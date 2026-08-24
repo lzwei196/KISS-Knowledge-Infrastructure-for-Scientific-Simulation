@@ -9,6 +9,12 @@ agent comes from GeoForge's existing provider harness.
 Every authoring run lives in an opaque, indexed workspace.  HTTP callers pass
 the id, never an arbitrary path, which keeps download/open/import operations
 bound to a workspace the user actually created through this app.
+
+KDT's accepted product is deliberately a portable, bare KI.  GeoForge keeps
+that accepted tree byte-for-byte unchanged and creates a separate
+``desktop-candidate`` only when the user imports it.  That projection may add
+Desktop compatibility metadata, but it must never invent scientific inputs,
+outputs, boundaries, or validation claims.
 """
 
 from __future__ import annotations
@@ -34,6 +40,11 @@ from typing import Callable, Iterator
 from urllib.parse import urlparse
 
 from . import firstrun
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - bundled by the desktop app
+    yaml = None
 
 
 REPOSITORY = "https://github.com/lzwei196/KDT-single.git"
@@ -333,7 +344,8 @@ def create_job(*, model_name: str, domain: str, source_type: str,
     (root / "README.txt").write_text(
         "GeoForge KI Studio workspace\n\n"
         "probe/     deterministic KDT source analysis\n"
-        "candidate/ the KI package being authored\n"
+        "candidate/ the portable bare KI being authored and accepted by KDT\n"
+        "desktop-candidate/ GeoForge compatibility projection created at import time\n"
         "runs/      agent logs and acceptance records\n"
         "exports/   validated ZIP packages\n",
         encoding="utf-8",
@@ -854,6 +866,7 @@ def verify(job_id: str) -> dict:
 
 
 def export_zip(job_id: str) -> tuple[Path, bytes]:
+    """Export the unchanged, KDT-accepted bare KI."""
     root, doc = _meta(job_id)
     state = job(job_id)
     acceptance = state.get("acceptance") or {}
@@ -866,6 +879,99 @@ def export_zip(job_id: str) -> tuple[Path, bytes]:
         for file in sorted(p for p in (root / "candidate").rglob("*") if p.is_file()):
             archive.write(file, file.relative_to(root / "candidate").as_posix())
     return path, path.read_bytes()
+
+
+def adapt_for_desktop(job_id: str) -> dict:
+    """Project an accepted bare KI into a separate Desktop package tree.
+
+    The adapter is intentionally narrow. ``template_version`` describes the
+    Desktop contract itself, and an empty ``processes`` container states that
+    the bare KI did not project a process graph.  All scientific sections must
+    still come from KDT/the authoring agent; this function will not synthesize
+    them merely to make a validator green.
+    """
+    root, _doc = _meta(job_id)
+    state = job(job_id)
+    acceptance = state.get("acceptance") or {}
+    candidate = root / "candidate"
+    if (not state["can_import"] or
+            acceptance.get("digest") != tree_digest(candidate)):
+        raise ValueError("verify the unchanged bare KI before Desktop adaptation")
+    _reject_symlinks(candidate)
+
+    desktop = root / "desktop-candidate"
+    staging = root / ".desktop-candidate.tmp"
+    if staging.exists():
+        shutil.rmtree(staging)
+    shutil.copytree(candidate, staging)
+    changes: list[dict[str, str]] = []
+    dag = staging / "dag.yaml"
+    if dag.is_file():
+        if yaml is None:
+            raise RuntimeError("PyYAML is required to adapt dag.yaml")
+        raw = dag.read_text(encoding="utf-8", errors="strict")
+        parsed = yaml.safe_load(raw) or {}
+        if not isinstance(parsed, dict):
+            raise ValueError("dag.yaml must contain a top-level mapping")
+        prefix = ""
+        suffix = ""
+        if "template_version" not in parsed:
+            prefix = "template_version: '3.5'\n\n"
+            changes.append({
+                "field": "template_version",
+                "action": "added Desktop contract version 3.5",
+            })
+        if "processes" not in parsed:
+            suffix = (
+                "\n\n# Added by the GeoForge Desktop compatibility adapter.\n"
+                "# Empty means the bare KI did not project a scientific process graph.\n"
+                "processes:\n"
+                "  nodes: []\n"
+                "  internal_edges: []\n"
+            )
+            changes.append({
+                "field": "processes",
+                "action": "added an explicitly empty process-graph container",
+            })
+        if prefix or suffix:
+            dag.write_text(prefix + raw.rstrip() + suffix + "\n", encoding="utf-8")
+
+    record = {
+        "adapter": "GeoForge Desktop bare-KI adapter",
+        "adapter_version": 1,
+        "created_at": time.time(),
+        "source": "candidate",
+        "source_digest": acceptance.get("digest"),
+        "kdt_engine_commit": acceptance.get("engine_commit"),
+        "changes": changes,
+        "scientific_content_policy": (
+            "No scientific inputs, outputs, boundary conditions, processes, "
+            "or validation claims were inferred by the Desktop adapter."
+        ),
+    }
+    (staging / ".geoforge-adapter.json").write_text(
+        json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+    if desktop.exists():
+        shutil.rmtree(desktop)
+    staging.replace(desktop)
+    (root / "runs" / "desktop-adaptation.json").write_text(
+        json.dumps({**record, "path": str(desktop)}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return {**record, "path": str(desktop)}
+
+
+def export_desktop_zip(job_id: str) -> tuple[Path, bytes, dict]:
+    """Create and export GeoForge's projection without altering the bare KI."""
+    root, doc = _meta(job_id)
+    adaptation = adapt_for_desktop(job_id)
+    desktop = Path(adaptation["path"])
+    name = _slug(doc["model_name"])
+    path = root / "exports" / f"{name}-GeoForge-Desktop-KI.zip"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for file in sorted(p for p in desktop.rglob("*") if p.is_file()):
+            archive.write(file, file.relative_to(desktop).as_posix())
+    return path, path.read_bytes(), adaptation
 
 
 def open_workspace(job_id: str) -> Path:

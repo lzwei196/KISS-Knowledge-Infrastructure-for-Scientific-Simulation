@@ -174,7 +174,7 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,fai
     $("#start").disabled=busy||!$("#provider").value;
   }
   drawRunState();
-  const steps=sw.steps||[];$("#verification").innerHTML=steps.length?`<div class="steps">${steps.map(s=>`<div class="step ${s.ok||s.recovered?'good':s.skipped?'skip':'bad'}"><span class="icon">${s.ok?'✓':s.recovered?'↺':s.skipped?'–':'✕'}</span><div><b>${esc(s.name)}${s.recovered?' · repaired':''}</b>${s.detail?`<details><summary>details</summary>${esc(s.detail)}</details>`:""}</div></div>`).join("")}</div>`:
+  const steps=sw.steps||[];$("#verification").innerHTML=steps.length?`<div class="steps">${steps.map(s=>`<div class="step ${s.ok||s.recovered?'good':s.skipped?'skip':'bad'}"><span class="icon">${s.ok?'✓':s.recovered?'↺':s.deferred?'◇':s.skipped?'–':'✕'}</span><div><b>${esc(s.name)}${s.recovered?' · repaired':s.deferred?' · handled in each project':''}</b>${s.detail?`<details><summary>details</summary>${esc(s.detail)}</details>`:""}</div></div>`).join("")}</div>`:
     '<div class="explain">Not checked yet. The agent will run the KI preflight.</div>';
 }
 async function loadState(){if(!MODEL){$("#title").textContent="No KI selected";return;}const r=await fetch("/api/setup/"+encodeURIComponent(MODEL));STATE=await r.json();draw();}

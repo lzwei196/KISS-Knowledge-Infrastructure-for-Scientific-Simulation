@@ -8,7 +8,8 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from kiss_cli import kdtstudio
+from kiss_cli import doctor, kdtstudio
+from kiss_cli.catalog import KI
 
 
 class KdtStudioTests(unittest.TestCase):
@@ -209,6 +210,57 @@ class KdtStudioTests(unittest.TestCase):
         self.assertFalse(kdtstudio.job(created["id"])["can_import"])
         with self.assertRaisesRegex(ValueError, "verify the unchanged"):
             kdtstudio.export_zip(created["id"])
+
+    def test_desktop_adapter_keeps_bare_ki_unchanged_and_adds_only_compatibility_fields(self):
+        created = self._create()
+        root = Path(created["root"])
+        candidate = root / "candidate"
+        (candidate / "SKILL.md").write_text("# My Model\n", encoding="utf-8")
+        (candidate / "preflight_check.py").write_text(
+            "print('PREFLIGHT_REPORT={}')\n", encoding="utf-8")
+        (candidate / "docs").mkdir()
+        (candidate / "docs" / "format_spec.yaml").write_text("formats: {}\n", encoding="utf-8")
+        # This represents a valid bare scientific contract whose only missing
+        # fields belong to GeoForge's Desktop projection.
+        bare_dag = (
+            "identity:\n  model_id: My Model\n  repo_url: https://example.org/model\n"
+            "boundary: {}\ninputs: {}\noutputs: []\nstates: {}\n"
+            "influence: {}\nsafety: {}\n"
+        )
+        (candidate / "dag.yaml").write_text(bare_dag, encoding="utf-8")
+        acceptance = {
+            "ok": True,
+            "engine_commit": kdtstudio.REVIEWED_COMMIT,
+            "digest": kdtstudio.tree_digest(candidate),
+            "signature": kdtstudio.tree_signature(candidate),
+        }
+        (root / "runs" / "ki-acceptance.json").write_text(
+            json.dumps(acceptance), encoding="utf-8")
+
+        adaptation = kdtstudio.adapt_for_desktop(created["id"])
+        desktop = Path(adaptation["path"])
+        self.assertEqual((candidate / "dag.yaml").read_text(), bare_dag)
+        projected = (desktop / "dag.yaml").read_text()
+        self.assertIn("template_version: '3.5'", projected)
+        self.assertIn("processes:", projected)
+        self.assertIn("nodes: []", projected)
+        self.assertEqual(
+            [item["field"] for item in adaptation["changes"]],
+            ["template_version", "processes"],
+        )
+        self.assertTrue((desktop / ".geoforge-adapter.json").is_file())
+        blockers = [
+            finding for finding in doctor.check_ki(KI(name="My Model", root=desktop))
+            if finding.severity == doctor.BLOCK
+        ]
+        self.assertEqual(blockers, [])
+
+        archive, blob, exported = kdtstudio.export_desktop_zip(created["id"])
+        self.assertEqual(exported["source_digest"], acceptance["digest"])
+        self.assertEqual(blob, archive.read_bytes())
+        with zipfile.ZipFile(archive) as zf:
+            self.assertIn(".geoforge-adapter.json", zf.namelist())
+            self.assertIn("template_version: '3.5'", zf.read("dag.yaml").decode())
 
     def test_studio_frontend_and_routes_are_present(self):
         package = Path(__file__).parents[1]

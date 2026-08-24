@@ -75,6 +75,15 @@ def request(root: Path) -> dict | None:
     # display data just like an imported KI. In particular, never let an agent
     # turn the official-page link into a javascript: URL.
     kind = str(raw.get("kind") or "other").lower()
+    expected = str(raw.get("expected_path") or "").strip()[:1000]
+    if kind == "permission" and expected:
+        # v0.6.34 could persist a popup for Kimi's automatic shared-skill
+        # discovery.  That folder is now part of Kimi's read-only runtime
+        # surface, so archive the stale request instead of showing it forever.
+        from .kimi_security import is_runtime_read_path
+        if is_runtime_read_path(expected):
+            clear_request(root)
+            return None
     url = str(raw.get("url") or "").strip()[:2000]
     return {
         **raw,
@@ -85,7 +94,7 @@ def request(root: Path) -> dict | None:
         "title": " ".join(str(raw.get("title") or "Help needed").split())[:160],
         "message": str(raw.get("message") or "").strip()[:8000],
         "url": url if url.startswith(("https://", "http://")) else None,
-        "expected_path": str(raw.get("expected_path") or "").strip()[:1000] or None,
+        "expected_path": expected or None,
         "command": str(raw.get("command") or "").strip()[:2000] or None,
         "resume_hint": str(raw.get("resume_hint") or "").strip()[:4000] or None,
         "user_note": str(raw.get("user_note") or "").strip()[:4000] or None,
@@ -125,6 +134,61 @@ def request_user(root: Path, payload: dict) -> dict:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
     return doc
+
+
+def request_for_kimi_permission(root: Path, path: str) -> dict | None:
+    """Turn one macOS sandbox denial into a specific user decision.
+
+    The denied path comes from Kimi's process stderr, not from the model's
+    prose.  Approval remains explicit and project-local; this function never
+    widens the policy by itself.
+    """
+    candidate = Path(str(path)).expanduser()
+    if not candidate.is_absolute():
+        return None
+    try:
+        candidate = candidate.resolve(strict=False)
+    except OSError:
+        candidate = candidate.absolute()
+    from .kimi_security import is_runtime_read_path
+    if is_runtime_read_path(candidate):
+        # Startup-owned paths are already available read-only in the macOS
+        # profile.  Never turn them into a project decision.
+        return None
+    current = request(root)
+    if current and current.get("status") == "waiting":
+        return current
+    home = Path.home().resolve()
+    # Asking for the whole home directory is equivalent to Full computer
+    # access and must use the clearly labelled global setting instead.
+    if candidate == home or candidate in home.parents:
+        return None
+    return request_user(root, {
+        "kind": "permission",
+        "title": "Kimi needs access to one folder",
+        "message": (
+            f"Kimi tried to read {candidate}. GeoForge blocked it because it is "
+            "outside this project. Choose whether this project may read that "
+            "specific path; no other personal folders will be opened."
+        ),
+        "expected_path": str(candidate),
+        "allow_note": False,
+        "options": [
+            {
+                "id": "allow-kimi-read-once",
+                "label": "Allow once",
+                "description": "Read this path for the next Kimi turn only, then close it again.",
+                "response": f"Allow Kimi to read {candidate} once.",
+            },
+            {
+                "id": "allow-kimi-read-project",
+                "label": "Always for this project",
+                "description": "Remember read-only access in this project's policy.",
+                "response": f"Allow Kimi to read {candidate} in this project.",
+            },
+        ],
+        "resume_hint": "Retry the interrupted turn after applying the selected project permission.",
+    })
 
 
 def resume(root: Path, note: str = "") -> dict | None:

@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, install, mcp, paths, plotting, policy, preparation, projectrun, projectview, providers, sessions, setup, shellenv, skilllib, tls
+from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, install, kimi_security, mcp, paths, plotting, policy, port, preparation, projectrun, projectview, providers, sessions, settings, setup, shellenv, skilllib, software_audit, tls
 from kiss_cli.catalog import KI
 from kiss_cli.manifest import Acquire, DataNeed, Manifest
 
@@ -155,6 +155,126 @@ class ProviderHealthTests(unittest.TestCase):
         self.assertIn("ReadFile", tool)
         self.assertIn("[[GEOF_TOOL:", tool)
 
+    def test_kimi_project_scope_wraps_the_complete_process_tree(self):
+        provider = providers.Provider(
+            name="kimi", binary="kimi", label="Kimi Code",
+            argv=["kimi", "-p", "{prompt}"], output="text",
+        )
+        wrapped = ["/usr/bin/sandbox-exec", "-f", "/tmp/kimi.sb",
+                   "/bin/kimi", "-p", "hello"]
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(provider, "health", return_value=providers.ProviderHealth(
+                 True, True, "signed in")), \
+             mock.patch.object(provider, "path", return_value="/bin/kimi"), \
+             mock.patch.object(settings, "kimi_security_mode", return_value="scoped"), \
+             mock.patch.object(kimi_security, "wrap",
+                               return_value=(wrapped, Path("/tmp/kimi.sb"))) as secure, \
+             mock.patch.object(kimi_security, "cleanup") as cleanup, \
+             mock.patch.object(providers.subprocess, "Popen") as popen:
+            proc = popen.return_value
+            proc.stdout = io.StringIO("")
+            proc.wait.return_value = 0
+            proc.stdin = None
+            output = "".join(providers.run(provider, "hello", Path(td)))
+        self.assertEqual(popen.call_args.args[0], wrapped)
+        secure.assert_called_once()
+        cleanup.assert_called_once_with(Path("/tmp/kimi.sb"))
+        self.assertNotIn("project-scoped security", output)
+
+    def test_cli_add_dirs_include_real_directories_granted_by_policy(self):
+        provider = providers.Provider(
+            name="kimi", binary="kimi", label="Kimi Code",
+            argv=["kimi", "-p", "{prompt}"], output="text",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            coupled = root / "shared" / "binaries"
+            project.mkdir()
+            coupled.mkdir(parents=True)
+            pol = policy.Policy("VIC")
+            pol.add("read", coupled, "declared coupled model")
+            with mock.patch.object(provider, "health", return_value=providers.ProviderHealth(
+                     True, True, "signed in")), \
+                 mock.patch.object(provider, "path", return_value="/bin/kimi"), \
+                 mock.patch.object(settings, "kimi_security_mode", return_value="full"), \
+                 mock.patch.object(providers.subprocess, "Popen") as popen:
+                proc = popen.return_value
+                proc.stdout = io.StringIO("")
+                proc.wait.return_value = 0
+                proc.stdin = None
+                list(providers.run(provider, "hello", project, pol=pol))
+
+            argv = popen.call_args.args[0]
+            self.assertIn("--add-dir", argv)
+            self.assertIn(str(coupled.resolve()), argv)
+
+    def test_kimi_eperm_becomes_a_permission_event_not_a_node_stack(self):
+        provider = providers.Provider(
+            name="kimi", binary="kimi", label="Kimi Code",
+            argv=["kimi", "-p", "{prompt}"], output="stream-json",
+        )
+        denied = "/Users/leo/.agents/skills"
+
+        def spawn(*_args, **kwargs):
+            stderr = kwargs["stderr"]
+            stderr.write(
+                "Error: EPERM: operation not permitted, realpath "
+                f"'{denied}'\n    at async Object.realpath (node:fs)\n")
+            stderr.flush()
+            proc = mock.Mock()
+            proc.stdout = io.StringIO("")
+            proc.wait.return_value = 1
+            proc.stdin = None
+            return proc
+
+        events = {}
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(provider, "health", return_value=providers.ProviderHealth(
+                 True, True, "signed in")), \
+             mock.patch.object(provider, "path", return_value="/bin/kimi"), \
+             mock.patch.object(settings, "kimi_security_mode", return_value="full"), \
+             mock.patch.object(providers.subprocess, "Popen", side_effect=spawn):
+            output = "".join(providers.run(
+                provider, "hello", Path(td), runtime_events=events))
+        self.assertEqual(events["permission"]["path"], denied)
+        self.assertIn("needs permission to read", output)
+        self.assertNotIn("Object.realpath", output)
+        self.assertNotIn("exited 1", output)
+
+    def test_kimi_auth_timeout_becomes_a_plain_connection_error(self):
+        provider = providers.Provider(
+            name="kimi", binary="kimi", label="Kimi Code",
+            argv=["kimi", "-p", "{prompt}"], output="stream-json",
+        )
+
+        def spawn(*_args, **kwargs):
+            stderr = kwargs["stderr"]
+            stderr.write(
+                "OAuth request to https://auth.kimi.com/api/oauth/token failed: "
+                "fetch failed: Connect Timeout Error\n")
+            stderr.flush()
+            proc = mock.Mock()
+            proc.stdout = io.StringIO("")
+            proc.wait.return_value = 1
+            proc.stdin = None
+            return proc
+
+        events = {}
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(provider, "health", return_value=providers.ProviderHealth(
+                 True, True, "signed in")), \
+             mock.patch.object(provider, "path", return_value="/bin/kimi"), \
+             mock.patch.object(settings, "kimi_security_mode", return_value="full"), \
+             mock.patch.object(providers.subprocess, "Popen", side_effect=spawn):
+            output = "".join(providers.run(
+                provider, "请运行模型", Path(td), runtime_events=events))
+        self.assertEqual(events["connection"]["service"], "auth.kimi.com")
+        self.assertIn("网络", output)
+        self.assertIn("不是 KI", output)
+        self.assertNotIn("exited 1", output)
+        self.assertNotIn("```", output)
+
     def test_claude_nested_tool_activity_is_visible(self):
         tool = providers._text_from_stream_json(json.dumps({
             "type": "assistant",
@@ -172,6 +292,20 @@ class ProviderHealthTests(unittest.TestCase):
         events = list(gui._with_heartbeats(slow_stream(), interval=0.005))
         self.assertIn(None, events)
         self.assertEqual(events[-1], "finished")
+
+    def test_chat_forwarder_turns_idle_time_into_invisible_keepalives(self):
+        def slow_stream():
+            time.sleep(0.04)
+            yield "finished"
+
+        forwarded = []
+        ok = gui._forward_chat_stream(
+            slow_stream(), lambda piece: forwarded.append(piece) or True,
+            interval=0.005,
+        )
+        self.assertTrue(ok)
+        self.assertIn(gui.CHAT_KEEPALIVE, forwarded)
+        self.assertEqual(forwarded[-1], "finished")
 
     def test_missing_alias_and_duplicate_workdir_are_not_passed_to_cli(self):
         provider = providers.Provider(
@@ -318,6 +452,30 @@ class FrozenRuntimeTests(unittest.TestCase):
         self.assertTrue(text.startswith("*IB00000001  IBSNAT"))
         self.assertIn("@  SLB  SLMH  SLLL  SDUL  SSAT", text)
 
+    def test_vic_software_verification_does_not_require_global_project_data(self):
+        source = Path(__file__).parents[2] / "models" / "VIC"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = paths.KissConfig.default(root)
+            live = root / "ki"
+            materialised = port.materialise(source, live, cfg)
+            self.assertFalse(materialised.unresolved)
+            for binary in (
+                cfg.roles["binaries"] / "VIC-5.1.0" / "vic" / "drivers" /
+                "classic" / "vic_classic.exe",
+                cfg.roles["binaries"] / "cmf_v420_pkg" / "src" / "MAIN_cmf",
+            ):
+                binary.parent.mkdir(parents=True, exist_ok=True)
+                binary.write_text("test executable")
+                binary.chmod(0o755)
+            result = subprocess.run(
+                [sys.executable, str(live / "preflight_check.py")],
+                capture_output=True, text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("SOFTWARE PREFLIGHT PASSED", result.stdout)
+        self.assertIn("Project data not installed globally", result.stdout)
+
     def test_dssat_weather_fields_do_not_silently_drop_a_digit(self):
         script = (Path(__file__).parents[2] / "models" / "DSSAT" / "tools" /
                   "run_reference_case.py")
@@ -420,6 +578,72 @@ class EnvironmentAndTlsTests(unittest.TestCase):
         self.assertTrue(ctx.check_hostname)
 
 
+class KimiSecurityTests(unittest.TestCase):
+    def test_profile_reopens_only_the_approved_project_under_home(self):
+        home = Path.home().resolve()
+        project = home / "Documents" / "GeoForge project"
+        text = kimi_security.profile(cwd=project)
+        deny = f'(deny file-read* (subpath "{home}"))'
+        allow = f'(allow file-read* (subpath "{project}"))'
+        self.assertIn(deny, text)
+        self.assertIn(allow, text)
+        self.assertIn(
+            f'(allow file-read* (subpath "{home / ".agents" / "skills"}"))',
+            text,
+        )
+        self.assertLess(text.index(deny), text.index(allow))
+        self.assertIn("(deny file-write*)", text)
+
+    def test_shared_agent_skills_are_read_only_kimi_runtime_not_project_data(self):
+        home = Path.home().resolve()
+        skills = home / ".agents" / "skills"
+        text = kimi_security.profile(cwd=home / "Documents" / "GeoForge project")
+
+        self.assertTrue(kimi_security.is_runtime_read_path(skills))
+        self.assertTrue(kimi_security.is_runtime_read_path(skills / "example" / "SKILL.md"))
+        self.assertIn(
+            f'(allow file-read-metadata (literal "{home / ".agents"}"))', text)
+        self.assertIn(f'(allow file-read* (subpath "{skills}"))', text)
+        self.assertNotIn(f'(allow file-read* (subpath "{home / ".agents"}"))', text)
+        self.assertNotIn(f'(allow file-write* (subpath "{skills}"))', text)
+
+    def test_scoped_kimi_uses_explicit_skills_instead_of_watching_home(self):
+        with tempfile.TemporaryDirectory() as td:
+            cwd = Path(td)
+            project_skills = cwd / ".agents" / "skills"
+            project_skills.mkdir(parents=True)
+            dirs = kimi_security.explicit_skill_dirs(cwd)
+
+            self.assertIn((Path.home() / ".agents" / "skills").resolve(), dirs)
+            self.assertIn(project_skills.resolve(), dirs)
+            self.assertNotIn(Path.home().resolve(), dirs)
+
+    def test_scoped_kimi_watches_a_private_home_but_keeps_real_login_state(self):
+        original = {"HOME": str(Path.home()), "PATH": "/usr/bin"}
+        updated, isolated = kimi_security.scoped_environment(original)
+        try:
+            self.assertNotEqual(updated["HOME"], original["HOME"])
+            self.assertEqual(Path(updated["HOME"]), isolated)
+            self.assertTrue(isolated.is_dir())
+            self.assertEqual(
+                Path(updated["KIMI_CODE_HOME"]),
+                (Path.home() / ".kimi-code").resolve(),
+            )
+            self.assertEqual(original, {"HOME": str(Path.home()), "PATH": "/usr/bin"})
+        finally:
+            kimi_security.cleanup_home(isolated)
+        self.assertFalse(isolated.exists())
+
+    def test_kimi_security_setting_defaults_safe_and_rejects_unknown_modes(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(settings, "_path", return_value=Path(td) / "settings.json"):
+            self.assertEqual(settings.masked()["kimi_security_mode"], "scoped")
+            settings.update({"kimi_security_mode": "full"})
+            self.assertEqual(settings.masked()["kimi_security_mode"], "full")
+            with self.assertRaisesRegex(ValueError, "unknown Kimi security mode"):
+                settings.update({"kimi_security_mode": "everything"})
+
+
 class ClipboardTests(unittest.TestCase):
     def test_macos_clipboard_falls_back_to_pasteboard_commands(self):
         replies = [
@@ -464,6 +688,17 @@ class ClipboardTests(unittest.TestCase):
         bridge.window.create_file_dialog.assert_called_once_with(
             "folder", directory="/tmp", allow_multiple=False)
 
+    def test_native_project_folder_picker_starts_at_existing_ancestor(self):
+        native = SimpleNamespace(FOLDER_DIALOG="folder")
+        bridge = desktop_app._DesktopApi(native)
+        bridge.window = SimpleNamespace(create_file_dialog=mock.Mock(return_value=None))
+        missing = Path(tempfile.gettempdir()) / "not-created" / "new-location"
+
+        self.assertIsNone(bridge.choose_project_parent(str(missing)))
+        bridge.window.create_file_dialog.assert_called_once_with(
+            "folder", directory=str(Path(tempfile.gettempdir())),
+            allow_multiple=False)
+
 
 class SessionProjectTests(unittest.TestCase):
     def test_new_session_can_live_under_a_user_selected_parent(self):
@@ -484,6 +719,29 @@ class SessionProjectTests(unittest.TestCase):
             loaded = sessions.load(root, session["id"])
             self.assertEqual(sessions.project_path(root, loaded), project)
             self.assertEqual(sessions.list_all(root)[0]["project_path"], str(project))
+
+    def test_new_session_creates_a_missing_selected_parent(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            root = base / "geoforge-state"
+            selected = base / "new" / "nested" / "research-projects"
+            self.assertFalse(selected.exists())
+
+            session = sessions.create(root, project_parent=selected)
+            project = sessions.project_path(root, session)
+
+            self.assertTrue(selected.is_dir())
+            self.assertEqual(project.parent, selected.resolve())
+            self.assertTrue((project / "inputs" / "uploads").is_dir())
+
+    def test_new_session_explains_when_selected_parent_cannot_be_created(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            blocker = base / "already-a-file"
+            blocker.write_text("not a folder")
+
+            with self.assertRaisesRegex(ValueError, "could not create project location"):
+                sessions.create(base / "state", project_parent=blocker / "child")
 
     def test_external_project_is_archived_beside_its_selected_parent(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1150,6 +1408,12 @@ class FrontendRegressionTests(unittest.TestCase):
         page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text()
         self.assertIn("CLI default", page)
         self.assertIn("Auto KI", page)
+
+    def test_chat_stream_hides_keepalives_and_explains_real_disconnects(self):
+        page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text()
+        self.assertIn('replaceAll("\\u200b","")', page)
+        self.assertIn("The live response connection was interrupted", page)
+        self.assertNotIn("The request failed: ${e.message||e}", page)
         self.assertIn("Verified on this machine", page)
         self.assertIn('src="/logo.svg"', page)
         self.assertIn('id="newsess" disabled', page)
@@ -1166,6 +1430,9 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("Copy this message", page)
         self.assertIn("Recheck local CLIs", page)
         self.assertIn("/api/providers?refresh=1", page)
+        self.assertIn("refreshMachineStatus", page)
+        self.assertIn('fetch("/api/status",{cache:"no-store"})', page)
+        self.assertIn("refreshMachineStatus(true,true)", page)
         self.assertIn("Local CLIs are installed but not ready", page)
         self.assertIn("sign-in needed", page)
         self.assertIn("update needed", page)
@@ -1523,6 +1790,69 @@ class ProjectPreparationTests(unittest.TestCase):
 
 
 class InstallStatusTests(unittest.TestCase):
+    def test_verified_preflight_is_injected_as_machine_evidence_for_chat(self):
+        handler = object.__new__(gui.Handler)
+        binary = "/shared/vic/binaries/cmf_v420_pkg/src/MAIN_cmf"
+        handler._status_for = lambda _ki: {
+            "can_run": True, "label": "Verified on this machine",
+            "steps": [{"name": "preflight", "detail":
+                       f"  OK    CaMa-Flood 4.20: {binary}\n"
+                       "  Results: 2 passed, 0 failed"}],
+        }
+        cfg = SimpleNamespace(roles={"binaries": Path("/shared/vic/binaries")})
+
+        block = handler._software_status_prompt(
+            [SimpleNamespace(name="VIC")], cfg)
+
+        self.assertIn("VERIFIED ON THIS MACHINE", block)
+        self.assertIn(binary, block)
+        self.assertIn("current machine evidence", block)
+
+    def test_all_bundled_kis_have_an_agent_visibility_contract(self):
+        models = Path(__file__).parents[2] / "models"
+        manifests = Path(__file__).parents[1] / "manifests"
+        with tempfile.TemporaryDirectory() as td:
+            result = software_audit.audit(models, Path(td), manifests)
+
+        self.assertEqual(result["catalogue_count"], 127)
+        self.assertEqual(result["contract_checked"], 127)
+        self.assertTrue(result["ok"], result["errors"])
+
+    def test_verified_status_path_is_real_policy_and_cli_visible(self):
+        models = Path(__file__).parents[2] / "models"
+        manifests = Path(__file__).parents[1] / "manifests"
+        with tempfile.TemporaryDirectory() as td:
+            workroot = Path(td)
+            workspace = workroot / "vic"
+            binary = workspace / "binaries" / "cmf_v420_pkg" / "src" / "MAIN_cmf"
+            binary.parent.mkdir(parents=True)
+            binary.write_text("compiled model")
+            cfg = paths.KissConfig.default(workspace)
+            (workspace / paths.CONFIG_NAME).write_text(cfg.dumps())
+            (workspace / "status.json").write_text(json.dumps({
+                "model": "VIC", "ok": True,
+                "steps": [{"name": "preflight", "ok": True,
+                           "detail": f"  OK    CaMa-Flood 4.20: {binary}\n"}],
+            }))
+
+            result = software_audit.audit(models, workroot, manifests)
+
+        self.assertTrue(result["ok"], result["errors"])
+        vic = next(item for item in result["verified"] if item["model"] == "VIC")
+        self.assertTrue(vic["paths"][0]["exists"])
+        self.assertTrue(vic["paths"][0]["policy_visible"])
+        self.assertTrue(vic["paths"][0]["cli_visible"])
+
+    def test_preflight_path_parser_handles_colon_and_found_at_forms(self):
+        status = {"steps": [{"name": "preflight", "detail":
+                   "  OK    Maps: /tmp/model/maps (3 items)\n"
+                   "[OK] binary found at /tmp/model/bin/run\n"
+                   "  WARN  ignored: /tmp/missing"}]}
+        self.assertEqual(
+            software_audit.preflight_paths(status),
+            [Path("/tmp/model/maps"), Path("/tmp/model/bin/run")],
+        )
+
     def test_primary_cause_is_saved_and_preflight_is_skipped(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -1616,6 +1946,50 @@ class AgentSetupTests(unittest.TestCase):
             self.assertEqual(req["kind"], "permission")
             self.assertEqual(
                 req["command"], "brew install mpich netcdf netcdf-fortran")
+
+    def test_kimi_denied_folder_becomes_a_two_choice_popup_request(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            denied = Path.home() / "Documents" / "external-research-data"
+            req = setup.request_for_kimi_permission(root, str(denied))
+            self.assertIsNotNone(req)
+            self.assertEqual(req["kind"], "permission")
+            self.assertEqual(req["expected_path"], str(denied.resolve()))
+            self.assertEqual(
+                [item["id"] for item in req["options"]],
+                ["allow-kimi-read-once", "allow-kimi-read-project"],
+            )
+            saved = setup.request(root)
+            self.assertEqual(saved["title"], "Kimi needs access to one folder")
+            self.assertFalse(saved["allow_note"])
+
+    def test_kimi_shared_skill_folder_never_becomes_a_popup_request(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            skills = Path.home() / ".agents" / "skills"
+            self.assertIsNone(
+                setup.request_for_kimi_permission(root, str(skills)))
+            self.assertFalse((root / setup.REQUEST_FILE).exists())
+
+    def test_old_kimi_shared_skill_popup_is_archived_on_read(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            skills = Path.home() / ".agents" / "skills"
+            setup.request_user(root, {
+                "kind": "permission",
+                "title": "Kimi needs access to one folder",
+                "expected_path": str(skills),
+                "options": ["Allow once"],
+            })
+
+            self.assertIsNone(setup.request(root))
+            self.assertFalse((root / setup.REQUEST_FILE).exists())
+            self.assertEqual(len(list(root.glob("setup-request-*.json"))), 1)
+
+    def test_kimi_permission_never_offers_the_entire_home_folder(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.assertIsNone(
+                setup.request_for_kimi_permission(Path(td), str(Path.home())))
 
     def test_failed_agent_turn_is_visible_even_without_structured_request(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2031,6 +2405,24 @@ class AgentSetupTests(unittest.TestCase):
             args, _ = policy.claude_args(pol)
             self.assertIn("Bash(python3:*)", args)
             self.assertIn("Bash(wine:*)", args)
+
+    def test_policy_exposes_shared_binary_root_for_declared_coupling(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki_root = root / "ki"
+            ki_root.mkdir()
+            cfg = paths.KissConfig.default(root / "vic")
+            pol = policy.Policy.derive(
+                KI("VIC", ki_root),
+                Manifest(model="VIC", install_dir="VIC-5.1.0",
+                         depends_on=["CaMa_Flood"]),
+                cfg,
+            )
+            keys = {grant.key() for grant in pol.grants}
+            self.assertIn(f"read:{cfg.roles['binaries']}", keys)
+            self.assertIn(f"exec:{cfg.roles['binaries']}", keys)
+            self.assertIn(
+                f"exec:{cfg.roles['binaries'] / 'VIC-5.1.0'}", keys)
 
 
 class ImportValidationTests(unittest.TestCase):

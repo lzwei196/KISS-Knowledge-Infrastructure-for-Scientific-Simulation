@@ -98,6 +98,21 @@ class Policy:
         p.add("exec", prefix, f"the {ki.name} executable and its install tree")
         p.add("read", prefix, "model support files alongside the binary")
 
+        # Coupled models commonly share one model-scoped binaries directory.
+        # VIC is the concrete example: its own executable lives below
+        # ``VIC-5.1.0`` while the declared CaMa-Flood dependency lives below
+        # ``cmf_v420_pkg``. Granting only the primary install prefix makes the
+        # dependency look absent to a contained agent even though the shared
+        # software preflight has already verified it. The role is still scoped
+        # to this model workspace (for example ~/kiss/vic/binaries), not to a
+        # machine-wide software directory.
+        if man.depends_on:
+            coupled = ", ".join(man.depends_on)
+            p.add("read", cfg.roles["binaries"],
+                  f"support files for declared coupled models: {coupled}")
+            p.add("exec", cfg.roles["binaries"],
+                  f"executables for declared coupled models: {coupled}")
+
         # Interpreter, so Python-based KIs can run at all.  Grant the exact
         # configured spelling even when it is a command name: native agent
         # CLIs match ``Bash(python3:*)`` separately from filesystem grants.
@@ -133,6 +148,20 @@ class Policy:
         g = Grant(kind=kind, path=value, reason=reason)
         if not any(x.key() == g.key() for x in self.grants):
             self.grants.append(g)
+
+    def add_verified_install(self, root: str | Path, model: str | None = None) -> None:
+        """Expose one GeoForge-verified model workspace without making it writable.
+
+        Older and manually packaged KIs do not all place runtime assets below
+        ``binaries/<install_dir>``. DSSAT keeps support files below ``DSSAT/``;
+        APEX keeps its licensed executable below ``ki/reference``; coupled
+        models may use a sibling directory. The real preflight validated these
+        paths as one installation, so the normal chat must see the same tree.
+        This remains narrowly model-scoped and deliberately grants no write.
+        """
+        label = model or self.model
+        self.add("read", root, f"GeoForge-verified {label} installation")
+        self.add("exec", root, f"executables in the verified {label} installation")
 
     def add_authoring_aliases(self, cfg) -> None:
         """Also grant each path under the name the agent will actually see.
@@ -272,10 +301,11 @@ def codex_args(pol: Policy) -> tuple[list[str], Enforcement]:
 
 
 def coarse_args(pol: Policy) -> tuple[list[str], Enforcement]:
-    """Kimi, Gemini and Qwen expose only an all-or-nothing auto-approve.
+    """Gemini and Qwen expose only an all-or-nothing auto-approve.
 
     There is no way to express "these paths and no others", so least privilege
-    is not achievable. Returning NONE makes the caller say so out loud.
+    is not achievable. Returning NONE makes the caller say so out loud. Kimi
+    is contained around its complete process tree by ``kimi_security`` on Mac.
     """
     if pol.posture is Posture.DANGER_FULL_ACCESS:
         return ["--yolo"], Enforcement.NONE

@@ -297,6 +297,14 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <label>Local agent CLIs</label><div id="s-local"></div>
     <div style="display:flex;gap:8px;margin:6px 0 12px"><button id="s-recheck">Recheck local CLIs</button><span class="hint" id="s-local-msg" style="align-self:center;margin:0"></span></div>
     <label>Default provider</label><select id="s-def"></select>
+    <div class="datacard" style="margin-top:12px;padding:14px">
+      <label for="s-kimi-security" style="margin-top:0">Kimi Code file access</label>
+      <select id="s-kimi-security">
+        <option value="scoped">Project scoped (recommended)</option>
+        <option value="full">Full computer access</option>
+      </select>
+      <div class="hint" id="s-kimi-security-note" style="margin:7px 0 0">Project scoped lets Kimi use this project, its KI, approved data, and its own login state. Other personal files are blocked by macOS.</div>
+    </div>
     <label>Anthropic API key</label><input id="s-anthropic" autocomplete="off">
     <label>DeepSeek API key</label><input id="s-deepseek" autocomplete="off">
     <label>OpenAI API key</label><input id="s-openai" autocomplete="off">
@@ -312,7 +320,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <div style="color:var(--fg-2)">Each chat has its own project folder for memory, inputs, model runs, outputs, and plots.</div>
     <label for="project-parent">Create the project inside</label>
     <div style="display:flex;gap:7px"><input id="project-parent" autocomplete="off" spellcheck="false" style="flex:1"><button id="project-browse">Choose…</button></div>
-    <div class="hint" id="project-location-note" style="margin:6px 0 0">GeoForge creates a new named folder inside this location. Existing files are not changed.</div>
+    <div class="hint" id="project-location-note" style="margin:6px 0 0">You may type a new folder path. GeoForge creates it, then creates this chat's named project folder inside it. Existing files are not changed.</div>
     <div class="hint" id="project-location-error" style="margin:7px 0 0;color:var(--block)"></div>
     <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
       <button class="primary" id="project-create">Create chat</button>
@@ -479,6 +487,7 @@ const sessionUploading=(id=CUR&&CUR.id)=>(UPLOADING.get(id)||0)>0;
 let KIND=localStorage.getItem("kiss.kind")||"cli";
 // Which session KIND was last synced from; null means "not yet".
 let KIND_SYNCED_FOR;
+let STATUS_REFRESHING=null,LAST_STATUS_CHECK=0;
 
 function stateClass(n){
   const s=(STATUS[n]||{}).state;
@@ -486,6 +495,27 @@ function stateClass(n){
 function stateLabel(n){
   const s=STATUS[n]||{};
   return s.label||(s.state==="verified"?"Verified on this machine":"Setup needed");}
+
+async function refreshMachineStatus(redraw=true,force=false){
+  // Verification belongs to this Mac, not to one chat. It may change in the
+  // setup window while the chat page remains open, so a once-per-launch cache
+  // can incorrectly keep showing "Setup needed" after preflight has passed.
+  if(!force&&Date.now()-LAST_STATUS_CHECK<1500)return STATUS;
+  if(STATUS_REFRESHING)return STATUS_REFRESHING;
+  STATUS_REFRESHING=(async()=>{
+    try{
+      const r=await fetch("/api/status",{cache:"no-store"});
+      if(!r.ok)throw new Error(`status ${r.status}`);
+      const fresh=await r.json();
+      if(fresh&&typeof fresh==="object"&&!Array.isArray(fresh))STATUS=fresh;
+      LAST_STATUS_CHECK=Date.now();
+      if(redraw&&CUR)drawModelLabel();
+      return STATUS;
+    }catch(_error){return STATUS;}
+    finally{STATUS_REFRESHING=null;}
+  })();
+  return STATUS_REFRESHING;
+}
 
 async function loadAll(){
   try{
@@ -497,6 +527,7 @@ async function loadAll(){
       fetch("/api/status").then(r=>r.json()),
       fetch("/api/providers").then(r=>r.json()),
       fetch("/api/project-location").then(r=>r.json())]);
+    LAST_STATUS_CHECK=Date.now();
     drawSessions(); drawProviders();
     const requested=new URLSearchParams(location.search).get("session");
     if(requested&&SESSIONS.some(s=>s.id===requested)){
@@ -690,7 +721,10 @@ async function openSession(id){
   const seq=++OPEN_SEQ, leaving=CUR&&CUR.id;
   if(ACTION_SESSION&&ACTION_SESSION!==id)closeActionPicker();
   if(leaving&&leaving!==id)DRAFTS.set(leaving,$("#msg").value);
-  const next=await (await fetch("/api/session/"+id)).json();
+  const [next]=await Promise.all([
+    fetch("/api/session/"+id).then(r=>r.json()),
+    refreshMachineStatus(false),
+  ]);
   if(seq!==OPEN_SEQ)return;
   CUR=next;
   drawSessions();
@@ -805,7 +839,7 @@ function chooseProjectLocation(){
   if(PROJECT_PICK_RESOLVE)return Promise.resolve(null);
   $("#project-parent").value=PROJECT_LOCATION.default_parent||"";
   $("#project-location-error").textContent=LAST_PROJECT_ERROR;LAST_PROJECT_ERROR="";
-  $("#project-location-note").textContent=chineseUI()?"GeoForge 会在这里新建一个项目文件夹，不会更改已有文件。":"GeoForge creates a new named folder inside this location. Existing files are not changed.";
+  $("#project-location-note").textContent=chineseUI()?"可以直接输入尚不存在的文件夹路径。GeoForge 会先创建该路径，再在其中新建本次对话的项目文件夹；不会更改已有文件。":"You may type a new folder path. GeoForge creates it, then creates this chat's named project folder inside it. Existing files are not changed.";
   $("#sessionpick").classList.add("open");
   return new Promise(resolve=>{PROJECT_PICK_RESOLVE=resolve;setTimeout(()=>$("#project-parent").focus(),0);});
 }
@@ -909,11 +943,17 @@ async function send(){
     const rd=r.body.getReader(), dec=new TextDecoder();
     for(;;){const{done,value}=await rd.read(); if(done)break;
       flight.raw+=dec.decode(value,{stream:true});
-      if(CUR&&CUR.id===target){const out=liveBubble(target);if(out){out.innerHTML=flight.raw.trim()?md(flight.raw,target,true):liveWaitingHtml(flight);$("#chat").scrollTop=$("#chat").scrollHeight;}}}
+      if(CUR&&CUR.id===target){const out=liveBubble(target),visible=flight.raw.replaceAll("\u200b","");if(out){out.innerHTML=visible.trim()?md(visible,target,true):liveWaitingHtml(flight);$("#chat").scrollTop=$("#chat").scrollHeight;}}}
+    flight.raw=flight.raw.replaceAll("\u200b","");
     if(CUR&&CUR.id===target){const out=liveBubble(target);if(out)out.innerHTML=flight.raw.trim()?md(flight.raw,target,false):'<p style="color:var(--fg-3)">(no output)</p>';}
   }catch(e){
-    flight.raw=flight.raw||`The request failed: ${e.message||e}`;
-    if(CUR&&CUR.id===target){const out=liveBubble(target);if(out)out.innerHTML=md(flight.raw,target,false);$("#hint").textContent="This chat stopped. You can retry the message or check AI Settings.";}
+    flight.raw=flight.raw.replaceAll("\u200b","");
+    const detail=String(e&&e.message||e||"");
+    const disconnected=/Load failed|Failed to fetch|network connection was lost/i.test(detail);
+    if(!flight.raw)flight.raw=disconnected
+      ?(chineseUI()?"与 GeoForge 的响应连接中断了。后台任务可能仍在结束并保存状态；你可以切换到其他对话，稍后回来查看。若再次发生，请检查 AI 设置和所选服务商的网络连接。":"The live response connection was interrupted. The background task may still be finishing and saving its state; you can use another chat and return shortly. If it happens again, check AI Settings and the selected provider's network connection.")
+      :`${chineseUI()?"请求未完成":"The request did not finish"}: ${detail}`;
+    if(CUR&&CUR.id===target){const out=liveBubble(target);if(out)out.innerHTML=md(flight.raw,target,false);$("#hint").textContent=chineseUI()?"本对话的实时连接已停止；可稍后返回查看后台保存的结果。":"This chat's live connection stopped; return shortly to check the saved result.";}
   }
   clearInterval(runPoll);
   INFLIGHT.delete(target);
@@ -1481,16 +1521,25 @@ async function openSettings(){
   for(const [id,k] of [["s-anthropic","ANTHROPIC_API_KEY"],["s-deepseek","DEEPSEEK_API_KEY"],
                        ["s-openai","OPENAI_API_KEY"],["s-openrouter","OPENROUTER_API_KEY"]])
     $("#"+id).value=s.api_keys[k]||"";
+  $("#s-kimi-security").value=s.kimi_security_mode||"scoped";
+  drawKimiSecurityNote();
   drawLocalSettings();
   $("#modal").classList.add("open");
 }
 $("#settings").onclick=openSettings;
 $("#s-recheck").onclick=()=>refreshProviders(true);
+function drawKimiSecurityNote(){
+  const full=$("#s-kimi-security").value==="full";
+  $("#s-kimi-security-note").textContent=full
+    ?"Kimi can read and change any file your macOS account can access. Use this only for a task that cannot run in project-scoped mode."
+    :"Project scoped lets Kimi use this project, its KI, approved data, and its own login state. Other personal files are blocked by macOS.";
+}
+$("#s-kimi-security").onchange=drawKimiSecurityNote;
 $("#help").onclick=()=>$("#guide").classList.add("open");
 $("#guide-close").onclick=()=>$("#guide").classList.remove("open");
 $("#s-close").onclick=()=>$("#modal").classList.remove("open");
 $("#s-save").onclick=async()=>{
-  const body={default_provider:$("#s-def").value,api_keys:{
+  const body={default_provider:$("#s-def").value,kimi_security_mode:$("#s-kimi-security").value,api_keys:{
     ANTHROPIC_API_KEY:$("#s-anthropic").value,DEEPSEEK_API_KEY:$("#s-deepseek").value,
     OPENAI_API_KEY:$("#s-openai").value,OPENROUTER_API_KEY:$("#s-openrouter").value}};
   const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -1501,12 +1550,16 @@ $("#s-save").onclick=async()=>{
 };
 window.addEventListener("focus",()=>{
   refreshSessionList();
+  refreshMachineStatus(true,true);
   const waiting=PROV.providers.some(p=>p.kind==="cli"&&p.installed&&!p.usable);
   if(waiting&&Date.now()-LAST_PROVIDER_CHECK>3000)refreshProviders(false);
 });
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden)pauseProjectMedia();
-  else if($("#viewpanel").classList.contains("open"))resumeProjectMedia();
+  else{
+    refreshMachineStatus(true,true);
+    if($("#viewpanel").classList.contains("open"))resumeProjectMedia();
+  }
 });
 $("#theme").onclick=()=>{
   const d=document.body.hasAttribute("data-dark");

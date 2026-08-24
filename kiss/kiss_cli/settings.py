@@ -21,6 +21,7 @@ from .firstrun import data_dir
 
 KEY_NAMES = ("ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY",
              "OPENAI_API_KEY", "OPENROUTER_API_KEY")
+KIMI_SECURITY_MODES = {"scoped", "full"}
 
 
 def _path() -> Path:
@@ -60,11 +61,19 @@ def masked() -> dict:
     """Settings for the UI: keys reduced to a recognisable tail."""
     s = load()
     out = {"default_provider": s.get("default_provider", ""),
+           "kimi_security_mode": kimi_security_mode(s),
            "api_keys": {}}
     for k in KEY_NAMES:
         v = (s.get("api_keys") or {}).get(k) or os.environ.get(k) or ""
         out["api_keys"][k] = (f"…{v[-4:]}" if v else "")
     return out
+
+
+def kimi_security_mode(data: dict | None = None) -> str:
+    """The Kimi file-access mode, defaulting safely for old settings files."""
+    mode = (data if data is not None else load()).get(
+        "kimi_security_mode", "scoped")
+    return mode if mode in KIMI_SECURITY_MODES else "scoped"
 
 
 def update(payload: dict) -> None:
@@ -94,4 +103,9 @@ def update(payload: dict) -> None:
             if not ok:
                 raise ValueError(f"unknown provider {dp!r}")
         s["default_provider"] = dp
+    if "kimi_security_mode" in payload:
+        mode = payload["kimi_security_mode"]
+        if mode not in KIMI_SECURITY_MODES:
+            raise ValueError(f"unknown Kimi security mode {mode!r}")
+        s["kimi_security_mode"] = mode
     save(s)

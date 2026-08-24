@@ -195,9 +195,19 @@ def _ensure_project(workroot: Path, s: dict) -> Path:
             parent = Path(str(requested)).expanduser()
             if not parent.is_absolute():
                 raise ValueError("project location must be an absolute folder path")
+            # A typed project location is an instruction to create that
+            # location, not a requirement that the user prepare it in Finder
+            # first.  Resolve after mkdir so existing symlinks are still
+            # canonicalised and the saved project pointer is stable.
+            try:
+                parent.mkdir(parents=True, exist_ok=True)
+            except OSError as error:
+                raise ValueError(
+                    f"could not create project location {parent}: {error}"
+                ) from error
             parent = parent.resolve()
             if not parent.is_dir():
-                raise ValueError(f"project location does not exist: {parent}")
+                raise ValueError(f"project location is not a folder: {parent}")
         else:
             parent = default_project_parent(root)
         current = parent / _folder_name(s)

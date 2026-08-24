@@ -37,8 +37,14 @@ class _DesktopApi:
         if self.window is None:
             return None
         start = Path(initial).expanduser() if initial else Path.home()
+        # Native folder pickers need an existing directory to start in.  If
+        # the user typed a new path, open at its closest existing ancestor;
+        # GeoForge will create the full typed path when the session is saved.
         if not start.is_dir():
-            start = Path.home()
+            candidate = start
+            while candidate != candidate.parent and not candidate.is_dir():
+                candidate = candidate.parent
+            start = candidate if candidate.is_dir() else Path.home()
         try:
             picked = self.window.create_file_dialog(
                 self.webview.FOLDER_DIALOG,

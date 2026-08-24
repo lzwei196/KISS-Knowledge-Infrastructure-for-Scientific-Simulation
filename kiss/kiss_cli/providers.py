@@ -27,6 +27,44 @@ from typing import Iterator
 from .presentation import activity_marker
 
 
+_KIMI_EPERM_PATH = re.compile(
+    r"(?:realpath\s+|path:\s*)['\"](?P<path>/[^'\"\r\n]+)['\"]",
+    re.IGNORECASE,
+)
+_KIMI_AUTH_NETWORK = re.compile(
+    r"auth\.kimi\.com.*(?:connect timeout|timed?\s*out|fetch failed|"
+    r"enotfound|econn(?:refused|reset))",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def policy_directories(pol) -> list[str]:
+    """Real directory roots a CLI must register to honour ``pol``.
+
+    This is public so the release audit can prove that a successful preflight
+    path will be visible to the agent before launching a paid provider call.
+    The operating-system sandbox remains the enforcement boundary.
+    """
+    if pol is None:
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for grant in pol.all_grants():
+        if grant.kind not in {"read", "write", "exec"}:
+            continue
+        candidate = Path(grant.path).expanduser()
+        if not candidate.is_absolute() or not candidate.is_dir():
+            continue
+        try:
+            value = str(candidate.resolve())
+        except OSError:
+            value = str(candidate.absolute())
+        if value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
 @dataclass(frozen=True)
 class ProviderHealth:
     """Cheap local evidence about whether a CLI can be selected.
@@ -525,7 +563,8 @@ def run(provider: Provider, prompt: str, cwd: Path,
         model: str | None = None,
         timeout: int | None = None,
         resume: str | None = None,
-        session_out: dict | None = None) -> Iterator[str]:
+        session_out: dict | None = None,
+        runtime_events: dict | None = None) -> Iterator[str]:
     """Spawn the CLI and yield displayable text as it arrives.
 
     When ``cfg`` is given the agent is started **inside the relocation
@@ -558,6 +597,14 @@ def run(provider: Provider, prompt: str, cwd: Path,
     # Keep real host directories everywhere, and keep synthetic aliases only
     # when this process will actually enter the namespace that creates them.
     cli_extra_dirs = list(extra_dirs or [])
+    # Keep the CLI's own workspace roots aligned with GeoForge's policy.  The
+    # outer Kimi Seatbelt profile already honoured these grants, but Kimi's
+    # Read/Bash tools also require every external directory to be declared via
+    # --add-dir.  Without this second half, a verified coupled binary could be
+    # readable by macOS yet still appear missing inside the agent.  Only real
+    # directories from explicit read/write/exec grants are added; command names
+    # and network grants never become filesystem roots.
+    cli_extra_dirs.extend(policy_directories(pol))
     relocation_active = False
     if cfg is not None and getattr(cfg, "relocation", "sandbox") == "sandbox":
         from .paths import have_sandbox
@@ -596,13 +643,26 @@ def run(provider: Provider, prompt: str, cwd: Path,
     # Least privilege, mapped onto whatever this CLI can actually enforce.
     # When it cannot enforce anything, say so — silence here would imply a
     # guarantee that was never obtained.
+    kimi_scoped = False
+    if provider.name == "kimi":
+        from .settings import kimi_security_mode
+        kimi_scoped = kimi_security_mode() == "scoped"
+        if kimi_scoped:
+            # Kimi's automatic skill discovery watches the entire OS home
+            # directory.  Pin it to the same read-only skill roots exposed by
+            # GeoForge's Seatbelt profile, avoiding a broad home permission
+            # and the resulting repeated popup.
+            from .kimi_security import explicit_skill_dirs
+            for skill_dir in explicit_skill_dirs(Path(cwd)):
+                argv += ["--skills-dir", str(skill_dir)]
     if pol is not None:
         from . import policy as _pol
-        mapper = getattr(_pol, provider.policy_map, _pol.coarse_args)
-        extra_args, enforcement = mapper(pol)
-        argv = argv + extra_args
-        if enforcement is not _pol.Enforcement.EXACT:
-            yield f"[{_pol.describe(enforcement, provider.label)}]\n\n"
+        if not kimi_scoped:
+            mapper = getattr(_pol, provider.policy_map, _pol.coarse_args)
+            extra_args, enforcement = mapper(pol)
+            argv = argv + extra_args
+            if enforcement is not _pol.Enforcement.EXACT:
+                yield f"[{_pol.describe(enforcement, provider.label)}]\n\n"
 
     if cfg is not None and getattr(cfg, "relocation", "sandbox") == "sandbox":
         from .paths import have_sandbox, sandbox_command
@@ -614,6 +674,30 @@ def run(provider: Provider, prompt: str, cwd: Path,
         # No bwrap: nothing to say. The KI in use is a materialised copy with
         # real paths, so there is nothing for a namespace to fix; warning about
         # a missing Linux tool on a Mac was pure noise.
+
+    # Kimi's own permission prompts do not contain the entire shell process
+    # tree.  In the safe default, put the final argv (including any relocation
+    # wrapper) inside a macOS file-system sandbox.  This is intentionally done
+    # immediately before Popen so every child Kimi starts inherits it.
+    kimi_profile = None
+    kimi_home = None
+    if kimi_scoped:
+        from . import kimi_security
+        try:
+            env, kimi_home = kimi_security.scoped_environment(env)
+            argv, kimi_profile = kimi_security.wrap(
+                argv, cwd=Path(cwd), extra_dirs=cli_extra_dirs, cfg=cfg,
+                ki_root=ki_root, pol=pol,
+            )
+        except (OSError, RuntimeError) as error:
+            kimi_security.cleanup_home(kimi_home)
+            yield ("[Kimi Code was not started: project-scoped security could "
+                   f"not be applied ({error}). Choose Full computer access "
+                   "in AI Settings only if you accept that risk.]")
+            return
+        # Successful policy enforcement is normal application state, not part
+        # of the assistant's answer.  Keep it visible in AI Settings and only
+        # surface failures (or the explicit full-access warning) in chat.
 
     import tempfile
 
@@ -645,6 +729,11 @@ def run(provider: Provider, prompt: str, cwd: Path,
             text=True, encoding="utf-8", errors="replace", bufsize=1, **spawn,
         )
     except OSError as e:
+        err_spool.close()
+        if kimi_profile is not None:
+            from .kimi_security import cleanup, cleanup_home
+            cleanup(kimi_profile)
+            cleanup_home(kimi_home)
         yield f"[failed to start {provider.label}: {e}]"
         return
 
@@ -715,7 +804,41 @@ def run(provider: Provider, prompt: str, cwd: Path,
             if provider.stdout_only:
                 err_spool.seek(0)
                 tail = "".join(err_spool.readlines()[-15:]).strip()
-            yield f"\n\n[{provider.label} exited {rc}]"
-            if tail:
-                yield f"\n```\n{tail[-1500:]}\n```"
+            denied = (_KIMI_EPERM_PATH.search(tail)
+                      if provider.name == "kimi" and "EPERM" in tail else None)
+            auth_network = (provider.name == "kimi" and
+                            _KIMI_AUTH_NETWORK.search(tail))
+            if denied:
+                path = denied.group("path")[:1000]
+                if runtime_events is not None:
+                    runtime_events["permission"] = {
+                        "provider": "kimi", "kind": "read", "path": path,
+                    }
+                # A Node stack trace is implementation chrome. The app turns
+                # this precise denial into a structured, selectable popup.
+                yield (f"\n\n[Kimi Code needs permission to read `{path}`. "
+                       "GeoForge will ask you how to continue.]")
+            elif auth_network:
+                if runtime_events is not None:
+                    runtime_events["connection"] = {
+                        "provider": "kimi", "service": "auth.kimi.com",
+                    }
+                if re.search(r"[\u3400-\u9fff]", prompt):
+                    yield ("\n\nKimi Code 无法连接认证服务 `auth.kimi.com`。"
+                           "这是网络、DNS、VPN 或代理连接问题，不是 KI、模型安装"
+                           "或项目权限问题。请检查网络后重试，或先切换其他 AI 服务商。")
+                else:
+                    yield ("\n\nKimi Code could not reach its sign-in service "
+                           "`auth.kimi.com`. This is a network, DNS, VPN, or "
+                           "proxy connection problem—not a KI, model-install, "
+                           "or project-permission problem. Check the connection "
+                           "and retry, or switch AI provider for now.")
+            else:
+                yield f"\n\n[{provider.label} exited {rc}]"
+                if tail:
+                    yield f"\n```\n{tail[-1500:]}\n```"
         err_spool.close()
+        if kimi_profile is not None:
+            from .kimi_security import cleanup, cleanup_home
+            cleanup(kimi_profile)
+            cleanup_home(kimi_home)

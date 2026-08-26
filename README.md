@@ -168,73 +168,108 @@ The `diagnostics` file is the unusual one. It records failures that produce
 permeability and hydraulic conductivity is seven orders of magnitude and no
 error message.
 
-## Using the KI harness
+## Driving a KI with your own agent — the KI harness
 
-A KI tells an agent how to run one model. The **harness** is the layer above
-that: one contract for how *any* agent uses *any* KI, so a chat session, a
-batch loop and your own script all drive a model the same way. It ships here at
-`ki_tools_common/ki_tools_common/harness/`, and an install puts it into the
-model's environment.
+> **The KI tells an agent how to run one model. The harness makes sure the
+> agent is actually told.** Three lines, and any agent — Claude, codex, your
+> own loop — drives any of the 127 models the same way.
 
 ```python
 from pathlib import Path
 from ki_tools_common import harness
 
-ki = Path("models/MODFLOW6").resolve()
-text = harness.contract(ki, execute=True, target_var="head")
+contract = harness.contract(Path("models/MODFLOW6").resolve(), execute=True)
 ```
 
-`contract()` returns the text you inject into the agent's prompt — about 7.5 kB
-for MODFLOW 6. It turns the KI's operating instructions into obligations: run
-the real binary rather than a stand-in, follow `SKILL.md` in order, call tools
-by absolute path, read units from the files rather than assuming them, run
-preflight first, and never appoint yourself judge of your own output. Ten in
-total, held as a registry in `ki_harness.py` rather than prose, so a parity test
-fails the moment a driver quietly drops one.
+Put `contract` in your system prompt. That is the whole integration.
 
-The rest keeps the agent honest about what it is holding.
+### Why it exists
+
+This started as two copies of the same thing. The chat application and the
+self-improve loop each had their own way of pointing an agent at a KI, and they
+drifted: one kept its rules in a branch table where 29 of them sat in the wrong
+branch, and its per-KI review gate reached 3 of 458 packages. The other embedded
+its rules in one place and could not be partial.
+
+The lesson was **chokepoint, not routing** — a rule that lives at a junction can
+be skipped by whoever takes the other road. So the two were replaced by one
+function that every caller goes through, with no branch on who is asking.
+
+### What the contract says
+
+`contract()` renders the KI's operating instructions as obligations. Ten of
+them, held as a registry in `ki_harness.py` rather than as prose, so a parity
+test can fail the moment any driver drops one:
+
+| | |
+|---|---|
+| **Run the real thing** | no toy substitute, no literature value passed off as a result |
+| **Follow SKILL.md in order** | the protocol is a sequence, not a menu |
+| **Absolute tool paths** | run tools with the project interpreter — do not search, do not disk-glob |
+| **Know the outputs** | before running, not after |
+| **Units from the files** | from the file's own attributes, never from documentation |
+| **Preflight first** | check the environment before the run |
+| **Failure ladder** | triplets, then documentation, then think — in that order |
+| **Never weaken** | do not quietly relax the test to make it pass |
+| **Not your own judge** | verdicts belong to the caller |
+| **Evidence series** | write the simulated series to CSV, so the result is reproducible |
+
+### The rest of the API
 
 ```python
-m = harness.manifest(ki)
-m["artifacts"]   # {'SKILL.md': True, 'dag.yaml': True, 'preflight_check.py': True, ...}
-m["missing"]     # [] — say what is absent instead of discovering it mid-run
-m["tools"]       # 30 tool scripts, as paths relative to the KI
+m = harness.manifest(ki)          # what this KI actually ships
+m["artifacts"]                    # {'SKILL.md': True, 'dag.yaml': True, ...}
+m["missing"]                      # [] — stated up front, not discovered mid-run
+m["tools"]                        # 30 tool scripts for MODFLOW 6
 
 harness.tool_command(ki, "tools/calib_run.py")
 # '/usr/bin/python3 /abs/path/models/MODFLOW6/tools/calib_run.py'
 
 harness.run_preflight(ki, timeout=60)
 # {'report': ..., 'returncode': 1, 'raw_tail': ...}
+
+harness.assert_injected(prompt)   # raises unless the prompt carries the contract
 ```
 
-`tool_command()` refuses rather than guesses: ask for a tool that is not there
-and it raises `KiHarnessError`, because a fabricated path fails later and more
-confusingly than a loud refusal now. `assert_injected(prompt)` is the
-conformance hook — it raises unless the prompt carries the `[KI HARNESS v1]`
-marker, so a spawn site that bypassed the contract fails immediately instead of
-producing plausible unguided work.
+Two of these refuse rather than guess. `tool_command()` raises `KiHarnessError`
+for a tool that is not there, because a fabricated path fails later and more
+confusingly. `assert_injected()` is the conformance hook: it raises unless the
+prompt carries the `[KI HARNESS v1]` marker, so a spawn site that bypassed the
+contract fails immediately instead of producing plausible unguided work. Wire it
+into your own runner and the same guarantee applies.
 
 | | |
 |---|---|
-| `HC_PROJECT_PYTHON` | the interpreter `tool_command()` and `run_preflight()` emit. Set it to your project's environment; otherwise the shipped default carries a `KISSPATH_` placeholder |
-| `KI_HARNESS_FULL=1` | adds the run-time attention digest — dag caveats, format spec, top diagnostic triplets |
+| `HC_PROJECT_PYTHON` | interpreter for `tool_command()` and `run_preflight()`. Set it to your project environment |
+| `KI_HARNESS_FULL=1` | adds the run-time attention digest: dag caveats, format spec, top triplets |
 
-One function needs more than this repository. `resolve_ki_path()` maps a model
-*id* to its KI directory through the database of the internal fleet the harness
-was written for, and refuses to guess, because a folder name is not always the
-model id. That mismatch is real here too: 8 of these 127 packages differ —
-`SWAT+` lives in `SWAT_Plus`, `HEC-RAS` in `HEC_RAS`, `Noah-MP` in `Noah_MP`.
-Against a plain clone there is no such database, so use the catalogue, which
-resolves the same spellings and reports ambiguity rather than picking:
+### How it was verified
+
+Each piece shipped with its own proof, not a green tick: resolution tested on
+four naming cases, the contract rendered against three models and *refused* on a
+KI too thin to execute, prompts checked for the marker, the numeric strip proven
+to leave zero threshold statements on the runner path, and the spawn
+environment proven to send a bare `python` to the project interpreter. The chat
+application adopted it behind a flag with a byte-level diff against the old
+text, because that prompt had been tested heavily and a silent rewrite was not
+acceptable. Live proof came from an HBV run against its Eidselva baseline.
+
+### Resolving a model name
+
+`resolve_ki_path()` maps a model *id* to its directory through the database of
+the fleet the harness was written for, and refuses to guess — a folder name is
+not always the model id. That is real here too: 8 of these 127 packages differ,
+`SWAT+` living in `SWAT_Plus`, `HEC-RAS` in `HEC_RAS`, `Noah-MP` in `Noah_MP`.
+A plain clone has no such database, so use the catalogue, which resolves the
+same spellings and reports ambiguity rather than picking one:
 
 ```python
 from kiss_cli.catalog import Catalog
 ki = Catalog.discover().get("SWAT+").root
 ```
 
-The dissection toolkit that produced these packages — the pipeline that reads a
-model's source and writes its KI — is a separate project:
-[**KDT-single**](https://github.com/lzwei196/KDT-single).
+The toolkit that writes these packages from a model's source is a separate
+project: [**KDT-single**](https://github.com/lzwei196/KDT-single).
 
 ## Terminal use
 

@@ -1,129 +1,519 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "dfnWorks"
-  version: "2.10.0"
-  domain: "subsurface_hydrology"
-  subdomain: "discrete_fracture_network"
-  description: "Computational suite for modeling flow and transport in 3D discrete fracture networks"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  native_binaries:
-    DFNGen: "KISSPATH_BINARIES/dfnWorks/source/repo/DFNGen/DFNGen"
-    DFNTrans: "KISSPATH_BINARIES/dfnWorks/source/repo/DFNTrans/DFNTrans"
-    correct_volume: "KISSPATH_BINARIES/dfnWorks/source/repo/CPP_correct_volumes/correct_volume"
-  modes:
-    - name: "graph"
-      description: "Graph-based flow and transport (no external dependencies)"
-      dependencies: ["pydfnworks"]
-    - name: "full_physics"
-      description: "Mesh-based flow via PFLOTRAN/FEHM and particle tracking via DFNTrans"
-      dependencies: ["pydfnworks", "LaGriT", "PFLOTRAN or FEHM", "PETSc"]
-
+  name: dfnWorks
+  language: c++/c/python
+  implementation:
+    id: dfnworks-v2100
+    version: v2.10.0 (DFNGen v2.3, DFNTrans, pydfnworks driver)
+    provenance: C++ (DFNGen generator), C (DFNTrans particle tracker), Python (pydfnworks driver + self-contained
+      dfnGraph flow/transport solver); LANL EES-16. Full-physics meshing (LaGriT) and flow (PFLOTRAN/FEHM)
+      are external binaries invoked by pydfnworks.
+  scientific_reference_version: dfnWorks discrete fracture network framework (Hyman et al. 2015, Computers
+    & Geosciences 84:10-19), graph-mode flow/transport branch (dfnGraph, v2.2+)
 inputs:
-  forcing:
-    - name: "pressure_in"
-      unit: "Pa"
-      valid_range: [0, 1.0e+10]
-      description: "Inflow boundary pressure"
-    - name: "pressure_out"
-      unit: "Pa"
-      valid_range: [0, 1.0e+10]
-      description: "Outflow boundary pressure"
+  forcing: []
   parameters:
-    critical:
-      - name: "domainSize"
-        unit: "m"
-        valid_range: [0.1, 100000]
-        description: "3D domain bounding box dimensions [x, y, z] in meters"
-      - name: "h"
-        unit: "m"
-        valid_range: [0.001, 100]
-        description: "Minimum mesh feature size (must be < 0.5 * min_radius)"
-      - name: "permeability"
-        unit: "m^2"
-        valid_range: [1.0e-15, 1.0e-8]
-        description: "Intrinsic fracture permeability (NOT hydraulic conductivity)"
-      - name: "aperture"
-        unit: "m"
-        valid_range: [1.0e-6, 1.0e-2]
-        description: "Fracture aperture"
-      - name: "p32"
-        unit: "1/m"
-        valid_range: [0.01, 10]
-        description: "Fracture intensity (fracture area per unit volume)"
-      - name: "kappa"
-        unit: "dimensionless"
-        valid_range: [0.1, 100]
-        description: "Fisher concentration parameter for fracture orientation"
-      - name: "alpha"
-        unit: "dimensionless"
-        valid_range: [1.0, 4.0]
-        description: "Truncated power-law exponent for fracture size distribution"
-      - name: "min_radius"
-        unit: "m"
-        valid_range: [0.01, 1000]
-        description: "Minimum fracture radius"
-      - name: "max_radius"
-        unit: "m"
-        valid_range: [0.1, 10000]
-        description: "Maximum fracture radius"
-      - name: "boundaryFaces"
-        unit: "flag"
-        valid_range: [0, 1]
-        description: "6-element list [top, bottom, left_w, front_n, right_e, back_s] for boundary connectivity"
-    optional:
-      - name: "matrix_porosity"
-        unit: "dimensionless"
-        valid_range: [0.001, 0.3]
-        description: "Matrix porosity for TDRW diffusion"
-      - name: "matrix_diffusivity"
-        unit: "m^2/s"
-        valid_range: [1.0e-12, 1.0e-9]
-        description: "Matrix diffusivity for TDRW"
-      - name: "seed"
-        unit: "integer"
-        valid_range: [1, 2147483647]
-        description: "Random seed for stochastic network generation"
-
+  - name: domainSize
+    unit: m
+    category: domain
+    source_kind: user_provided
+    model_input_format: dfnGen input .dat ([x,y,z], centered at origin)
+    notes: All spatial dimensions strictly in meters (SI); km/cm inputs silently produce explosive or
+      microscopic networks.
+  - name: domainSizeIncrease
+    unit: m
+    category: domain
+    source_kind: user_provided
+    model_input_format: dfnGen input .dat
+    notes: Oversize generation buffer; fractures are generated in the buffered domain then truncated to
+      domainSize, which sets boundary-face flags.
+  - name: h
+    unit: m
+    category: mesh
+    source_kind: user_provided
+    model_input_format: dfnGen input .dat
+    notes: Minimum feature size; simultaneously the FRAM rejection threshold and the LaGriT mesh resolution.
+      Must be < 0.5*min_radius (recommended < 0.1) and > 1e-3*min_radius.
+  - name: fracture shape
+    unit: enum
+    category: family
+    source_kind: user_provided
+    model_input_format: ell | rect | poly per family
+    notes: Elliptical, rectangular, or polygonal planar fractures.
+  - name: size distribution (edistr/rdistr)
+    unit: enum
+    category: family
+    source_kind: user_provided
+    model_input_format: 1=lognormal, 2=truncated power-law, 3=exponential, 4=constant
+    notes: Selector per family; TPL exponent alpha, min/max radius, log_mean/log_std, or exp_mean parameterize
+      the chosen law.
+  - name: min_radius / max_radius
+    unit: m
+    category: family
+    source_kind: user_provided
+    model_input_format: dfnGen input .dat per family
+  - name: Fisher kappa (ekappa/rkappa)
+    unit: dimensionless
+    category: family
+    source_kind: user_provided
+    model_input_format: von Mises-Fisher concentration per family
+    notes: 'Controls orientation clustering: ~0 random, high nearly parallel. Too low overestimates connectivity.'
+  - name: orientation (theta/phi trend & plunge, or dip/strike)
+    unit: degrees
+    category: family
+    source_kind: user_provided
+    model_input_format: spherical pole per family
+    notes: Model default unit is degrees.
+  - name: aspect ratio (easpect/raspect)
+    unit: dimensionless
+    category: family
+    source_kind: user_provided
+    model_input_format: dfnGen input .dat per family
+  - name: p32 targets (e_p32Targets/r_p32Targets)
+    unit: 1/m
+    category: family
+    source_kind: user_provided
+    model_input_format: fracture surface area per domain volume per family
+    notes: Fracture intensity; typical field range 0.01-10 /m. Used when stopCondition=1.
+  - name: famProb / probability
+    unit: dimensionless
+    category: family
+    source_kind: user_provided
+    model_input_format: relative family probability (used when stopCondition=0)
+  - name: permeability k
+    unit: m^2
+    category: hydraulic
+    source_kind: calibrated
+    model_input_format: hy_variable=permeability; constant/correlated/semi-correlated hy_function
+    notes: Intrinsic permeability (NOT hydraulic conductivity K m/s). Cubic-law default k=b^2/12. Calibrated
+      range 1e-15 to 1e-8 m^2; highest-sensitivity parameter.
+  - name: aperture b
+    unit: m
+    category: hydraulic
+    source_kind: calibrated
+    model_input_format: hy_variable=aperture; constant/correlated/semi-correlated
+    notes: Calibrated range 1e-6 to 1e-2 m. Cubic law amplifies aperture error quadratically into permeability.
+      v2.6+ supports stress-field-based hydraulic aperture.
+  - name: transmissivity T
+    unit: m^2/s
+    category: hydraulic
+    source_kind: calibrated
+    model_input_format: hy_variable=transmissivity
+    notes: Under-documented input path; only permeability is exercised in worked examples.
+  - name: fluid_viscosity
+    unit: Pa.s
+    category: fluid
+    source_kind: default
+    model_input_format: graph_flow run argument
+    notes: Hardcoded model default 8.9e-4 (water ~20C) when caller does not override; governs Darcy flux
+      = (k/mu)*(dp/L).
+  - name: fluid_density
+    unit: kg/m^3
+    category: fluid
+    source_kind: user_provided
+    model_input_format: DFNTrans control (e.g. 997.73)
+  - name: matrix_porosity
+    unit: dimensionless
+    category: transport
+    source_kind: calibrated
+    model_input_format: TDRW input (optional)
+    notes: Calibrated range 0.001-0.3; only used when tdrw_flag enabled.
+  - name: matrix_diffusivity
+    unit: m^2/s
+    category: transport
+    source_kind: calibrated
+    model_input_format: TDRW input (optional)
+    notes: Calibrated range 1e-12 to 1e-9 m^2/s; cm^2/s confusion gives 1e4x retardation.
+  - name: phi (graph-flow velocity porosity)
+    unit: dimensionless
+    category: graph
+    source_kind: default
+    model_input_format: graph_flow run argument
+    notes: Hardcoded default 1; edge velocity = flux/phi, so default makes velocity equal Darcy flux and
+      directly scales travel times if not overridden.
+  initial_conditions:
+  - name: seed
+    unit: n/a
+    category: rng
+    source_kind: user_provided
+    model_input_format: dfnGen input .dat (non-negative int)
+    notes: seed>0 reproducible; seed==0 substitutes a clock-based seed at runtime, making every run a
+      different network.
+  boundary_conditions:
+  - name: stopCondition
+    unit: enum
+    category: stop
+    source_kind: user_provided
+    model_input_format: 0=stop at nPoly, 1=stop at p32 targets (default 1)
+  - name: nPoly
+    unit: count
+    category: stop
+    source_kind: user_provided
+    model_input_format: total fractures to accept (when stopCondition=0)
+  - name: boundaryFaces
+    unit: 6 binary flags
+    category: connectivity
+    source_kind: user_provided
+    model_input_format: '[top,bottom,left_w,front_n,right_e,back_s] connectivity enforcement'
+    notes: 'Needs >=1 inflow and >=1 outflow face. Three distinct face conventions across subsystems:
+      positional list (dfnGen), string names (''left''/''right''/...) (graph flow), 1-based index (1=top..6=back)
+      (DFNTrans).'
+  - name: keepOnlyLargestCluster / keepIsolatedFractures / removeFracturesLessThan / disableFram
+    unit: switches
+    category: connectivity
+    source_kind: user_provided
+    model_input_format: cluster/isolation filtering and FRAM control flags
+  - name: pressure_in / pressure_out
+    unit: Pa
+    category: flow_bc
+    source_kind: user_provided
+    model_input_format: Dirichlet inlet/outlet boundary pressure (graph flow); PFLOTRAN *.ex boundary
+      files (full-physics)
+    notes: Pascals required; MPa/psi confusion shifts graph-flow velocities by orders of magnitude. Solver
+      requires pressure_in > pressure_out.
+  - name: nparticles
+    unit: count
+    category: transport
+    source_kind: user_provided
+    model_input_format: DFNTrans / graph transport control
+  - name: tdrw_flag
+    unit: bool
+    category: transport
+    source_kind: user_provided
+    model_input_format: enable time-domain-random-walk matrix diffusion
+  - name: particle release weighting (flux_weight / init_nf / init_partn)
+    unit: switch
+    category: transport
+    source_kind: user_provided
+    model_input_format: flux-weighted vs equal-per-fracture sampling
+    notes: Flux-weighting biases breakthrough toward fast paths; init_nf gives unbiased per-fracture sampling.
+  - name: control_planes
+    unit: m + direction
+    category: transport
+    source_kind: user_provided
+    model_input_format: intermediate breakthrough plane positions
 outputs:
   primary:
-    - name: "Total travel time"
-      unit: "s"
-      valid_range: [0, 1.0e+15]
-      format: "HDF5 (graph_partime.hdf5)"
-    - name: "Pathline length"
-      unit: "m"
-      valid_range: [0, 1.0e+6]
-      format: "HDF5 (graph_partime.hdf5)"
-    - name: "Advective time"
-      unit: "s"
-      valid_range: [0, 1.0e+15]
-      format: "HDF5 (graph_partime.hdf5)"
-    - name: "Beta"
-      unit: "s/m"
-      valid_range: [0, 1.0e+18]
-      format: "HDF5 (graph_partime.hdf5)"
-  flow:
-    - name: "velocity"
-      unit: "m/s"
-      valid_range: [0, 1.0e+3]
-      format: "HDF5 (graph_flow.hdf5)"
-    - name: "vol_flow_rate"
-      unit: "m^3/s"
-      valid_range: [0, 1.0e+6]
-      format: "HDF5 (graph_flow.hdf5)"
-  network:
-    - name: "num_fractures"
-      unit: "count"
-      description: "Total fractures after isolation removal"
-    - name: "p32_achieved"
-      unit: "1/m"
-      description: "Actual fracture intensity achieved"
-
+  - name: particle_travel_time
+    unit: s
+    description: Per-particle advective solute travel time from inlet to outlet through the resolved subsurface
+      fractured-rock DFN flow field
+    validation_rank: 1
+    emitted_in: partime / partime.dat
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against tracer-test breakthrough at a monitoring point; mode-dependent (graph vs full-physics
+          differ ~30%) and stochastic across generation seeds, so ensemble comparison is preferred over
+          single-realization match.
+      detrending_options:
+      - none
+  - name: breakthrough_curve
+    unit: cumulative arrival fraction vs s
+    description: Cumulative subsurface fractured-rock DFN solute particle-arrival CDF; characteristic
+      early arrivals plus power-law late-time tailing
+    validation_rank: 2
+    emitted_in: derived in s5 post-processing from partime
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Tracer-test breakthrough CDF; particle-release weighting (flux vs equal) shifts the curve, so
+          the initialization must match the observed sampling. Late-time tail shape is the diagnostic
+          feature.
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - First-arrival / breakthrough-detection framing when only arrival timing class is observed.
+      detrending_options:
+      - none
+  - name: travel_time_statistics
+    unit: s
+    description: Median, mean, std, CV, percentiles (p5/p50/p95), and tailing ratio of the subsurface
+      fractured-rock DFN solute travel-time distribution
+    validation_rank: 3
+    emitted_in: derived in s5 post-processing
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        - ranking_quality
+        determining_metric: spearman
+        caveats:
+        - Median/percentile travel time vs tracer-test summary statistics; ensemble-mean over seeds recommended.
+      detrending_options:
+      - none
+  - name: effective_permeability
+    unit: m^2
+    description: Upscaled subsurface fractured-rock DFN network permeability k_eff = Q*mu*L/(A*dP)
+    validation_rank: 4
+    emitted_in: derived in s5 post-processing
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compare against block-scale permeability from packer/pumping tests; should fall between min
+          and max single-fracture permeability and be consistent with cubic-law estimate. Mode-dependent.
+      detrending_options:
+      - none
+  - name: flow_channeling_metric
+    unit: dimensionless
+    description: Flow-channeling density (dQ); fraction of total flow carried by the top fraction of fractures
+      (top 10% typically carry >50%)
+    validation_rank: 5
+    emitted_in: derived in s5 post-processing
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Rarely directly observed; primarily an internal structural diagnostic. Comparable only where
+          channeling fraction is inferred from tracer or flow-logging data.
+      detrending_options:
+      - none
+  - name: fracture_network_geometry
+    unit: radii/coords m
+    description: Accepted fracture radii, unit normals, centroids, and intersection segments defining
+      the generated subsurface fractured-rock DFN
+    validation_rank: 6
+    emitted_in: radii_Final.dat / normal_vectors.dat / translations.dat / intersection_list.dat / connectivity.dat
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        - ranking_quality
+        determining_metric: spearman
+        caveats:
+        - Aggregate statistics (P32 intensity, size-distribution moments, orientation density) vs borehole/outcrop
+          fracture mapping; individual fracture positions are stochastic and not point-matchable.
+      detrending_options:
+      - none
+  - name: upscaled_continuum_properties
+    unit: permeability tensor m^2; porosity dimensionless
+    description: ECPM/UDFM equivalent porous-medium permeability tensor (3x3 per cell) and fracture porosity
+      for basin-scale coupling
+    validation_rank: 7
+    emitted_in: upscaled permeability tensor / ECPM PFLOTRAN input (full-physics)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Upscaled tensor should be symmetric positive definite and grid-convergent; comparison is against
+          continuum-scale effective-property estimates, not direct field measurement.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "env_vars"
-    description: "LAGRIT_EXE env var must exist (even if empty) or pydfnworks crashes at init"
-    workaround: "Set os.environ['LAGRIT_EXE'] = '' before importing pydfnworks"
-  - id: "time_module"
-    description: "pydfnworks clobbers the 'time' module namespace; use 'from time import time as _now'"
-  - id: "graph_sparse"
-    description: "Graph flow fails with 'no nodes in inlet' on small/sparse networks"
-    workaround: "Use larger domains or higher p32 to ensure boundary connectivity"
+- id: dt_001
+  symptom: Domain produces an enormous fracture network with millions of fractures, or fractures are microscopic
+    relative to domain
+  diagnosis: Domain size specified in kilometers or centimeters instead of meters; dfnWorks uses meters
+    for all spatial dimensions. A 10 km site entered as domainSize=[10,10,10] creates a 10m domain (1000x
+    too small). Conversely, entering domainSize=[10000,10000,10000] when 10m was intended creates a domain
+    1000
+  remedy: 'Verify domain dimensions are in meters; convert km to m (*1000) or cm to m (/100); convert_fracture_input;
+    ["Check: DFN.params[''domainSize''][''value''] should be in meters", ''For a 10 km site: [10000, 10000,
+    depth_m], NOT [10, 10, depth]'', ''Verify h is also in meters and proportional to domain'']; Tool'
+  severity: silent
+- id: dt_002
+  symptom: Flow velocities are 6-7 orders of magnitude too high; breakthrough occurs in microseconds instead
+    of days/years
+  diagnosis: 'Hydraulic conductivity K (m/s) used directly as permeability k (m^2); Field measurements
+    often report hydraulic conductivity K in m/s, but dfnWorks requires intrinsic permeability k in m^2.
+    The conversion is k = K * mu / (rho * g). For water at 20C: k = K * 8.9e-4 / (997 * 9.81) = K * 9.1e-8.
+    A typi'
+  remedy: 'Convert K to k using k = K * mu / (rho * g); convert_hydraulic_params; [''python convert_hydraulic_params.py
+    --K 1e-5 --output params.json'', ''Use the k_m2 value from output in hy_params'', ''For water at 20C:
+    k = K * 9.1e-8'']; Tool convert_hydraulic_params.py performs conversion and warns if k > 1e-6 m'
+  severity: silent
+- id: dt_003
+  symptom: Graph flow produces velocities that are 3-6 orders of magnitude too low or too high
+  diagnosis: Pressure boundary conditions in MPa or psi instead of Pa; The graph-based flow solver (run_graph_flow)
+    expects pressure in Pascals (Pa). A 1 MPa pressure gradient should be entered as pressure_in=2e6,
+    pressure_out=1e6 (not 2, 1). Using MPa directly produces pressures 1e6 too small, and velocities 1e
+  remedy: 'Convert pressures to Pa: 1 MPa = 1e6 Pa, 1 psi = 6894.76 Pa; None; ["G = DFN.run_graph_flow(''left'',
+    ''right'', 2e6, 1e6)  # Pa, not MPa", ''For hydrostatic head: P = rho * g * h = 997 * 9.81 * depth_m''];
+    run_dfnworks.py validates that pressure_in > pressure_out'
+  severity: silent
+- id: dt_004
+  symptom: LaGriT meshing crashes with degenerate triangles or zero-area elements
+  diagnosis: Mesh resolution h is larger than the smallest fracture radius; The FRAM parameter h defines
+    the minimum feature size in the mesh. If h is larger than min_radius, small fractures cannot be resolved
+    into triangles. The meshing algorithm produces degenerate (zero-area) elements that crash the flow
+    solv
+  remedy: 'Reduce h to be less than half the smallest fracture radius; None; [''Check: h < 0.5 * min(min_radius
+    across all families)'', ''For min_radius=1.0, use h <= 0.5 (ideally h=0.1)'', "DFN.params[''h''][''value'']
+    = 0.1"]; check_input() warns about h vs min_radius mismatch'
+  severity: fatal
+- id: dt_005
+  symptom: Fracture apertures produce extremely low permeability; flow is essentially zero
+  diagnosis: Aperture specified in micrometers (um) without converting to meters; dfnWorks aperture values
+    must be in meters. A typical fracture aperture of 100 um should be entered as 1e-4 m. If 100 is entered
+    directly (interpreted as 100 m), the cubic law gives k = 100^2/12 = 833 m^2, which is absurdly high.
+    I
+  remedy: 'Ensure aperture is in meters: 100 um = 1e-4 m, 1 mm = 1e-3 m; convert_hydraulic_params; [''python
+    convert_hydraulic_params.py --aperture 100 --aperture_unit um --cubic_law'', ''Use output k_m2 value
+    in hy_params'']; convert_hydraulic_params.py accepts --aperture_unit flag'
+  severity: silent
+- id: dt_006
+  symptom: Flow solver returns zero velocity everywhere; no particles reach outlet
+  diagnosis: 'No connected fracture path exists between inlet and outlet boundaries; The DFN does not
+    have a percolating cluster connecting the specified inflow and outflow boundaries. This can happen
+    when: (1) p32 is too low for the domain size, (2) fractures are too small relative to domain, (3)
+    wrong boundary '
+  remedy: 'Increase p32/nPoly, increase max_radius, or change boundary faces; None; [''Check dfngen_logfile.txt
+    for connectivity information'', "Try: DFN.params[''keepOnlyLargestCluster''][''value''] = True to
+    see if cluster exists", ''Increase p32 by 50% and re-run'', ''Increase max_radius or add more fracture
+    familie'
+  severity: fatal
+- id: dt_007
+  symptom: Flow solution exists but particles are released at wrong face; breakthrough curve is wrong
+  diagnosis: 'boundaryFaces or in-flow-boundary specification uses wrong convention; dfnWorks boundaryFaces
+    uses: [top, bottom, left_w, front_n, right_e, back_s]. DFNTrans in-flow-boundary uses 1-based: 1=top,
+    2=bottom, 3=left_w, 4=front_n, 5=right_e, 6=back_s. Graph flow uses strings: "left", "right", "top",
+    "bo'
+  remedy: 'Verify boundary convention matches the solver being used; None; [''For left-to-right flow:'',
+    ''  boundaryFaces = [0, 0, 1, 1, 0, 0]  (left and front enabled)'', "  graph_flow: inflow=''left'',
+    outflow=''right''", ''  DFNTrans: in-flow-boundary=3, out-flow-boundary=5'']; Verify with small test
+    case before pro'
+  severity: degraded
+- id: dt_008
+  symptom: Network has nearly random fracture orientations despite field data showing clear sets
+  diagnosis: 'Fisher kappa parameter is too low; The Fisher distribution parameter kappa controls orientation
+    clustering. kappa=0 is uniform random, kappa=1 is very broad scatter, kappa=100 is nearly parallel.
+    If kappa is set too low (e.g., kappa=0.1), fractures will have nearly random orientations regardless
+    of '
+  remedy: 'Increase kappa to match observed orientation clustering; convert_fracture_input; [''Use stereonet
+    plot to visualize fracture poles'', ''Estimate kappa from data: kappa = (N-1)/(N-R) where R is resultant
+    length'', ''Typical values: kappa=10 (moderate), kappa=50 (tight), kappa=100+ (very tight)'']; convert_'
+  severity: silent
+- id: dt_009
+  symptom: DFNGen exits immediately with version mismatch error
+  diagnosis: 'Compiled DFNGen binary version does not match required version 2.3; pydfnworks v2.10 requires
+    DFNGen v2.3. If the binary was compiled from an older source or the .dfngen_version file is missing,
+    the version check fails. This commonly happens after updating pydfnworks without recompiling DFNGen.
+
+    ; ['''
+  remedy: 'Recompile DFNGen from the current source; None; [''cd $dfnworks_PATH/DFNGen'', ''make clean
+    && make'', ''Verify: cat .dfngen_version  (should show 2.3)'']; define_paths() checks version automatically
+    on DFNWORKS initialization'
+  severity: fatal
+- id: dt_010
+  symptom: DFNWORKS initialization fails with path not found errors
+  diagnosis: Missing or incorrect ~/.dfnworksrc configuration file; dfnWorks requires paths to external
+    executables (DFNGen, DFNTrans, LaGriT, PFLOTRAN, FEHM) set either in ~/.dfnworksrc (JSON) or as environment
+    variables. If the file is missing or paths are incorrect, DFNWORKS() fails during define_paths().
+    Gra
+  remedy: 'Create or fix ~/.dfnworksrc with correct paths; None; [''Create ~/.dfnworksrc with JSON format:'',
+    ''  {"dfnworks_PATH": "/path/to/dfnWorks/", ...}'', ''Minimum required: dfnworks_PATH'', ''Test: python
+    -c \''from pydfnworks import *; DFN = DFNWORKS("test")\'''']; Installation script should create ~/.dfnworks'
+  severity: fatal
+- id: dt_011
+  symptom: DFNGen runs for hours without completing; fracture count grows very slowly
+  diagnosis: 'p32 target is unreachable for the given domain size and fracture parameters; When using
+    stopCondition=1 (stop at p32 target), DFNGen keeps placing fractures until p32 targets are met. If
+    the target p32 is too high for the given max_radius and domain size, the rejection rate becomes very
+    high (>99%) '
+  remedy: Reduce p32 targets, increase max_radius, or use stopCondition=0 with nPoly; None; ['Start with
+    lower p32 (e.g., 0.1) and increase gradually', 'Ensure max_radius > domain_size / 10 for at least
+    one family', 'Switch to stopCondition=0 with explicit nPoly for predictable runtime']; run_dfnworks.py
+    chec
+  severity: degraded
+- id: dt_012
+  symptom: TDRW matrix diffusion produces extreme retardation; particles barely move
+  diagnosis: 'Matrix diffusivity specified in cm^2/s instead of m^2/s; The TDRW (Time Domain Random Walk)
+    method for matrix diffusion expects diffusivity in m^2/s. Published values are often in cm^2/s. For
+    molecular diffusion of a tracer in rock matrix: D ~ 1e-10 m^2/s = 1e-6 cm^2/s. Using cm^2/s value
+    (e.g., 1e-'
+  remedy: 'Convert diffusivity from cm^2/s to m^2/s by multiplying by 1e-4; None; [''D_m2s = D_cm2s *
+    1e-4'', ''Typical rock matrix: D = 1e-10 to 1e-12 m^2/s'', "DFN.run_graph_transport(G, N, ''partime'',
+    ''frac'', tdrw_flag=True, matrix_diffusivity=1e-10)"]; Warn if diffusivity > 1e-8 m^2/s (likely wrong
+    units)'
+  severity: silent
+- id: dt_013
+  symptom: LaGriT exits with error about degenerate triangles or fails to merge meshes
+  diagnosis: Nearly coplanar or very close fractures produce degenerate mesh elements; When two fractures
+    are nearly coplanar or their intersection line is very short relative to h, LaGriT cannot produce
+    quality triangles. The merge step may also fail if fracture intersection edges are missing from the
+    triangula
+  remedy: 'Reduce h, increase min_radius, or remove problematic fractures; None; [''Reduce h to half its
+    current value'', "Set DFN.params[''disableFram''][''value''] = True for simpler meshing", ''Check
+    for missing edges: DFN.check_for_missing_edges()'', ''If persistent: use graph mode instead (no meshing
+    needed)'']; Us'
+  severity: fatal
+- id: dt_014
+  symptom: Flow solver produces NaN or infinite values; some cells have zero volume
+  diagnosis: Zero-aperture fractures produce zero-volume Voronoi cells in the mesh; During mesh volume
+    correction (correct_uge_file), cell volumes are multiplied by fracture aperture. If any fracture has
+    aperture = 0, the corresponding cells have zero volume, causing division-by-zero in the flow solver.
+    This can
+  remedy: 'Check aperture.dat for zero values and assign minimum aperture; None; [''import numpy as np'',
+    "a = np.loadtxt(''aperture.dat'')", "print(f''Zero apertures: {np.sum(a==0)}'')", ''a[a==0] = 1e-6  #
+    Set minimum aperture of 1 um'', "np.savetxt(''aperture.dat'', a)"]; assign_hydraulic_properties()
+    should enforce '
+  severity: silent
+- id: dt_015
+  symptom: DFNGen input file has wrong number of parameters for fracture families
+  diagnosis: Number of entries in per-family arrays does not match nFamEll/nFamRect; When using the legacy
+    input file format (not Python API), each per-family parameter array (e.g., eRadii, eAspect, ekappa)
+    must have exactly nFamEll entries. If a family is added or removed without updating all arrays, DFNGen
+    rea
+  remedy: 'Use the Python API (add_fracture_family) instead of manual input files; None; [''Preferred:
+    Use DFN.add_fracture_family() for each family'', ''If using input files: verify all per-family arrays
+    have same length'', ''Count: nFamEll arrays and nFamRect arrays separately'']; check_input() validates
+    array len'
+  severity: degraded
+- id: dt_016
+  symptom: Breakthrough curve shows faster transport than expected; early arrivals dominate
+  diagnosis: Flux-weighted particle initialization biases towards fast flow paths; When init_fluxw or
+    flux_weight=yes is used, more particles are placed on high-flux fractures. This produces a breakthrough
+    curve that emphasizes fast paths and underrepresents slow, tortuous paths. The curve shape is correct
+    for f
+  remedy: 'Use init_nf for unbiased sampling; use flux_weight only for flux-averaged C; None; [''DFNTrans:
+    Set init_nf: yes and init_partn: 10'', "Graph: DFN.run_graph_transport(G, N, ..., initial_positions=''uniform'')",
+    ''Compare both initializations to understand bias'']; Document which initialization was used al'
+  severity: silent
+- id: dt_017
+  symptom: PFLOTRAN crashes with input file parsing error or unknown keyword
+  diagnosis: PFLOTRAN input file format does not match installed PFLOTRAN version; PFLOTRAN input syntax
+    changes between major versions. The dfn_explicit.in file must match the installed PFLOTRAN version.
+    Common mismatches include deprecated keywords (e.g., GRID vs STRUCTURED_GRID), changed units specifications,
+  remedy: 'Update PFLOTRAN input file to match installed version; None; [''Check PFLOTRAN version: pflotran
+    --version'', ''Compare input file syntax with PFLOTRAN documentation for that version'', ''Use dfnWorks
+    example input files as templates'', ''Alternative: use graph-based flow to avoid PFLOTRAN dependency''];
+    Us'
+  severity: fatal

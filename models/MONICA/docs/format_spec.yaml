@@ -1,163 +1,880 @@
-model:
-  name: "MONICA"
-  full_name: "Model of Nitrogen and Carbon in Agro-ecosystems"
-  version: "3.x"
-  domain: "crop_agro_ecosystem"
-  time_step: "daily"
-  spatial_domain: "1-D column, 1 m² surface, 2 m depth"
-  language: "C++17 (core), Python (orchestration)"
-  license: "MPL-2.0"
-  binary_path: "KISSPATH_BINARIES/MONICA/source/repo/_cmake_release/monica-run"
-  binary_type: "ELF 64-bit, x86-64, dynamically linked"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: MONICA
+  language: c++
+  implementation:
+    id: monica-zalf
+    version: 3.6.56
+    provenance: C++17; ZALF (zalf-rpm/monica) standalone monica-run binary wrapping the core soil-plant
+      C/N/water modules; thin Python orchestration binding.
+  scientific_reference_version: MONICA 3.6.x (ZALF; MOdel of Nitrogen and Carbon dynamics in Agro-ecosystems;
+    Nendel et al. 2011, Ecological Modelling)
 inputs:
   forcing:
-    - name: "tavg"
-      unit: "°C"
-      valid_range: [-50, 60]
-      description: "Mean daily air temperature"
-    - name: "tmin"
-      unit: "°C"
-      valid_range: [-60, 50]
-      description: "Minimum daily air temperature"
-    - name: "tmax"
-      unit: "°C"
-      valid_range: [-50, 60]
-      description: "Maximum daily air temperature"
-    - name: "wind"
-      unit: "m s⁻¹"
-      valid_range: [0, 50]
-      description: "Wind speed"
-    - name: "globrad"
-      unit: "MJ m⁻² d⁻¹"
-      valid_range: [0, 40]
-      description: "Global radiation"
-    - name: "precip"
-      unit: "mm d⁻¹"
-      valid_range: [0, 500]
-      description: "Precipitation"
-    - name: "relhumid"
-      unit: "%"
-      valid_range: [0, 100]
-      description: "Relative humidity"
-
-  soil_profile:
-    - name: "Thickness"
-      unit: "m"
-      valid_range: [0.01, 1.0]
-      description: "Soil layer thickness"
-    - name: "SoilOrganicCarbon"
-      unit: "%"
-      valid_range: [0.0, 30.0]
-      description: "Soil organic carbon content"
-    - name: "SoilRawDensity"
-      unit: "kg m⁻³"
-      valid_range: [500, 2000]
-      description: "Soil bulk density"
-    - name: "Sand"
-      unit: "fraction 0-1"
-      valid_range: [0.0, 1.0]
-      description: "Sand fraction (alternative to KA5TextureClass)"
-    - name: "Clay"
-      unit: "fraction 0-1"
-      valid_range: [0.0, 1.0]
-      description: "Clay fraction (alternative to KA5TextureClass)"
-
+  - name: tavg
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: 'climate.csv column (semicolon-separated, 2 header rows: names + units)'
+  - name: tmin
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: climate.csv column
+  - name: tmax
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: climate.csv column
+  - name: globrad
+    unit: MJ m-2 d-1
+    category: forcing
+    source_kind: forcing
+    model_input_format: climate.csv column
+    notes: Drives photosynthesis directly; the model reads the value as-is, so non-MJ units (J cm-2, W
+      m-2) silently inflate yield. netRadiation = globrad*(1-albedo).
+  - name: wind
+    unit: m s-1
+    category: forcing
+    source_kind: forcing
+    model_input_format: climate.csv column
+    notes: Enters FAO Penman-Monteith ET0; a hardcoded minimum windspeed of 0.5 m/s is enforced internally.
+  - name: precip
+    unit: mm d-1
+    category: forcing
+    source_kind: forcing
+    model_input_format: climate.csv column
+  - name: relhumid
+    unit: '% (0-100)'
+    category: forcing
+    source_kind: forcing
+    model_input_format: climate.csv column
+    notes: Passed to the moisture module as relhumid/100; if absent the orchestrator substitutes a -1.0
+      sentinel the module must interpret.
+  - name: sunhours
+    unit: h
+    category: forcing
+    source_kind: forcing
+    model_input_format: climate.csv column (optional)
+    notes: Used when globrad is unavailable.
+  - name: vappd
+    unit: kPa
+    category: forcing
+    source_kind: forcing
+    model_input_format: climate.csv column (optional)
+  - name: atmospheric CO2 concentration
+    unit: ppm
+    category: forcing
+    source_kind: forcing
+    model_input_format: supplied per-day in the climate/env map
+    notes: Drives photosynthesis; when not supplied it is generated from a hardcoded per-RCP logistic+seasonal-sine
+      fit (default RCP8.5).
+  - name: atmospheric O3 concentration
+    unit: ppb
+    category: forcing
+    source_kind: forcing
+    model_input_format: supplied per-day in the env map (optional; drives O3-impact module)
   parameters:
-    critical:
-      - name: "pc_MaxAssimilationRate"
-        valid_range: [15, 60]
-        unit: "µmol m⁻² s⁻¹"
-        description: "Maximum CO2 assimilation rate"
-      - name: "pc_StageTemperatureSum"
-        valid_range: [0, 3000]
-        unit: "°C d"
-        description: "Temperature sum required per development stage"
-      - name: "pc_CropSpecificMaxRootingDepth"
-        valid_range: [0.5, 2.0]
-        unit: "m"
-        description: "Maximum crop rooting depth"
-      - name: "vs_FieldCapacity"
-        valid_range: [0.10, 0.45]
-        unit: "m³ m⁻³"
-        description: "Field capacity (from PTF or measured)"
-      - name: "vs_PermanentWiltingPoint"
-        valid_range: [0.04, 0.20]
-        unit: "m³ m⁻³"
-        description: "Permanent wilting point (from PTF or measured)"
-      - name: "NDeposition"
-        valid_range: [5, 50]
-        unit: "kg N ha⁻¹ yr⁻¹"
-        description: "Annual atmospheric nitrogen deposition"
-
-  config_files:
-    - name: "sim.json"
-      description: "Simulation configuration: date range, paths, output events, model switches"
-    - name: "site.json"
-      description: "Site & soil profile: location, soil layers, module parameters"
-    - name: "crop.json"
-      description: "Crop rotation: species/cultivar refs, management calendar"
-    - name: "climate.csv"
-      description: "Daily weather forcing, semicolon-separated with 2 header rows"
-
+  - name: crop species parameters
+    unit: '-'
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: species include-from-file JSON (merged with cultivar at runtime)
+    notes: Includes pc_MaxAssimilationRate (15-60 µmol m-2 s-1), pc_StageTemperatureSum[] (degC d), base/heat-stress
+      phase temperature sums, specificLeafArea, assimilate-partitioning fractions, N-concentration thresholds.
+  - name: crop cultivar parameters
+    unit: '-'
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: cultivar include-from-file JSON
+    notes: Cultivar-specific traits (e.g. vernalisation requirement, LT50 frost tolerance, rooting depth
+      0.5-2.0 m) merged over the species defaults.
+  - name: residue parameters (residueParams)
+    unit: '-'
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: crop JSON
+  - name: Kc factor per development stage
+    unit: '-'
+    category: parameters
+    source_kind: calibrated
+    model_input_format: crop JSON
+    notes: Crop coefficient relating actual crop ET to reference ET0; range ~0.3-1.3.
+  - name: soil hydraulic parameters (field capacity, wilting point, saturation)
+    unit: m3 m-3
+    category: parameters
+    source_kind: derived
+    model_input_format: derived by pedotransfer functions from texture, OM and bulk density, per layer
+    notes: Field capacity 0.10-0.45, wilting point 0.04-0.20.
+  - name: soil texture (sand/clay fractions or KA5 class)
+    unit: fraction 0-1
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: SoilProfileParameters[] layer entry in site.json
+    notes: Drives PTF-derived hydraulics; expected as fractions, not percent.
+  - name: soil bulk density (SoilRawDensity)
+    unit: kg m-3
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: SoilProfileParameters[] layer entry
+    notes: Plausible range 500-2000 kg m-3.
+  - name: soil organic carbon (initial SOC per layer)
+    unit: '% (mass)'
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: SoilProfileParameters[] layer entry; SOC = SOM × 0.58
+  - name: soil pH per layer
+    unit: '-'
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: SoilProfileParameters[] layer entry
+  - name: layer thickness
+    unit: m
+    category: parameters
+    source_kind: user_provided
+    model_input_format: SoilProfileParameters[] layer entry
+    notes: 20 layers × 0.1 m to 2 m; supplied in metres.
+  - name: ps_MicrobialUtilizationEfficiency
+    unit: '-'
+    category: parameters
+    source_kind: calibrated
+    model_input_format: soil organic parameters
+    notes: Default 0.5, range 0.3-0.7.
+  - name: snowRetainedWaterToSnowRatio
+    unit: '-'
+    category: parameters
+    source_kind: calibrated
+    model_input_format: soil/snow parameters
+    notes: Range 0.0-0.5.
+  - name: site latitude
+    unit: decimal degrees
+    category: parameters
+    source_kind: user_provided
+    model_input_format: site.json (required)
+  - name: site slope / elevation (HeightNN)
+    unit: m/m, m
+    category: parameters
+    source_kind: user_provided
+    model_input_format: site.json (defaults 0)
+  - name: albedo
+    unit: '-'
+    category: parameters
+    source_kind: default
+    model_input_format: environment parameter
+    notes: Applied inline as netRadiation = globrad*(1 - albedo).
+  initial_conditions:
+  - name: initial soil water content per layer
+    unit: m3 m-3
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: site/soil JSON state at simulation start
+  - name: initial soil mineral N (NO3, NH4) per layer
+    unit: kg N m-3
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: site/soil JSON state at start
+  - name: initial soil organic matter pools per layer
+    unit: kg C / kg N m-3
+    category: initial_conditions
+    source_kind: derived
+    model_input_format: initialised from SOC and OM partitioning at start
+  - name: initial soil temperature per layer
+    unit: degC
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: soil temperature initialisation
+  boundary_conditions:
+  - name: groundwater depth / table
+    unit: m
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: measured series or annual sinusoid (min/max/month) in site/env JSON
+    notes: Lower boundary; negative computed sinusoidal depths are clamped to a hardcoded 20.0 m (effectively
+      no groundwater).
+  - name: atmospheric N deposition (NDeposition)
+    unit: kg N ha-1 yr-1
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: site.json (default 30)
+  - name: sowing workstep
+    unit: date
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: crop.json cropRotation[] Sowing (with is-winter-crop flag)
+  - name: mineral fertilisation workstep
+    unit: kg N ha-1
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: crop.json cropRotation[] MineralFertilization; N partitioning from fert-params
+  - name: organic fertilisation workstep
+    unit: kg FM ha-1
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: crop.json cropRotation[] OrganicFertilization
+  - name: irrigation workstep
+    unit: mm
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: crop.json cropRotation[] Irrigation; or automatic via AutoIrrigationParams
+  - name: tillage workstep
+    unit: m (depth)
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: crop.json cropRotation[] Tillage
+  - name: harvest workstep
+    unit: date / trigger
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: crop.json cropRotation[] AutomaticHarvest
+  - name: model option switches
+    unit: boolean / mode
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: sim.json (NitrogenResponseOn, WaterDeficitResponseOn, UseAutomaticIrrigation,
+      UseNMinMineralFertilisingMethod, UseSecondaryYields, EmergenceFloodingControlOn, EmergenceMoistureControlOn)
+    notes: Structural switches selecting which stress responses and management automations are active.
 outputs:
   primary:
-    - name: "Yield"
-      unit: "kg DM ha⁻¹"
-      valid_range: [0, 20000]
-      description: "Harvested dry-matter yield"
-    - name: "LAI"
-      unit: "m² m⁻²"
-      valid_range: [0, 12]
-      description: "Leaf area index"
-    - name: "Act_ET"
-      unit: "mm"
-      valid_range: [0, 15]
-      description: "Actual evapotranspiration"
-    - name: "Mois"
-      unit: "m³ m⁻³"
-      valid_range: [0.0, 0.6]
-      description: "Volumetric soil moisture per layer"
-    - name: "NLeach"
-      unit: "kg N ha⁻¹"
-      valid_range: [0, 200]
-      description: "Nitrogen leaching below root zone"
-    - name: "SOC"
-      unit: "kgC kg⁻¹"
-      valid_range: [0.0, 0.1]
-      description: "Soil organic carbon per layer"
-    - name: "N2O"
-      unit: "kg N ha⁻¹"
-      valid_range: [0, 50]
-      description: "Nitrous oxide emissions"
-    - name: "GPP"
-      unit: "kg C ha⁻¹"
-      valid_range: [0, 50000]
-      description: "Gross primary production"
-    - name: "Stage"
-      unit: "0-7"
-      valid_range: [0, 7]
-      description: "Phenological development stage"
-
-  output_format:
-    type: "CSV"
-    sections: ["daily", "crop", "yearly", "run"]
-    header_rows: 3
-    description: "Multi-section CSV with field names, units, and JSON column references"
-
-environment:
-  MONICA_PARAMETERS:
-    description: "Must point to monica-parameters repository root"
-    required: true
-
+  - name: Yield
+    unit: kg DM ha-1
+    description: Harvested crop marketable dry-matter yield.
+    validation_rank: 1
+    emitted_in: MONICA output CSV (crop/harvest events)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Point/plot trial yields compare directly; convert DM to fresh weight where obs are fresh.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Single-season plot yield.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/provincial yield aggregates carry a technology trend a weather-driven point model cannot
+          reproduce; detrend before comparing. Point simulation must be representative-aggregated to the
+          region first.
+      detrending_options:
+      - none
+      - linear_residual
+      - decadal_mean
+  - name: LAI
+    unit: m2 m-2
+    description: Crop canopy leaf area index.
+    validation_rank: 2
+    emitted_in: MONICA output CSV (daily/crop events)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against destructive or remote-sensed LAI at the plot; peak timing is informative for
+          phenology.
+      detrending_options:
+      - none
+  - name: Stage
+    unit: 0-7
+    description: Crop phenological development stage.
+    validation_rank: 5
+    emitted_in: MONICA output CSV (daily)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare stage-transition DOY (emergence, flowering, maturity) against phenological observations.
+          Only stage-transition timing is compared; magnitude of the 0-7 index itself is not a meaningful
+          target.
+      detrending_options:
+      - none
+  - name: Act_ET
+    unit: mm
+    description: Actual evapotranspiration from the soil-plant column water balance.
+    validation_rank: 3
+    emitted_in: MONICA output CSV (daily)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against eddy-covariance / lysimeter ET at the column location.
+      detrending_options:
+      - none
+  - name: Mois
+    unit: m3 m-3
+    description: Volumetric soil moisture per layer.
+    validation_rank: 6
+    emitted_in: MONICA output CSV (daily, per layer 1-20)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Match the observed sensor depth to the corresponding model layer.
+      detrending_options:
+      - none
+  - name: NLeach
+    unit: kg N ha-1
+    description: Soil nitrate leaching below the root zone / lower boundary of the soil column.
+    validation_rank: 7
+    emitted_in: MONICA output CSV (daily/yearly)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Compare against lysimeter/suction-cup leachate fluxes; cumulative annual loads are more robust
+          than daily.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Seasonal/annual cumulative leaching.
+      detrending_options:
+      - none
+  - name: N2O
+    unit: kg N ha-1
+    description: Soil nitrous oxide emissions from nitrification/denitrification.
+    validation_rank: 8
+    emitted_in: MONICA output CSV (daily)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Chamber flux measurements are episodic and noisy; cumulative seasonal flux comparison is more
+          defensible than daily matching.
+      detrending_options:
+      - none
+  - name: SOC
+    unit: '% (kg C kg-1)'
+    description: Soil organic carbon per layer.
+    validation_rank: 4
+    emitted_in: MONICA output CSV (per layer 1-6)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        - trend_match
+        determining_metric: pbias
+        caveats:
+        - SOC change is slow; long-term-experiment decadal change is the meaningful signal.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Match measured horizon to the corresponding model SOC layer.
+      detrending_options:
+      - none
+      - decadal_mean
+  - name: SumNUp
+    unit: kg N ha-1
+    description: Cumulative crop nitrogen uptake.
+    validation_rank: 9
+    emitted_in: MONICA output CSV (crop/harvest events)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compare against measured crop N offtake at harvest.
+      detrending_options:
+      - none
+  - name: GPP
+    unit: kg C ha-1
+    description: Crop canopy gross primary production.
+    validation_rank: 10
+    emitted_in: MONICA output CSV (daily)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against eddy-covariance partitioned GPP at flux towers.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "UT1"
-    description: "globrad unit trap: J cm⁻² vs MJ m⁻² d⁻¹ (÷100) — yields inflated 10-100×"
-  - id: "UT5"
-    description: "relhumid unit trap: fraction vs percent — breaks ET calculation"
-  - id: "UT7"
-    description: "Thickness unit trap: cm vs m — causes negative soil moisture (fatal)"
-  - id: "UT8"
-    description: "SoilRawDensity: g cm⁻³ vs kg m⁻³ — corrupts porosity calculations"
-  - id: "ENV"
-    description: "MONICA_PARAMETERS not set → zero output with no error"
+- id: dt_01
+  symptom: 'Yield is 10–100× too high (e.g., 500,000 kg ha⁻¹ instead of 5,000). Crop LAI grows to extreme
+    values. All biomass pools inflated.
+
+    '
+  diagnosis: 'Global radiation (globrad) was supplied in J cm⁻² or W m⁻² instead of MJ m⁻² d⁻¹. MONICA
+    reads the value as-is, resulting in 100× or ~12× over-estimation of available photosynthetically active
+    radiation.
+
+    '
+  remedy: 'Convert globrad before writing climate.csv: - J cm⁻² → MJ m⁻² d⁻¹: divide by 100 - W m⁻² →
+    MJ m⁻² d⁻¹: multiply by 0.0864 Alternatively, use header-to-acd-names in sim.json: "globrad": ["globrad",
+    "/", 100]
+
+    '
+  severity: silent
+- id: dt_02
+  symptom: 'ET0 is always 0 or near 0. Crops show severe water stress even with adequate precipitation.
+    Transpiration deficit (TraDef) stuck at 1.0.
+
+    '
+  diagnosis: 'Relative humidity was provided as a fraction [0–1] instead of percentage [0–100]. The Penman-Monteith
+    ET calculation receives near-zero humidity values, leading to incorrect vapour pressure deficit computation.
+
+    '
+  remedy: 'Ensure relhumid is in percent (0–100). If source data is fraction, multiply by 100. Use --relhumid-unit
+    fraction flag in the converter tool.
+
+    '
+  severity: silent
+- id: dt_03
+  symptom: 'Unrealistic actual evapotranspiration values (ET > 20 mm d⁻¹ regularly). Soil dries out much
+    faster than expected.
+
+    '
+  diagnosis: 'Wind speed was provided in km h⁻¹ instead of m s⁻¹. Wind speed enters the Penman-Monteith
+    equation directly; a 3.6× overestimate amplifies the aerodynamic term of ET.
+
+    '
+  remedy: 'Convert wind speed: km h⁻¹ ÷ 3.6 = m s⁻¹. Use --wind-unit km_h flag in the converter tool.
+
+    '
+  severity: silent
+- id: dt_04
+  symptom: 'Precipitation totals are 1000× too high. Massive waterlogging and surface runoff. Crop dies
+    from oxygen stress.
+
+    '
+  diagnosis: 'Precipitation was provided in m d⁻¹ instead of mm d⁻¹. ERA5 natively reports total precipitation
+    in metres.
+
+    '
+  remedy: 'Convert m to mm: multiply by 1000. Use --precip-unit m flag in the converter tool.
+
+    '
+  severity: silent
+- id: dt_05
+  symptom: 'Negative volumetric soil moisture. Model may crash or produce physically impossible soil water
+    content values.
+
+    '
+  diagnosis: 'Soil layer thickness was provided in cm instead of m. A layer specified as "30" (meaning
+    30 cm) is interpreted as 30 m, causing the water balance to become nonsensical.
+
+    '
+  remedy: 'Ensure Thickness is in metres: [0.1, "m"] for 10 cm layers. If source data is in cm, divide
+    by 100.
+
+    '
+  severity: fatal
+- id: dt_06
+  symptom: 'Soil water dynamics are wrong. Field capacity and wilting point computed by pedotransfer functions
+    are incorrect.
+
+    '
+  diagnosis: 'Bulk density (SoilRawDensity) was provided in g cm⁻³ instead of kg m⁻³. A value of 1.4 (g
+    cm⁻³) is interpreted as 1.4 kg m⁻³ (essentially zero density), corrupting porosity calculations.
+
+    '
+  remedy: 'Convert g cm⁻³ to kg m⁻³: multiply by 1000. Value should be in range [500, 2000] kg m⁻³.
+
+    '
+  severity: silent
+- id: dt_07
+  symptom: 'SOC decomposition rates are extreme. Either too fast (SOC in g/kg interpreted as %) or unmeasurably
+    slow (SOC as fraction interpreted as %).
+
+    '
+  diagnosis: 'SoilOrganicCarbon was provided in g kg⁻¹ instead of %. A value of 15 g kg⁻¹ = 1.5% is read
+    as 15%.
+
+    '
+  remedy: 'Convert g kg⁻¹ to %: divide by 10. Typical agricultural SOC: 0.5–4%.
+
+    '
+  severity: silent
+- id: dt_08
+  symptom: 'Sand/clay fractions appear as 40–80 in the JSON (as percentages) but MONICA expects fractions.
+    Pedotransfer functions produce wrong field capacity and wilting point.
+
+    '
+  diagnosis: 'Sand and Clay were provided as percentages (0–100) where fractions (0–1) are expected, or
+    vice versa depending on configuration.
+
+    '
+  remedy: 'When using Sand/Clay directly (not KA5TextureClass), provide as fractions [0–1]. Divide percentages
+    by 100.
+
+    '
+  severity: silent
+- id: dt_09
+  symptom: 'Nitrogen surplus is 5× higher than expected. Soil NO₃ accumulates to extreme levels. N leaching
+    far exceeds observations.
+
+    '
+  diagnosis: 'Mineral fertiliser amount was specified in kg product ha⁻¹ instead of kg N ha⁻¹. For example,
+    200 kg Ammonium Nitrate ha⁻¹ contains only ~68 kg N ha⁻¹ (34% N).
+
+    '
+  remedy: 'Specify fertiliser amount as kg N ha⁻¹. The N partitioning (NH4/NO3/Carbamid fractions) is
+    defined in the fertiliser parameter file, not the amount field.
+
+    '
+  severity: silent
+- id: dt_10
+  symptom: 'Background N leaching is very high even without fertilisation. Soil mineral N accumulates
+    unrealistically between crop seasons.
+
+    '
+  diagnosis: 'NDeposition was specified as a daily rate (kg N ha⁻¹ d⁻¹) instead of annual (kg N ha⁻¹ yr⁻¹).
+    A value of 30 kg N ha⁻¹ d⁻¹ would deposit 10,950 kg N ha⁻¹ yr⁻¹.
+
+    '
+  remedy: 'NDeposition must be annual: [30, "kg N ha-1 y-1"]. Typical range: 5–50 kg N ha⁻¹ yr⁻¹.
+
+    '
+  severity: silent
+- id: dt_11
+  symptom: 'MONICA starts but produces zero output. No crop growth, no soil processes. Output file contains
+    only headers.
+
+    '
+  diagnosis: 'The MONICA_PARAMETERS environment variable is not set or points to a wrong directory. All
+    "include-from-file" references fail silently, resulting in default (zero) parameters.
+
+    '
+  remedy: 'Set MONICA_PARAMETERS to the monica-parameters repository root: export MONICA_PARAMETERS=/path/to/monica-parameters
+    Verify: ls $MONICA_PARAMETERS/crops/ should list crop JSON files.
+
+    '
+  severity: silent
+- id: dt_12
+  symptom: 'JSON parse error on startup. MONICA refuses to run with a cryptic error message about unexpected
+    token.
+
+    '
+  diagnosis: 'The JSON configuration file has a syntax error. Most commonly: a trailing comma after the
+    last element in an array or object. JSON does not allow trailing commas (unlike JavaScript).
+
+    '
+  remedy: 'Validate JSON with a linter (python -m json.tool sim.json). Remove trailing commas. Check for
+    missing brackets.
+
+    '
+  severity: fatal
+- id: dt_13
+  symptom: 'Segmentation fault immediately on startup. No output produced.
+
+    '
+  diagnosis: 'The mas_cpp_misc symlink is missing or broken. MONICA''s shared libraries (date, helpers,
+    climate-file-io) cannot be found, leading to uninitialised function pointers.
+
+    '
+  remedy: 'Create the symlink: ln -sf ../mas-infrastructure/src mas_cpp_misc Rebuild: cd _cmake_release
+    && cmake .. && make -j$(nproc)
+
+    '
+  severity: fatal
+- id: dt_14
+  symptom: '"No climate data available" error. Simulation period is empty despite climate.csv having data.
+
+    '
+  diagnosis: 'Date format mismatch between climate.csv and sim.json configuration. Climate.csv uses DE-date
+    (DD.MM.YYYY) but sim.json maps it as iso-date (YYYY-MM-DD), or vice versa.
+
+    '
+  remedy: 'Match the header-to-acd-names mapping in sim.json to the actual column names in climate.csv.
+    Use "DE-date": "de-date" for German dates or "iso-date": "iso-date" for ISO dates.
+
+    '
+  severity: fatal
+- id: dt_15
+  symptom: 'Crop never reaches harvest. AutomaticHarvest never triggers. Simulation runs to end date without
+    producing yield.
+
+    '
+  diagnosis: 'The latest-date for AutomaticHarvest is set too early (before the crop reaches maturity),
+    OR the crop cultivar''s StageTemperatureSum is too large for the available growing degree days at
+    this location.
+
+    '
+  remedy: 'Extend the latest-date to well past expected maturity. Check that the cultivar is appropriate
+    for the climate zone. Compare TempSum accumulation in daily output against StageTemperatureSum requirements.
+
+    '
+  severity: degraded
+- id: dt_16
+  symptom: 'Winter crop planted in spring shows extremely late development and low yield. Spring crop
+    planted in autumn dies.
+
+    '
+  diagnosis: 'The is-winter-crop flag does not match the actual sowing season. Winter crops require vernalisation
+    (cold period); sowing them in spring means they never satisfy vernalisation requirements.
+
+    '
+  remedy: 'Set is-winter-crop correctly. Match sowing date to crop type: winter crops in Sep–Nov, spring
+    crops in Mar–May.
+
+    '
+  severity: degraded
+- id: dt_17
+  symptom: 'Water balance does not close. Annual ET + recharge + runoff differs significantly from precipitation
+    + irrigation.
+
+    '
+  diagnosis: 'Likely a soil parameter error (wrong bulk density or field capacity) causing incorrect storage
+    change calculations, or the soil column depth is insufficient (< 2m) leading to truncated percolation.
+
+    '
+  remedy: 'Check soil parameters, especially bulk density units (kg m⁻³). Ensure soil column extends to
+    2 m (20 layers × 0.1 m). Compare simulated vs measured soil moisture profiles.
+
+    '
+  severity: degraded
+- id: dt_18
+  symptom: "MONICA crashes immediately with: \"terminate called after throwing an instance of 'std::out_of_range'\n\
+    \ what():  vector::_M_range_check: __n (which is 0) >= this->size() (which is 0)\"\nBinary exits with\
+    \ returncode -6 (SIGABRT). No output file created.\n"
+  diagnosis: convert_soil_to_monica.py places SoilProfileParameters at the JSON root level, but MONICA
+    requires it nested inside SiteParameters. The soil layers vector is empty from MONICA's perspective,
+    causing an out-of-bounds access on the first simulation step. This is a bug in the KI tool's JSON
+    output stru
+  remedy: "After running convert_soil_to_monica.py, move SoilProfileParameters inside SiteParameters using:\n\
+    \  python3 -c \"\n  import json\n  with open('site.json') as f: d = json.load(f)\n  template = <load\
+    \ original working site.json>\n  template['SiteParameters']['SoilProfileParameters'] = d['SoilProfileParameter"
+  severity: fatal
+- id: dt_19
+  symptom: 'MONICA crashes with std::out_of_range (same as dt_18 symptom) OR produces zero yield for all
+    years, despite climate.csv containing valid data. Log shows no obvious error. Elapsed time is near
+    0s.
+
+    '
+  diagnosis: 'csv-separator in sim.json does not match the actual delimiter in climate.csv. convert_climate_to_monica.py
+    outputs semicolon-delimited (;) files, but sim.json defaults to csv-separator: "," (comma). MONICA
+    reads zero rows and the climate data vector is empty.
+
+    '
+  remedy: "After generating climate.csv with convert_climate_to_monica.py, check its delimiter with: head\
+    \ -1 climate.csv If semicolons are used, update sim.json:\n  \"climate.csv-options\": { \"no-of-climate-file-header-lines\"\
+    : 2, \"csv-separator\": \";\" }\nNote: convert_climate_to_monica.py always outputs \";\" as the "
+  severity: fatal
+- id: dt_20
+  symptom: 'convert_soil_to_monica.py --format hwsd raises: "UnicodeDecodeError: ''utf-8'' codec can''t
+    decode byte 0x97" when passed the HWSD raster file (hwsd.bil).
+
+    '
+  diagnosis: 'The --format hwsd mode expects a pre-extracted CSV lookup table (with columns T_SAND, T_CLAY,
+    T_OC, T_BULK_DENSITY, T_PH_H2O), NOT the binary .bil raster file. Passing the raster triggers a UTF-8
+    decode failure when the tool tries to read it as CSV.
+
+    '
+  remedy: "Step 1 — look up the MU_GLOBAL code at the target lat/lon from the raster:\n  python3 -c \"\
+    \n  import rasterio; from rasterio.transform import rowcol; import numpy as np\n  with rasterio.open('data/soil/HWSD_RASTER/hwsd.bil')\
+    \ as src:\n      row,col = rowcol(src.transform, lon, lat)\n      print('MU_GLOBAL"
+  severity: fatal
+- id: dt_21
+  symptom: 'MONICA severely underestimates yield (PBIAS < -40%) for Chinese wheat despite reasonable soil
+    and climate inputs. NSE strongly negative.
+
+    '
+  diagnosis: 'UseAutomaticIrrigation is set to false (default). Chinese winter wheat (Huang-Huai-Hai Plain)
+    receives 3-4 irrigations per season (~150-200 mm total). Running rainfed against irrigated national/provincial
+    statistics produces a systematic -40 to -60% bias.
+
+    '
+  remedy: "Enable irrigation in sim.json for Chinese wheat simulations:\n  \"UseAutomaticIrrigation\"\
+    : true,\n  \"AutoIrrigationParams\": {\n      \"irrigationParameters\": { \"nitrateConcentration\"\
+    : [0, \"mg dm-3\"] },\n      \"amount\": [50, \"mm\"],\n      \"trigger_if_nFC_below_%\": [55, \"\
+    %\"],\n      \"calc_nFC_until_depth_m\": "
+  severity: silent
+- id: dt_22
+  symptom: 'MONICA yields with CMFD forcing are 20-30% higher than with NASA POWER forcing for the same
+    site and settings. Unclear which is more accurate.
+
+    '
+  diagnosis: CMFD (China Meteorological Forcing Dataset) is a station-based reanalysis with higher solar
+    radiation values than NASA POWER's satellite-derived estimates. Higher radiation drives more photosynthesis
+    → higher simulated yields. For Chinese basins, CMFD is the preferred forcing (observation-based, 0.1
+  remedy: 'For China basins: use CMFD forcing and compare against provincial yield statistics rather than
+    national FAOSTAT averages. Provincial statistics are typically 5-20% higher than national averages
+    and closer to the single-site CMFD simulation. For global/non-China sites: use MSWX or NASA POWER.
+    Note: a'
+  severity: degraded
+- id: dt_23
+  symptom: 'Henan province wheat yield is underestimated by -10 to -20% even with irrigation enabled.
+    Other NCP (North China Plain) provinces simulate closer to reference values.
+
+    '
+  diagnosis: HWSD MU_GLOBAL codes for the Henan sampling point (e.g., 11078) report ~80% sand in both
+    topsoil and subsoil — a Fluvisol/Entisol mapping unit that does not represent actual cultivated soil.
+    Millennia of cultivation and sediment management have changed the effective soil texture. The sandy
+    HWSD prof
+  remedy: For Henan wheat validation, override the HWSD texture with a loam approximation (T_SAND=45,
+    T_CLAY=25) representative of cultivated Fluvisols in the Huang-Huai-Hai Plain. This is consistent
+    with China's second soil survey data for the region. Alternatively, use SoilGrids v2 (250m) instead
+    of HWSD fo
+  severity: degraded
+- id: dt_24
+  symptom: A single irrigated high-yield-province point simulation (e.g. Shandong winter wheat, ~4500
+    kg DM ha-1 → ~5100 kg FW ha-1) overshoots the FAOSTAT *national* China wheat yield (~3300-4100 kg
+    ha-1) by +40-45% PBIAS, and the detrended interannual correlation is ~0 or negative (r_detr ≈ -0.3).
+    NSE/KGE ar
+  diagnosis: 'obs_shape mismatch, NOT a model or unit error. FAOSTAT national yield is a `regional_aggregate_time_series`:
+    a fresh-weight area-weighted mean over ALL provinces (high- and low-yielding) that also carries a
+    multi-decade technology/management uptrend. A single point sim at one productive, irrigated p'
+  remedy: "1. Score ONLY magnitude_accuracy (PBIAS on DM→FW converted levels) and\n   trend_match (detrended/first-difference\
+    \ r) — never raw NSE/KGE/r.\n2. For a defensible *magnitude* test, compare the point sim against the\n\
+    \   matching PROVINCIAL reference (Shandong ≈ 5-6 t/ha FW), not the\n   national mean — as"
+  severity: structural
+- id: dt_25
+  symptom: 'You want to honestly compare MONICA point runs against the FAOSTAT *national* China wheat
+    series (dt_24''s regional_aggregate_time_series), and need a concrete representative-aggregation recipe
+    + which moisture convention to use. Also: the validated multi-site PBIAS table in SKILL.md (+5.8%
+    Hebei … +'
+  diagnosis: 'Empirically resolved on 2026-06-24. Area-weighting the 5 validated NCP winter-wheat province
+    point runs (Hebei/Shandong/Henan/Jiangsu/Anhui, 1992-2000) by wheat sown area (approx Mha: Henan 5.0,
+    Shandong 3.8, Hebei 2.5, Jiangsu 2.2, Anhui 2.2) into ONE national-representative series, then comparing '
+  remedy: "1. For the national magnitude test, area-weight several NCP province runs\n   (weights above)\
+    \ BEFORE computing PBIAS; expect PBIAS within roughly\n   +-10% (DM-direct) — far better than any\
+    \ single province.\n2. Pick ONE moisture convention and state it. The validated multi-site\n   table\
+    \ is DM-direct; t"
+  severity: structural
+- id: dt_26
+  symptom: 'parse_monica_output.py aborts with "ValueError: dict contains fields not in fieldnames: ''daily''"
+    (or another column name) inside write_clean_csv / csv.DictWriter.writerows when parsing a normal MONICA
+    out.csv that contains more than one output section (e.g. a daily section plus a crop/harvest-event '
+  diagnosis: 'write_clean_csv derived the CSV fieldnames from timeseries[0].keys() only. extract_timeseries
+    adds a key to a row''s dict ONLY when that row''s cell is non-empty, so rows from different MONICA
+    sections legitimately carry different key sets. Any later row whose keys are not a subset of the first
+    row''s '
+  remedy: Build the fieldname list as the UNION of all rows' keys (preserving first-seen order) and construct
+    the DictWriter with restval="" and extrasaction="ignore" so heterogeneous-section rows are written
+    with blanks for absent columns instead of raising. Fixed in tools/parse_monica_output.py write_clean_
+  severity: degraded
+- id: dt_27
+  symptom: 'parse_monica_output.py "succeeds" (exit 0) on a crop/harvest-event out.csv but reports columns:
+    ["crop"], units: ["CM-count;Crop;Yield;sowing;harvest"], an empty summary (no max_yield_kg_ha / n_harvests)
+    and a timeseries.csv that holds no Yield column — every per-harvest yield is silently lost. On a'
+  diagnosis: 'MONICA writes every output event block under a BARE section label line (the event key, quoted:
+    "crop", "daily", "yearly", "run") followed by that block''s own header row, units row and data rows;
+    blocks differ in header AND may differ in separator. The tool read line 0 as the header and detected
+    the '
+  remedy: 'Fixed 2026-08-22 in tools/parse_monica_output.py: parse_monica_output() now walks the file
+    block by block (label -> header -> optional units -> optional m:/j:/c: meta -> rows until blank line
+    / next label), detects the separator per block, returns the UNION of all block headers (plus a leading
+    "sect'
+  severity: degraded
+- id: dt_28
+  symptom: convert_soil_to_monica.py --format hwsd on a 1-row HWSD extract (T_* and S_* columns from HWSD_DATA.csv
+    / ki_tools_common.soil_utils.lookup_hwsd) emits 20 layers whose layers 4-20 all carry the TOPSOIL
+    sand/clay and a flat SOC of 0.1 %, and every run prints the warning "No soil layers defined" altho
+  diagnosis: 'process_hwsd() decided topsoil-vs-subsoil per ROW ("T_SAND" in rec), but an HWSD_DATA row
+    carries BOTH horizons (T_* 0-30 cm, S_* 30-100 cm), so the S_* columns were never read: only the 3
+    topsoil layers were built and the 2 m profile was padded by copying them. validate_outputs() looked
+    for SoilPro'
+  remedy: 'STATUS 2026-08-22: a fix (3 topsoil layers from T_* + 7 subsoil layers from S_*, S_OC when
+    present else half of T_OC, pad to 20; validator reading SiteParameters.SoilProfileParameters) was
+    written but REVERTED by the independent tool review: its validate_outputs still fell back to the JSON
+    root ("pa'
+  severity: degraded
+- id: dt_29
+  symptom: Irrigated, well-fertilised winter wheat at 30-40 N (NCP / Huang-Huai-Hai) simulates ~2.5-3.2
+    t DM ha-1 against 5-6 t/ha statistics (PBIAS -40..-60 %) although TraDef ~ 1, NDef ~ 1 and HeatRed
+    = 1; AbBiom is healthy (15-18 t) so the harvest index is ~0.2; most seasons are harvested exactly
+    ON the Aut
+  diagnosis: The stock long-day cultivar (crops/wheat/winter-wheat.json, DaylengthRequirement 20 h, BaseDaylength
+    0/7 h) is a ~52 N parameterisation. MONICA multiplies every stage's thermal time by the long-day factor
+    (DL - base)/(req - base) (crop-module.cpp fc_DaylengthFactor); its photoperiodic daylength (sun
+  remedy: 'Transfer the photoperiod requirement to the site (latitude-derived, no yield fitting): `tools/site_photoperiod.py
+    adapt --lat <lat> --base $MONICA_PARAMETERS/crops/wheat/winter-wheat.json --out <file>` sets every
+    positive DaylengthRequirement entry to the site''s maximum photoperiodic daylength (15.4'
+  severity: silent
+- id: dt_30
+  symptom: Individual seasons yield 0 (AbBiom 7-10 t, no anthesis/maturity row, harvest ON latest-date)
+    in otherwise working irrigated runs; the daily trace shows output Stage 1 (germination) persisting
+    from the autumn sowing until the first spring rain (e.g. 2010-10 -> 2011-03 in the NCP), then a stalled
+    vege
+  diagnosis: 'EmergenceMoistureControlOn defaults to TRUE in the model (monica-parameters.h pc_EmergenceMoistureControlOn
+    {true}; docs/06 wrongly listed false): germination needs top-layer moisture > 20 % of capillary water.
+    In a dry autumn (2010 NCP drought) the seedbed never qualifies, and automatic irrigation '
+  remedy: 'Set "EmergenceMoistureControlOn": false in sim.json for irrigated NCP wheat (farmers pre-irrigate
+    the seedbed), or add an explicit Irrigation workstep on the sowing date. Verify with the anthesis/maturity
+    event blocks that no season is missing both. Probe column p34.375_115.875: 2010-11 season 0 -> '
+  severity: silent
+- id: dt_31
+  symptom: 'Gridded or statistical yield obs (GDHY v1.2/1.3, FAOSTAT, provincial yearbooks) scored against
+    MONICA Yield (kg DM ha-1 / 1000) read ~12-14 % low everywhere although phenology, water and N are
+    verified healthy (NCP 20-cell block 2026-08-22: per-site median PBIAS -16 % with anthesis 05-10, maturity
+    0'
+  diagnosis: 'Moisture-basis mismatch, not a model defect: MONICA''s Yield is dry matter; statistics-derived
+    obs (and the GDHY product, which is harmonised to FAO national yields) are fresh weight at ~12 % harvest
+    moisture; the GDHY .nc4 carries no unit attribute, so the runner compared DM-direct ("platform preced'
+  remedy: 'Apply the documented conversion before scoring statistics-derived obs: sim_t_ha = kg DM ha-1
+    / 1000 / 0.88, state the convention in the result and keep the DM-direct number as an auxiliary (run_and_score.py:
+    pbias_dm_direct / PBIAS_dm_direct / yield_convention). Do not mix with the DM-direct validat'
+  severity: degraded
+- id: dt_32
+  symptom: 'A regional-aggregate yield comparison (GDHY / FAOSTAT / yearbook obs, obs_shape regional_aggregate_time_series)
+    is rejected by the orchestrator''s dag_driven_gate with "REJECT_WRONG_METRIC: metrics [''nse'', ''kge'',
+    ''r''] use families that are not in valid_families=[''trend_match'', ''magnitude_accuracy''] f'
+  diagnosis: 'A reporting-contract gap, not a model or unit defect: the result''s headline `metrics` block
+    led with nse/r/kge and the runner''s test_runs row carried no dag-valid metric (median_* keys only),
+    so the retest/report agent re-authored the row from the generic nse/kge/pbias template and the loop''s
+    route '
+  remedy: 'Follow SKILL.md ''Reporting contract for regional-aggregate / gridded-statistics yield obs'':
+    metrics + every test_runs row carry ONLY pbias (+rmse) and trend_error / decadal_pbias / slope_ratio
+    with determining_metric pbias, obs_shape, metric_families_valid, detrending_applied; NSE/KGE/r from
+    the sam'
+  severity: structural

@@ -1,0 +1,452 @@
+schema_version: 1
+model_id: CRHM
+domain: hydrology
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+# Bands are literature-grounded from fetched full texts only. Blocks are keyed by
+# CRHM dag_variable, per the campaign instruction. Where the fetched literature
+# reports benchmark skill but no acceptance convention, bands are null.
+
+references:
+  me2015:
+    doi: 10.5194/hess-19-4127-2015
+    title: "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity for a small, mixed land use catchment"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-4127-2015.txt
+  fang2010:
+    doi: 10.5194/hess-14-991-2010
+    title: "Prediction of snowmelt derived streamflow in a wetland dominated prairie basin"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2010
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-14-991-2010.txt
+  fang2013:
+    doi: 10.5194/hess-17-1635-2013
+    title: "Multi-variable evaluation of hydrological model predictions for a headwater basin in the Canadian Rocky Mountains"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-17-1635-2013.txt
+  odusanya2019:
+    doi: 10.5194/hess-23-1113-2019
+    title: "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration in a data-sparse catchment"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-1113-2019.txt
+  krinner2018:
+    doi: 10.5194/gmd-11-5027-2018
+    title: "ESM-SnowMIP: assessing snow models and quantifying snow-related climate feedbacks"
+    venue: "Geosci. Model Dev."
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-11-5027-2018.txt
+  hanzer2016:
+    doi: 10.5194/tc-10-1859-2016
+    title: "Multilevel spatiotemporal validation of snow/ice mass balance and runoff modeling in glacierized catchments"
+    venue: "The Cryosphere"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-10-1859-2016.txt
+  macdonald2009:
+    doi: 10.1002/hyp.7348
+    title: "Modelling blowing snow redistribution to prairie wetlands"
+    venue: "Hydrological Processes"
+    year: 2009
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_hyp.7348.txt
+  pomeroy2022:
+    doi: 10.1016/j.jhydrol.2022.128711
+    title: "The cold regions hydrological modelling platform for hydrological diagnosis and prediction"
+    venue: "Journal of Hydrology"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2022.128711.txt
+  nicholls2024:
+    doi: 10.1002/eco.2714
+    title: "Evaluating the Use of the Penman-Monteith and Priestley-Taylor Algorithms for Modeling evapotranspiration"
+    venue: "Ecohydrology"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_eco.2714.txt
+  iwata2010:
+    doi: 10.1029/2009wr008070
+    title: "Effects of snow cover on soil freezing, water movement, and snowmelt infiltration: A paired plot experiment"
+    venue: "Water Resources Research"
+    year: 2010
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2009wr008070.txt
+
+validation:
+  - dag_variable: SWE
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred NSE convention; the fetched Moriasi-reproducing table says NSE <0.5 is unsatisfactory and 0.5-0.65 is satisfactory for all constituents."
+        cites: [me2015]
+      - metric: nrmse
+        direction: minimize
+        unit: dimensionless
+        bands: {satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "ESM-SnowMIP states normalized SWE RMSE >1 fits variations no better than the average observations."
+        cites: [krinner2018]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "CRHM SWE benchmarks report RMSD directly; Fang 2013 reports all-season SWE RMSD of 19.4-274.9 mm across HRUs and NRMSD of 0.31-0.67."
+        cites: [fang2013, pomeroy2022]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "CRHM SWE benchmarks use model bias; Fang 2013 reports all-season MB from -0.006 to 0.36 and peak-SWE differences from 1.6% to 29% at alpine sites."
+        cites: [fang2013]
+    validated_when: "NSE >= 0.5 and nRMSE <= 1.0, with RMSE/MB checked against CRHM SWE benchmark ranges."
+    evidence_strength: strong
+    confidence: 0.72
+    notes: >-
+      The dag determining_metric nse is retained. Fang 2013 says "any positive value of NSE suggests that model has some predictive power" and reports SWE NRMSD 0.31-0.67; Krinner 2018 gives the normalized-RMSE interpretation for SWE.
+
+  - dag_variable: SWE
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Benchmark envelope from CRHM peak-SWE comparisons: Fang 2013 reports mean peak snow accumulation differences of 2.4-16% at sheltered sites and 1.6-29% at Fisera Ridge."
+        cites: [fang2013]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fang 2010 reports prairie SWE RMSD of 1.7-25.2 mm and describes generally good performance for the lower ranges."
+        cites: [fang2010]
+    validated_when: "|PBIAS| <= 30% for point/HRU peak SWE snapshots, with RMSE inspected where available."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      This is a CRHM benchmark envelope rather than a universal snow-course standard. Fang 2013 calls peak snow accumulation "extremely important" for hydrological predictive capability.
+
+  - dag_variable: SWE
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "Hanzer 2016 uses ACC, BIAS, and CSI for binary snow-cover maps and states non-forested ACC and CSI values above 0.7 indicate good performance."
+        cites: [hanzer2016]
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Hanzer 2016 reports snow-cover BIAS close to 1 as optimal and notes values within about 20% over- or underestimation in non-forested comparisons."
+        cites: [hanzer2016]
+    validated_when: "CSI >= 0.7 after converting/re-aggregating model SWE to a binary snow-cover or mapped-SWE comparison."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The dag determining_metric csi is retained. The cited snow/ice paper is not CRHM-specific but is a fetched snow spatial-validation convention using CSI.
+
+  - dag_variable: SWE
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred NSE convention; Me 2015 reproduces Moriasi et al. ratings with NSE 0.5-0.65 satisfactory."
+        cites: [me2015]
+      - metric: nrmse
+        direction: minimize
+        unit: dimensionless
+        bands: {satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "For SWE, normalized RMSE >1 means no better than the average observations."
+        cites: [krinner2018]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For time-varying binary snow cover, Hanzer 2016 reports Landsat/MODIS mean CSI about 0.72-0.73 and uses CSI as the more selective contingency-table score."
+        cites: [hanzer2016]
+    validated_when: "NSE >= 0.5 and nRMSE <= 1.0 for spatially aggregated SWE time series; CSI supports binary snow-cover timing."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: "CRHM does not produce gridded SWE natively; comparison requires HRU-to-grid or grid-to-HRU aggregation before applying these scores."
+
+  - dag_variable: SWE
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred NSE convention from the fetched Moriasi-reproducing performance table."
+        cites: [me2015]
+      - metric: nrmse
+        direction: minimize
+        unit: dimensionless
+        bands: {satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "ESM-SnowMIP uses normalized SWE RMSE to compare between sites and identifies >1 as no better than observed-average variability."
+        cites: [krinner2018]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "CRHM platform review compiles SWE MB/RMSD/NRMSD across applications rather than a regional product threshold."
+        cites: [pomeroy2022]
+    validated_when: "NSE >= 0.5 and nRMSE <= 1.0 for basin/regional SWE time series after aggregation to the product support."
+    evidence_strength: moderate
+    confidence: 0.56
+    notes: "Satellite and analysis SWE products have forest/shallow-snow retrieval biases; the band is a transferred hydrology/snow-model convention, not a product-specific guarantee."
+
+  - dag_variable: basinflow_s
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Me 2015 reproduces the Moriasi et al. hydrologic model table: NSE 0.5-0.65 satisfactory, 0.65-0.75 good, 0.75-1 very good."
+        cites: [me2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "For discharge Q, the fetched table gives |PBIAS| 15-25% satisfactory, 10-15% good, <10% very good."
+        cites: [me2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fang 2013 reports six-season outlet discharge NSE 0.58, RMSD 0.147 m3/s, and MB 0.01 for Marmot Creek."
+        cites: [fang2013]
+    validated_when: "NSE >= 0.5 and |PBIAS| <= 25% for outlet discharge."
+    evidence_strength: strong
+    confidence: 0.86
+    notes: "The dag determining_metric nse is retained. CRHM benchmark evidence includes Fang 2013 outlet NSE 0.58 and Pomeroy 2022 Bow River NSE values 0.75, 0.84, and 0.77."
+
+  - dag_variable: basinflow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Same discharge convention as basinflow_s after converting interval volume to a comparable daily or subdaily discharge."
+        cites: [me2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "For discharge Q, the fetched performance table gives |PBIAS| <=25% as satisfactory."
+        cites: [me2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fang 2010 reports spring basin discharge RMSD 0.12 and 0.33 m3/s and MB -0.32 and -0.56 for two prairie years."
+        cites: [fang2010]
+    validated_when: "After unit conversion/resampling, NSE >= 0.5 and |PBIAS| <= 25% for outlet discharge."
+    evidence_strength: strong
+    confidence: 0.84
+    notes: "The dag determining_metric nse is retained; basinflow is the interval-volume counterpart to basinflow_s."
+
+  - dag_variable: hru_actet
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Odusanya 2019 evaluates monthly AET with NSE/KGE/R2/PBIAS and treats NSE >0.50 as satisfactory in subbasins; the tier source is Moriasi-style hydrologic evaluation."
+        cites: [odusanya2019, me2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Odusanya 2019 states PBIAS <= +/-25 showed satisfactory monthly AET performance."
+        cites: [odusanya2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "A CRHM peatland ET benchmark found the locally calibrated Priestley-Taylor AET run had RMSE 0.47 mm/day, MAE 0.31 mm/day, and 6.4% bias against eddy covariance ET."
+        cites: [nicholls2024]
+    validated_when: "NSE >= 0.5 and |PBIAS| <= 25% against flux-tower or trusted ET time series; daily RMSE near 0.5 mm/day is supportive."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: "The dag determining_metric nse is retained. ET thresholds are transferred from hydrologic AET validation, backed by a fetched CRHM eddy-covariance benchmark."
+
+  - dag_variable: hru_actet
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for spatial evapotranspiration fields; ET validation literature uses NSE, KGE, R2, PBIAS, RMSE, and uncertainty bracketing instead."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Odusanya 2019 reports PBIAS <= +/-25 as satisfactory for monthly AET, but this does not ground the dag's CSI metric for ET spatial fields."
+        cites: [odusanya2019]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Odusanya 2019 treats NSE >0.50 in a majority of AET subbasins as satisfactory, but does not provide a CSI rule."
+        cites: [odusanya2019]
+    validated_when: "UNRESOLVED for CSI; use cited ET NSE/PBIAS only as context until a spatial ET categorical convention is fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The dag determining_metric csi is retained with a null band because no fetched ET paper thresholds CSI."
+
+  - dag_variable: Subl
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS validation threshold for direct sublimation flux observations."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "CRHM papers validate sublimation mainly through snow redistribution/SWE and streamflow effects; MacDonald 2009 concludes blowing-snow transport and sublimation can be represented successfully, but does not set a sublimation-flux PBIAS band."
+        cites: [macdonald2009, pomeroy2022]
+    validated_when: "UNRESOLVED — direct sublimation PBIAS has no fetched numeric threshold; grade through independent flux data only with expert review."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The dag determining_metric pbias is retained but un-evaluable. Literature commonly diagnoses sublimation through SWE mass redistribution rather than direct observed sublimation time series."
+
+  - dag_variable: soil_moist
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: dimensionless
+        bands: {satisfactory: 0.4}
+        pass_band: satisfactory
+        band_note: "CRHM Marmot Creek soil-moisture evaluation reports NRMSD 0.17-0.39; this benchmark envelope is used because the paper says layer mismatch makes pattern more appropriate than magnitude."
+        cites: [fang2013]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 34.0}
+        pass_band: satisfactory
+        band_note: "Fang 2013 reports soil-moisture MB 0.07-0.34 and attributes overestimation to probes measuring a shallower layer than the simulated soil layer."
+        cites: [fang2013]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining_metric is NSE, but Fang 2013 states that because simulated and observed depths differ, 'the pattern of change, rather than soil moisture magnitudes' should be compared."
+        cites: [fang2013]
+    validated_when: "nRMSE <= 0.4 and |PBIAS| <= 34% for comparable point soil-moisture storage, with temporal pattern inspected."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: "Literature supersedes the dag's NSE emphasis for point soil moisture because CRHM storage depth and probe depth often differ."
+
+  - dag_variable: soil_moist
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE threshold for CRHM column-integrated soil_moist against satellite top-layer spatial soil-moisture products."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Odusanya 2019 validates SWAT soil moisture with ESA CCI maps using R2, but the fetched text does not provide a transferable CRHM NSE threshold for column storage."
+        cites: [odusanya2019]
+    validated_when: "UNRESOLVED — spatial satellite soil-moisture NSE is a data-support mismatch unless a product-specific convention is fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The dag determining_metric nse is retained with a null band. Satellite soil moisture senses the upper few centimetres, while CRHM soil_moist is column-integrated storage."
+
+  - dag_variable: snowmeltD
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS threshold for daily snowmelt depth; CRHM studies usually validate snowmelt through SWE ablation timing, runoff, or mass-balance closure."
+        cites: []
+    secondary_metrics:
+      - metric: timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fang 2013 reports that in most cases snowmelt timing and snow depletion matched observations, but does not set a numeric timing or PBIAS band for snowmeltD."
+        cites: [fang2013]
+    validated_when: "UNRESOLVED — daily snowmelt PBIAS has no fetched numeric threshold; use SWE ablation timing and runoff consistency as context."
+    evidence_strength: weak
+    confidence: 0.32
+    notes: "The dag determining_metric pbias is retained but un-evaluable. A dedicated snowmelt-rate validation convention is still needed."
+
+  - dag_variable: infil_act
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS threshold for modelled actual infiltration into soil."
+        cites: []
+    secondary_metrics:
+      - metric: process_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Iwata 2010 quantifies snowmelt infiltration from a paired-plot water balance and shows frozen layers can impede infiltration, but it is an observational process study, not a model validation threshold table."
+        cites: [iwata2010]
+    validated_when: "UNRESOLVED — infiltration PBIAS requires site-specific water-balance or lysimeter evidence and no fetched numeric pass band exists."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The dag determining_metric pbias is retained with a null band. Infiltration is normally inferred from soil moisture change, runoff, and snowmelt rather than directly observed at HRU scale."
+
+deferred_paywalled:
+  - ref: "Pomeroy et al. 2007 — The cold regions hydrological model: a platform for basing process representation and model structure on physical evidence"
+    doi: 10.1002/hyp.6787
+    needed_for: [SWE, basinflow_s, basinflow, Subl, snowmeltD, infil_act]
+  - ref: "Fang and Pomeroy 2007 — Snowmelt runoff sensitivity analysis to drought on the Canadian prairies"
+    doi: 10.1002/hyp.6796
+    needed_for: [basinflow_s, basinflow, snowmeltD]
+  - ref: "Pomeroy et al. 2012 — Sensitivity of snowmelt hydrology in Marmot Creek, Alberta, to forest cover disturbance"
+    doi: 10.1002/hyp.9248
+    needed_for: [SWE, basinflow_s, basinflow, Subl, snowmeltD]
+  - ref: "Shifting Hydrological Processes in a Canadian Agroforested Catchment due to a Warming Climate"
+    doi: 10.3390/w12030739
+    needed_for: [Subl, snowmeltD, infil_act]

@@ -1,14 +1,3 @@
----
-name: pyswmm
-description: >-
-  EPA SWMM5 (Storm Water Management Model 5.1.14–5.2.4) via the OpenWaterAnalytics
-  swmm-toolkit. Covers Rainfall-runoff generation and infiltration on urban subcatchments;
-  Overland (subcatchment) flow routing; Hydraulic flow routing through a drainage network
-  of nodes and links; Flow control structures (pumps, weirs, orifices, outlets); Low
-  Impact Development (LID) practices. Use when the task involves running, configuring,
-  calibrating or interpreting PySWMM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (15 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_inp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_inp.py --help` |
+| `tools/convert_soil_to_inp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_inp.py --help` |
+| `tools/parse_swmm_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_swmm_output.py --help` |
+| `tools/run_pyswmm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_pyswmm.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # hydrocraft-pyswmm-urban v1.0.0
 
@@ -195,6 +218,30 @@ Each has caused silent failures in production.
 
 ---
 
+## 5b. Unit Table and Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`, projected from `dag.yaml`
+and `diagnostics/triplets.yaml`. This unit table restates the unit-system
+conversions and traps used by the PySWMM pipeline; the selected `[OPTIONS]`
+`FLOW_UNITS` value controls whether SWMM interprets the model in US customary
+or SI units.
+
+| Variable / quantity | Source or common raw unit | Model unit | Conversion / handling | Type |
+|---------------------|---------------------------|------------|-----------------------|------|
+| Rainfall intensity | mm/day | in/hr (US) or mm/hr (SI) | Divide by 24 for mm/day to mm/hr; convert to in/hr only for US projects | rate conversion |
+| Evaporation rate | in/hr or mm/hr | in/day (US) or mm/day (SI) | Convert per-hour values to per-day values before authoring `[EVAPORATION]` | rate conversion |
+| Subcatchment area | m² or km² | acres (US) or hectares (SI) | Convert to the unit implied by `FLOW_UNITS` before writing `[SUBCATCHMENTS]` | area conversion |
+| Elevation / pipe length | ft or m | ft (US) or m (SI) | Use one length system consistently across nodes, links, and cross-sections | length conversion |
+| Subcatchment slope | fraction | percent | Multiply fraction by 100 before writing `[SUBCATCHMENTS]` Slope | convention conversion |
+| Depression storage | in or mm | in (US) or mm (SI) | Use the storage-depth unit implied by `FLOW_UNITS` | length conversion |
+| Infiltration rate | in/hr or mm/hr | in/hr (US) or mm/hr (SI) | Convert rates to the selected SWMM unit system before writing `[INFILTRATION]` | rate conversion |
+| Pipe diameter / `Geom1` | inches or mm | ft (US) or m (SI) | Convert cross-section dimensions to the model length unit before writing `[XSECTIONS]` | length conversion |
+| External / direct inflow | LPS or other flow units | CFS (US) or CMS (SI) | Convert to the selected SWMM flow unit before writing `[INFLOWS]` | flow conversion |
+| Manning's n | dimensionless | dimensionless | Do not apply a 1.49 factor to `n`; SWMM handles the unit-system coefficient internally | no conversion |
+| Weir / orifice coefficients | US or SI coefficient convention | dimensionless, unit-system embedded | Do not numerically convert between US and SI coefficients; choose the coefficient for the selected unit system | convention selection |
+
+---
+
 ## 6. Execution Model
 
 ### 6.1 Full Execution (No Intervention)
@@ -245,6 +292,32 @@ with Simulation('model.inp') as sim:
 Only ONE `Simulation` object can exist at a time in a Python process.
 Attempting to create a second raises `MultiSimulationError`. Use
 `multiprocessing` for parallel runs, NOT threading.
+
+---
+
+## 6b. Output Description
+
+This section restates `dag.yaml`; if this section and the dag disagree, the
+dag wins. The headline output is the dag's `validation_rank: 1` variable:
+
+> `runoff_rate` — Surface runoff rate generated by a subcatchment. (CFS (US) | CMS (SI))
+
+| Output variable (dag `var`) | Rank | Emitted in | Unit | Description |
+|-----------------------------|------|------------|------|-------------|
+| `runoff_rate` | 1 | model.out (SubcatchSeries); live via Subcatchment.runoff | CFS (US) \| CMS (SI) | Surface runoff rate generated by a subcatchment. |
+| `infiltration_loss` | 2 | model.out (SubcatchSeries) | in/hr (US) \| mm/hr (SI) | Infiltration loss rate from a subcatchment. |
+| `node_invert_depth` | 3 | model.out (NodeSeries); live via Node.depth | ft (US) \| m (SI) | Water depth above invert at a node (junction/storage/outfall). |
+| `node_total_inflow` | 4 | model.out (NodeSeries); live via Node.total_inflow | CFS (US) \| CMS (SI) | Total inflow to a node (lateral + upstream). |
+| `node_flooding` | 5 | model.out (NodeSeries flooding_losses); live via Node.flooding; summarized in model.rpt | CFS (US) \| CMS (SI) | Surface flooding (overflow) rate at a node when capacity is exceeded. |
+| `link_flow_rate` | 6 | model.out (LinkSeries); live via Link.flow | CFS (US) \| CMS (SI) | Drainage-network water flow rate through a conduit/structure link. |
+| `link_flow_depth` | 7 | model.out (LinkSeries); live via Link.depth | ft (US) \| m (SI) | Flow depth in a conduit/channel link. |
+| `total_outflow` | 8 | model.out (SystemSeries outfall_flows / OutfallStats); live via Node.total_outflow at outfalls | CFS (US) \| CMS (SI) | System or outfall discharge (the catchment outlet hydrograph). |
+| `runoff_error` | 9 | model.rpt; live via Simulation.runoff_error | % continuity | Subcatchment surface-runoff water mass-balance continuity error. |
+| `flow_routing_error` | 10 | model.rpt; live via Simulation.flow_routing_error | % continuity | Drainage-network conveyance-routing water mass-balance continuity error. |
+
+The other dag outputs are: `infiltration_loss`, `node_invert_depth`,
+`node_total_inflow`, `node_flooding`, `link_flow_rate`, `link_flow_depth`,
+`total_outflow`, `runoff_error`, and `flow_routing_error`.
 
 ---
 
@@ -311,6 +384,19 @@ with Output('model.out') as out:
 ## 9. Critical Domain Knowledge
 
 These non-obvious facts have caused silent failures:
+
+### 9.1 Diagnostic Triplets (Top 5)
+
+These are the first five high-risk entries from `diagnostics/triplets.yaml`;
+check the full YAML before debugging any run.
+
+| ID | Error / symptom | Diagnosis | Remedy |
+|----|-----------------|-----------|--------|
+| `dt_001` | Runoff is 24x lower than expected; runoff volumes are near zero despite significant rainfall | Rainfall was supplied as mm/day, but SWMM expects mm/hr intensity | Convert mm/day to mm/hr by dividing by 24 and verify `[RAINGAGES]` Type is `INTENSITY` |
+| `dt_002` | Total runoff volume is 100-1,000,000x wrong while the model runs without errors | Subcatchment area was supplied in m² or km² instead of acres or hectares | Convert areas to the `FLOW_UNITS` system before writing `[SUBCATCHMENTS]` |
+| `dt_003` | Pipe velocities are ~3x too fast or too slow and hydrograph timing is off | Elevations or pipe lengths are in the wrong unit system | Verify `[JUNCTIONS]` elevations and `[CONDUITS]` lengths match `FLOW_UNITS`; convert 1 ft = 0.3048 m |
+| `dt_004` | Weir or orifice flows are approximately 1.8x too high or too low | The discharge coefficient uses the wrong unit-system convention | Use the coefficient convention for the selected unit system; do not simply convert coefficients |
+| `dt_005` | Runoff timing is wildly wrong despite plausible subcatchment slopes | Slope was entered as a fraction instead of percent | Multiply decimal slope by 100; enter 0.5 for 0.5% |
 
 1. **Rainfall units are INTENSITY not depth**: SWMM expects rain as in/hr or
    mm/hr. Providing cumulative depth (inches or mm) will produce wildly
@@ -451,13 +537,37 @@ ki/
 
 ---
 
-## 15. Validation
+## 15. Validated Results
 
 Test case: Built-in weir_setting model (3 subcatchments, 4 junctions, 1 outfall,
 3 conduits, 1 weir, 3-day SCS Type I storm).
 
-Expected behavior:
+Expected behavior, retained from the existing body as execution sanity checks
+rather than convention validation pass bands:
 - Peak runoff occurs ~10 hours into storm (SCS Type I distribution)
 - Continuity errors < 1% for both runoff and routing
 - Node J1 depth peaks when weir is partially closed
 - Outfall flow tracks network routing with ~30 min lag
+
+### Performance Metrics — judged against the field's bar, not intuition
+
+The pass bands below restate `docs/validation_convention.yaml`. No achieved
+calibration or validation metric values are stated in this SKILL body; do not
+infer achieved values from the convention bars.
+
+| Dag variable | Metric | Direction | Convention bar, cited |
+|--------------|--------|-----------|-----------------------|
+| `runoff_rate` | nse | maximize | satisfactory >= 0.5 (moriasi2015, estrela2022); good >= 0.7 (moriasi2015, estrela2022); very_good >= 0.8 (moriasi2015, estrela2022) |
+| `runoff_rate` | pbias | zero_centered | satisfactory \|PBIAS\| <= 15.0 (moriasi2015, lee2012); good \|PBIAS\| <= 10.0 (moriasi2015, lee2012); very_good \|PBIAS\| <= 5.0 (moriasi2015, lee2012) |
+| `infiltration_loss` | nse | maximize | satisfactory: no cited threshold; good: no cited threshold; very_good: no cited threshold |
+| `node_invert_depth` | nse | maximize | satisfactory >= 0.5 (moriasi2015, rabori2023); good >= 0.7 (moriasi2015, rabori2023); very_good >= 0.8 (moriasi2015, rabori2023) |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending | Prepared through the SWMM forcing tools and checked by `preflight_check.py` before execution |
+| Soil / infiltration | Pipeline | Pending | Infiltration parameters are prepared before execution; direct `infiltration_loss` validation has no cited threshold |
+| Land cover | Pipeline | Pending | Supplies imperviousness, roughness, and depression storage inputs |
+| Drainage domain | Pipeline | Pending | Supplies subcatchments, nodes, links, and outfalls |
+| Initial / hotstart state | User or pipeline | Pending | Use hotstart only when explicitly prepared for the run |

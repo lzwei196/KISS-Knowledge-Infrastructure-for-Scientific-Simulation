@@ -43,7 +43,7 @@
 - **Result**: 21.5 mm/kyr model vs 21.5 mm/kyr observed (PBIAS=0.0%)
 - **Obs**: USGS WQP SSC stations 02489500 (Bogalusa, 86 obs) and 02492000 (Bush, 291 obs)
 - **Key insight**: Low-relief landscape — diffusion (caerial) dominates, Kd is irrelevant
-- **Output**: `KISSPATH_BINARIES/pyBadlands/pearl_river_run/output_v3_0`
+- **Output**: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/pearl_river_run/output_v3_0`
 
 ### Modder River Basin, Free State, South Africa (DB row 3061)
 - **DEM**: `srtm_modder_30m.tif` resampled to 1km UTM35S (53,109 TIN nodes)
@@ -52,7 +52,7 @@
 - **Result**: 12.76 mm/kyr model vs 5–20 mm/kyr observed (PBIAS=+2.1%)
 - **Obs**: Published 10Be cosmogenic denudation (Codilean et al. 2014); GloRiSe 3 stations
 - **Key insight**: High-relief landscape — SPL (Kd) dominates, caerial is irrelevant
-- **Output**: `KISSPATH_BINARIES/pyBadlands/modder_river_run/output_v3_0`
+- **Output**: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/modder_river_run/output_v3_0`
 
 ### Multi-Site Statistics
 - r=0.71, NSE=0.48, KGE=0.51, RMSE=4.9 mm/kyr, PBIAS=+6.3%

@@ -142,7 +142,7 @@ outputs:
   - var: "Grain.Wt"
     validation_rank: 1
     unit: "g/m^2"
-    description: "Grain dry weight (yield); g/m^2 x10 = kg/ha, /100 = t/ha."
+    description: "Crop grain dry weight (yield) in the plant/crop biomass medium; g/m^2 x10 = kg/ha, /100 = t/ha."
     emitted_in: "SQLite Report table (.db)"
     observability:
       comparable_obs_shapes:
@@ -183,7 +183,7 @@ outputs:
   - var: "Leaf.LAI"
     validation_rank: 2
     unit: "m^2/m^2"
-    description: "Leaf area index; peak typically 3-8."
+    description: "Crop canopy leaf area index in the plant canopy medium; peak typically 3-8."
     emitted_in: "SQLite Report table (.db)"
     observability:
       comparable_obs_shapes:
@@ -196,7 +196,7 @@ outputs:
   - var: "Phenology.Stage / flowering & maturity date"
     validation_rank: 6
     unit: "stage code / day-of-year"
-    description: "Phenological development stage and derived flowering/maturity timing."
+    description: "Crop phenological development stage in the plant/crop medium and derived flowering/maturity timing."
     emitted_in: "SQLite Report table (.db)"
     observability:
       comparable_obs_shapes:
@@ -214,7 +214,7 @@ outputs:
   - var: "Root.RootingDepth"
     validation_rank: 7
     unit: "mm"
-    description: "Rooting depth."
+    description: "Rooting depth in the soil profile/root-zone medium."
     emitted_in: "SQLite Report table (.db)"
     observability:
       comparable_obs_shapes:
@@ -457,3 +457,21 @@ safety:
       scope: "phenology initiation"
       source: "APSIM Plant module phenology documentation (apsim.info)"
       status: adopted
+
+medium_evidence:
+  - var: "Grain.Wt"
+    source: "SKILL.md"
+    quote: "It models crop growth, soil water balance, nitrogen cycling, and management operations at field/point scale with a daily timestep."
+    note: "APSIM is declared as a crop and farming-system simulator at field/point scale, so grain yield is a crop/plant-area output."
+  - var: "Leaf.LAI"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_csc2.20857.txt"
+    quote: "The maize model simulates phenology, leaf development and senescence, and biomass accumulation and partitioning across nine crop phases."
+    note: "The cited APSIM crop model statement places LAI with crop leaf/canopy development."
+  - var: "Phenology.Stage / flowering & maturity date"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-020-74740-3.txt"
+    quote: "Disturbance mainly causes a shift in phenological development of crops and affects their economic yield."
+    note: "The paper ties phenological development to cereal crop growth and development."
+  - var: "Root.RootingDepth"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_csc2.20857.txt"
+    quote: "this parameter determines the root front velocity, and affects soil water and nitrogen availability to the plant at each of the 12 APSIM crop stages."
+    note: "Rooting depth is the crop root front in the soil profile, controlling plant access to soil water and nitrogen."

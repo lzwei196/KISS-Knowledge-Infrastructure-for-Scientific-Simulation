@@ -1,13 +1,3 @@
----
-name: phreeqc
-description: >-
-  PHREEQC version 3. Covers Aqueous speciation (saturation indices, species distribution,
-  density, specific conductance); Batch-reaction whole-system equilibrium with minerals,
-  gases, ion exchange, surface complexation…; 1-D advection-dispersion-diffusion reactive
-  transport (operator-splitting, column geometry…. Use when the task involves running,
-  configuring, calibrating or interpreting PHREEQC.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/convert_solution_input.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_solution_input.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_phreeqc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_phreeqc.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # PHREEQC Knowledge Infrastructure
 
@@ -232,9 +256,24 @@ Tab-delimited file with user-chosen columns. Controlled by SELECTED_OUTPUT keywo
 | Charge balance    | eq         | Anion-cation balance residual            |
 | Water mass        | kg         | Mass of solvent water                    |
 
+## 6. Output Description (from dag.yaml)
+
+This section restates `dag.yaml`; if this text and the dag disagree, the dag wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `pH` - Negative log of hydrogen-ion activity in the modeled water solution (dimensionless)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| pH | 1 | dimensionless | Negative log of hydrogen-ion activity in the modeled water solution |
+
+Other dag outputs: `pe`, `element_totals`, `species_distribution`, `saturation_index`,
+`ionic_strength`, `specific_conductance`, `phase_amounts`, `transport_profiles`.
+
 ---
 
-## 6. Unit Trap Table
+## 7. Unit Trap Table
 
 These are the most common unit-related errors when preparing PHREEQC input:
 
@@ -253,7 +292,7 @@ These are the most common unit-related errors when preparing PHREEQC input:
 
 ---
 
-## 7. Tools Reference
+## 8. Tools Reference
 
 | Tool                       | Stage | Purpose                                        |
 |----------------------------|-------|------------------------------------------------|
@@ -264,7 +303,7 @@ These are the most common unit-related errors when preparing PHREEQC input:
 
 ---
 
-## 8. Critical Domain Knowledge
+## 9. Critical Domain Knowledge
 
 ### dk_001: Database must cover all elements in solution
 If an element in the SOLUTION block is not defined as a SOLUTION_MASTER_SPECIES in the
@@ -310,7 +349,7 @@ to 0 means the mineral can only precipitate (not dissolve). Setting it to a larg
 
 ---
 
-## 9. Validation
+## 10. Validation
 
 ### Benchmark: Calcite Dissolution to Equilibrium
 
@@ -326,9 +365,25 @@ This can be verified against published values in Appelo & Postma (2005) and Park
 For 1-D transport validation, PHREEQC's advection-dispersion transport can reproduce the
 analytical Ogata-Banks solution for conservative tracer breakthrough.
 
+## 11. Validated Results (from validation_convention.yaml)
+
+This section restates `docs/validation_convention.yaml`; if this text and the convention
+file disagree, the convention wins. The bars below are the cited field thresholds available
+for the dag variables. Null convention bands are written as `no cited threshold`.
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band | Citation keys |
+|--------------|--------|-----------|----------------|-----------|-------------------|---------------|
+| pH | absolute_error | minimize | no cited threshold (parkhurst1999, parkhurst1995) | no cited threshold (parkhurst1999, parkhurst1995) | <= 0.05 (parkhurst1999, parkhurst1995) | parkhurst1999, parkhurst1995 |
+| pH | mae | minimize | no cited threshold (parkhurst1999, parkhurst1995) | no cited threshold (parkhurst1999, parkhurst1995) | <= 0.05 (parkhurst1999, parkhurst1995) | parkhurst1999, parkhurst1995 |
+| pe | absolute_error | minimize | no cited threshold | no cited threshold | no cited threshold | no citation keys supplied by convention |
+
+No achieved run metric is stated here unless it is present in the KI's validation outputs or
+convention files. A PHREEQC run should be judged against these convention bars rather than
+against intuition or remembered thresholds.
+
 ---
 
-## 10. Calibration Parameters
+## 12. Calibration Parameters
 
 | Parameter           | Keyword            | Typical Range      | Sensitivity |
 |---------------------|--------------------|--------------------|-------------|
@@ -343,7 +398,7 @@ analytical Ogata-Banks solution for conservative tracer breakthrough.
 
 ---
 
-## 11. Coupling Points
+## 13. Coupling Points
 
 | Integration Point     | Direction | Format              | Notes                         |
 |-----------------------|-----------|---------------------|-------------------------------|
@@ -356,7 +411,7 @@ analytical Ogata-Banks solution for conservative tracer breakthrough.
 
 ---
 
-## 12. Data Requirements
+## 14. Data Requirements
 
 | Data Type          | Source                  | Format         | Key Fields                |
 |--------------------|------------------------|----------------|---------------------------|
@@ -370,7 +425,7 @@ analytical Ogata-Banks solution for conservative tracer breakthrough.
 
 ---
 
-## 13. Quick Start
+## 15. Quick Start
 
 ```bash
 # 1. Build PHREEQC
@@ -389,7 +444,7 @@ python3 ki/tools/parse_output.py --input results.sel --output results.csv
 
 ---
 
-## 14. Diagnostic Triplets Reference
+## 16. Diagnostic Triplets Reference
 
 See `diagnostics/triplets.yaml` for the complete set. Key entries:
 
@@ -404,7 +459,7 @@ See `diagnostics/triplets.yaml` for the complete set. Key entries:
 
 ---
 
-## 15. File Structure
+## 17. File Structure
 
 ```
 ki/

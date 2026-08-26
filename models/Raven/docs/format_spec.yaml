@@ -1,324 +1,817 @@
-model:
-  name: Raven v4.1
-  domain: hydrology
-  binary: Raven.exe
-  binary_path: KISSPATH_BINARIES/raven/Raven.exe
-  language: C++
-  working_directory: ./
-  invocation: Raven.exe <basin_name> -o output/
-  dependencies: 'g++ (C++11), optional: libnetcdf for NetCDF I/O'
-  notes: 'Meta-framework emulating 8+ model structures (GR4J, HBV-EC, HMETS, MOHYSE,
-    SAC-SMA, HYMOD, UBC, HYPR). Unique in HydroCraft for structural uncertainty quantification
-    via multi-model ensembles.
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
-    '
+model:
+  name: Raven
+  language: c++
+  implementation:
+    id: raven-v41
+    version: '4.1'
+    provenance: C++; University of Waterloo Raven Hydrological Modelling Framework v4.1 (CSHS-CWRA); compiled
+      HydroCraft binary Raven.exe (netCDF output disabled).
+  scientific_reference_version: Raven Hydrological Modelling Framework v4.1 (Craig et al. 2020, Environ.
+    Model. Softw. 129:104728)
 inputs:
   forcing:
-  - name: precipitation
-    file: '{basin}.rvt'
-    variable: PRECIP
+  - name: PRECIP
     unit: mm/d
-    valid_range:
-    - 0.0
-    - 500.0
-    format: Raven .rvt time series block (:MultiData or :Data)
-    missing_value: -1.2345
-    conversion_from_cmfd: 'mm/3hr -> mm/d: SUM 8 timesteps per day'
-    bug_history: Raven IGNORES units and will NOT do conversion (dt_001). All conversion
-      in convert_forcing_to_rvt.py.
-  - name: temperature
-    file: '{basin}.rvt'
-    variable: TEMP_AVE (or TEMP_DAILY_MIN, TEMP_DAILY_MAX)
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt time series; daily total
+    notes: Raven treats each value as a daily total and performs NO unit conversion. Missing PRECIP is
+      silently filled with zeros.
+  - name: TEMP_MIN
     unit: degC
-    valid_range:
-    - -60.0
-    - 60.0
-    conversion_from_cmfd: 'K -> degC: subtract 273.15; mean of 8 timesteps'
-    bug_history: Kelvin not converted -> wrong PET, no snowmelt (dt_002)
-  - name: shortwave_radiation
-    file: '{basin}.rvt'
-    variable: SW_RADIA_NET or SHORTWAVE
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt time series
+  - name: TEMP_MAX
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt time series
+  - name: TEMP_AVE
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt time series; can be generated internally from TEMP_MIN/TEMP_MAX
+  - name: SW_RADIA
     unit: MJ/m2/d
-    valid_range:
-    - 0.0
-    - 35.0
-    conversion_from_cmfd: 'W/m2 -> MJ/m2/d: multiply by 0.0864'
-    bug_history: W/m2 not converted -> extreme PET values (dt_003)
-  - name: air_pressure
-    file: '{basin}.rvt'
-    variable: AIR_PRES
-    unit: kPa
-    valid_range:
-    - 50.0
-    - 110.0
-    conversion_from_cmfd: 'Pa -> kPa: divide by 1000'
-    bug_history: Pa not converted -> broken vapor pressure (dt_004)
-  - name: wind_speed
-    file: '{basin}.rvt'
-    variable: WIND_VEL
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt time series; generated internally from latitude+day if absent
+    notes: Required by Priestley-Taylor / Penman-Monteith PET; W/m2 values are misread (no conversion).
+  - name: LW_INCOMING
+    unit: MJ/m2/d
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt time series
+  - name: WIND_VEL
     unit: m/s
-    valid_range:
-    - 0.0
-    - 80.0
-    notes: If not provided, Raven estimates from latitude (dt_025, silent approximation)
-  - name: relative_humidity
-    file: '{basin}.rvt'
-    variable: REL_HUMIDITY
-    unit: fraction
-    valid_range:
-    - 0.0
-    - 1.0
-    notes: If not provided, Raven generates internally
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt time series; optional, generated internally if absent
+  - name: REL_HUMIDITY
+    unit: fraction (0-1)
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt time series
+  - name: AIR_PRES
+    unit: kPa
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt time series; required by Penman-Monteith (Pa values misread as kPa)
+  - name: PET
+    unit: mm/d
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt time series; only when PET_DATA method selected
+  - name: observed discharge
+    unit: m3/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: .rvt :ObservationData HYDROGRAPH block
+    notes: Optional; required for Diagnostics metrics (NSE/KGE), else Diagnostics reports -9999. Missing
+      marker is -1.2345.
   parameters:
-    critical:
-    - name: HRU table columns
-      file: '{basin}.rvh'
-      description: HRU data lines MUST have exactly 13 comma-separated fields
-      bug_history: 'Undocumented 10th column is AQUIFER_PROFILE (set to [NONE]). Without
-        it, Raven segfaults with ''line N is wrong length'' (err_001). Column order:
-        ID, AREA, ELEVATION, LATITUDE, LONGITUDE, BASIN_ID, LAND_USE_CLASS, VEG_CLASS,
-        SOIL_PROFILE, AQUIFER_PROFILE, TERRAIN_CLASS, SLOPE, ASPECT
-
-        '
-    - name: class name consistency
-      file: '{basin}.rvh and {basin}.rvp'
-      description: Soil, land use, vegetation, terrain class names must match exactly
-        between .rvh and .rvp
-      bug_history: Case-sensitive mismatch causes fatal error (dt_007, dt_008)
-    - name: GlobalParameter syntax
-      file: '{basin}.rvp'
-      description: :GlobalParameter is single-line, NOT a block
-      bug_history: 'Wrong: :GlobalParameter / PARAM1 val / :EndGlobalParameter. Correct:
-        :GlobalParameter PARAM1 val (one per line, no block delimiters) (err_002).
-
-        '
-    - name: .rvc file existence
-      file: '{basin}.rvc'
-      description: Raven requires .rvc file to exist even if empty
-      bug_history: Missing .rvc -> 'Cannot find or read .rvc file' exit (err_004)
-    calibration_by_template:
-      gr4j:
-        parameters:
-        - GR4J_X1
-        - GR4J_X2
-        - GR4J_X3
-        - GR4J_X4
-        count: 4
-        snow: false
-      hbv_ec:
-        parameters:
-        - SNOW_SWI
-        - MELT_FACTOR
-        - REFREEZE_FACTOR
-        - BASEFLOW_COEFF
-        - FIELD_CAPACITY
-        - SAT_WILT
-        - MAX_PERC_RATE
-        - TOPSOIL
-        count: 21
-        snow: true
-      hmets:
-        parameters:
-        - GAMMA_SHAPE
-        - GAMMA_SCALE
-        - GAMMA_SHAPE2
-        - GAMMA_SCALE2
-        - SNOW_SWI_MIN
-        - SNOW_SWI_MAX
-        - MELT_FACTOR
-        - DD_MELT_TEMP
-        - REFREEZE_FACTOR
-        - DD_REFREEZE_TEMP
-        count: 21
-        snow: true
-      hymod:
-        parameters:
-        - SOIL_STORE
-        - B_EXP
-        - ALPHA
-        - KF
-        - KS
-        count: 5
-        snow: false
-  files:
-    required:
-    - name: '{basin}.rvi'
-      description: 'Model definition: process algorithms, timestep, output options'
-      format: Raven command file (colon-prefixed directives)
-    - name: '{basin}.rvp'
-      description: 'Parameters: soil/veg/land-use class definitions and values'
-      format: Raven command file
-    - name: '{basin}.rvh'
-      description: 'HRU/Basin: subbasins, HRU table (13 columns)'
-      format: Raven command file with CSV data sections
-    - name: '{basin}.rvt'
-      description: 'Time series: forcing data and observed discharge'
-      format: Raven command file with :Data/:MultiData blocks
-    optional:
-    - name: '{basin}.rvc'
-      description: Initial conditions (recommended for warm start)
-      notes: MUST exist even if empty. Use solution.rvc from previous run for warm
-        start.
+  - name: Soil class parameters (hydraulic / storage, e.g. HBV_BETA, porosity, max release rate)
+    unit: various
+    category: parameters
+    source_kind: calibrated
+    model_input_format: .rvp :SoilParameterList / :SoilProfiles
+    notes: Named template stores (PRODUCT_STORE, FAST_RESERVOIR) are aliases for SOIL[i]; sentinel values
+      (-11111.1 AUTO_COMPUTE, -33333.3 NOT_SPECIFIED, -55555.5 USE_TEMPLATE_VALUE) trigger internal estimation
+      rather than being literal data.
+  - name: Vegetation / land-use class parameters (e.g. AET_COEFF, interception)
+    unit: various
+    category: parameters
+    source_kind: calibrated
+    model_input_format: .rvp :VegetationParameterList / :LandUseParameterList
+  - name: Terrain class parameters
+    unit: various
+    category: parameters
+    source_kind: calibrated
+    model_input_format: .rvp :TerrainClasses
+  - name: Global / emulation-template parameters (e.g. GR4J X1-X4, MOHYSE_PET_COEFF, melt factors)
+    unit: various
+    category: parameters
+    source_kind: calibrated
+    model_input_format: .rvp :GlobalParameter and routed Soil/LandUse lists
+    notes: 'v4.1 requires correct routing: GR4J X2/X3 as SoilParameterList, X4 as LandUseParameterList,
+      X1 encoded via soil_thickness*porosity, not all as :GlobalParameter.'
+  - name: HRU/SubBasin geometry (area, elevation, lat/lon, slope, aspect, class assignments)
+    unit: km2 / m / deg
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: .rvh HRU lines (exactly 13 comma-separated fields)
+    notes: Sum of HRU areas must equal SubBasin area; class names must match .rvp exactly (case-sensitive).
+  initial_conditions:
+  - name: Initial soil water storage (SOIL[i])
+    unit: mm
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: .rvc; cold-start climate defaults or warm-start from solution.rvc
+    notes: First 1-2 years should be discarded as spinup.
+  - name: Initial snow water equivalent and snow state (SNOW, SNOW_LIQ, COLD_CONTENT)
+    unit: mm / energy
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: .rvc
+  - name: Initial canopy / groundwater storage
+    unit: mm
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: .rvc
+  - name: .rvc file existence (cold start)
+    unit: n/a
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: .rvc must exist (even if only a comment) in v4.1 or Raven aborts
+  boundary_conditions:
+  - name: Process algorithm selection (model structure)
+    unit: n/a
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: .rvi :HydrologicProcesses block (:ProcessType ALGORITHM FROM_STATE TO_STATE)
+    notes: Determines which emulation structure is realized; ORDERED_SERIES solver applies processes strictly
+      in listed order (order-dependent results).
+  - name: PET method selector
+    unit: n/a
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: .rvi :Evaporation / :OW_Evaporation (PET_OUDIN / PET_HARGREAVES_1985 / PET_PRIESTLEY_TAYLOR
+      / PET_PENMAN_MONTEITH / PET_HAMON / PET_MOHYSE / PET_DATA)
+    notes: Method choice sets required forcing; unmet requirements cause silent fallback to internal generators.
+  - name: Solver / numerical method
+    unit: n/a
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: .rvi :SoilModel / solution method (ORDERED_SERIES, EULER, ITERATED_HEUN)
+  - name: Routing method (in-channel and in-catchment)
+    unit: n/a
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: .rvi :Routing and :CatchmentRoute (ROUTE_NONE / ROUTE_DUMP / diffusive wave etc.)
+    notes: Channel and in-catchment routing are independent selections; can be disabled to avoid double-counting
+      with external routing.
+  - name: Simulation control (start/end dates, :TimeStep, output options)
+    unit: n/a
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: .rvi :StartDate/:EndDate/:TimeStep/:EvaluationMetrics
+    notes: :TimeStep must match the .rvt :Data interval or forcing is misread.
+  - name: Reservoir / water management operations (extractions, diversions)
+    unit: various
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: .rvm (optional)
 outputs:
   primary:
-  - name: discharge
-    file: output/Hydrographs.csv
+  - name: discharge (STREAMFLOW)
     unit: m3/s
-    valid_range:
-    - 0
-    - null
-    format: 'CSV; columns: date, sub_XX (simulated per subbasin), obs (if provided)'
-    notes: Primary validation output
-    canonical_id: discharge
-  - name: diagnostics
-    file: output/Diagnostics.csv
-    format: CSV; performance metrics (NSE, KGE, RMSE, etc.)
-    notes: Reports -9999 if no observed data provided (dt_011, not an error)
-  - name: watershed_storage
-    file: output/WatershedStorage.csv
-    format: CSV; daily storage in all compartments
-  - name: forcing_functions
-    file: output/ForcingFunctions.csv
-    format: CSV; actual forcing used (including internally generated variables)
-    notes: Check this to see what Raven estimated when forcing was missing (dt_025)
-  - name: basin_runoff
-    canonical_id: surface_runoff
-    unit: mm/day
-  - name: snow_water_equivalent
-    canonical_id: snow_water_equivalent
+    description: Simulated streamflow hydrograph at each gauged SubBasin outlet; observed series co-reported
+      when supplied.
+    validation_rank: 1
+    emitted_in: Hydrographs.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Discard first 1-2 years (cold-start spinup).
+        - Diagnostics report -9999 when no observed discharge is supplied.
+        - Structural choice (template/algorithm) drives 20-50% inter-model differences; compare against
+          observed gauge, not against another model.
+      detrending_options:
+      - none
+  - name: Soil water storage (SOIL[i])
     unit: mm
-  - name: soil_moisture
-    canonical_id: soil_moisture
+    description: Basin-averaged soil layer water storage; SOIL[0]/SOIL[1] can supply soil moisture to
+      coupled crop/water-quality models.
+    validation_rank: 4
+    emitted_in: WatershedStorage.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Conceptual storage units (mm) are template-dependent and not always directly comparable to absolute
+          observed soil moisture; compare anomalies/dynamics.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Only meaningful when HRU discretization resolves spatial heterogeneity (elevation bands / land-use
+          HRUs).
+      detrending_options:
+      - none
+      - linear_residual
+  - name: Snow water equivalent (SNOW / TOTAL_SWE)
     unit: mm
-  - name: evapotranspiration
-    canonical_id: evapotranspiration
-    unit: mm/day
+    description: Snowpack water equivalent per HRU/basin.
+    validation_rank: 3
+    emitted_in: WatershedStorage.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Snow-incapable templates produce no snowpack; only snow-capable structures (HBV-EC, HMETS, UBC,
+          CemaNeige) are comparable.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Requires elevation-band/distributed HRUs to resolve the snow gradient.
+      detrending_options:
+      - none
+  - name: Actual evapotranspiration (AET)
+    unit: mm/d
+    description: Actual ET flux to the atmosphere; diagnostic accumulator, not an independent mass-balance
+      reservoir.
+    validation_rank: 2
+    emitted_in: ForcingFunctions.csv / CustomOutput
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - PET-method choice strongly conditions AET; silent fallback to internal generators when required
+          forcing is missing.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Gridded ET products (e.g. remote-sensing) compare at HRU/basin aggregation; conceptual ET is
+          demand-limited, not energy-closed by default.
+      detrending_options:
+      - none
+  - name: Performance diagnostics (NSE, KGE, PBIAS, RMSE)
+    unit: dimensionless / m3/s
+    description: Built-in objective functions computed against observed in-stream water discharge (STREAMFLOW)
+      over the simulation period.
+    validation_rank: 5
+    emitted_in: Diagnostics.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: scalar_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Reports -9999 if no observed discharge supplied; these are model-internal diagnostics, not an
+          independent observation.
+        - Calibration-vs-validation NSE gap > 0.15 indicates overfitting.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- id: unit_precip_not_aggregated
-  triplet: dt_001
-  description: "Precip mm/3hr not aggregated to mm/d \u2014 8x overestimate"
-  affected_output: "Hydrographs.csv \u2014 discharge 8x too high"
-  detection: Mean annual runoff >> mean annual precip
-  fix: Sum 8 3-hourly timesteps per day in convert_forcing_to_rvt.py
+- id: dt_rav_001
+  symptom: Model runs successfully but simulated discharge is 8x too high
+  diagnosis: 'Precipitation input in mm/3hr instead of mm/d. Raven treats all values as daily totals.;
+    CMFD/MSWX forcing is 3-hourly. If the tool sums 8 timesteps to get daily totals,
+
+    Raven gets correct mm/d. If raw 3-hourly values are passed directly, Raven
+
+    interprets each 3-hourly value as a full day''s precipit'
+  remedy: 'Ensure precipitation is aggregated to daily (sum of 8 timesteps) before writing .rvt; convert_forcing_to_rvt.py;
+    [''Check .rvt PRECIP values: daily precip > 200mm is suspicious'', ''Verify mean annual precip is
+    200-3000 mm/yr, not 1600-24000'']; convert_forcing_to_rvt.py has bounds checking (max 500 mm/'
   severity: silent
-- id: temperature_kelvin
-  triplet: dt_002
-  description: Temperature in Kelvin instead of Celsius
-  affected_output: Wrong PET and snowmelt
-  detection: Temperatures ~300 in .rvt
-  fix: Subtract 273.15
+- id: dt_rav_002
+  symptom: Temperature-dependent processes (snowmelt, PET) produce wrong results. No error message.
+  diagnosis: 'Temperature in Kelvin instead of Celsius. Raven expects degC.; CMFD raw temperature is in
+    Kelvin. The VIC forcing pipeline converts to Celsius,
+
+    but if raw CMFD NetCDF is read directly, temperatures of 273-310K are interpreted
+
+    as 273-310 degC, producing absurd PET and no snowmelt.
+
+    ; [''convert_forcing'
+  remedy: 'Subtract 273.15 from all temperature variables; convert_forcing_to_rvt.py; [''Check .rvt TEMP
+    values: should be -40 to +50 degC'', ''If values are 230-320, they are still in Kelvin'']; Bounds
+    checking in convert_forcing_to_rvt.py catches T > 60 degC'
   severity: silent
-- id: radiation_wrong_units
-  triplet: dt_003
-  description: Shortwave radiation in W/m2 instead of MJ/m2/d
-  affected_output: Extreme PET
-  fix: Multiply by 0.0864
+- id: dt_rav_003
+  symptom: PET computed by Raven is unrealistically high or low
+  diagnosis: 'Shortwave radiation in W/m2 instead of MJ/m2/d; Raven expects SW_RADIA in MJ/m2/d. CMFD/MSWX
+    provides instantaneous W/m2.
+
+    Conversion factor: mean_W_m2 * 0.0864 = MJ/m2/d. If raw W/m2 values (0-400)
+
+    are provided, Raven interprets them as MJ/m2/d (physically impossible — solar
+
+    constant is ~118 MJ/m2/d'
+  remedy: 'Multiply mean daily shortwave (W/m2) by 0.0864 to get MJ/m2/d; convert_forcing_to_rvt.py; [''Check
+    SW_RADIA values: should be 0-40 MJ/m2/d'', ''Values > 50 indicate W/m2 was not converted'']; Bounds
+    checking in convert_forcing_to_rvt.py'
   severity: silent
-- id: pressure_pa_not_kpa
-  triplet: dt_004
-  description: Pressure in Pa instead of kPa
-  affected_output: Broken vapor pressure computation
-  fix: Divide by 1000
+- id: dt_rav_004
+  symptom: Penman-Monteith PET computation fails or gives wrong values
+  diagnosis: 'Air pressure in Pa instead of kPa; Raven expects AIR_PRES in kPa. CMFD provides Pa. The
+    VIC pipeline
+
+    already converts to kPa, but if using raw CMFD data, 101325 Pa would be
+
+    interpreted as 101325 kPa (1000x too high), breaking vapor pressure calculations.
+
+    ; [''convert_forcing_to_rvt.py'']'
+  remedy: 'Divide pressure by 1000 (Pa -> kPa); [''Check AIR_PRES: should be 60-110 kPa, not 60000-110000''];
+    Bounds checking catches values outside 30-110 kPa'
   severity: silent
-- id: missing_forcing_zeros
-  triplet: dt_010
-  description: Missing forcing variables filled with zeros silently
-  affected_output: Zero precip = zero discharge with no warning
-  detection: All Q = 0 despite reasonable other forcing
-  fix: Verify PRECIP is present in .rvt
+- id: dt_rav_005
+  symptom: Raven reports zero precipitation despite forcing data being present
+  diagnosis: 'Forcing data timestep does not match :TimeStep in .rvi; If .rvi has :TimeStep 1.0 (daily)
+    but .rvt provides 3-hourly data with
+
+    interval=0.125, Raven may only read every 8th value. Conversely, if .rvt
+
+    says interval=1.0 but data is actually 3-hourly, Raven reads all values
+
+    as consecutive days, spreadi'
+  remedy: 'Ensure :TimeStep in .rvi matches the data interval in .rvt :Data block; [''Verify .rvt data
+    interval (4th value in header line after :Data)'', ''Typical: interval=1.0 for daily, interval=0.125
+    for 3-hourly'']; validate_raven_inputs.py checks timestep consistency'
   severity: silent
-- id: no_snow_in_cold_basin
-  triplet: dt_012
-  description: GR4J, HYMOD, SAC-SMA have NO snow processes
-  affected_output: Winter precipitation = rain, wrong seasonal pattern
-  detection: No seasonal accumulation in cold basins
-  fix: Use HBV-EC, HMETS, or UBC for snow-dominated basins
-  severity: silent
-- id: rvh_13_columns
-  triplet: err_001
-  description: HRU data must have exactly 13 comma-separated fields including AQUIFER_PROFILE
-  affected_output: Segfault
-  fix: Add [NONE] as column 10 (AQUIFER_PROFILE)
+- id: dt_rav_006
+  symptom: 'Raven crashes with ''Error: HRU area sum does not equal basin area'''
+  diagnosis: 'Sum of HRU areas in .rvh does not match SubBasin area; Raven checks that the total area
+    of all HRUs assigned to a subbasin
+
+    matches the subbasin''s expected area. Floating-point rounding during
+
+    HRU construction can cause tiny mismatches that trigger this error.
+
+    ; [''build_rvh_from_shapefile.py'', ''.rvh '
+  remedy: Rescale HRU areas to sum exactly to basin area; build_rvh_from_shapefile.py; ['Calculate sum
+    of HRU AREA values in .rvh', 'Adjust largest HRU to absorb the rounding difference']; build_rvh_from_shapefile.py
+    rescales automatically (1% tolerance)
   severity: fatal
-- id: cold_start_artifact
-  triplet: dt_023
-  description: First 1-2 years of simulation are unreliable due to cold start
-  fix: Add extra spinup years and discard in analysis
-- id: ensemble_identical_rvp
-  triplet: dt_024
-  description: Ensemble members share same .rvp -> identical results
-  fix: Each template must have its own .rvp with template-specific parameters
-expected_ranges:
-  bengbu_huai_river:
-    basin_area_km2: 118358
-    period: 2000-2005
-    forcing: CMFD 224 cells aggregated to basin mean
-    ensemble_uncalibrated:
-      mohyse_nse: 0.787
-      hbv_nse: 0.592
-      hmets_nse: 0.647
-      hymod_nse: -0.82
-      gr4j_nse: 0.323
-      best_model: MOHYSE (r=0.920, NSE=0.787)
-      structural_uncertainty_cv: 0.35
-calibration_reference:
-  method: DDS (Dynamically Dimensioned Search)
-  tool: calibrate_raven_dds.py
-  recommended_sequence:
-  - Select template by climate (docs/s0_model_selection_skill.md)
-  - Run uncalibrated ensemble (5-8 templates)
-  - Pick best 2-3 templates by NSE
-  - DDS calibration on selected templates (500-1000 iterations)
-  - Validate on hold-out period
-  target_metrics:
-  - NSE > 0.5
-  - KGE > 0.5
-  - PBIAS < 25%
-  warmup: Discard first 1-2 years (cold start equilibration)
-unit_conversions:
-- variable: precipitation
-  source: CMFD (mm/3hr)
-  target: Raven (mm/d)
-  operation: SUM 8 timesteps per day
-  trap_if_wrong: Runoff 8x too high
-- variable: temperature
-  source: CMFD (K)
-  target: Raven (degC)
-  offset: -273.15
-  operation: subtract
-  trap_if_wrong: PET wrong, no snowmelt
-- variable: shortwave_radiation
-  source: CMFD (W/m2)
-  target: Raven (MJ/m2/d)
-  factor: 0.0864
-  operation: multiply
-  trap_if_wrong: Extreme PET
-- variable: air_pressure
-  source: CMFD (Pa)
-  target: Raven (kPa)
-  factor: 0.001
-  operation: multiply
-  trap_if_wrong: Broken vapor pressure
+- id: dt_rav_007
+  symptom: Raven crashes with 'Soil profile not found' error
+  diagnosis: 'Soil profile name in .rvh does not match any profile in .rvp; The SOIL_PROFILE column in
+    .rvh HRU table must exactly match a
 
-# dt_rav_045 (2026-07-27): not every calibratable Raven parameter has a name in
-# the .rvp.  A tool that decides "is this parameter writable?" by scanning for
-# named columns will silently drop the profile-encoded ones.
-parameter_addressing:
-- name: Profile-encoded capacities are not addressable by name
-  file: '{basin}.rvp'
-  description: 'Some Raven emulation parameters have NO named column: their value is
-    carried by a :SoilProfiles layer thickness, as capacity_mm = thickness_m * POROSITY
-    * 1000. Known member: gr4j GR4J_X1 -> SOIL[0] (PRODUCT_STORE). Any tool that decides
-    whether a parameter is writable MUST check the :SoilProfiles encoding in addition
-    to :GlobalParameter and :Parameters headers, and any tool that writes one MUST
-    do so after POROSITY is final. GR4J_X3 is explicitly NOT in this class -- it is
-    a named :SoilParameterList column and SOIL[1] thickness is fixed geometry.
+    :SoilProfile name in .rvp. Case-sensitive. Common mismatch:
+
+    .rvh uses ''DEFAULT_PROF'' but .rvp defines ''Default_Prof''.
+
+    ; [''.rvh file'', ''.rvp file'']'
+  remedy: Ensure soil profile names match exactly between .rvh and .rvp; validate_raven_inputs.py; validate_raven_inputs.py
+    cross-checks all class names
+  severity: fatal
+- id: dt_rav_008
+  symptom: Raven crashes with 'Land use class not found' error
+  diagnosis: 'Land use or vegetation class in .rvh not defined in .rvp; Every LAND_USE_CLASS and VEG_CLASS
+    value in the .rvh HRU table must have
+
+    a corresponding entry in :LandUseClasses and :VegetationClasses blocks
+
+    in the .rvp file. If build_rvh and build_rvp use different naming conventions,
+
+    this error occurs.
 
     '
-  applies_to:
-  - calibrate_raven_dds.py
-  - build_rvp_parameters.py
-  bug_history: 'dt_rav_045 -- GR4J_X1 silently dropped from a 1000-iteration DDS run
-    at Tangnaihai; cal 0.838 / val 0.577 with X2 and X3 pinned at their bounds.
+  remedy: Regenerate .rvp from .rvh to ensure class names match; build_rvp_parameters.py --rvh_file <path>;
+    Always generate .rvp AFTER .rvh, using --rvh_file flag
+  severity: fatal
+- id: dt_rav_009
+  symptom: Raven crashes with 'Bad data in time series' or 'Insufficient data'
+  diagnosis: 'Mismatch between declared data count and actual data lines in .rvt; The .rvt :Data header
+    declares the number of data points (e.g., ''365'' for 1 year
 
-    '
+    daily). If the actual number of data lines differs, Raven either reads past end
+
+    of data (corrupt values) or runs out of data mid-simulation.
+
+    ; [''conver'
+  remedy: Verify data count in .rvt header matches actual number of data lines; ["Count lines between
+    ':Data' header and ':EndData'", 'Compare with the count value in the header line']; convert_forcing_to_rvt.py
+    computes count from actual data length
+  severity: fatal
+- id: dt_rav_010
+  symptom: Model runs but produces zero or near-zero discharge
+  diagnosis: 'Forcing variable not provided — Raven fills with zeros silently; If a required forcing variable
+    (e.g., PRECIP) is missing from .rvt,
+
+    Raven does NOT crash. It fills the missing variable with zeros.
+
+    Zero precipitation = zero runoff = zero discharge. No warning is issued.
+
+    This is the most dangerous sil'
+  remedy: 'Verify all required forcing variables are present in .rvt; validate_raven_inputs.py; [''Check
+    .rvt has at minimum: :Data PRECIP, :Data TEMP_MIN, :Data TEMP_MAX'', ''If using PET_PENMAN_MONTEITH,
+    also need WIND_VEL, REL_HUMIDITY, SW_RADIA'']; validate_raven_inputs.py checks forcing vs PET method
+    requirem'
+  severity: silent
+- id: dt_rav_011
+  symptom: Diagnostics.csv shows NSE = -9999.000 or NASH_SUTCLIFFE not computed
+  diagnosis: 'No observation data provided for the gauged subbasin; Raven computes performance diagnostics
+    (NSE, KGE, etc.) only when observed
+
+    data is provided in the .rvt file for the gauged subbasin. If no observed
+
+    data is present, diagnostics are reported as -9999 — not as an error.
+
+    ; [''.rvt file'']'
+  remedy: Add observed discharge data to .rvt for the gauged subbasin; ['Add :ObservationData HYDROGRAPH
+    1 block to .rvt (subbasin ID = 1)', 'Ensure observed data covers the simulation period', "Raven's
+    missing data marker is -1.2345"]; Warn user when no observed data is provided
+  severity: silent
+- id: dt_rav_012
+  symptom: Snow-dominated basin produces no snowmelt peaks despite snowfall
+  diagnosis: 'Selected template has no snow process (e.g., GR4J, HYMOD, SAC-SMA); GR4J, HYMOD, and basic
+    SAC-SMA do not include snow balance processes.
+
+    In snow-dominated basins, all winter precipitation is treated as rain,
+
+    producing runoff in winter instead of spring snowmelt peaks. The model
+
+    runs fine — the phys'
+  remedy: Use a snow-capable template (HBV-EC, HMETS, UBC, MOHYSE, HYPR); select_model_template.py --recommend
+    --climate cold; select_model_template.py warns if snow_capable=False for cold/alpine basins
+  severity: silent
+- id: dt_rav_013
+  symptom: Raven crashes with 'Incompatible algorithm' or 'State variable not found'
+  diagnosis: 'Mixing process algorithms from different model families; Some algorithms expect specific
+    state variables. For example, GR4J
+
+    infiltration (INF_GR4J) expects GR4J-specific soil stores. Using it with
+
+    HBV baseflow (BASE_LINEAR) may fail because the expected state variable
+
+    routing does not match. Emulati'
+  remedy: Use a complete emulation template or verify algorithm compatibility; select_model_template.py;
+    ['Use predefined templates (gr4j, hbv_ec, hmets, etc.) as starting point', 'If customizing, verify
+    all algorithms reference existing state variables']; select_model_template.py generates compatible
+    algorit
+  severity: fatal
+- id: dt_rav_014
+  symptom: PET is zero or unrealistic despite correct forcing
+  diagnosis: 'PET method requires forcing variables not provided; PET_PENMAN_MONTEITH requires WIND_VEL,
+    REL_HUMIDITY, and SW_RADIA.
+
+    If only PRECIP + TEMP_MIN + TEMP_MAX are provided, Raven falls back
+
+    to internal generators that may produce inaccurate results. It does
+
+    NOT error — it silently uses generated values'
+  remedy: 'Match PET method to available forcing or provide full forcing; [''For minimal forcing (P+T):
+    use PET_OUDIN or PET_HARGREAVES_1985'', ''For full forcing (7 vars): use PET_PENMAN_MONTEITH'']; validate_raven_inputs.py
+    checks PET method vs available forcing'
+  severity: degraded
+- id: dt_rav_015
+  symptom: DDS calibration does not improve after many iterations
+  diagnosis: 'Wrong template for basin or parameter ranges too narrow; If the selected model structure
+    is fundamentally wrong for the basin
+
+    (e.g., no snow process for a snow basin), no amount of parameter tuning
+
+    will produce good results. Also, if parameter ranges are too narrow,
+
+    DDS cannot explore the parameter '
+  remedy: Try a different model template or widen parameter ranges; ['Run ensemble comparison first (run_ensemble_comparison.py)
+    to find best template', 'Then calibrate only the best-performing template', 'Widen parameter ranges
+    if DDS hits bounds repeatedly']; Always run ensemble first, calibrate second
+  severity: degraded
+- id: dt_rav_016
+  symptom: Calibrated model overfits — good calibration NSE but poor validation
+  diagnosis: 'Too many parameters calibrated relative to data length; Models with many parameters (SAC-SMA:
+    16, HBV: 21) can overfit short
+
+    calibration periods. Rule of thumb: need at least 3 years of daily data
+
+    per calibrated parameter. GR4J (4 params) is most resistant to overfitting.
+
+    ; [''calibrate_raven_dds.py'''
+  remedy: Use fewer parameters or longer calibration period; ['Split data into calibration (70%) and validation
+    (30%)', 'Report both calibration and validation metrics', 'For short records (<10 years), prefer GR4J
+    or HYMOD (fewer params)']
+  severity: degraded
+- id: dt_rav_017
+  symptom: Raven reports 'Mass balance error exceeds tolerance'
+  diagnosis: 'Timestep too large for the process algorithms, or numerical instability; Some process algorithms
+    (especially routing) can become numerically unstable
+
+    at large timesteps. Diffusive wave routing with daily timestep on small
+
+    basins may produce mass balance violations.
+
+    ; [''.rvi file'']'
+  remedy: Reduce timestep or use simpler routing; ['Change :TimeStep from 1.0 to 0.25 (6-hourly)', 'Or
+    change :Routing to ROUTE_NONE and :CatchmentRoute to ROUTE_DUMP']
+  severity: fatal
+- id: dt_rav_018
+  symptom: Raven crashes with segmentation fault
+  diagnosis: 'Stack overflow from too many HRUs or very long simulation period; Raven allocates arrays
+    proportional to (n_HRUs * n_timesteps * n_state_variables).
+
+    Very large domains (>10,000 HRUs) or very long periods (>50 years daily) can
+
+    exceed the default stack size.
+
+    ; [''Raven binary'']'
+  remedy: 'Reduce HRU count or increase stack size; [''Aggregate HRUs (use lumped strategy instead of
+    fine-grained)'', ''Or increase stack: ulimit -s unlimited before running'', ''Or recompile Raven with
+    -Wl,-z,stacksize=268435456'']'
+  severity: fatal
+- id: dt_rav_019
+  symptom: Raven and VIC disagree strongly despite same forcing and basin
+  diagnosis: 'Expected — different model structures produce different results; Raven and VIC use fundamentally
+    different physics. A 20-50% difference in
+
+    mean discharge is EXPECTED with uncalibrated parameters. This is NOT an error
+
+    — it quantifies structural uncertainty. Only flag as an issue if:
+
+    (1) correlation r'
+  remedy: 'Accept differences as structural uncertainty unless extreme; [''Check correlation (timing):
+    r > 0.5 is acceptable'', ''Check volume ratio: 0.5-2.0 is acceptable for uncalibrated'', ''Calibrate
+    both models, then compare'']'
+  severity: silent
+- id: dt_rav_020
+  symptom: Raven discharge has different timing than VIC (peaks early/late)
+  diagnosis: 'Different routing and runoff generation mechanisms; VIC uses variable infiltration curve
+    + Lohmann routing (unit hydrograph).
+
+    Raven emulations (HBV, GR4J) use their own infiltration + optional routing.
+
+    Different runoff generation = different peak timing. Routing adds further
+
+    lag. Compare with observ'
+  remedy: Use observed data as reference rather than comparing models to each other; ['Plot Raven, VIC,
+    and observed on same graph', 'Cross-correlate to find lag']
+  severity: silent
+- id: dt_rav_021
+  symptom: Compilation fails with undefined reference to netcdf functions
+  diagnosis: 'NetCDF option enabled but library not linked; If Makefile has CXXFLAGS += -Dnetcdf uncommented
+    but LDLIBS does not
+
+    point to the correct NetCDF library path, compilation succeeds but
+
+    linking fails.
+
+    ; [''Makefile'']'
+  remedy: 'Either disable NetCDF (comment out -Dnetcdf) or set correct library path; [''For basic Raven
+    (no NetCDF I/O): leave -Dnetcdf commented out in Makefile'', ''For NetCDF support: LDLIBS += -L/usr/lib/x86_64-linux-gnu
+    -lnetcdf'']'
+  severity: fatal
+- id: dt_rav_022
+  symptom: 'Raven.exe: Permission denied'
+  diagnosis: 'Binary not marked as executable after compilation; After compiling with make or g++, the
+    output binary may not have
+
+    execute permission depending on umask settings.
+
+    ; [''Raven.exe'']'
+  remedy: chmod +x Raven.exe; ['chmod +x KISSPATH_BINARIES/raven/Raven.exe']
+  severity: fatal
+- id: dt_rav_023
+  symptom: First 1-2 years of simulation show unrealistic discharge spikes or dips
+  diagnosis: 'Cold start spinup artifact — initial soil moisture too high or too low; Default initial
+    conditions (zero or arbitrary soil moisture) take 1-2 years
+
+    to equilibrate. During spinup, discharge may be unrealistically high (if initial
+
+    soil is over-saturated) or low (if initially dry). This is normal and e'
+  remedy: Discard first 1-2 years as spinup, or use solution.rvc from previous run; ['Set simulation start
+    2 years before analysis period', 'Or copy solution.rvc from a completed run as the new .rvc']; generate_rvc_initial.py
+    uses climate-aware defaults to reduce spinup
+  severity: degraded
+- id: dt_rav_024
+  symptom: Ensemble models produce identical results despite different templates
+  diagnosis: 'All ensemble members share the same .rvp — template-specific parameters not applied; If
+    the ensemble runner copies the same .rvp to all run directories without
+
+    regenerating template-specific parameters, all models effectively use the same
+
+    parameters. The .rvi differs (process algorithms) but paramet'
+  remedy: Regenerate .rvp for each template using build_rvp_parameters.py; run_ensemble_comparison.py
+    (already does this internally); run_ensemble_comparison.py generates template-specific .rvp for each
+    member
+  severity: silent
+- id: dt_rav_025
+  symptom: Raven fills missing forcing with its internal generators — results differ from expectations
+  diagnosis: 'Raven silently generates missing forcing variables using internal functions; Raven has 40+
+    ''forcing function generators'' that can estimate missing
+
+    variables from those provided. For example, TEMP_AVE from TEMP_MIN+TEMP_MAX,
+
+    or SW_RADIA from latitude+day_of_year. These are approximations and may
+
+    diff'
+  remedy: 'Provide as many forcing variables as available to minimize reliance on generators; [''Include
+    at minimum: PRECIP, TEMP_MIN, TEMP_MAX'', ''Preferably also: TEMP_AVE, SW_RADIA, WIND_VEL'', ''Check
+    ForcingFunctions.csv to see what Raven generated internally'']'
+  severity: silent
+- id: dt_rav_026
+  symptom: Forcing conversion produces 44,551 mm/yr precip and 50C mean temperature — all variables mapped
+    to wrong physical quantities
+  diagnosis: convert_forcing_to_rvt.py had wrong VIC forcing column mapping. Tool assumed column order
+    [PRECIP, TMAX, TMIN, WIND, SW, LW, PRESSURE] but actual VIC process_forcing.py output is [AIR_TEMP,
+    PREC, PRESSURE, SWDOWN, LWDOWN, VP, WIND]. Temperature was summed as precip (44x overestimate), pressure
+    was r
+  remedy: 'Fixed column indices in aggregate_3hourly_to_daily(): VIC col 0->TEMP, 1->PRECIP, 2->PRESSURE,
+    3->SW, 4->LW, 5->VP, 6->WIND; convert_forcing_to_rvt.py; After fix: annual precip 1035 mm (expected
+    800-1100), mean temp 15.4 C (expected 14-16 C for Bengbu)'
+  severity: silent
+- id: dt_rav_027
+  symptom: convert_forcing_to_rvt.py reports 'No grid cells found' when reading HydroCraft VIC grid NetCDF
+  diagnosis: 'Tool reads ds.variables[''lat'']/[''lon''] but HydroCraft VIC grid NetCDF uses ''y''/''x''
+    with a 2D ''mask'' array. The bare except block swallows the KeyError.; HydroCraft''s make_basin_grid_nc.py
+    produces grid files with variables named ''y'', ''x'',
+
+    and ''mask'' (2D array). This is a valid convention but differs'
+  remedy: Added y/x + 2D mask support in grid reader. Also removed extension filter in filename parser.;
+    convert_forcing_to_rvt.py
+  severity: fatal
+- id: dt_rav_028
+  symptom: Raven v4.1 rejects GR4J_X1-X4 as GlobalParameter — 'Unrecognized/invalid global parameter name'
+  diagnosis: 'select_model_template.py and build_rvp_parameters.py place GR4J parameters as :GlobalParameter
+    commands. But Raven v4.1 requires GR4J_X2/X3 as soil parameters (SoilParameterList), GR4J_X4 as a
+    land-use parameter (LandUseParameterList), and GR4J_X1 is encoded implicitly via soil_thickness *
+    porosity '
+  remedy: 'Use hand-crafted .rvi/.rvp templates per model (as in run_ensemble_v2.py). Generic tools need
+    major refactoring to properly route parameters.; [''GR4J: X1 via soil_thickness*porosity*1000, X2/X3
+    as SoilParameterList, X4 as LandUseParameterList'', ''HBV: soil params in SoilParameterList, melt/refreeze
+    i'
+  severity: fatal
+- id: dt_rav_029
+  symptom: MOHYSE crashes with 'required soil property HBV_BETA not included' — hidden dependency
+  diagnosis: INF_HBV infiltration algorithm (used internally by MOHYSE) requires HBV_BETA as a soil parameter.
+    MOHYSE also requires MOHYSE_PET_COEFF (global) and AET_COEFF (land use) — none documented in the emulation
+    template.; ['select_model_template.py', 'build_rvp_parameters.py']
+  remedy: Add HBV_BETA to SoilParameterList, MOHYSE_PET_COEFF to GlobalParameter, AET_COEFF to LandUseParameterList
+  severity: fatal
+- id: dt_rav_030
+  symptom: Raven exits with 'Cannot find or read .rvc file' even for cold start
+  diagnosis: Raven v4.1 requires a .rvc file to exist even if empty. Unlike VIC which runs without IC,
+    Raven insists on finding the file path specified in the .rvi.; ['generate_rvc_initial.py']
+  remedy: 'Create a minimal .rvc file with just a comment: ''# Empty initial conditions — cold start'''
+  severity: fatal
+- id: dt_rav_031
+  symptom: build_rvp_parameters.py generates wrong class names from comma-separated .rvh — trailing commas
+  diagnosis: parse_rvh_classes() uses line.split() (whitespace) on comma-separated HRU lines, producing
+    tokens like 'WETLAND,' with trailing commas. Class names don't match between .rvh and .rvp.; ['build_rvp_parameters.py']
+  remedy: Detect comma in line and use split(',') + strip() for CSV format
+  severity: fatal
+- id: dt_rav_032
+  symptom: build_rvp_parameters.py reads AQUIFER_PROFILE as TERRAIN_CLASS — wrong column index
+  diagnosis: 'Parser reads column [9] as terrain class, but 13-column .rvh format has AQUIFER_PROFILE
+    at [9], TERRAIN_CLASS at [10]. Order: ID(0) AREA(1) ELEV(2) LAT(3) LON(4) BASIN(5) LU(6) VEG(7) SOIL(8)
+    AQUIFER(9) TERRAIN(10) SLOPE(11) ASPECT(12); [''build_rvp_parameters.py'']'
+  remedy: Changed to read parts[10] for terrain class
+  severity: fatal
+- id: dt_rav_033
+  symptom: Raven v4.1 rejects :SWCanopyCorrect and :ExchangeFlow2 — unrecognized commands from generic
+    template
+  diagnosis: select_model_template.py generates .rvi with commands that exist in Raven documentation but
+    are not compiled into v4.1 binary (:SWCanopyCorrect, :ExchangeFlow2). The Raven source code has conditional
+    compilation flags.; ['select_model_template.py']
+  remedy: Use hand-crafted per-model templates validated against Raven v4.1 binary. Generic template generation
+    needs version-awareness.
+  severity: fatal
+- id: dt_rav_034
+  symptom: External NSE/KGE differ from Raven's own Diagnostics.csv, and the paired obs column in Hydrographs.csv
+    sits one row BELOW the raw gauge value for the same calendar date — a silent one-timestep lag in every
+    externally scored metric
+  diagnosis: 'Hydrographs.csv is PERIOD-ENDING (RavenUsersManual v4.1, ''Output files'': ''reports period-ending
+    time-averaged flows for the preceding time step ... the initial flow conditions at the start of the
+    first time step are included''), while :ObservationData input has been period-STARTING since v2.7.
+    So the'
+  remedy: 'Use parse_raven_output.load_discharge_series() (or parse_hydrographs(date_convention=''period_ending'')),
+    which shifts the stamp back one timestep and drops the initial-condition row. Proof of correctness:
+    after the shift, Raven''s own ''(observed)'' column equals the raw gauge file on identical calendar'
+  severity: major
+- id: dt_rav_035
+  symptom: validate_water_balance reports a huge closure FAIL (e.g. residual 76.7% of P, dS numerically
+    equal to cumulative ET) on a run whose native 'MB Error [mm]' column closes to machine zero
+  diagnosis: 'WatershedStorage.csv ''Total [mm]'' is not physical storage: it also contains the ''Cum.
+    Losses to Atmosphere'' ACCUMULATOR (6744.8 of 6828.6 mm after 12 alpine years at Tangnaihai). Taking
+    dS = delta(Total) therefore double-counts ET and produces a bogus residual. The checker fault is post-processing, '
+  remedy: 'Use parse_raven_output.compute_water_balance(): P/ET/Q from Cum. Inputs / Cum. Losses to Atmosphere
+    / Cum. Outflow, and dS from the PHYSICAL stores only (exclude every ''Cum.*'', ''Total'', ''MB Error''
+    and the period-ending rainfall/snowfall rate columns). At Tangnaihai this turned FAIL/76.7% into PASS/0'
+  severity: major
+- id: dt_rav_036
+  symptom: Multi-emulation study reports 'best of N emulations' held-out NSE, but the winner was chosen
+    using that same held-out window (or Raven's full-obs-period Diagnostics.csv, which spans it)
+  diagnosis: Model-structure choice is a tuning decision. Raven's Diagnostics.csv NASH_SUTCLIFFE is computed
+    over the entire :ObservationData record, so ranking on it — or on the validation-window score — leaks
+    the held-out period into selection and makes the reported number optimistically biased rather than
+    a c
+  remedy: Rank on the CALIBRATION-window score (parse_raven_output.select_best_member(members, cal_key='cal');
+    run_ensemble_comparison now sets stats['rank_basis']='calibration_window_nse' when members carry cal
+    scores) and report the held-out score OF THE CAL-SELECTED MEMBER. At Tangnaihai both rules pick ub
+  severity: major
+- id: dt_rav_037
+  symptom: run_raven.py returns diagnostics:{} and every DDS iteration reports the same objective, so
+    'calibrated' output is byte-identical to the defaults
+  diagnosis: 'Two independent bugs in the same reader. (1) FILENAME: Raven prefixes output with :RunName,
+    so a multi-emulation study writes <RunName>_Diagnostics.csv (tangnaihai_ubc_Diagnostics.csv); the
+    tool only looked for Diagnostics.csv and <basin>_Diagnostics.csv. (2) PARSE: Diagnostics.csv is COLUMN-oriente'
+  remedy: run_raven.find_diagnostics_file() globs *Diagnostics.csv as a fallback; extract_diagnostics()
+    reads the header row and maps header->value, exposing both DIAG_NASH_SUTCLIFFE and bare NASH_SUTCLIFFE.
+    calibrate_raven_dds.py now IMPORTS extract_diagnostics instead of keeping its own copy — one reader
+    fo
+  severity: fatal
+- id: dt_rav_038
+  symptom: 'DDS runs to completion and reports a best parameter set, but the hydrograph is unchanged:
+    some templates (ubc, mohyse, hypr) had no calibration set at all, and sac_sma/hymod/hmets sets named
+    parameters that build_rvp_parameters.py never writes'
+  diagnosis: 'CALIBRATION_PARAMS was written from the literature parameter names (SAC_UZTWM, HYMOD_CMAX,
+    ...) rather than from the .rvp this KI actually generates (SAC_PERC_ALPHA, POROSITY, PDM_B, ...).
+    update_rvp_parameter() cannot write a name that is absent from the .rvp, so those DDS dimensions were
+    no-ops — '
+  remedy: 'Added ubc/mohyse/hypr sets and corrected sac_sma/hymod to the emitted names; added UNIVERSAL_PARAMS
+    (PET_CORRECTION, MELT_FACTOR, DD_MELT_TEMP, RAINSNOW_TEMP) to every template; and added resolve_calibration_set(),
+    which intersects the set with rvp_parameter_names() and REPORTS the dropped names as '
+  severity: fatal
+- id: dt_rav_039
+  symptom: Every emulation calibrates to a large negative NSE in a cold, high-elevation basin; simulated
+    runoff has a hard floor far above the observed mean no matter what parameters DDS picks
+  diagnosis: 'Appendix F prescribes temperature-index PET (PET_OUDIN / PET_HAMON / PET_MOHYSE) for most
+    emulations. With no radiation term these collapse at high elevation: at Tangnaihai (mean HRU elevation
+    4128 m) they gave 59-299 mm/yr PET versus 726 mm/yr from PET_PRIESTLEY_TAYLOR on identical CMFD forcing,
+    le'
+  remedy: select_model_template.py --pet_method auto (the DEFAULT) substitutes PET_PRIESTLEY_TAYLOR for
+    any TEMPERATURE_INDEX_PET reference, records the substitution in the JSON 'pet' block and in a comment
+    in the .rvi, and --pet_method template restores Appendix F verbatim. Requires radiation/humidity/wind
+    i
+  severity: fatal
+- id: dt_rav_040
+  symptom: 'An elevation-band .rvh built by s1 makes no difference to the result: snow accumulation, melt
+    timing and the seasonal hydrograph are identical to a single lumped HRU, and cold-region emulations
+    (HBV-EC, HMETS) calibrate to large negative NSE in an alpine basin'
+  diagnosis: 'Raven defaults orocorr_temp / orocorr_precip / orocorr_PET to OROCORR_NONE (ParseInput.cpp:260-262)
+    and select_model_template.py never emitted an :OroTempCorrect or :OroPrecipCorrect directive. With
+    no directive CModel::CorrectTemp is a no-op, so EVERY HRU is forced with the gauge''s own temperature '
+  remedy: select_model_template.py --orographic auto (the DEFAULT) reads the HRU elevations from the staged
+    .rvh and, when relief >= 100 m, emits ':OroTempCorrect OROCORR_SIMPLELAPSE' and ':OroPrecipCorrect
+    OROCORR_SIMPLELAPSE'. Raven then declares ADIABATIC_LAPSE and PRECIP_LAPSE required, so build_rvp_param
+  severity: fatal
+- id: dt_rav_041
+  symptom: Raven_errors.txt says 'SW_RADIA data supplied at gauge <name> but will not be used due to choice
+    of forcing generation algorithm'; a radiation-based PET over-evaporates and the calibrator has to
+    push PET_CORRECTION to its lower bound to compensate
+  diagnosis: 'Raven''s default is SW_RAD_DEFAULT with CLOUDCOV_NONE: it computes CLEAR-SKY shortwave from
+    latitude and date and applies no cloud attenuation, discarding any :Data SHORTWAVE present in the
+    .rvt. Once s0 substitutes a radiation-based PET (dt_rav_039), potential evaporation is therefore driven
+    by clea'
+  remedy: resolve_sw_radiation() in select_model_template.py emits ':SWRadiationMethod SW_RAD_DATA' whenever
+    the resolved PET method consumes radiation AND the .rvt carries :Data SHORTWAVE. Raven then uses the
+    supplied (CMFD/MSWX) shortwave and sets cloud correction to NONE itself (ParseInput.cpp:3696). The
+    d
+  severity: major
+- id: dt_rav_043
+  symptom: In a snow-dominated basin the calibrated hydrograph has the wrong seasonal shape (melt too
+    early/late, spring peak wrong magnitude) even though DDS reports a converged best objective; the reported
+    skipped_parameters_absent_from_rvp list contains MELT_FACTOR and/or DD_MELT_TEMP
+  diagnosis: The shared degree-day melt parameters (MELT_FACTOR, DD_MELT_TEMP) only exist for templates
+    that use POTMELT_DEGREE_DAY. UBC (POTMELT_UBCWM), HMETS (POTMELT_HMETS) and HBV-EC (POTMELT_HBV) each
+    expose a DIFFERENT melt parameterisation — RAIN_MELT_MULT/CONV_MELT_MULT/COND_MELT_MULT/CC_DECAY_COEFF,
+    MIN
+  remedy: 'Each template''s own melt controls were added to CALIBRATION_PARAMS. Widening the search space
+    REQUIRES widening the DDS budget with it (Tolson & Shoemaker 2007): measured for ubc at Tangnaihai
+    with 16 free parameters, 250 iterations gave cal NSE 0.730 / held-out 0.548 / PBIAS +16.5% (DDS buys
+    hydrog'
+  severity: major
+- id: dt_rav_044
+  symptom: 'diagnostics/triplets.yaml documents a defect as fixed, and a prior run''s result.json reports
+    the metric that fix produced, but the tool no longer contains the fix: s0 rejects --pet_method, s9
+    rejects --seed/--cal_start/--cal_end and errors with ''No calibration parameters defined for template:
+    ubc'', '
+  diagnosis: The KNOWLEDGE (triplets, notes, result.json) and the CODE are promoted through different
+    paths. A review/rollback reverted the canonical tools to a pre-fix snapshot while leaving triplets.yaml
+    and the recorded metrics in place, so the KI advertised a capability it no longer had. Encountered
+    2026-07-
+  remedy: 'FIRST ACTION on this KI: verify the code matches the claims. Run `diff -r .kdt_snapshots/<latest>/tools
+    <ki>/tools` and, for each triplet whose remedy names a CLI flag or function, check it is actually
+    there — e.g. `grep -c ''add_argument("--cal_start'' tools/s9_calibration/calibrate_raven_dds.py` and'
+  severity: fatal

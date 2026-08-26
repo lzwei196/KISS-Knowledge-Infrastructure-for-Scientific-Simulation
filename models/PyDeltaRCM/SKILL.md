@@ -1,13 +1,3 @@
----
-name: pydeltarcm
-description: >-
-  DeltaRCM reduced-complexity delta morphodynamics (Liang, Voller & Paola 2015 Part 1 +
-  Liang, Geleynse, Edmonds & Passalacqua 2015 Part 2), as…. Covers River delta
-  morphodynamics (delta formation, growth, and planform evolution); Reduced-complexity
-  hydrodynamics via weighted-random-walk routing of water parcels. Use when the task
-  involves running, configuring, calibrating or interpreting PyDeltaRCM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (16 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters.py --help` |
+| `tools/generate_yaml_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_yaml_config.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_pydeltarcm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_pydeltarcm.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # PyDeltaRCM v2.2.0 — Knowledge Infrastructure
 
@@ -242,9 +266,28 @@ The model is configured via a YAML file. All parameters have defaults in `defaul
 
 ---
 
-## Output: NetCDF File
+## 6. Output Description
 
 Output is saved to `<out_dir>/pyDeltaRCM_output.nc`.
+
+This section restates `dag.yaml`; if this body and the dag disagree, the dag is the source of truth.
+
+**Headline output** (`validation_rank: 1` in `dag.yaml`):
+
+> `discharge` — Water-discharge magnitude (CF long_name channel_water_flowing__volume_rate). (`m3/s`)
+
+Other dag outputs: `eta`, `stage`, `depth`, `velocity`, `sedflux`, `sandfrac`, `strata_sand_frac`.
+
+| Output variable (dag `var`) | Rank | File | Unit | Description |
+|-----------------------------|------|------|------|-------------|
+| `discharge` | 1 | `pyDeltaRCM_output.nc (save_discharge_grids)` | `m3/s` | Water-discharge magnitude (CF long_name channel_water_flowing__volume_rate). |
+| `stage` | 2 | `pyDeltaRCM_output.nc (save_stage_grids)` | `m` | Water-surface elevation reconstructed from the weighted-random-walk free-surface scheme. |
+| `eta` | 3 | `pyDeltaRCM_output.nc (save_eta_grids)` | `m` | Bed (topographic) elevation field; the primary morphodynamic state defining delta planform and topography. |
+| `depth` | 4 | `pyDeltaRCM_output.nc (save_depth_grids)` | `m` | Water flow depth, depth = max(stage - eta, 0). |
+| `velocity` | 5 | `pyDeltaRCM_output.nc (save_velocity_grids)` | `m/s` | Water-flow velocity magnitude uw = sqrt(ux^2 + uy^2), clamped to u_max = 2*u0. |
+| `sedflux` | 6 | `pyDeltaRCM_output.nc (save_sedflux_grids)` | `m3/s` | Sediment flux field qs (combined sand + mud transport). |
+| `sandfrac` | 7 | `pyDeltaRCM_output.nc (save_sandfrac_grids)` | `-` | Surface bed sand fraction (0-1) from active-layer mixing during deposition. |
+| `strata_sand_frac` | 8 | `pyDeltaRCM_output.nc (stratigraphy) / reconstructed from eta + sandfrac` | `-` | Stratigraphic (subsurface) sand fraction recorded at each bed elevation over time; reconstructable from saved eta + sandfrac surfaces. |
 
 ### Dimensions
 - `seconds` (or `time` in legacy mode): unlimited, model time in seconds
@@ -258,9 +301,9 @@ Output is saved to `<out_dir>/pyDeltaRCM_output.nc`.
 | `eta` | (time, x, y) | m | Bed elevation |
 | `stage` | (time, x, y) | m | Water surface elevation |
 | `depth` | (time, x, y) | m | Water depth |
-| `discharge` | (time, x, y) | m²/s | Water discharge magnitude |
+| `discharge` | (time, x, y) | m3/s | Water discharge magnitude |
 | `velocity` | (time, x, y) | m/s | Flow velocity magnitude |
-| `sedflux` | (time, x, y) | m³/s | Sediment flux |
+| `sedflux` | (time, x, y) | m3/s | Sediment flux |
 | `sandfrac` | (time, x, y) | - | Sand fraction (0-1) |
 | `strata_depth` | (time, x, y) | m | Stratigraphy elevation |
 | `strata_sand_frac` | (time, x, y) | - | Stratigraphy sand fraction |
@@ -288,7 +331,27 @@ These are not set by users but are critical for understanding model behavior:
 
 ---
 
-## Unit Trap Table
+## 8. Unit Conversion Table (Unit Table)
+
+PyDeltaRCM is a morphodynamic delta model and has no meteorological forcing conversion table: `dag.yaml` declares `inputs.forcing: []`. The model uses YAML parameters and writes selected NetCDF grids. The table below documents the KI's critical model-side units and output units; exact I/O shapes remain in `docs/format_spec.yaml`.
+
+| Variable or control | Source unit (verified) | Model/output unit | Factor | Type |
+|---------------------|------------------------|-------------------|--------|------|
+| Meteorological forcing | none (`inputs.forcing: []`) | none | n/a | not applicable |
+| `Length`, `Width`, `dx`, `L0_meters`, `N0_meters` | user-provided meters | `m` | x1 | multiplicative |
+| `u0` | user-provided velocity | `m/s` | x1 | multiplicative |
+| `h0`, `hb`, `H_SL` | user-provided elevation/depth | `m` | x1 | multiplicative |
+| `C0_percent` | percent | internal fraction `C0 = C0_percent / 100` | /100 | multiplicative |
+| `f_bedload` | fraction (0-1) | fraction (0-1) | x1 | multiplicative |
+| `SLR`, `subsidence_rate` | user must provide m/s of model time | `m/s (model time)` | x1 | multiplicative |
+| `start_subsidence`, `save_dt` | user must provide seconds of model time | `s (model time)` | x1 | multiplicative |
+| `discharge` output | model NetCDF `save_discharge_grids` | `m3/s` | x1 | output unit |
+| `eta`, `stage`, `depth` outputs | model NetCDF grids | `m` | x1 | output unit |
+| `velocity` output | model NetCDF `save_velocity_grids` | `m/s` | x1 | output unit |
+| `sedflux` output | model NetCDF `save_sedflux_grids` | `m3/s` | x1 | output unit |
+| `sandfrac`, `strata_sand_frac` outputs | model NetCDF / stratigraphy | `-` | x1 | output unit |
+
+### Unit Trap Table
 
 These unit conversions and constraints are critical for correct model behavior:
 
@@ -318,6 +381,36 @@ real_time = model_time / If
 Where `If` is the intermittency factor (fraction of time the river is at bankfull, typically 0.01-0.1).
 
 Example: 1 year of model time at If=0.05 represents 20 years of real time.
+
+---
+
+## 11. Validated Results
+
+This section restates `docs/validation_convention.yaml` and `knowledge_infrastructure.yaml`; do not substitute remembered thresholds. The convention file wins for pass bands, and null bands are written as `no cited threshold`.
+
+### Validation Summary
+
+| Source | Field | Value |
+|--------|-------|-------|
+| `knowledge_infrastructure.yaml` | validation tier | `validated` |
+| `knowledge_infrastructure.yaml` | tier justification | `measured: NSE=1.000, KGE=0.999, R=1.000, 2 scorecard(s)` |
+| `knowledge_infrastructure.yaml` | best_nse | `0.99999` |
+| `knowledge_infrastructure.yaml` | best_kge | `0.999` |
+| `knowledge_infrastructure.yaml` | best_r | `0.99999` |
+
+### Performance Metrics - Convention Bars
+
+Headline metric for the dag rank-1 output:
+
+> Bar for `discharge` (`csi`, direction `maximize`, convention `cites: []`): satisfactory: no cited threshold; good: no cited threshold; very_good: no cited threshold. Achieved CSI is not recorded in `SKILL.md`, so this body gives no pass/fail verdict.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Convention cites |
+|--------------|--------|-----------|-------------------|-----------|----------------|------------------|
+| `discharge` | `csi` | maximize | no cited threshold | no cited threshold | no cited threshold | `[]` |
+| `eta` | `csi` | maximize | no cited threshold | no cited threshold | no cited threshold | `[]` |
+| `stage` | `csi` | maximize | no cited threshold | no cited threshold | no cited threshold | `[]` |
+
+The convention also states that `discharge` is conventionally assessed as channel-network flux partition and directionality, not absolute spatial CSI, until a fetched threshold exists.
 
 ---
 

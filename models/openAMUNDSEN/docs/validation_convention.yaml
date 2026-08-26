@@ -1,0 +1,327 @@
+schema_version: 1
+model_id: openAMUNDSEN
+domain: hydrology
+generated_by: "Step-B fleet agent (GPT-5 Codex) - validation convention"
+generated_at: 2026-08-14
+
+# Bands are literature-grounded benchmark or convention values, not tuned gates.
+# Where the fetched literature reports no numeric convention for the DAG metric, the
+# band is null and confidence is kept <= 0.4.
+
+references:
+  strasser2024:
+    doi: 10.5194/gmd-17-6775-2024
+    title: "openAMUNDSEN v1.0: an open-source snow-hydrological model for mountain regions"
+    venue: "Geosci. Model Dev."
+    year: 2024
+    oa: gold
+    resolves: https://doi.org/10.5194/gmd-17-6775-2024
+  hanzer2016:
+    doi: 10.5194/tc-10-1859-2016
+    title: "Multilevel spatiotemporal validation of snow/ice mass balance and runoff modeling in glacierized catchments"
+    venue: "The Cryosphere"
+    year: 2016
+    oa: gold
+    resolves: https://doi.org/10.5194/tc-10-1859-2016
+  wever2015:
+    doi: 10.5194/tc-9-2271-2015
+    title: "Verification of the multi-layer SNOWPACK model with different water transport schemes"
+    venue: "The Cryosphere"
+    year: 2015
+    oa: gold
+    resolves: https://doi.org/10.5194/tc-9-2271-2015
+  koltsida2023:
+    doi: 10.5194/hess-27-917-2023
+    title: "Hydrological modeling using the Soil and Water Assessment Tool in urban and peri-urban environments: the case of Kifisos experimental subbasin (Athens, Greece)"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2023
+    oa: gold
+    resolves: https://doi.org/10.5194/hess-27-917-2023
+  storebakken2025:
+    doi: 10.1002/hyp.70197
+    title: "Modelling of the Seasonal Snow Cover Dynamics for Open and Forested Areas in the Berchtesgaden National Park (Germany) Using the openAMUNDSEN Mountain Snow Cover Model"
+    venue: "Hydrological Processes"
+    year: 2025
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_hyp.70197.txt
+  gebler2015:
+    doi: 10.5194/hess-19-2145-2015
+    title: "Actual evapotranspiration and precipitation measured by lysimeters: a comparison with eddy covariance and tipping bucket"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2015
+    oa: gold
+    resolves: https://doi.org/10.5194/hess-19-2145-2015
+
+validation:
+  - dag_variable: swe
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.95, good: 0.93, satisfactory: 0.76}
+        pass_band: satisfactory
+        band_note: "Benchmark-achieved openAMUNDSEN floor: reported SWE NSE values were 0.93, 0.76, and 0.95 for three model versions."
+        cites: [strasser2024]
+      - metric: rmse
+        direction: minimize
+        unit: kg m-2
+        bands: {very_good: 46.0, good: 55.0, satisfactory: 76.0}
+        pass_band: satisfactory
+        band_note: "Converted from reported SWE RMSE of 0.046, 0.055, and 0.076 m water equivalent; SNOWPACK benchmark says SWE RMSE < 40 mm w.e. was well simulated."
+        cites: [strasser2024, wever2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "openAMUNDSEN co-reports KGE for SWE (0.94, 0.65, 0.88); the DAG headline metric remains NSE."
+        cites: [strasser2024]
+    validated_when: "NSE >= 0.76 and RMSE <= 76 kg m-2 against co-located SWE point time series."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The bands are benchmark-achieved values from the openAMUNDSEN Rofental example, not formal
+      universal SWE tiers. The point comparison must respect the DAG caveat on co-location and
+      elevation/aspect matching.
+
+  - dag_variable: swe
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass band for continuous spatial SWE snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched snow-model papers evaluate SWE spatial/point magnitude with RMSE or normalized errors rather than CSI."
+        cites: [strasser2024, wever2015]
+    validated_when: "UNRESOLVED - no cited numeric CSI convention for spatial SWE snapshots."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Use this block only to contextualize a data-gap; it must not loosen a spatial SWE gate."
+
+  - dag_variable: snow_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.92, good: 0.79, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "Benchmark-achieved openAMUNDSEN floor: reported snow-depth NSE values were 0.79, 0.70, and 0.92."
+        cites: [strasser2024]
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.186, good: 0.269, satisfactory: 0.283}
+        pass_band: satisfactory
+        band_note: "Benchmark-achieved openAMUNDSEN floor; SNOWPACK verification reports snow-height RMSE < 4.2 cm during main winter."
+        cites: [strasser2024, wever2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "openAMUNDSEN co-reports KGE for snow depth (0.77, 0.61, 0.95); NSE remains the DAG headline metric."
+        cites: [strasser2024]
+    validated_when: "NSE >= 0.70 and RMSE <= 0.283 m against co-located snow-depth point time series."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The openAMUNDSEN paper reports point snow-depth Pearson correlation, NSE, KGE, and RMSE
+      for T-index, EB+Cryo, and EB+Multi+SRF simulations. Bands use the least skillful reported
+      validated openAMUNDSEN value as the satisfactory floor.
+
+  - dag_variable: snow_depth
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass band for spatial snow-depth snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched point snow-depth benchmarks use NSE/RMSE; spatial categorical CSI is documented for snow cover, not depth."
+        cites: [strasser2024, hanzer2016]
+    validated_when: "UNRESOLVED - no cited numeric CSI convention for spatial snow-depth snapshots."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Treat failed spatial depth CSI as a convention gap unless a fetched ALS/depth-map benchmark is added."
+
+  - dag_variable: snow_cover (area fraction / extent)
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.95, good: null, satisfactory: 0.72}
+        pass_band: satisfactory
+        band_note: "AMUNDSEN snow-cover validation reports Landsat/MODIS CSI = 0.72/0.73 for a mapped scene and MODIS winter running means near 0.95."
+        cites: [hanzer2016]
+    secondary_metrics:
+      - metric: acc
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hanzer et al. co-report ACC and BIAS with CSI; Storebakken et al. stress that FSC comparisons are threshold-sensitive."
+        cites: [hanzer2016, storebakken2025]
+    validated_when: "CSI >= 0.72 for cloud-filtered binary snow-cover maps against Landsat/MODIS-style observations."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      The DAG metric (CSI) is retained. The pass band is a model-family benchmark, not a universal
+      snow-cover tier. Storebakken 2025 notes that satellite FSC and model SWE-to-binary comparisons
+      are sensitive to analysis thresholds.
+
+  - dag_variable: snow_cover (area fraction / extent)
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: scd_mean_bias
+        direction: zero_centered
+        unit: day
+        bands: {very_good: null, good: null, satisfactory: 1.6}
+        pass_band: satisfactory
+        band_note: "openAMUNDSEN BGNP benchmark reports mean snow-cover-duration difference of 1.6 days."
+        cites: [storebakken2025]
+      - metric: sdd_mean_bias
+        direction: zero_centered
+        unit: day
+        bands: {very_good: null, good: null, satisfactory: 4.6}
+        pass_band: satisfactory
+        band_note: "openAMUNDSEN BGNP benchmark reports mean snow-disappearance-day difference of 4.6 days."
+        cites: [storebakken2025]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For event timing, the fetched openAMUNDSEN benchmark evaluates SCD and SDD day differences rather than categorical CSI."
+        cites: [storebakken2025]
+    validated_when: "|SCD mean bias| <= 1.6 days and |SDD mean bias| <= 4.6 days at event-observation locations."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Literature supersedes the DAG's generic CSI for this event shape: the fetched openAMUNDSEN
+      forest/open-area evaluation grades snow-cover duration and disappearance-day timing.
+
+  - dag_variable: snow_melt
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred runoff-like daily-flow convention; OA paper reproduces Moriasi 2015 satisfactory flow threshold NSE > 0.50."
+        cites: [koltsida2023]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred runoff-like convention; OA paper reproduces satisfactory flow threshold PBIAS <= +/-15%."
+        cites: [koltsida2023]
+    secondary_metrics:
+      - metric: runoff_nse_24h
+        direction: maximize
+        status: supportive
+        ceiling_reason: "SNOWPACK verification reports 24 h snowpack-runoff NSE around 0.66-0.73; direct point melt observations remain rare."
+        cites: [wever2015]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 15% where snowmelt is observed or inferred as a runoff-like daily flux."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "This is a transferred hydrologic flux convention; direct melt-lysimeter validation would be stronger."
+
+  - dag_variable: snow_runoff
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "OA paper reproduces Moriasi 2015 satisfactory flow threshold NSE > 0.50 for watershed-scale flow simulations."
+        cites: [koltsida2023]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "OA paper reproduces Moriasi 2015 satisfactory flow threshold PBIAS <= +/-15% for watershed-scale flow simulations."
+        cites: [koltsida2023]
+    secondary_metrics:
+      - metric: be
+        direction: maximize
+        status: supportive
+        ceiling_reason: "AMUNDSEN runoff validation co-reports benchmark efficiency because seasonal runoff can inflate NSE."
+        cites: [hanzer2016]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 15% for routed or otherwise comparable snow-runoff time series."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Hanzer et al. report AMUNDSEN runoff NSE values around or above 0.8 for most glacierized
+      catchments, while warning that strong seasonality can make NSE inefficient. The DAG caveat
+      remains: catchment runoff comparison requires external routing.
+
+  - dag_variable: snow_density
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: bias
+        direction: zero_centered
+        unit: kg m-3
+        bands: {very_good: 25.0, good: null, satisfactory: 50.0}
+        pass_band: satisfactory
+        band_note: "SNOWPACK verification reports typical density deviation < 50 kg m-3 and average bias around 25 kg m-3."
+        cites: [wever2015]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG metric is PBIAS, but the fetched snow-density benchmark reports absolute kg m-3 deviation and bias."
+        cites: [wever2015]
+    validated_when: "|bulk snow-density bias| <= 50 kg m-3 against snow-pit or profile measurements."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Literature supersedes percentage bias with absolute density bias because observations are sparse snow-pit/profile measurements."
+
+  - dag_variable: evapotranspiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: relative_bias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 3.8, good: null, satisfactory: 8.0}
+        pass_band: satisfactory
+        band_note: "ET lysimeter-vs-eddy-covariance study reports annual total difference 3.8% and monthly summer differences < 8%."
+        cites: [gebler2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched ET evidence compares lysimeter, eddy-covariance, and Penman-Monteith totals by relative differences rather than NSE."
+        cites: [gebler2015]
+    validated_when: "|relative ET bias| <= 8% over snow-free comparable periods."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      This is a weak transferred observation-method convention for the optional FAO Penman-Monteith
+      ET module, not an openAMUNDSEN ET benchmark. Winter ET comparisons have low correlations in
+      the fetched lysimeter/EC paper, so the rule is restricted to snow-free periods.
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2007 model evaluation guidelines"
+    doi: 10.13031/2013.23153
+    needed_for: [snow_melt, snow_runoff]
+  - ref: "Moriasi et al. 2015 hydrologic and water-quality model evaluation guidelines"
+    doi: 10.13031/trans.58.10715
+    needed_for: [snow_melt, snow_runoff]
+  - ref: "A spatial SWE or ALS snow-depth benchmark with explicit CSI/IoU-style pass bands"
+    doi: unknown_not_fetched
+    needed_for: [swe, snow_depth]

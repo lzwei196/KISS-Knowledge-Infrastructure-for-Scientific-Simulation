@@ -276,8 +276,8 @@ def main():
     parser.add_argument("--hwsd-csv", help="Path to HWSD CSV data file")
     parser.add_argument("--lat", type=float, help="Latitude for HWSD lookup")
     parser.add_argument("--lon", type=float, help="Longitude for HWSD lookup")
-    parser.add_argument("--sand-percent", type=float, help="Sand content (%)")
-    parser.add_argument("--clay-percent", type=float, help="Clay content (%)")
+    parser.add_argument("--sand-percent", type=float, help="Sand content (%%)")
+    parser.add_argument("--clay-percent", type=float, help="Clay content (%%)")
     parser.add_argument("--layers", help="Comma-separated layer thicknesses in meters (e.g. 0.1,0.2,0.4,0.8)")
     parser.add_argument("--output", help="Output JSON file path")
 

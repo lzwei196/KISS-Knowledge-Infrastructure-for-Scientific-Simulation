@@ -1,25 +1,18 @@
 #!/usr/bin/env python3
 """
-Generate the main ParFlow Python run script.
+Generate the main ParFlow Python run script (pftools API) by rendering
+workflow/run_script_template.py.fmt -- a template that follows the SHIPPED
+CLM example (parflow source test/python/washita/LW_Test.py) key-for-key.
 
-Creates a complete pftools-based Python script that configures all ParFlow
-solver keys and runs the simulation. Uses the ParFlow Python API (pftools).
+The previous version could not produce a runnable script: it violated the
+KI's own validated triplets dt_pf_v001/v002/v003/v004, declared an undefined
+geometry 'indicator_input', and its main() never forwarded subsurface/slope/
+IC/forcing paths (all upstream stage products were silently ignored).
 
-Key solver parameters configured:
-  - Richards equation (variably saturated flow)
-  - Newton-Krylov nonlinear solver with PFMG preconditioner
-  - Terrain-following grid (optional)
-  - CLM coupling (optional)
-  - Overland flow (kinematic or diffusive wave)
-
-Usage:
-    python generate_parflow_script.py \
-        --domain_json outputs/parflow_run/domain/domain_definition.json \
-        --subsurface_dir outputs/parflow_run/subsurface/ \
-        --slope_dir outputs/parflow_run/topography/ \
-        --ic_file outputs/parflow_run/ic_bc/initial_pressure.pfb \
-        --run_name chaohe_test \
-        --output_dir outputs/parflow_run/run/
+Soil heterogeneity: IndicatorField from s2 (texture_indicator.pfb +
+texture_params.json). CLM forcing: MetForcing='3D' chunks from s5. Restart:
+--start_time_hours + --ic_pfb <last dump> (CLM soil states restart cold --
+crash recovery only). Mannings: hour time base => n in hr*m^(-1/3) = SI/3600.
 
 Author: Jianyun Zhang Research Group, Hohai University
 """
@@ -27,363 +20,273 @@ Author: Jianyun Zhang Research Group, Hohai University
 import argparse
 import json
 import os
+import shutil
 import sys
 from datetime import datetime
 
+TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "..", "workflow", "run_script_template.py.fmt")
 
-def validate_inputs(domain_json):
-    errors = []
-    if not os.path.exists(domain_json):
-        errors.append(f"Domain definition not found: {domain_json}")
-    return errors
+CLM_BLOCK = '''run.Solver.LSM = "CLM"
+run.Solver.CLM.CLMFileDir = "."
+run.Solver.CLM.Print1dOut = False
+run.Solver.CLM.CLMDumpInterval = 24
+run.Solver.CLM.MetForcing = "3D"
+run.Solver.CLM.MetFileName = "{met_name}"
+run.Solver.CLM.MetFilePath = "{met_path}"
+run.Solver.CLM.MetFileNT = {met_nt}
+run.Solver.CLM.IstepStart = {istep_start}
+run.Solver.CLM.EvapBeta = "Linear"
+run.Solver.CLM.VegWaterStress = "Saturation"
+run.Solver.CLM.ResSat = 0.1
+run.Solver.CLM.WiltingPoint = 0.12
+run.Solver.CLM.FieldCapacity = 0.98
+run.Solver.CLM.IrrigationType = "none"
+run.Solver.PrintCLM = True
+run.Solver.WriteCLMBinary = False'''
 
 
 def process(domain_json, run_name, output_dir,
             start_date="2000-01-01", end_date="2010-12-31",
             dt_hours=1.0, dump_interval_hours=24,
-            enable_clm=True, overland_flow="kinematic",
-            terrain_following=True, p=1, q=1, r=1,
-            subsurface_dir=None, slope_dir=None, ic_file=None,
-            forcing_dir=None, clm_dir=None):
-    """Generate ParFlow run script."""
+            enable_clm=True, terrain_following=True, p=1, q=1, r=1,
+            texture_params=None, indicator_pfb=None,
+            slope_x_pfb=None, slope_y_pfb=None, ic_pfb=None,
+            clm_dir=None, forcing_dir=None, met_name="NLDAS", met_nt=24,
+            mannings_hr=1.0e-5, k_anisotropy=0.1, start_time_hours=0,
+            nl_max_iter=300, eta_value=0.001, use_jacobian=True,
+            derivative_epsilon=1e-16, krylov_dim=70,
+            pc_matrix_type="FullJacobian"):
     os.makedirs(output_dir, exist_ok=True)
-
     with open(domain_json) as f:
-        domain = json.load(f)
-
-    grid = domain["grid"]
+        grid = json.load(f)["grid"]
     nx, ny, nz = grid["nx"], grid["ny"], grid["nz"]
     dx, dy = grid["dx"], grid["dy"]
     dz_layers = grid["dz_layers_m"]
     total_depth = grid["total_depth_m"]
-    origin_x = domain["origin"]["x"]
-    origin_y = domain["origin"]["y"]
+    dz0 = dz_layers[0]
+    if any(abs(d - dz0) > 1e-9 for d in dz_layers):
+        raise ValueError(
+            "Non-uniform dz with Box geometry activates only the bottom layer "
+            "(dt_pf_v005): regenerate the domain with uniform --dz_layers.")
 
-    # Compute simulation hours
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    total_hours = int((end_dt - start_dt).total_seconds() / 3600)
-    total_steps = int(total_hours / dt_hours)
-    dump_steps = int(dump_interval_hours / dt_hours)
+    total_hours = int((datetime.strptime(end_date, "%Y-%m-%d")
+                       - datetime.strptime(start_date, "%Y-%m-%d")).total_seconds() / 3600)
+    if start_time_hours % dump_interval_hours != 0:
+        raise ValueError("start_time_hours must be a multiple of dump_interval")
+    istep_start = int(start_time_hours) + 1
 
-    # dz as fractions for terrain-following
-    if terrain_following:
-        dz_fracs = [d / total_depth for d in dz_layers]
+    classes = {}
+    if texture_params and os.path.exists(texture_params):
+        with open(texture_params) as f:
+            classes = {int(k): v for k, v in json.load(f).items()}
+    for prm in classes.values():
+        # ParFlow VanGenuchten SRes is a saturation FRACTION, not theta_r
+        prm["sres_frac"] = round(prm["sres"] / max(prm["porosity"], 1e-6), 4)
+    gnames = " ".join(f"c{c}" for c in sorted(classes))
+
+    def per_class(*fmts):
+        return "\n".join(f.format(c=c, **prm)
+                         for c, prm in sorted(classes.items()) for f in fmts)
+
+    indi = ""
+    if classes:
+        indi = ('run.GeomInput.indi_input.InputType = "IndicatorField"\n'
+                f'run.GeomInput.indi_input.GeomNames = "{gnames}"\n'
+                'run.Geom.indi_input.FileName = "texture_indicator.pfb"\n'
+                + per_class('run.GeomInput.c{c}.Value = {c}'))
+
+    if slope_x_pfb and slope_y_pfb:
+        slopes = "\n".join(f'run.TopoSlopes{a}.Type = "PFBFile"\n'
+                           f'run.TopoSlopes{a}.GeomNames = "domain"\n'
+                           f'run.TopoSlopes{a}.FileName = "slope_{a.lower()}.pfb"'
+                           for a in ("X", "Y"))
     else:
-        dz_fracs = dz_layers
+        slopes = "\n".join(f'run.TopoSlopes{a}.Type = "Constant"\n'
+                           f'run.TopoSlopes{a}.GeomNames = "domain"\n'
+                           f'run.TopoSlopes{a}.Geom.domain.Value = -0.001'
+                           for a in ("X", "Y"))
 
-    # Generate the Python run script
-    script_lines = [
-        '#!/usr/bin/env python3',
-        '"""',
-        f'ParFlow run script for {run_name}',
-        f'Generated by HydroCraft ParFlow KI',
-        f'Domain: {nx}x{ny}x{nz}, dx={dx}m, total depth={total_depth}m',
-        f'Period: {start_date} to {end_date}',
-        '"""',
-        '',
-        'import os',
-        'import sys',
-        '',
-        '# Add ParFlow install to PATH if needed',
-        'PARFLOW_DIR = os.environ.get("PARFLOW_DIR", ',
-        '    "KISSPATH_BINARIES/parflow/install")',
-        'os.environ["PARFLOW_DIR"] = PARFLOW_DIR',
-        'if os.path.join(PARFLOW_DIR, "bin") not in os.environ.get("PATH", ""):',
-        '    os.environ["PATH"] = os.path.join(PARFLOW_DIR, "bin") + ":" + os.environ.get("PATH", "")',
-        '',
-        'try:',
-        '    from parflow import Run',
-        '    from parflow.tools.fs import mkdir, cp, get_absolute_path',
-        'except ImportError:',
-        '    print("ERROR: pftools not installed. Run: pip install pftools")',
-        '    sys.exit(1)',
-        '',
-        f'run_name = "{run_name}"',
-        f'run = Run(run_name, __file__)',
-        '',
-        '# ============================================================',
-        '# Process / Computational Grid',
-        '# ============================================================',
-        f'run.Process.Topology.P = {p}',
-        f'run.Process.Topology.Q = {q}',
-        f'run.Process.Topology.R = {r}',
-        '',
-        '# ============================================================',
-        '# Computational Grid',
-        '# ============================================================',
-        f'run.ComputationalGrid.Lower.X = {origin_x}',
-        f'run.ComputationalGrid.Lower.Y = {origin_y}',
-        f'run.ComputationalGrid.Lower.Z = 0.0',
-        '',
-        f'run.ComputationalGrid.NX = {nx}',
-        f'run.ComputationalGrid.NY = {ny}',
-        f'run.ComputationalGrid.NZ = {nz}',
-        '',
-        f'run.ComputationalGrid.DX = {dx}',
-        f'run.ComputationalGrid.DY = {dy}',
-        f'run.ComputationalGrid.DZ = {total_depth}  # scaled by dzScale',
-        '',
-    ]
+    bcs = "\n".join(f'run.Patch.{pa}.BCPressure.Type = "FluxConst"\n'
+                    f'run.Patch.{pa}.BCPressure.Cycle = "constant"\n'
+                    f'run.Patch.{pa}.BCPressure.alltime.Value = 0.0'
+                    for pa in ("left", "right", "front", "back", "bottom"))
 
-    # Terrain-following grid dz scaling
-    if terrain_following:
-        script_lines += [
-            '# Terrain-following grid: dz as fractions of total depth',
-            'run.Solver.TerrainFollowingGrid = True',
-            '',
-            f'run.Cell.{0}.dzScale.Type = "nzList"',
-            f'run.Cell.{0}.dzScale.nzListNumber = {nz}',
-            '',
-        ]
-        for k, frac in enumerate(dz_fracs):
-            script_lines.append(
-                f'run.Cell.{k}.dzScale.Value = {frac:.6f}'
-            )
-        script_lines.append('')
-    else:
-        script_lines += [
-            'run.Solver.TerrainFollowingGrid = False',
-            '',
-        ]
+    dist_files = (["texture_indicator.pfb"] if classes else []) + \
+        (["slope_x.pfb", "slope_y.pfb"] if slope_x_pfb and slope_y_pfb else []) + \
+        ["ic_pressure.pfb"]
+    dist_block = "\n".join(f'run.dist(os.path.join(here, "{f}"))' for f in dist_files)
+    if enable_clm and forcing_dir:
+        dist_block += (
+            f'\n_nsub = {p * q * r}'
+            f'\nfor _f in sorted(glob.glob(os.path.join("{forcing_dir}", "{met_name}.*.pfb"))):'
+            '\n    _d = _f + ".dist"'
+            '\n    _ok = os.path.exists(_d) and sum(1 for _l in open(_d) if _l.strip()) == _nsub'
+            '\n    if not _ok:'
+            '\n        run.dist(_f)')
 
-    # Domain and timing
-    script_lines += [
-        '# ============================================================',
-        '# Timing',
-        '# ============================================================',
-        'run.TimingInfo.BaseUnit = 1.0  # hours',
-        f'run.TimingInfo.StartCount = 0',
-        f'run.TimingInfo.StartTime = 0.0',
-        f'run.TimingInfo.StopTime = {total_hours}.0',
-        f'run.TimingInfo.DumpInterval = {dump_interval_hours}',
-        f'run.TimeStep.Type = "Constant"',
-        f'run.TimeStep.Value = {dt_hours}',
-        '',
-        '# ============================================================',
-        '# Domain',
-        '# ============================================================',
-        'run.Domain.GeomName = "domain"',
-        '',
-        '# Geometry input',
-        'run.GeomInput.Names = "domain_input indicator_input"',
-        'run.GeomInput.domain_input.GeomName = "domain"',
-        'run.GeomInput.domain_input.InputType = "Box"',
-        '',
-        f'run.Geom.domain.Lower.X = {origin_x}',
-        f'run.Geom.domain.Lower.Y = {origin_y}',
-        'run.Geom.domain.Lower.Z = 0.0',
-        f'run.Geom.domain.Upper.X = {origin_x + nx * dx}',
-        f'run.Geom.domain.Upper.Y = {origin_y + ny * dy}',
-        f'run.Geom.domain.Upper.Z = {total_depth}',
-        '',
-        '# ============================================================',
-        '# Boundary Conditions (Patches)',
-        '# ============================================================',
-        'run.Geom.domain.Patches = "left right front back bottom top"',
-        '',
-        '# No-flow on bottom and sides',
-        'run.BCPressure.PatchNames = "left right front back bottom top"',
-        '',
-        'for patch in ["left", "right", "front", "back", "bottom"]:',
-        '    run.Patch.__getattr__(patch).BCPressure.Type = "FluxConst"',
-        '    run.Patch.__getattr__(patch).BCPressure.Cycle = "constant"',
-        '    run.Patch.__getattr__(patch).BCPressure.alltime.Value = 0.0',
-        '',
-        '# Top: overland flow boundary',
-        'run.Patch.top.BCPressure.Type = "OverlandFlow"',
-        'run.Patch.top.BCPressure.Cycle = "constant"',
-        'run.Patch.top.BCPressure.alltime.Value = 0.0',
-        '',
-        '# ============================================================',
-        '# Subsurface Properties',
-        '# ============================================================',
-        '# Permeability (CRITICAL: units are m/hr)',
-        'run.Geom.domain.Perm.Type = "Constant"',
-        'run.Geom.domain.Perm.Value = 0.001  # m/hr -- OVERRIDE with PFB files',
-        '',
-        '# Porosity',
-        'run.Geom.domain.Porosity.Type = "Constant"',
-        'run.Geom.domain.Porosity.Value = 0.4',
-        '',
-        '# Specific storage',
-        'run.Geom.domain.SpecificStorage.Type = "Constant"',
-        'run.Geom.domain.SpecificStorage.Value = 1.0e-4  # 1/m',
-        '',
-        '# van Genuchten (CRITICAL: alpha in 1/m, NOT 1/cm)',
-        'run.Phase.RelPerm.Type = "VanGenuchten"',
-        'run.Geom.domain.RelPerm.Alpha = 3.6  # 1/m',
-        'run.Geom.domain.RelPerm.N = 1.56',
-        '',
-        'run.Phase.Saturation.Type = "VanGenuchten"',
-        'run.Geom.domain.Saturation.Alpha = 3.6  # 1/m',
-        'run.Geom.domain.Saturation.N = 1.56',
-        'run.Geom.domain.Saturation.SRes = 0.078',
-        'run.Geom.domain.Saturation.SSat = 1.0',
-        '',
-    ]
+    clm = CLM_BLOCK.format(met_name=met_name, met_path=forcing_dir or ".",
+                           met_nt=met_nt, istep_start=istep_start) if enable_clm else ""
 
-    # Overland flow
-    script_lines += [
-        '# ============================================================',
-        '# Overland Flow (Manning\'s equation)',
-        '# ============================================================',
-        f'run.Solver.Nonlinear.UseStoppingCriteria = True',
-    ]
-    if overland_flow == "diffusive":
-        script_lines.append('run.Solver.OverlandFlowDiffusive = 1')
-    else:
-        script_lines.append('run.Solver.OverlandKinematic = 1')
-    script_lines += [
-        '',
-        'run.Mannings.Type = "Constant"',
-        'run.Mannings.GeomNames = "domain"',
-        'run.Mannings.Geom.domain.Value = 0.04',
-        '',
-    ]
+    with open(TEMPLATE) as f:
+        tmpl = f.read()
+    # Six Newton-Krylov keys render from CLI flags. If the template still
+    # hardcodes any of them (older revision), rewrite that line to the
+    # placeholder before rendering, so the KINSol-stall fallback
+    # (UseJacobian=False + PFSymmetric) is reachable with either template.
+    _solver_lines = {
+        "nl_max_iter": ("run.Solver.Nonlinear.MaxIter = 80",
+                        "run.Solver.Nonlinear.MaxIter = {nl_max_iter}"),
+        "eta_value": ("run.Solver.Nonlinear.EtaValue = 0.001",
+                      "run.Solver.Nonlinear.EtaValue = {eta_value}"),
+        "use_jacobian": ("run.Solver.Nonlinear.UseJacobian = True",
+                         "run.Solver.Nonlinear.UseJacobian = {use_jacobian}"),
+        "derivative_epsilon": (
+            "run.Solver.Nonlinear.DerivativeEpsilon = 1e-16",
+            "run.Solver.Nonlinear.DerivativeEpsilon = {derivative_epsilon}"),
+        "krylov_dim": ("run.Solver.Linear.KrylovDimension = 70",
+                       "run.Solver.Linear.KrylovDimension = {krylov_dim}"),
+        "pc_matrix_type": (
+            'run.Solver.Linear.Preconditioner.PCMatrixType = "FullJacobian"',
+            'run.Solver.Linear.Preconditioner.PCMatrixType = "{pc_matrix_type}"'),
+    }
+    for _k, (_old, _new) in _solver_lines.items():
+        if ("{%s}" % _k) in tmpl:
+            continue
+        if tmpl.count(_old) != 1:
+            raise RuntimeError(
+                "template exposes neither {%s} nor the line %r exactly once"
+                " -- cannot render this solver key from flags" % (_k, _old))
+        tmpl = tmpl.replace(_old, _new)
+    script = tmpl.format(
+            run_name=run_name, nx=nx, ny=ny, nz=nz, dx=dx, dy=dy, dz0=dz0,
+            total_depth=total_depth, start_date=start_date, end_date=end_date,
+            total_hours=total_hours, start_time_hours=start_time_hours,
+            p=p, q=q, r=r,
+            geominput_names="domain_input" + (" indi_input" if classes else ""),
+            upper_x=nx * dx, upper_y=ny * dy, indi=indi, gnames=gnames,
+            perm_classes=per_class('run.Geom.c{c}.Perm.Type = "Constant"',
+                                   'run.Geom.c{c}.Perm.Value = {ks_m_hr}  # {name}'),
+            k_anisotropy=k_anisotropy,
+            start_count=int(start_time_hours // dump_interval_hours),
+            start_time_f=float(start_time_hours), stop_time_f=float(total_hours),
+            dump_interval_f=float(dump_interval_hours), dt_hours=dt_hours,
+            porosity_classes=per_class('run.Geom.c{c}.Porosity.Type = "Constant"',
+                                       'run.Geom.c{c}.Porosity.Value = {porosity}'),
+            bcs=bcs, slopes=slopes, mannings_hr=mannings_hr,
+            relperm_classes=per_class('run.Geom.c{c}.RelPerm.Alpha = {alpha_1m}',
+                                      'run.Geom.c{c}.RelPerm.N = {n}'),
+            saturation_classes=per_class('run.Geom.c{c}.Saturation.Alpha = {alpha_1m}',
+                                         'run.Geom.c{c}.Saturation.N = {n}',
+                                         'run.Geom.c{c}.Saturation.SRes = {sres_frac}',
+                                         'run.Geom.c{c}.Saturation.SSat = 1.0'),
+            clm=clm, tfg=terrain_following, dist_block=dist_block,
+            nl_max_iter=nl_max_iter, eta_value=eta_value,
+            use_jacobian=use_jacobian,
+            derivative_epsilon=derivative_epsilon,
+            krylov_dim=krylov_dim, pc_matrix_type=pc_matrix_type,
+        )
 
-    # Slope files
-    script_lines += [
-        '# ============================================================',
-        '# Topographic Slopes',
-        '# ============================================================',
-        'run.TopoSlopesX.Type = "Constant"',
-        'run.TopoSlopesX.GeomNames = "domain"',
-        'run.TopoSlopesX.Geom.domain.Value = -0.001  # Override with PFB',
-        '',
-        'run.TopoSlopesY.Type = "Constant"',
-        'run.TopoSlopesY.GeomNames = "domain"',
-        'run.TopoSlopesY.Geom.domain.Value = -0.001  # Override with PFB',
-        '',
-    ]
-
-    # CLM
-    if enable_clm:
-        script_lines += [
-            '# ============================================================',
-            '# CLM Coupling',
-            '# ============================================================',
-            'run.Solver.LSM = "CLM"',
-            'run.Solver.CLM.CLMDumpInterval = 1',
-            f'run.Solver.CLM.MetForcing = "1D"',
-            f'run.Solver.CLM.MetFileName = "NLDAS"',
-            f'run.Solver.CLM.MetFilePath = "./"',
-            'run.Solver.CLM.IstepStart = 1',
-            '',
-        ]
-
-    # Solver
-    script_lines += [
-        '# ============================================================',
-        '# Solver Configuration',
-        '# ============================================================',
-        'run.Solver = "Richards"',
-        'run.Solver.MaxIter = 25000',
-        'run.Solver.Drop = 1e-20',
-        'run.Solver.AbsTol = 1e-8',
-        '',
-        '# Nonlinear solver (Newton)',
-        'run.Solver.Nonlinear.MaxIter = 300',
-        'run.Solver.Nonlinear.ResidualTol = 1e-6',
-        'run.Solver.Nonlinear.EtaChoice = "EtaConstant"',
-        'run.Solver.Nonlinear.EtaValue = 0.01',
-        'run.Solver.Nonlinear.UseJacobian = True',
-        'run.Solver.Nonlinear.DerivativeEpsilon = 1e-14',
-        'run.Solver.Nonlinear.StepTol = 1e-30',
-        'run.Solver.Nonlinear.Globalization = "LineSearch"',
-        '',
-        '# Linear solver (PFMG from HYPRE)',
-        'run.Solver.Linear.KrylovDimension = 100',
-        'run.Solver.Linear.MaxRestarts = 5',
-        'run.Solver.Linear.Preconditioner = "PFMG"',
-        'run.Solver.Linear.Preconditioner.PFMG.MaxIter = 1',
-        'run.Solver.Linear.Preconditioner.PFMG.NumPreRelax = 1',
-        'run.Solver.Linear.Preconditioner.PFMG.NumPostRelax = 1',
-        '',
-        '# ============================================================',
-        '# Output Control',
-        '# ============================================================',
-        'run.Solver.PrintSubsurfData = True',
-        'run.Solver.PrintPressure = True',
-        'run.Solver.PrintSaturation = True',
-        'run.Solver.PrintMask = True',
-        'run.Solver.PrintVelocities = False',
-        'run.Solver.WriteSiloSubsurfData = False',
-        'run.Solver.WriteSiloPressure = False',
-        'run.Solver.WriteSiloSaturation = False',
-        '',
-        '# Initial conditions',
-        'run.ICPressure.Type = "HydroStaticPatch"',
-        'run.ICPressure.GeomNames = "domain"',
-        'run.Geom.domain.ICPressure.Value = -5.0',
-        'run.Geom.domain.ICPressure.RefGeom = "domain"',
-        'run.Geom.domain.ICPressure.RefPatch = "bottom"',
-        '',
-        '# ============================================================',
-        '# Run',
-        '# ============================================================',
-        f'run.run(working_directory="{output_dir}")',
-        '',
-        'print(f"ParFlow run {run_name} completed.")',
-    ]
-
-    # Write script
     script_path = os.path.join(output_dir, f"run_{run_name}.py")
     with open(script_path, "w") as f:
-        f.write("\n".join(script_lines))
+        f.write(script)
     os.chmod(script_path, 0o755)
 
-    result = {
-        "status": "success",
-        "run_script": script_path,
-        "run_name": run_name,
-        "grid": {"nx": nx, "ny": ny, "nz": nz, "dx": dx, "dy": dy},
-        "total_depth_m": total_depth,
-        "simulation_hours": total_hours,
-        "total_timesteps": total_steps,
-        "dump_interval_hours": dump_interval_hours,
-        "expected_output_files": total_steps // dump_steps,
+    # Stage inputs next to the script under the canonical names it references
+    staged = {}
+    for src, dst in [(indicator_pfb, "texture_indicator.pfb"),
+                     (slope_x_pfb, "slope_x.pfb"), (slope_y_pfb, "slope_y.pfb"),
+                     (ic_pfb, "ic_pressure.pfb")]:
+        if src:
+            if not os.path.exists(src):
+                raise FileNotFoundError(f"Input file not found: {src}")
+            dstp = os.path.join(output_dir, dst)
+            if os.path.abspath(src) != os.path.abspath(dstp):
+                shutil.copyfile(src, dstp)
+            staged[dst] = dstp
+    if enable_clm:
+        if not clm_dir:
+            raise ValueError("--clm_dir is required with CLM enabled")
+        for fn in ("drv_clmin.dat", "drv_vegm.dat", "drv_vegp.dat"):
+            src = os.path.join(clm_dir, fn)
+            if not os.path.exists(src):
+                raise FileNotFoundError(f"CLM driver file missing: {src}")
+            shutil.copyfile(src, os.path.join(output_dir, fn))
+            staged[fn] = os.path.join(output_dir, fn)
+
+    return {
+        "status": "success", "run_script": script_path, "run_name": run_name,
+        "grid": {"nx": nx, "ny": ny, "nz": nz, "dx": dx, "dy": dy, "dz": dz0},
+        "total_depth_m": total_depth, "simulation_hours": total_hours,
+        "start_time_hours": start_time_hours, "istep_start": istep_start,
+        "expected_pressure_dumps": (total_hours - start_time_hours) // dump_interval_hours + 1,
         "mpi_topology": {"P": p, "Q": q, "R": r, "total_cores": p * q * r},
         "clm_enabled": enable_clm,
-        "overland_flow": overland_flow,
-        "terrain_following": terrain_following,
+        "subsurface_classes": {c: v["name"] for c, v in classes.items()},
+        "staged_inputs": staged,
         "run_command": f"cd {output_dir} && python run_{run_name}.py",
-        "mpi_run_command": f"cd {output_dir} && mpirun -np {p*q*r} parflow {run_name}",
     }
-    return result
+
+
+ARGS = [
+    ("--domain_json", dict(required=True)),
+    ("--run_name", dict(required=True)),
+    ("--output_dir", dict(required=True)),
+    ("--start_date", dict(default="2000-01-01")),
+    ("--end_date", dict(default="2010-12-31")),
+    ("--dt_hours", dict(type=float, default=1.0)),
+    ("--dump_interval", dict(type=int, default=24)),
+    ("--no_clm", dict(action="store_true")),
+    ("--no_tfg", dict(action="store_true")),
+    ("--p", dict(type=int, default=1)),
+    ("--q", dict(type=int, default=1)),
+    ("--r", dict(type=int, default=1)),
+    ("--texture_params", dict(default=None, help="texture_params.json from s2")),
+    ("--indicator_pfb", dict(default=None, help="texture_indicator.pfb from s2")),
+    ("--slope_x_pfb", dict(default=None)),
+    ("--slope_y_pfb", dict(default=None)),
+    ("--ic_pfb", dict(default=None, help="initial (or restart) pressure PFB")),
+    ("--clm_dir", dict(default=None, help="s4 output dir with drv_*.dat")),
+    ("--forcing_dir", dict(default=None, help="s5 output dir with NLDAS chunks")),
+    ("--met_name", dict(default="NLDAS")),
+    ("--met_nt", dict(type=int, default=24)),
+    ("--mannings_hr", dict(type=float, default=1.0e-5)),
+    ("--k_anisotropy", dict(type=float, default=0.1)),
+    ("--nl_max_iter", dict(type=int, default=300,
+                           help="Solver.Nonlinear.MaxIter (docs/s7_solver_skill.md default)")),
+    ("--eta_value", dict(type=float, default=0.001)),
+    ("--use_jacobian", dict(choices=["true", "false"], default="true",
+                            help="false = FD Jacobian-vector products (KINSol stall fallback)")),
+    ("--derivative_epsilon", dict(type=float, default=1e-16)),
+    ("--krylov_dim", dict(type=int, default=70)),
+    ("--pc_matrix_type", dict(choices=["FullJacobian", "PFSymmetric"],
+                              default="FullJacobian")),
+    ("--start_time_hours", dict(type=int, default=0,
+                                help="restart offset (multiple of dump_interval)")),
+]
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate ParFlow run script"
-    )
-    parser.add_argument("--domain_json", required=True)
-    parser.add_argument("--run_name", required=True)
-    parser.add_argument("--output_dir", required=True)
-    parser.add_argument("--start_date", default="2000-01-01")
-    parser.add_argument("--end_date", default="2010-12-31")
-    parser.add_argument("--dt_hours", type=float, default=1.0)
-    parser.add_argument("--dump_interval", type=int, default=24)
-    parser.add_argument("--no_clm", action="store_true")
-    parser.add_argument("--overland", choices=["kinematic", "diffusive"],
-                        default="kinematic")
-    parser.add_argument("--no_tfg", action="store_true")
-    parser.add_argument("--p", type=int, default=1)
-    parser.add_argument("--q", type=int, default=1)
-    parser.add_argument("--r", type=int, default=1)
-    args = parser.parse_args()
-
-    errs = validate_inputs(args.domain_json)
-    if errs:
-        print(json.dumps({"status": "error", "errors": errs}))
+    ap = argparse.ArgumentParser(description="Generate ParFlow run script")
+    for name, kw in ARGS:
+        ap.add_argument(name, **kw)
+    a = ap.parse_args()
+    if not os.path.exists(a.domain_json):
+        print(json.dumps({"status": "error",
+                          "errors": [f"Domain definition not found: {a.domain_json}"]}))
         sys.exit(1)
-
     result = process(
-        args.domain_json, args.run_name, args.output_dir,
-        args.start_date, args.end_date, args.dt_hours, args.dump_interval,
-        not args.no_clm, args.overland, not args.no_tfg,
-        args.p, args.q, args.r,
-    )
+        a.domain_json, a.run_name, a.output_dir, a.start_date, a.end_date,
+        a.dt_hours, a.dump_interval, not a.no_clm, not a.no_tfg, a.p, a.q, a.r,
+        texture_params=a.texture_params, indicator_pfb=a.indicator_pfb,
+        slope_x_pfb=a.slope_x_pfb, slope_y_pfb=a.slope_y_pfb, ic_pfb=a.ic_pfb,
+        clm_dir=a.clm_dir, forcing_dir=a.forcing_dir, met_name=a.met_name,
+        met_nt=a.met_nt, mannings_hr=a.mannings_hr,
+        k_anisotropy=a.k_anisotropy, start_time_hours=a.start_time_hours,
+        nl_max_iter=a.nl_max_iter, eta_value=a.eta_value,
+        use_jacobian=(a.use_jacobian == "true"),
+        derivative_epsilon=a.derivative_epsilon, krylov_dim=a.krylov_dim,
+        pc_matrix_type=a.pc_matrix_type)
     print(json.dumps(result, indent=2))
 
 

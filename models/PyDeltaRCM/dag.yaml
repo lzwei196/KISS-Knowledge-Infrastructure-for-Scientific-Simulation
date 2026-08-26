@@ -189,7 +189,7 @@ outputs:
   - var: "velocity"
     validation_rank: 5
     unit: "m/s"
-    description: "Flow-velocity magnitude uw = sqrt(ux^2 + uy^2), clamped to u_max = 2*u0."
+    description: "Water-flow velocity magnitude uw = sqrt(ux^2 + uy^2), clamped to u_max = 2*u0."
     emitted_in: "pyDeltaRCM_output.nc (save_velocity_grids)"
     observability:
       comparable_obs_shapes:
@@ -442,3 +442,9 @@ safety:
       scope: "influence block grading"
       source: "Liang et al. 2016 (doi:10.1002/2015JF003653); no Sobol/Morris/EFAST study exists for DeltaRCM"
       status: adopted
+
+medium_evidence:
+  - var: "velocity"
+    source: "docs/s2_water_routing.md"
+    quote: "Route water parcels through the domain using weighted random walks to compute the free water surface, flow velocities, and discharge field for the current timestep."
+    note: "Water-routing documentation identifies the velocity output as a water-flow field."

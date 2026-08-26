@@ -1,0 +1,279 @@
+schema_version: 1
+model_id: GemPy
+domain: geologic_modeling
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+# GemPy/geological-model validation is mostly convention-by-comparison rather than
+# universal threshold tables. Numeric bands below are used only where a fetched paper
+# gives an explicit match/misfit criterion. Otherwise bands stay null and low confidence.
+
+references:
+  gempy2019:
+    doi: 10.5194/gmd-12-1-2019
+    title: "GemPy 1.0: open-source stochastic geological modeling and inversion"
+    venue: "Geosci. Model Dev."
+    year: 2019
+    oa: gold
+    resolves: https://gmd.copernicus.org/articles/12/1/2019/gmd-12-1-2019.pdf
+  schaaf2021:
+    doi: 10.5194/gmd-14-3899-2021
+    title: "Constraining stochastic 3-D structural geological models with topology information using approximate Bayesian computation in GemPy 2.1"
+    venue: "Geosci. Model Dev."
+    year: 2021
+    oa: gold
+    resolves: https://gmd.copernicus.org/articles/14/3899/2021/gmd-14-3899-2021.pdf
+  entropy2012:
+    doi: 10.1016/j.tecto.2011.05.001
+    title: "Uncertainties have a meaning: Information entropy as a quality measure for 3-D geological models"
+    venue: "Tectonophysics"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.tecto.2011.05.001.txt
+  consistency2025:
+    doi: 10.5194/gmd-18-71-2025
+    title: "Checking the consistency of 3D geological models"
+    venue: "Geosci. Model Dev."
+    year: 2025
+    oa: gold
+    resolves: https://gmd.copernicus.org/articles/18/71/2025/gmd-18-71-2025.pdf
+  giraud2020:
+    doi: 10.5194/se-11-419-2020
+    title: "Towards plausible lithological classification from geophysical inversion: honouring geological principles in subsurface imaging"
+    venue: "Solid Earth"
+    year: 2020
+    oa: gold
+    resolves: https://se.copernicus.org/articles/11/419/2020/se-11-419-2020.pdf
+  scott2019:
+    doi: 10.1186/s40517-019-0143-6
+    title: "A probabilistic geologic model of the Krafla geothermal system constrained by gravimetric data"
+    venue: "Geothermal Energy"
+    year: 2019
+    oa: gold
+    resolves: https://geothermal-energy-journal.springeropen.com/track/pdf/10.1186/s40517-019-0143-6
+  geopdnn2024:
+    doi: 10.5194/gmd-17-957-2024
+    title: "GeoPDNN 1.0: a semi-supervised deep learning neural network using pseudo-labels for three-dimensional shallow strata modelling and uncertainty analysis in urban areas from borehole data"
+    venue: "Geosci. Model Dev."
+    year: 2024
+    oa: gold
+    resolves: https://gmd.copernicus.org/articles/17/957/2024/gmd-17-957-2024.pdf
+  pakyuz2018:
+    doi: 10.5194/se-9-385-2018
+    title: "Monte Carlo simulation for uncertainty estimation on structural data in implicit 3-D geological modeling"
+    venue: "Solid Earth"
+    year: 2018
+    oa: gold
+    resolves: https://www.solid-earth.net/9/385/2018/se-9-385-2018.pdf
+
+validation:
+  - dag_variable: lith_block
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a reusable CSI/Jaccard threshold for validating a full 3-D categorical lithology block against observations."
+        cites: []
+    secondary_metrics:
+      - metric: overall_accuracy
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [giraud2020, geopdnn2024]
+      - metric: geophysical_consistency
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [giraud2020]
+    validated_when: "UNRESOLVED - compare categorical lithology pattern with observations, borehole holdout labels, and geological/geophysical consistency; no cited CSI pass band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Fetched lithology papers define validation metrics but not a field-wide CSI threshold.
+      Giraud 2020 defines lithology prediction accuracy as the ratio of correct predictions to
+      total predictions and reports a case where all lithologies were recovered with accuracy
+      above 90%; GeoPDNN 2024 reports accuracy/precision/recall/F1 around 98% in a single
+      urban borehole case. These are benchmark results, not reusable pass bands.
+
+  - dag_variable: scalar_field
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric CSI threshold for GemPy scalar/potential fields; the field validates the resulting contacts, topology, and data honouring rather than the dimensionless scalar magnitude."
+        cites: []
+    secondary_metrics:
+      - metric: input_data_honouring
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [gempy2019, pakyuz2018]
+      - metric: geological_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [consistency2025]
+    validated_when: "UNRESOLVED - scalar-field validation is indirect: derived interfaces should honour contact/orientation data and geological rules; no cited numeric scalar-field CSI band."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      GemPy uses a dimensionless potential field whose isosurfaces define geology, so absolute
+      scalar values are not directly observed. Pakyuz 2018 emphasizes propagation of structural
+      input-data uncertainty; Parquer 2025 frames checking as consistency with geological
+      principles rather than a scalar-field magnitude threshold.
+
+  - dag_variable: surfaces_and_sections
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched surface/cross-section paper gives a reusable CSI threshold; papers use borehole/profile correspondence, cross-validation error, topology, and expert consistency."
+        cites: []
+    secondary_metrics:
+      - metric: borehole_profile_correspondence
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [geopdnn2024]
+      - metric: geological_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [consistency2025]
+    validated_when: "UNRESOLVED - surfaces and sections should match held-out borehole/profile geometry and geological topology, but no fetched paper supplies a numeric CSI pass band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      GeoPDNN 2024 validates 3-D geology by comparing sections to complete drilling results,
+      stating that accurate correspondence between borehole data and cross-sections indicates
+      modelling precision. This supports the comparison mode, not a universal threshold.
+
+  - dag_variable: uncertainty_distribution
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI threshold for comparing entropy/probability maps; entropy is a diagnostic quantity whose acceptable value depends on data density and geological ambiguity."
+        cites: []
+    secondary_metrics:
+      - metric: mean_entropy
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [entropy2012, schaaf2021]
+      - metric: entropy_reduction
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [schaaf2021]
+    validated_when: "UNRESOLVED - compare spatial uncertainty/entropy patterns to ensemble behaviour and information added by observations; no cited pass band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Wellmann and Regenauer-Lieb 2012 propose information entropy as an objective measure to
+      compare and evaluate model and observational results, with entropy equal to zero where
+      one member has probability 1. Schaaf 2021 reports entropy reduction from topology
+      constraints, but its threshold is model-specific rather than a general entropy validation band.
+
+  - dag_variable: geophysics_forward
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: gravity_rmse
+        direction: minimize
+        unit: mGal
+        bands: {very_good: 0.1, good: 0.15, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Gravity field validation is judged against assumed measurement error; Scott 2019 estimated 0.1 mGal, stored posterior models after RMS misfit <0.15 mGal, and tested 0.5 mGal where 0.1 mGal was likely underestimated."
+        cites: [scott2019]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [giraud2020]
+      - metric: tmi_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: []
+    validated_when: "For gravity grids, RMS/RMSE misfit should be within the gravity-data error model (<=0.5 mGal, with <=0.15 mGal in the cited Krafla run); no fetched numeric TMI band."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      This supersedes the dag's CSI headline for geophysical_forward spatial_snapshot when
+      observed gravity values are available, because fetched geophysical validation papers use
+      weighted misfit/RMSE and visual field comparison. Scott 2019 states that the RMS misfit
+      stabilization reflects the assumed measurement error and reports close gravity-field
+      correspondence with absolute misfit below 0.3 mGal. Giraud 2020 uses a tolerance tied to
+      noise levels, but does not give a reusable numeric value.
+
+  - dag_variable: geophysics_forward
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: gravity_rmse
+        direction: minimize
+        unit: mGal
+        bands: {very_good: 0.1, good: 0.15, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred from gravity-field point-observation misfit in Scott 2019; use only for gravity station values, not magnetic TMI."
+        cites: [scott2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: []
+    validated_when: "For a gravity station value, absolute/RMS misfit should be within the station error model (<=0.5 mGal; stronger if <=0.15 mGal). PBIAS has no fetched field convention for single-station gravity/TMI."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: >-
+      The dag determining metric is pbias, but the fetched geophysical-model literature validates
+      gravity responses by modeled-observed misfit/RMSE at observation points. The band is
+      transferred from Scott 2019's gravity likelihood and should not be applied to magnetic TMI
+      without a fetched TMI error convention.
+
+  - dag_variable: topology
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: 1.0, satisfactory: 0.975}
+        pass_band: satisfactory
+        band_note: "For topology graphs, CSI is treated as the Jaccard intersection/union of graph edges. GemPy 1.0 states J=1 is an identical match; Schaaf 2021 allows acceptance in 1-epsilon <= J <= 1 and uses epsilon=0.025 as a strict case-study threshold."
+        cites: [gempy2019, schaaf2021]
+    secondary_metrics:
+      - metric: geological_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [consistency2025]
+    validated_when: "Topology is validated when the observed/target adjacency graph matches exactly (CSI/Jaccard = 1.0) or, for ABC-style stochastic acceptance, stays within a strict model-specific tolerance such as J >= 0.975."
+    evidence_strength: moderate
+    confidence: 0.70
+    notes: >-
+      GemPy 1.0 defines topology graph similarity with Jaccard intersection over union and says
+      the metric reaches exactly one for an identical match. Schaaf 2021 states only identical
+      graph pairs give J=1 and that tolerances may accept 1-epsilon <= J <= 1; it also warns the
+      absolute threshold is proportional to model sensitivity and was chosen empirically, so
+      confidence is moderate rather than strong.
+
+deferred_paywalled:
+  - ref: "Geological Modelling and Validation of Geological Interpretations via Simulation and Classification of Quantitative Covariates"
+    doi: 10.3390/min8010007
+    needed_for: [lith_block, scalar_field, surfaces_and_sections]
+  - ref: "Geological modeling from field data and geological knowledge. Part II: modelling validation using gravity and magnetic data inversion"
+    doi: unknown_not_fetched
+    needed_for: [geophysics_forward]

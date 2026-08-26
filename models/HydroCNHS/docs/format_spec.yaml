@@ -1,237 +1,519 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: HydroCNHS
-  version: 1.2.1
-  domain: hydrology
-  language: Python
-  binary_path: KISSPATH_PYTHON_ENV/bin/python
-  package: hydrocnhs
-  time_step: daily
-  rainfall_runoff_schemes:
-  - GWLF
-  - ABCD
-  routing: Lohmann
-  abm_apis:
-  - Dam
-  - RiverDiv
-  - Conveying
-  - InSitu
+  language: python
+  implementation:
+    id: hydrocnhs
+    version: 1.2.1
+    provenance: Pure Python; HydroCNHS package (Lin / Yang group) — no compiled binaries; API model.run(temp,
+      prec, pet).
+  scientific_reference_version: 'HydroCNHS (Lin, Yang & Wi 2022) — semi-distributed daily CNHS hydrology:
+    GWLF/ABCD rainfall-runoff + Lohmann routing + four ABM coupling APIs'
 inputs:
   forcing:
-  - name: temperature
-    symbol: temp
+  - name: precipitation (prec)
+    unit: cm/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: 'Python dict {outlet_name: [daily values]}'
+    notes: Internal area-to-discharge conversion (0.01*Area*10000/86400) confirms the model expects cm/day;
+      mm/day, m/day, or kg/m2/s forcing runs silently with magnitude errors.
+  - name: temperature (temp)
     unit: degC
-    valid_range:
-    - -60
-    - 60
-    format: dict of lists keyed by subbasin name
-    notes: Must be Celsius. If Kelvin, subtract 273.15 (dt_003)
-  - name: precipitation
-    symbol: prec
+    category: forcing
+    source_kind: forcing
+    model_input_format: 'Python dict {outlet_name: [daily values]}'
+    notes: Drives Hamon PET (exp(temp/16)) and degree-day snowmelt; a monthly-mean resample of temp also
+      selects the GWLF growing-season CN antecedent-moisture branch. Kelvin input silently saturates PET
+      seasonality.
+  - name: potential evapotranspiration (pet)
     unit: cm/day
-    valid_range:
-    - 0
-    - 100
-    format: dict of lists keyed by subbasin name
-    notes: MUST be cm/day. If mm/day divide by 10 (dt_001). If kg/m2/s multiply by
-      86400/10 (dt_002)
-  - name: potential_evapotranspiration
-    symbol: pet
-    unit: cm/day
-    valid_range:
-    - 0
-    - 5
-    format: dict of lists keyed by subbasin name
-    notes: Optional - Hamon method used if not provided. Must be cm/day if supplied
-      (dt_004)
+    category: forcing
+    source_kind: forcing
+    model_input_format: 'Python dict {outlet_name: [daily values]} (optional)'
+    notes: Optional. If omitted, computed internally by Hamon from temperature + subbasin latitude + Julian
+      day; PET forced to 0 where temp<=0. Pre-supplying it avoids recomputation each calibration run.
   parameters:
-    critical:
-    - name: CN2
-      full_name: SCS Curve Number
-      valid_range:
-      - 25
-      - 100
-      sensitivity: very_high
-      description: SCS runoff curve number; most sensitive GWLF parameter. Change
-        of +/-5 shifts peak Q 30-50%
-      scheme: GWLF
-    - name: Res
-      full_name: Recession coefficient
-      valid_range:
-      - 0.001
-      - 0.5
-      sensitivity: high
-      description: Baseflow recession coefficient
-      scheme: GWLF
-    - name: Alpha
-      full_name: Groundwater discharge rate
-      valid_range:
-      - 0
-      - 1
-      sensitivity: high
-      description: Groundwater discharge rate
-      scheme: GWLF
-    - name: Ur
-      full_name: Available water capacity
-      valid_range:
-      - 1
-      - 15
-      unit: cm
-      sensitivity: high
-      description: Soil available water capacity. Must be in cm not mm (dt_009)
-      scheme: GWLF
-    gwlf:
-    - name: IS
-      valid_range:
-      - 0
-      - 0.5
-      sensitivity: medium
-      description: Fraction of precipitation intercepted
-    - name: Sep
-      valid_range:
-      - 0
-      - 0.5
-      sensitivity: low
-      description: Fraction to deep aquifer
-    - name: Beta
-      valid_range:
-      - 0
-      - 1
-      sensitivity: medium
-      description: Unsaturated zone percolation
-    - name: Df
-      valid_range:
-      - 0
-      - 1
-      unit: cm/degC
-      sensitivity: medium
-      description: Snowmelt degree-day coefficient (dt_010)
-    - name: Kc
-      valid_range:
-      - 0.5
-      - 1.5
-      sensitivity: medium
-      description: Crop/vegetation coefficient
-    abcd:
-    - name: a
-      valid_range:
-      - 0
-      - 1
-      sensitivity: high
-      description: Controls runoff during unsaturation
-    - name: b
-      valid_range:
-      - 0
-      - 400
-      unit: cm
-      sensitivity: high
-      description: Maximum soil water storage
-    - name: c
-      valid_range:
-      - 0
-      - 1
-      sensitivity: medium
-      description: Groundwater recharge fraction
-    - name: d
-      valid_range:
-      - 0
-      - 1
-      sensitivity: medium
-      description: Groundwater discharge rate
-    routing:
-    - name: GShape
-      valid_range:
-      - 1
-      - 100
-      description: Gamma distribution shape for within-subbasin UH
-    - name: GScale
-      valid_range:
-      - 0.01
-      - 150
-      description: Gamma distribution scale for within-subbasin UH
-    - name: Velo
-      valid_range:
-      - 0.5
-      - 55
-      unit: m/s
-      description: Saint-Venant wave celerity (dt_011)
-    - name: Diff
-      valid_range:
-      - 200
-      - 4000
-      unit: m2/s
-      description: Saint-Venant diffusion coefficient
-  geometry:
-  - name: subbasin_area
+  - name: CN2 (SCS runoff curve number)
+    unit: '-'
+    category: gwlf_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml; -99 flags for calibration
+    notes: Range [25,100]; most sensitive GWLF parameter. Internally converted to dry/wet CN1/CN3 and
+      detention DSkt.
+  - name: IS (interception fraction)
+    unit: '-'
+    category: gwlf_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml
+    notes: Range [0,0.5].
+  - name: Res (baseflow recession coefficient)
+    unit: '-'
+    category: gwlf_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml
+    notes: Range [1e-3,0.5]; sets groundwater discharge Gt=Res*St.
+  - name: Sep (deep seepage fraction)
+    unit: '-'
+    category: gwlf_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml
+    notes: Range [0,0.5]; deep seepage Dt=Sep*St lost from the basin.
+  - name: Alpha (groundwater discharge / baseflow coefficient)
+    unit: '-'
+    category: gwlf_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml
+    notes: Range [0,1]. Docs/KI overlap Alpha (baseflow rate) vs Res (recession); both govern shallow-groundwater
+      discharge.
+  - name: Beta (unsaturated-zone percolation coefficient)
+    unit: '-'
+    category: gwlf_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml
+    notes: Range [0,1].
+  - name: Ur (available soil water capacity)
+    unit: cm
+    category: gwlf_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml
+    notes: Range [1,15]; water-stress onset Ks ramps below 0.5*Ur. mm input silently suppresses runoff.
+  - name: Df (degree-day snowmelt coefficient)
+    unit: cm/degC
+    category: gwlf_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml
+    notes: Range [0,1]; melt=min(SnowSt, Df*temp) for temp>0. Shared with ABCD.
+  - name: Kc (land cover / crop coefficient)
+    unit: '-'
+    category: gwlf_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml
+    notes: Range [0.5,1.5].
+  - name: a (runoff/recharge control under unsaturation)
+    unit: '-'
+    category: abcd_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml (LSM='ABCD')
+    notes: Range [0,1].
+  - name: b (maximum soil water storage)
+    unit: cm
+    category: abcd_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml (LSM='ABCD')
+    notes: Range [0,400]; upper limit on ET + soil moisture storage.
+  - name: c (groundwater recharge fraction)
+    unit: '-'
+    category: abcd_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml (LSM='ABCD')
+    notes: Range [0,1].
+  - name: d (groundwater discharge rate)
+    unit: '-'
+    category: abcd_parameter
+    source_kind: calibrated
+    model_input_format: RainfallRunoff entry in model.yaml (LSM='ABCD')
+    notes: Range [0,1].
+  - name: GShape (within-subbasin gamma UH shape)
+    unit: '-'
+    category: routing_parameter
+    source_kind: calibrated
+    model_input_format: Routing entry in model.yaml (per link)
+    notes: Range [1,100]. Interacts with GScale → calibrate jointly. Silently set to a single impulse
+      (no in-grid lag) when assigned_Q or InstreamControl is active.
+  - name: GScale (within-subbasin gamma UH scale)
+    unit: '-'
+    category: routing_parameter
+    source_kind: calibrated
+    model_input_format: Routing entry in model.yaml (per link)
+    notes: Range [1e-2,150]; clamped to >=0.0001 to avoid divide-by-zero in gamma.cdf.
+  - name: Velo (Saint-Venant wave celerity)
+    unit: m/s
+    category: routing_parameter
+    source_kind: calibrated
+    model_input_format: Routing entry in model.yaml (per link)
+    notes: Range [0.5,55]; between-subbasin channel wave velocity.
+  - name: Diff (Saint-Venant diffusivity)
+    unit: m^2/s
+    category: routing_parameter
+    source_kind: calibrated
+    model_input_format: Routing entry in model.yaml (per link)
+    notes: Range [200,4000]; controls hydrograph attenuation.
+  - name: subbasin drainage area (Area)
     unit: ha
-    notes: MUST be hectares. If km2 multiply by 100 (dt_005). If m2 divide by 10000
-      (dt_006)
-  - name: latitude
-    unit: decimal_degrees
-    notes: Required for Hamon PET calculation (dt_008)
-  - name: flow_length
+    category: static_geometry
+    source_kind: user_provided
+    model_input_format: Outlet attribute in model.yaml
+    notes: Used to convert runoff depth (cm) to discharge (cms). km2 or m2 input silently mis-scales discharge.
+  - name: subbasin latitude (Latitude)
+    unit: decimal degrees
+    category: static_geometry
+    source_kind: user_provided
+    model_input_format: Outlet attribute in model.yaml
+    notes: Used by Hamon PET solar-declination term.
+  - name: flow length between outlets (FlowLength)
     unit: m
-    notes: If km multiply by 1000 (dt_007)
+    category: static_geometry
+    source_kind: user_provided
+    model_input_format: Routing link attribute in model.yaml
+    notes: Sets Lohmann travel time/attenuation. km input makes routing ~1000x too fast.
+  initial_conditions:
+  - name: S0 (initial shallow saturated soil water, GWLF)
+    unit: cm
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: RainfallRunoff initial value in model.yaml
+    notes: Requires 1-2 yr warm-up to equilibrate.
+  - name: U0 (initial unsaturated soil water, GWLF)
+    unit: cm
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: RainfallRunoff initial value in model.yaml
+    notes: Requires warm-up.
+  - name: SnowS (initial snow storage)
+    unit: cm
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: RainfallRunoff initial value in model.yaml
+    notes: Shared concept for GWLF and ABCD; requires warm-up.
+  - name: XL (initial saturated/lower soil water, ABCD)
+    unit: cm
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: RainfallRunoff initial value in model.yaml (ABCD)
+    notes: ABCD groundwater store initial value.
+  boundary_conditions:
+  - name: LSM rainfall-runoff scheme selector (GWLF | ABCD | Other)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: WaterSystem.LSM in model.yaml
+    notes: '''Other'' lets the user inject pre-computed subbasin runoff.'
+  - name: simulation period (StartDate / EndDate / DataLength)
+    unit: date / count
+    category: control
+    source_kind: user_provided
+    model_input_format: WaterSystem in model.yaml; dates as YYYY/M/D
+    notes: DataLength MUST equal (EndDate-StartDate).days+1 or arrays mis-size (fatal IndexError). Hyphenated
+      dates silently misparse.
+  - name: routing network topology (Outlets / Routing links)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: WaterSystem.Outlets + Routing graph in model.yaml
+    notes: Node-link connectivity from which SimSeq routing order is derived.
+  - name: InstreamControl flag
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: Routing attribute in model.yaml (default False)
+    notes: When True, in-grid UH collapses to a single impulse (no within-subbasin lag) for a reservoir-controlled
+      outlet.
+  - name: ABM agent rules and priority ordering
+    unit: '-'
+    category: management
+    source_kind: user_provided
+    model_input_format: ABM section in model.yaml + user .py modules at Path.Modules
+    notes: Agents execute in priority order (lower number first); dam release must precede downstream
+      diversion or water balance is silently violated. Priorities must be unique.
+  - name: observed streamflow
+    unit: cms (m^3/s)
+    category: calibration_target
+    source_kind: user_provided
+    model_input_format: supplied to GA / Indicator for calibration only
+    notes: Not consumed by the forward simulation; used only as the calibration/evaluation target.
 outputs:
   primary:
   - name: Q_routed
-    unit: cms (m3/s)
-    valid_range:
-    - 0
-    - 100000
-    format: dict keyed by subbasin/outlet name
-    description: Routed streamflow at each outlet
-  - name: discharge
-    canonical_id: discharge
-    unit: m3/s
-  - name: surface_runoff
-    canonical_id: surface_runoff
-    unit: mm/day
-  - name: evapotranspiration
-    canonical_id: evapotranspiration
-    unit: mm/day
-  - name: soil_moisture
-    canonical_id: soil_moisture
-    unit: m3/m3
-  diagnostics:
-  - name: NSE
-    valid_range:
-    - -inf
-    - 1
-    description: Nash-Sutcliffe Efficiency
-  - name: KGE
-    valid_range:
-    - -inf
-    - 1
-    description: Kling-Gupta Efficiency
-  - name: PBIAS
-    unit: '%'
-    description: Percent Bias
-  - name: r
-    valid_range:
-    - -1
-    - 1
-    description: Pearson correlation coefficient
-  - name: RMSE
-    unit: cms
-    valid_range:
-    - 0
-    - inf
-    description: Root Mean Square Error
-config:
-  format: YAML
-  date_format: YYYY/M/D
-  notes: Date must be YYYY/M/D not YYYY-MM-DD (silent parse failure). DataLength must
-    equal days between StartDate and EndDate inclusive.
-  calibration_sentinel: -99
-  notes_calibration: Parameters set to -99 are marked for GA calibration. Bounds must
-    be set explicitly.
+    unit: cms (m^3/s)
+    description: Daily routed streamflow at routing/gauged outlets (and dam-agent inflow outlets); the
+      primary return of Model.run().
+    validation_rank: 1
+    emitted_in: model.dc.Q_routed[outlet] (data collector)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Exclude a 1-2 yr warm-up before scoring so soil/groundwater/snow stores equilibrate.
+        - Align simulated and observed on the date index, not array position; a 1-day offset destroys
+          correlation in flashy basins.
+        - Regulated reaches require the corresponding ABM agents configured or the comparison conflates
+          natural and human signals.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Single-instant comparison (e.g., a peak or a long-term mean flow) discards the timing information
+          routing is designed to capture.
+      detrending_options:
+      - none
+  - name: Q_runoff
+    unit: cms (m^3/s)
+    description: Local unrouted subbasin runoff (also exposed as Q_local) before Lohmann routing.
+    validation_rank: 2
+    emitted_in: model.dc.Q_runoff[outlet] (data collector)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Unrouted runoff is rarely directly observed; compare only against gauges representing un-routed
+          local generation, otherwise use Q_routed.
+      detrending_options:
+      - none
+  - name: pet
+    unit: cm/day
+    description: Hamon-computed potential evapotranspiration (atmospheric water demand) when PET is not
+      supplied as input.
+    validation_rank: 3
+    emitted_in: model.dc.pet[outlet] (data collector)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Hamon PET is temperature-driven; comparison against energy-balance reference ET will show structural
+          bias.
+      detrending_options:
+      - none
+  - name: TSS_monthly
+    unit: Mg
+    description: Monthly routed total suspended sediment (sediment mode only).
+    validation_rank: 4
+    emitted_in: model.dc TSS field (data collector, sediment mode)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Monthly aggregate; depends on manually supplied dam-agent TSS and an 11-month backward routing
+          window.
+      detrending_options:
+      - none
+  - name: ABM_agent_records
+    unit: varies (storage volume, diversion volume)
+    description: Agent-specific water-management outputs (e.g., reservoir storage, diversion volume; bookkeeping
+      records, not a single field observable) recorded by user-defined ABM modules via the shared data
+      collector.
+    validation_rank: 5
+    emitted_in: model.dc.<user-defined field> (data collector)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Field names and semantics are user/ABM-module-defined, not fixed by the model; comparability
+          depends on the specific agent implementation.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: Precipitation in mm/day instead of cm/day causes 10x discharge error
+  symptom: Simulated discharge is exactly 10× higher than observed
+  diagnosis: 'Precipitation data is in mm/day instead of cm/day; HydroCNHS internally expects precipitation
+    in cm/day. Most global datasets (ERA5, station data) provide mm/day. The model runs without error
+    but generates 10× too much runoff because it interprets 5 mm as 5 cm.
+
+    ; [''rainfall_runoff'', ''Q_routed'']'
+  remedy: 'Divide all precipitation values by 10 before passing to model.run(); convert_climate_inputs;
+    [''prec_cm = {k: [v/10 for v in vals] for k, vals in prec_mm.items()}'']; convert_climate_inputs.py
+    validates mean precipitation is < 5 cm/day'
+  severity: silent
+- id: dt_002
+  symptom: Simulated discharge is orders of magnitude wrong (100× or more)
+  diagnosis: 'CMIP precipitation in kg/m²/s not converted to cm/day; CMIP6 precipitation flux is in kg/m²/s.
+    Converting to cm/day requires multiplying by 86400 (seconds/day) and dividing by 10 (mm→cm). Forgetting
+    either step produces extreme discharge values.
+
+    ; [''rainfall_runoff'', ''Q_routed'']'
+  remedy: prec_cm = prec_kgm2s * 86400.0 / 10.0; convert_climate_inputs; ['prec_cmday = prec_kgm2s * 86400
+    / 10']; convert_climate_inputs.py accepts --prec-unit kg/m2/s
+  severity: silent
+- id: dt_003
+  symptom: PET calculation returns unrealistic values; seasonal cycle is muted
+  diagnosis: 'Temperature data is in Kelvin instead of Celsius; The Hamon PET method uses exp(temp/16).
+    When temp is ~293 K instead of ~20°C, the exponential term becomes enormous and PET saturates, eliminating
+    the seasonal signal. The model runs but evaporation dominates all seasons.
+
+    ; [''pet_hamon'', ''rainfall_ru'
+  remedy: 'Subtract 273.15 from all temperature values; convert_climate_inputs; [''temp_C = {k: [v - 273.15
+    for v in vals] for k, vals in temp_K.items()}'']; convert_climate_inputs.py validates mean temp <
+    100°C'
+  severity: silent
+- id: dt_004
+  symptom: Discharge consistently too low; evaporation excessive
+  diagnosis: 'PET provided in mm/day instead of cm/day; If PET is provided (not auto-calculated), it must
+    be in cm/day. Passing mm/day makes evaporation 10× too high, leaving too little water for runoff.
+    This only affects runs where user provides PET.
+
+    ; [''rainfall_runoff'']'
+  remedy: 'Divide PET values by 10; convert_climate_inputs; [''pet_cm = {k: [v/10 for v in vals] for k,
+    vals in pet_mm.items()}'']; convert_climate_inputs.py applies same unit logic to PET'
   severity: silent
 - id: dt_005
-  description: Area in km2 instead of ha causes 100x low discharge
+  symptom: Simulated discharge is exactly 100× lower than observed
+  diagnosis: 'Subbasin area specified in km² instead of hectares (ha); HydroCNHS converts runoff depth
+    (cm) to discharge (cms) using area in hectares. 1 km² = 100 ha. If area is in km², discharge is 100×
+    too low. The model runs without error.
+
+    ; [''rainfall_runoff'', ''Q_routed'']'
+  remedy: Multiply all area values by 100 (km² → ha); build_model_config; ['area_ha = area_km2 * 100'];
+    build_model_config.py warns if area < 0.01 ha
+  severity: silent
+- id: dt_006
+  symptom: Simulated discharge far too high (10000× or more)
+  diagnosis: 'Subbasin area specified in m² instead of hectares; 1 ha = 10000 m². Passing m² makes area
+    10000× too large, proportionally inflating discharge.
+
+    ; [''rainfall_runoff'', ''Q_routed'']'
+  remedy: Divide area by 10000 (m² → ha); build_model_config; ['area_ha = area_m2 / 10000']; build_model_config.py
+    warns if area > 1e6 ha
+  severity: silent
+- id: dt_007
+  symptom: Routing delays are 1000× too short; hydrograph has no attenuation
+  diagnosis: 'FlowLength specified in km instead of meters; Lohmann routing uses FlowLength in meters
+    to compute travel time. If km is passed, the flow appears to travel 1000× faster, producing almost
+    instantaneous routing with no attenuation.
+
+    ; [''routing'', ''Q_routed'']'
+  remedy: Multiply FlowLength by 1000 (km → m); build_model_config; ['flow_m = flow_km * 1000']; build_model_config.py
+    accepts --flow-lengths in meters
   severity: silent
 - id: dt_008
-  description: Wrong date format causes silent parse failure
+  symptom: Model fails to parse dates correctly; simulation period is wrong
+  diagnosis: 'Date format uses hyphens instead of slashes; HydroCNHS expects dates as ''YYYY/M/D'' (e.g.,
+    ''1981/1/1''), not ''YYYY-MM-DD''. Using the wrong separator causes silent parsing errors where the
+    date is misinterpreted or defaults to an unexpected value.
+
+    ; [''WaterSystem'', ''model initialization'']'
+  remedy: Change date separators from '-' to '/'; ; ["Replace '1981-01-01' with '1981/1/1' in model.yaml"];
+    build_model_config.py validates date format
+  severity: silent
+- id: dt_009
+  symptom: Unsaturated zone never fills; runoff generation is suppressed
+  diagnosis: 'Ur (soil water capacity) specified in mm instead of cm; Ur is available water capacity in
+    cm. If mm values are passed (e.g., 80 instead of 8), the soil zone appears enormous and never saturates,
+    suppressing surface runoff. Baseflow may still occur but total discharge will be too low.
+
+    ; [''gwlf'', ''Q_r'
+  remedy: 'Divide Ur by 10 (mm → cm); convert_parameters; [''Ur_cm = Ur_mm / 10'']; GWLF range cap: Ur
+    max is 15 cm'
+  severity: silent
+- id: dt_010
+  symptom: Snow melts too fast; spring freshet is exaggerated
+  diagnosis: 'Df (snowmelt coefficient) in mm/°C instead of cm/°C; Df controls degree-day snowmelt rate.
+    In mm/°C it would be 3-5; in cm/°C the range is 0.3-0.5. If mm values are used, snow melts 10× too
+    fast, causing an unrealistic spring flood and premature snowpack depletion.
+
+    ; [''gwlf'', ''snow module'']'
+  remedy: 'Divide Df by 10 (mm/°C → cm/°C); convert_parameters; [''Df_cm = Df_mm / 10'']; GWLF range cap:
+    Df max is 1 cm/°C'
+  severity: silent
+- id: dt_011
+  symptom: Routing wave travels too fast; downstream hydrograph peaks too early
+  diagnosis: 'Velo (wave velocity) in km/h instead of m/s; Lohmann routing expects Velo in m/s. If km/h
+    is used (e.g., 100 km/h instead of 27.8 m/s), wave travel time is distorted, causing premature peak
+    arrival at downstream outlets.
+
+    ; [''routing'']'
+  remedy: 'Convert: Velo_ms = Velo_kmh * 1000 / 3600; ; [''Velo_ms = Velo_kmh * 1000 / 3600'']; Routing
+    range cap: Velo max is 55 m/s'
+  severity: silent
+- id: dt_012
+  symptom: GA produces unrealistic parameter values near bound extremes
+  diagnosis: Default parameter bounds are too wide for the basin; gen_default_bounds() returns physically
+    possible ranges, not basin-appropriate ranges. For example, CN2 range [25,100] is valid globally but
+    [50,85] might be appropriate for a specific forested basin. Wide bounds slow convergence and allow
+    unreali
+  remedy: Tighten bounds based on basin soil/land-use/climate; ; ["df_bounds.loc[df_bounds['Parameter']=='CN2',
+    'Upper'] = 85", 'Review all bounds against basin characteristics']; Run convert_parameters.py first
+    to establish reasonable center values
+  severity: degraded
+- id: dt_013
+  symptom: IndexError or array length mismatch during simulation
+  diagnosis: 'DataLength in YAML does not match actual date range; DataLength must equal (end_date - start_date).days
+    + 1. If it''s wrong, the model pre-allocates arrays of the wrong size, causing index errors during
+    simulation or silent truncation of results.
+
+    ; [''model initialization'', ''all arrays'']'
+  remedy: 'Recompute DataLength from start and end dates; build_model_config; [''from datetime import
+    datetime'', ''dl = (datetime(2013,12,31) - datetime(1981,1,1)).days + 1  # 12053'']; build_model_config.py
+    auto-computes DataLength'
+  severity: fatal
+- id: dt_014
+  symptom: NaN or zero values in discharge output
+  diagnosis: 'Parameters still set to -99 sentinel value; Parameters set to -99 are calibration placeholders.
+    Running the model directly with -99 values produces undefined behavior: negative soil moisture, NaN
+    in exponentials, or zero runoff.
+
+    ; [''rainfall_runoff'', ''routing'']'
+  remedy: Set actual parameter values or run calibration first; run_hydrocnhs; ['Check model.yaml for
+    any remaining -99 values', 'Replace with reasonable estimates or run calibration']; run_hydrocnhs.py
+    checks for -99 values before simulation
+  severity: fatal
+- id: dt_015
+  symptom: ImportError when running model with ABM agents
+  diagnosis: 'ABM module file not found in Path.Modules directory; When ABM is configured, HydroCNHS tries
+    to import the module file (e.g., TRB_ABM.py) from the directory specified in Path.Modules. If the
+    path is wrong or the file is missing, import fails.
+
+    ; [''ABM initialization'']'
+  remedy: Verify Path.Modules in model.yaml points to the correct directory; ; ['Check that the .py file
+    exists at the Modules path', 'Verify the module name in ABM.Modules matches the filename']; Check
+    file existence before running
+  severity: fatal
+- id: dt_016
+  symptom: Dam releases happen after diversions; water balance incorrect
+  diagnosis: ABM agent Priority values are set incorrectly; Agents execute in priority order (lower number
+    first). If a diversion agent has higher priority (lower number) than a dam agent upstream, it diverts
+    water before the dam releases it, creating a water balance violation. The model runs without error
+    but f
+  remedy: 'Set dam agents to lower priority numbers than downstream agents; ; [''Set upstream dam Priority:
+    1'', ''Set downstream diversion Priority: 2'']; Review priority order matches physical upstream-downstream
+    sequence'
+  severity: silent
+- id: dt_017
+  symptom: Evaluation metrics are worse than expected despite good parameters
+  diagnosis: 'Warmup period not excluded from metric calculation; The first 1-2 years of simulation have
+    poor performance because initial conditions (S0, U0, SnowS) are arbitrary. Including this period in
+    metric calculations artificially lowers NSE/KGE.
+
+    ; [''evaluation metrics'']'
+  remedy: Skip the first 1-2 years (365-730 days) when computing metrics; parse_output; ['obs = obs[warmup_days:]',
+    'sim = sim[warmup_days:]']; parse_output.py --warmup-years 2
+  severity: degraded
+- id: dt_018
+  symptom: Correlation is very low despite visually similar hydrographs
+  diagnosis: 'Simulated and observed date indices are not aligned; If observed data starts on a different
+    date than the simulation, or has gaps, simple array indexing produces misaligned comparisons. Even
+    a 1-day offset can destroy correlation for flashy basins.
+
+    ; [''evaluation metrics'']'
+  remedy: Align on date index, not array position; parse_output; ['common_dates = sim_df.index.intersection(obs_df.index)',
+    'Compare only on common dates']; parse_output.py aligns on pandas DatetimeIndex
   severity: silent

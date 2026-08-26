@@ -1,0 +1,79 @@
+# VIC 5.1.0 classic-driver global parameter TEMPLATE (KI-shipped).
+#
+# Every line that config_paths.create_global_param() rewrites is anchored at
+# column 0: FORCING1, SOIL, VEGLIB, VEGPARAM, RESULT_DIR, OUTFILE, STARTYEAR,
+# ENDYEAR, FORCEYEAR.  Everything else is a validated default that reproduced
+# the Bengbu 51080 and 唐乃亥 routed-discharge runs.
+#
+# Do NOT hand-edit per basin.  Set the VIC_* environment variables documented in
+# SKILL.md and run  `python -c "import config_paths; config_paths.create_global_param()"`.
+#
+# Water-balance mode (FULL_ENERGY FALSE) with the snow model active; this is the
+# KI's uncalibrated baseline configuration.  The 21 OUTVARs below are REQUIRED in
+# this exact order: s5_routing / SKILL.md slice the flux file as
+#     df.iloc[:, [0, 1, 2, 3, 18, 16, 17]]
+#       -> year month day OUT_PREC OUT_EVAP OUT_RUNOFF OUT_BASEFLOW
+# which is the 7-column input Lohmann `rout` expects.  Reordering or removing an
+# OUTVAR silently feeds `rout` the wrong columns.
+
+NLAYER                  3       # number of soil layers
+NODES                   3       # number of soil thermal nodes
+MODEL_STEPS_PER_DAY     8
+SNOW_STEPS_PER_DAY      8
+RUNOFF_STEPS_PER_DAY    8
+STARTYEAR               1980
+STARTMONTH              01
+STARTDAY                01
+ENDYEAR                 1990    # year model simulation ends
+ENDMONTH                12      # month model simulation ends
+ENDDAY                  31      # day model simulation ends
+FULL_ENERGY             FALSE   # Water balance only mode
+FROZEN_SOIL             FALSE   # Not simulating frozen soil
+FORCING1                /path/to/forcing_final/PREFIX_
+FORCE_FORMAT            ASCII
+FORCE_TYPE              AIR_TEMP
+FORCE_TYPE              PREC
+FORCE_TYPE              PRESSURE
+FORCE_TYPE              SWDOWN
+FORCE_TYPE              LWDOWN
+FORCE_TYPE              VP
+FORCE_TYPE              WIND
+FORCE_STEPS_PER_DAY     8
+FORCEYEAR               1980
+FORCEMONTH              01
+FORCEDAY                01
+GRID_DECIMAL            4       # Forcing filenames have 4 decimal places for lat/lon
+SOIL                    /path/to/soil/SOIL_PARAM_COMPLETE.txt
+BASEFLOW                ARNO    # Standard VIC baseflow parameterization
+JULY_TAVG_SUPPLIED      FALSE   # Not used in water balance mode
+ORGANIC_FRACT           FALSE   # Not simulating organic soils
+VEGLIB                  KISSPATH_DATA/vic_param/veglib.LDAS
+VEGPARAM                /path/to/veg/vic_veg_param_final.txt
+ROOT_ZONES              3       # Must match format of veg param file
+VEGPARAM_LAI            TRUE    # LAI is provided in the veg param file
+LAI_SRC                 FROM_VEGPARAM # Read LAI from veg param file
+SNOW_BAND               1       # Not using multiple snow elevation bands
+RESULT_DIR              /path/to/vic_result/
+OUTFILE                 basin_fluxes
+OUT_FORMAT              ASCII
+AGGFREQ                 NHOURS          24
+OUTVAR                  OUT_PREC
+OUTVAR                  OUT_RAINF
+OUTVAR                  OUT_SNOWF
+OUTVAR                  OUT_AIR_TEMP
+OUTVAR                  OUT_SWDOWN
+OUTVAR                  OUT_LWDOWN
+OUTVAR                  OUT_PRESSURE
+OUTVAR                  OUT_WIND
+OUTVAR                  OUT_DENSITY
+OUTVAR                  OUT_REL_HUMID
+OUTVAR                  OUT_QAIR
+OUTVAR                  OUT_VP
+OUTVAR                  OUT_VPD
+OUTVAR                  OUT_RUNOFF
+OUTVAR                  OUT_BASEFLOW
+OUTVAR                  OUT_EVAP
+OUTVAR                  OUT_SWE
+OUTVAR                  OUT_SOIL_MOIST
+OUTVAR                  OUT_ALBEDO
+OUTVAR                  OUT_SOIL_TEMP

@@ -1,148 +1,221 @@
 #!/usr/bin/env python3
 """
-Preflight check for Lohmann Routing 1.0 — verifies environment before simulation.
+Preflight check for Lohmann Routing 1.0.
 
-Run this BEFORE attempting any model execution. It checks that all required
-binaries, packages, and data paths are available.
-
-Usage:
-    python preflight_check.py
-
-Exit codes:
-    0 — all checks passed, safe to proceed
-    1 — one or more checks failed, fix before proceeding
+Run this before attempting model execution. The gate requires the final output
+line to be PREFLIGHT_REPORT=<json> listing every real check performed.
 """
 
+import json
 import os
-import sys
-import shutil
 import subprocess
+import sys
+from pathlib import Path
 
-PASS = 0
-FAIL = 0
+
+MODEL_ID = "Lohmann_Routing"
+KI_DIR = Path(__file__).resolve().parent
+DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
+BINARY = Path("KISSPATH_BINARIES/route_1.0/src/rout")
+DEM_DIR = Path("KISSPATH_STATIC/china_dem_90m")
+PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
 
 
-def check_file(path, label, executable=False):
-    global PASS, FAIL
-    if os.path.isfile(path):
-        if executable and not os.access(path, os.X_OK):
-            print(f"  WARN  {label}: exists but not executable: {path}")
-            print(f"         Fix: chmod +x {path}")
-            FAIL += 1
-        else:
-            print(f"  OK    {label}: {path}")
-            PASS += 1
+def report_check(checks, kind, subject, critical, passed, fix):
+    """Append a contract-shaped check and print a human-readable status."""
+    status = "pass" if passed else "fail"
+    checks.append(
+        {
+            "kind": kind,
+            "subject": str(subject),
+            "critical": bool(critical),
+            "status": status,
+            "fix": "" if passed else fix,
+        }
+    )
+    label = "OK" if passed else ("FAIL" if critical else "WARN")
+    print(f"  {label:<5} {kind}: {subject}")
+    if not passed:
+        print(f"        Fix: {fix}")
+
+
+def check_file(checks, path, label, critical=True, executable=False):
+    path = Path(path)
+    subject = str(path.resolve()) if path.exists() else str(path)
+    if not path.is_file():
+        report_check(
+            checks,
+            "binary" if executable else "data",
+            subject,
+            critical,
+            False,
+            f"Restore {label} at {path}; see {DIAGNOSTICS} for recovery patterns.",
+        )
+        return False
+    if executable and not os.access(path, os.X_OK):
+        report_check(
+            checks,
+            "binary",
+            str(path.resolve()),
+            critical,
+            False,
+            f"Make {label} executable: chmod +x {path}. See {DIAGNOSTICS}.",
+        )
+        return False
+    report_check(
+        checks,
+        "binary" if executable else "data",
+        str(path.resolve()),
+        critical,
+        True,
+        "",
+    )
+    return True
+
+
+def check_dir(checks, path, label, critical=True, required_files=None):
+    path = Path(path)
+    missing_files = []
+    if path.is_dir() and required_files:
+        missing_files = [name for name in required_files if not (path / name).is_file()]
+    passed = path.is_dir() and not missing_files
+    if missing_files:
+        fix = (
+            f"Restore required {label} files under {path}: {', '.join(missing_files)}. "
+            f"See {DIAGNOSTICS}."
+        )
     else:
-        print(f"  FAIL  {label}: NOT FOUND at {path}")
-        FAIL += 1
+        fix = f"Restore {label} directory at {path}. See {DIAGNOSTICS}."
+    report_check(
+        checks,
+        "data",
+        str(path.resolve()) if path.exists() else str(path),
+        critical,
+        passed,
+        fix,
+    )
+    return passed
 
 
-def check_dir(path, label):
-    global PASS, FAIL
-    if os.path.isdir(path):
-        n = len(os.listdir(path))
-        print(f"  OK    {label}: {path} ({n} items)")
-        PASS += 1
-    else:
-        print(f"  FAIL  {label}: directory NOT FOUND at {path}")
-        FAIL += 1
-
-
-def check_import(module, label):
-    # Also search HydroCraft python_env for packages
-    import sys
-    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
-    if _penv not in sys.path:
-        sys.path.insert(0, _penv)
-    global PASS, FAIL
+def check_binary_starts(checks, binary):
+    """Verify the Fortran executable can be invoked cheaply."""
+    binary = Path(binary)
+    subject = str(binary.resolve()) if binary.exists() else str(binary)
+    if not binary.is_file() or not os.access(binary, os.X_OK):
+        report_check(
+            checks,
+            "run",
+            subject,
+            True,
+            False,
+            f"Fix the executable before startup testing: {binary}. See {DIAGNOSTICS}.",
+        )
+        return False
     try:
-        __import__(module)
-        print(f"  OK    {label}: import {module} succeeded")
-        PASS += 1
-    except ImportError as e:
-        print(f"  FAIL  {label}: import {module} failed: {e}")
-        print(f"         Fix: pip install {module.split('.')[0]}")
-        FAIL += 1
+        result = subprocess.run(
+            [str(binary)],
+            input="",
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            check=False,
+        )
+    except Exception as exc:
+        report_check(
+            checks,
+            "run",
+            subject,
+            True,
+            False,
+            f"Executable did not start: {exc}. Rebuild route_1.0/src/rout; see {DIAGNOSTICS}.",
+        )
+        return False
+
+    output = (result.stdout + result.stderr).strip()
+    passed = result.returncode == 0 and "USAGE:" in output and "rout <infile>" in output
+    report_check(
+        checks,
+        "run",
+        subject,
+        True,
+        passed,
+        f"Expected rout to print usage when run without args; got rc={result.returncode}, output={output!r}. Rebuild or inspect with {DIAGNOSTICS}.",
+    )
+    return passed
 
 
-def check_binary_search(name, label):
-    global PASS, FAIL
-    found = shutil.which(name)
-    if found:
-        print(f"  OK    {label}: {found}")
-        PASS += 1
-        return
-    # Search common locations
-    search_dirs = [
-        "KISSPATH_BINARIES",
-        "KISSPATH_HOME",
-        "/usr/local/bin",
-    ]
-    for d in search_dirs:
-        if not os.path.isdir(d):
-            continue
-        for root, dirs, files in os.walk(d):
-            for f in files:
-                if name.lower() in f.lower() and os.access(os.path.join(root, f), os.X_OK):
-                    print(f"  OK    {label}: {os.path.join(root, f)}")
-                    PASS += 1
-                    return
-            if root.count(os.sep) - d.count(os.sep) > 3:
-                dirs.clear()  # limit depth
-    print(f"  FAIL  {label}: binary '{name}' not found in PATH or common locations")
-    print(f"         Check SKILL.md for the correct binary path")
-    FAIL += 1
+def check_import_with_interpreter(checks, interpreter, module, critical):
+    interpreter = Path(interpreter)
+    subject = f"{interpreter.absolute()}: import {module}"
+    if not interpreter.is_file():
+        report_check(
+            checks,
+            "import",
+            subject,
+            critical,
+            False,
+            f"Restore HydroCraft Python environment at {interpreter}. See {DIAGNOSTICS}.",
+        )
+        return False
+    result = subprocess.run(
+        [str(interpreter), "-c", f"import {module}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    passed = result.returncode == 0
+    report_check(
+        checks,
+        "import",
+        subject,
+        critical,
+        passed,
+        f"Install {module.split('.')[0]} into {interpreter.parent.parent}: {result.stderr.strip() or result.stdout.strip()}. See {DIAGNOSTICS}.",
+    )
+    return passed
 
 
-def check_common_data():
-    """Check common HydroCraft data paths."""
-    global PASS, FAIL
-    common = [
-        ("KISSPATH_OBS", "Observation data"),
-        ("KISSPATH_FORCING", "Forcing data"),
-        ("KISSPATH_STATIC", "DEM data"),
-        ("KISSPATH_STATIC", "Soil data"),
-    ]
-    for path, label in common:
-        if os.path.isdir(path):
-            PASS += 1
-        else:
-            print(f"  WARN  {label}: {path} not found (may not be needed)")
+def emit_report(model_id, checks):
+    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": model_id, "checks": checks}, sort_keys=True))
+    critical_failed = any(c["status"] != "pass" and c.get("critical") for c in checks)
+    sys.exit(1 if critical_failed else 0)
 
 
 def main():
-    global PASS, FAIL
-    print(f"=" * 60)
-    print(f"  PREFLIGHT CHECK: Lohmann Routing 1.0")
-    print(f"=" * 60)
+    checks = []
+    print("=" * 60)
+    print("  PREFLIGHT CHECK: Lohmann Routing 1.0")
+    print("=" * 60)
     print()
 
-    # Model-specific checks
-    # Binary: Lohmann routing binary
-    check_file("KISSPATH_BINARIES/route_1.0/src/rout", "Lohmann routing binary", executable=True)
-    # Directory: DEM 90m
-    check_dir("KISSPATH_STATIC/china_dem_90m", "DEM 90m")
+    check_file(checks, BINARY, "Lohmann routing binary", critical=True, executable=True)
+    check_binary_starts(checks, BINARY)
+    check_dir(
+        checks,
+        DEM_DIR,
+        "DEM 90m",
+        critical=True,
+        required_files=["china_dem_90m.tif"],
+    )
+    check_import_with_interpreter(checks, PYTHON_ENV, "pandas", critical=False)
+    check_file(checks, KI_DIR / "s5_routing_param" / "run_build_routing_new.py", "routing parameter tool", critical=False)
+    check_file(checks, KI_DIR / "preprocess_vic_for_routing.py", "VIC routing preprocessor", critical=False)
+    check_file(checks, KI_DIR / "knowledge_infrastructure.yaml", "KI manifest", critical=True)
+    check_file(checks, KI_DIR / "dag.yaml", "KDT DAG", critical=True)
+    check_file(checks, DIAGNOSTICS, "diagnostic triplets", critical=True)
 
     print()
-
-    # Common data checks
-    check_common_data()
-
-    # Diagnostics available?
-    ki_dir = os.path.dirname(os.path.abspath(__file__))
-    triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")
-    if os.path.isfile(triplets):
-        print(f"  INFO  Diagnostic triplets available at: {triplets}")
-        print(f"         If the model fails, check triplets FIRST for known fixes.")
-
-    print()
-    print(f"  Results: {PASS} passed, {FAIL} failed")
-    if FAIL > 0:
-        print(f"  STATUS: PREFLIGHT FAILED — fix the issues above before running")
-        sys.exit(1)
+    passed = sum(1 for check in checks if check["status"] == "pass")
+    failed = len(checks) - passed
+    print(f"  Results: {passed} passed, {failed} failed")
+    if any(check["status"] != "pass" and check.get("critical") for check in checks):
+        print(f"  STATUS: PREFLIGHT FAILED - fix critical issues above; start with {DIAGNOSTICS}")
     else:
-        print(f"  STATUS: PREFLIGHT PASSED — safe to proceed with model execution")
-        sys.exit(0)
+        print("  STATUS: PREFLIGHT PASSED - safe to proceed with model execution")
+    emit_report(MODEL_ID, checks)
 
 
 if __name__ == "__main__":

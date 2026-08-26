@@ -123,6 +123,37 @@ def generate_namelist_block(fcly: float, fsnd: float) -> str:
     return f"&params\n  fcly = {fcly}\n  fsnd = {fsnd}\n/\n"
 
 
+def lookup_hwsd_fractions(lat: float, lon: float) -> tuple[float, float, dict]:
+    """Look up TOPSOIL clay/sand fractions at a point from the HWSD raster.
+
+    The module docstring has always promised "looks up HWSD clay/sand fractions
+    for a given location", but until 2026-08-21 no code did it — only the manual
+    `--fractions` path and the coarse USDA texture-class table existed, so every
+    caller had to guess a texture class.  The real raster lookup lives in the
+    shared toolkit; use it rather than re-implementing the .bil + MU_GLOBAL join.
+
+    HWSD reports T_CLAY / T_SAND as PERCENT of the < 2 mm fraction; FSM2 wants
+    fractions 0-1, so the values are divided by 100.
+
+    Returns (fcly, fsnd, raw_hwsd_record).
+    """
+    from ki_tools_common.soil_utils import lookup_hwsd
+
+    rec = lookup_hwsd(lat, lon)
+    if not rec or rec.get("clay") is None or rec.get("sand") is None:
+        raise RuntimeError(
+            f"HWSD lookup returned no clay/sand at ({lat}, {lon}): {rec!r}. "
+            "Do NOT silently fall back to a default texture — pick the texture "
+            "class explicitly with --texture and say so in the run notes."
+        )
+    fcly = float(rec["clay"]) / 100.0
+    fsnd = float(rec["sand"]) / 100.0
+    print(f"HWSD at ({lat}, {lon}): mu_id={rec.get('mu_id')} "
+          f"texture={rec.get('texture')} clay={rec['clay']}% sand={rec['sand']}% "
+          f"-> fcly={fcly:.3f}, fsnd={fsnd:.3f}")
+    return fcly, fsnd, rec
+
+
 def lookup_texture_class(texture: str) -> tuple[float, float]:
     """Look up clay/sand fractions from USDA texture class name."""
     key = texture.lower().replace(" ", "_").replace("-", "_")
@@ -142,6 +173,8 @@ def convert_soil(
     fsnd: float | None = None,
     texture_class: str | None = None,
     output_file: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
 ) -> dict:
     """
     Derive FSM2 soil parameters.
@@ -160,13 +193,16 @@ def convert_soil(
     dict with derived soil properties
     """
     # Resolve input
+    hwsd_record = None
     if fcly is not None and fsnd is not None:
         pass
+    elif lat is not None and lon is not None:
+        fcly, fsnd, hwsd_record = lookup_hwsd_fractions(lat, lon)
     elif texture_class is not None:
         fcly, fsnd = lookup_texture_class(texture_class)
         print(f"Texture class '{texture_class}': fcly={fcly}, fsnd={fsnd}")
     else:
-        raise ValueError("Provide either fcly+fsnd or texture_class")
+        raise ValueError("Provide fcly+fsnd, or lat+lon (HWSD lookup), or texture_class")
 
     # Validate input
     issues = validate_input(fcly, fsnd)
@@ -203,6 +239,8 @@ def convert_soil(
         print(f"\nWrote namelist block to {output_file}")
 
     params["issues"] = issues + out_issues
+    if hwsd_record is not None:
+        params["hwsd"] = hwsd_record
     return params
 
 
@@ -216,11 +254,15 @@ def main():
     group.add_argument("--texture", help="USDA soil texture class (e.g. 'loam', 'sandy_clay')")
     group.add_argument("--fractions", nargs=2, type=float, metavar=("FCLY", "FSND"),
                        help="Clay and sand fractions (0-1)")
+    group.add_argument("--latlon", nargs=2, type=float, metavar=("LAT", "LON"),
+                       help="Look the clay/sand fractions up in HWSD at this point")
     parser.add_argument("-o", "--output", help="Output namelist file")
     args = parser.parse_args()
 
     if args.fractions:
         convert_soil(fcly=args.fractions[0], fsnd=args.fractions[1], output_file=args.output)
+    elif args.latlon:
+        convert_soil(lat=args.latlon[0], lon=args.latlon[1], output_file=args.output)
     else:
         convert_soil(texture_class=args.texture, output_file=args.output)
 

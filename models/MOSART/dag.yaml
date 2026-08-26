@@ -499,7 +499,7 @@ outputs:
   - var: "WRM_DEFICIT"
     validation_rank: 6
     unit: "m3"
-    description: "Cumulative unmet demand for a grid cell."
+    description: "Cumulative unmet water-supply demand for a grid cell."
     emitted_in: "output NetCDF"
     observability:
       comparable_obs_shapes:

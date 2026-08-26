@@ -1,14 +1,3 @@
----
-name: pflotran
-description: >-
-  PFLOTRAN v6.0 (RICHARDS variably-saturated flow + multicomponent reactive transport; van
-  Genuchten/Mualem characteristic curves). Covers Variably saturated single-phase
-  isothermal subsurface flow (RICHARDS mode); Single-phase non-isothermal coupled flow +
-  heat (TH mode); Two-phase liquid-gas multiphase multicomponent flow incl. supercritical
-  CO2 (GENERAL mode). Use when the task involves running, configuring, calibrating or
-  interpreting PFLOTRAN.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -32,13 +21,48 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (27 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_pflotran.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_pflotran.py --help` |
+| `tools/convert_soil_to_pflotran.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_pflotran.py --help` |
+| `tools/parse_pflotran_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_pflotran_output.py --help` |
+| `tools/run_pflotran.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_pflotran.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # PFLOTRAN Knowledge Infrastructure
 
 **Package**: hydrocraft-pflotran-subsurface v1.1.0
 **Domain**: Groundwater flow and reactive transport; 1D vadose zone soil moisture
 **Model**: PFLOTRAN (Parallel Flow and Transport)
 **Stats**: 4 tools, 5 skill documents, 26 diagnostic triplets
-**Last updated**: 2026-04-30 — added 1D vadose zone / FLUXNET SWC validation workflow
+**Last updated**: 2026-08-18 — aligned body with KI dag/convention output and validation sections
+  (previously 2026-04-30 — added 1D vadose zone / FLUXNET SWC validation workflow)
   (3-site campaign: CN-Din, CN-Qia, CN-HaM; best result NSE=0.471 at CN-HaM v2)
 
 ---
@@ -328,6 +352,32 @@ Supported length units: `m`, `cm`, `km`
 Supported pressure units: `Pa`, `kPa`, `MPa`, `atm`, `bar`
 Supported flux units: `m/s`, `m/d`, `m/yr`, `mm/yr`, `cm/yr`
 
+### 4.2.1 Unit Conversion Table
+
+This table preserves the KI's pipeline-facing unit conversions. PFLOTRAN can
+accept some inline units in the input deck, but tools and validators should make
+the conversion explicit before comparing results.
+
+| Variable | Source unit (verified in KI body) | Model/internal unit | Factor or transform | Type |
+|---|---|---|---|---|
+| Permeability | Darcy (D) | m^2 | 1 D = 9.869233e-13 m^2 | multiplicative |
+| Permeability | milliDarcy (mD) | m^2 | 1 mD = 9.869233e-16 m^2 | multiplicative |
+| Hydraulic conductivity | m/day | m/s | 1 m/day = 1.1574e-5 m/s | multiplicative |
+| Hydraulic conductivity | cm/hr | m/s | 1 cm/hr = 2.778e-6 m/s | multiplicative |
+| Pressure | atm | Pa | 1 atm = 101325 Pa | multiplicative |
+| Pressure | bar | Pa | 1 bar = 1e5 Pa | multiplicative |
+| Pressure | psi | Pa | 1 psi = 6894.76 Pa | multiplicative |
+| Recharge/flux | mm/yr | m/s | 1 mm/yr = 3.171e-11 m/s | multiplicative |
+| Recharge/flux | mm/day | m/s | 1 mm/day = 1.1574e-8 m/s | multiplicative |
+| Temperature | K | C | T(C) = T(K) - 273.15 | additive |
+| Concentration | mg/L | mol/L | depends on molar mass | molecular-weight conversion |
+| Time | yr | s | 1 yr = 3.15576e7 s | multiplicative |
+| Time | day | s | 1 day = 86400 s | multiplicative |
+| Length | cm | m | 1 cm = 0.01 m | multiplicative |
+| Diffusion coefficient | cm^2/s | m^2/s | 1 cm^2/s = 1e-4 m^2/s | multiplicative |
+| Porosity | % | fraction (0-1) | divide by 100 | multiplicative |
+| van Genuchten alpha | 1/cm (water) | 1/Pa | 1/cm * 1/(rho*g) | pressure-head conversion |
+
 ### 4.3 Unit Trap Table
 
 | Trap ID | Variable | Wrong Unit | Correct Unit | Error Factor | Symptom |
@@ -380,6 +430,30 @@ END
 ### 5.4 Mass Balance (`.massbal`)
 
 Tracks fluid/solute mass in/out of domain. Critical for verification.
+
+---
+
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. If this section and `dag.yaml` ever disagree,
+the dag wins. This section restates the KI's extracted dag facts so an agent
+reading only this file can identify the judged output.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `Hydraulic_Head` — Derived water-table / piezometric head, (P - P_atm)/(rho*g) + z. (m)
+
+| Output variable (dag `var`) | Rank | Unit | Description from dag/extracted KI facts |
+|---|---:|---|---|
+| `Hydraulic_Head` | 1 | m | Derived water-table / piezometric head, (P - P_atm)/(rho*g) + z. |
+| `Liquid_Pressure` | see `dag.yaml` | see `dag.yaml` | Other dag output listed by the KI. |
+| `Liquid_Saturation` | see `dag.yaml` | see `dag.yaml` | Other dag output listed by the KI. |
+| `Darcy_Velocity` | see `dag.yaml` | see `dag.yaml` | Other dag output listed by the KI. |
+| `Solute_Concentration` | see `dag.yaml` | see `dag.yaml` | Other dag output listed by the KI. |
+| `Cumulative_Mass_Balance` | see `dag.yaml` | see `dag.yaml` | Other dag output listed by the KI. |
+
+The dag's other outputs are exactly: `Liquid_Pressure`, `Liquid_Saturation`,
+`Darcy_Velocity`, `Solute_Concentration`, `Cumulative_Mass_Balance`.
 
 ---
 
@@ -512,12 +586,52 @@ For Bengbu-basin-scale (catchment) simulations:
 
 ## 9. Validation Metrics
 
-For groundwater models, use:
-- **NSE** (Nash-Sutcliffe Efficiency): >0.5 acceptable, >0.7 good
-- **KGE** (Kling-Gupta Efficiency): >0.5 acceptable, >0.7 good
-- **PBIAS** (Percent Bias): |PBIAS| < 25% acceptable, < 10% good
-- **RMSE** of hydraulic head: site-specific, typically < 1–2 m
-- **Water balance error**: must be < 1% for numerical accuracy
+For this KI, validation bars come from `docs/validation_convention.yaml`, not
+from generic groundwater-model heuristics. The convention currently provides
+these extracted bars:
+
+| Dag variable | Metric | Direction | Convention bar, cited |
+|---|---|---|---|
+| `Liquid_Pressure` | NSE | maximize | satisfactory >= 0.995 (`bisht2017`) |
+| `Liquid_Pressure` | RMSE | minimize | satisfactory <= 0.045 (`bisht2017`) |
+| `Liquid_Pressure` | RMSE | minimize | satisfactory <= 0.045 (`bisht2017`) |
+| `Liquid_Saturation` | NSE | maximize | satisfactory >= 0.5 (`das2019`); good >= 0.75 (`das2019`) |
+
+No extracted convention bar for `Hydraulic_Head` was provided in this body
+upgrade. Do not substitute the `Liquid_Pressure` or `Liquid_Saturation` bars
+for the rank-1 output; read `docs/validation_convention.yaml` before scoring a
+rank-1 validation campaign.
+
+---
+
+## 11. Validated Results
+
+### PFLOTRAN KI Validation Campaigns
+
+| Campaign | Scope | Result stated in this KI body | Interpretation |
+|---|---|---|---|
+| FLUXNET SWC 3-site campaign | CN-Din, CN-Qia, CN-HaM | best result NSE=0.471 at CN-HaM v2 | Existing body result; compare only against the correct variable's convention bar. |
+| CN-HaM SMAP L4 sm_rootzone 2019 winter window | obs only 2019-01-01..01-19 | snow gating + IC datum 0.645 m flipped r from -0.83 to +0.84, PBIAS -11% to +0.8% | Existing body marks NSE structurally invalid because obs std is 0.107% VWC. |
+| CN-Din FLUXNET SWC | subtropical forest | NSE=-0.17 | Existing body attributes bias to P-ET deficit treatment. |
+| CN-Qia FLUXNET SWC | plantation forest | structural +54% wet bias | Existing body marks monsoon regime structurally unsuitable. |
+
+### Performance Metrics -- convention bars
+
+**State the bar from `docs/validation_convention.yaml` with its citation key.
+Null convention bands must be written as `no cited threshold`; never guess.**
+
+| Dag variable | Metric | Direction | Bar (convention, cited) |
+|---|---|---|---|
+| `Liquid_Pressure` | NSE | maximize | satisfactory >= 0.995 (`bisht2017`) |
+| `Liquid_Pressure` | RMSE | minimize | satisfactory <= 0.045 (`bisht2017`) |
+| `Liquid_Pressure` | RMSE | minimize | satisfactory <= 0.045 (`bisht2017`) |
+| `Liquid_Saturation` | NSE | maximize | satisfactory >= 0.5 (`das2019`); good >= 0.75 (`das2019`) |
+
+**Headline-output caveat**: `Hydraulic_Head` is the dag rank-1 output:
+`Derived water-table / piezometric head, (P - P_atm)/(rho*g) + z.` (m). The
+extracted convention facts supplied for this upgrade do not include a
+`Hydraulic_Head` pass-band, so an agent must not invent one from remembered
+hydrology thresholds.
 
 ---
 

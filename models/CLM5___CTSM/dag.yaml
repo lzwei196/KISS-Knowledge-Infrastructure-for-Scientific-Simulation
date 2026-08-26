@@ -144,7 +144,7 @@ outputs:
   - var: NPP
     validation_rank: 2
     unit: gC/m2/s
-    description: "Net primary production (GPP minus autotrophic respiration)"
+    description: "Vegetation net primary production (GPP minus autotrophic respiration)"
     emitted_in: "$CASE.clm2.h0.*.nc"
     observability:
       comparable_obs_shapes:
@@ -170,7 +170,7 @@ outputs:
   - var: EFLX_LH_TOT
     validation_rank: 4
     unit: W/m2
-    description: "Total latent heat flux"
+    description: "Total latent heat flux — energy of water evaporation/transpiration from the land surface to the atmosphere"
     emitted_in: "$CASE.clm2.h0.*.nc"
     observability:
       comparable_obs_shapes:
@@ -183,7 +183,7 @@ outputs:
   - var: FSH
     validation_rank: 5
     unit: W/m2
-    description: "Sensible heat flux"
+    description: "Sensible heat flux from the land surface to the atmosphere"
     emitted_in: "$CASE.clm2.h0.*.nc"
     observability:
       comparable_obs_shapes:

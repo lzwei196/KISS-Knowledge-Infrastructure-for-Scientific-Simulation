@@ -236,7 +236,7 @@ outputs:
   - var: "GPP"
     validation_rank: 1
     unit: "umol/m2/s"
-    description: "Gross Primary Production (carbon assimilation flux)."
+    description: "Gross Primary Production (terrestrial vegetation carbon assimilation flux)."
     emitted_in: "model output table"
     observability:
       comparable_obs_shapes:
@@ -251,7 +251,7 @@ outputs:
   - var: "Ra"
     validation_rank: 3
     unit: "umol/m2/s"
-    description: "Autotrophic respiration."
+    description: "Autotrophic respiration (terrestrial vegetation carbon respiration flux)."
     emitted_in: "model output table"
     observability:
       comparable_obs_shapes:
@@ -308,7 +308,7 @@ outputs:
   - var: "NPP"
     validation_rank: 2
     unit: "umol/m2/s"
-    description: "Net Primary Production (GPP - Ra)."
+    description: "Net Primary Production (terrestrial vegetation carbon production flux; GPP - Ra)."
     emitted_in: "model output table"
     observability:
       comparable_obs_shapes:
@@ -409,3 +409,23 @@ safety:
       scope: "processes, states, boundary.scope_out."
       source: "Smith et al. 2001/2014; Sitch et al. 2003; KI Overview vs Core Physics discrepancy noted in the KI."
       status: adopted
+
+medium_evidence:
+  - var: "GPP"
+    source: "SKILL.md"
+    quote: |-
+      This knowledge infrastructure enables autonomous simulation of terrestrial ecosystem
+      carbon and nitrogen cycling using the core physics of LPJ-GUESS.
+    note: "KI overview declares LPJ-GUESS outputs as terrestrial ecosystem carbon-cycle quantities."
+  - var: "Ra"
+    source: "SKILL.md"
+    quote: |-
+      This knowledge infrastructure enables autonomous simulation of terrestrial ecosystem
+      carbon and nitrogen cycling using the core physics of LPJ-GUESS.
+    note: "KI overview declares LPJ-GUESS outputs as terrestrial ecosystem carbon-cycle quantities."
+  - var: "NPP"
+    source: "SKILL.md"
+    quote: |-
+      This knowledge infrastructure enables autonomous simulation of terrestrial ecosystem
+      carbon and nitrogen cycling using the core physics of LPJ-GUESS.
+    note: "KI overview declares LPJ-GUESS outputs as terrestrial ecosystem carbon-cycle quantities."

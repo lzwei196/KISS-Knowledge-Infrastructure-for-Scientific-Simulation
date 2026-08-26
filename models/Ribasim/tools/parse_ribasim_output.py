@@ -118,7 +118,7 @@ def parse_basin_nc(results_dir: Path) -> pd.DataFrame:
     import xarray as xr
 
     basin_path = results_dir / "basin.nc"
-    ds = xr.open_dataset(basin_path)
+    ds = xr.open_dataset(basin_path, engine="h5netcdf")
 
     # Get all variables and flatten to DataFrame
     df = ds.to_dataframe().reset_index()
@@ -135,7 +135,7 @@ def parse_flow_nc(results_dir: Path) -> pd.DataFrame | None:
     if not flow_path.exists():
         return None
 
-    ds = xr.open_dataset(flow_path)
+    ds = xr.open_dataset(flow_path, engine="h5netcdf")
     df = ds.to_dataframe().reset_index()
     ds.close()
 
@@ -150,7 +150,7 @@ def parse_basin_state_nc(results_dir: Path) -> pd.DataFrame | None:
     if not state_path.exists():
         return None
 
-    ds = xr.open_dataset(state_path)
+    ds = xr.open_dataset(state_path, engine="h5netcdf")
     df = ds.to_dataframe().reset_index()
     ds.close()
 

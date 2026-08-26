@@ -1,14 +1,3 @@
----
-name: marrmot
-description: >-
-  MARRMoT v2.1.x. Covers Lumped conceptual rainfall-runoff simulation at catchment scale;
-  47 selectable conceptual model structures (GR4J, HYMOD, Sacramento, HBV, VIC, TOPMODEL,
-  etc.); Continuous state-space (ODE) integration of catchment storages; Generation of
-  streamflow, actual evapotranspiration, internal stores and fluxes; Unit-hydrograph
-  routing of generated runoff to catchment outlet. Use when the task involves running,
-  configuring, calibrating or interpreting MARRMoT.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_marrmot.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_marrmot.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # MARRMoT Knowledge Infrastructure
 
@@ -240,6 +264,54 @@ These non-obvious facts cause silent failures. Each is linked to a diagnostic tr
 ## Output Description
 
 MARRMoT's `get_output()` method returns a structure containing three main arrays: (1) `Q` -- simulated streamflow in mm/d (same length as forcing time series), (2) `Ea` -- actual evapotranspiration in mm/d, and (3) `S` -- storage time series in mm for each model store (columns = stores). A water balance summary is printed to the console. The `parse_output.py` tool extracts these into a CSV with columns `date, Q_sim (mm/d), Ea (mm/d), S1, S2, ...` and computes validation metrics (NSE, KGE, PBIAS) against observed streamflow. To convert Q from mm/d to m^3/s, multiply by `catchment_area_km2 * 1e6 / 86400 / 1000`.
+
+## 6. Output Description -- dag-sourced
+
+This section restates `dag.yaml`. If this section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output**: `Q` -- Total simulated streamflow at the catchment outlet (sum of fluxes in FluxGroups.Q, after unit-hydrograph routing). (`mm/d`)
+
+| Output variable (dag `var`) | validation rank | Unit | Emitted in | Description |
+|-----------------------------|-----------------|------|------------|-------------|
+| `Q` | 1 | mm/d | `fluxOutput.Q (get_output / get_streamflow)` | Total simulated streamflow at the catchment outlet (sum of fluxes in FluxGroups.Q, after unit-hydrograph routing). |
+| `Ea` | 2 | mm/d | `fluxOutput.Ea (get_output)` | Actual evapotranspiration -- catchment water flux to the atmosphere, aggregated from the model's evaporation fluxes. |
+| `S` | 3 | mm | `storeInternal (get_output)` | Storage time series per model store (e.g. soil moisture, fast reservoir, slow/baseflow reservoir, snow store); number of stores varies by structure (1 to 8). |
+| `waterBalance` | 4 | mm | `waterBalance (check_waterbalance)` | Scalar water-balance closure residual over the run; should be near zero (<1 mm). Computed and printed but NOT enforced by the model. |
+
+Other dag outputs are `Ea`, `S`, and `waterBalance`. Scoring and observation binding should treat `Q` as the rank-1 output.
+
+## 8. Unit Conversion Table -- source-restated
+
+This table restates the KI's existing unit traps and `docs/format_spec.yaml`. MARRMoT performs no internal unit conversion on the forcing array or parameter vector.
+
+| Variable | Source unit | MARRMoT / comparison unit | Conversion | Source in KI |
+|----------|-------------|---------------------------|------------|--------------|
+| Precipitation | mm/3h (CMFD) | mm/d | sum 8 values per day | `Unit Trap Table`, `docs/format_spec.yaml` |
+| Precipitation | kg/m2/s (ERA5) | mm/d | x 86400 | `Unit Trap Table`, `docs/format_spec.yaml` |
+| Precipitation | m/d (some GCMs) | mm/d | x 1000 | `Unit Trap Table`, `docs/format_spec.yaml` |
+| Potential evapotranspiration | W/m2 (net radiation) | mm/d | compute PET externally with Penman-Monteith or Hargreaves; do not pass radiation as PET | `Unit Trap Table`, `docs/format_spec.yaml` |
+| Potential evapotranspiration | mm/month | mm/d | divide by `days_in_month` | `Unit Trap Table`, `docs/format_spec.yaml` |
+| Temperature | K | deg C | subtract 273.15 | `Unit Trap Table`, `docs/format_spec.yaml` |
+| Temperature | deg F | deg C | `(F - 32) x 5/9` | `Unit Trap Table`, `docs/format_spec.yaml` |
+| Storage parameter (`Smax`, `x1`, `x3`) | m | mm | x 1000 | `Unit Trap Table`, `docs/format_spec.yaml` |
+| Time step (`delta_t`) | hours | days | divide by 24 | `Unit Trap Table`, `docs/format_spec.yaml` |
+| Observed streamflow | m3/s | mm/d | `Q_mm = Q_m3s * 86400 / (area_km2 * 1e6) * 1000` | `Unit Trap Table`, `dag.yaml`, `docs/format_spec.yaml` |
+| Simulated streamflow `Q` | mm/d | m3/s | `Q_m3s = Q_mm_d * area_km2 * 1e6 / 86400 / 1000` | `Output Description`, `dag.yaml` |
+
+## 11. Validated Results -- convention-sourced
+
+**Status**: body campaign pending. This SKILL body does not claim achieved calibration, validation, or full-period scores until they are produced by the actual MARRMoT package and parsed by the KI tools.
+
+**Rank-1 validation target**: `Q` (`mm/d`) -- Total simulated streamflow at the catchment outlet (sum of fluxes in FluxGroups.Q, after unit-hydrograph routing).
+
+| Dag variable | Metric | Direction | Convention bands, with citation key on each band | Validation status in this body |
+|--------------|--------|-----------|--------------------------------------------------|--------------------------------|
+| `Q` | `nse` | maximize | very_good: 0.8 (`moriasi2015`, `moriasi2007`); good: 0.6 (`moriasi2015`, `moriasi2007`); satisfactory: 0.5 (`moriasi2015`, `moriasi2007`) | pending |
+| `Q` | `pbias` | zero_centered | very_good: 3.0 (`moriasi2015`); good: 10.0 (`moriasi2015`); satisfactory: 15.0 (`moriasi2015`) | pending |
+| `Q` | `pbias` | zero_centered | very_good: 3.0 (`moriasi2015`); good: 10.0 (`moriasi2015`); satisfactory: 15.0 (`moriasi2015`) | pending |
+| `Ea` | `nse` | maximize | satisfactory: no cited threshold (`ershadi2014`) | pending |
+
+For `Q` PBIAS, apply the bands to absolute PBIAS magnitude because the convention direction is zero-centered. For `Ea` NSE, do not substitute a numeric pass line: the convention records the satisfactory band as null, so this body states `no cited threshold`.
 
 ---
 

@@ -1,185 +1,681 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: OpenFOAM
-  version: dev
-  domain: ocean
-  binary_path: KISSPATH_BINARIES/OpenFOAM/source/repo/platforms/linux64GccDPInt32Opt/bin/foamRun
-  utilities:
-  - blockMesh
-  - checkMesh
-  - decomposePar
-  - reconstructPar
-  - foamToVTK
-  - setFields
-  - postProcess
-  solver_modules:
-  - incompressibleFluid
-  - fluid
-  - isothermalFluid
-  - incompressibleVoF
-  - compressibleVoF
-  - multiphaseEuler
-  - incompressibleDriftFlux
-  - solid
-  - solidDisplacement
+  language: c++
+  implementation:
+    id: openfoam-dev-incompressiblefluid
+    version: OpenFOAM-dev
+    provenance: C++; OpenFOAM Foundation (Henry Weller / Chris Greenshields, CFD Direct) finite-volume
+      toolbox; foamRun dynamically loads the incompressibleFluid solver module with a RANS turbulence
+      closure.
+  scientific_reference_version: OpenFOAM-dev (OpenFOAM Foundation / CFD Direct), foamRun finite-volume
+    incompressible turbulent flow (incompressibleFluid module, RANS k-epsilon closure)
 inputs:
   forcing:
-  - name: U
-    description: Velocity field (boundary and initial conditions)
-    unit: m/s
-    format: volVectorField (FoamFile ASCII/binary)
-    valid_range:
-    - -100
-    - 100
-  - name: p
-    description: Pressure field (kinematic for incompressible)
-    unit: m^2/s^2
-    format: volScalarField (FoamFile ASCII/binary)
-    valid_range:
-    - -1e6
-    - 1e6
-  - name: k
-    description: Turbulent kinetic energy
-    unit: m^2/s^2
-    format: volScalarField
-    valid_range:
-    - 0
-    - 1000
-  - name: epsilon
-    description: Turbulent dissipation rate
-    unit: m^2/s^3
-    format: volScalarField
-    valid_range:
-    - 0
-    - 1e6
-  - name: alpha.water
-    description: Volume fraction (VoF simulations)
-    unit: dimensionless
-    format: volScalarField
-    valid_range:
-    - 0
-    - 1
+  - name: Inlet velocity
+    unit: m/s (vector)
+    category: boundary_driver
+    source_kind: user_provided
+    model_input_format: 0/U fixedValue patch field
+    notes: Volumetric discharge Q (m^3/s) is imposed as U = Q/A_inlet at the inlet patch; OpenFOAM consumes
+      velocity, not discharge.
+  - name: Outlet / reference pressure
+    unit: kinematic m^2/s^2 [0 2 -2 0 0 0 0]
+    category: boundary_driver
+    source_kind: user_provided
+    model_input_format: 0/p (fixedValue / totalPressure) patch field
+    notes: Incompressible solvers operate on kinematic pressure p/rho, NOT Pa; a dynamic-pressure (Pa)
+      field crashes at startup with a dimension mismatch.
   parameters:
-    critical:
-    - name: nu
-      location: constant/physicalProperties
-      unit: m^2/s
-      valid_range:
-      - 1e-7
-      - 1e-3
-      description: Kinematic viscosity. MUST be kinematic (nu=mu/rho), not dynamic.
-    - name: deltaT
-      location: system/controlDict
-      unit: s
-      valid_range:
-      - 1e-6
-      - 1
-      description: 'Time step. Must satisfy CFL: Co = U*dt/dx < 1 for explicit schemes.'
-    - name: convertToMeters
-      location: system/blockMeshDict
-      unit: dimensionless
-      valid_range:
-      - 1e-6
-      - 1000
-      description: Scale factor for mesh vertex coordinates. 1=meters, 0.001=mm.
-    - name: nOuterCorrectors
-      location: system/fvSolution
-      unit: dimensionless
-      valid_range:
-      - 1
-      - 100
-      description: PIMPLE outer loop iterations. 1=PISO, >1=PIMPLE.
-    - name: gravity
-      location: constant/g
-      unit: m/s^2
-      valid_range:
-      - -9.81
-      - 9.81
-      description: 'Gravity vector. Convention: (0 -9.81 0) for Y-up, (0 0 -9.81)
-        for Z-up.'
-    mesh:
-    - name: blockMeshDict
-      location: system/blockMeshDict
-      description: 'Structured hex mesh definition: vertices, blocks, grading, boundary
-        patches.'
-    - name: decomposeParDict
-      location: system/decomposeParDict
-      description: MPI domain decomposition. numberOfSubdomains must match mpirun
-        -np.
+  - name: nu (kinematic viscosity)
+    unit: m^2/s [0 2 -1 0 0 0 0]
+    category: fluid_property
+    source_kind: dataset_lookup
+    model_input_format: constant/physicalProperties (viscosityModel constant)
+    notes: Kinematic nu = mu/rho, NOT dynamic mu [Pa.s]; water 20C ~1.004e-6, air 20C ~1.516e-5, seawater
+      15C ~1.19e-6. Sets the Reynolds number / flow regime.
+  - name: sigma (surface tension)
+    unit: N/m = kg/s^2 [1 0 -2 0 0 0 0]
+    category: fluid_property
+    source_kind: dataset_lookup
+    model_input_format: constant/phaseProperties (dev scalar sigma)
+    notes: Water-air at 20C = 0.072 N/m. dev incompressibleVoF expects a scalar sigma in phaseProperties
+      (not the legacy ((air water) 0.07) syntax).
+  - name: k-epsilon closure constants (Cmu, C1, C2, sigmak, sigmaEps)
+    unit: dimensionless
+    category: turbulence_coefficient
+    source_kind: default
+    model_input_format: momentumTransport coeffDict (overridable; baked defaults Cmu=0.09, C1=1.44, C2=1.92,
+      sigmak=1.0, sigmaEps=1.3)
+    notes: Hardcoded constructor defaults in the kEpsilon model; overridable but undocumented in the wrapper
+      layer.
+  initial_conditions:
+  - name: Initial velocity / pressure fields
+    unit: m/s ; kinematic m^2/s^2
+    category: field_state
+    source_kind: user_provided
+    model_input_format: 0/U, 0/p internalField (uniform or nonuniform list)
+    notes: Vector fields require vector syntax 'uniform (0 0 0)'; a scalar 'uniform 0' for U is a fatal
+      parse error.
+  - name: Initial turbulence fields (k, epsilon, omega)
+    unit: k m^2/s^2 ; epsilon m^2/s^3 ; omega 1/s
+    category: field_state
+    source_kind: user_provided
+    model_input_format: 0/k, 0/epsilon, 0/omega internalField + inlet patch values
+    notes: 'Must be non-zero/physical: k = 1.5*(U_ref*TI)^2 with TI 0.01-0.10; epsilon = Cmu^0.75*k^1.5/l;
+      omega = k^0.5/(Cmu^0.25*l). Zero values make the closure equations singular.'
+  - name: Initial phase fraction alpha.water and hydrostatic p_rgh
+    unit: alpha dimensionless 0-1 ; p_rgh kinematic m^2/s^2
+    category: field_state
+    source_kind: user_provided
+    model_input_format: 0/alpha.water via setFields (boxToCell/cylinderToCell); 0/p_rgh per-phase hydrostatic
+      list
+    notes: alpha.water=1 is water, 0 is air; uniform-0 init gives an all-air domain. p_rgh must be initialised
+      to per-phase hydrostatic values aligned with the free surface, else a large interface imbalance
+      drives spurious velocity spikes.
+  boundary_conditions:
+  - name: Computational mesh (polyMesh)
+    unit: m (SI)
+    category: mesh_geometry
+    source_kind: user_provided
+    model_input_format: constant/polyMesh (points/faces/owner/neighbour/boundary) from blockMesh or snappyHexMesh
+    notes: blockMeshDict convertToMeters scales ALL vertices; a wrong value silently rescales the domain
+      (e.g. 1000x) and every derived Re / pressure. Patch names must exactly match field-file patches.
+  - name: Boundary-condition patch types
+    unit: categorical
+    category: patch_type_selection
+    source_kind: user_provided
+    model_input_format: 0/<field> patch entries (fixedValue, zeroGradient, inletOutlet, noSlip, slip,
+      empty, symmetry, wedge, cyclic, fixedFluxPressure)
+    notes: empty for 1D/2D (faces normal to ignored direction), wedge for axisymmetric, symmetryPlane
+      only on a perfectly planar patch; cyclic requires matching face areas.
+  - name: g (gravity)
+    unit: m/s^2 (vector)
+    category: gravity_vector
+    source_kind: user_provided
+    model_input_format: constant/g
+    notes: 'Must point downward in mesh coordinates: (0 -9.81 0) Y-up or (0 0 -9.81) Z-up; wrong sign/axis
+      silently reverses buoyancy.'
+  - name: Discretisation schemes (fvSchemes)
+    unit: categorical
+    category: discretisation_selection
+    source_kind: user_provided
+    model_input_format: system/fvSchemes (ddt/grad/div/laplacian/snGrad selectors)
+    notes: Selects temporal order (Euler/backward/CrankNicolson), convection scheme (upwind/linearUpwind/QUICK/vanLeer)
+      and non-orthogonal correction; controls numerical diffusion and stability. dev VoF compression set
+      here via interfaceCompression (cAlpha removed).
+  - name: Linear solvers and algorithm controls (fvSolution)
+    unit: categorical / numeric
+    category: solver_control_selection
+    source_kind: user_provided
+    model_input_format: system/fvSolution (GAMG for p, smoothSolver for U/k/eps; PIMPLE nOuterCorrectors/nCorrectors/nNonOrthogonalCorrectors/residualControl/relaxationFactors)
+    notes: nOuterCorrectors=1 is PISO, >1 is PIMPLE; SIMPLE uses relaxation <1 for steady pseudo-time.
+  - name: Run controls (controlDict)
+    unit: categorical / numeric
+    category: run_control_selection
+    source_kind: user_provided
+    model_input_format: system/controlDict (startTime/endTime, deltaT, adjustTimeStep, maxCo, writeControl,
+      writeInterval, purgeWrite)
+    notes: deltaT and maxCo govern Courant stability; writeInterval units depend on writeControl mode;
+      purgeWrite>0 silently deletes older time directories.
 outputs:
   primary:
   - name: U
-    description: Velocity vector field at each cell center
     unit: m/s
-    format: volVectorField in time directories (e.g., 0.5/U)
-    valid_range:
-    - -100
-    - 100
+    description: Cell-centre velocity vector field of the selected water/air/seawater working fluid written
+      per write-time directory; the primary kinematic solution variable for incompressible flow.
+    validation_rank: 2
+    emitted_in: time directories (caseDir/<time>/U)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Probe-point velocity is sensitive to mesh resolution and turbulence-model choice near walls
+          (y+).
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against PIV/LDV fields only on the resolved (steady or phase-averaged) part of the flow.
+      detrending_options:
+      - none
   - name: p
-    description: Pressure field (kinematic for incompressible solvers)
-    unit: m^2/s^2
-    format: volScalarField in time directories
-    valid_range:
-    - -1e6
-    - 1e6
+    unit: kinematic m^2/s^2 (multiply by rho for Pa)
+    description: Kinematic pressure field of the selected water/air/seawater working fluid; pressure differences
+      across patches give fluid head loss / pressure drop after multiplying by rho.
+    validation_rank: 3
+    emitted_in: time directories (caseDir/<time>/p)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Output is kinematic (p/rho); convert to Pa before comparing to a manometer/transducer.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Wall pressure-coefficient comparisons are strongly turbulence-model dependent in separated flow.
+      detrending_options:
+      - none
   - name: phi
-    description: Face volumetric flux
-    unit: m^3/s
-    format: surfaceScalarField in time directories
-    valid_range:
-    - -1e3
-    - 1e3
+    unit: m^3/s (volumetric face flux)
+    description: Conservative face-area-weighted flux of the selected water/air/seawater working fluid;
+      integrated over an outlet patch gives the volumetric fluid flow rate Q = sum(phi).
+    validation_rank: 4
+    emitted_in: time directories (caseDir/<time>/phi); flow rate via surfaceFieldValue postProcessing
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Compare patch-integrated Q (sum of phi), not raw per-face flux, against a gauged discharge.
+      detrending_options:
+      - none
+  - name: alpha.water
+    unit: dimensionless 0-1
+    description: VoF phase fraction; the iso-surface alpha=0.5 defines the free surface, from which water-level
+      / wave elevation is derived.
+    validation_rank: 1
+    emitted_in: time directories (caseDir/<time>/alpha.water)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Only meaningful when MULES mass conservation holds; at large domains alpha drifts and the derived
+          water level is unreliable.
+      detrending_options:
+      - none
   - name: k
-    description: Turbulent kinetic energy (if turbulent)
     unit: m^2/s^2
-    format: volScalarField
-    valid_range:
-    - 0
-    - 1000
-  - name: nut
-    description: Turbulent viscosity
-    unit: m^2/s
-    format: volScalarField
-    valid_range:
-    - 0
-    - 1
-  - name: water_surface_elevation
-    canonical_id: water_surface_elevation
-    unit: m
-  - name: wave_height
-    canonical_id: wave_height
-    unit: m
-  - name: current_velocity
-    canonical_id: current_velocity
-    unit: m/s
-  structure:
-    description: Each write produces a time-named directory (e.g., 0.1/, 0.2/) containing
-      all field files.
-    time_control: writeControl (timeStep|runTime|adjustableRunTime) + writeInterval
-      in controlDict
-case_structure:
-- path: 0/
-  description: Initial and boundary conditions (U, p, k, epsilon, etc.)
-- path: constant/
-  description: 'Time-invariant: polyMesh/, physicalProperties, momentumTransport'
-- path: system/
-  description: 'Solver config: controlDict, fvSchemes, fvSolution, blockMeshDict'
-dimension_system:
-  description: '7-element array: [kg m s K mol A cd]'
-  common:
-    kinematic_pressure: '[0 2 -2 0 0 0 0]'
-    dynamic_pressure: '[1 -1 -2 0 0 0 0]'
-    velocity: '[0 1 -1 0 0 0 0]'
-    kinematic_viscosity: '[0 2 -1 0 0 0 0]'
-    density: '[1 -3 0 0 0 0 0]'
+    description: Turbulent kinetic energy field of the selected water/air/seawater working fluid from
+      the RANS closure; diagnostic of turbulent mixing intensity in the flow.
+    validation_rank: 5
+    emitted_in: time directories (caseDir/<time>/k)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - RANS k is a modelled (not resolved-transient) quantity; compare only to TKE estimated under
+          the same averaging convention.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Strongly dependent on closure-coefficient choice (see influence block).
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- id: ut_001
-  description: Kinematic vs dynamic pressure mismatch crashes incompressible solvers
-- id: ut_002
-  description: Dynamic viscosity (Pa.s) used instead of kinematic (m^2/s) gives wrong
-    Re by ~1000x
-- id: ut_003
-  description: convertToMeters forgotten produces silently wrong results
-- id: ut_005
-  description: deltaT too large for mesh causes CFL violation and divergence
-- id: ut_009
-  description: MPI np vs decomposeParDict mismatch causes immediate crash
+- id: dt_001
+  symptom: 'Solver crashes immediately with "Dimension mismatch" error when reading pressure field. Error
+    mentions incompatible dimensions for p.
+
+    '
+  diagnosis: 'Pressure field uses dynamic dimensions [1 -1 -2 0 0 0 0] (Pa) but incompressible solver
+    expects kinematic dimensions [0 2 -2 0 0 0 0] (m^2/s^2).
+
+    ; OpenFOAM incompressible solvers (incompressibleFluid, icoFoam, simpleFoam) solve for kinematic pressure
+    p/rho. The dimension array in the p field file mu'
+  remedy: 'Change pressure dimensions to [0 2 -2 0 0 0 0] and divide values by density; convert_forcing_to_openfoam.py;
+    [''Edit 0/p: change dimensions to [0 2 -2 0 0 0 0]'', ''Divide all pressure values by fluid density
+    (rho)'', ''For water: p_kinematic = p_Pa / 998'']; check_case.py validates dimension arrays befor'
+  severity: fatal
+- id: dt_002
+  symptom: 'Simulation converges but velocity and pressure values are orders of magnitude wrong. Reynolds
+    number does not match expected flow regime.
+
+    '
+  diagnosis: 'convertToMeters in blockMeshDict is wrong. Vertices are in millimeters but convertToMeters
+    is set to 1 (meters), making the domain 1000x too large.
+
+    ; The convertToMeters factor scales all vertex coordinates. If vertices are defined in mm (e.g., for
+    a 100mm pipe), convertToMeters must be 0.001. With '
+  remedy: 'Set convertToMeters to correct value and regenerate mesh; generate_mesh.py; [''Check vertex
+    coordinate units in blockMeshDict'', ''Set convertToMeters: 1 for meters, 0.001 for mm, 0.01 for cm'',
+    ''Re-run blockMesh'', ''Verify domain dimensions in checkMesh output or ParaView'']; generate_mesh.py
+    reports dom'
+  severity: silent
+- id: dt_003
+  symptom: 'Fatal error at startup: "patch name X not found in mesh boundary". Solver exits before any
+    calculation.
+
+    '
+  diagnosis: 'Boundary patch names in field files (0/U, 0/p) do not match the patch names defined in constant/polyMesh/boundary.
+
+    ; After regenerating the mesh (blockMesh, snappyHexMesh), patch names may change. Field files in 0/
+    still reference the old patch names. OpenFOAM requires exact match (case-sensitive) b'
+  remedy: Update patch names in all field files to match polyMesh/boundary; check_case.py; ['Read constant/polyMesh/boundary
+    to get current patch names', 'Update all files in 0/ to use matching patch names', 'Ensure every mesh
+    patch has an entry in every field file']; check_case.py validates patch name consis
+  severity: fatal
+- id: dt_004
+  symptom: 'Simulation diverges after a few time steps. Log shows increasing residuals, then "Floating
+    point exception" or NaN values. Often preceded by very high Courant number.
+
+    '
+  diagnosis: 'Time step deltaT is too large for the mesh resolution and flow velocity, resulting in Courant
+    number >> 1.
+
+    ; The Courant-Friedrichs-Lewy (CFL) condition requires Co = U*dt/dx < 1 for explicit and semi-implicit
+    time schemes. With PISO, this is strictly required. With PIMPLE, Co can exceed 1 if enough'
+  remedy: 'Reduce deltaT or enable adaptive time stepping with maxCo=1; configure_case.py; [''Estimate
+    required dt: dt < dx / U_max'', ''Or enable adjustTimeStep yes and maxCo 1 in controlDict'', ''If
+    using PIMPLE, increase nOuterCorrectors to 3-5'', ''Start with 1st order Euler time scheme for initial
+    stability'']; r'
+  severity: fatal
+- id: dt_005
+  symptom: 'Gravity appears to work backwards: heavy fluid (water) rises and light fluid (air) sinks in
+    a VoF simulation. Buoyancy-driven flows go the wrong direction.
+
+    '
+  diagnosis: 'Gravity vector has wrong sign or is pointing along wrong axis relative to the mesh coordinate
+    system.
+
+    ; In a Y-up mesh, gravity should be (0 -9.81 0). In a Z-up mesh, (0 0 -9.81). A positive gravity component
+    means "up" in that direction, reversing buoyancy. The simulation will run without error but'
+  remedy: 'Correct gravity vector to point downward in mesh coordinate system; convert_properties_to_openfoam.py;
+    ["Determine which axis is ''up'' in your mesh", ''Set gravity to negative along that axis: (0 -9.81
+    0) for Y-up'', ''Verify magnitude is approximately 9.81 m/s^2'']; check_case.py validates gravity
+    direc'
+  severity: silent
+- id: dt_006
+  symptom: 'Turbulent simulation diverges in first 5-10 iterations. Residuals for k and epsilon/omega
+    explode immediately. Laminar equivalent works fine.
+
+    '
+  diagnosis: 'Turbulence fields (k, epsilon, omega) initialized with zero or unreasonable values. The
+    turbulence model equations become singular.
+
+    ; Turbulence model equations require non-zero initial fields. Setting k=0 causes division-by-zero
+    in epsilon or omega equations. Use estimation formulas: k = 1.5*(U*TI)'
+  remedy: Initialize turbulence fields with physically reasonable values; ; ['Estimate turbulence intensity
+    TI (0.01-0.10)', 'Calculate k = 1.5 * (U_ref * TI)^2', 'Calculate epsilon = 0.09^0.75 * k^1.5 / (0.07
+    * D_h)', 'Set uniform initial values in 0/k and 0/epsilon', 'Set inlet boundary conditions with same
+  severity: fatal
+- id: dt_007
+  symptom: 'Simulation produces far fewer or far more output files than expected. Either disk fills up
+    with thousands of time directories, or only one output exists at the end time.
+
+    '
+  diagnosis: 'writeControl and writeInterval have mismatched semantics. writeControl is set to "timeStep"
+    but writeInterval is a time in seconds (e.g., 0.1), or vice versa.
+
+    ; If writeControl=timeStep and writeInterval=0.1, OpenFOAM writes every 0.1 time steps, which rounds
+    to every step. If writeControl=runTime a'
+  remedy: 'Match writeInterval units to writeControl mode; configure_case.py; [''For timeStep: writeInterval
+    = number of steps (integer)'', ''For runTime: writeInterval = seconds of simulation time'', ''For
+    adjustableRunTime: same as runTime, adjusts dt to hit times'', ''Calculate expected N outputs = endTime
+    / write'
+  severity: silent
+- id: dt_008
+  symptom: 'VoF (interFoam/incompressibleVoF) simulation runs but shows no water -- entire domain is air.
+    Free surface never appears despite correct settings.
+
+    '
+  diagnosis: 'Phase fraction field alpha.water is initialized as uniform 0 (all air). The water region
+    was never defined.
+
+    ; In VoF, alpha=1 is water and alpha=0 is air. The field must be initialized with setFields or funkySetFields
+    to define the initial water body geometry. A uniform 0 field means no water exists'
+  remedy: 'Use setFields to initialize water region in alpha.water; ; [''Create system/setFieldsDict with
+    boxToCell or cylinderToCell'', ''Define water region geometry (coordinates of water body)'', ''Set
+    alpha.water = 1 inside water region, 0 outside'', ''Run: setFields -case <caseDir>'', ''Verify in
+    ParaView that alp'
+  severity: silent
+- id: dt_009
+  symptom: 'MPI crash at startup when running parallel. Error message about "number of processor directories
+    does not equal number of processors" or similar MPI abort.
+
+    '
+  diagnosis: 'The -np argument to mpirun does not match numberOfSubdomains in system/decomposeParDict.
+
+    ; OpenFOAM requires exact match between MPI process count and domain decomposition. If decomposeParDict
+    says 4 subdomains but mpirun uses -np 8, the solver cannot find the right processor directories.
+
+    ; [''run_op'
+  remedy: Match mpirun -np N with numberOfSubdomains N in decomposeParDict; run_openfoam.py; ['Check numberOfSubdomains
+    in system/decomposeParDict', 'Use same N in mpirun -np N', 'If changing N, re-run decomposePar', 'Delete
+    old processor* directories before re-decomposing']; run_openfoam.py validates np vs d
+  severity: fatal
+- id: dt_010
+  symptom: 'Solver diverges after some iterations. checkMesh reports max non-orthogonality > 70 degrees.
+    Pressure equation shows oscillating or increasing residuals.
+
+    '
+  diagnosis: 'Mesh has cells with high non-orthogonality (face normal significantly misaligned with line
+    connecting cell centers).
+
+    ; The finite volume surface normal gradient approximation breaks down for highly non-orthogonal cells.
+    Without correction, the pressure equation produces oscillatory or divergent resu'
+  remedy: 'Add non-orthogonal correctors and use limited schemes; ; [''In fvSolution/PIMPLE: set nNonOrthogonalCorrectors
+    2'', "In fvSchemes: use ''limited corrected 0.5'' for laplacian and snGrad", ''If still diverging,
+    improve mesh quality or refine problem areas'', ''Run checkMesh to verify improvement'']; Always r'
+  severity: fatal
+- id: dt_011
+  symptom: 'Simulation runs but Reynolds number is wrong by factor ~1000. Flow appears much more or less
+    turbulent than expected. Pressure drop is unrealistic.
+
+    '
+  diagnosis: 'Dynamic viscosity mu [Pa.s] was entered instead of kinematic viscosity nu [m^2/s]. For water,
+    mu = 1e-3 Pa.s but nu = 1e-6 m^2/s.
+
+    ; OpenFOAM physicalProperties expects kinematic viscosity nu = mu/rho. Using dynamic viscosity directly
+    makes the fluid appear 1000x more viscous (for water). The simulat'
+  remedy: 'Convert to kinematic viscosity: nu = mu / rho; convert_properties_to_openfoam.py; [''Check
+    current nu value in physicalProperties'', ''For water at 20C: nu should be ~1e-6 m^2/s (not 1e-3)'',
+    ''If wrong, compute nu = mu / rho and update'', ''Re-estimate Reynolds number: Re = U * L / nu''];
+    convert_propertie'
+  severity: silent
+- id: dt_012
+  symptom: 'Fatal parse error: "expected token, found on line X". Solver cannot read field file and exits
+    immediately.
+
+    '
+  diagnosis: 'Vector internalField specified as scalar: "internalField uniform 0" instead of "internalField
+    uniform (0 0 0)" for a volVectorField.
+
+    ; OpenFOAM distinguishes between scalar and vector fields. A volVectorField requires parenthesized
+    vector values (Ux Uy Uz). Using a bare scalar causes a parse error. '
+  remedy: 'Use vector syntax for vector fields; ; ["Change ''internalField uniform 0'' to ''internalField
+    uniform (0 0 0)''", "Similarly for boundaryField: ''value uniform (Ux Uy Uz)''", ''Check field class
+    is volVectorField for U, volScalarField for p'']; convert_forcing_to_openfoam.py generates correct
+    format'
+  severity: fatal
+- id: dt_013
+  symptom: 'Residuals oscillate instead of decreasing. Solver never converges to specified tolerance.
+    SIMPLE or PIMPLE iterations show sawtooth pattern.
+
+    '
+  diagnosis: 'Relaxation factors are too aggressive (too close to 1.0) for the current mesh and flow conditions,
+    or nOuterCorrectors is insufficient.
+
+    ; Under-relaxation damps the update between iterations to prevent oscillations. For SIMPLE/PIMPLE,
+    typical values are 0.3-0.7 for velocity and 0.2-0.3 for pressure.'
+  remedy: 'Reduce relaxation factors and/or increase outer correctors; configure_case.py; [''Set relaxation:
+    U=0.5, p=0.2 (conservative start)'', ''Increase nOuterCorrectors to 5-10 for PIMPLE'', ''Use 1st order
+    upwind temporarily for stability'', ''Gradually increase relaxation as solution develops'']; Start
+    with con'
+  severity: degraded
+- id: dt_014
+  symptom: 'Output time directories disappear during or after simulation. Only the last few time steps
+    are available. Earlier results are lost.
+
+    '
+  diagnosis: 'purgeWrite is set to a non-zero value in controlDict, causing OpenFOAM to delete old time
+    directories and keep only the last N.
+
+    ; purgeWrite N tells OpenFOAM to keep only the most recent N output times. This saves disk space for
+    long runs but destroys earlier results. Setting purgeWrite 0 keeps all '
+  remedy: Set purgeWrite 0 to keep all time directories; ; ['Edit system/controlDict', 'Set purgeWrite
+    0', 'Re-run simulation from last available time']; configure_case.py defaults to purgeWrite 0
+  severity: silent
+- id: dt_015
+  symptom: 'Error "foamRun: command not found" or "libOpenFOAM.so: cannot open shared object file" when
+    trying to run the solver.
+
+    '
+  diagnosis: 'OpenFOAM environment not sourced. PATH and LD_LIBRARY_PATH do not include OpenFOAM directories.
+
+    ; OpenFOAM requires sourcing etc/bashrc to set up environment variables (WM_PROJECT_DIR, FOAM_APPBIN,
+    FOAM_LIBBIN, etc.). Without this, the shell cannot find OpenFOAM executables or shared libraries.
+
+    ; ['''
+  remedy: 'Source OpenFOAM environment before running; run_openfoam.py; [''source $WM_PROJECT_DIR/etc/bashrc'',
+    ''Or specify --foam-bashrc in run_openfoam.py'', ''Verify with: which foamRun (should show path)''];
+    run_openfoam.py accepts --foam-bashrc to source automatically'
+  severity: fatal
+- id: dt_016
+  symptom: 'Wall functions produce warnings about y+ being outside valid range. Turbulence near walls
+    is inaccurate, skin friction coefficient is wrong.
+
+    '
+  diagnosis: 'First cell height near walls does not match the turbulence wall treatment. Wall functions
+    require 30 < y+ < 300. Resolved walls require y+ < 1.
+
+    ; y+ = u_tau * y / nu, where u_tau is friction velocity, y is first cell height. If using wall functions
+    (kEpsilon, kOmegaSST with default BCs), y+ should b'
+  remedy: 'Adjust first cell height to achieve correct y+ range; ; [''Estimate y+ = u_tau * y / nu where
+    u_tau = sqrt(tau_w / rho)'', ''For wall functions: target y+ = 30-100'', ''Use grading in blockMesh
+    to concentrate cells near wall'', ''Or switch to low-Re wall treatment (resolve to y+ < 1)'']; Estimate
+    required f'
+  severity: degraded
+- id: dt_017
+  symptom: 'No postProcessing/ directory created. Function objects (probes, forces, samples) produce no
+    output even though they are defined.
+
+    '
+  diagnosis: 'Function objects are defined in controlDict but the functions{} block is empty, commented
+    out, or has syntax errors that silently prevent loading.
+
+    ; OpenFOAM silently skips malformed function objects without error. A missing semicolon, wrong library
+    name, or incorrect type string causes the function'
+  remedy: 'Check function object syntax and library names; ; [''Run with -postProcess flag to test function
+    objects separately'', ''Check for syntax errors in functions{} block'', ''Verify libs entries point
+    to correct shared libraries'', ''Test with simple builtin: #includeFunc residuals'']; Use #includeFunc
+    macros f'
+  severity: silent
+- id: dt_018
+  symptom: 'Fatal error on startup: "keyword X not found" or "unexpected end of file". Solver cannot parse
+    a dictionary file.
+
+    '
+  diagnosis: 'Missing semicolon at the end of a dictionary entry. OpenFOAM dictionaries require semicolons
+    after every value assignment.
+
+    ; Unlike JSON or YAML, OpenFOAM dictionaries use C-like syntax where every statement ends with a semicolon.
+    A missing semicolon causes the parser to read the next keyword as par'
+  remedy: 'Add missing semicolons to dictionary files; ; [''Check the line number reported in the error
+    message'', ''Look for missing semicolons on that line and preceding lines'', "Every assignment must
+    end with semicolon: ''key value;''", ''Closing braces also need semicolons in some contexts'']; Use
+    check_case.py o'
+  severity: fatal
+- id: dt_019
+  symptom: 'VoF simulation: interface is unrealistically sharp or diffuse. Droplets fragment into unphysical
+    small structures.
+
+    '
+  diagnosis: 'Surface tension coefficient sigma has wrong dimensions or value. OpenFOAM expects sigma
+    in [kg/s^2] = [N/m] but value may be wrong by orders of magnitude.
+
+    ; Surface tension sigma controls the capillary pressure across the interface. Too low sigma allows
+    unphysical fragmentation. Too high sigma preve'
+  remedy: 'Set correct surface tension value for the fluid pair; convert_properties_to_openfoam.py; [''Water-air
+    at 20C: sigma = 0.072 N/m'', ''Check dimensions are [1 0 -2 0 0 0 0]'', ''Verify Weber number: We
+    = rho * U^2 * L / sigma'']; Use fluid preset values in convert_properties_to_openfoam.py'
+  severity: silent
+- id: dt_020
+  symptom: 'Pressure field shows checkerboard pattern. Oscillating pressure values between adjacent cells.
+    Non-physical pressure distribution.
+
+    '
+  diagnosis: 'Insufficient nNonOrthogonalCorrectors on a non-orthogonal mesh, or using uncorrected snGrad/laplacian
+    schemes.
+
+    ; Non-orthogonal correction is needed when mesh faces are not aligned with the vector connecting cell
+    centers. Without correction, the pressure Laplacian approximation introduces systematic'
+  remedy: 'Add non-orthogonal correctors and use corrected schemes; ; [''Set nNonOrthogonalCorrectors
+    to 1-3 in PIMPLE block'', "Use ''Gauss linear corrected'' for laplacianSchemes", "Use ''corrected''
+    for snGradSchemes", "For severe non-orthogonality, use ''limited corrected 0.5''"]; Run checkMesh
+    and set correctors '
+  severity: degraded
+- id: dt_021
+  symptom: incompressibleVoF (3D two-phase VoF) used for a basin-scale storm surge domain (>100 km horizontal
+    extent). Simulation shows severe mass loss (phase fraction drops from 0.8 to <0.5 over 5-day run),
+    p_rgh gauge probes show large monotonic decrease masking all surge signal, and/or deltaT collapses
+    tow
+  diagnosis: "incompressibleVoF resolves the air-water interface via Volume of Fluid (MULES), which requires\
+    \ resolving the free surface at the cell level. For a 977 km x 674 km x 50 m ocean domain with 10\
+    \ m vertical cells: (1) MULES numerical diffusion smears alpha into the air cell; inletOutlet\n  \
+    \  BC at atmosph"
+  remedy: 'Switch to shallowWaterFoam for basin-scale storm surge. Source is at $WM_PROJECT_DIR/applications/legacy/incompressible/shallowWaterFoam/.
+    Compile with: cd $WM_PROJECT_DIR/applications/legacy/incompressible/shallowWaterFoam && wmake Fields
+    needed: h (water depth, init h=40m), hU (depth-integrated ve'
+- id: dt_022
+  symptom: "incompressibleVoF run: deltaT collapses to machine zero (e.g. 6e-33) while Courant Number\
+    \ max is reported as ~0.5 (exactly maxCo). Solver keeps iterating but makes no time progress. Log\
+    \ shows:\n  \"deltaT = 2.03e-100\" then \"deltaT = 1.93e-100\" etc, exponentially decaying.\nVelocity\
+    \ residuals converge i"
+  diagnosis: A NaN/Inf velocity appeared in one cell. The Courant number computation skips NaN comparisons,
+    reporting the last valid Co_max (typically near maxCo). The adaptive timestepper then computes dt_new
+    = dt * (maxCo / Co_max) = dt * 1.0 and applies a tiny reduction factor repeatedly, creating exponential
+  remedy: 'Set MULESCorr no in fvSolution alpha.water solver block; None; ["In system/fvSolution under
+    ''alpha.water.*'', set: MULESCorr no;", ''Also reduce nSubCycles from 5 to 1-2 to reduce alpha overshoot'',
+    ''Remove alphaApplyPrevCorr yes; and MULES { nIter N; } sub-dict'', ''After fix, confirm Max(alpha.water)
+    s'
+- id: dt_023
+  symptom: 'incompressibleVoF: solver starts normally but velocity diverges between t=1000s and t=2000s.
+    Log shows Co_max spike from 0.45 to 4.5+ in one step, then deltaT halves repeatedly. No error message
+    — just instability pattern. Happens when both atmosphere U (uniformFixedValue) and atmosphere p_rgh
+    (unif'
+  diagnosis: Fixing BOTH velocity and pressure at the same boundary (atmosphere) is overdetermined for
+    an incompressible solver. The velocity BC forces a flow pattern; the pressure BC independently forces
+    a different one. Their incompatibility grows over time until one cell velocity diverges. For ocean/atmospher
+  remedy: Remove fixed U at atmosphere; use pressureInletOutletVelocity instead; None; ['In 0/U, change
+    atmosphere BC from uniformFixedValue to:', '    atmosphere { type pressureInletOutletVelocity; value
+    uniform (0 0 0); }', 'Keep only the p_rgh time table at the atmosphere boundary', 'To add wind forcing
+    co
+- id: dt_024
+  symptom: "wmake of decomposePar fails with linker error:\n  \"/usr/bin/ld.bfd: 找不到 -lparallel: 没有那个文件或目录\"\
+    \n  \"collect2: error: ld returned 1 exit status\"\nlibparallel.so is missing from $FOAM_LIBBIN.\n"
+  diagnosis: 'decomposePar links against libparallel.so which is in $WM_PROJECT_DIR/src/parallel/parallel/.
+    This library is NOT built by the standard Allwmake unless the parallel sub-tree is built first. When
+    building individual utilities, the dependency order is not enforced.
+
+    ; [''decomposePar'', ''libparallel.so'']'
+  remedy: 'Build libparallel.so first, then retry decomposePar; None; [''cd $WM_PROJECT_DIR/src/parallel/parallel
+    && wmake libso'', ''Verify: ls $FOAM_LIBBIN/libparallel.so'', ''Then retry: cd $WM_PROJECT_DIR/applications/utilities/parallelProcessing/decomposePar
+    && wmake'']'
+- id: dt_025
+  symptom: 'incompressibleVoF with alpha.water inletOutlet at the atmosphere boundary: Phase-1 volume
+    fraction decreases monotonically throughout the run. Typical rate: 0.8 → 0.5 over a 5-day simulation.
+    p_rgh probes show large monotonic decrease (~13,000 Pa/hour) that overwhelms any surge signal.
+
+    '
+  diagnosis: MULES (even with MULESCorr no and nSubCycles 2) causes numerical diffusion that smears alpha
+    upward from the interface (z=40m) into the air cell (z=40-50m). The inletOutlet BC at the atmosphere
+    treats any outward flow as a legitimate outflow of whatever alpha is locally present. As alpha diffuses
+    in
+  remedy: Change atmosphere alpha.water BC from inletOutlet to zeroGradient OR fixedValue 0; None; ['In
+    0/alpha.water, change atmosphere BC to:', '    atmosphere { type zeroGradient; }', 'ALSO update ALL
+    processor*/0/alpha.water files (decomposePar copies BCs at decompose time)', 'For strict mass conservation
+- id: dt_026
+  symptom: "FOAM FATAL ERROR at startup:\n  \"Deprecated and unused cAlpha entry specified in system/fvSolution/solvers/alpha.water.*\"\
+    \nSolver exits immediately listing available compression schemes (MPLICU, etc.)\n"
+  diagnosis: "In OpenFOAM-dev (post-2022), the cAlpha parameter for interface compression is deprecated.\
+    \ The compression scheme is now selected via fvSchemes divSchemes:\n  div(phi,alpha) Gauss interfaceCompression\
+    \ vanLeer 1;\nThe cAlpha entry in fvSolution is no longer valid and causes a fatal error.\n; ['system/fv"
+  remedy: 'Remove cAlpha from fvSolution alpha solver block; set compression in fvSchemes; None; [''In
+    system/fvSolution, remove: cAlpha 0.5; from the alpha.water.* block'', ''In system/fvSchemes, under
+    divSchemes, ensure:'', ''    div(phi,alpha) Gauss interfaceCompression vanLeer 1;'', ''To disable
+    compression (more'
+- id: dt_027
+  symptom: 'After setFields, alpha.water Max > 1 (e.g. Max=1.82) from the very first timestep. Log: "Phase-1
+    volume fraction = 0.799  Min=-2e-22  Max=1.82" The interface is at a non-integer fraction of the cell,
+    causing alpha to overshoot when MULES applies compression.
+
+    '
+  diagnosis: setFields initializes a box that doesn't align with cell boundaries. When z_surface = 47.5m
+    but cells are at z=[0,10,20,30,40,50m], the water box (z<47.5m) fills cells 0-4 fully (z=[0,40m])
+    and 50% of cell 5 (z=[40,50m]). MULES interface compression then overshoots this sub-cell initialization,
+    crea
+  remedy: 'Align free surface with cell face boundary in blockMeshDict and setFieldsDict; None; [''Choose
+    nz such that z_surface falls exactly on a cell boundary'', ''Example: nz=5, lz=50m (10m cells), water
+    at z<40m → 4 full cells exactly'', ''In setFieldsDict: box (0 0 0) (Lx Ly 40) for water zone'', ''NOT:
+    box ...'
+- id: dt_028
+  symptom: 'incompressibleVoF: deltaT stays at 1-2s for hours despite adjustTimeStep yes and maxDeltaT
+    7200. Simulation makes very slow progress (8-32 sim-s/wall-s). Log shows Co_max oscillating between
+    0.2 and 0.8 every few timesteps. p_rgh probes show large oscillation amplitude even with no forcing.
+
+    '
+  diagnosis: Incorrect hydrostatic p_rgh initialization. Using uniform p_rgh = 0 (or any constant) when
+    the water cells require ~400,000 Pa and air cells ~−1200 Pa creates a ~401,200 Pa imbalance at the
+    interface. This drives initial velocities of ~32 m/s, creating standing gravity waves (period ~4s
+    for 40m dept
+  remedy: 'Initialize p_rgh with correct hydrostatic values per phase; None; [''In water cells (layers
+    0 to nz_water-1):'', ''    p_rgh_water = p_atm_BC + (rho_water - rho_air) * g * z_surface'', ''    Example:
+    -1215.84 + (1025-1.2)*9.81*40 = 400523.28 Pa'', ''In air cells (layers nz_water to nz-1):'', ''    p_rgh_air '
+- id: dt_029
+  symptom: "Changing lateral wall BCs from slip/fixedFluxPressure to open BCs (zeroGradient for p_rgh,\
+    \ pressureInletOutletVelocity for U, inletOutlet for alpha) causes immediate catastrophic blowup at\
+    \ t=0:\n  \"Courant Number mean: 0.xxx max: 4.33\" at first timestep\nfollowed by alpha.water > 1.5\
+    \ and NaN velocitie"
+  diagnosis: The hydrostatic pressure in the water column (p_rgh ≈ 400,000 Pa) is extrapolated to the
+    open lateral boundary via zeroGradient, which sets the boundary face p_rgh = interior cell value.
+    This creates a ~400,000 Pa pressure difference between the open boundary and the far-field (which
+    knows nothing o
+  remedy: 'Keep lateral walls as slip/fixedFluxPressure; do not use open BCs without radiation; None;
+    [''Keep lateral wall BCs as:'', ''  U: slip'', ''  p_rgh: fixedFluxPressure; value uniform 0;'', ''  alpha.water:
+    zeroGradient'', ''Open/absorbing BCs require waveTransmissive or Orlanski radiation conditions'',
+    ''waveTr'
+- id: dt_030
+  symptom: 'incompressibleVoF: deltaT grows to 10-30s then suddenly drops to 0.25-0.5s in a single step.
+    Pattern repeats every few minutes of wall time. Log shows Co_max jumping from 0.2 to 4.5+ in one step.
+    ''interfaceCompression vanLeer 1'' is the div(phi,alpha) scheme.
+
+    '
+  diagnosis: The interfaceCompression scheme applies an anti-diffusion flux at the interface to keep it
+    sharp. This compression flux is additive and can be larger than the physical flow flux in cells where
+    the interface is near-vertical or curved. In a large closed domain, the compression scheme intermittently
+    c
+  remedy: Change div(phi,alpha) from interfaceCompression to Gauss vanLeer (no compression); None; ['In
+    system/fvSchemes, under divSchemes, change:', '    div(phi,alpha) Gauss interfaceCompression vanLeer
+    1;', '  to:', '    div(phi,alpha) Gauss vanLeer;', 'This gives a diffuse interface (3-4 cells wide)
+    but e
+- id: dt_031
+  symptom: 'incompressibleVoF storm surge: p_rgh gauge probe at z=2.5m shows large monotonic decrease
+    of ~13,000 Pa/hour from t=0, but the storm surge signal (expected ~10,000 Pa peak) is completely masked.
+    All 3 gauge stations show identical decreasing trend with no spatial variation.
+
+    '
+  diagnosis: "Two simultaneous failures mask the surge signal: (1) Mass loss: p_rgh at z=2.5m is proportional\
+    \ to water column height.\n    As water escapes (via alpha diffusion through atmosphere BC), effective\n\
+    \    water depth drops from 40m to ~30m, p_rgh falls by ~100,000 Pa.\n    This dominates over the\
+    \ storm su"
+  remedy: 'Fix mass conservation (dt_025) and use spatially varying forcing; or switch to IB analytical;
+    None; [''For storm surge comparison without running a full CFD: compute IB analytically:'', ''    eta_IB(x,y,t)
+    = -(p_atm(x,y,t) - p_ref) / (rho_water * g)'', ''Extract p_atm at each gauge location from the forc'
+- id: dt_032
+  symptom: "incompressibleVoF (OpenFOAM-dev) fails at startup with:\n  \"cannot find file constant/phaseProperties\"\
+    \nor:\n  \"keyword sigma is undefined in phaseProperties\"\nDespite having constant/transportProperties\
+    \ set up correctly.\n"
+  diagnosis: "OpenFOAM-dev incompressibleVoF requires a different constant/ file structure than the legacy\
+    \ interFoam: - Legacy interFoam: constant/transportProperties (single file with both phases) - Dev\
+    \ incompressibleVoF: separate per-phase files + phaseProperties Required files:\n  constant/phaseProperties\
+    \      "
+  remedy: Create correct dev-format constant/ files for incompressibleVoF; None; ['Create constant/phaseProperties:',
+    '    phases (water air);', '    sigma 0.07;', 'Create constant/physicalProperties.water:', '    viscosityModel
+    constant; nu 1e-06; rho 1025;', 'Create constant/physicalProperties.air:', '    v

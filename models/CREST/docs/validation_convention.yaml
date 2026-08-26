@@ -1,0 +1,307 @@
+schema_version: 1
+model_id: CREST
+domain: hydrology
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+# Blocks are keyed by the model's own dag output names. Numeric bands are used only
+# where a fetched full text states either a domain convention or a benchmark judged
+# as skillful/good. Thin-literature outputs are left as null-band, low-confidence
+# records rather than inferred gates.
+
+references:
+  ef5_2020:
+    doi: 10.5194/gmd-13-4943-2020
+    title: "The Ensemble Framework For Flash Flood Forecasting (EF5) v1.2: description and case study"
+    venue: "Geosci. Model Dev."
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-4943-2020.txt
+  towner2019:
+    doi: 10.5194/hess-23-3057-2019
+    title: "Assessing the performance of global hydrological models for capturing peak river flows in the Amazon basin"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-3057-2019.txt
+  van_griensven2012:
+    doi: 10.5194/hess-16-3371-2012
+    title: "Critical review of SWAT applications in the upper Nile basin countries"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-16-3371-2012.txt
+  bouregreg2011:
+    doi: 10.4236/jgis.2011.34024
+    title: "Hydrologic Modeling of the Bouregreg Watershed (Morocco) Using GIS and SWAT Model"
+    venue: "Journal of Geographic Information System"
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.4236_jgis.2011.34024.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling & Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+  arnold2012:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42256.txt
+  wu2012:
+    doi: 10.1175/jhm-d-11-087.1
+    title: "Evaluation of Global Flood Detection Using Satellite-Based Rainfall and a Hydrologic Model"
+    venue: "Journal of Hydrometeorology"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jhm-d-11-087.1.txt
+  wu2014:
+    doi: 10.1002/2013wr014710
+    title: "Real-time global flood estimation using satellite-based precipitation and a coupled land surface and routing model"
+    venue: "Water Resources Research"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2013wr014710.txt
+  ionita2015:
+    doi: 10.1175/jhm-d-14-0156.1
+    title: "Predicting the June 2013 European Flooding Based on Precipitation, Soil Moisture, and Snow"
+    venue: "Journal of Hydrometeorology"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jhm-d-14-0156.1.txt
+  jaafar2021:
+    doi: 10.1016/j.jhydrol.2021.126522
+    title: "Mapping dynamic non-perennial stream networks using high-resolution distributed hydrologic simulation"
+    venue: "Journal of Hydrology"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2021.126522.txt
+
+validation:
+  - dag_variable: "STREAMFLOW (Q)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Moriasi-style streamflow convention reproduced in fetched OA texts: satisfactory NSE > 0.5; very good NSE 0.75 to 1."
+        cites: [van_griensven2012, bouregreg2011, arnold2012]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Fetched sources reproduce streamflow PBIAS ranges: satisfactory within +/-25%, very good within +/-10%."
+        cites: [van_griensven2012, bouregreg2011]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "The same hydrology convention recommends RSR with satisfactory RSR <= 0.7 and very good RSR 0 to 0.5."
+        cites: [van_griensven2012, bouregreg2011]
+      - metric: cc
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The EF5 benchmark co-reports correlation coefficient and normalized bias against USGS gauges; EF5/CREST median CC was 0.40 with uncalibrated parameters."
+        cites: [ef5_2020]
+    validated_when: "NSE >= 0.5 and |PBIAS| <= 25% against gauge discharge; RSR and correlation are supporting diagnostics."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      This keeps the dag determining metric NSE as headline and adds PBIAS because field conventions judge streamflow with both shape and volume error. Van Griensven 2012 states model results can be judged satisfactory if "NSE > 0.5" and "PBIAS +/- 25% for stream flow"; Bouregreg 2011 states very good ranges of "0.75 to 1 for NSE" and "-10 to 10 for PBIAS." EF5 2020 reports CREST/EF5 benchmark context: uncalibrated CONUS simulations had maximum NSE 0.71 and "NSE scores up to 0.76."
+
+  - dag_variable: "STREAMFLOW (Q)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred from fetched streamflow volume-bias convention; no peak-snapshot-only PBIAS tier was found."
+        cites: [van_griensven2012, bouregreg2011]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Snapshot/event-volume validation should not rely on hydrograph NSE alone; the field convention still treats hydrographs and exceedance curves as graphical/context checks."
+        cites: [van_griensven2012]
+    validated_when: "|PBIAS| <= 25% for event volume or snapshot magnitude, with hydrograph/exceedance plots used as context."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      The dag determining metric is PBIAS. The numeric band is a cautious transfer from streamflow volume evaluation rather than a snapshot-specific rule; Van Griensven 2012 also notes graphical assessment through hydrographs and percent exceedance probability curves.
+
+  - dag_variable: "SOILMOISTURE (SM)"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric validation threshold for CREST relative soil moisture (% of WM) against gridded observations."
+        cites: []
+    secondary_metrics:
+      - metric: spearman
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Rank/anomaly agreement is more defensible than absolute error because CREST reports relative storage rather than volumetric water content."
+        cites: [ionita2015]
+    validated_when: "UNRESOLVED - require a fetched CREST/soil-moisture or satellite-soil-moisture convention before auto-validating."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The fetched soil-moisture text is predictive rather than a model-SM validation convention: Ionita 2015 uses soil moisture as a predictor and defines stable correlations, while also noting that real-time soil moisture observations are difficult and many studies depend on reanalysis fields. Null band prevents loosening the gate.
+
+  - dag_variable: "SOILMOISTURE (SM)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a point-time-series correlation pass band for CREST relative soil moisture."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Absolute RMSE is only informative after converting or rescaling CREST percent-of-capacity storage to the observation unit."
+        cites: [ionita2015]
+    validated_when: "UNRESOLVED - use point soil-moisture observations only after unit/rescaling is documented; no numeric pass band is cited."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The dag determining metric r is retained, but the fetched corpus does not support a numeric threshold for this model output. Ionita 2015 reports soil moisture in volumetric water content and highlights observation uncertainty, which does not justify a CREST %WM band.
+
+  - dag_variable: "SNOWWATER (SWE)"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a spatial SWE CSI threshold for CREST/Snow-17."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "EF5 2020 warns that snow processes were not considered in its CONUS benchmark, so SWE validation requires snow-specific observations and configuration."
+        cites: [ef5_2020]
+    validated_when: "UNRESOLVED - require snow-specific gridded SWE benchmark or Snow-17 validation text before auto-validating CSI."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      EF5 2020 states the benchmark should be used with caution where frozen precipitation is active and says snow-process parameter development is still required. That supports caution but not a numeric SWE CSI band.
+
+  - dag_variable: "SNOWWATER (SWE)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a point SWE NSE threshold for CREST/Snow-17."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "EF5 2020 notes poor mountainous performance where precipitation falls as snow and says EF5 did not consider snow processes in that study."
+        cites: [ef5_2020]
+    validated_when: "UNRESOLVED - require snow-course/SNOTEL or Snow-17 validation convention before auto-validating NSE."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      The dag determining metric NSE is retained with a null band. A fetched Snow-17/SWE threshold paper was not available under the capped search/fetch discipline.
+
+  - dag_variable: "RETURNPERIOD (RP)"
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: spearman
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.6}
+        pass_band: satisfactory
+        band_note: "Peak-flow ranking convention from fetched Amazon benchmark: Spearman annual-maximum correlations exceeding 0.6 are considered skilful."
+        cites: [towner2019]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Towner 2019 co-reports KGE for peak-flow simulations and describes intermediate KGE scores as 0.75 > KGE >= 0.5."
+        cites: [towner2019]
+    validated_when: "Spearman rank correlation >= 0.6 for observed versus simulated annual maxima or flood-class return-period ranking."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      This matches the dag's Spearman determining metric. Towner 2019 explicitly says values exceeding 0.6 are "considered skilful" for annual maximum discharge at 75 gauging stations including a CREST EF5 run.
+
+  - dag_variable: "INUNDATION (depth)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.3, satisfactory: 0.3}
+        pass_band: satisfactory
+        band_note: "Transferred from fetched global flood-detection benchmark: for >3 day floods without dams, CSI about 0.3 was called good at this GFMS development stage."
+        cites: [wu2012, bennett2013]
+    secondary_metrics:
+      - metric: pod
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Flood detection benchmarks require POD together with FAR/CSI because high detection can come with many false alarms."
+        cites: [wu2012]
+      - metric: far
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bennett 2013 describes FAR as sensitive to false alarms, and Wu 2012 states balanced POD and FAR are necessary for this type of system."
+        cites: [wu2012, bennett2013]
+      - metric: f1
+        direction: maximize
+        status: supportive
+        ceiling_reason: "A CREST dynamic-stream-network study used precision, recall, F1, and FAR against DSWE/loggers, but it was not an inundation-depth benchmark."
+        cites: [jaafar2021]
+    validated_when: "CSI >= 0.3 for binary inundated/not-inundated spatial overlap, with POD and FAR reviewed to avoid a high-hit/high-false-alarm result."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The dag says CSI is more appropriate than depth RMSE for this optional simple inundation module. Bennett 2013 defines CSI as penalizing both misses and false alarms. Wu 2012 reports that for floods longer than 3 days in areas without large dams "POD is ~0.7, FAR is ~0.6, and CSI is ~0.3" and calls these good results; the band is therefore a flood-detection benchmark transfer, not a CREST-iMAP depth threshold.
+
+deferred_paywalled:
+  - ref: "CREST-iMAP v1.0: A fully coupled hydrologic-hydraulic modeling framework dedicated to flood inundation mapping and prediction"
+    doi: 10.1016/j.envsoft.2021.105051
+    needed_for: ["INUNDATION (depth)"]
+  - ref: "CONUS-wide model calibration and validation for CRESTv3.0"
+    doi: 10.1016/j.jhydrol.2023.130333
+    needed_for: ["STREAMFLOW (Q)", "SOILMOISTURE (SM)", "SNOWWATER (SWE)"]
+  - ref: "The coupled routing and excess storage (CREST) distributed hydrological model"
+    doi: 10.1080/02626667.2010.543087
+    needed_for: ["STREAMFLOW (Q)", "SOILMOISTURE (SM)"]
+  - ref: "A systematic assessment and reduction of parametric uncertainties for a distributed hydrological model"
+    doi: 10.1016/j.jhydrol.2018.07.055
+    needed_for: ["STREAMFLOW (Q)", "SOILMOISTURE (SM)"]
+  - ref: "Utilizing Satellite Surface Soil Moisture Data in Calibrating a Distributed Hydrological Model Applied in Humid Regions Through a Multi-Objective Bayesian Hierarchical Framework"
+    doi: 10.3390/rs11111335
+    needed_for: ["SOILMOISTURE (SM)"]
+  - ref: "Soil Moisture for Hydrological Applications: Open Questions and New Opportunities"
+    doi: 10.3390/w9020140
+    needed_for: ["SOILMOISTURE (SM)"]
+  - ref: "Verification of the multi-layer SNOWPACK model with different water transport schemes"
+    doi: 10.5194/tc-9-2271-2015
+    needed_for: ["SNOWWATER (SWE)"]
+  - ref: "A flood inundation forecast of Hurricane Harvey using a continental-scale 2D hydrodynamic model"
+    doi: 10.1016/j.hydroa.2019.100039
+    needed_for: ["INUNDATION (depth)"]

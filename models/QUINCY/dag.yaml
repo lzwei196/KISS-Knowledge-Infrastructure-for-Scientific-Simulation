@@ -171,7 +171,7 @@ outputs:
   - var: "Ra"
     validation_rank: 5
     unit: "umol CO2/m2/s"
-    description: "Autotrophic respiration (maintenance + growth), coupled to instantaneous GPP."
+    description: "Terrestrial ecosystem autotrophic respiration (maintenance + growth), coupled to instantaneous GPP."
     emitted_in: "results CSV"
     observability:
       comparable_obs_shapes:
@@ -184,7 +184,7 @@ outputs:
   - var: "Rh"
     validation_rank: 6
     unit: "umol CO2/m2/s"
-    description: "Heterotrophic respiration (CENTURY-like Q10 temperature response with a bell-shaped precipitation moisture response)."
+    description: "Soil heterotrophic respiration in the terrestrial ecosystem (CENTURY-like Q10 temperature response with a bell-shaped precipitation moisture response)."
     emitted_in: "results CSV"
     observability:
       comparable_obs_shapes:
@@ -197,7 +197,7 @@ outputs:
   - var: "LAI"
     validation_rank: 7
     unit: "m2/m2"
-    description: "Leaf area index from temperature-driven (Gaussian) phenology."
+    description: "Vegetation leaf area index from temperature-driven (Gaussian) phenology."
     emitted_in: "results CSV"
     observability:
       comparable_obs_shapes:
@@ -228,7 +228,7 @@ outputs:
   - var: "H"
     validation_rank: 8
     unit: "W/m2"
-    description: "Sensible heat flux as the Rn-LE residual (no independent energy-balance closure)."
+    description: "Terrestrial ecosystem sensible heat flux as the Rn-LE residual (no independent energy-balance closure)."
     emitted_in: "results CSV"
     observability:
       comparable_obs_shapes:
@@ -513,3 +513,21 @@ safety:
       scope: "carbon/energy conservation interpretation of the analytic surrogate"
       source: "QUINCY analytic reimplementation core (calc_reco / calc_energy_fluxes structure) vs Thum et al. 2019 mass-balanced formulation"
       status: adopted
+
+medium_evidence:
+  - var: "Ra"
+    source: "dag.yaml"
+    quote: "Single-site terrestrial ecosystem carbon exchange (GPP, NEE, Reco, autotrophic and heterotrophic respiration)"
+    note: "boundary.scope_in declares autotrophic respiration as terrestrial ecosystem carbon exchange."
+  - var: "Rh"
+    source: "dag.yaml"
+    quote: "Drives the bell-shaped soil-moisture scalar of heterotrophic respiration; not used for a prognostic soil-water balance."
+    note: "The forcing notes tie heterotrophic respiration to the soil-moisture/soil-water medium."
+  - var: "LAI"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018rg000608.txt"
+    quote: "Abstract Leaf area index (LAI) is a critical vegetation structural variable and is essential in the feedback of vegetation to the climate system."
+    note: "The LAI review identifies LAI as a vegetation structural variable."
+  - var: "H"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-12-4781-2019.txt"
+    quote: "QUINCY model v1.0 (rev. 1996) represents the coupled bio- geochemical cycles of carbon (C), nitrogen (N), and phos- phorus (P) in terrestrial ecosystems, as well as their interac- tion with the terrestrial water and energy balance (Fig. 1)."
+    note: "The QUINCY model description places its energy balance in terrestrial ecosystems."

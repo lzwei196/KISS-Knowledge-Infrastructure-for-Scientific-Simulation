@@ -1,293 +1,102 @@
-# ============================================================================
-# PyAEZ Knowledge Infrastructure v1.0.0
-# ============================================================================
-# PyAEZ v2.2 — Python Agro-Ecological Zoning Framework
-# 6-module pipeline for crop yield potential and land suitability assessment
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: "hydrocraft-pyaez-crop"
-  version: "1.0.0"
-  description: "Knowledge infrastructure for PyAEZ agro-ecological zoning within HydroCraft"
-  target_model: "PyAEZ 2.2"
-  domain: "crop yield potential and land suitability"
-  authors:
-    - "Auto-dissect pipeline"
-  license: "MIT"
-  created: "2026-03-27T23:37:43.529583"
-
+  name: PyAEZ
+  language: python
+  implementation:
+    id: pyaez-2.2
+    version: '2.2'
+    provenance: Python; FAO/AIT Geo-informatics Center PyAEZ 2.2 (Numba-accelerated AEZ implementation),
+      MIT-licensed.
+  scientific_reference_version: FAO/IIASA Agro-Ecological Zoning (AEZ/GAEZ) framework as implemented in
+    PyAEZ 2.2 (six-module land-evaluation pipeline)
+  binary:
+    path: KISSPATH_KI_ROOT/PyAEZ/knowledge_infrastructure/tools/run_pyaez.py
+    type: Python
 pipeline:
   stages:
-    - id: s0_data_preparation
-      name: "Data Preparation"
-      description: "Convert forcing/soil/terrain data to PyAEZ format with unit conversions"
-      order: 0
-      depends_on: []
-      skill_document: "docs/s0_data_preparation.md"
-      tools: [convert_forcing, convert_soil]
-      milestones:
-        - id: m0_data_ready
-          description: "All 6 climate .npy files and spatial .tif rasters exist with correct units"
-          verification: "python -c \"import numpy as np; a=np.load('climate/max_temp.npy'); assert a.ndim==3 and np.nanmean(a)<60\""
-
-    - id: s1_climate_regime
-      name: "Climate Regime Analysis (Module I)"
-      description: "Compute thermal climate, LGP, ETo, temperature profiles, and AEZ classification"
-      order: 1
-      depends_on: [s0_data_preparation]
-      skill_document: "docs/s1_climate_regime.md"
-      tools: [run_pyaez]
-      milestones:
-        - id: m1_climate_done
-          description: "LGP, thermal zones, and temperature profiles computed"
-          verification: "ls data_output/NB1/*.tif | wc -l >= 10"
-
-    - id: s2_crop_simulation
-      name: "Crop Simulation (Module II)"
-      description: "Simulate biomass and water-limited yield for all planting dates"
-      order: 2
-      depends_on: [s1_climate_regime]
-      skill_document: "docs/s2_crop_simulation.md"
-      tools: [run_pyaez]
-      milestones:
-        - id: m2_crop_done
-          description: "Rainfed and irrigated yield maps produced"
-          verification: "test -f data_output/NB2/*yield_rain*"
-
-    - id: s3_climatic_constraints
-      name: "Climatic Constraints (Module III)"
-      description: "Apply agro-climatic reduction factors (fc3) to yield"
-      order: 3
-      depends_on: [s1_climate_regime, s2_crop_simulation]
-      skill_document: "docs/s3_climatic_constraints.md"
-      tools: [run_pyaez]
-      milestones:
-        - id: m3_fc3_done
-          description: "fc3 constraint factor and climate-adjusted yield produced"
-          verification: "test -f data_output/NB3/*fc3*"
-
-    - id: s4_soil_constraints
-      name: "Soil Constraints (Module IV)"
-      description: "Calculate SQ1-SQ7 soil qualities and apply soil reduction factor (fc4)"
-      order: 4
-      depends_on: [s3_climatic_constraints]
-      skill_document: "docs/s4_soil_constraints.md"
-      tools: [run_pyaez]
-      milestones:
-        - id: m4_fc4_done
-          description: "fc4 constraint factor and soil-adjusted yield produced"
-          verification: "test -f data_output/NB4/*fc4*"
-
-    - id: s5_terrain_economic
-      name: "Terrain Constraints & Economic Analysis (Modules V-VI)"
-      description: "Apply terrain reduction (fc5) via Fournier Index and compute economic suitability"
-      order: 5
-      depends_on: [s4_soil_constraints]
-      skill_document: "docs/s5_terrain_economic.md"
-      tools: [run_pyaez]
-      milestones:
-        - id: m5_complete
-          description: "Final adjusted yield and economic suitability maps produced"
-          verification: "test -f data_output/NB5/*terrain* && test -f data_output/NB6/*revenue*"
-
-    - id: s6_output_parsing
-      name: "Output Parsing"
-      description: "Extract results from GeoTIFF/NumPy to CSV summary and suitability tables"
-      order: 6
-      depends_on: [s5_terrain_economic]
-      skill_document: "docs/s0_data_preparation.md"
-      tools: [parse_output]
-      milestones:
-        - id: m6_csv_done
-          description: "Summary CSV and suitability JSON produced"
-          verification: "test -f results/pixel_values.csv"
-
+  - s0_data_preparation
+  - s1_climate_regime
+  - s2_crop_simulation
+  - s3_climatic_constraints
+  - s4_soil_constraints
+  - s5_terrain_economic
 tools:
-  - id: convert_forcing
-    name: "Forcing Converter"
-    description: "Convert CMFD/MSWX forcing data to PyAEZ-compatible NumPy arrays with unit conversions"
-    stage: s0_data_preparation
-    script_path: "tools/convert_forcing.py"
-    language: python
-
-  - id: convert_soil
-    name: "Soil Converter"
-    description: "Convert HWSD raster and database to PyAEZ soil inputs (GeoTIFF + Excel)"
-    stage: s0_data_preparation
-    script_path: "tools/convert_soil.py"
-    language: python
-
-  - id: run_pyaez
-    name: "PyAEZ Pipeline Runner"
-    description: "Execute selected PyAEZ modules (I-VI) with pre-flight validation"
-    stage: s1_climate_regime
-    script_path: "tools/run_pyaez.py"
-    language: python
-
-  - id: parse_output
-    name: "Output Parser"
-    description: "Parse GeoTIFF/NumPy outputs to CSV summary tables and suitability classification"
-    stage: s6_output_parsing
-    script_path: "tools/parse_output.py"
-    language: python
-
-skill_documents:
-  - id: sd_s0
-    name: "Data Preparation"
-    stage: s0_data_preparation
-    path: "docs/s0_data_preparation.md"
-    knowledge_type: procedural
-
-  - id: sd_s1
-    name: "Climate Regime Analysis"
-    stage: s1_climate_regime
-    path: "docs/s1_climate_regime.md"
-    knowledge_type: procedural
-
-  - id: sd_s2
-    name: "Crop Simulation"
-    stage: s2_crop_simulation
-    path: "docs/s2_crop_simulation.md"
-    knowledge_type: procedural
-
-  - id: sd_s3
-    name: "Climatic Constraints"
-    stage: s3_climatic_constraints
-    path: "docs/s3_climatic_constraints.md"
-    knowledge_type: procedural
-
-  - id: sd_s4
-    name: "Soil Constraints"
-    stage: s4_soil_constraints
-    path: "docs/s4_soil_constraints.md"
-    knowledge_type: procedural
-
-  - id: sd_s5
-    name: "Terrain Constraints & Economic Suitability"
-    stage: s5_terrain_economic
-    path: "docs/s5_terrain_economic.md"
-    knowledge_type: procedural
-
-diagnostic_triplets:
-  - id: dt_001
-    stage: s0_data_preparation
-    failure_domain: unit_conversion
-    severity: critical
-    summary: "Temperature in Kelvin instead of Celsius"
-
-  - id: dt_002
-    stage: s0_data_preparation
-    failure_domain: unit_conversion
-    severity: critical
-    summary: "Relative humidity percentage instead of fraction"
-
-  - id: dt_003
-    stage: s0_data_preparation
-    failure_domain: unit_conversion
-    severity: critical
-    summary: "Precipitation mm/month instead of mm/day"
-
-  - id: dt_004
-    stage: s0_data_preparation
-    failure_domain: data_format
-    severity: critical
-    summary: "Climate array axis order wrong"
-
-  - id: dt_005
-    stage: s1_climate_regime
-    failure_domain: parameter
-    severity: high
-    summary: "Latitude min/max swapped or incorrect"
-
-  - id: dt_006
-    stage: s0_data_preparation
-    failure_domain: unit_conversion
-    severity: medium
-    summary: "Wind speed at 10m instead of 2m height"
-
-  - id: dt_007
-    stage: s1_climate_regime
-    failure_domain: interpolation
-    severity: medium
-    summary: "Cubic spline interpolation produces negative values"
-
-  - id: dt_008
-    stage: s2_crop_simulation
-    failure_domain: parameter
-    severity: medium
-    summary: "Default soil water parameters override actual soil"
-
-  - id: dt_009
-    stage: s2_crop_simulation
-    failure_domain: performance
-    severity: medium
-    summary: "Numba not installed, extremely slow execution"
-
-  - id: dt_010
-    stage: s1_climate_regime
-    failure_domain: data_format
-    severity: high
-    summary: "Mask value incorrect, all pixels excluded"
-
-  - id: dt_011
-    stage: s2_crop_simulation
-    failure_domain: file_io
-    severity: high
-    summary: "Excel crop parameter sheet missing columns"
-
-  - id: dt_012
-    stage: s0_data_preparation
-    failure_domain: unit_conversion
-    severity: medium
-    summary: "Radiation MJ/m2/day instead of W/m2"
-
-  - id: dt_013
-    stage: s4_soil_constraints
-    failure_domain: data_format
-    severity: critical
-    summary: "Soil map SMU codes don't match Excel"
-
-  - id: dt_014
-    stage: s5_terrain_economic
-    failure_domain: unit_conversion
-    severity: medium
-    summary: "Slope in degrees instead of percent"
-
-  - id: dt_015
-    stage: s5_terrain_economic
-    failure_domain: unit_conversion
-    severity: low
-    summary: "Yield kg/ha vs ton/ha mismatch in economic module"
-
-  - id: dt_016
-    stage: s2_crop_simulation
-    failure_domain: parameter
-    severity: high
-    summary: "LGP indicators not imported before simulation"
-
-  - id: dt_017
-    stage: s1_climate_regime
-    failure_domain: parameter
-    severity: medium
-    summary: "Soil moisture capacity too high causing inflated LGP"
-
+  count: 4
+  files:
+  - tools/convert_forcing.py
+  - tools/convert_soil.py
+  - tools/parse_output.py
+  - tools/run_pyaez.py
+inputs:
+  forcing:
+  - name: minimum air temperature
+    unit: degC
+  - name: maximum air temperature
+    unit: degC
+  - name: precipitation
+    unit: mm/day
+  - name: shortwave downward radiation
+    unit: W/m^2
+  - name: wind speed
+    unit: m/s at 2 m reference height
+  - name: relative humidity
+    unit: 0-1 fraction
+  parameters:
+  - name: elevation (DEM)
+    unit: meters
+  - name: slope
+    unit: percent (%)
+  - name: soil mapping unit (SMU) map
+    unit: integer HWSD SMU codes
+  - name: available soil moisture capacity (Sa)
+    unit: mm/m
+  - name: rooting depth (D) for LGP water balance
+    unit: m
+  - name: soil water depletion fraction (pc)
+    unit: 0-1 fraction
+  - name: crop biophysical parameters (LAI, HI, height, kc, legume flag, adaptability/photosynthesis class,
+      cycle length, yield-loss factors, reference est_yield)
+    unit: mixed (LAI unitless, HI 0-1, kc unitless, est_yield kg/ha, cycle days)
+  - name: agro-climatic (fc3) reduction lookup factors
+    unit: 0-1 reduction factors
+  - name: soil-quality (SQ1-SQ7) characteristics and reduction factors
+    unit: 0-100 ratings / 0-1 reductions
+  - name: terrain reduction factors
+    unit: 0-1 reduction factors
+  - name: economic cost / price / yield reference points
+    unit: currency/ha, currency/ton, ton/ha
+  initial_conditions: []
+  boundary_conditions:
+  - name: study-area mask
+    unit: binary 0/1
+  - name: latitude extent (lat_min, lat_max)
+    unit: decimal degrees
+  - name: water-supply mode
+    unit: categorical (rainfed | irrigated)
+  - name: climate temporal mode
+    unit: categorical (monthly=12 | daily=365)
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - lgp
+  - thermal_zone
+  - pet_daily
+  - yield_rain
+  - yield_irr
+  - terrain_yield
+  - suitability_class
+  - net_revenue
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: R=0.286'
+  metrics:
+    best_r: 0.2865
 summary:
   total_tools: 4
-  total_tool_lines: 1050
-  total_skill_documents: 6
+  total_stage_docs: 6
   total_diagnostic_triplets: 17
-  failure_domains:
-    - unit_conversion
-    - data_format
-    - parameter
-    - performance
-    - file_io
-    - interpolation
-  pipeline_stages: 7
-  target_model_version: "2.2"
-
-validation:
-  tier: "synthetic"
-  tier_justification: "Validated using built-in Laos maize example data from the PyAEZ repository. This is a self-contained test with repository-provided inputs and expected outputs, not independent observed data."
-  benchmark: "PyAEZ Laos maize example (NB1-NB6)"
-  metrics: {}
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

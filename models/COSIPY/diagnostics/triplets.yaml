@@ -508,3 +508,67 @@
     prevention: "convert_forcing applies height correction by default"
   severity: silent
   cross_references: []
+
+# ---------------------------------------------------------------------------
+# Triplets added by self-improve runs after the original corpus was published.
+# Recovered 2026-08-12 and merged back; the block above is the published base,
+# byte-for-byte. See REPORT.md.
+# ---------------------------------------------------------------------------
+- id: dt_021
+  symptom:
+    description: 'surfaceTemperature.py get_subsurface_temperature/interp_subT raises ''IndexError: list
+      index out of range'' at run time, on a column that started with initial_snowheight=0 or that ablated
+      to near-zero snow/ice.'
+  diagnosis:
+    root_cause: The subsurface-temperature interpolation indexes thin near-surface layers that do not
+      exist when the column has no (or vanishingly thin) snow layers; this is distinct from dt_015 (solver
+      non-convergence/NaN from extreme forcing units).
+  remedy:
+    action: For point/seasonal-snow setups, in constants.toml set initial_snowheight_constant=0.2 and
+      a thick ice base (initial_glacier_height ~= 70 m) so the column always retains thin near-surface
+      layers; do NOT run with initial_snowheight=0 on a 1x1 point column.
+  format_spec_violated: none (model robustness bug in surfaceTemperature.py, not a format-spec violation)
+  canonical_intent: ki_local_if_pass
+  added_by_run: COSIPY_retry1
+- id: dt_022
+  symptom:
+    error_pattern: 'OSError: [Errno -101] NetCDF: HDF error'
+    description: 'xr.open_dataset / to_netcdf with the default (netcdf4) engine raises ''OSError: [Errno
+      -101] NetCDF: HDF error'' when reading the COSIPY forcing file, writing output, or even on the shipped
+      Zhadang input. Reproducible in the shared python_env (libnetcdf 4.9.3 / HDF5 1.14.6); a trivial
+      1-var file may still write, but multi-variable COSIPY files fail. The h5netcdf engine handles the
+      same files fine.'
+  diagnosis:
+    root_cause: The python_env netCDF4/HDF5 backend is broken on this host (regressed after 2026-06-19).
+      It is NOT a file-locking or filesystem issue (HDF5_USE_FILE_LOCKING has no effect; a /tmp copy fails
+      identically). The previously-documented dedicated venv (auto_dissect/_work/COSIPY/venv) no longer
+      exists.
+  remedy:
+    action: Run COSIPY through tools/run_cosipy.py, which injects tools/_netcdf_shim/sitecustomize.py
+      onto PYTHONPATH and sets COSIPY_FORCE_H5NETCDF=1 so COSIPY's default-engine xarray I/O routes through
+      h5netcdf (no model-source edit). run_cosipy validation and parse_output both already use an engine-fallback
+      open helper (default -> h5netcdf -> netcdf4). Just use the system python3 — no special venv needed.
+  format_spec_violated: none (environment/backend regression, not a format-spec violation)
+  canonical_intent: ki_local_if_pass
+  added_by_run: COSIPY_verify_20260621
+- id: dt_023
+  symptom:
+    error_pattern: 'ERROR: Input file not found: ./data/input/.*'
+    description: run_cosipy.py preflight reports "Input file not found" for a relative data_path even
+      though the file exists and COSIPY itself runs fine. Triggered when run_cosipy is invoked from the
+      KI directory (or anywhere) with --source-dir pointing at the COSIPY repo, while config.toml uses
+      a relative data_path like "./data/". The model subprocess runs with cwd=source_dir, but the preflight
+      validators resolved the relative path against the CALLER cwd, so they looked in the wrong place
+      and aborted before COSIPY ever started.
+  diagnosis:
+    root_cause: validate_config/validate_input_data/validate_output joined the relative data_path against
+      the process cwd instead of --source-dir (where COSIPY actually resolves it). Path-base mismatch,
+      not a missing file.
+  remedy:
+    action: Fixed in tools/run_cosipy.py — added _resolve_data_path(data_path, source_dir) which normalizes
+      a relative data_path against source_dir, and threaded --source-dir into all three validators. Relative
+      configs now preflight correctly from any cwd. (If you hit this on an older copy, either pass an
+      absolute data_path in config.toml or run from inside source_dir.)
+  format_spec_violated: none (tool path-resolution bug)
+  canonical_intent: ki_local_if_pass
+  added_by_run: COSIPY_real_case_20260622_mtfidelity

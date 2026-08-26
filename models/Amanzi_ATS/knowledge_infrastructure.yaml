@@ -1,77 +1,108 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:58:58.533567'
-  domain: groundwater
   name: Amanzi_ATS
-  version: auto-generated
+  language: c++
+  implementation:
+    id: amanzi-ats
+    version: Amanzi v1.7-dev (git f8b03562e, master); ATS docs 1.6 lineage
+    provenance: C++; DOE Amanzi/ATS multi-physics framework (LANL/LBNL/PNNL/ORNL) built on Trilinos, with
+      XML (Teuchos ParameterList) input.
+  scientific_reference_version: Amanzi/ATS integrated surface-subsurface thermal hydrology framework (Amanzi
+    multi-process core + ATS ecohydrology PKs; Painter/Coon formulation, WRR 2016)
+  binary:
+    path: KISSPATH_KI_ROOT/Amanzi_ATS/knowledge_infrastructure/tools/run_amanzi.py
+    type: Python
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_forcing_preparation
+  - s2_soil_parameterization
+  - s3_mesh_generation
+  - s4_xml_input_assembly
+  - s5_execution_and_output
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_amanzi.py
+  - tools/convert_soil_to_amanzi.py
+  - tools/parse_amanzi_output.py
+  - tools/run_amanzi.py
+inputs:
+  forcing:
+  - name: Precipitation / recharge mass flux
+    unit: kg/m^2/s (internal); inputs commonly mm/hr, mm/yr, cm/yr
+  - name: Atmospheric temperature
+    unit: K (internal); input °C or K
+  - name: Meteorological surface forcing (radiation, humidity, wind, snow/rain partition)
+    unit: PK-specific (W/m^2, -, m/s, kg/m^2/s)
+  parameters:
+  - name: Intrinsic permeability k
+    unit: m^2
+  - name: van Genuchten alpha
+    unit: 1/Pa (internal; literature commonly 1/cm)
+  - name: van Genuchten n
+    unit: dimensionless (>1)
+  - name: van Genuchten m
+    unit: dimensionless
+  - name: Mualem rel-perm pore-connectivity exponent l
+    unit: dimensionless
+  - name: Porosity
+    unit: dimensionless (0–1)
+  - name: Residual saturation S_r
+    unit: dimensionless
+  - name: Specific storage
+    unit: 1/m
+  - name: Longitudinal/transverse dispersivity
+    unit: m
+  - name: Sorption distribution coefficient Kd
+    unit: m^3/kg (internal; literature mL/g)
+  - name: Gravity vector
+    unit: m/s^2 (3-vector)
+  initial_conditions:
+  - name: Initial pressure
+    unit: Pa
+  - name: Initial solute concentration
+    unit: mol/L
+  - name: Initial temperature
+    unit: K
+  boundary_conditions:
+  - name: Prescribed pressure / water-table boundary
+    unit: Pa (internal; input m head)
+  - name: Recharge rate
+    unit: mm/yr (converted to kg/m^2/s)
+  - name: Flow model selection
+    unit: '-'
+  - name: Transport algorithm selection
+    unit: '-'
+  - name: Chemistry engine selection
+    unit: '-'
+  - name: Relative-permeability / WRM model selection
+    unit: '-'
+  - name: Execution / timestepping controls
+    unit: s (times); dimensionless (factors)
+  - name: Mesh and regions
+    unit: m
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - pressure
+  - hydraulic_head
+  - saturation_liquid
+  - darcy_velocity
+  - total_component_concentration
+  - temperature
+  - saturation_ice
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=-0.150, R=0.445, 2 scorecard(s)'
+  metrics:
+    best_nse: -0.1505
+    best_r: 0.4445
+summary:
+  total_tools: 4
+  total_stage_docs: 5
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

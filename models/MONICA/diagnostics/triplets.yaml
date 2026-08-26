@@ -531,3 +531,176 @@
     filtering is a separate, pre-existing limitation, not part of this fix.
     For validated province yields use the multisite yield_for_plot.csv tables.
   severity: degraded
+
+- id: dt_27
+  stage: output_parsing
+  failure_domain: tooling
+  symptom: >
+    parse_monica_output.py "succeeds" (exit 0) on a crop/harvest-event out.csv
+    but reports columns: ["crop"], units: ["CM-count;Crop;Yield;sowing;harvest"],
+    an empty summary (no max_yield_kg_ha / n_harvests) and a timeseries.csv that
+    holds no Yield column — every per-harvest yield is silently lost. On a
+    daily+crop file the crop block is likewise dropped.
+  diagnosis: >
+    MONICA writes every output event block under a BARE section label line
+    (the event key, quoted: "crop", "daily", "yearly", "run") followed by that
+    block's own header row, units row and data rows; blocks differ in header
+    AND may differ in separator. The tool read line 0 as the header and
+    detected the separator from line 0, so for an event file the label "crop"
+    became the only column and the real header was taken as the units row; all
+    5-column data rows then failed the len(vals)==len(header) filter (or, in
+    daily+crop files, only the first block's rows matched). Prior agents worked
+    around this with ad-hoc csv parsers instead of the KI tool.
+  remedy: >
+    Fixed 2026-08-22 in tools/parse_monica_output.py: parse_monica_output()
+    now walks the file block by block (label -> header -> optional units ->
+    optional m:/j:/c: meta -> rows until blank line / next label), detects the
+    separator per block, returns the UNION of all block headers (plus a
+    leading "section" column when >1 block) and, ONLY when >1 block, tags
+    every row with its block name; a single-block file (e.g. a crop-event
+    out.csv) keeps its plain per-block contract - no "section" key. The label
+    line is REQUIRED to be quoted (monica-run-main.cpp:300 writes '"'+spec+'"');
+    an unquoted one-cell line such as the `Precip` header of a "run" block or a
+    legacy single-column header is never a label (retry2 revision).
+    Use `--columns Yield sowing harvest` on an event file to get one row
+    per harvest; skip rows whose harvest date ends "-12-31" (trailing partial
+    season). SKILL.md's "3+ header rows" description omits the label line.
+  severity: degraded
+
+- id: dt_28
+  stage: soil_parameterisation
+  failure_domain: tooling
+  symptom: >
+    convert_soil_to_monica.py --format hwsd on a 1-row HWSD extract (T_* and
+    S_* columns from HWSD_DATA.csv / ki_tools_common.soil_utils.lookup_hwsd)
+    emits 20 layers whose layers 4-20 all carry the TOPSOIL sand/clay and a
+    flat SOC of 0.1 %, and every run prints the warning "No soil layers
+    defined" although the file is valid and MONICA runs.
+  diagnosis: >
+    process_hwsd() decided topsoil-vs-subsoil per ROW ("T_SAND" in rec), but
+    an HWSD_DATA row carries BOTH horizons (T_* 0-30 cm, S_* 30-100 cm), so the
+    S_* columns were never read: only the 3 topsoil layers were built and the
+    2 m profile was padded by copying them. validate_outputs() looked for
+    SoilProfileParameters at the JSON ROOT, but build_site_json nests them
+    under SiteParameters (the dt_18 crash fix), so the layer checks never ran
+    and the spurious warning always fired.
+  remedy: >
+    STATUS 2026-08-22: a fix (3 topsoil layers from T_* + 7 subsoil layers from
+    S_*, S_OC when present else half of T_OC, pad to 20; validator reading
+    SiteParameters.SoilProfileParameters) was written but REVERTED by the
+    independent tool review: its validate_outputs still fell back to the JSON
+    root ("params.get('SoilProfileParameters') or site_json.get(...)") instead
+    of strictly requiring SiteParameters.SoilProfileParameters. The live tool
+    therefore STILL pads layers 4-20 from T_* and still prints the spurious
+    warning. Re-land the fix with a STRICT validator (no root fallback) in a
+    reviewed tool_patch; until then build subsoil layers yourself if needed.
+    When building the hwsd CSV from lookup_hwsd(), pass sub_sand/sub_silt/
+    sub_clay as S_SAND/S_SILT/S_CLAY (leave S_OC/S_BULK_DENSITY/S_PH_H2O blank
+    if unknown — blanks fall back to the topsoil-derived values).
+  severity: degraded
+
+- id: dt_29
+  stage: crop_rotation
+  failure_domain: configuration
+  symptom: >
+    Irrigated, well-fertilised winter wheat at 30-40 N (NCP / Huang-Huai-Hai) simulates ~2.5-3.2 t DM ha-1
+    against 5-6 t/ha statistics (PBIAS -40..-60 %) although TraDef ~ 1, NDef ~ 1 and HeatRed = 1; AbBiom is
+    healthy (15-18 t) so the harvest index is ~0.2; most seasons are harvested exactly ON the AutomaticHarvest
+    latest-date; the daily trace shows stem elongation ~Apr 2, anthesis (Stage 4->5) ~May 27 and maturity
+    ~Jun 22 where the real crop flowers late Apr-early May and matures Jun 5-10.
+  diagnosis: >
+    The stock long-day cultivar (crops/wheat/winter-wheat.json, DaylengthRequirement 20 h, BaseDaylength 0/7 h)
+    is a ~52 N parameterisation. MONICA multiplies every stage's thermal time by the long-day factor
+    (DL - base)/(req - base) (crop-module.cpp fc_DaylengthFactor); its photoperiodic daylength (sun at -6 deg)
+    peaks at 18.5 h at 52.5 N but only 15.5 h at 35 N, so the factor stays ~0.45-0.55 all spring, development
+    slips 3-4 weeks, grain fill lands in the hot late-June window and the harvest index collapses. The harvest
+    cap only masks it (yield is fixed at maturity; Stage at harvest = 6). A lower vernalisation requirement
+    (30 d) changes < 2 %; the shipped Bacanora (AgMIP4) cultivar is a spring type and flowers Apr 1 (worse).
+  remedy: >
+    Transfer the photoperiod requirement to the site (latitude-derived, no yield fitting):
+    `tools/site_photoperiod.py adapt --lat <lat> --base $MONICA_PARAMETERS/crops/wheat/winter-wheat.json
+    --out <file>` sets every positive DaylengthRequirement entry to the site's maximum photoperiodic daylength
+    (15.4-15.6 h across 34-36 N) and use the written object as cropParams.cultivar; the tool refuses short-day
+    cultivars (any negative entry, e.g. crops/soybean/*.json), --out == --base, any --out inside the
+    monica-parameters repository and an --out whose parent directory does not exist (it creates no directories
+    and writes only <out>.tmp then <out>); every refusal - command-line usage errors included - is one JSON
+    {"status":"error"} on stdout with exit 2, nothing written. Probe 34.6 N: anthesis
+    ~May 9, maturity ~Jun 9, cap hits 11/17 -> 2/17, HI 0.19 -> 0.28, mean yield 3156 -> 4849 kg DM ha-1.
+    Then run the phenology gate (SKILL.md China workflow step 5): anthesis/maturity event blocks in the output,
+    median dates within +-10 d of the regional calendar, < 10 % seasons cut at latest-date without maturity.
+    Never add ["Stage|harvest","LAST"] to the crop block (duplicate "harvest" header -> parser drops the date).
+  severity: silent
+
+- id: dt_30
+  stage: execution
+  failure_domain: configuration
+  symptom: >
+    Individual seasons yield 0 (AbBiom 7-10 t, no anthesis/maturity row, harvest ON latest-date) in otherwise
+    working irrigated runs; the daily trace shows output Stage 1 (germination) persisting from the autumn sowing
+    until the first spring rain (e.g. 2010-10 -> 2011-03 in the NCP), then a stalled vegetative crop.
+  diagnosis: >
+    EmergenceMoistureControlOn defaults to TRUE in the model (monica-parameters.h pc_EmergenceMoistureControlOn
+    {true}; docs/06 wrongly listed false): germination needs top-layer moisture > 20 % of capillary water. In a
+    dry autumn (2010 NCP drought) the seedbed never qualifies, and automatic irrigation cannot rescue it because
+    SoilColumn::applyIrrigationViaTrigger only fires inside the cultivar heat-sum window
+    (HeatSumIrrigationStart/End 461-1676 degC d, i.e. after emergence). The validated China multisite sim.json
+    set the switch false; a runner that omits the key silently inherits true.
+  remedy: >
+    Set "EmergenceMoistureControlOn": false in sim.json for irrigated NCP wheat (farmers pre-irrigate the
+    seedbed), or add an explicit Irrigation workstep on the sowing date. Verify with the anthesis/maturity event
+    blocks that no season is missing both. Probe column p34.375_115.875: 2010-11 season 0 -> 2809 kg DM ha-1
+    (stock cultivar) and 4574 with the dt_29 photoperiod transfer.
+  severity: silent
+
+- id: dt_31
+  stage: output_comparison
+  failure_domain: units
+  symptom: >
+    Gridded or statistical yield obs (GDHY v1.2/1.3, FAOSTAT, provincial yearbooks) scored against MONICA Yield
+    (kg DM ha-1 / 1000) read ~12-14 % low everywhere although phenology, water and N are verified healthy (NCP
+    20-cell block 2026-08-22: per-site median PBIAS -16 % with anthesis 05-10, maturity 06-10, TraDef ~ 1,
+    NDef ~ 1, HI 0.27).
+  diagnosis: >
+    Moisture-basis mismatch, not a model defect: MONICA's Yield is dry matter; statistics-derived obs (and the
+    GDHY product, which is harmonised to FAO national yields) are fresh weight at ~12 % harvest moisture; the
+    GDHY .nc4 carries no unit attribute, so the runner compared DM-direct ("platform precedent") and understated
+    the sim by the factor 0.88. SKILL.md "Unit notes for output comparison" already documents
+    yield_FW = yield_DM / 0.88.
+  remedy: >
+    Apply the documented conversion before scoring statistics-derived obs: sim_t_ha = kg DM ha-1 / 1000 / 0.88,
+    state the convention in the result and keep the DM-direct number as an auxiliary (run_and_score.py:
+    pbias_dm_direct / PBIAS_dm_direct / yield_convention). Do not mix with the DM-direct validated 5-site SKILL
+    table (dt_25). NCP block 2026-08-22: -16.0 % (DM-direct) -> -4.6 % (FW) per-site median; block mean 4.97 vs
+    5.31 t/ha. Compare DM-direct only against obs explicitly reported as dry matter (field trials, GGCMI/AgMIP
+    protocol data).
+  severity: degraded
+
+- id: dt_32
+  stage: output_comparison
+  failure_domain: scale_mismatch
+  symptom: >
+    A regional-aggregate yield comparison (GDHY / FAOSTAT / yearbook obs, obs_shape regional_aggregate_time_series) is
+    rejected by the orchestrator's dag_driven_gate with "REJECT_WRONG_METRIC: metrics ['nse', 'kge', 'r'] use families
+    that are not in valid_families=['trend_match', 'magnitude_accuracy'] for (variable='Yield',
+    obs_shape='regional_aggregate_time_series')" although the magnitude is fine (NCP block 2026-08-22: per-site median
+    PBIAS -4.6 % FW, phenology gate PASS), and/or the r < 0.5 retry trigger keeps firing on the case because r ~ 0.
+  diagnosis: >
+    A reporting-contract gap, not a model or unit defect: the result's headline `metrics` block led with nse/r/kge and the
+    runner's test_runs row carried no dag-valid metric (median_* keys only), so the retest/report agent re-authored the
+    row from the generic nse/kge/pbias template and the loop's route reader picked r (structurally ~0 for a
+    statistics-harmonised area mean with a technology trend - dt_24/dt_25) as the verdict stat. The dag
+    (outputs.Yield.observability) sanctions ONLY magnitude_accuracy + trend_match for this obs_shape, determining metric
+    pbias; temporal_pattern_match stats are not a verdict input here.
+  remedy: >
+    Follow SKILL.md 'Reporting contract for regional-aggregate / gridded-statistics yield obs': metrics + every test_runs
+    row carry ONLY pbias (+rmse) and trend_error / decadal_pbias / slope_ratio with determining_metric pbias, obs_shape,
+    metric_families_valid, detrending_applied; NSE/KGE/r from the same all_metrics call go to
+    aux_temporal_pattern_not_gate_valid (run_and_score.py stage 5 + write_result). Hand the runner off with
+    kdt_detached_run.py and return run_detached so the orchestrator harvests result.json itself; copy the row VERBATIM,
+    never re-author it. Definitions: trend_error = slope(sim - obs) x (n - 1) / mean(obs); decadal_pbias = max |PBIAS| of
+    the half-period means. A fixed-management run does not carry the technology trend (NCP: slope_ratio 0.15, trend_error
+    -0.36) - report it, do not tune for it (dt_25). Harness note: the L2 binding ships GDHY as catalogue shape
+    spatial_time_series while the dag declares regional_aggregate_time_series, so the case contract's determining metric
+    falls back to the shape-nature default r ("SHAPE MISMATCH - fix the dag or the catalogue shape"); the dag should
+    declare the gridded-statistics shape explicitly (Tier-1 proposal).
+  severity: structural

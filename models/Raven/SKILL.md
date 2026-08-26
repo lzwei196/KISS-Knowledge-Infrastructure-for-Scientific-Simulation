@@ -1,14 +1,3 @@
----
-name: raven
-description: >-
-  Raven Hydrological Modelling Framework v4.1. Covers Rainfall-runoff transformation from
-  meteorological forcing to discharge (hydrograph); Infiltration and surface runoff
-  partitioning; Evapotranspiration / potential ET (multiple selectable methods); Snow
-  accumulation, melt, and snowpack energy/mass state; Soil water balance, percolation
-  between layers, and baseflow. Use when the task involves running, configuring,
-  calibrating or interpreting Raven.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,48 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (11 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (43 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (27 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/common/validate_raven_inputs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/common/validate_raven_inputs.py --help` |
+| `tools/s0_config/select_model_template.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_config/select_model_template.py --help` |
+| `tools/s10_coupling/raven_vic_comparison.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_coupling/raven_vic_comparison.py --help` |
+| `tools/s1_basin_setup/build_rvh_from_shapefile.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_basin_setup/build_rvh_from_shapefile.py --help` |
+| `tools/s2_parameters/build_rvp_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_parameters/build_rvp_parameters.py --help` |
+| `tools/s3_forcing/convert_forcing_to_rvt.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_forcing/convert_forcing_to_rvt.py --help` |
+| `tools/s5_initial_conditions/generate_rvc_initial.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_initial_conditions/generate_rvc_initial.py --help` |
+| `tools/s6_execution/run_raven.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_execution/run_raven.py --help` |
+| `tools/s7_output/parse_raven_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_output/parse_raven_output.py --help` |
+| `tools/s8_ensemble/run_ensemble_comparison.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_ensemble/run_ensemble_comparison.py --help` |
+| `tools/s9_calibration/calibrate_raven_dds.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_calibration/calibrate_raven_dds.py --help` |
+
+*11 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -132,6 +163,59 @@ numpy, pandas, geopandas, rasterio, shapely, netCDF4 (all in HydroCraft venv)
 - s1, s2, s3 can run in parallel after s0
 - s5 depends on s1 and s2
 - s8 (ensemble): all model runs execute in parallel (same forcing/HRU, different .rvi/.rvp)
+
+---
+
+## 6. Output Description
+
+This section restates `dag.yaml`; if this section and `dag.yaml` ever disagree,
+`dag.yaml` wins. The headline output is the dag's `validation_rank: 1` variable,
+which is the quantity this KI is judged by when observations are supplied.
+
+**Headline output**:
+
+> `discharge (STREAMFLOW)` -- Simulated streamflow hydrograph at each gauged SubBasin outlet; observed series co-reported when supplied. (`m3/s`)
+
+| Output variable (dag `var`) | Validation rank | Emitted in | Unit | Description from `dag.yaml` |
+|-----------------------------|----------------:|------------|------|-----------------------------|
+| `discharge (STREAMFLOW)` | 1 | `Hydrographs.csv` | `m3/s` | Simulated streamflow hydrograph at each gauged SubBasin outlet; observed series co-reported when supplied. |
+| `Actual evapotranspiration (AET)` | 2 | `WatershedStorage.csv` / diagnostics | `mm/d` | Actual ET flux to the atmosphere; diagnostic accumulator, not an independent mass-balance reservoir. |
+| `Snow water equivalent (SNOW / TOTAL_SWE)` | 3 | `WatershedStorage.csv` / state outputs | `mm` | Snowpack water equivalent per HRU/basin. |
+| `Soil water storage (SOIL[i])` | 4 | `WatershedStorage.csv` | `mm` | Basin-averaged soil layer water storage; SOIL[0]/SOIL[1] can supply soil moisture to coupled crop/water-quality models. |
+| `Performance diagnostics (NSE, KGE, PBIAS, RMSE)` | 5 | `Diagnostics.csv` | `dimensionless / m3/s` | Built-in objective functions computed against observed in-stream water discharge (STREAMFLOW) over the simulation period. |
+
+When asked what Raven predicts, answer first with `discharge (STREAMFLOW)`.
+Use `parse_raven_output.py` for `Hydrographs.csv` because the raw file is
+period-ending and must be shifted to calendar dates before external metrics are
+computed.
+
+---
+
+## 8. Unit Conversion Table
+
+Exact input/output shapes live in `docs/format_spec.yaml`. Raven performs no
+unit conversion on `.rvt` values, so these conversions must happen before model
+execution, normally in `tools/s3_forcing/convert_forcing_to_rvt.py`.
+
+| Variable | Source unit | Raven unit | Conversion |
+|----------|-------------|------------|------------|
+| `PRECIP` from CMFD 3-hr | `kg/m2/s` | `mm/d` | multiply by `10800` per 3-hour step, then sum 8 steps |
+| `PRECIP` from MSWX 3-hr | `mm/3hr` | `mm/d` | sum 8 steps; no `10800` multiplier |
+| `TEMP_MIN`, `TEMP_MAX`, `TEMP_AVE` from CMFD | `K` | `degC` | subtract `273.15` |
+| `TEMP_MIN`, `TEMP_MAX`, `TEMP_AVE` from MSWX | `degC` | `degC` | none |
+| `SW_RADIA` | `W/m2` | `MJ/m2/d` | multiply by `0.0864` |
+| `AIR_PRES` | `Pa` | `kPa` | divide by `1000` |
+| `WIND_VEL` | `m/s` | `m/s` | none |
+
+### 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Impact if wrong |
+|----------|--------------------------|-----------------|
+| `discharge (STREAMFLOW)` | Absolute streamflow at gauged SubBasin outlets in `m3/s` | Do not treat as basin-depth runoff or per-grid-cell flux. |
+| `Actual evapotranspiration (AET)` | Flux to the atmosphere in `mm/d` | Do not treat as an independent mass-balance reservoir. |
+| `Soil water storage (SOIL[i])` | Basin-averaged layer storage in `mm` | Convert or scale before comparison to volumetric soil moisture. |
+| `Snow water equivalent (SNOW / TOTAL_SWE)` | Snowpack water equivalent in `mm` | Compare only during periods with meaningful snowpack. |
+| `Performance diagnostics (NSE, KGE, PBIAS, RMSE)` | Computed against observed in-stream water discharge when supplied | Missing observations produce diagnostic sentinels, not model validation. |
 
 ---
 
@@ -429,12 +513,27 @@ python $KI/tools/s10_coupling/raven_vic_comparison.py \
 
 ---
 
-## Validated Results -- Bengbu Basin (Step 3 Production Validation)
+## 11. Validated Results -- Bengbu Basin (Step 3 Production Validation)
 
 **Basin**: Bengbu (Huai River, 118,358 km2, humid subtropical monsoon)
 **Period**: 2000-01-01 to 2005-12-31, CMFD forcing (224 grid cells aggregated to basin mean)
 **Data**: ALL inputs from HydroCraft global datasets (CMFD forcing, China DEM 90m, AVHRR land cover)
 **Reference**: VIC 5.1.0 + Lohmann routing (mean Q = 1,509 m3/s)
+
+### Performance Metrics -- Convention Bars
+
+These bars restate `docs/validation_convention.yaml`; if this section and the
+convention file disagree, `docs/validation_convention.yaml` wins. The Bengbu
+production run below compares Raven to VIC, while the headline field bar for
+`discharge (STREAMFLOW)` applies to gauged discharge validation after spinup.
+
+| Dag variable | Obs shape | Metric | Direction | Convention bar, cited |
+|--------------|-----------|--------|-----------|-----------------------|
+| `discharge (STREAMFLOW)` | `point_time_series` | `nse` | maximize | satisfactory >= `0.50` (`moriasi2015`, `moriasi2007`); good >= `0.70` (`moriasi2015`, `moriasi2007`); very good >= `0.80` (`moriasi2015`, `moriasi2007`) |
+| `discharge (STREAMFLOW)` | `point_time_series` | `pbias` | zero_centered | satisfactory within `15` percent (`moriasi2015`); good within `10` percent (`moriasi2015`); very good within `5` percent (`moriasi2015`) |
+| `Soil water storage (SOIL[i])` | `point_time_series` | `ubrmse` | minimize | satisfactory <= `0.06` (`smap2017`); good <= `0.04` (`smap2017`); very good: no cited threshold (`smap2017`) |
+| `Soil water storage (SOIL[i])` | `point_time_series` | `r` | maximize | satisfactory >= `0.70` (`gripgl2022`); good >= `0.80` (`gripgl2022`); very good >= `0.90` (`gripgl2022`) |
+| `Soil water storage (SOIL[i])` | `spatial_time_series` | `r` | maximize | satisfactory >= `0.70` (`gripgl2022`); good >= `0.80` (`gripgl2022`); very good >= `0.90` (`gripgl2022`) |
 
 ### Ensemble Results (5 model structures, uncalibrated)
 

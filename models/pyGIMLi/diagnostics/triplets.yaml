@@ -1,458 +1,153 @@
+# ==========================================================================
 # pyGIMLi Diagnostic Triplets
-# 18 symptom → diagnosis → remedy entries for common pyGIMLi failures
-# Organized by failure domain
+# ==========================================================================
+# 18 triplets. RESTORED 2026-08-12 from the KDT dag-generation
+# capture triplets.yaml
+# after the self-improve overlay overwrote the corpus. Top-level LIST — do not
+# wrap these entries in a `triplets:` key.
+# ==========================================================================
 
-metadata:
-  model: "pyGIMLi"
-  version: "1.5+"
-  domain: "geophysics"
-  total_triplets: 18
-  failure_domains:
-    - unit_conversion
-    - parameter_format
-    - mesh_generation
-    - inversion_convergence
-    - data_quality
-    - silent_error
-
-# ============================================================
-# UNIT CONVERSION (5 triplets)
-# ============================================================
-
-dt_001:
-  failure_domain: unit_conversion
+- id: dt_001
+  symptom: Inverted resistivity model values are 1000x higher than expected for site geology (model range
+    10000-1e8 Ohm·m for typical sedimentary site)
+  diagnosis: Input apparent resistivity is in Ohm (resistance) instead of Ohm·m (resistivity); geometric
+    factor k was not applied to convert resistance (V/I) to apparent resistivity (k x V/I)
+  remedy: 'Apply geometric factor: rhoa = k * R, where k = 2pi / (1/AM - 1/AN - 1/BM + 1/BN); verify rhoa
+    range is 1-10000 Ohm·m before inversion'
   severity: silent
-  symptom:
-    description: "Inverted resistivity model values are 1000× higher than expected for site geology"
-    error_pattern: "Model range 10000–1e8 Ohm·m for typical sedimentary site"
-    detection_method: "Compare model range to petrophysical tables; check data['rhoa'] range"
-  diagnosis:
-    root_cause: "Input apparent resistivity is in Ohm (resistance) instead of Ohm·m (resistivity)"
-    explanation: >
-      The geometric factor k was not applied to convert resistance (V/I) to
-      apparent resistivity (k × V/I). Some instruments export raw resistance.
-      pyGIMLi expects Ohm·m for the 'rhoa' token.
-    affected_components: ["DataContainer", "ERTManager.invert"]
-  remedy:
-    action: "Apply geometric factor: rhoa = k * R, where k = 2π / (1/AM - 1/AN - 1/BM + 1/BN)"
-    tool_to_run: "convert_data_to_gimli.py"
-    manual_steps:
-      - "Check raw data file header for units (Ohm vs Ohm·m)"
-      - "data['rhoa'] = ert.createGeometricFactors(data) * data['r']"
-    prevention: "Always verify rhoa range before inversion: 1–10000 Ohm·m is typical near-surface"
-  cross_references: ["dt_010"]
-
-dt_002:
-  failure_domain: unit_conversion
+- id: dt_002
+  symptom: SRT inversion produces velocities 1000x too high (e.g. 500000 m/s); velocity range exceeds
+    10000 m/s for near-surface survey
+  diagnosis: Travel times are in milliseconds instead of seconds; pyGIMLi expects seconds, so 1000x-too-large
+    times give 1000x-too-small slowness and unrealistic velocities
+  remedy: 'Divide travel times by 1000: data[''t''] /= 1000.0; check that t range is 0.001-0.1 s for near-surface'
   severity: silent
-  symptom:
-    description: "SRT inversion produces velocities 1000× too high (e.g., 500000 m/s)"
-    error_pattern: "Velocity range exceeds 10000 m/s for near-surface survey"
-    detection_method: "Check 1/slowness after inversion; compare to data['t'] range"
-  diagnosis:
-    root_cause: "Travel times are in milliseconds instead of seconds"
-    explanation: >
-      SEG-2 files and some pick programs export travel times in ms.
-      pyGIMLi expects seconds. If times are 1000× too large, the inverted
-      slowness is 1000× too small, giving unrealistic velocities.
-    affected_components: ["DataContainer['t']", "TravelTimeManager.invert"]
-  remedy:
-    action: "Divide travel times by 1000: data['t'] /= 1000.0"
-    tool_to_run: "convert_data_to_gimli.py --time-unit ms"
-    manual_steps:
-      - "Check data['t'] range: should be 0.001–0.1 s for near-surface"
-      - "If median(t) > 1.0, times are likely in ms"
-    prevention: "Always check t range before inversion"
-  cross_references: ["dt_003"]
-
-dt_003:
-  failure_domain: unit_conversion
+- id: dt_003
+  symptom: Mesh generation fails with 'degenerate triangle' or nonsensical geometry; mesh covers < 1 m
+    or > 10000 km
+  diagnosis: Electrode/sensor coordinates are in lat/lon degrees instead of local metres, producing a
+    ~0.01 m wide mesh or numerical precision issues
+  remedy: Project coordinates to local Cartesian (UTM or subtract centroid); verify survey extent is 10-1000
+    m for typical surveys
   severity: fatal
-  symptom:
-    description: "Mesh generation fails with 'degenerate triangle' or nonsensical geometry"
-    error_pattern: "Triangle/Tetgen error; mesh covers < 1 m or > 10000 km"
-    detection_method: "Check sensor coordinate range: max(x) - min(x)"
-  diagnosis:
-    root_cause: "Electrode/sensor coordinates are in lat/lon degrees instead of local metres"
-    explanation: >
-      GPS coordinates (e.g., 39.9°N, 116.4°E) treated as metres produce a
-      mesh ~0.01 m wide. Or projected coordinates in large numbers produce
-      numerical precision issues.
-    affected_components: ["pg.meshtools.createParaMesh", "Triangle"]
-  remedy:
-    action: "Project coordinates to local Cartesian (UTM or local origin subtracted)"
-    tool_to_run: "convert_data_to_gimli.py"
-    manual_steps:
-      - "Compute survey extent: should be 10–1000 m for typical surveys"
-      - "If extent < 1 m: coordinates are in degrees, need projection"
-      - "Subtract centroid to work in local coordinates"
-    prevention: "Always verify sensor positions are in metres with local origin"
-  cross_references: ["dt_006"]
-
-dt_004:
-  failure_domain: unit_conversion
+- id: dt_004
+  symptom: IP inversion produces nonsensical Cole-Cole parameters (tau and c out of range); phase values
+    > 100 mrad or positive when should be negative
+  diagnosis: IP phase sign convention mismatch — pyGIMLi's SIP framework expects negative phase (lag convention)
+    but some instruments report positive phase
+  remedy: 'Negate phase values: data[''ipa''] = -abs(data[''ipa'']); check instrument manual for sign
+    convention'
   severity: silent
-  symptom:
-    description: "IP inversion produces nonsensical Cole-Cole parameters (τ and c out of range)"
-    error_pattern: "Phase values > 100 mrad or negative when should be positive"
-    detection_method: "Check data['ipa'] range and sign"
-  diagnosis:
-    root_cause: "IP phase sign convention mismatch — pyGIMLi expects negative phase (phase lag)"
-    explanation: >
-      Some instruments report IP phase as positive values. pyGIMLi's SIP
-      framework expects negative phase (lag convention). Feeding positive
-      phases produces inverted Cole-Cole parameters.
-    affected_components: ["SIPSpectrum", "SpectrumManager"]
-  remedy:
-    action: "Negate phase values: data['ipa'] = -abs(data['ipa'])"
-    tool_to_run: "convert_data_to_gimli.py --negate-phase"
-    manual_steps:
-      - "Check instrument manual for sign convention"
-      - "If phases are positive, negate them before inversion"
-    prevention: "Document instrument phase convention in field notes"
-  cross_references: []
-
-dt_005:
-  failure_domain: unit_conversion
+- id: dt_005
+  symptom: Chi-squared is either extremely high (>100) or extremely low (<0.01); inversion converges but
+    chi² never reaches ~1.0
+  diagnosis: Error estimates provided as percentage (0-100) instead of fraction (0-1); data weighting
+    is 100x wrong, errors-as-percent give chi² ~100x too small (overfitting)
+  remedy: 'Convert errors: if max(err) > 1, divide by 100; data[''err''] should be 0.01-0.20 (e.g. 3%
+    -> 0.03); use ert.estimateError() if unsure'
   severity: degraded
-  symptom:
-    description: "Chi-squared is either extremely high (>100) or extremely low (<0.01)"
-    error_pattern: "Inversion converges but chi² never reaches ~1.0"
-    detection_method: "Print mgr.inv.chi2() after inversion"
-  diagnosis:
-    root_cause: "Error estimates provided as percentage (0–100) instead of fraction (0–1)"
-    explanation: >
-      pyGIMLi expects relative error as a fraction (e.g., 0.03 for 3%).
-      If errors are given as percentages (e.g., 3.0 for 3%), data weighting
-      is 100× wrong. Errors as percentage → chi² ~100× too small (overfitting).
-    affected_components: ["data['err']", "Inversion.dataTrans"]
-  remedy:
-    action: "Convert errors: if max(err) > 1, divide by 100"
-    manual_steps:
-      - "Check data['err'] range: should be 0.01–0.20 for typical data"
-      - "If err values are 1–20, divide by 100"
-      - "Typical: 3% → err = 0.03"
-    prevention: "Always use ert.estimateError() if unsure about error format"
-  cross_references: ["dt_014", "dt_015"]
-
-# ============================================================
-# MESH GENERATION (3 triplets)
-# ============================================================
-
-dt_006:
-  failure_domain: mesh_generation
+- id: dt_006
+  symptom: createParaMesh fails with segfault or 'no valid triangulation' (segmentation fault in Triangle
+    library)
+  diagnosis: Duplicate or overlapping electrode positions in DataContainer; Triangle requires unique node
+    positions or Delaunay triangulation fails
+  remedy: Remove duplicate sensors (check with 1mm tolerance), snap to grid if very close, re-number ABMN
+    indices after removing electrodes
   severity: fatal
-  symptom:
-    description: "createParaMesh fails with segfault or 'no valid triangulation'"
-    error_pattern: "Segmentation fault in Triangle library"
-    detection_method: "Try pg.meshtools.createParaMesh(data) and catch crash"
-  diagnosis:
-    root_cause: "Duplicate or overlapping electrode positions in DataContainer"
-    explanation: >
-      Triangle requires unique node positions. If two electrodes have
-      identical or near-identical coordinates (within floating-point tolerance),
-      the Delaunay triangulation fails.
-    affected_components: ["pg.meshtools.createParaMesh", "Triangle"]
-  remedy:
-    action: "Remove duplicate sensors; snap to grid if positions are very close"
-    manual_steps:
-      - "sensors = data.sensors(); check for duplicates with 1mm tolerance"
-      - "pg.unique(sensors) or manually remove duplicate electrode indices"
-      - "Re-number ABMN indices after removing electrodes"
-    prevention: "Validate electrode uniqueness in data preparation step"
-  cross_references: ["dt_003"]
-
-dt_007:
-  failure_domain: mesh_generation
+- id: dt_007
+  symptom: Inversion produces edge artifacts — extreme resistivity/velocity values spike at model boundaries
+  diagnosis: Boundary region too small — the FEM zero-flux/fixed boundary condition leaks into the parametric
+    domain when the mesh boundary is too close to the sensor array
+  remedy: 'Increase boundary factor to 3-5x the electrode spread: createParaMesh(data, boundary=5); or
+    mask boundary cells where coverage < 0.1'
   severity: degraded
-  symptom:
-    description: "Inversion produces edge artifacts — model values spike at boundaries"
-    error_pattern: "Extreme resistivity/velocity values at model edges"
-    detection_method: "Visualize model with coverage overlay; check boundary cells"
-  diagnosis:
-    root_cause: "Boundary region too small — FEM boundary conditions affect the inversion domain"
-    explanation: >
-      If the mesh boundary is too close to the sensor array, the zero-flux
-      or fixed boundary condition leaks into the parametric domain. This
-      creates artificial high/low values at the edges.
-    affected_components: ["pg.meshtools.createParaMesh boundary parameter"]
-  remedy:
-    action: "Increase boundary factor to 3–5× the electrode spread"
-    manual_steps:
-      - "mesh = pg.meshtools.createParaMesh(data, boundary=5)"
-      - "Alternatively, mask boundary cells in visualization: coverage < 0.1"
-    prevention: "Always use boundary >= 3 for real field data inversions"
-  cross_references: ["dt_009"]
-
-dt_008:
-  failure_domain: mesh_generation
+- id: dt_008
+  symptom: Inversion is very slow (hours instead of minutes) or runs out of memory; mesh.cellCount() >
+    100000
+  diagnosis: Mesh is too fine — paraMaxCellSize too small or quality too high; Jacobian is n_data x n_cells
+    and normal equations scale O(n³), so >50000 cells is excessive for 2D ERT
+  remedy: Increase paraMaxCellSize (≈electrode_spacing²); reduce quality from 34 to 30; aim for 2000-20000
+    cells in 2D; check cellCount before inversion
   severity: degraded
-  symptom:
-    description: "Inversion is very slow (hours instead of minutes) or runs out of memory"
-    error_pattern: "MemoryError or prolonged computation; mesh.cellCount() > 100000"
-    detection_method: "Print mesh.cellCount() before inversion"
-  diagnosis:
-    root_cause: "Mesh is too fine — paraMaxCellSize too small or quality too high"
-    explanation: >
-      Each mesh cell adds a model parameter. The Jacobian matrix is
-      n_data × n_cells, and solving the normal equations scales as O(n³).
-      A 2D ERT inversion with > 50000 cells is typically excessive.
-    affected_components: ["pg.meshtools.createParaMesh", "Inversion Jacobian"]
-  remedy:
-    action: "Increase paraMaxCellSize; reduce quality; use coarser paraDX"
-    manual_steps:
-      - "For 2D surveys: aim for 2000–20000 cells"
-      - "paraMaxCellSize = electrode_spacing² is a good starting point"
-      - "Reduce quality from 34 to 30 if needed"
-    prevention: "Check mesh.cellCount() before running inversion"
-  cross_references: []
-
-# ============================================================
-# INVERSION CONVERGENCE (4 triplets)
-# ============================================================
-
-dt_009:
-  failure_domain: inversion_convergence
+- id: dt_009
+  symptom: Model is extremely smooth — no anomalies visible despite known geology; chi² decreasing but
+    model looks flat
+  diagnosis: Regularization parameter lambda is too high, over-penalizing model roughness and producing
+    a homogeneous-half-space-like model that fits data poorly
+  remedy: Reduce lambda by factor 2-5 and re-run (lam=20->10->5->2); target chi² ≈ 1.0, do not go below
+    chi² = 0.5
   severity: degraded
-  symptom:
-    description: "Model is extremely smooth — no anomalies visible despite known geology"
-    error_pattern: "Homogeneous-looking model; chi² decreasing but model looks flat"
-    detection_method: "Compare model range (max/min ratio) to expected contrast"
-  diagnosis:
-    root_cause: "Regularization parameter lambda is too high"
-    explanation: >
-      High lambda over-penalizes model roughness, producing a smooth model
-      that fits data poorly. The model looks like a homogeneous half-space
-      despite the data containing anomaly signatures.
-    affected_components: ["Inversion.setLambda"]
-  remedy:
-    action: "Reduce lambda by factor 2–5 and re-run; target chi² ≈ 1.0"
-    manual_steps:
-      - "Start with lam=20, then try lam=10, lam=5, lam=2"
-      - "Stop when chi² ≈ 1.0; do not go below chi² = 0.5"
-      - "If still too smooth at chi² ≈ 1: reduce error estimates"
-    prevention: "Monitor chi² and lambda together; plot convergence curve"
-  cross_references: ["dt_005", "dt_015"]
-
-dt_010:
-  failure_domain: inversion_convergence
+- id: dt_010
+  symptom: 'Inversion diverges — chi² increases or NaN values appear in model (RuntimeWarning: invalid
+    value; NaN in model vector)'
+  diagnosis: Zero or negative error estimates, or data incompatible with transform; TransLogLU requires
+    strictly positive data, so zero/negative rhoa gives NaN/Inf and zero errors give infinite weights
+  remedy: Remove data where rhoa <= 0; set error floor data['err'] = max(err, 0.01); for negative rhoa
+    check electrode numbering (ABMN swap)
   severity: fatal
-  symptom:
-    description: "Inversion diverges — chi² increases or NaN values appear in model"
-    error_pattern: "RuntimeWarning: invalid value; NaN in model vector"
-    detection_method: "Check for np.isnan(model).any() after each iteration"
-  diagnosis:
-    root_cause: "Zero or negative error estimates, or data values incompatible with transform"
-    explanation: >
-      TransLogLU requires strictly positive data. If apparent resistivity
-      contains zero or negative values (bad measurement, polarity error),
-      the log transform produces NaN/Inf. Zero errors produce infinite weights.
-    affected_components: ["Inversion", "TransLogLU"]
-  remedy:
-    action: "Remove zero/negative data; set minimum error floor"
-    manual_steps:
-      - "Remove data where rhoa <= 0: data.remove(data['rhoa'] <= 0)"
-      - "Set error floor: data['err'] = np.maximum(data['err'], 0.01)"
-      - "For negative apparent resistivity: check electrode numbering (ABMN swap)"
-    prevention: "Always filter data before inversion; use estimateError()"
-  cross_references: ["dt_001", "dt_005"]
-
-dt_011:
-  failure_domain: inversion_convergence
+- id: dt_011
+  symptom: Checkerboard-like artifacts near current/source electrodes in ERT — regular high/low pattern
+    at electrode positions
+  diagnosis: Singularity removal (SR) is disabled in ERTModelling; the FEM point-source singularity at
+    current electrodes propagates numerical error into the Jacobian and model, looking like real structure
+  remedy: 'Enable singularity removal: ERTManager(data, sr=True) (default is True); never disable sr without
+    a specific reason'
   severity: silent
-  symptom:
-    description: "Checkerboard-like artifacts near current/source electrodes (ERT)"
-    error_pattern: "Regular pattern of high/low near electrode positions"
-    detection_method: "Visual inspection of model near electrode line"
-  diagnosis:
-    root_cause: "Singularity removal (SR) is disabled in ERTModelling"
-    explanation: >
-      The FEM solution has a point-source singularity at current electrodes.
-      Without singularity removal, the numerical error at these points
-      propagates into the Jacobian and model. The artifact looks like real
-      structure but is purely numerical.
-    affected_components: ["ERTModelling(sr=False)", "ERTManager"]
-  remedy:
-    action: "Enable singularity removal: ERTManager(sr=True)"
-    manual_steps:
-      - "mgr = ert.ERTManager(data, sr=True)  # default is True"
-      - "If using custom FOP: fop = ERTModelling(sr=True)"
-      - "For borehole ERT: ensure primary potential is computed correctly"
-    prevention: "Never disable sr unless you have a specific reason and understand the consequences"
-  cross_references: []
-
-dt_012:
-  failure_domain: inversion_convergence
+- id: dt_012
+  symptom: SRT inversion produces velocity-inversion artefact — slower layer above faster, velocity decreasing
+    with depth in a clearly layered setting
+  diagnosis: Velocity/slowness transform confusion — pyGIMLi inverts for slowness (s/m) not velocity;
+    applying TransLog assuming velocity parameterization produces artifacts
+  remedy: Use default TravelTimeManager(data) — do not override modelTrans; model values are slowness,
+    display velocity = 1/slowness
   severity: silent
-  symptom:
-    description: "SRT inversion produces velocity inversion artefact — slower layer above faster"
-    error_pattern: "Velocity decreasing with depth in a clearly layered setting"
-    detection_method: "Plot velocity vs. depth profile; compare to expected layer model"
-  diagnosis:
-    root_cause: "Velocity/slowness transform confusion — applying TransLog to velocity instead of slowness"
-    explanation: >
-      pyGIMLi inverts for slowness (s/m), not velocity (m/s). The travel time
-      forward problem is linear in slowness. If a log transform is applied
-      assuming velocity parameterization, the inversion may produce artifacts.
-      Default TravelTimeManager handles this correctly.
-    affected_components: ["TravelTimeManager", "modelTrans"]
-  remedy:
-    action: "Use default TravelTimeManager — do not override model transform"
-    manual_steps:
-      - "mgr = tt.TravelTimeManager(data)  # uses correct defaults"
-      - "Do not set mgr.fop.modelTrans = pg.trans.TransLog() manually"
-      - "Model values are slowness; display as velocity = 1/slowness"
-    prevention: "Understand that SRT inverts slowness, not velocity"
-  cross_references: ["dt_002"]
-
-# ============================================================
-# DATA QUALITY (3 triplets)
-# ============================================================
-
-dt_013:
-  failure_domain: data_quality
+- id: dt_013
+  symptom: Systematic misfit pattern — residuals are structured not random; residual pseudosection shows
+    consistent positive/negative bands
+  diagnosis: Systematic data error (electrode contact problems, cable cross-talk, instrument drift) not
+    captured by the random-noise error model, producing structured residuals that smooth regularization
+    cannot reproduce
+  remedy: Identify and remove systematic outliers (|residual/error| > 3); use reciprocal error as data
+    error; check for dead electrodes
   severity: degraded
-  symptom:
-    description: "Systematic misfit pattern — residuals are structured, not random"
-    error_pattern: "Residual pseudosection shows consistent positive/negative bands"
-    detection_method: "Plot (observed-predicted)/error as pseudosection"
-  diagnosis:
-    root_cause: "Systematic data error not captured by random noise model"
-    explanation: >
-      The error model (relativeError + absoluteError) assumes random noise.
-      Systematic errors from electrode contact problems, cable cross-talk,
-      or instrument drift produce structured residuals that smooth regularization
-      cannot reproduce.
-    affected_components: ["data['err']", "estimateError"]
-  remedy:
-    action: "Identify and remove systematic outliers; use reciprocal analysis"
-    manual_steps:
-      - "Plot residual pseudosection to find structured patterns"
-      - "Remove data with |residual/error| > 3 (outliers)"
-      - "If reciprocals are available, use reciprocal error as data error"
-      - "Check for dead electrodes: all data involving one electrode are bad"
-    prevention: "Collect reciprocal measurements in the field; check contact resistance"
-  cross_references: ["dt_005"]
-
-dt_014:
-  failure_domain: data_quality
+- id: dt_014
+  symptom: Inversion requires many iterations (>15) and chi² plateaus above 2; chi² stalls at 2-5 after
+    10+ iterations
+  diagnosis: Starting model too far from the true model; Gauss-Newton is locally convergent, so poor linearization
+    gives slow convergence or a local minimum
+  remedy: 'Set a data-statistics starting model: ERT startModel = exp(mean(log(rhoa))); SRT from median
+    apparent velocity; or use 1D result as 2D start'
   severity: degraded
-  symptom:
-    description: "Inversion requires many iterations (>15) and chi² plateaus above 2"
-    error_pattern: "Chi² stalls at 2–5 after 10+ iterations"
-    detection_method: "Plot chi² vs. iteration number"
-  diagnosis:
-    root_cause: "Starting model is too far from the true model"
-    explanation: >
-      Gauss-Newton inversion is locally convergent. If the starting model
-      is far from the truth, the linearization is poor and convergence is
-      slow. The inversion may get stuck in a local minimum.
-    affected_components: ["Inversion starting model", "regionManager().setStartModel()"]
-  remedy:
-    action: "Use a better starting model based on data statistics"
-    manual_steps:
-      - "For ERT: startModel = geometric_mean(rhoa) = exp(mean(log(rhoa)))"
-      - "For SRT: startModel based on median apparent velocity from first arrivals"
-      - "Or use 1D inversion result as starting model for 2D"
-    prevention: "Always set reasonable starting model from data statistics"
-  cross_references: ["dt_009"]
-
-dt_015:
-  failure_domain: data_quality
+- id: dt_015
+  symptom: Model shows many small-scale fluctuations not matching known geology; noisy cell-to-cell variation
+    with chi² < 0.5
+  diagnosis: Overfitting — lambda too low or error estimates too large; when chi² << 1 the inversion fits
+    noise, producing spurious small-scale structure
+  remedy: Increase lambda (double and re-run if chi² < 0.5) or reduce error estimates; use robustData=True
+    for L1 norm; target chi² = 1.0 ± 0.2
   severity: degraded
-  symptom:
-    description: "Model shows many small-scale fluctuations that don't match known geology"
-    error_pattern: "Noisy-looking model with cell-to-cell variation; chi² < 0.5"
-    detection_method: "Check chi² < 0.5; compare model roughness to geological expectation"
-  diagnosis:
-    root_cause: "Overfitting — lambda too low or error estimates too large"
-    explanation: >
-      When chi² << 1, the inversion is fitting noise, producing spurious
-      small-scale structure. This happens when errors are overestimated
-      (giving too much freedom) or lambda is too low (insufficient smoothing).
-    affected_components: ["Inversion lambda", "data['err']"]
-  remedy:
-    action: "Increase lambda or reduce error estimates"
-    manual_steps:
-      - "If chi² < 0.5: double lambda and re-run"
-      - "If errors seem reasonable: use robustData=True for L1 norm"
-      - "Check error estimates: typical is 3% for modern instruments"
-    prevention: "Target chi² = 1.0 ± 0.2; stop reducing lambda when reached"
-  cross_references: ["dt_005", "dt_009"]
-
-# ============================================================
-# SILENT ERRORS (3 triplets)
-# ============================================================
-
-dt_016:
-  failure_domain: silent_error
+- id: dt_016
+  symptom: Depth of investigation appears half of expected from electrode spread; model resolves only
+    shallow features, deep anomalies missed
+  diagnosis: Electrode spacing unit error — positions in decimetres/centimetres instead of metres, making
+    the mesh 100x too small so the depth axis is compressed
+  remedy: Verify and correct electrode position units to metres; check data.sensors() range matches physical
+    survey extent (1/100 of expected => cm)
   severity: silent
-  symptom:
-    description: "Depth of investigation appears half of expected from electrode spread"
-    error_pattern: "Model resolves only shallow features; deep anomalies missed"
-    detection_method: "Compare maximum resolved depth to theoretical DOI ≈ 0.2 × spread"
-  diagnosis:
-    root_cause: "Electrode spacing unit error — positions in decimetres or centimetres instead of metres"
-    explanation: >
-      If electrode positions are in cm instead of m, the mesh is 100× too
-      small. The inversion runs correctly but the depth axis is wrong.
-      The model appears to have shallow investigation depth because the
-      scale is compressed.
-    affected_components: ["DataContainer sensor positions", "mesh geometry"]
-  remedy:
-    action: "Verify and correct electrode position units to metres"
-    manual_steps:
-      - "Check survey notes for electrode spacing"
-      - "Verify: data.sensors() range matches physical survey extent"
-      - "If range is 1/100 of expected: positions are in cm"
-    prevention: "Always verify sensor position range matches field survey layout"
-  cross_references: ["dt_003"]
-
-dt_017:
-  failure_domain: silent_error
+- id: dt_017
+  symptom: ERT model in borehole geometry is physically unreasonable; resistivity > 1e6 or < 0.01 near
+    borehole electrodes
+  diagnosis: Analytical geometric factor (assumes homogeneous half-space with surface electrodes) used
+    for borehole/crosshole/surface+borehole geometry, producing systematically biased apparent resistivities
+  remedy: 'Use numerical geometric factor with a mesh: k = ert.createGeometricFactors(data, mesh=createParaMesh(data));
+    always numerical k for non-standard geometries'
   severity: silent
-  symptom:
-    description: "ERT model in borehole geometry is physically unreasonable (extreme values)"
-    error_pattern: "Resistivity > 1e6 or < 0.01 near borehole electrodes"
-    detection_method: "Check model extreme values; compare to surface ERT at same site"
-  diagnosis:
-    root_cause: "Analytical geometric factor used for borehole/crosshole geometry"
-    explanation: >
-      The standard analytical geometric factor k assumes a homogeneous half-space
-      with surface electrodes. For borehole, crosshole, or surface+borehole
-      configurations, this factor is invalid. Using it produces systematically
-      biased apparent resistivities.
-    affected_components: ["ert.createGeometricFactors", "DataContainerERT"]
-  remedy:
-    action: "Use numerical geometric factor: ert.createGeometricFactors(data, mesh)"
-    manual_steps:
-      - "mesh = pg.meshtools.createParaMesh(data)"
-      - "k = ert.createGeometricFactors(data, mesh=mesh)  # numerical k"
-      - "For crosshole: always use numerical geometric factors"
-    prevention: "Always use numerical k for non-standard geometries"
-  cross_references: ["dt_001", "dt_011"]
-
-dt_018:
-  failure_domain: silent_error
+- id: dt_018
+  symptom: Model looks reasonable but low-coverage regions show misleading structure; anomalies appear
+    in regions with coverage < 10%
+  diagnosis: Displaying full model without coverage masking; low cumulative-sensitivity cells are controlled
+    by regularization and starting model rather than data, so showing them at full opacity is geophysically
+    misleading
+  remedy: 'Display model with coverage mask/alpha: coverage = sumCols(jacobian)/max; pg.show(mesh, model,
+    coverage=coverage) or mask cells where coverage < 0.1'
   severity: silent
-  symptom:
-    description: "Model looks reasonable but low-coverage regions show misleading structure"
-    error_pattern: "Interesting anomalies in regions with coverage < 10%"
-    detection_method: "Overlay coverage/sensitivity on model; check if anomalies are in low-coverage zones"
-  diagnosis:
-    root_cause: "Displaying full model without coverage masking"
-    explanation: >
-      Cells with low cumulative sensitivity (coverage) are poorly constrained
-      by the data. Their values are controlled primarily by regularization
-      and the starting model, not by the measured data. Displaying these
-      cells at full opacity is geophysically misleading.
-    affected_components: ["pg.show", "Visualization"]
-  remedy:
-    action: "Always display model with coverage mask or alpha channel"
-    manual_steps:
-      - "coverage = np.array(pg.math.sumCols(mgr.fop.jacobian()))"
-      - "coverage /= coverage.max()"
-      - "pg.show(mesh, model, coverage=coverage)"
-      - "Alternatively: mask cells where coverage < 0.1"
-    prevention: "Make coverage overlay the default for all result plots"
-  cross_references: ["dt_007"]

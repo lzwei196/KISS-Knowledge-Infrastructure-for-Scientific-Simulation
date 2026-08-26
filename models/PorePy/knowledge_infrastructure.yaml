@@ -1,77 +1,141 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:59:49.310630'
-  domain: groundwater
   name: PorePy
-  version: auto-generated
+  language: python
+  implementation:
+    id: porepy
+    version: 1.12.0
+    provenance: Python; Porous Media Group (University of Bergen) PorePy library; Python-API model mixins
+      solved via run_stationary_model / run_time_dependent_model.
+  scientific_reference_version: PorePy multiphysics fractured-porous-media framework (Keilegavlen et al.
+    2021 formulation; mixed-dimensional FV/FE with contact mechanics)
+  binary:
+    path: KISSPATH_PYTHON_ENV/bin/python
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_domain_definition
+  - s2_forcing_parameters
+  - s3_material_properties
+  - s4_mesh_generation
+  - s5_model_execution
+  - s6_output_analysis
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_data.py
+  - tools/convert_material_params.py
+  - tools/parse_porepy_output.py
+  - tools/run_porepy.py
+inputs:
+  forcing:
+  - name: Transient boundary pressure / flux schedule
+    unit: Pa or m^3/s over s
+  - name: Recharge rate
+    unit: m/s
+  parameters:
+  - name: permeability
+    unit: m^2
+  - name: normal_permeability
+    unit: m^2
+  - name: porosity
+    unit: dimensionless (0-1)
+  - name: biot_coefficient
+    unit: dimensionless (0<alpha<=1)
+  - name: shear_modulus
+    unit: Pa
+  - name: lame_lambda
+    unit: Pa
+  - name: specific_storage
+    unit: 1/Pa
+  - name: friction_coefficient
+    unit: dimensionless
+  - name: dilation_angle
+    unit: radians
+  - name: density (solid)
+    unit: kg/m^3
+  - name: specific_heat_capacity (solid)
+    unit: J/(kg*K)
+  - name: thermal_conductivity (solid)
+    unit: W/(m*K)
+  - name: thermal_expansion (solid)
+    unit: 1/K
+  - name: viscosity
+    unit: Pa*s
+  - name: density (fluid)
+    unit: kg/m^3
+  - name: compressibility
+    unit: 1/Pa
+  - name: specific_heat_capacity (fluid)
+    unit: J/(kg*K)
+  - name: thermal_conductivity (fluid)
+    unit: W/(m*K)
+  - name: thermal_expansion (fluid)
+    unit: 1/K
+  - name: fracture_gap
+    unit: m
+  - name: Newton convergence tolerances (inc/res atol)
+    unit: dimensionless
+  - name: nl_max_iterations
+    unit: count
+  - name: characteristic_displacement
+    unit: m
+  - name: mesh cell_size / cell_size_fracture / cell_size_boundary / cell_size_min
+    unit: m
+  - name: reference_pressure / reference_temperature
+    unit: Pa / K
+  initial_conditions:
+  - name: Initial pressure field
+    unit: Pa
+  - name: Initial displacement field
+    unit: m
+  - name: Initial temperature field
+    unit: K
+  boundary_conditions:
+  - name: Pressure boundary condition (Dirichlet)
+    unit: Pa
+  - name: Flux boundary condition (Neumann)
+    unit: m^3/s
+  - name: Robin boundary condition
+    unit: mixed
+  - name: Displacement / traction boundary condition
+    unit: m / Pa
+  - name: Temperature boundary condition
+    unit: K
+  - name: Domain bounding box
+    unit: m
+  - name: Fracture network (line / plane / elliptic fractures, wells)
+    unit: m
+  - name: Grid type selection
+    unit: categorical
+  - name: Discretization method selection
+    unit: categorical
+  - name: Time schedule and dt
+    unit: s
+  - name: Linear solver selection
+    unit: categorical
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - pressure
+  - displacement
+  - temperature
+  - darcy_flux
+  - stress
+  - fracture_aperture
+  - contact_traction
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.975, R=1.000, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.975
+    best_r: 0.9999
+summary:
+  total_tools: 4
+  total_stage_docs: 6
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

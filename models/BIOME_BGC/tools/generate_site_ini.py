@@ -37,6 +37,10 @@ LIB_DIR = os.path.join(os.path.dirname(__file__), '..', 'lib')
 sys.path.insert(0, LIB_DIR)
 from bgc_utils import STANDARD_DAILY_OUTPUT, STANDARD_ANNUAL_OUTPUT
 
+# Fixed-size C string buffers in the BIOME-BGC 4.2 source (one byte kept for NUL)
+MAX_OUTPREFIX_LEN = 99    # pointbgc_struct.h: char outprefix[100]
+MAX_FILENAME_LEN = 127    # ini.h: char name[128]  (met, epc, restart, co2 files)
+
 
 def validate_inputs(args):
     """Validate all input parameters."""
@@ -65,6 +69,27 @@ def validate_inputs(args):
         errors.append(f"CO2 {args.co2_ppm} ppm out of range [100, 1500]")
     if args.ndep < 0 or args.ndep > 0.1:
         errors.append(f"N deposition {args.ndep} kgN/m2/yr out of range [0, 0.1]")
+
+    # BIOME-BGC 4.2 reads file names into fixed C buffers with no bounds check:
+    # output prefix -> char outprefix[100] (pointbgc_struct.h:48), every other
+    # file name -> char name[128] (ini.h:27). A longer string overflows silently:
+    # the model exits 0, prints "Opened ... output file", and writes NOTHING.
+    # Prefer short RELATIVE paths and run the model with --workdir set.
+    if len(args.output_prefix) > MAX_OUTPREFIX_LEN:
+        errors.append(
+            f"output_prefix is {len(args.output_prefix)} chars; BIOME-BGC's "
+            f"outprefix buffer holds at most {MAX_OUTPREFIX_LEN} "
+            f"(pointbgc_struct.h char outprefix[100]). The model would exit 0 "
+            f"and write no output files. Use a short prefix relative to the run "
+            f"directory (e.g. 'outputs/normal') and pass --workdir to run_bgc.py.")
+    restart_name = args.restart_file if args.restart_file else f"restart/{Path(args.output_prefix).stem}.endpoint"
+    for label, p in (("met_file", args.met_file), ("epc_file", args.epc_file),
+                     ("restart_file", restart_name), ("co2_file", args.co2_file or "")):
+        if len(p) > MAX_FILENAME_LEN:
+            errors.append(
+                f"{label} path is {len(p)} chars; BIOME-BGC's file-name buffer "
+                f"holds at most {MAX_FILENAME_LEN} (ini.h char name[128]). "
+                f"Use a shorter/relative path.")
 
     return errors
 
@@ -236,9 +261,11 @@ def main():
     parser.add_argument("--elevation", type=float, default=500.0, help="Elevation (m)")
     parser.add_argument("--soil_depth", type=float, default=1.0,
                         help="Effective soil depth (m)")
-    parser.add_argument("--sand", type=float, default=30.0, help="Sand %")
-    parser.add_argument("--silt", type=float, default=50.0, help="Silt %")
-    parser.add_argument("--clay", type=float, default=20.0, help="Clay %")
+    # argparse expands help strings with %-formatting: a bare '%' raised
+    # "ValueError: incomplete format" on --help, so it must be escaped as '%%'
+    parser.add_argument("--sand", type=float, default=30.0, help="Sand %% (sand+silt+clay must sum to 100)")
+    parser.add_argument("--silt", type=float, default=50.0, help="Silt %%")
+    parser.add_argument("--clay", type=float, default=20.0, help="Clay %%")
     parser.add_argument("--start_year", type=int, default=2000,
                         help="First simulation year")
     parser.add_argument("--n_met_years", type=int, required=True,

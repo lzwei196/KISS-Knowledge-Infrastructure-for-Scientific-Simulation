@@ -621,7 +621,7 @@ outputs:
   - var: "DOA"
     validation_rank: 5
     unit: "date"
-    description: "Day of anthesis (summary)"
+    description: "Crop day of anthesis (summary)"
     emitted_in: "_saved_summary_output (SUMMARY_OUTPUT_VARS)"
     observability:
       comparable_obs_shapes:
@@ -634,7 +634,7 @@ outputs:
   - var: "DOM"
     validation_rank: 6
     unit: "date"
-    description: "Day of maturity (summary)"
+    description: "Crop day of maturity (summary)"
     emitted_in: "_saved_summary_output"
     observability:
       comparable_obs_shapes:
@@ -647,7 +647,7 @@ outputs:
   - var: "LAI"
     validation_rank: 2
     unit: "m2 m-2"
-    description: "Leaf area index"
+    description: "Crop canopy leaf area index"
     emitted_in: "daily _saved_output"
     observability:
       comparable_obs_shapes:
@@ -678,7 +678,7 @@ outputs:
   - var: "TAGP"
     validation_rank: 8
     unit: "kg ha-1"
-    description: "Total above-ground dry-matter production"
+    description: "Total above-ground crop biomass dry-matter production"
     emitted_in: "daily _saved_output"
     observability:
       comparable_obs_shapes:
@@ -696,7 +696,7 @@ outputs:
   - var: "TWSO"
     validation_rank: 1
     unit: "kg ha-1"
-    description: "Total weight of storage organs (harvestable yield)"
+    description: "Total crop storage-organ biomass (harvestable yield)"
     emitted_in: "daily _saved_output and _saved_summary_output"
     observability:
       comparable_obs_shapes:
@@ -719,7 +719,7 @@ outputs:
   - var: "TWLV"
     validation_rank: 9
     unit: "kg ha-1"
-    description: "Total weight of leaves"
+    description: "Total crop leaf dry-matter biomass"
     emitted_in: "daily _saved_output"
     observability:
       comparable_obs_shapes:
@@ -732,7 +732,7 @@ outputs:
   - var: "TWST"
     validation_rank: 10
     unit: "kg ha-1"
-    description: "Total weight of stems"
+    description: "Total crop stem dry-matter biomass"
     emitted_in: "daily _saved_output"
     observability:
       comparable_obs_shapes:
@@ -745,7 +745,7 @@ outputs:
   - var: "TWRT"
     validation_rank: 11
     unit: "kg ha-1"
-    description: "Total weight of roots"
+    description: "Total crop root dry-matter biomass"
     emitted_in: "daily _saved_output"
     observability:
       comparable_obs_shapes:
@@ -802,7 +802,7 @@ outputs:
   - var: "RD"
     validation_rank: 14
     unit: "cm"
-    description: "Rooting depth"
+    description: "Crop rooting depth in the soil profile"
     emitted_in: "daily _saved_output"
     observability:
       comparable_obs_shapes:
@@ -1094,3 +1094,41 @@ safety:
       scope: "inputs.forcing and processes.modules"
       source: "pcse/crop/assimilation.py and PCSE 6.0 release notes (CO2 removed from WOFOST72SiteDataProvider)"
       status: "adopted"
+
+medium_evidence:
+  - var: "DOA"
+    source: "dag.yaml"
+    quote: "Phenological development on a DVS scale 0 (emergence) - 1 (anthesis) - 2 (maturity), including optional vernalisation for winter cereals"
+    note: "scope_in identifies anthesis as a crop phenological development output"
+  - var: "DOM"
+    source: "dag.yaml"
+    quote: "Phenological development on a DVS scale 0 (emergence) - 1 (anthesis) - 2 (maturity), including optional vernalisation for winter cereals"
+    note: "scope_in identifies maturity as a crop phenological development output"
+  - var: "LAI"
+    source: "dag.yaml"
+    quote: "Tracks a deque of daily leaf cohorts (GRLV, FYSAGE) and prunes them at SPAN; computes leaf death DSLV from combined water-stress, temperature, and self-shading drivers; integrates WLV/DWLV/TWLV; publishes LAI (exponential pre-LAIEXP plus canopy LAI from leaf biomass via SLATB)."
+    note: "processes identify LAI as canopy/leaf biomass state"
+  - var: "TAGP"
+    source: "dag.yaml"
+    quote: "Leaf, stem, storage-organ, and root dynamics including leaf-cohort senescence"
+    note: "scope_in identifies the simulated biomass organs as crop organs"
+  - var: "TWSO"
+    source: "dag.yaml"
+    quote: "Integrates storage-organ biomass WSO/DWSO/TWSO with growth GRSO=ADMI*FO; storage organs do not die in WOFOST 7.2; pod area index PAI=TWSO*SPA."
+    note: "processes identify TWSO as crop storage-organ biomass"
+  - var: "TWLV"
+    source: "dag.yaml"
+    quote: "Tracks a deque of daily leaf cohorts (GRLV, FYSAGE) and prunes them at SPAN; computes leaf death DSLV from combined water-stress, temperature, and self-shading drivers; integrates WLV/DWLV/TWLV; publishes LAI (exponential pre-LAIEXP plus canopy LAI from leaf biomass via SLATB)."
+    note: "processes identify TWLV as crop leaf biomass"
+  - var: "TWST"
+    source: "dag.yaml"
+    quote: "Integrates stem biomass WST/DWST/TWST with growth GRST=ADMI*FS and death DRST via RDRSTB; stem area index SAI=TWST*SSATB(DVS)."
+    note: "processes identify TWST as crop stem biomass"
+  - var: "TWRT"
+    source: "dag.yaml"
+    quote: "Integrates root biomass WRT/DWRT/TWRT and rooting depth RD up to RDM=min(RDMSOL, RDMCR); RR=RRI until RD reaches RDM; publishes RD which controls the soil water balance's root-zone depth."
+    note: "processes identify TWRT as crop root biomass"
+  - var: "RD"
+    source: "dag.yaml"
+    quote: "Integrates root biomass WRT/DWRT/TWRT and rooting depth RD up to RDM=min(RDMSOL, RDMCR); RR=RRI until RD reaches RDM; publishes RD which controls the soil water balance's root-zone depth."
+    note: "processes identify RD as crop rooting depth linked to the soil root zone"

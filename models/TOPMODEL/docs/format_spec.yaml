@@ -1,139 +1,397 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: TOPMODEL BMI (NOAA
-  domain: hydrology
-  binary_path: ''
-  language: unknown
+  name: TOPMODEL
+  language: c
+  implementation:
+    id: topmodel-noaa-owp-bmi
+    version: NOAA-OWP topmodel (2021 BMI release)
+    provenance: C; NOAA-OWP BMI port (2021) of Fred Ogden's 2009 C translation of the Beven (1995) TMOD95.02
+      TOPMODEL Fortran reference, distributed at github.com/NOAA-OWP/topmodel.
+  scientific_reference_version: TOPMODEL (Beven & Kirkby 1979; Beven et al. 1995 formulation, TMOD95.02
+    lineage)
 inputs:
   forcing:
-  - name: rain
-    unit: '**m/hr**'
-    format: ''
-    source: skill_md
-  - name: temp
-    unit: K
-    format: ''
-    source: skill_md
-  - name: srad
-    unit: "W/m\xB2"
-    format: ''
-    source: skill_md
-  - name: wind
-    unit: m/s
-    format: ''
-    source: skill_md
+  - name: rainfall (rain)
+    unit: m/hr
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: inputs.dat column 1, per-timestep depth
+    notes: Internally treated as a per-step depth in metres; the 'h-1' BMI label is a misnomer when dt
+      != 1 h, and the model is structurally only safe for dt = 1.0 in the inputs.dat header.
+  - name: potential evapotranspiration (pe)
+    unit: m/hr
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: inputs.dat column 2, per-timestep depth
+    notes: TOPMODEL does NOT compute PET internally; it must be supplied (e.g., from Hargreaves or Penman-Monteith).
+  - name: observed discharge (Qobs)
+    unit: m/hr
+    category: hydrologic
+    source_kind: forcing
+    model_input_format: inputs.dat column 3, per-timestep depth; optional, used only for diagnostic NSE
+      and hyd.out comparison
+    notes: Read by inputs() in standalone mode; not a BMI input variable. Used by results() to compute
+      internal NSE and to write the observed column of hyd.out.
+  parameters:
+  - name: szm
+    unit: m
+    category: subsurface
+    source_kind: calibrated
+    model_input_format: params.dat field 1
+    notes: Exponential transmissivity-decay parameter; controls baseflow recession shape. szm > 0 is required
+      (zero -> division by zero in qb = szq*exp(-sbar/szm)).
+  - name: t0 (ln T0)
+    unit: ln(m/hr)
+    category: subsurface
+    source_kind: calibrated
+    model_input_format: params.dat field 2
+    notes: Input is the natural log of saturated surface transmissivity, NOT linear T0. The binary computes
+      szq = exp(t0 + log(dt) - tl); supplying linear T0 silently mis-scales baseflow.
+  - name: td
+    unit: hr
+    category: subsurface
+    source_kind: calibrated
+    model_input_format: params.dat field 3
+    notes: Unsaturated-zone time delay per unit local saturation deficit.
+  - name: chv
+    unit: m/hr
+    category: routing
+    source_kind: calibrated
+    model_input_format: params.dat field 4
+    notes: Main-channel routing velocity used in the time-delay histogram.
+  - name: rv
+    unit: m/hr
+    category: routing
+    source_kind: calibrated
+    model_input_format: params.dat field 5
+    notes: Internal (overland) routing velocity used in the time-delay histogram.
+  - name: srmax
+    unit: m
+    category: root_zone
+    source_kind: calibrated
+    model_input_format: params.dat field 6
+    notes: Maximum root-zone storage deficit; cap on ET supply and root-zone water available for percolation.
+  - name: xk0
+    unit: m/hr
+    category: infiltration_excess
+    source_kind: calibrated
+    model_input_format: params.dat field 10
+    notes: Surface saturated hydraulic conductivity for the Green-Ampt option; consumed only when infex=1.
+  - name: hf
+    unit: m
+    category: infiltration_excess
+    source_kind: calibrated
+    model_input_format: params.dat field 11
+    notes: Green-Ampt wetting-front suction; consumed only when infex=1.
+  - name: dth
+    unit: '-'
+    category: infiltration_excess
+    source_kind: calibrated
+    model_input_format: params.dat field 12
+    notes: Green-Ampt water-content change at the wetting front; consumed only when infex=1.
+  - name: TWI histogram (lnaotb, dist_area_lnaotb)
+    unit: ln(m), -
+    category: topography
+    source_kind: dataset_lookup
+    model_input_format: subcat.dat — 10-30 (ln(a/tanB), area-fraction) pairs ordered high to low TWI
+    notes: Derived from a depressionless DEM. Must be ordered HIGH to LOW TWI; the code does not check
+      ordering and silently produces wrong qof if reversed. Area fractions must sum to ~1.0 (water-balance
+      error otherwise).
+  - name: channel network (cum_dist_area, dist_from_outlet)
+    unit: -, m
+    category: topography
+    source_kind: dataset_lookup
+    model_input_format: subcat.dat — (cum_dist_area, dist_from_outlet[m]) pairs
+    notes: Combined with chv and rv to build the time-delay histogram. Channel distances must be in metres,
+      not km.
+  - name: subcatchment area
+    unit: m^2
+    category: subcatchment
+    source_kind: dataset_lookup
+    model_input_format: subcat.dat header / external scaling
+    notes: Used to convert per-step depth fluxes to volumetric discharge.
+  initial_conditions:
+  - name: Q0
+    unit: m/hr
+    category: subsurface
+    source_kind: user_provided
+    model_input_format: params.dat field 7
+    notes: Initial subsurface flow; init_water_balance computes sbar = -szm*log(Q0/szq). Q0 = 0 produces
+      -inf and silently propagates as NaN.
+  - name: sr0
+    unit: m
+    category: root_zone
+    source_kind: user_provided
+    model_input_format: params.dat field 8
+    notes: Initial root-zone deficit; must satisfy sr0 <= srmax (otherwise initial water-balance error).
+  boundary_conditions:
+  - name: infex (infiltration-excess flag)
+    unit: flag (0/1)
+    category: process_switch
+    source_kind: user_provided
+    model_input_format: params.dat field 9
+    notes: Structural switch enabling the Green-Ampt infiltration-excess path; default 0 (off).
+  - name: stand_alone flag
+    unit: flag (0/1)
+    category: execution_mode
+    source_kind: user_provided
+    model_input_format: topmod.run line 1
+    notes: 'Structural switch: 1 = standalone driver (reads inputs.dat, writes topmod.out/hyd.out); 0
+      = BMI framework coupling (rain/PE injected by caller).'
+  - name: catchment outlet
+    unit: '-'
+    category: outlet
+    source_kind: user_provided
+    model_input_format: implicit — single subcatchment with one outlet defined by the channel-distance
+      table
+    notes: TOPMODEL assumes a single outlet per subcatchment; basin boundary delineated externally from
+      the DEM.
+  - name: dt (timestep length)
+    unit: hr
+    category: timestep
+    source_kind: user_provided
+    model_input_format: inputs.dat header line, second value
+    notes: Internally the code uses dt as an integer array index; the C binary is structurally safe only
+      at dt = 1.0. Sub-hourly or daily dt values silently mis-index the rain/PE arrays and can read past
+      the buffer.
 outputs:
   primary:
-  - name: runoff
-    unit: unknown
-    format: ''
-    source: skill_md
-  - name: Evapotranspiration
-    unit: unknown
-    format: ''
-    source: skill_md
-  - name: discharge
-    canonical_id: discharge
-    unit: m3/s
-  - name: surface_runoff
-    canonical_id: surface_runoff
-    unit: mm/day
-  - name: evapotranspiration
-    canonical_id: evapotranspiration
-    unit: mm/day
-  - name: soil_moisture
-    canonical_id: soil_moisture
-    unit: m3/m3
+  - name: Q (simulated discharge)
+    unit: m/hr (per-step depth; convert to m^3/s via Q_m3s = Q_mhr * basin_area_m^2 / 3600)
+    description: Per-timestep routed discharge at the catchment outlet (qb + qof routed through the time-delay
+      histogram).
+    validation_rank: 1
+    emitted_in: hyd.out (column 3) and topmod.out (column 4 'Q[it]')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Observed Q must be reduced to the same units (m/hr per-step depth) as the simulated series.
+        - Single-outlet hydrograph; the model is lumped per subcatchment and cannot resolve internal spatial
+          pattern.
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Only relevant for threshold-based flood-event detection; classification depends on the chosen
+          threshold and dataset definition.
+      detrending_options:
+      - none
+      - first_difference
+  - name: qb (baseflow)
+    unit: m/hr (per-step depth)
+    description: Per-step subsurface baseflow contribution to the outlet; qb = szq*exp(-sbar/szm).
+    validation_rank: 3
+    emitted_in: topmod.out column 'qb'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Direct observation of baseflow is rare; usually inferred via hydrograph separation from observed
+          Q.
+      detrending_options:
+      - none
+  - name: sbar (mean saturation deficit)
+    unit: m
+    description: Catchment-mean soil-moisture saturation deficit; central prognostic state.
+    validation_rank: 4
+    emitted_in: topmod.out column 'sbar'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Best compared against piezometer water-table-depth observations via TOPMODEL's local-deficit
+          mapping; absolute sbar carries calibration scaling.
+      detrending_options:
+      - none
+  - name: contrib_area (saturated contributing-area fraction)
+    unit: '-'
+    description: Fraction of subcatchment area predicted to be saturated and producing saturation-excess
+      runoff at each step.
+    validation_rank: 5
+    emitted_in: topmod.out internal field; max_contrib_area summarized at end-of-run
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Comparison is to the FRACTION not to specific saturated locations; TOPMODEL's similarity assumption
+          groups cells by TWI, not absolute position.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - At-a-point saturated/unsaturated flag time series.
+      detrending_options:
+      - none
+  - name: ea (actual evapotranspiration)
+    unit: m/hr (per-step depth)
+    description: Area-weighted actual ET = ep*(1 - deficit_root_zone/srmax), capped by available root-zone
+      water.
+    validation_rank: 2
+    emitted_in: topmod.out via 'ep' column and accumulated into sumae
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Spatially-uniform PET assumption; no canopy energy-balance closure.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Aggregate ET datasets carry remote-sensing retrieval biases independent of the model.
+      detrending_options:
+      - none
+      - linear_residual
+  secondary:
+  - name: qof (saturation/Hortonian overland flow)
+    unit: m/hr (per-step depth)
+    description: Per-step saturated-area + (optional) infiltration-excess overland flow contribution.
+    validation_rank: null
+    emitted_in: topmod.out column 'qof'
+    observability:
+      comparable_obs_shapes: []
+      detrending_options:
+      - none
+  - name: bal (water-balance residual)
+    unit: m
+    description: 'Closure diagnostic at finalize: bal = sbar + sump - sumae - sumq + sumrz - sumuz.'
+    validation_rank: null
+    emitted_in: topmod.out trailing summary (BAL)
+    observability:
+      comparable_obs_shapes: []
+      detrending_options:
+      - none
 known_issues:
 - id: dt_001
-  description: "Simulated discharge is ~24,000\xD7 too high compared to observed"
-  affected_output: Precipitation left in mm/day instead of converting to m/hr
-  detection: Precipitation left in mm/day instead of converting to m/hr
-  fix: "Divide precipitation by 24,000 (mm\u2192m = \xF71000, day\u2192hr = \xF724)"
+  symptom: Simulated discharge is ~24,000× too high compared to observed
+  diagnosis: Precipitation left in mm/day instead of converting to m/hr
+  remedy: Divide precipitation by 24,000 (mm→m = ÷1000, day→hr = ÷24)
+  severity: silent
 - id: dt_002
-  description: "Simulated discharge is ~24\xD7 too high"
-  affected_output: Precipitation converted to m/day but not to m/hr
-  detection: Precipitation converted to m/day but not to m/hr
-  fix: Divide precipitation by 24 to convert from m/day to m/hr
+  symptom: Simulated discharge is ~24× too high
+  diagnosis: Precipitation converted to m/day but not to m/hr
+  remedy: Divide precipitation by 24 to convert from m/day to m/hr
+  severity: silent
 - id: dt_003
-  description: "Simulated discharge ~1000\xD7 too high"
-  affected_output: Precipitation in mm/hr instead of m/hr
-  detection: Precipitation in mm/hr instead of m/hr
-  fix: "Divide precipitation by 1,000 (mm\u2192m)"
+  symptom: Simulated discharge ~1000× too high
+  diagnosis: Precipitation in mm/hr instead of m/hr
+  remedy: Divide precipitation by 1,000 (mm→m)
+  severity: silent
 - id: dt_004
-  description: No evapotranspiration, all rainfall becomes runoff, PBIAS >> 50%
-  affected_output: PE (potential evapotranspiration) set to zero or not provided
-  detection: PE (potential evapotranspiration) set to zero or not provided
-  fix: Compute PET from temperature/radiation using Hargreaves or Penman-Monteith,
-    convert to m/hr
+  symptom: No evapotranspiration, all rainfall becomes runoff, PBIAS >> 50%
+  diagnosis: PE (potential evapotranspiration) set to zero or not provided
+  remedy: Compute PET from temperature/radiation using Hargreaves or Penman-Monteith, convert to m/hr
+  severity: silent
 - id: dt_005
-  description: ET too large, no runoff produced, extremely negative water balance
-  affected_output: PE left in mm/day instead of m/hr
-  detection: PE left in mm/day instead of m/hr
-  fix: Divide PE by 24,000
+  symptom: ET too large, no runoff produced, extremely negative water balance
+  diagnosis: PE left in mm/day instead of m/hr
+  remedy: Divide PE by 24,000
+  severity: silent
 - id: dt_006
-  description: PET unrealistically high (>20 mm/day equivalent)
-  affected_output: Temperature used in Kelvin in Hargreaves equation instead of Celsius
-  detection: Temperature used in Kelvin in Hargreaves equation instead of Celsius
-  fix: Subtract 273.15 from temperature before computing PET
+  symptom: PET unrealistically high (>20 mm/day equivalent)
+  diagnosis: Temperature used in Kelvin in Hargreaves equation instead of Celsius
+  remedy: Subtract 273.15 from temperature before computing PET
+  severity: silent
 - id: dt_007
-  description: Validation metrics (NSE, KGE) are nonsensical (NSE = -1e6)
-  affected_output: "Comparing simulated Q in m/hr with observed Q in m\xB3/s"
-  detection: "Comparing simulated Q in m/hr with observed Q in m\xB3/s"
-  fix: "Convert both to same units: Q_m3s = Q_mhr \xD7 basin_area_m\xB2 / 3600"
+  symptom: Validation metrics (NSE, KGE) are nonsensical (NSE = -1e6)
+  diagnosis: Comparing simulated Q in m/hr with observed Q in m³/s
+  remedy: 'Convert both to same units: Q_m3s = Q_mhr × basin_area_m² / 3600'
+  severity: silent
 - id: dt_008
-  description: Segmentation fault during model execution
-  affected_output: nstep in inputs.dat doesn't match actual number of data lines
-  detection: nstep in inputs.dat doesn't match actual number of data lines
-  fix: Verify nstep equals the exact number of rain/pe/qobs lines in inputs.dat
+  symptom: Segmentation fault during model execution
+  diagnosis: nstep in inputs.dat doesn't match actual number of data lines
+  remedy: Verify nstep equals the exact number of rain/pe/qobs lines in inputs.dat
+  severity: fatal
 - id: dt_009
-  description: Water balance error (BAL is large), contributing area always 0 or 1
-  affected_output: TWI distribution area fractions do not sum to 1.0
-  detection: TWI distribution area fractions do not sum to 1.0
-  fix: Normalize dist_area_lnaotb so sum equals 1.0
+  symptom: Water balance error (BAL is large), contributing area always 0 or 1
+  diagnosis: TWI distribution area fractions do not sum to 1.0
+  remedy: Normalize dist_area_lnaotb so sum equals 1.0
+  severity: degraded
 - id: dt_010
-  description: Saturated area calculation gives wrong spatial pattern
-  affected_output: TWI values not sorted from high to low in subcat.dat
-  detection: TWI values not sorted from high to low in subcat.dat
-  fix: Sort TWI classes by lnaotb descending (highest TWI first)
+  symptom: Saturated area calculation gives wrong spatial pattern
+  diagnosis: TWI values not sorted from high to low in subcat.dat
+  remedy: Sort TWI classes by lnaotb descending (highest TWI first)
+  severity: degraded
 - id: dt_011
-  description: Division by zero or NaN in model output
-  affected_output: szm parameter set to 0
-  detection: szm parameter set to 0
-  fix: Set szm > 0 (minimum ~0.001 m)
+  symptom: Division by zero or NaN in model output
+  diagnosis: szm parameter set to 0
+  remedy: Set szm > 0 (minimum ~0.001 m)
+  severity: fatal
 - id: dt_012
-  description: Initial water balance error, model diverges from start
-  affected_output: sr0 (initial root zone deficit) exceeds srmax
-  detection: sr0 (initial root zone deficit) exceeds srmax
-  fix: "Ensure sr0 \u2264 srmax in params.dat"
+  symptom: Initial water balance error, model diverges from start
+  diagnosis: sr0 (initial root zone deficit) exceeds srmax
+  remedy: Ensure sr0 ≤ srmax in params.dat
+  severity: degraded
 - id: dt_013
-  description: '''Can''t open control file named ./data/topmod.run'''
-  affected_output: Binary executed from wrong directory or topmod.run not at expected
-    path
-  detection: Binary executed from wrong directory or topmod.run not at expected path
-  fix: Run binary from directory containing data/topmod.run, or copy config to ./data/
+  symptom: '''Can''t open control file named ./data/topmod.run'''
+  diagnosis: Binary executed from wrong directory or topmod.run not at expected path
+  remedy: Run binary from directory containing data/topmod.run, or copy config to ./data/
+  severity: fatal
 - id: dt_014
-  description: '''Can''t open'' error for inputs.dat, subcat.dat, or params.dat'
-  affected_output: File paths in topmod.run are wrong (absolute vs relative)
-  detection: File paths in topmod.run are wrong (absolute vs relative)
-  fix: Use paths relative to the binary's working directory in topmod.run
+  symptom: '''Can''t open'' error for inputs.dat, subcat.dat, or params.dat'
+  diagnosis: File paths in topmod.run are wrong (absolute vs relative)
+  remedy: Use paths relative to the binary's working directory in topmod.run
+  severity: fatal
 - id: dt_015
-  description: Model runs but produces no output (topmod.out, hyd.out empty)
-  affected_output: stand_alone flag set to 0 in topmod.run
-  detection: stand_alone flag set to 0 in topmod.run
-  fix: Set first line of topmod.run to 1 for standalone execution
+  symptom: Model runs but produces no output (topmod.out, hyd.out empty)
+  diagnosis: stand_alone flag set to 0 in topmod.run
+  remedy: Set first line of topmod.run to 1 for standalone execution
+  severity: fatal
 - id: dt_016
-  description: Model produces output but Q is constant/flat
-  affected_output: Precipitation values are all zero (wrong column or file format)
-  detection: Precipitation values are all zero (wrong column or file format)
-  fix: Verify inputs.dat has non-zero rain values in column 1
+  symptom: Model produces output but Q is constant/flat
+  diagnosis: Precipitation values are all zero (wrong column or file format)
+  remedy: Verify inputs.dat has non-zero rain values in column 1
+  severity: degraded
 - id: dt_017
-  description: Routing delay is 0 or 1 timestep, no hydrograph attenuation
-  affected_output: Channel velocity (chv) too high relative to channel length
-  detection: Channel velocity (chv) too high relative to channel length
-  fix: Reduce chv or increase channel distances in subcat.dat
+  symptom: Routing delay is 0 or 1 timestep, no hydrograph attenuation
+  diagnosis: Channel velocity (chv) too high relative to channel length
+  remedy: Reduce chv or increase channel distances in subcat.dat
+  severity: silent
 - id: dt_018
-  description: Channel distance is orders of magnitude wrong
-  affected_output: dist_from_outlet in subcat.dat is in km instead of meters
-  detection: dist_from_outlet in subcat.dat is in km instead of meters
-  fix: Multiply channel distances by 1000
-unit_conversions: []
+  symptom: Channel distance is orders of magnitude wrong
+  diagnosis: dist_from_outlet in subcat.dat is in km instead of meters
+  remedy: Multiply channel distances by 1000
+  severity: silent
+- id: dt_019
+  symptom: Water-balance residual ~40–45% (FAIL) while NSE/KGE/r are normal and daily P/ET/Q rates are
+    physically realistic
+  diagnosis: 'NOAA-OWP standalone TOPMODEL artifact: topmod.out reports ''Maximum contributing area 0.00000''
+    so the saturation-excess contributing area never closes the standalone mass balance. It is NOT a unit
+    error and does not affect dimensionless metrics.'
+  remedy: Confirm forcing units are correct (max rain realistic, P≈900–1000 mm/yr), confirm rates via
+    parse_topmodel_output, then treat the WB FAIL as a known structural diagnostic flag rather than a
+    tool bug. Do not apply ×1000/×86400 corrections (triplets dt_001–dt_007 do NOT apply).

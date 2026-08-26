@@ -1,14 +1,3 @@
----
-name: crest
-description: >-
-  CREST distributed water balance (Wang et al. 2011, HSJ 56:84-98) as realized in EF5
-  v1.2.3. Covers Grid-distributed surface water balance (variable-infiltration-curve
-  runoff generation…; Sub-grid soil-moisture storage-capacity variability via the
-  Xinanjiang/VIC infiltration curve; Runoff separation into overland (fast) and interflow
-  (slow) components; Impervious-area direct runoff. Use when the task involves running,
-  configuring, calibrating or interpreting CREST.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (21 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (11 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_ef5.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_ef5.py --help` |
+| `tools/convert_params_to_ef5.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_params_to_ef5.py --help` |
+| `tools/parse_ef5_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_ef5_output.py --help` |
+| `tools/prepare_basic_grids.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/prepare_basic_grids.py --help` |
+| `tools/run_ef5.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_ef5.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # CREST (Coupled Routing and Excess STorage) within EF5 — Knowledge Infrastructure
 
@@ -143,6 +167,27 @@ Stages 1, 2, 3 can run in parallel after stage 0.
 Stage 4 depends on 1, 2, 3.
 Stage 6 depends on 4, 5.
 Stage 7 depends on 6.
+
+---
+
+## Output Description
+
+This section restates the KI's `dag.yaml`. If this body and `dag.yaml` disagree,
+the dag is authoritative.
+
+**Headline output**: `STREAMFLOW (Q)` — Discharge at each grid cell and at gauge locations. (`m3/s`)
+
+| Output variable (dag `var`) | Validation role | Unit | Description |
+|-----------------------------|-----------------|------|-------------|
+| `STREAMFLOW (Q)` | rank 1 / headline variable | `m3/s` | Discharge at each grid cell and at gauge locations. |
+| `SOILMOISTURE (SM)` | other dag output | see `dag.yaml` | see `dag.yaml` |
+| `SNOWWATER (SWE)` | other dag output | see `dag.yaml` | see `dag.yaml` |
+| `RETURNPERIOD (RP)` | other dag output | see `dag.yaml` | see `dag.yaml` |
+| `INUNDATION (depth)` | other dag output | see `dag.yaml` | see `dag.yaml` |
+
+Agents judging a CREST run should treat `STREAMFLOW (Q)` as the model's rank-1
+output and should bind discharge observations to that variable before computing
+skill metrics.
 
 ---
 
@@ -358,6 +403,37 @@ TASK=run
 
 ---
 
+## Unit Table / Unit Conversion Table
+
+This unit table summarizes conversions that the CREST/EF5 pipeline must apply or
+verify before execution and post-processing. Exact I/O shapes live in
+`docs/format_spec.yaml`; this body records the unit intent and the common traps.
+
+| Variable | Source unit / representation | Model or analysis unit | Factor / conversion | Type |
+|----------|------------------------------|------------------------|---------------------|------|
+| CMFD precipitation | `kg/m2/s` | EF5 precipitation forcing rate | convert to configured timestep depth/rate before EF5 ingestion | multiplicative |
+| MSWX precipitation | `mm/3hr` | EF5 precipitation forcing rate | use timestep accumulation directly for 3-hour forcing; do not apply the CMFD mass-flux factor | multiplicative / none by source |
+| PET forcing | commonly `mm/day` or monthly depth/rate product | EF5 PET forcing rate matching config `UNIT` and `FREQ` | divide by the configured time interval when converting accumulated depth to rate | multiplicative |
+| PET as temperature | K if source is Kelvin | `degC` when config `UNIT=C` | subtract 273.15 | additive |
+| `WM` soil water capacity | m, cm, or mm depending on source | `mm` | m x1000; cm x10; mm x1 | multiplicative |
+| `IM` impervious area | percent or fraction depending on source | percent scalar when no `im_grid`; grid multiplier when `im_grid` is present | percent 0-100; fraction x100 for scalar percent input | semantic / multiplicative |
+| `FC` saturated hydraulic conductivity | mm/day, m/s, or mm/hr depending on source | `mm/hr` | mm/day /24; m/s x3600000; mm/hr x1 | multiplicative |
+| `STREAMFLOW (Q)` | EF5 simulated discharge | `m3/s` | no conversion before comparison to observed discharge in `m3/s` | identity |
+| Observed discharge | must be discharge series | `m3/s` | convert source units such as L/s or cfs before metrics | source-dependent |
+| DEM | meters or feet | meters | feet x0.3048; meters x1 | multiplicative |
+| Basin area | km2, m2, or ha | km2 | m2 /1000000; ha /100 | multiplicative |
+
+### Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| `STREAMFLOW (Q)` | discharge at each grid cell and at gauge locations in `m3/s` | runoff depth or volume per timestep | NSE/PBIAS can be computed on the wrong physical quantity |
+| `SOILMOISTURE (SM)` | CREST storage state tied to `WM` | volumetric water content | soil moisture diagnostics are not comparable without conversion |
+| `SNOWWATER (SWE)` | snow water equivalent | snow depth | snow storage magnitude is wrong without density conversion |
+| `INUNDATION (depth)` | water depth | discharge or flood extent mask | inundation interpretation changes from depth to presence/flow |
+
+---
+
 ## Output Variables
 
 | Grid Output | Variable | Unit | Description |
@@ -438,7 +514,7 @@ Calibration parameter blocks define min/max ranges for each parameter.
 
 ---
 
-## Validation: Bengbu Basin, Huai River (2026-03-25)
+## Validated Results: Bengbu Basin, Huai River (2026-03-25)
 
 **Basin**: Bengbu (Station 51080), Huai River Basin, China
 **Area**: 121,330 km²
@@ -446,16 +522,44 @@ Calibration parameter blocks define min/max ranges for each parameter.
 **Forcing**: Synthetic climatological (seasonal pattern from CMFD monthly means)
 **Binary**: EF5 v1.2.3, compiled from source with g++
 
+### Field Validation Bars
+
+The validation convention is sourced from `docs/validation_convention.yaml`.
+Null convention bands are written as `no cited threshold`; no thresholds are
+filled in from memory.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Citation keys |
+|--------------|--------|-----------|-------------------|-----------|----------------|---------------|
+| `STREAMFLOW (Q)` | `nse` | maximize | `0.5` (`van_griensven2012`, `bouregreg2011`, `arnold2012`) | no cited threshold (`van_griensven2012`, `bouregreg2011`, `arnold2012`) | `0.75` (`van_griensven2012`, `bouregreg2011`, `arnold2012`) | `van_griensven2012`, `bouregreg2011`, `arnold2012` |
+| `STREAMFLOW (Q)` | `pbias` | zero_centered | `25.0` (`van_griensven2012`, `bouregreg2011`) | no cited threshold (`van_griensven2012`, `bouregreg2011`) | `10.0` (`van_griensven2012`, `bouregreg2011`) | `van_griensven2012`, `bouregreg2011` |
+| `STREAMFLOW (Q)` | `pbias` | zero_centered | `25.0` (`van_griensven2012`, `bouregreg2011`) | no cited threshold (`van_griensven2012`, `bouregreg2011`) | `10.0` (`van_griensven2012`, `bouregreg2011`) | `van_griensven2012`, `bouregreg2011` |
+| `SOILMOISTURE (SM)` | `r` | maximize | no cited threshold | no cited threshold | no cited threshold | none |
+
+For `STREAMFLOW (Q)`, NSE is judged as maximize with satisfactory `0.5` and
+very good `0.75` under `van_griensven2012`, `bouregreg2011`, and `arnold2012`.
+PBIAS is judged as zero-centered with satisfactory `25.0` and very good `10.0`
+under `van_griensven2012` and `bouregreg2011`.
+
 ### Results
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| NSE | -2.81 | Expected with synthetic forcing |
-| KGE | -1.18 | Volume bias dominates |
-| R (Pearson) | 0.658 | Seasonal pattern captured |
-| R² | 0.433 | — |
-| PBIAS | 213.6% | Synthetic precip overestimates |
-| RMSE | 2777.6 m³/s | — |
+| Metric | Value | Convention bar |
+|--------|-------|----------------|
+| NSE | -2.81 | `STREAMFLOW (Q)` satisfactory `0.5` and very good `0.75` (`van_griensven2012`, `bouregreg2011`, `arnold2012`) |
+| KGE | -1.18 | no cited threshold |
+| R (Pearson) | 0.658 | `SOILMOISTURE (SM)` has no cited threshold for `r`; no `STREAMFLOW (Q)` `r` bar is stated here |
+| R² | 0.433 | no cited threshold |
+| PBIAS | 213.6% | `STREAMFLOW (Q)` zero-centered satisfactory `25.0` and very good `10.0` (`van_griensven2012`, `bouregreg2011`) |
+| RMSE | 2777.6 m³/s | no cited threshold |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Synthetic climatological forcing using seasonal pattern from CMFD monthly means | surrogate-validated | Real CMFD/MSWX forcing is expected to improve metrics |
+| Soil/CREST parameters | KI parameter setup for Bengbu validation | surrogate-validated | Parameters listed below |
+| DEM / routing grids | EF5/CREST preparation workflow | production path present | Stage-1 grid regeneration required on prepared inputs |
+| Observed discharge | Bengbu station 51080 comparison series | used for validation | Metrics reported above |
+| EF5 binary | EF5 v1.2.3 compiled with g++ | production-validated | Binary compiles and runs |
 
 ### Parameters used
 

@@ -420,7 +420,7 @@ outputs:
   - var: "flood extent (derived from hmax > threshold)"
     validation_rank: 1
     unit: "category / area"
-    description: "Wet/dry classification derived from hmax exceeding a depth threshold."
+    description: "Flood-water wet/dry extent classification derived from hmax exceeding a depth threshold."
     emitted_in: "sfincs_map.nc"
     observability:
       comparable_obs_shapes:

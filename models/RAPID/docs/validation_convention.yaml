@@ -1,0 +1,195 @@
+schema_version: 1
+model_id: RAPID
+domain: hydrology
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  me2015:
+    doi: 10.5194/hess-19-4127-2015
+    title: "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-4127-2015.txt
+  david2011:
+    doi: 10.1175/2011jhm1345.1
+    title: "River Network Routing on the NHDPlus Dataset"
+    venue: "J. Hydrometeorol."
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_2011jhm1345.1.txt
+  tavakoly2017:
+    doi: 10.1111/1752-1688.12456
+    title: "Continental-Scale River Flow Modeling of the Mississippi River Basin Using High-Resolution NHDPlus Dataset"
+    venue: "JAWRA Journal of the American Water Resources Association"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1111_1752-1688.12456.txt
+  tavakoly2023:
+    doi: 10.1016/j.envsoft.2023.105631
+    title: "Development of non-data driven reservoir routing in the routing application for parallel computatIon of discharge (RAPID) model"
+    venue: "Environmental Modelling & Software"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2023.105631.txt
+  david2016:
+    doi: 10.1002/2015ea000142
+    title: "A decade of RAPID - Reflections on the development of an open source geoscience code"
+    venue: "Earth and Space Science"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2015ea000142.txt
+
+validation:
+  - dag_variable: Qout
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Daily discharge convention reproduced from Moriasi et al. (2007): satisfactory NSE begins at 0.5; the primary Moriasi papers were fetched and returned closed."
+        cites: [me2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "For Q discharge, the reproduced Moriasi table rates absolute PBIAS below 25% as at least satisfactory."
+        cites: [me2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RAPID benchmarks compare computed flow against gauges with RMSE and Nash efficiency, but no universal discharge-unit RMSE threshold exists because RMSE scales with basin flow."
+        cites: [david2011, tavakoly2017]
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The continental RAPID benchmark uses KGE with the same daily-data rating levels as NSE, but the dag determining metric is NSE."
+        cites: [tavakoly2017, tavakoly2023]
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "RAPID routes supplied runoff; David 2011 states land-surface-model runoff bias cannot be fixed by RAPID, and mass is conserved within RAPID."
+        cites: [david2011]
+    validated_when: "Daily or sub-daily routed discharge is validated when NSE >= 0.5 and absolute PBIAS <= 25% after timestamp alignment, unit conversion, and spinup removal."
+    rule:
+      all_of:
+        - {metric: nse, op: gte, value: 0.5}
+        - {metric: pbias, op: abs_lte, value: 25}
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      The fetched OA convention table says performance ratings are based on Moriasi et al. (2007), with NSE
+      satisfactory 0.5-0.65, good 0.65-0.75, very good 0.75-1, and Q PBIAS satisfactory 15-25%.
+      David 2011 validates RAPID flow computation against gauges using RMSE and Nash efficiency and reports
+      statistically significant improvement over lumped runoff. Tavakoly 2017 uses hydrograph assessment plus
+      correlation, RMSE, NSE, and KGE for daily RAPID streamflow and defines daily poor/acceptable/good
+      levels around 0.4 and 0.6; the domain Moriasi pass of NSE 0.5 is retained as the headline gate.
+
+  - dag_variable: Qout
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric single-instant discharge PBIAS validation threshold; hydrology conventions cited here are for time-series or accumulated-flow evaluation."
+        cites: []
+    secondary_metrics:
+      - metric: absolute_percent_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Single-instant comparisons are timing-sensitive; RAPID literature validates hydrographs or daily series, not isolated snapshots."
+        cites: [david2011, tavakoly2017]
+    validated_when: "UNRESOLVED - retain the dag PBIAS metric, but do not auto-validate a single-instant Qout snapshot without a fetched snapshot-specific threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The fetched convention source defines PBIAS as an average tendency over simulated outputs and observations,
+      and RAPID papers evaluate hydrographs/daily streamflow. A one-point comparison can diagnose magnitude
+      error, but the cached and capped-search literature did not provide a cited pass band.
+
+  - dag_variable: Qout
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred from fetched discharge time-series convention; use on basin outlets or aggregate-reach series after consistent temporal aggregation."
+        cites: [me2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Transferred from Q discharge PBIAS convention; accumulation/aggregation must use consistent units and periods."
+        cites: [me2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Continental RAPID regional evaluation uses KGE alongside NSE, correlation, and RMSE for daily averaged simulated results."
+        cites: [tavakoly2017]
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Regional Qout bias is inherited from forcing/runoff and reservoir operations; RAPID conserves routed mass and cannot remove upstream runoff bias by routing alone."
+        cites: [david2011, tavakoly2023]
+    validated_when: "A basin-outlet or regional aggregated Qout series is validated when NSE >= 0.5 and absolute PBIAS <= 25% on the agreed daily/monthly aggregation window."
+    rule:
+      all_of:
+        - {metric: nse, op: gte, value: 0.5}
+        - {metric: pbias, op: abs_lte, value: 25}
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      The headline bands are the fetched discharge convention, transferred to regional/basin aggregated series.
+      Tavakoly 2017 is the closest RAPID-specific regional benchmark and reports continental-scale Mississippi
+      daily streamflow evaluation with hydrographs plus correlation, RMSE, NSE, and KGE. Confidence is lower
+      than point time series because no fetched source gives a separate aggregate-specific threshold table.
+
+  - dag_variable: V
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched RAPID or river-routing paper provides a numeric NSE pass band for directly observed channel water volume V."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m3
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched channel-storage validation paper gives a universal RMSE threshold in m3; storage RMSE is reach-size dependent."
+        cites: []
+    secondary_metrics:
+      - metric: mass_balance_closure
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RAPID literature treats storage/volume primarily as an internal routing or reservoir state; David 2011 emphasizes conservation of average flow rate within RAPID."
+        cites: [david2011, david2016]
+    validated_when: "UNRESOLVED - V is diagnostic/internal unless paired with independent channel-storage observations; do not auto-validate without a fetched storage-specific threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Cached RAPID papers and two capped OpenAlex queries did not identify a field convention for validating
+      stored channel water volume per reach. RAPID history notes reservoir storage simulations as an application,
+      while reservoir-routing work uses storage information to improve discharge, not a numeric V validation gate.
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2007 model evaluation guidelines primary tier table"
+    doi: 10.13031/2013.23153
+    needed_for: [Qout]
+  - ref: "Moriasi et al. 2015 hydrologic/water-quality model performance recommendations"
+    doi: 10.13031/trans.58.10715
+    needed_for: [Qout]

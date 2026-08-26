@@ -1,239 +1,89 @@
-# mizuRoute Knowledge Infrastructure
-# Schema-compliant package definition
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: hydrocraft-mizuroute
-  version: 1.0.0
-  model: mizuRoute
-  model_version: "main (2026-03)"
-  repository: https://github.com/ESCOMP/mizuRoute
-  license: Apache-2.0
-  language: Fortran (93%) + Python tools
-  created_by: Jianyun Zhang Research Group, Hohai University
-  created_date: 2026-03-21
-  last_updated: 2026-03-21
-  description: >
-    Reach-based river routing with 5 selectable methods (IRF, KWT, KWE, MC, DW),
-    lake/reservoir routing, and MPI parallelism. Routes gridded runoff from VIC or
-    WRF-Hydro through a vector river network to compute streamflow at every reach.
-
+  name: mizuRoute
+  language: fortran
+  implementation:
+    id: mizuroute-standalone
+    version: ESCOMP mizuRoute 3.1.1 (standalone route_runoff driver)
+    provenance: Fortran 90 (OOP abstract routing classes, OpenMP/MPI/PIO); NCAR/UW ESCOMP standalone route_runoff
+      driver.
+  scientific_reference_version: mizuRoute river-network routing framework (Mizukami et al. 2016, GMD 9:2223-2238;
+    vector-based parallel lineage Mizukami et al. 2021)
+  binary:
+    path: KISSPATH_BINARIES/mizuRoute/mizuRoute-main/route/bin/mizuroute.exe
+    type: ELF
 pipeline:
   stages:
-    - id: s0_config
-      name: Configuration
-      description: Define basin, time period, routing method, upstream model
-      knowledge_type: evaluative
-      depends_on: []
-      milestone: Configuration dictionary/YAML with all parameters defined
-
-    - id: s1_network
-      name: River Network Topology
-      description: Build river network topology NetCDF from DEM + basin shapefile
-      knowledge_type: procedural
-      depends_on: [s0_config]
-      milestone: network_topology.nc with seg_id, tosegment, seg_length, seg_slope, hru_id, hru_area
-
-    - id: s2_remap
-      name: Runoff Remapping Weights
-      description: Compute area-weighted overlap from VIC grid to mizuRoute HRUs
-      knowledge_type: procedural
-      depends_on: [s0_config, s1_network]
-      milestone: remap_weights.nc with grid-to-HRU weights summing to ~1.0 per HRU
-
-    - id: s3_runoff
-      name: Runoff Format Conversion
-      description: Convert VIC flux output to mizuRoute runoff NetCDF (mm/timestep -> mm/s)
-      knowledge_type: procedural
-      depends_on: [s0_config]
-      milestone: runoff.nc with RUNOFF variable in mm/s, time coordinate with calendar attribute
-
-    - id: s4_control
-      name: Control File Generation
-      description: Generate mizuRoute control file with all paths, method, and time settings
-      knowledge_type: procedural
-      depends_on: [s1_network, s2_remap, s3_runoff]
-      milestone: basin.control file with all variable names matching NetCDF files
-
-    - id: s5_execute
-      name: Execution
-      description: Run mizuRoute with preflight and postflight validation
-      knowledge_type: procedural
-      depends_on: [s4_control]
-      milestone: mizuRoute exits with code 0, output NetCDF files exist in output_dir
-
-    - id: s6_postprocess
-      name: Output Extraction and Comparison
-      description: Extract discharge at outlet, compute metrics, compare methods
-      knowledge_type: evaluative
-      depends_on: [s5_execute]
-      milestone: Discharge CSV with timeseries, performance metrics if obs available
-
+  - s0_config_skill
+  - s1_network_skill
+  - s2_remap_skill
+  - s3_runoff_skill
+  - s4_control_skill
+  - s5_execution_skill
+  - s6_comparison_skill
 tools:
-  - id: t01
-    name: build_network_topology
-    stage: s1_network
-    script: tools/s1_network/build_network_topology.py
-    lines: 380
-    description: Build river network topology NetCDF from DEM + basin shapefile using WhiteboxTools
-    inputs: [basin_shp, dem, stream_threshold, min_slope]
-    outputs: [network_topology.nc]
-
-  - id: t02
-    name: create_remap_weights
-    stage: s2_remap
-    script: tools/s2_remap/create_remap_weights.py
-    lines: 250
-    description: Compute area-weighted spatial remapping from VIC grid to mizuRoute HRUs
-    inputs: [grid_nc, network_nc, subbasins_shp]
-    outputs: [remap_weights.nc]
-
-  - id: t03
-    name: convert_vic_runoff
-    stage: s3_runoff
-    script: tools/s3_runoff/convert_vic_runoff.py
-    lines: 300
-    description: Convert VIC flux files to mizuRoute runoff NetCDF with unit conversion
-    inputs: [vic_result_dir, grid_nc, start_year, end_year, vic_timestep]
-    outputs: [runoff.nc]
-    critical_notes: >
-      UNIT CONVERSION: VIC mm/timestep -> mm/s. Divides by timestep_seconds.
-      Missing this produces 8-86400x error with NO error message (dt_m003).
-
-  - id: t04
-    name: generate_control_file
-    stage: s4_control
-    script: tools/s4_control/generate_control_file.py
-    lines: 220
-    description: Generate mizuRoute control file from configuration and file metadata
-    inputs: [basin_name, network_nc, runoff_nc, remap_nc, output_dir, route_opt, dates, dt]
-    outputs: [basin.control]
-
-  - id: t05
-    name: run_mizuroute
-    stage: s5_execute
-    script: tools/s5_execution/run_mizuroute.py
-    lines: 280
-    description: Execute mizuRoute with preflight checks, monitoring, and output validation
-    inputs: [control_file, exe_path]
-    outputs: [output NetCDF files]
-
-  - id: t06
-    name: extract_discharge
-    stage: s6_postprocess
-    script: tools/s6_postprocess/extract_discharge.py
-    lines: 330
-    description: Extract discharge timeseries from mizuRoute output, compute NSE/KGE/RMSE
-    inputs: [mizuroute_output, network_nc, obs_file, warmup_years]
-    outputs: [discharge.csv, metrics]
-
-  - id: t07
-    name: compare_routing_methods
-    stage: s6_postprocess
-    script: tools/s6_postprocess/compare_routing_methods.py
-    lines: 230
-    description: Run all 5 routing methods on same basin and compare discharge
-    inputs: [control_template, exe, network_nc, methods]
-    outputs: [comparison CSVs per method]
-
-skill_documents:
-  - id: sd01
-    stage: s0_config
-    path: docs/s0_config_skill.md
-    title: Routing Method Selection Guide
-    topics: [method_comparison, basin_size_decision_tree, lake_routing_options]
-
-  - id: sd02
-    stage: s1_network
-    path: docs/s1_network_skill.md
-    title: River Network Construction
-    topics: [DEM_vs_MERIT, stream_threshold, reach_properties, topology_validation]
-
-  - id: sd03
-    stage: s2_remap
-    path: docs/s2_remap_skill.md
-    title: Spatial Remapping
-    topics: [CRS_alignment, weight_validation, grid_to_vector]
-
-  - id: sd04
-    stage: s3_runoff
-    path: docs/s3_runoff_skill.md
-    title: Runoff Unit Conversion
-    topics: [VIC_mm_timestep_to_mm_s, WRF_Hydro_conversion, temporal_aggregation]
-
-  - id: sd05
-    stage: s4_control
-    path: docs/s4_control_skill.md
-    title: Control File Reference
-    topics: [variable_name_mapping, method_parameters, complete_reference]
-
-  - id: sd06
-    stage: s5_execute
-    path: docs/s5_execution_skill.md
-    title: Running mizuRoute
-    topics: [serial_vs_MPI, runtime_expectations, error_interpretation]
-
-  - id: sd07
-    stage: s6_postprocess
-    path: docs/s6_comparison_skill.md
-    title: Routing Method Comparison
-    topics: [Lohmann_vs_CaMa_vs_mizuRoute, metrics, when_to_use_which]
-
-  - id: sd08
-    stage: s1_network
-    path: docs/s_lake_routing_skill.md
-    title: Lake and Reservoir Routing
-    topics: [level_pool, Hanasaki, GRanD_database, parameter_estimation]
-
-diagnostic_triplets:
-  path: diagnostics/triplets.yaml
-  count: 18
-  domains: [compilation, path_resolution, unit_conversion, parameter_format,
-            dependency_mismatch, runtime, silent_error]
-
-couplings:
-  - id: c_mzr_01
-    source: VIC 5.1.0
-    target: mizuRoute
-    variable: RUNOFF + BASEFLOW
-    units: mm/s
-    tool: convert_vic_runoff
-    notes: Critical unit conversion mm/timestep -> mm/s
-
-  - id: c_mzr_02
-    source: WRF-Hydro 5.2.0
-    target: mizuRoute
-    variable: SFCRNOFF + UGDRNOFF
-    units: mm/s
-    tool: (convert_wrfhydro_runoff - planned)
-    notes: Use LDASOUT not CHRTOUT (CHRTOUT is already routed)
-
-  - id: c_mzr_03
-    source: mizuRoute
-    target: CaMa-Flood
-    variable: reach discharge
-    units: m3/s
-    tool: (future coupling)
-    notes: Efficient vector routing + CaMa-Flood floodplain dynamics
-
-  - id: c_mzr_04
-    source: mizuRoute
-    target: plot tools
-    variable: outlet discharge
-    units: m3/s
-    tool: extract_discharge
-    notes: CSV output compatible with plot_discharge_comparison.py
-
+  count: 7
+  files:
+  - tools/s1_network/build_network_topology.py
+  - tools/s2_remap/create_remap_weights.py
+  - tools/s3_runoff/convert_vic_runoff.py
+  - tools/s4_control/generate_control_file.py
+  - tools/s5_execution/run_mizuroute.py
+  - tools/s6_postprocess/compare_routing_methods.py
+  - tools/s6_postprocess/extract_discharge.py
+inputs:
+  forcing:
+  - name: gridded runoff (surface RUNOFF + subsurface BASEFLOW)
+    unit: mm/s
+  parameters:
+  - name: river-network topology (seg_id, tosegment, seg_length, seg_slope, hru_id, hru_seg_id, hru_area,
+      hru_lat, hru_lon)
+    unit: mixed (m for length, m/m for slope, m2 for area)
+  - name: reach hydraulic/geometry parameters (R_SLOPE, R_MAN_N, R_WIDTH, R_DEPTH bankfull, RLENGTH, R_STORAGE,
+      SIDE_SLOPE)
+    unit: mixed (m/m slope, s/m^(1/3) Manning n, m width/depth, m3 storage)
+  - name: routing-method parameters (wave velocity velo, diffusivity diff, KWT wave-scale, gamma-UH shape/timescale)
+    unit: velo m/s; diff m2/s; UH shape dimensionless; UH timescale s
+  - name: lake/reservoir attributes and operation parameters (is_lake, lake_id, lake_area, lake_max_storage,
+      lake_min_storage, d_h_d_a; Doll03/Hanasaki06/HYPE blocks)
+    unit: mixed (m2 area, m3 storage, m/m2 height-area derivative)
+  initial_conditions:
+  - name: reach routing state restart (per-reach discharge, channel volume, wave/particle states, future-runoff
+      queues)
+    unit: mixed (m3/s discharge, m3 volume)
+  boundary_conditions:
+  - name: routing method selection (route_opt / routeMethods)
+    unit: enumerated
+  - name: hillslope-routing switch (doesBasinRoute) and accumulation switch (doesAccumRunoff)
+    unit: 0/1
+  - name: simulation window and calendar (sim_start, sim_end, dt, calendar)
+    unit: datetime; dt in seconds
+  - name: spatial remapping enable (is_remap) and remap weights
+    unit: boolean + dimensionless weights
+  - name: lake-simulation enable and lake model type (is_lake_sim, lake_model_type)
+    unit: boolean + enumerated
+  - name: data-assimilation mode (qmodOption) and prescribed water-management fluxes
+    unit: enumerated; flux m3/s, volume m3
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - routed_discharge
+  - basRunoff
+  - REACH_VOL
+  - lake_outflow_storage
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.364, KGE=0.298, R=0.870, 4 scorecard(s)'
+  metrics:
+    best_nse: 0.3638
+    best_kge: 0.2979
+    best_r: 0.87
 summary:
   total_tools: 7
-  total_lines: 2115
-  total_skill_documents: 8
+  total_stage_docs: 7
   total_diagnostic_triplets: 19
-  silent_error_percentage: 39
-  pipeline_stages: 7
-  couplings: 4
-  missing_tools:
-    - extract_merit_network.py (s1 alternative - needs MERIT Hydro download)
-    - convert_wrfhydro_runoff.py (s3 alternative for WRF-Hydro)
-    - add_lakes_to_network.py (s1 extension for lake routing)
-    - run_mizuroute_full_pipeline.py (end-to-end wrapper)
-  coverage_percentage: 70
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

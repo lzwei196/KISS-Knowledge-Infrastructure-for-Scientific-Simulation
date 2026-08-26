@@ -1,77 +1,127 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:00:09.297303'
-  domain: biogeochemistry
   name: FATES
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: fates-ctsm
+    version: ''
+    _reason: No concrete FATES/CTSM tag surfaced in the streams; the runnable version is tied to the host
+      CTSM/CLM checkout the component is compiled into.
+    provenance: Fortran 2003+; FATES compiled as a component of the CTSM/CLM (or E3SM/ELM) host land model;
+      runs only inside the host, not standalone.
+  scientific_reference_version: FATES (Functionally Assembled Terrestrial Ecosystem Simulator), NGEE-Tropics/DOE;
+    size- and age-structured cohort demographic DGVM of the ED/PPA lineage (Moorcroft, Hurtt & Pacala
+    2001; Fisher et al. 2015), JSON-parameter-file era (post-2023)
+  binary:
+    path: KISSPATH_HOME/cesm/scratch/test_fates/bld/cesm.exe
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_parameter_setup
+  - s2_surface_data
+  - s3_forcing_data
+  - s4_case_creation
+  - s5_output_analysis
+tools:
+  count: 5
+  files:
+  - tools/convert_fates_params.py
+  - tools/convert_forcing_data.py
+  - tools/convert_surface_data.py
+  - tools/parse_fates_output.py
+  - tools/run_fates_case.py
+inputs:
+  forcing:
+  - name: TBOT (air temperature)
+    unit: K
+  - name: PRECTmms (precipitation)
+    unit: mm/s
+  - name: FSDS (downwelling shortwave radiation)
+    unit: W/m2
+  - name: FLDS (downwelling longwave radiation)
+    unit: W/m2
+  - name: QBOT (specific humidity)
+    unit: kg/kg
+  - name: WIND (scalar wind speed)
+    unit: m/s
+  - name: PSRF (surface pressure)
+    unit: Pa
+  - name: CO2 concentration
+    unit: ppmv
+  parameters:
+  - name: fates_leaf_vcmax25top (max carboxylation rate at 25C)
+    unit: umol/m2/s
+  - name: fates_leaf_slatop (specific leaf area at canopy top)
+    unit: m2/gC
+  - name: fates_allom_d2h1 / d2h2 (DBH-to-height coefficients)
+    unit: '-'
+  - name: fates_allom_d2bl1 (DBH-to-leaf-biomass coefficient)
+    unit: kgC
+  - name: fates_wood_density
+    unit: g/cm3
+  - name: fates_turnover_leaf (leaf longevity)
+    unit: yr
+  - name: fates_mort_scalar_cstarvation (carbon-starvation mortality scalar)
+    unit: '-'
+  - name: fates_mort_bmort (background mortality rate)
+    unit: 1/yr
+  - name: fates_mort_scalar_hydrfailure (hydraulic-failure mortality scalar)
+    unit: '-'
+  - name: fates_fire_nignitions (lightning ignition density)
+    unit: 1/km2/day
+  - name: fates_phen_drought_threshold (drought phenology threshold)
+    unit: MPa
+  - name: fates_recruit_seed_supplement (external seed-rain supplement)
+    unit: '-'
+  - name: soil texture (clay / sand / organic fraction per layer)
+    unit: '%'
+  - name: PFT fractional coverage
+    unit: fraction
+  initial_conditions:
+  - name: initial vegetation structure (bare ground or inventory cohorts)
+    unit: DBH cm, density stems/m2
+  - name: restart state (all prognostic cohort/patch pools)
+    unit: varies
+  boundary_conditions:
+  - name: use_fates
+    unit: logical
+  - name: fates_spitfire_mode (fire module selector, 0-4)
+    unit: code
+  - name: use_fates_planthydro (plant hydraulics toggle)
+    unit: logical
+  - name: fates_parteh_mode (allocation hypothesis selector)
+    unit: code
+  - name: use_fates_sp (satellite-phenology / prescribed-vegetation mode)
+    unit: logical
+  - name: compset selection
+    unit: label
+  - name: land-use transitions (LUH2)
+    unit: fraction/yr
+  - name: logging / timber-harvest rates
+    unit: fraction/yr
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - FATES_VEGC
+  - FATES_GPP
+  - FATES_NPP
+  - FATES_LAI
+  - FATES_NPLANT
+  - FATES_MORTALITY
+  - FATES_DISTURBANCE_RATE_FIRE
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: NSE=0.699, KGE=0.690, R=0.952, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.6986
+    best_kge: 0.6903
+    best_r: 0.9516
+summary:
+  total_tools: 5
+  total_stage_docs: 5
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

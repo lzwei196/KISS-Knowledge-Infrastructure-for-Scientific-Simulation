@@ -1,77 +1,130 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:00:09.335933'
-  domain: crop
   name: LPJmL
-  version: auto-generated
+  language: c
+  implementation:
+    id: lpjml-600
+    version: 6.0.0
+    provenance: C (optional MPI parallelization); PIK (Potsdam Institute for Climate Impact Research)
+      LPJmL source from github.com/PIK-LPJmL/LPJmL.
+  scientific_reference_version: LPJmL 6.0.0 (LPJmL4 lineage; Schaphoff et al. 2018 GMD model description,
+    von Bloh et al. 2018 GMD nitrogen cycle)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/LPJmL/source/repo/bin/lpjml
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_climate_forcing
+  - s2_soil_parameters
+  - s3_configuration
+  - s4_execution
+  - s5_output_analysis
+tools:
+  count: 6
+  files:
+  - tools/convert_climate_to_clm.py
+  - tools/convert_forcing_to_clm.py
+  - tools/convert_soil_to_clm.py
+  - tools/convert_soil_to_lpjml.py
+  - tools/parse_lpjml_output.py
+  - tools/run_lpjml.py
+inputs:
+  forcing:
+  - name: temp (mean daily air temperature)
+    unit: deg C
+  - name: prec (precipitation)
+    unit: mm/day (daily) or mm/month (monthly)
+  - name: swdown (shortwave downward radiation)
+    unit: W/m2
+  - name: lwnet (net longwave radiation)
+    unit: W/m2
+  - name: tmin (daily minimum temperature)
+    unit: deg C
+  - name: tmax (daily maximum temperature)
+    unit: deg C
+  - name: tamp (diurnal temperature range)
+    unit: deg C
+  - name: wetdays (wet-day frequency)
+    unit: days/month
+  - name: humid (specific humidity)
+    unit: kg/kg
+  - name: wind (wind speed)
+    unit: m/s
+  - name: co2 (atmospheric CO2 concentration)
+    unit: ppm
+  parameters:
+  - name: soil texture class
+    unit: code (1-13 USDA scheme)
+  - name: soil pH
+    unit: pH
+  - name: PFT / CFT coefficients
+    unit: various
+  - name: grid coordinates
+    unit: degrees
+  - name: land fraction per cell
+    unit: fraction
+  - name: country code
+    unit: code
+  - name: surface elevation
+    unit: m
+  - name: river drainage direction
+    unit: index
+  - name: lake fraction
+    unit: fraction
+  - name: reservoir information
+    unit: capacity / year
+  initial_conditions:
+  - name: restart state (soil C/N, vegetation, soil moisture, thermal, river storage, phenology)
+    unit: binary pools
+  boundary_conditions:
+  - name: landuse (CFT area fractions)
+    unit: fraction
+  - name: N fertilizer application rate
+    unit: gN/m2/yr
+  - name: manure N application rate
+    unit: gN/m2/yr
+  - name: prescribed sowing dates
+    unit: DOY
+  - name: crop phenological heat units (PHU)
+    unit: deg C days
+  - name: tillage practice
+    unit: binary
+  - name: residue left on field
+    unit: fraction
+  - name: 'nitrogen-limitation switch (with_nitrogen: no / lim / unlim)'
+    unit: option
+  - name: irrigation mode (no / lim / pot / all)
+    unit: option
+  - name: fire module selector (no_fire / fire Glob-FIRM / spitfire)
+    unit: option
+  - name: river routing and reservoir switch
+    unit: option
+  - name: spinup / restart control (equilsoil, FROM_RESTART)
+    unit: option
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - pft_harvestc
+  - npp
+  - gpp
+  - discharge
+  - runoff
+  - transp
+  - vegc
+  - soilc
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.144, KGE=0.049, R=0.742, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.1444
+    best_kge: 0.0488
+    best_r: 0.742
+summary:
+  total_tools: 6
+  total_stage_docs: 5
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

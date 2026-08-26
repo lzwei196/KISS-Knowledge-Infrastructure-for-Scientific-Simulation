@@ -1,77 +1,135 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:00:02.704257'
-  domain: crop
   name: MONICA
-  version: auto-generated
+  language: c++
+  implementation:
+    id: monica-zalf
+    version: 3.6.56
+    provenance: C++17; ZALF (zalf-rpm/monica) standalone monica-run binary wrapping the core soil-plant
+      C/N/water modules; thin Python orchestration binding.
+  scientific_reference_version: MONICA 3.6.x (ZALF; MOdel of Nitrogen and Carbon dynamics in Agro-ecosystems;
+    Nendel et al. 2011, Ecological Modelling)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MONICA/source/repo/_cmake_release/monica-run
+    type: work_dir
 pipeline:
-  stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  stages: []
+tools:
+  count: 5
+  files:
+  - tools/convert_climate_to_monica.py
+  - tools/convert_soil_to_monica.py
+  - tools/parse_monica_output.py
+  - tools/run_monica.py
+  - tools/site_photoperiod.py
+inputs:
+  forcing:
+  - name: tavg
+    unit: degC
+  - name: tmin
+    unit: degC
+  - name: tmax
+    unit: degC
+  - name: globrad
+    unit: MJ m-2 d-1
+  - name: wind
+    unit: m s-1
+  - name: precip
+    unit: mm d-1
+  - name: relhumid
+    unit: '% (0-100)'
+  - name: sunhours
+    unit: h
+  - name: vappd
+    unit: kPa
+  - name: atmospheric CO2 concentration
+    unit: ppm
+  - name: atmospheric O3 concentration
+    unit: ppb
+  parameters:
+  - name: crop species parameters
+    unit: '-'
+  - name: crop cultivar parameters
+    unit: '-'
+  - name: residue parameters (residueParams)
+    unit: '-'
+  - name: Kc factor per development stage
+    unit: '-'
+  - name: soil hydraulic parameters (field capacity, wilting point, saturation)
+    unit: m3 m-3
+  - name: soil texture (sand/clay fractions or KA5 class)
+    unit: fraction 0-1
+  - name: soil bulk density (SoilRawDensity)
+    unit: kg m-3
+  - name: soil organic carbon (initial SOC per layer)
+    unit: '% (mass)'
+  - name: soil pH per layer
+    unit: '-'
+  - name: layer thickness
+    unit: m
+  - name: ps_MicrobialUtilizationEfficiency
+    unit: '-'
+  - name: snowRetainedWaterToSnowRatio
+    unit: '-'
+  - name: site latitude
+    unit: decimal degrees
+  - name: site slope / elevation (HeightNN)
+    unit: m/m, m
+  - name: albedo
+    unit: '-'
+  initial_conditions:
+  - name: initial soil water content per layer
+    unit: m3 m-3
+  - name: initial soil mineral N (NO3, NH4) per layer
+    unit: kg N m-3
+  - name: initial soil organic matter pools per layer
+    unit: kg C / kg N m-3
+  - name: initial soil temperature per layer
+    unit: degC
+  boundary_conditions:
+  - name: groundwater depth / table
+    unit: m
+  - name: atmospheric N deposition (NDeposition)
+    unit: kg N ha-1 yr-1
+  - name: sowing workstep
+    unit: date
+  - name: mineral fertilisation workstep
+    unit: kg N ha-1
+  - name: organic fertilisation workstep
+    unit: kg FM ha-1
+  - name: irrigation workstep
+    unit: mm
+  - name: tillage workstep
+    unit: m (depth)
+  - name: harvest workstep
+    unit: date / trigger
+  - name: model option switches
+    unit: boolean / mode
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - Yield
+  - LAI
+  - Stage
+  - Act_ET
+  - Mois
+  - NLeach
+  - N2O
+  - SOC
+  - SumNUp
+  - GPP
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.192, R=0.971, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.1922
+    best_r: 0.9709
+summary:
+  total_tools: 5
+  total_stage_docs: 0
+  total_diagnostic_triplets: 32
+  generated: '2026-08-22'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

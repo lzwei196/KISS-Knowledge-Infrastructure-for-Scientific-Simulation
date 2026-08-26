@@ -1,13 +1,3 @@
----
-name: topoflow
-description: >-
-  TopoFlow 3.6. Covers Spatially-distributed watershed hydrologic response to climatic
-  forcing over a D8 raster; Channel routing (kinematic / diffusive / dynamic wave) with
-  Manning or Law-of-Wall friction; Infiltration and runoff partitioning (Green-Ampt,
-  Smith-Parlange, 1-D Richards, Beven); Snowmelt (degree-day or energy balance). Use when
-  the task involves running, configuring, calibrating or interpreting TopoFlow.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (14 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_topoflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_topoflow.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # TopoFlow 3.6 Knowledge Infrastructure
 
@@ -165,6 +189,51 @@ data sources.
 
 ---
 
+## 8. Unit Table (Template §8, From KI Specs)
+
+Exact machine-readable shapes and attributes live in `docs/format_spec.yaml`.
+This section is the reader-facing unit table for the KI; if a unit here ever
+conflicts with `dag.yaml` or `docs/format_spec.yaml`, the source file wins.
+
+### Pipeline unit conversions
+
+| Variable | Source unit | Model unit | Factor | Type |
+|----------|-------------|------------|--------|------|
+| Precipitation (P), ERA5-style daily source | mm/day | mm/hr in `.cfg` input | ÷ 24 | multiplicative |
+| Precipitation (P), GLDAS-style flux source | kg/m²/s | mm/hr in `.cfg` input | × 3600 | multiplicative |
+| Precipitation (P), `.cfg` input | mm/hr | m/s internal | ÷ 3.6e6, performed by TopoFlow | model internal conversion |
+| Air temperature | K | °C | − 273.15 | additive |
+| Relative humidity | percent | 0–1 fraction | ÷ 100 | multiplicative |
+| Wind speed (`u_z`) | m/s | m/s | none | identity |
+| Saturated hydraulic conductivity (`Ks`) | mm/hr | m/s | ÷ 3.6e6 | multiplicative |
+| Soil porosity (`θs`) | percent | 0–1 fraction | ÷ 100 | multiplicative |
+| Manning's n | s/m^(1/3) | s/m^(1/3) | none | identity |
+| Channel width | m | m | none | identity |
+| Slope | m/m | m/m | none | identity |
+| DEM elevation | m | m | none | identity |
+| Capillary length (`G`) | cm | m | ÷ 100 | multiplicative |
+| ET rate | mm/day | mm/hr in `.cfg` input | ÷ 24 | multiplicative |
+| Timestep (`dt`) | seconds | seconds | none | identity |
+
+### Output unit table
+
+The rank-1 output is restated from `dag.yaml` and is the variable this model is
+judged by. Other dag outputs are listed by their dag variable names; read
+`dag.yaml` before binding observations or changing validation targets.
+
+| Output variable (dag `var`) | Rank | Unit stated in KI facts | Notes |
+|-----------------------------|------|-------------------------|-------|
+| `outlet_discharge (Q_outlet)` | 1 | m^3/s | Headline simulated hydrograph at the basin outlet pixel |
+| `peak_time_of_flow (T_peak)` | other dag output | see `dag.yaml` | Peak-time output named by the dag |
+| `peak_discharge (Q_peak)` | other dag output | see `dag.yaml` | Peak-discharge output named by the dag |
+| `outlet_depth (d_outlet)` | other dag output | see `dag.yaml` | Outlet depth output named by the dag |
+| `outlet_velocity (u_outlet)` | other dag output | see `dag.yaml` | Outlet velocity output named by the dag |
+| `channel_discharge_grids (Q)` | other dag output | see `dag.yaml` | Discharge grid-stack output named by the dag |
+| `depth_grids (d)` | other dag output | see `dag.yaml` | Depth grid-stack output named by the dag |
+| `infiltration_rate_grids (v0 / IN)` | other dag output | see `dag.yaml` | Infiltration-rate grid-stack output named by the dag |
+
+---
+
 ## 5. Configuration File Format
 
 TopoFlow uses **pipe-delimited `.cfg` text files** with the format:
@@ -249,6 +318,34 @@ by a `.rti` header file specifying grid dimensions, cell size, and data type.
 | `snowpack__depth`                                              | hs       | m      |
 | `land_surface_water__evaporation_volume_flux`                  | ET       | m/s    |
 | `soil_water_sat-zone_top_surface__elevation`                   | h_table  | m      |
+
+---
+
+## 6. Output Description (From `dag.yaml`)
+
+**Source of truth:** `dag.yaml`. The dag is the model identity for observable
+outputs: every output's dag variable, unit, medium-named description,
+observability, and `validation_rank` live there. If this section and `dag.yaml`
+ever disagree, `dag.yaml` wins and this section must be fixed.
+
+**Headline output** (`validation_rank: 1`, the variable this model is judged by):
+
+> `outlet_discharge (Q_outlet)` — Volume flow rate at the basin outlet pixel (basin_outlet_water_x-section__volume_flow_rate); the simulated hydrograph. (m^3/s)
+
+| Output variable (dag `var`) | Validation role | Unit | Description |
+|-----------------------------|-----------------|------|-------------|
+| `outlet_discharge (Q_outlet)` | rank 1 | m^3/s | Volume flow rate at the basin outlet pixel (basin_outlet_water_x-section__volume_flow_rate); the simulated hydrograph. |
+| `peak_time_of_flow (T_peak)` | other dag output | see `dag.yaml` | Other output named by the dag. |
+| `peak_discharge (Q_peak)` | other dag output | see `dag.yaml` | Other output named by the dag. |
+| `outlet_depth (d_outlet)` | other dag output | see `dag.yaml` | Other output named by the dag. |
+| `outlet_velocity (u_outlet)` | other dag output | see `dag.yaml` | Other output named by the dag. |
+| `channel_discharge_grids (Q)` | other dag output | see `dag.yaml` | Other output named by the dag. |
+| `depth_grids (d)` | other dag output | see `dag.yaml` | Other output named by the dag. |
+| `infiltration_rate_grids (v0 / IN)` | other dag output | see `dag.yaml` | Other output named by the dag. |
+
+Do not choose a different headline variable from a filename or plot label. When
+asked what TopoFlow predicts in this KI, answer from the dag: the rank-1 judged
+variable is `outlet_discharge (Q_outlet)`.
 
 ---
 
@@ -359,6 +456,47 @@ python -m topoflow \
 ```
 
 Expected peak discharge at outlet: ~1–5 m³/s depending on infiltration method.
+
+---
+
+## 11. Validated Results (From `docs/validation_convention.yaml`)
+
+This KI's validation target is the dag's rank-1 variable:
+`outlet_discharge (Q_outlet)`. Field skill is judged against
+`docs/validation_convention.yaml`; do not substitute remembered thresholds.
+
+### Test basin
+
+| Property | Value |
+|----------|-------|
+| Site | Nishnabotna River tributary near Treynor, IA |
+| DEM | 29 × 44 cells at 30m resolution |
+| Events | June 7, 1967 and June 20, 1967 rainfall |
+| Run directory | `topoflow/examples/Treynor_Iowa_30m/` |
+| Existing body status | Treynor Iowa (June 1967 events) |
+
+### Performance bars
+
+The table states the convention bars only. It does not invent achieved metric
+values; compute those from parsed outputs and observations before declaring a
+run satisfactory, good, or very good.
+
+| Dag variable | Metric | Direction | Convention bar |
+|--------------|--------|-----------|----------------|
+| `outlet_discharge (Q_outlet)` | `nse` | maximize | satisfactory ≥ 0.5 (`shrestha2018`); good ≥ 0.65 (`shrestha2018`); very_good ≥ 0.75 (`shrestha2018`) |
+| `outlet_discharge (Q_outlet)` | `pbias` | zero_centered | very_good within 10 of zero (`shrestha2018`); good within 15 of zero (`shrestha2018`); satisfactory within 25 of zero (`shrestha2018`) |
+| `peak_time_of_flow (T_peak)` | `day_bias` | zero_centered | satisfactory: no cited threshold |
+| `peak_discharge (Q_peak)` | `pbias` | zero_centered | very_good within 10 of zero (`shrestha2018`, `mizukami2019`); good within 15 of zero (`shrestha2018`, `mizukami2019`); satisfactory within 25 of zero (`shrestha2018`, `mizukami2019`) |
+
+### Data replacement tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | KI pipeline | Pending per run | Use `tools/convert_forcing.py` and validate ranges before execution. |
+| Soil / infiltration | KI pipeline | Pending per run | Use `tools/convert_soil_params.py`; preserve TopoFlow unit expectations. |
+| DEM / topography | KI pipeline or bundled example | Pending per run | D8 codes, slopes, and contributing areas must match the DEM. |
+| Initial conditions | TopoFlow configuration | Pending per run | Read component `.cfg` files before reporting assumptions. |
+| Observed discharge | `data_ki/ObservedQ/SKILL.md` | Required for scoring | Bind observations to `outlet_discharge (Q_outlet)` before computing NSE or PBIAS. |
 
 ---
 

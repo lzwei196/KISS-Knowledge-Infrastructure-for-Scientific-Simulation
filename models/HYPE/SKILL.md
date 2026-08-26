@@ -1,12 +1,6 @@
 ---
 name: hype-hydrocraft
-description: >-
-  HYPE 5.35.0 (SMHI HYdrological Predictions for the Environment; conceptual
-  semi-distributed water + N/P/OC/sediment model). SMHI versions the line…. Covers
-  Subbasin water balance: snow accumulation/melt, soil water (up to 3 layers),
-  evapotranspiration…; Soil temperature, ground frost, frozen-soil water fraction. Use
-  when the task involves running, configuring, calibrating or interpreting HYPE.
-version: 1.0.0
+version: "1.0.0"
 model: HYPE v5.35.0
 domain: semi-distributed hydrology with integrated nutrient transport
 validation_status: production_validated
@@ -34,6 +28,320 @@ validation_status: production_validated
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (23 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (10 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/s10_calibration/parse_calibration_results.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_calibration/parse_calibration_results.py --help` |
+| `tools/s10_calibration/setup_calibration.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_calibration/setup_calibration.py --help` |
+| `tools/s1_subbasin_delineation/delineate_subbasins.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_subbasin_delineation/delineate_subbasins.py --help` |
+| `tools/s1_subbasin_delineation/validate_topology.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_subbasin_delineation/validate_topology.py --help` |
+| `tools/s2_slc_classification/compute_slc_fractions.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_slc_classification/compute_slc_fractions.py --help` |
+| `tools/s2_slc_classification/generate_geoclass.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_slc_classification/generate_geoclass.py --help` |
+| `tools/s3_forcing_preparation/convert_forcing_to_hype.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_forcing_preparation/convert_forcing_to_hype.py --help` |
+| `tools/s4_geodata_generation/generate_geodata.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_geodata_generation/generate_geodata.py --help` |
+| `tools/s4_geodata_generation/validate_geodata.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_geodata_generation/validate_geodata.py --help` |
+| `tools/s5_parameter_setup/extract_wwh_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_parameter_setup/extract_wwh_params.py --help` |
+| `tools/s5_parameter_setup/setup_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_parameter_setup/setup_parameters.py --help` |
+| `tools/s6_lake_reservoir_config/generate_damdata.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_lake_reservoir_config/generate_damdata.py --help` |
+| `tools/s6_lake_reservoir_config/generate_lakedata.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_lake_reservoir_config/generate_lakedata.py --help` |
+| `tools/s6_lake_reservoir_config/setup_lake_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_lake_reservoir_config/setup_lake_data.py --help` |
+| `tools/s7_execution/configure_info.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_execution/configure_info.py --help` |
+| `tools/s7_execution/run_hype.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_execution/run_hype.py --help` |
+| `tools/s8_output_analysis/compare_vic_hype.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_output_analysis/compare_vic_hype.py --help` |
+| `tools/s8_output_analysis/parse_hype_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_output_analysis/parse_hype_output.py --help` |
+| `tools/s8_output_analysis/plot_hype_results.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_output_analysis/plot_hype_results.py --help` |
+| `tools/s9_water_quality/configure_npc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_water_quality/configure_npc.py --help` |
+| `tools/s9_water_quality/generate_cropdata.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_water_quality/generate_cropdata.py --help` |
+| `tools/s9_water_quality/parse_npc_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_water_quality/parse_npc_output.py --help` |
+
+*23 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
+---
+
+# HYPE -- Knowledge Infrastructure Skill Document
+
+> **Version**: 1.0.0
+> **Domain**: semi-distributed hydrology with integrated nutrient transport
+> **Last updated**: 2026-08-18
+> **Validation status**: production_validated
+
+---
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | HYPE (HYdrological Predictions for the Environment) |
+| Version | 5.35.0 |
+| Language | Fortran 90 |
+| License | LGPL-3.0-only |
+| Repository | https://sourceforge.net/projects/hype/files/release_hype_5_35_0/ |
+| Citation | SMHI HYPE 5.35.0 source and this KI's gathered papers |
+| Primary domain | Semi-distributed hydrology with integrated nutrient transport |
+| Spatial mode | Semi-distributed subbasin/SLC |
+
+## 2. What This Model Does
+
+HYPE simulates subbasin water balance, routing, snow, evapotranspiration, soil water,
+groundwater, lake/reservoir effects, and coupled nitrogen/phosphorus transport. It uses
+subbasins connected by MAINDOWN topology, with each subbasin divided into SLC
+(soil-land use class) fractions.
+
+## 3. Input Requirements
+
+**Exact shapes live in `docs/format_spec.yaml`** (projected from dag + triplets; regenerate it,
+never hand-edit). This section explains intent and gotchas; the spec file is the contract.
+
+### 3.1 Meteorological Forcing
+
+| Variable | Unit model expects | Source dataset | Source unit | Conversion |
+|----------|-------------------|----------------|-------------|------------|
+| Precipitation | mm/day | CMFD/MSWX/NASA POWER through `ki_tools_common.load_forcing` | CMFD kg/m^2/s or 3-hourly depth; MSWX 3-hourly depth | convert to daily total; CMFD kg/m^2/s uses timestep conversion before daily sum |
+| Temperature | deg C | CMFD/MSWX/NASA POWER through `ki_tools_common.load_forcing` | CMFD K; MSWX deg C | CMFD subtract 273.15, then daily mean |
+| Shortwave radiation | MJ/m^2/day | CMFD/MSWX when PET model requires it | W/m^2 | daily mean then convert to MJ/m^2/day |
+| Wind speed | m/s | CMFD/MSWX when PET model 5 requires it | m/s | daily mean |
+| Humidity | fraction | CMFD/MSWX when PET model 5 requires it | kg/kg or RH source field | convert to relative humidity fraction |
+
+### 3.2 Static Inputs
+
+| Input | Source | Tool that prepares it |
+|-------|--------|----------------------|
+| Subbasins and MAINDOWN routing | DEM-derived watershed topology | `tools/s1_subbasin_delineation/` |
+| Soil-land use class fractions | Land cover + soil data | `tools/s2_slc_classification/` |
+| GeoData/GeoClass | Delineation + SLC products | `tools/s4_geodata_generation/` |
+| Parameters | WWH defaults, literature, or calibration setup | `tools/s5_parameter_setup/` and `tools/s10_calibration/` |
+| Lake/reservoir configuration | HydroLAKES + GRanD | `tools/s6_lake_reservoir_config/` |
+
+### 3.3 Configuration Files
+
+| File | Format | Notes |
+|------|--------|-------|
+| `info.txt` | whitespace/tab-delimited HYPE control file | directory paths must end with `/`; sets dates, paths, outputs, PET/snow options, calibration |
+| `GeoData.txt` | tab-separated subbasin table | includes SUBID, MAINDOWN, AREA, SLC fractions, RIVLEN, coordinates, elevation, slope, lake fields |
+| `GeoClass.txt` | tab-separated SLC class table | land use, soil, crop, vegtype, special code, stream depth, soil layers |
+| `par.txt` | HYPE parameter file | value counts must match max land-use and soil IDs |
+| `Pobs.txt`, `Tobs.txt`, optional forcing files | tab-separated daily time series | header row is line 1; no `!!` comments |
+| `Qobs.txt` | tab-separated observed discharge | optional for scoring/calibration; units are m^3/s |
+
+## 4. Build Instructions
+
+The production binary is `KISSPATH_BINARIES/hype/hype`. If rebuilding from
+source, use the HYPE 5.35.0 source directory and compile without NetCDF unless NetCDF output is
+explicitly required:
+
+```bash
+cd KISSPATH_BINARIES/hype/hype_5_35_0_src/
+make comp=gfortran
+```
+
+Known build issues are captured in `diagnostics/triplets.yaml`, including `dt_b01`
+(unnecessary NetCDF linker flags) and `dt_b02` (unsupported or overly strict gfortran setup).
+
+## 5. Execution
+
+Before any run, execute the KI preflight from this directory:
+
+```bash
+python preflight_check.py
+```
+
+Run the actual HYPE binary or the KI's stage-7 wrapper; do not replace it with a simplified
+formula or surrogate:
+
+```bash
+KISSPATH_BINARIES/hype/hype ./
+python tools/s7_execution/run_hype.py --project_dir <path>
+```
+
+The direct binary argument must end with `/`, because HYPE concatenates the directory string
+with `info.txt`.
+
+## 6. Output Description
+
+**Source: `dag.yaml`.** The dag is the model's identity. If this section ever disagrees with
+`dag.yaml`, the dag wins and this section is the bug.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `cout` -- Simulated outflow (discharge) from the outlet lake / subbasin, positive flow only. (`m^3/s`)
+
+Extracted dag facts:
+- RANK-1 OUTPUT: var=`cout`, unit=`m^3/s`, description=`Simulated outflow (discharge) from the outlet lake / subbasin, positive flow only.`
+- Other dag outputs: `snow`, `evap`, `soim`, `gwat`, `wcom`, `c1TN`, `c1TP`
+
+| Output variable (dag `var`) | Rank | File | Unit | Description |
+|-----------------------------|------|------|------|-------------|
+| `cout` | 1 | `timeCOUT.txt` / subbasin output files | m^3/s | Simulated outflow (discharge) from the outlet lake / subbasin, positive flow only. |
+| `evap` | 2 | `timeEVAP.txt` | mm/day | Actual evapotranspiration from subbasin soil water and land surface. |
+| `snow` | 3 | `timeSNOW.txt` | mm | Snow water equivalent, subbasin land-area average. |
+| `soim` | 4 | `timeSOIM.txt` | mm | Computed soil moisture (root zone and full profile). |
+| `gwat` | 5 | `timeGWAT.txt` | m | Groundwater table level (negative downward from surface). |
+| `wcom` | 6 | `timeWCOM.txt` | m | Water level of the outlet lake at end of timestep, in the user reference system (via w0ref). |
+| `c1TN` | 7 | `timeC1TN.txt` | ug/L | Modelled total nitrogen concentration in surface-water main outflow. |
+| `c1TP` | 8 | `timeC1TP.txt` | ug/L | Modelled total phosphorus concentration in surface-water main outflow. |
+
+The dag output set is `cout`, `snow`, `evap`, `soim`, `gwat`, `wcom`, `c1TN`, and `c1TP`.
+
+## 7. Tool Inventory
+
+| Tool area | Purpose | Inputs | Outputs |
+|-----------|---------|--------|---------|
+| `tools/s1_subbasin_delineation/` | Delineate subbasins and routing topology | DEM/domain inputs | Subbasin polygons and MAINDOWN |
+| `tools/s2_slc_classification/` | Compute SLC fractions | land cover and soil data | SLC tables/fractions |
+| `tools/s3_forcing_preparation/convert_forcing_to_hype.py` | Convert forcing to HYPE format | daily forcing dict or source grids | `Pobs.txt`, `Tobs.txt`, optional forcing files |
+| `tools/s4_geodata_generation/` | Generate HYPE static files | subbasins and SLC products | `GeoData.txt`, `GeoClass.txt` |
+| `tools/s5_parameter_setup/` | Prepare parameters | defaults, literature, basin setup | `par.txt` |
+| `tools/s6_lake_reservoir_config/` | Configure lakes and dams | HydroLAKES, GRanD, GeoData | `LakeData.txt`, `DamData.txt` |
+| `tools/s7_execution/run_hype.py` | Execute HYPE and parse logs | complete run directory | HYPE result directory |
+| `tools/s8_output_analysis/` | Parse and score outputs | result files and observations | metrics, plots, comparison tables |
+| `tools/s9_water_quality/` | Enable and parse N/P simulation | crop, region, nutrient settings | NPC-ready config and nutrient outputs |
+| `tools/s10_calibration/` | Configure and parse built-in calibration | HYPE setup, observations, parameter choices | `optpar.txt`, calibration results |
+
+Shared utilities should be used instead of raw extraction code where available:
+
+```python
+from ki_tools_common.load_forcing import load_daily_forcing
+from ki_tools_common.metrics import all_metrics
+from ki_tools_common.validation import validate_forcing_ranges
+from ki_tools_common.units import convert
+```
+
+## 8. Unit Conversion Table
+
+| Variable | Source unit (verified) | Model unit | Factor | Type |
+|----------|------------------------|------------|--------|------|
+| Precipitation | CMFD kg/m^2/s for a 3-hour timestep | mm/3hr before daily aggregation | x10800 | multiplicative |
+| Precipitation | 3-hourly depth | mm/day | sum 8 timesteps | aggregation |
+| Temperature | K | deg C | -273.15 | additive |
+| Temperature | 3-hourly deg C | deg C daily | mean 8 timesteps | aggregation |
+| Shortwave radiation | W/m^2 | MJ/m^2/day | daily mean x 0.0864 | multiplicative |
+| Pressure | Pa | hPa | /100.0 | multiplicative |
+
+### 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| `cout` | positive simulated outflow discharge, m^3/s | signed inflow/outflow or depth-normalized runoff | wrong sign or magnitude in discharge scoring and coupling |
+| `snow` | snow water equivalent, mm | binary snow cover or snow depth | wrong observation pairing and metric interpretation |
+| `evap` | actual evapotranspiration, mm/day | PET demand or energy flux | water-balance and ET comparison errors |
+| `gwat` | groundwater table level, negative downward from surface, m | positive depth below ground | inverted groundwater dynamics |
+| `c1TN`, `c1TP` | concentration in ug/L | areal nutrient load | invalid water-quality comparison unless converted |
+
+Output unit verification checklist:
+- Read the output entry in `dag.yaml` before post-processing.
+- Print the first values from the parsed HYPE output and check order of magnitude.
+- For discharge, confirm `cout` is absolute flow in m^3/s, not basin-depth runoff.
+- For nutrient outputs, compare concentrations as concentrations unless explicitly converted.
+
+## 9. Diagnostic Triplets (Top 5)
+
+The full diagnostic corpus stays in `diagnostics/triplets.yaml`; check it before debugging.
+
+| # | Error | Diagnosis | Remedy |
+|---|-------|-----------|--------|
+| 1 (`dt_r01`) | HYPE fails to open `info.txt` / `Cannot open file` | directory argument lacks the trailing slash used by HYPE string concatenation | pass the run directory with a trailing `/`, or use `run_hype.py` |
+| 2 (`dt_u03`) | all precipitation in `Pobs.txt` is zero despite CMFD data | CMFD precipitation is kg/m^2/s and needs timestep conversion | multiply by 10800 for mm/3hr, then sum 8 steps for daily |
+| 3 (`dt_s01`) | water balance is wrong but HYPE exits successfully | SLC fractions in `GeoData.txt` do not sum to 1.0 | validate each subbasin row so SLC fractions sum to 1.0 within 0.001 |
+| 4 (`dt_s08`) | zero discharge despite valid precipitation | `GeoClass.txt` streamdepth column is 0 | set streamdepth greater than 0 for non-water SLC classes |
+| 5 (`dt_r04`) | fatal forcing date mismatch | forcing dates do not cover the full `bdate` to `edate` range | regenerate forcing files so `Pobs.txt` and `Tobs.txt` cover the full period with no gaps |
+
+## 10. Coupling Interfaces
+
+| Upstream model/data | Variable exchanged | Unit | Temporal resolution |
+|---------------------|-------------------|------|---------------------|
+| CMFD/MSWX/NASA POWER forcing loaders | precipitation, temperature, optional radiation/wind/humidity/pressure | mixed source units converted to HYPE daily units | daily after aggregation |
+| HydroLAKES/GRanD data KIs | lake and dam geometry/regulation fields | mixed | static |
+| VIC comparison workflow | discharge at matching outlet | m^3/s | daily or evaluation period |
+
+| Downstream model/workflow | Variable exchanged | Unit | Temporal resolution |
+|---------------------------|-------------------|------|---------------------|
+| HydroCraft discharge comparison | `cout` | m^3/s | daily |
+| Water-quality analysis | `c1TN`, `c1TP` | ug/L | daily or configured output period |
+| Calibration/scoring tools | `cout` against `rout`/`Qobs.txt` | m^3/s | daily or configured criterion period |
+
+## 11. Validated Results
+
+### Test Basin: Bengbu -- Huai River
+
+| Property | Value |
+|----------|-------|
+| Location | Huai River at Bengbu |
+| Area | ~121,330 km^2 |
+| Period | 1980-1990, with 1980 warmup and 1981-1990 evaluated |
+| Resolution | lumped 1-subbasin setup with daily forcing |
+
+### Performance Metrics -- judged against the field's bar, not intuition
+
+**Source: `docs/validation_convention.yaml`.** Bands below are copied from the convention. Null
+bands are written as `no cited threshold`.
+
+Extracted convention facts:
+- CONVENTION BAR for `cout`: metric=`nse`, direction=`maximize`, bands={very_good: 0.8, good: 0.7, satisfactory: 0.5}, cites=`pandit2025`, `shrestha2020`
+- CONVENTION BAR for `cout`: metric=`pbias`, direction=`zero_centered`, bands={very_good: 5, good: 10, satisfactory: 15}, cites=`pandit2025`
+- CONVENTION BAR for `snow`: metric=`nse`, direction=`maximize`, satisfactory=`no cited threshold`, cites=none
+- CONVENTION BAR for `snow`: metric=`csi`, direction=`maximize`, satisfactory=`no cited threshold`, cites=none
+
+> Bar for `cout` (nse, per `pandit2025`, `shrestha2020`): satisfactory >= 0.5,
+> good >= 0.7, very_good >= 0.8. Bengbu achieved 0.678, which is satisfactory.
+
+> Bar for `cout` (pbias, per `pandit2025`): very_good within 5, good within 10,
+> satisfactory within 15, direction zero_centered. Bengbu achieved +19.8%, outside
+> the satisfactory band.
+
+| Dag variable | Metric | Direction | Achieved value in this SKILL | Bar (convention, cited) | Verdict |
+|--------------|--------|-----------|------------------------------|--------------------------|---------|
+| `cout` | nse | maximize | 0.678 | satisfactory >= 0.5, good >= 0.7, very_good >= 0.8 (`pandit2025`, `shrestha2020`) | satisfactory |
+| `cout` | pbias | zero_centered | +19.8% | very_good within 5, good within 10, satisfactory within 15 (`pandit2025`) | outside satisfactory |
+| `snow` | nse | maximize | not evaluated here | no cited threshold | no verdict |
+| `snow` | csi | maximize | not evaluated here | no cited threshold | no verdict |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | CMFD 0.1 degree 3-hourly converted to daily in the validated Bengbu run | production_validated for Bengbu | keep unit checks from `dt_u03` active |
+| Soil/SLC | KI stage outputs | production_validated for the documented Bengbu setup | SLC fractions must sum to 1.0 |
+| Land cover | KI stage outputs | production_validated for the documented Bengbu setup | represented through SLC fractions |
+| DEM/routing | KI stage outputs | production_validated for the documented Bengbu setup | use semi-distributed setup for large basins when routing attenuation matters |
+| Initial conditions | warmup period | production_validated for Bengbu discharge | 1980 warmup, 1981-1990 evaluated |
+
+## 12. Parameter Selection by Region
+
+Use these as physically informed starting points when no site-specific calibration exists; they
+do not replace calibration against observations.
+
+| Climate / Region | Key parameters | Rationale |
+|------------------|----------------|-----------|
+| Large monsoon basins | `lp`, `cevpam`, `wcfc`, `wcwp`, `wcep`, `rrcs1`, `rivvel`, `damp` | water balance, seasonal PET, soil storage, recession, and routing attenuation dominate discharge behavior |
+| Snow-affected basins | `ttmp`, `cmlt`, snowmelt model option, radiation forcing where available | snow accumulation and melt timing control seasonal runoff |
+| Lake/reservoir basins | `gratk`, `gratefk`, `gldepi`, `gldepol`, per-lake `rate`, `exp`, `w0ref`, `regvol`, `qprod1`, `qprod2` | outlet storage and regulation modify flow timing and peak attenuation |
+| Nutrient simulations | `fastn0`, `fastp0`, `humusn0`, `humusp0`, `denitrlu`, `denitwr`, `denitwl`, `minerfn`, `sedon`, `sedpp`, `soilcoh`, `soilerod` | N/P pools and transformations need multi-year warmup and regional management inputs |
 
 ---
 
@@ -268,6 +576,19 @@ s9_water_quality          Enable N/P simulation, configure NPC parameters, parse
         |
 s10_calibration           Built-in calibration (DDS/DEMC/MC) with optpar.txt + criteria
 ```
+
+### Stage Skill Documents
+
+- [s1_subbasin_delineation](docs/s1_subbasin_delineation.md)
+- [s2_slc_classification](docs/s2_slc_classification.md)
+- [s3_forcing_preparation](docs/s3_forcing_preparation.md)
+- [s4_geodata_generation](docs/s4_geodata_generation.md)
+- [s5_parameter_setup](docs/s5_parameter_setup.md)
+- [s6_lake_reservoir_config](docs/s6_lake_reservoir_config.md)
+- [s7_execution](docs/s7_execution.md)
+- [s8_output_analysis](docs/s8_output_analysis.md)
+- [s9_water_quality](docs/s9_water_quality.md)
+- [s10_calibration](docs/s10_calibration.md)
 
 ---
 
@@ -845,3 +1166,17 @@ crit subbasin 3             !! Subbasin for single-station calibration
 2. **Calibration**: Use `setup_calibration.py` with MC (exploration) or DEMC (posterior), key params: lp, cevpam, cmlt, wcfc, wcwp, wcep, rrcs1. See Stage s10 above.
 3. **Nutrient calibration**: Include `--substances "N P"` in setup_calibration.py to calibrate NPC parameters jointly with hydrology
 4. **Lake regulation**: Tools available — use `generate_lakedata.py` + `generate_damdata.py` to configure LakeData.txt/DamData.txt from HydroLAKES/GRanD
+
+
+## Stage documentation (one doc per pipeline stage)
+
+- docs/s1_subbasin_delineation.md
+- docs/s2_slc_classification.md
+- docs/s3_forcing_preparation.md
+- docs/s4_geodata_generation.md
+- docs/s5_parameter_setup.md
+- docs/s6_lake_reservoir_config.md
+- docs/s7_execution.md
+- docs/s8_output_analysis.md
+- docs/s9_water_quality.md
+- docs/s10_calibration.md

@@ -1,143 +1,557 @@
-# format_spec.yaml — machine-readable I/O specification for HEC-RAS
-# Used by coupling frameworks (ATA) to discover what the model consumes/produces.
-# HAND-CURATED (do NOT regenerate from SKILL.md text — the auto-scraper mislabels
-# HEC-RAS as a rainfall-runoff model). HEC-RAS is a 1D/2D HYDRAULICS model: it
-# CONSUMES discharge + surveyed cross-section geometry + Manning's n and PRODUCES
-# water-surface STAGE. It does NOT consume temperature/precipitation and does NOT
-# produce runoff.
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: HEC-RAS
-  version: "6.7 Beta 5"
-  domain: hydraulics
-  process: 1D steady/unsteady gradually-varied open-channel flow (water-surface profiles)
-  binary_path: "RasSteady.exe (Intel-Fortran PE64, run under WINE 9.0)"
-  language: fortran-pe-wine
-
+  language: fortran
+  implementation:
+    id: hec-ras-6.7b5
+    version: 6.7 Beta 5
+    provenance: USACE HEC-distributed Windows binaries (RasSteady.exe, RasUnsteady.exe, RasGeomPreprocess.exe)
+      executed via WINE; Intel-Fortran PE64 solver core (libifcoremd.dll, libiomp5md.dll) with HDF5 I/O.
+      Closed-source, public-domain U.S. Government software.
+  scientific_reference_version: HEC-RAS Hydraulic Reference Manual v6.1/6.5 (1-D Saint-Venant + standard-step
+    energy equation; 2-D shallow-water equations)
 inputs:
   forcing:
-  - name: discharge
-    unit: cfs (English) or m3/s (SI)
-    format: ".fNN / .rNN  Section 'Flow' lines, one value per profile"
-    range: [0.1, 1.0e7]
-    required: true
-    role: forcing
-    note: HEC-RAS CONSUMES discharge as the upstream boundary forcing.
-  geometry:
-  - name: cross_section_geometry
-    unit: ft or m (station-elevation pairs)
-    format: ".gNN  '#Sta/Elev' blocks per river station"
-    required: true
-    note: >
-      Surveyed cross sections are the irreducible input; they cannot be derived
-      from a basin shapefile alone — no DEM->XS authoring tool ships with this KI.
-  - name: reach_length
+  - name: discharge (upstream inflow hydrograph)
+    unit: cfs (English) or m^3/s (SI)
+    category: upstream boundary forcing
+    source_kind: forcing
+    model_input_format: 'Steady: ''.fNN''/''.rNN'' Section - Flow Data; Unsteady: ''.uNN'' boundary time
+      series'
+    notes: Primary forcing. Steady consumes one discharge per profile; unsteady consumes Q(t). HEC-RAS
+      PRODUCES stage from Q — Q is conserved along the reach for steady flow and must not be treated as
+      a model product. 1 m^3/s = 35.3147 cfs.
+  - name: downstream stage or stage hydrograph
     unit: ft or m
-    format: ".gNN  'Type RM Length L Ch R' (LOB/Channel/ROB)"
-    required: true
+    category: downstream boundary forcing
+    source_kind: forcing
+    model_input_format: '''.fNN''/''.uNN'' Reach Boundaries section; type code 1 (Known WS) or 4 (Rating
+      Curve)'
+    notes: Only when downstream BC type is Known Water Surface or Rating Curve; otherwise the downstream
+      condition is parameter-driven (normal depth or critical depth).
+  - name: lateral inflow hydrograph
+    unit: cfs or m^3/s
+    category: internal forcing
+    source_kind: forcing
+    model_input_format: '''.uNN'' lateral-inflow boundary'
+    notes: Optional; supplied at internal cross sections for unsteady runs.
+  - name: precipitation on grid
+    unit: mm/hr or in/hr
+    category: 2-D surface forcing
+    source_kind: forcing
+    model_input_format: '''.uNN'' / HDF boundary table'
+    notes: Optional, 2-D unsteady only. Acts as a surface boundary input; HEC-RAS does NOT compute watershed
+      hydrologic losses internally beyond simple infiltration options.
   parameters:
-  - name: manning_n
+  - name: cross_section_geometry (station/elevation pairs)
+    unit: ft or m (per project unit system)
+    category: geometry
+    source_kind: user_provided
+    model_input_format: '''.gNN'' Sta/Elev blocks per river station; preprocessed into ''.gNN.hdf'' hydraulic-property
+      tables (conveyance / area-vs-elevation)'
+    notes: Irreducible substrate parameter. Required at locations where discharge, slope, shape, or roughness
+      change; at structures; at levee ends; around junctions.
+  - name: reach_length (LOB / channel / ROB)
+    unit: ft or m
+    category: geometry
+    source_kind: user_provided
+    model_input_format: '''.gNN'' Type RM Length L Ch R'
+    notes: Distance between successive cross sections, separately for left-overbank, channel, right-overbank.
+  - name: main channel bank stations
+    unit: ft or m
+    category: geometry
+    source_kind: user_provided
+    model_input_format: '''.gNN'' bank-station designation'
+  - name: 2-D computational mesh + underlying terrain
+    unit: m (cell size); m (elevation)
+    category: geometry
+    source_kind: user_provided
+    model_input_format: '''.gNN.hdf'' 2-D flow area'
+    notes: Sub-grid bathymetry — fine-scale terrain integrated as cell properties on a coarser computational
+      grid.
+  - name: manning_n (channel and overbanks)
     unit: dimensionless
-    format: ".gNN  '#Mann' blocks"
-    range: [0.011, 0.20]
-    required: true
-    note: Identical in English & SI — NEVER convert.
-  - name: boundary_condition
-    unit: "slope ft/ft (normal depth), or WS ft (known WS), or rating curve"
-    format: ".fNN / .rNN  'Reach Boundaries'"
-    required: true
+    category: roughness
+    source_kind: calibrated
+    model_input_format: '''.gNN'' #Mann blocks per cross section'
+    notes: Identical numerical value in English and SI — NEVER convert. Conveyance K = (1.486/n)·A·R^(2/3)
+      (English) or (1.0/n)·A·R^(2/3) (SI); the unit factor is internal to the solver. Typical channel
+      0.025–0.05; typical overbank 0.04–0.15; physical range 0.005–0.5.
+  - name: expansion_contraction_coefficients
+    unit: dimensionless
+    category: loss coefficient
+    source_kind: default
+    model_input_format: '''.gNN'' per cross section'
+    notes: Default 0.1 contraction / 0.3 expansion for gradual transitions; 0.3 / 0.5 at bridges. Multiplies
+      the |α·V^2/2g − α_prev·V_prev^2/2g| transition-loss term.
+  - name: bridge / culvert / weir / gate coefficients
+    unit: varies
+    category: structure parameter
+    source_kind: user_provided
+    model_input_format: '''.gNN'' hydraulic-structure blocks'
+    notes: Discharge coefficients and geometry for hydraulic structures.
+  - name: theta (implicit weighting) and friction-slope averaging method
+    unit: dimensionless
+    category: numerical parameter
+    source_kind: default
+    model_input_format: '''.pNN'' / plan solver settings'
+    notes: Theta in [0.6, 1.0] for the implicit box scheme; friction-slope averaging method ∈ {average
+      conveyance (default), average friction slope, geometric mean, harmonic mean}.
+  - name: eddy viscosity / turbulence closure parameters (2-D)
+    unit: m^2/s
+    category: numerical parameter
+    source_kind: default
+    model_input_format: 2-D flow-area properties
+    notes: Reynolds-averaged turbulence closure for SWE solver.
+  initial_conditions:
+  - name: initial flow at upstream end of each reach (1-D unsteady)
+    unit: cfs or m^3/s
+    category: 1-D initial state
+    source_kind: user_provided
+    model_input_format: '''.uNN'' initial conditions section; or steady backwater warm-up'
+    notes: Defines the steady backwater profile used as t=0 state for unsteady routing.
+  - name: initial water-surface profile (restart)
+    unit: ft or m
+    category: 1-D initial state
+    source_kind: user_provided
+    model_input_format: restart file
+    notes: Optional alternative to the warm-up; supplies WS at every cross section at t=0.
+  - name: initial water-surface elevation per 2-D area
+    unit: ft or m
+    category: 2-D initial state
+    source_kind: user_provided
+    model_input_format: '''.uNN'' 2-D flow-area initial conditions'
+    notes: Or supplied implicitly by a warm-up period.
+  - name: initial bed elevation and gradation (sediment runs)
+    unit: ft or m; fraction by mass
+    category: sediment initial state
+    source_kind: user_provided
+    model_input_format: sediment input file
+    notes: Active-layer composition initialised per cross section.
+  boundary_conditions:
+  - name: upstream BC type code
+    unit: enum {1=Known WS, 2=Critical Depth, 3=Normal Depth (slope), 4=Rating Curve}
+    category: BC type
+    source_kind: user_provided
+    model_input_format: '''.fNN''/''.rNN'' Up Type/Slope; ''.uNN'' for unsteady'
+    notes: Selects how the upstream end of the domain is closed.
+  - name: downstream BC type code
+    unit: enum {1=Known WS, 2=Critical Depth, 3=Normal Depth (slope), 4=Rating Curve}
+    category: BC type
+    source_kind: user_provided
+    model_input_format: '''.fNN''/''.rNN'' Dn Type/Slope; ''.uNN'' for unsteady'
+    notes: Default Normal Depth (Type 3) uses bed slope as energy slope; induces an error band typically
+      ≥ 5 km near the downstream boundary.
+  - name: downstream_boundary_slope (when BC type = Normal Depth)
+    unit: ft/ft = m/m (dimensionless)
+    category: BC value (normal depth)
+    source_kind: user_provided
+    model_input_format: '''.fNN''/''.rNN'' Dn Slope value'
+    notes: Slope is dimensionless — never scale across unit systems.
   - name: flow_regime
-    unit: "enum {subcritical, supercritical, mixed}"
-    format: ".rNN run-control flag"
-    required: true
-
+    unit: enum {Subcritical, Supercritical, Mixed}
+    category: regime selector
+    source_kind: user_provided
+    model_input_format: '''.pNN''/''.rNN'' run-control flag'
+    notes: Mixed allows hydraulic-jump location; subcritical solves upstream from the downstream BC, supercritical
+      solves downstream from the upstream BC.
+  - name: unit_system
+    unit: enum {English, SI}
+    category: unit-system selector
+    source_kind: user_provided
+    model_input_format: '''.prj'' ''English Units'' or ''SI Units'' line'
+    notes: Controls the 1.486 vs 1.0 internal conveyance factor and the expected units of geometry/observed-WS
+      inputs.
+  - name: 2-D solver type (SWE vs DSW)
+    unit: enum {Full SWE, Diffusion Wave}
+    category: solver selector
+    source_kind: user_provided
+    model_input_format: '''.pNN'' 2-D solver setting'
+    notes: DSW is faster but valid only when barotropic pressure gradient and bottom friction dominate.
+  - name: gate openings, pump rules, rule-controlled structure states
+    unit: varies (gate openings in ft or m; rule-time series)
+    category: structure operations
+    source_kind: user_provided
+    model_input_format: '''.uNN'' / plan rule sets'
+    notes: Time-varying operational decisions for hydraulic structures during unsteady runs.
 outputs:
   primary:
   - name: water_surface_elevation
     unit: ft or m
-    format: "HDF5 /Results/Steady/.../Cross Sections/Water Surface"
-    role: stage
-    note: PRIMARY validated output (stage), NOT discharge.
+    description: Computed water-surface (stage) profile at each cross section (1-D) or per cell (2-D).
+      PRIMARY model product.
+    validation_rank: 2
+    emitted_in: <prj>.pNN.tmp.hdf at /Results/.../Cross Sections/Water Surface (1-D) or /Results/.../2D
+      Flow Areas/.../Water Surface (2-D)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Steady-flow profile compared at a single section / single profile; ensure observed WS belongs
+          to the same profile index as the simulated discharge.
+        - Geometry, observed WS, and project unit system (.prj 'English Units' vs 'SI Units') must all
+          share the same length unit.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Unsteady-flow stage hydrograph at a fixed cross section.
+        - Timing-accuracy metrics target peak-stage timing for routed flood waves.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - 2-D depth/stage field at a single instant; mesh resolution must resolve the flow features being
+          compared.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - 2-D unsteady stage / depth grid through time.
+      detrending_options:
+      - none
   - name: energy_grade
     unit: ft or m
-    format: "HDF5 .../Cross Sections/Energy Grade"
-  secondary:
-  - name: velocity
-    unit: ft/s or m/s
-    format: "HDF5 .../Additional Variables/Velocity Channel"
+    description: Open-channel surface-water energy-grade-line elevation EG = WS + α·V^2/2g at each section.
+    validation_rank: 3
+    emitted_in: <prj>.pNN.tmp.hdf at /Results/.../Cross Sections/Energy Grade
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Should satisfy EG ≥ WS at every cross section; EG is a structural check rather than a primary
+          calibration target.
+      detrending_options:
+      - none
   - name: discharge_out
-    unit: cfs or m3/s
-    format: "HDF5 .../Cross Sections/Flow"
-    note: Conserved along reach (pass-through of the input forcing, not a model product).
+    unit: cfs or m^3/s
+    description: Open-channel surface-water discharge at each cross section / structure / 2-D cell-face.
+      For STEADY flow this is a conserved pass-through of the input forcing, NOT a model product.
+    validation_rank: 1
+    emitted_in: <prj>.pNN.tmp.hdf at /Results/.../Cross Sections/Flow
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Only meaningful for UNSTEADY runs, where Q(t) is prognostic and reflects routing attenuation
+          and lag.
+        - For steady flow, validating Q against observed Q is CIRCULAR — discharge is the forcing input,
+          not a model product. Validate stage instead.
+      detrending_options:
+      - none
+  - name: velocity_channel
+    unit: ft/s or m/s
+    description: Main-channel velocity (1-D).
+    validation_rank: 4
+    emitted_in: <prj>.pNN.tmp.hdf at /Results/.../Additional Variables/Velocity Channel
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Velocity measurements are direction-specific; ensure observation is channel-aligned.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+      detrending_options:
+      - none
+  - name: velocity_total
+    unit: ft/s or m/s
+    description: Open-channel surface-water cross-section average (1-D) or cell-face (2-D) velocity.
+    validation_rank: 5
+    emitted_in: <prj>.pNN.tmp.hdf at /Results/.../Additional Variables/Velocity Total (1-D) or per-face
+      (2-D)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - 2-D depth-averaged velocity field.
+      detrending_options:
+      - none
+  - name: flood_inundation_extent
+    unit: m^2 or km^2 (area); ft or m (depth grid)
+    description: River/floodplain surface-water inundated area / water-depth grid / water-velocity grid
+      produced from 1-D or 2-D stage results.
+    validation_rank: 6
+    emitted_in: RAS Mapper inundation rasters / depth grids derived from <prj>.pNN.tmp.hdf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Wet/dry classification per pixel against satellite-derived flood extent (e.g., SAR-based).
+        - Hit-rate / critical-success-index families are appropriate; spatial-pattern correlation supplements
+          but does not replace contingency-table metrics.
+      - obs_shape: spatial_time_series
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        - spatial_pattern_match
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - Time-resolved inundation snapshots; timing metrics target arrival and recession of the flood
+          wave.
+      detrending_options:
+      - none
   - name: froude_number
     unit: dimensionless
-    format: "derived V / sqrt(g*D); identifies sub/super/critical regime"
-
-unit_conversions:
-  discharge_m3s_to_cfs: 35.3146667
-  length_m_to_ft: 3.2808399
-  gravity_english_fts2: 32.174
-  gravity_si_ms2: 9.81
-  manning_n: "dimensionless — identical in English & SI; never convert"
-  slope: "dimensionless ft/ft = m/m — never scale"
-
-coupling:
-  consumes_from:
-  - description: A rainfall-runoff / routing model supplying discharge hydrographs
-    variable: discharge
-    example_upstream_models: [VIC+Lohmann, WRF-Hydro, Raven, HEC-HMS]
-  produces_for:
-  - description: Flood-inundation / stage-dependent downstream consumers
-    variable: water_surface_elevation
-  note: >
-    Correct coupling direction: discharge (m3/s) flows INTO HEC-RAS as forcing;
-    water-surface STAGE (m) flows OUT. Do not couple HEC-RAS as a discharge
-    producer — discharge_out is merely the conserved input.
-
-validation:
-  tier: real
-  benchmark: HEC-RAS Mixed Flow Regime Channel example (computed vs observed WS)
-  variable: water_surface_elevation
-  metrics:
-    NSE: 0.9965
-    KGE: 0.977
-    RMSE_ft: 0.096
-    n: 19
-  note: Observed WS from .fNN 'Observed WS=' lines, 19 cross sections, profile PF1.
-
+    description: Channel Froude number Fr = V/sqrt(gD). Identifies sub/critical/super-critical regime
+      and locates hydraulic jumps.
+    validation_rank: 7
+    emitted_in: '<prj>.pNN.tmp.hdf at /Results/.../Froude # Channel (derived as V/sqrt(gD) if absent;
+      g = 32.174 ft/s^2 English, 9.81 m/s^2 SI)'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Regime classification (sub/super/critical) and hydraulic-jump location, compared against observed
+          regime evidence.
+      detrending_options:
+      - none
+  - name: shear_stress_channel
+    unit: lb/ft^2 or Pa
+    description: Channel-bed shear stress.
+    validation_rank: 8
+    emitted_in: <prj>.pNN.tmp.hdf at /Results/.../Additional Variables/Shear Channel
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Field measurement of bed shear is rare and method-dependent; usually inferred indirectly.
+      detrending_options:
+      - none
+  - name: sediment_transport_rate
+    unit: tons/day
+    description: Bed-material transport capacity / actual transport rate per section (sediment runs).
+    validation_rank: 9
+    emitted_in: sediment results HDF group
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Highly uncertain — observed sediment loads carry large measurement error; ranking-quality metrics
+          often more appropriate than absolute magnitude.
+      detrending_options:
+      - none
+  - name: bed_elevation_change
+    unit: ft or m
+    description: Cumulative scour or deposition relative to initial bed (sediment runs).
+    validation_rank: 10
+    emitted_in: sediment results HDF group
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+      detrending_options:
+      - none
+  - name: water_quality_constituent
+    unit: mg/L or deg C
+    description: Temperature / DO / nitrogen-species / algae concentrations (WQ runs).
+    validation_rank: 11
+    emitted_in: water-quality results HDF group
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+      detrending_options:
+      - none
+  secondary:
+  - name: friction_slope
+    unit: ft/ft (= m/m)
+    description: Energy / friction slope S_f at each section.
+    validation_rank: null
+    emitted_in: <prj>.pNN.tmp.hdf at /Results/.../Friction Slope
+    observability:
+      comparable_obs_shapes: []
+      detrending_options:
+      - none
 known_issues:
-- id: validating_wrong_variable
-  symptom: Reported NSE is against discharge, not stage
-  cause: Treating HEC-RAS as a rainfall-runoff model
-  fix: HEC-RAS consumes discharge and produces water-surface stage; validate stage.
-- id: new_river_blocked
-  symptom: Cannot run HEC-RAS on a brand-new river
-  cause: No DEM->cross-section authoring tool; .rNN run file needs Ras.exe/Wine-Mono
-  fix: KI is validatable only on bundled examples shipping both .gNN.hdf and .rNN.
+- id: new_river_steady_not_blocked
+  symptom: Need to run a steady profile on a NEW river/reach (no shipped .gNN.hdf + .rNN). Prior runs
+    declared this 'structurally impossible without Wine Mono / ras_commander'.
+  diagnosis: 'FALSE NEGATIVE. The steady Fortran solver reads cross-section station/elevation DIRECTLY
+    from the .rNN run file; the .gNN.hdf is only the results-skeleton seed. Proven 2026-06-04: bumping
+    every bed elevation in MIXED.r01 by +5 ft and re-running RasSteady.exe under plain wine raised the
+    computed wate'
+  remedy: Author new-river steady geometry with tools/author_steady_geometry.py (DEM + centerline -> ki_tools_common.terrain_ops.cut_cross_sections
+    -> trapezoidal XS injected into the template .rNN, keeping 19 XS / 4 pts so the 'Section - Arrays
+    Sizes' header stays valid). Then run_hecras.py under plain wine.
 - id: missing_plan_hdf_skeleton
-  symptom: "RasSteady aborts: HDF_ERROR opening <prj>.pNN.tmp.hdf"
-  cause: Plan results skeleton (normally written by Ras.exe/Wine-Mono) is absent
-  fix: "Seed it: cp <prj>.gNN.hdf <prj>.pNN.tmp.hdf (run_hecras.py does this)."
+  symptom: 'RasSteady aborts: ''HDF_ERROR trying to open HDF output file: <prj>.pNN.tmp.hdf ... No such
+    file or directory'''
+  diagnosis: The plan results skeleton is normally written by Ras.exe (Wine Mono). Without it the Fortran
+    solver cannot open a results file to write into.
+  remedy: 'Seed it from the geometry HDF before running: cp <prj>.gNN.hdf <prj>.pNN.tmp.hdf. run_hecras.py
+    / _hecras_env.seed_plan_hdf() does this automatically.'
 - id: wine_ld_preload
-  symptom: "wine: libstdc++.so.6 from LD_PRELOAD cannot be preloaded (wrong ELF class)"
-  cause: System-wide 64-bit LD_PRELOAD rejected by wine's loader
-  fix: "Strip it: env -u LD_PRELOAD wine ... (tools use _hecras_env.wine_env())."
+  symptom: 'wine fails to start; ''ld.so: object .../libstdc++.so.6 from LD_PRELOAD cannot be preloaded
+    (wrong ELF class: ELFCLASS64)'''
+  diagnosis: A system-wide LD_PRELOAD points at a 64-bit lib that wine's 32-bit loader rejects.
+  remedy: 'Run wine with the variable stripped: env -u LD_PRELOAD wine ... . The tools use _hecras_env.wine_env()
+    which pops LD_PRELOAD.'
+- id: hdf5_diag_after_finished
+  symptom: After 'Finished Steady Flow Simulation' the log prints HDF5-DIAG errors (H5Gopen2 'not a location').
+    Did the run fail?
+  diagnosis: 'Non-fatal: the solver probes an optional results group that the seeded skeleton lacks. Results
+    are already written.'
+  remedy: Ignore. Key success on the 'Finished' banner AND a results HDF > 60 kB. validate_outputs() confirms
+    WS is finite.
+- id: wine_mono_missing
+  symptom: Ras.exe (the .NET GUI/launcher) hangs or times out (rc=124) headless.
+  diagnosis: 'Ras.exe is .NET and needs Wine Mono (~/.wine/drive_c/windows/mono), which is not installed;
+    dl.winehq.org is unreachable in the sandbox.; Earlier this triplet ALSO claimed `ras-commander RasCmdr.compute_plan
+    fails before launch` was caused by missing Mono. That conflation was wrong: RasCmdr drives t'
+  remedy: Do NOT invoke Ras.exe (the .NET GUI) headless. Use RasCmdr.compute_plan (drives Fortran solvers
+    via WINE, no Mono required) or run_hecras.py for direct solver invocation. Both steady and unsteady
+    are drivable headless via ras-commander 0.93.0's HDF-direct path. Wine Mono is only required for RAS
+    Map
+- id: missing_run_file
+  symptom: 'run_hecras.py: ''No steady run file <prj>.rNN''.'
+  diagnosis: Brand-new project with no flattened run file. The .rNN is produced by Ras.exe/the GUI/ras-commander,
+    not by the Fortran solver.
+  remedy: Start from a project that ships a .rNN (all examples do), or generate one in the HEC-RAS GUI
+    / ras-commander, then re-parameterise with convert_flow_to_hecras.py.
+- id: missing_geometry_hdf
+  symptom: seed_plan_hdf raises 'No geometry HDF (<prj>.gNN.hdf) found'.
+  diagnosis: The project's geometry was never preprocessed to HDF; the seed step needs it as the results
+    skeleton.
+  remedy: Use a project that ships a .gNN.hdf, or run preprocess_geometry.py. Older example projects (pre-5.0)
+    may lack a geometry HDF entirely.
 - id: discharge_unit_cfs_cms
-  symptom: WS far too low / flow ~35x smaller than expected in an English project
-  cause: Discharge supplied in m3/s but project is English (cfs)
-  fix: "Q_cfs = Q_cms * 35.3147 (convert_flow_to_hecras.py --in-units m3/s)."
+  symptom: Water-surface elevations far too low / flow ~35x smaller than expected in an English (cfs)
+    project.
+  diagnosis: Discharge supplied in m3/s but the project is English (cfs). 1 m3/s = 35.3147 cfs.
+  remedy: 'Pass --in-units m3/s to convert_flow_to_hecras.py (uses ki_tools_common.units.convert), or
+    convert manually: Q_cfs = Q_cms * 35.3147.'
 - id: elevation_unit_ft_m
-  symptom: Validation NSE strongly negative; WS differs by ~3.28 factor
-  cause: Geometry/observed WS in metres while project is English (ft), or vice versa
-  fix: "Ensure geometry, observed WS, and .prj unit system all agree (1 m = 3.28084 ft)."
+  symptom: Validation NSE strongly negative; computed and observed WS differ by a ~3.28 factor or constant
+    offset.
+  diagnosis: Geometry/observed WS in metres while the project is English (ft), or vice versa. 1 m = 3.28084
+    ft.
+  remedy: Ensure geometry, observed WS, and the project unit system (.prj 'English Units'/'SI Units')
+    all agree. Do not mix.
 - id: manning_n_converted
-  symptom: Nonsensical depths after switching unit systems
-  cause: Manning's n was 'converted' between English and SI
-  fix: "Never convert n — it is dimensionless. The 1.486 vs 1.0 factor is internal."
+  symptom: Roughness sensitivity gives nonsensical depths after switching unit systems.
+  diagnosis: Manning's n was 'converted' between English and SI. n is DIMENSIONLESS and identical in both;
+    the 1.486 vs 1.0 conveyance factor is internal to the solver.
+  remedy: Never convert n. Keep channel n ~0.025-0.05, overbank ~0.04-0.15. edit_geometry.py rejects n
+    outside 0.005-0.5.
 - id: slope_scaled_wrongly
-  symptom: Normal-depth boundary gives wrong stage after a unit change
-  cause: Energy/friction slope (ft/ft = m/m) was scaled during conversion
-  fix: Slope is dimensionless — leave it unchanged across unit systems.
+  symptom: Normal-depth boundary gives unstable or wrong stage after a unit change.
+  diagnosis: Energy/friction slope (ft/ft = m/m) was scaled during a unit conversion. Slope is dimensionless.
+  remedy: Leave slopes unchanged across unit systems. edit_boundaries.py sets the raw slope value.
+- id: profile_mismatch_validation
+  symptom: validate_hecras.py RMSE much larger than expected (~feet) on a known-good run.
+  diagnosis: Observed WS were measured at a different profile than --profile-index selects (e.g. comparing
+    PF2 against PF1 observations).
+  remedy: 'Set --profile-index to the profile the observed WS belong to (Mixed Flow: PF1 = index 0, Q=500
+    cfs).'
+- id: river_station_bytes
+  symptom: Parsed records show river_station like b'0.5682' instead of 0.5682.
+  diagnosis: HDF string datasets are byte strings; str() of bytes keeps the b'...' wrapper.
+  remedy: Decode with .decode() (parse_output_hecras.py does this via _dec).
+- id: reading_ONN_binary
+  symptom: Garbled text / control characters when reading <prj>.ONN.
+  diagnosis: .ONN is a legacy BINARY detailed-output file, not text.
+  remedy: Read results from the HDF (<prj>.pNN.tmp.hdf) with parse_output_hecras.py, not the .ONN.
+- id: nonmonotonic_rating
+  symptom: 'rating_curve.py validation fails: ''non-monotonic rating curve (N reversals)''.'
+  diagnosis: Stage should rise with discharge at a fixed section. Reversals indicate a geometry/boundary
+    problem, ineffective-flow toggling, or a regime change at the section.
+  remedy: Check the cross-section geometry and boundary slopes; pick a section away from controls; inspect
+    the regime column (sub vs super) across the sweep.
+- id: no_flow_data_section
+  symptom: 'convert_flow_to_hecras.py: ''no Section - Flow Data block in run file''.'
+  diagnosis: The file passed is not a steady run file (.rNN), or it is an unsteady plan.
+  remedy: Pass the steady run file <prj>.rNN. Unsteady flow lives in .uNN and is not editable by this
+    tool.
+- id: no_boundary_section
+  symptom: 'edit_boundaries.py: ''no Section - Reach Boundaries block''.'
+  diagnosis: Wrong file (not a steady .rNN) or a junction-only reach with boundaries elsewhere.
+  remedy: Pass the steady run file. For known-WS/critical/rating boundaries (not normal-depth slope) edit
+    the .fNN flow file in the GUI and re-derive the run file.
 - id: unsteady_needs_mono
-  symptom: RasUnsteady/sediment/WQ fail headless on a missing plan HDF
-  cause: These solvers need a plan-HDF skeleton with boundary series, written by Ras.exe
-  fix: Only steady flow is end-to-end runnable headless here; others need Wine Mono.
+  symptom: RasUnsteady prints its banner then fails on io.tmp.hdf / a missing plan HDF.
+  diagnosis: Unsteady runs need the plan-HDF skeleton with boundary time series baked in, written by Ras.exe
+    (Wine Mono).
+  remedy: Unsteady/sediment/WQ are not end-to-end runnable headless here. Install Wine Mono and use Ras.exe
+    -c, or run on Windows. Steady flow IS fully drivable.
+- id: geom_preprocess_incomplete
+  symptom: preprocess_geometry.py produces no .gNN.hdf.
+  diagnosis: Standalone RasGeomPreprocess expects run-control files Ras.exe normally supplies.
+  remedy: Use a project that already ships a .gNN.hdf (steady examples do). Full geometry preprocessing
+    needs Ras.exe orchestration.
+- id: stale_results_reported
+  symptom: Results look identical after changing discharge/boundaries.
+  diagnosis: A previous run's <prj>.pNN.tmp.hdf was reused, so the parser read old values.
+  remedy: run_hecras.py deletes stale .pNN.tmp.hdf / .ONN before each run. If running by hand, remove
+    them first.

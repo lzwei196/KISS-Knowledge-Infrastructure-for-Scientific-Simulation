@@ -475,7 +475,7 @@ outputs:
   - var: "velbase_mag"
     validation_rank: 5
     unit: "m year-1"
-    description: "Basal sliding speed magnitude"
+    description: "Grounded-ice basal sliding speed magnitude"
     emitted_in: "spatial output NetCDF"
     observability:
       comparable_obs_shapes:
@@ -782,3 +782,9 @@ safety:
       scope: "air_temp, ice_surface_temp, delta_T"
       source: "https://www.pism.io/docs/manual/initialization/bootstrapping.html and PISM surface forcing docs"
       status: "adopted"
+
+medium_evidence:
+  - var: "velbase_mag"
+    source: "dag.yaml"
+    quote: "Shallow Shelf Approximation (finite-difference) membrane-stress solver for floating ice / ice streams; doubles as the sliding law for grounded ice in the hybrid."
+    note: "SSAFD is the sliding-law component for grounded ice, so velbase_mag is a grounded-ice basal sliding speed diagnostic."

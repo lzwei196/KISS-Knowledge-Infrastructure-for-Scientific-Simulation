@@ -1,13 +1,3 @@
----
-name: dart
-description: >-
-  DART Manhattan release — ensemble data-assimilation framework (EAKF / EnKF / QCEFF),
-  Anderson/DAReS lineage. Covers Combining observations with an ensemble of host-model
-  states to estimate system state (sequential…; Generating initial conditions for
-  forecasts; Producing retrospective state estimates (reanalysis). Use when the task
-  involves running, configuring, calibrating or interpreting DART.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (17 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_obs_to_dart.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_obs_to_dart.py --help` |
+| `tools/generate_input_nml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_input_nml.py --help` |
+| `tools/parse_dart_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_dart_output.py --help` |
+| `tools/run_dart.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_dart.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # DART — Data Assimilation Research Testbed
 
@@ -168,6 +192,27 @@ input files, and output files.
 
 **Dependencies**: Stage 1 must precede Stage 2. Stages 3-4 (synthetic) OR Stage 5
 (real) feed into Stage 6 or 7. Stage 8 requires Stage 7 output.
+
+---
+
+## 6. Output Description
+
+**Source**: `dag.yaml`. The dag is the source of truth for output identity,
+units, validation rank, and observability. If this section ever disagrees with
+`dag.yaml`, the dag wins.
+
+**Headline output**: `analysis ensemble mean (posterior state)` — Posterior ensemble-mean estimate in the coupled host model's physical medium (atmosphere, ocean, land, ice, etc.) and state space after assimilation and posterior inflation; the primary analysis product seeding the next cycle. (`host-model state units`)
+
+| Output variable (dag `var`) | Validation rank | Unit | Description |
+|---|---:|---|---|
+| `analysis ensemble mean (posterior state)` | 1 | `host-model state units` | Posterior ensemble-mean estimate in the coupled host model's physical medium (atmosphere, ocean, land, ice, etc.) and state space after assimilation and posterior inflation; the primary analysis product seeding the next cycle. |
+| `analysis ensemble spread (posterior sd)` | not provided in extracted facts | see `dag.yaml` | Named dag output; read `dag.yaml` for the authoritative description. |
+| `observation-space innovations and QC (obs_seq.final)` | not provided in extracted facts | see `dag.yaml` | Named dag output; read `dag.yaml` for the authoritative description. |
+| `binned observation-space diagnostics (bias, rmse, totalspread)` | not provided in extracted facts | see `dag.yaml` | Named dag output; read `dag.yaml` for the authoritative description. |
+
+The primary product that downstream agents should treat as this KI's judged
+prediction is `analysis ensemble mean (posterior state)`, not a diagnostic plot
+or a hand-selected variable from a coupled host model.
 
 ---
 
@@ -360,7 +405,50 @@ shell script that reads filter output, runs the model, and writes DART input.
 
 ---
 
-## Validation Results
+## 8. Unit Table
+
+**Source**: `dag.yaml` for output units, with conversion traps summarized from
+the DART workflow notes above. Do not infer physical units for coupled host
+states from the word "analysis"; read the host model state metadata and the dag.
+
+| Variable or quantity | Source unit | DART / output unit | Conversion or rule | Source / note |
+|---|---|---|---|---|
+| `analysis ensemble mean (posterior state)` | coupled host-model state units | `host-model state units` | No universal conversion; preserve the coupled host model's physical medium and state-space units. | `dag.yaml` rank-1 output |
+| `analysis ensemble spread (posterior sd)` | ensemble variance or member states | see `dag.yaml` | If starting from variance, take `sqrt(variance)` before treating it as spread. | Existing unit trap table |
+| Observation error | standard deviation may be supplied by users | DART obs error variance | Square standard deviation before writing obs_seq error variance. | Existing critical domain knowledge |
+| Pressure vertical coordinate | hPa / mb are common in observations | Pascals (Pa) | Multiply hPa or mb by `100`. | Existing critical domain knowledge |
+| 3D sphere localization cutoff | km or degrees are common user inputs | radians | `cutoff_rad = cutoff_km / 6371.0`; degrees require `deg * pi / 180`. | Existing critical domain knowledge |
+| Longitude and latitude | degrees are common in raw observations | DART internal radians | Convert degrees with `pi / 180`. | Existing unit trap table |
+| Time | ISO datetime or model time stamps | DART `(days, seconds)` pair | Use DART `advance_time`; do not hand-roll calendar offsets. | Existing unit trap table |
+| Missing data | NaN, -9999, or dataset sentinel | `-888888.0` for real values, `-888888` for integers | Replace non-DART sentinels before ingestion. | Existing critical domain knowledge |
+
+For the other dag outputs, the extracted facts list names the variables but does
+not provide units. Treat `dag.yaml` as required reading before parsing
+`obs_seq.final` or binned diagnostics in an automated scoring workflow.
+
+---
+
+## 11. Validated Results
+
+**Source**: `docs/validation_convention.yaml` for metrics, directions, bands,
+and citations. The convention is the source of truth for pass bands; null bands
+are written here as `no cited threshold`, never replaced by remembered values.
+
+### Validation Bar For Headline Output
+
+| Dag variable | Metric | Direction | Convention band | Convention cites |
+|---|---|---|---|---|
+| `analysis ensemble mean (posterior state)` | `nse` | maximize | no cited threshold | `[]` |
+| `analysis ensemble mean (posterior state)` | `rmse` | minimize | no cited threshold | `[]` |
+| `analysis ensemble mean (posterior state)` | `csi` | maximize | no cited threshold | `[]` |
+| `analysis ensemble mean (posterior state)` | `rmse` | minimize | no cited threshold | `[]` |
+| `analysis ensemble spread (posterior sd)` | `pbias` | zero_centered | no cited threshold | `[]` |
+| `analysis ensemble spread (posterior sd)` | `spread_error_ratio` | zero_centered | no cited threshold | `[]` |
+
+The convention records no cited satisfactory thresholds for these bars. A run
+may report NSE, RMSE, CSI, PBIAS, or spread-error ratio, but this KI must not
+label the value satisfactory/good/very good unless the convention later supplies
+a cited threshold.
 
 ### Lorenz 63 OSSE
 

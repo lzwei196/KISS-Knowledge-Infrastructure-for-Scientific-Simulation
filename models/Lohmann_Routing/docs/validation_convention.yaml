@@ -1,0 +1,260 @@
+schema_version: 1
+model_id: Lohmann_Routing
+domain: hydrology
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+# Blocks are keyed by the Lohmann_Routing dag.yaml output names, per the 2026-08-14
+# Step-B convention. Continuous discharge bands are hydrologic flow-performance
+# criteria; the categorical event block is intentionally low-confidence because the
+# fetched flood-event paper reports POD/FAR/CSI skill but not a prescriptive pass band.
+
+references:
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  arnold2012:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42256.txt
+  knoben2019:
+    doi: 10.5194/hess-23-4323-2019
+    title: "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2019
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/23/4323/2019/hess-23-4323-2019.pdf
+  cortes2023:
+    doi: 10.5194/hess-27-3505-2023
+    title: "To what extent does river routing matter in hydrological modeling?"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2023
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/27/3505/2023/hess-27-3505-2023.pdf
+  lohmann1998:
+    doi: 10.1080/02626669809492108
+    title: "Regional scale hydrology: II. Application of the VIC-2L model to the Weser River, Germany"
+    venue: "Hydrological Sciences Journal"
+    year: 1998
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1080_02626669809492108.txt
+  thiemig2015:
+    doi: 10.5194/hess-19-3365-2015
+    title: "A pan-African medium-range ensemble flood forecast system"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2015
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/19/3365/2015/hess-19-3365-2015.pdf
+
+validation:
+  - dag_variable: discharge_daily
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 9 states flow NSE: very good >0.80, good >0.70, satisfactory >0.50; stored as plain threshold values."
+        cites: [moriasi2015, arnold2012]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 9 states flow PBIAS: very good < +/-5%, good < +/-10%, satisfactory < +/-15%."
+        cites: [moriasi2015, arnold2012]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Useful for timing, bias, and variability decomposition; Knoben 2019 cautions that KGE and NSE thresholds are not directly interchangeable."
+        cites: [knoben2019, cortes2023]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Report RMSE in m3/s, but normalize or pair with RSR for cross-basin comparison; Moriasi 2015 recommends RMSE alongside RSR."
+        cites: [moriasi2015]
+    validated_when: "Daily routed streamflow is validated when NSE >= 0.50 and absolute PBIAS <= 15%, with hydrograph/flow-duration checks used to diagnose timing and peak-shape errors."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      The dag determining_metric nse is retained as a headline metric. Moriasi 2015 recommends
+      NSE, R2, d, RMSE/RSR, and PBIAS for daily, monthly, and yearly scales, and says flow
+      simulations are satisfactory when daily/monthly/annual R2 > 0.60, NSE > 0.50, and
+      PBIAS <= +/-15%. Arnold 2012 describes validation as comparing model output with
+      observed data and reports the same hydrologic calibration/validation practice. Cortes
+      2023 shows routing choices can alter daily streamflow and reports daily KGE improving
+      from 0.64 without routing to 0.81 for the best routing scheme, so timing diagnostics
+      remain important.
+
+  - dag_variable: discharge_daily
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a prescriptive CSI pass threshold for daily routed flood-event hit/miss validation."
+        cites: []
+    secondary_metrics:
+      - metric: pod
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Flood-event studies report POD with CSI and FAR from a contingency table; Thiemig 2015 states the optimum for POD and CSI is 100%."
+        cites: [thiemig2015]
+      - metric: far
+        direction: minimize
+        status: supportive
+        ceiling_reason: "False alarm rate is co-reported for event validation; Thiemig 2015 states the optimum for FAR is 0%."
+        cites: [thiemig2015]
+    validated_when: "UNRESOLVED - evaluate flood-event hit/miss with CSI/POD/FAR, but do not auto-validate on CSI until a fetched paper provides a prescriptive pass band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Thiemig 2015 defines contingency-table hits, misses, false alarms, POD, FAR, and CSI
+      for flood-event verification and reports AFFS POD 69%, FAR 29%, and CSI 54%, with CSI
+      generally above 50% in regional summaries. Those are benchmark results, not a domain
+      pass threshold, so the CSI band is null. This block therefore contextualizes event
+      diagnostics but must not loosen the gate.
+
+  - dag_variable: discharge_monthly
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final watershed-scale flow criteria apply across daily, monthly, and annual temporal scales."
+        cites: [moriasi2015, arnold2012]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow PBIAS criterion is absolute PBIAS < +/-15% for satisfactory performance."
+        cites: [moriasi2015, arnold2012]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "KGE is informative but has a different inherent benchmark than NSE, so it should not silently replace the dag nse criterion."
+        cites: [knoben2019]
+    validated_when: "Monthly mean routed streamflow is validated when NSE >= 0.50 and absolute PBIAS <= 15% against observed monthly mean discharge."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Moriasi 2015 explicitly includes monthly flow in the final D-M-A criteria and says the
+      same PBIAS criteria are recommended for daily, monthly, and annual scales. The dag caveat
+      that monthly skill is dominated by upstream runoff/baseflow rather than routing parameters
+      is handled as interpretation, not as a relaxed threshold.
+
+  - dag_variable: discharge_yearly
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 final annual/monthly flow criteria; use on the 12-value mean annual regime with caution."
+        cites: [moriasi2015, arnold2012]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 final flow PBIAS criteria for daily, monthly, and annual scales."
+        cites: [moriasi2015, arnold2012]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Correlation is useful for the mean annual cycle shape; Lohmann 1998 reports Pearson correlations for daily and validation-period streamflow."
+        cites: [lohmann1998]
+    validated_when: "The climatological 12-month routed discharge cycle is validated when NSE >= 0.50 and absolute PBIAS <= 15% against the observed mean annual regime."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      This dag output is a 12-value climatological cycle, not an interannual annual-total
+      time series. The best fetched convention is still the hydrologic flow D-M-A criterion,
+      so the same bands are used with lower confidence and with correlation retained as a
+      supportive shape diagnostic.
+
+  - dag_variable: discharge_daily_mm
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Same flow NSE convention as discharge_daily; comparison is valid only after observed gauge flow is area-normalized with the same basin area."
+        cites: [moriasi2015, arnold2012]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Same flow PBIAS convention as discharge_daily; PBIAS is dimensionless after consistent area normalization."
+        cites: [moriasi2015, arnold2012]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "KGE can summarize correlation, variability, and bias for normalized runoff-depth hydrographs, but NSE remains the dag headline criterion."
+        cites: [knoben2019, cortes2023]
+    validated_when: "Daily area-normalized discharge is validated when NSE >= 0.50 and absolute PBIAS <= 15%, after observed m3/s is divided by the same basin area."
+    evidence_strength: moderate
+    confidence: 0.70
+    notes: >-
+      No fetched paper provides a separate pass table for basin-area-normalized routed
+      discharge in mm/day. Because NSE and PBIAS are dimensionless and the variable is FLOW
+      divided by basin area, the streamflow convention is transferred; the gate must require
+      like-for-like area normalization.
+
+  - dag_variable: discharge_monthly_mm
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Same monthly flow NSE convention as discharge_monthly after consistent basin-area normalization."
+        cites: [moriasi2015, arnold2012]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Same monthly flow PBIAS convention as discharge_monthly after consistent basin-area normalization."
+        cites: [moriasi2015, arnold2012]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Monthly hydrograph shape remains informative, but monthly routing-parameter effects are expected to be weaker than daily effects."
+        cites: [cortes2023, lohmann1998]
+    validated_when: "Monthly area-normalized discharge is validated when NSE >= 0.50 and absolute PBIAS <= 15%, after observed flow is converted to the same mm/day basis."
+    evidence_strength: moderate
+    confidence: 0.70
+    notes: >-
+      Moriasi 2015 flow criteria are applied after unit harmonization. Cortes 2023 reports
+      runoff routing has considerable daily effects and negligible annual effects, with weaker
+      monthly routing-parameter influence; that caveat affects diagnosis rather than the
+      validation pass band.
+
+deferred_paywalled:
+  - ref: "Evaluation of Global Flood Detection Using Satellite-Based Rainfall and a Hydrologic Model"
+    doi: 10.1175/jhm-d-11-087.1
+    needed_for: [discharge_daily, categorical_event_csi]

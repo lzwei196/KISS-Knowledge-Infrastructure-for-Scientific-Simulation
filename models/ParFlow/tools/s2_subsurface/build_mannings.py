@@ -33,6 +33,9 @@ except ImportError as e:
 
 # AVHRR land cover class -> Manning's n
 # Source: Literature survey (Chow, 1959; Arcement & Schneider, 1989)
+# Keyed by the UMD 14-class legend the AVHRR 1981-1994 raster actually uses
+# (verified from its .vat.dbf), values in SI s m^-1/3 (converted to ParFlow's
+# hour time base at output).
 AVHRR_MANNINGS = {
     0:  0.035,   # Water
     1:  0.100,   # Evergreen Needleleaf Forest
@@ -40,21 +43,23 @@ AVHRR_MANNINGS = {
     3:  0.100,   # Deciduous Needleleaf Forest
     4:  0.120,   # Deciduous Broadleaf Forest
     5:  0.110,   # Mixed Forest
-    6:  0.050,   # Closed Shrublands
-    7:  0.040,   # Open Shrublands
-    8:  0.060,   # Woody Savannas
-    9:  0.050,   # Savannas
-    10: 0.040,   # Grasslands
-    11: 0.040,   # Permanent Wetlands
-    12: 0.035,   # Croplands
+    6:  0.100,   # Woodland
+    7:  0.060,   # Wooded Grassland
+    8:  0.050,   # Closed Shrubland
+    9:  0.040,   # Open Shrubland
+    10: 0.040,   # Grassland
+    11: 0.035,   # Cropland
+    12: 0.030,   # Bare Ground
     13: 0.015,   # Urban and Built-Up
-    14: 0.035,   # Cropland/Natural Vegetation Mosaic
-    15: 0.022,   # Snow and Ice
-    16: 0.030,   # Barren or Sparsely Vegetated
+    14: 0.030,   # (rare fill class)
 }
 
 HYDROCRAFT_ROOT = "KISSPATH_ROOT"
-AVHRR_PATH = os.path.join(HYDROCRAFT_ROOT, "data/forcing/AVHRR")
+# data/forcing/AVHRR never existed on this server -- the global AVHRR land
+# cover lives at data/landcover/ (silent all-0.04 fallback otherwise)
+AVHRR_FILE = os.path.join(
+    HYDROCRAFT_ROOT, "data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif")
+AVHRR_PATH = os.path.dirname(AVHRR_FILE)
 
 
 def validate_inputs(domain_json, surface_mask_npy):
@@ -103,13 +108,7 @@ def process(domain_json, surface_mask_npy, output_dir, uniform_n=None):
         class_counts = {"uniform": int(np.sum(mask_2d > 0))}
     else:
         # Find AVHRR file
-        avhrr_file = None
-        if os.path.isdir(AVHRR_PATH):
-            import glob
-            candidates = glob.glob(os.path.join(AVHRR_PATH, "*.tif"))
-            candidates += glob.glob(os.path.join(AVHRR_PATH, "**/*.tif"), recursive=True)
-            if candidates:
-                avhrr_file = candidates[0]
+        avhrr_file = AVHRR_FILE if os.path.exists(AVHRR_FILE) else None
 
         if avhrr_file is None:
             # Fall back to uniform
@@ -146,6 +145,12 @@ def process(domain_json, surface_mask_npy, output_dir, uniform_n=None):
 
     # Set inactive cells to 0
     mannings[mask_2d == 0] = 0.0
+
+    # UNIT CONVERSION: the table above is SI (s m^-1/3). ParFlow's time base
+    # here is HOURS (K in m/hr), so Manning's n must be hr m^-1/3: divide by
+    # 3600. The shipped washita example uses 5.52e-6 (~0.02 SI / 3600).
+    # Shipping SI values makes overland flow 3600x too slow -- silent error.
+    mannings = mannings / 3600.0
 
     # Save
     output_file = os.path.join(output_dir, "mannings_n.npy")

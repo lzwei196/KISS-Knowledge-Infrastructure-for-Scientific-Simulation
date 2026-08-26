@@ -1,0 +1,481 @@
+schema_version: 1
+model_id: DNDC
+domain: biogeochem
+generated_by: "Codex Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  cui2014:
+    doi: 10.5194/bg-11-91-2014
+    title: "Assessing biogeochemical effects and best management practice for a wheat-maize cropping system using the DNDC model"
+    venue: "Biogeosciences"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-11-91-2014.txt
+  zhang2019:
+    doi: 10.5194/bg-16-2905-2019
+    title: "Using a modified DNDC biogeochemical model to optimize field management of a multi-crop (cotton, wheat, and maize) system"
+    venue: "Biogeosciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-16-2905-2019.txt
+  jiang2021:
+    doi: 10.1038/s41598-020-79988-3
+    title: "Modelling adaptation strategies to reduce adverse impacts of climate change on maize cropping system in Northeast China"
+    venue: "Scientific Reports"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-020-79988-3.txt
+  zhang2011_ch4:
+    doi: 10.5194/bg-8-1225-2011
+    title: "Quantifying methane emissions from rice paddies in Northeast China by integrating remote sensing mapping with a biogeochemical model"
+    venue: "Biogeosciences"
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-8-1225-2011.txt
+  deng2016:
+    doi: 10.2134/jeq2016.04.0129
+    title: "Drainage and Nitrate Leaching from Artificially Drained Maize Fields Simulated by the DNDC Model"
+    venue: "Journal of Environmental Quality"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2134_jeq2016.04.0129.txt
+  li2007:
+    doi: 10.1007/s10705-006-9076-0
+    title: "Application of the DNDC model to tile-drained Illinois agroecosystems: model calibration, validation, and uncertainty analysis"
+    venue: "Nutrient Cycling in Agroecosystems"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10705-006-9076-0.txt
+  giltrap2012:
+    doi: 10.1080/00380768.2012.682955
+    title: "Validation of the DNDC-Rice model by using CH4 and N2O flux data from rice paddy fields"
+    venue: "Soil Science and Plant Nutrition"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1080_00380768.2012.682955.txt
+  willmott1981:
+    doi: 10.1080/02723646.1981.10642213
+    title: "On the validation of models"
+    venue: "Physical Geography"
+    year: 1981
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1080_02723646.1981.10642213.txt
+
+validation:
+  - dag_variable: crop_grain_yield
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Jiang 2021 gives the crop-model bias rule as nARE less than +/-15%; DNDC yield studies report RMD/MRB as the bias analogue."
+        cites: [jiang2021, cui2014, zhang2019]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Open-access reproduction of the nRMSE tiers: excellent <=10%, good 10-20%, fair 20-30%, poor >30%."
+        cites: [jiang2021]
+    secondary_metrics:
+      - metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Jiang 2021 tiers d >=0.9, 0.8-0.9, and 0.7-0.8; Willmott 1981 defines d as a 0 to 1 agreement index."
+        cites: [jiang2021, willmott1981]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Cui 2014 reports yield ME = 0.70 and calls the yield comparison a good agreement; Zhang 2019 reports yield NSI = 0.75."
+        cites: [cui2014, zhang2019]
+    validated_when: "|PBIAS| <= 15% and nRMSE <= 30% after converting DNDC grain carbon to dry-matter yield."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: "Retains the DAG magnitude metric. Cui 2014 reports yield RMSE 9.51%, RMD -2.76%, and ME 0.70; Zhang 2019 reports crop-yield IA 0.93-0.95 and NSI 0.75."
+
+  - dag_variable: crop_grain_yield
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Uses the fetched crop-model nARE magnitude convention; technology trends should be detrended before applying this band."
+        cites: [jiang2021]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        cites: [jiang2021]
+    secondary_metrics:
+      - metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Agreement-index tiers are useful after detrending: d >=0.7 is at least fair in Jiang 2021."
+        cites: [jiang2021, willmott1981]
+    validated_when: "Detrended regional yield series meet |PBIAS| <= 15% and nRMSE <= 30%; do not require raw interannual correlation across changing technology regimes."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "The numeric bands are crop-model conventions transferred to regional aggregates; the fetched DNDC studies are field-site validations, not national trend benchmarks."
+
+  - dag_variable: crop_N_uptake
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Jiang 2021 applies nARE < +/-15% to yield and biomass; it also validates plant N uptake with nRMSE/nARE/d."
+        cites: [jiang2021]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        cites: [jiang2021]
+    secondary_metrics:
+      - metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For plant N uptake, Jiang 2021 reports validation performance as good to excellent with nRMSE <=6.4%, nARE within -1.4% to 3.3%, and d >=0.76."
+        cites: [jiang2021]
+    validated_when: "|PBIAS| <= 15% and nRMSE <= 30% for seasonal plant N uptake."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "DNDC cached papers more often report crop yield and N-loss variables; this block transfers a fetched crop-model plant-N uptake convention."
+
+  - dag_variable: N2O_emission
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Zhang 2019 states that an NSI value between zero and one indicates acceptable model performance."
+        cites: [zhang2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Daily N2O peaks are commonly mismatched; cumulative annual emissions are the stronger validation target in Cui 2014 and Zhang 2019."
+        cites: [cui2014, zhang2019]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Giltrap 2012 evaluates daily CH4 and N2O fluxes with RMSE but does not provide a general pass threshold."
+        cites: [giltrap2012]
+    validated_when: "Daily N2O time-series NSE/NSI is non-negative, with cumulative-flux bias checked separately when available."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "The field explicitly notes daily peak limitations: Cui 2014 says magnitudes of some peak emissions differed; Zhang 2019 reports poor daily N2O skill for some fields."
+
+  - dag_variable: N2O_emission
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: mrb_to_2cv_ratio
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Literature supersedes raw PBIAS with a replicate-uncertainty rule: valid if |MRB| is smaller than double observation CV."
+        cites: [zhang2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Cui 2014 reports annual N2O RMD 8.74%; Zhang 2019 reports annual N2O error factors 8.7 +/- 4.5%."
+        cites: [cui2014, zhang2019]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Zhang 2019 reports annual cumulative N2O NSI = 0.72 and IA = 0.94."
+        cites: [zhang2019]
+    validated_when: "For cumulative or annual N2O, |MRB| must be smaller than two times the replicate-observation CV."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "The DAG determining metric is PBIAS, but fetched DNDC field validation uses MRB against observation variability as the numeric validity rule."
+
+  - dag_variable: NO_emission
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Zhang 2019 gives NSI 0 to 1 as acceptable; Cui 2014 reports annual NO ME = 0.53 with good captured patterns."
+        cites: [zhang2019, cui2014]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Cui 2014 reports annual NO RMD 0.32% and Zhang 2019 reports cumulative NO error factors 10.1 +/- 3.2%."
+        cites: [cui2014, zhang2019]
+    validated_when: "NO time-series NSE/NSI is non-negative, with annual cumulative bias used as supporting evidence."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Daily NO is better behaved than daily N2O in the fetched DNDC studies, but the only explicit numeric threshold remains the generic NSI > 0 acceptable rule."
+
+  - dag_variable: N2_emission
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DNDC validation paper provided a numeric field convention for direct N2 flux validation."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - direct N2 flux observations are too sparse in the fetched set to define a numeric validation band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "DNDC denitrification papers report N2O and NO much more commonly than direct N2. This block must not loosen a gate."
+
+  - dag_variable: NH3_volatilization
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Zhang 2019 states NSI between zero and one indicated acceptable model performance."
+        cites: [zhang2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Cumulative NH3 MRBs were -8.8% to 3.8% in Zhang 2019; Cui 2014 reports cumulative NH3 4% higher than observed."
+        cites: [zhang2019, cui2014]
+    validated_when: "NH3 daily/cumulative comparison has non-negative NSE/NSI and small cumulative bias relative to replicated-observation uncertainty."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "Zhang 2019 explicitly notes failure to capture quick daily responses to urea topdressing while cumulative NH3 remained well simulated."
+
+  - dag_variable: CO2_soil_respiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric validation threshold for DNDC heterotrophic soil respiration specifically."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Zhang 2019 evaluates daily NEE, not isolated heterotrophic respiration, and reports improved daily NEE NSI values."
+        cites: [zhang2019]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hoglwald LandscapeDNDC reports CO2 RMSE values, but as benchmark results rather than a transferable threshold."
+        cites: [cui2014]
+    validated_when: "UNRESOLVED - compare against heterotrophic-respiration observations or partitioned CO2 fluxes, but no numeric fetched band is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Field chamber or eddy-covariance CO2 observations often mix autotrophic and heterotrophic respiration; the DNDC output name is narrower than many observed flux products."
+
+  - dag_variable: CH4_flux
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.8, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Zhang 2011 reports EF >0.8 and concludes DNDC captured CH4 seasonal patterns and magnitudes; Zhang 2019 uses NSI >0 as acceptable."
+        cites: [zhang2011_ch4, zhang2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Zhang 2011 reports CH4 RMSE values of 0.190, 0.304, and 0.344 for validation cases but no universal RMSE band."
+        cites: [zhang2011_ch4]
+      - metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Giltrap 2012 and Willmott-style validation use RMSE and agreement, but do not define a CH4-specific pass band."
+        cites: [giltrap2012, willmott1981]
+    validated_when: "CH4 flux NSE/EF is non-negative; EF >= 0.8 is a good DNDC rice-paddy benchmark when comparable daily flux data exist."
+    evidence_strength: strong
+    confidence: 0.72
+    notes: "Only apply this block to rice, wetland, or otherwise anaerobic systems where DNDC CH4_flux is physically active."
+
+  - dag_variable: NO3_leaching
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Li 2007 sets validation best-case nitrate EF >0.5; this supersedes the DAG PBIAS headline for tile-drain/leaching time series."
+        cites: [li2007]
+      - metric: theils_u2
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Li 2007 sets U2 <0.5 for drainage and leaching outcomes."
+        cites: [li2007]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Zhang 2019 reports nitrate-leaching MRBs relative to two times replicate CV; Deng 2016 reports NRMSE and d for cumulative leaching."
+        cites: [zhang2019, deng2016]
+    validated_when: "For nitrate leaching time series, EF/NSE >= 0.5 and Theil U2 <= 0.5 under the DNDC tile-drainage validation convention."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Deng 2016 reports cumulative drainage and NO3-N leaching were reasonably close, but Li 2007 provides the explicit DNDC validation thresholds."
+
+  - dag_variable: SOC_stock_and_change
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mrb_to_2cv_ratio
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "For annual/seasonal SOC change, Zhang 2019 treats |MRB| smaller than double replicated-observation CV as valid."
+        cites: [zhang2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Zhang 2019 reports SOC-change error factors of 30 +/- 19%, but the pass condition is relative to observation CV."
+        cites: [zhang2019]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Zhang 2019 reports annual/seasonal SOC-change NSI = 0.75 and IA = 0.96."
+        cites: [zhang2019]
+    validated_when: "Multi-year SOC change is valid when |MRB| is less than two times replicated-observation CV; single-year noise alone is not decisive."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: "This supersedes raw PBIAS because SOC change is a small difference of large stocks and the fetched DNDC paper uses observation-uncertainty scaling."
+
+  - dag_variable: SOC_stock_and_change
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Point SOC stock uses the fetched crop-model nARE magnitude convention when measured stock replicates do not support the MRB-to-CV rule."
+        cites: [jiang2021]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        cites: [jiang2021]
+    secondary_metrics:
+      - metric: mrb_to_2cv_ratio
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Use Zhang 2019's |MRB| versus double CV rule when replicate SOC observations are available."
+        cites: [zhang2019]
+    validated_when: "Point SOC stock passes |PBIAS| <= 15% and nRMSE <= 30%, or stronger replicate-aware checks when available."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "A fetched DNDC-Rice paper reports SOC-stock nRMSE near 5%, but the numeric tier itself is grounded in Jiang 2021's reproduced nRMSE convention."
+
+  - dag_variable: water_balance_components
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.55}
+        pass_band: satisfactory
+        band_note: "Li 2007 sets validation best-case water EF >0.55 for DNDC drainage comparisons."
+        cites: [li2007]
+      - metric: theils_u2
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Li 2007 sets U2 <0.5 for drainage and leaching outcomes."
+        cites: [li2007]
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Deng 2016 reports RMSE/NRMSE/d for cumulative drainage and says annual and midyear totals were reasonably close."
+        cites: [deng2016]
+    validated_when: "Water-balance drainage/leaching components meet EF/NSE >= 0.55 and Theil U2 <= 0.5 in DNDC-style tile-drainage validation."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: "The convention is strongest for drainage and tile-flow terms; evapotranspiration or storage components may require variable-specific observation products."
+
+  - dag_variable: soil_temperature_profile
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: good
+        band_note: "The DAG's NSE metric is superseded by RMSE/nRMSE practice; Jiang 2021 reproduces the nRMSE tiers."
+        cites: [jiang2021]
+      - metric: rmse
+        direction: minimize
+        unit: deg C
+        bands: {very_good: null, good: null, satisfactory: 4.0}
+        pass_band: satisfactory
+        band_note: "Deng 2016 says soil temperature was modeled reasonably well with RMSE about 4 deg C and NRMSE of 10%."
+        cites: [deng2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Cui 2014 reports soil-temperature ME = 0.98, but DNDC validation papers report temperature mainly through RMSE/RMD/ME."
+        cites: [cui2014]
+    validated_when: "Soil-temperature profile passes nRMSE <= 20% and RMSE <= 4 deg C where comparable daily layer observations exist."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: "Deng 2016 also notes winter soil temperature is not well simulated where snow-cover data are unavailable; treat snow/freeze-thaw periods cautiously."
+
+  - dag_variable: soil_water_WFPS_and_water_table
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DNDC paper provides a numeric r threshold for WFPS or water-table depth."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Cui 2014 reports soil-moisture ME = 0.05 with R2 = 0.29; Zhang 2019 reports topsoil-moisture NSI = 0.15 and R2 = 0.42."
+        cites: [cui2014, zhang2019]
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Deng 2016 reports crop-available water-content NRMSE values but not a transferable WFPS/water-table pass band."
+        cites: [deng2016]
+    validated_when: "UNRESOLVED - use WFPS/water-table observations diagnostically, but no cited numeric r band is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The fetched DNDC literature has explicit drainage/leaching thresholds, not water-table-head or WFPS correlation thresholds."
+
+deferred_paywalled:
+  - ref: "Changes in carbon and nitrogen in soil particle-size fractions along a grassland restoration chronosequence in northern China"
+    doi: 10.1016/j.geoderma.2009.02.004
+    needed_for: [SOC_stock_and_change]

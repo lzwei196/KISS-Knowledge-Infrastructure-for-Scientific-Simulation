@@ -55,6 +55,10 @@ rotation worksteps.
 
 1. **Identify crops** — list crops in the rotation and find matching species/cultivar
    files in `monica-parameters/crops/`
+   - The stock long-day cultivars (`DaylengthRequirement` 20 h) are ~52°N calibrations. Outside
+     Central Europe run `tools/site_photoperiod.py adapt --lat <site> --base <cultivar.json> --out <file>`
+     and use the written object as `cropParams.cultivar` (SKILL.md China workflow step 5, triplet dt_29) —
+     otherwise anthesis slips into the hot season and the harvest index collapses (~0.2).
 2. **Define crop entries** — for each crop, set `is-winter-crop`, link species
    and cultivar parameter files
 3. **Define fertiliser library** — link mineral and organic fertiliser parameter files

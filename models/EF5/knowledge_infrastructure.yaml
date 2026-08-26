@@ -1,106 +1,125 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:58:40.531558'
-  domain: hydrology
   name: EF5
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: hype-5-35-0
+    version: 5.35.0
+    provenance: Fortran 90; SMHI HYPE 5.35.0 source (HYSS infrastructure + MODELMODULE.model core), text-file
+      I/O, optional NetCDF.
+  scientific_reference_version: HYPE 5.35.0 (SMHI HYdrological Predictions for the Environment; Lindstrom
+    et al. 2010 process basis)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CREST/source/repo/build/ef5
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s1_basic_grids
+  - s2_forcing_preparation
+  - s3_parameter_preparation
+  - s5_execution
+  - s6_output_analysis
+tools:
+  count: 5
+  files:
+  - tools/convert_forcing_to_ef5.py
+  - tools/convert_params_to_ef5.py
+  - tools/parse_ef5_output.py
+  - tools/prepare_basic_grids.py
+  - tools/run_ef5.py
+inputs:
+  forcing:
+  - name: precipitation (prec)
+    unit: mm/day
+  - name: air temperature (temp)
+    unit: degC
+  - name: daily min / max air temperature (tmin/tmax)
+    unit: degC
+  - name: shortwave radiation
+    unit: MJ/m^2/day
+  - name: relative humidity
+    unit: fraction
+  - name: wind speed
+    unit: m/s
+  parameters:
+  - name: lp (PET reduction limit)
+    unit: '-'
+  - name: cevp (PET coefficient)
+    unit: '-'
+  - name: cevpam / cevpph (PET seasonal amplitude / phase)
+    unit: '- / days'
+  - name: ttmp (snow threshold temperature)
+    unit: degC
+  - name: cmlt (degree-day snowmelt factor)
+    unit: mm/degC/day
+  - name: wcwp / wcfc / wcep (wilting point / field capacity / effective porosity)
+    unit: fraction
+  - name: rrcs1 / rrcs2 / rrcs3 (upper / lower / deep recession coefficients)
+    unit: '-'
+  - name: srrcs (surface runoff recession coefficient)
+    unit: '-'
+  - name: rivvel / damp (river velocity / attenuation)
+    unit: m/s / -
+  - name: lake rating-curve and depth parameters (gratk, gratefk, gldepi, gldepol)
+    unit: '- / m'
+  - name: nutrient process parameters (denitrlu, denitwr, denitwl, minerfn, sedon, sedpp, soilcoh, soilerod)
+    unit: various (1/day, kg/m2/day, kPa)
+  - name: SLC class definitions (landuse, soil, crop, vegtype, special, tiledepth, streamdepth, numlayers,
+      soildepth)
+    unit: '-'
+  - name: subbasin physiography (AREA, RIVLEN, latitude, elevation, slope, lake_depth, SLC_n fractions,
+      parreg/wqparreg/lakeregion)
+    unit: m^2, m, deg, m, %, fraction
+  initial_conditions:
+  - name: initial soil water
+    unit: mm
+  - name: initial lake stage
+    unit: m
+  - name: 'initial nutrient pools (humus/fast N and P: humusn0, fastn0, humusp0, fastp0)'
+    unit: kg/km2
+  boundary_conditions:
+  - name: simulation period (bdate / cdate / edate) and output/model options
+    unit: '-'
+  - name: PET method selector (petmodel 0-5)
+    unit: '-'
+  - name: snowmelt method selector (snowmeltmodel)
+    unit: '-'
+  - name: MAINDOWN routing topology
+    unit: '-'
+  - name: forcing-station mapping
+    unit: '-'
+  - name: lake / dam regulation configuration
+    unit: '-'
+  - name: upstream inflow, atmospheric deposition, point/non-point sources, aquifer exchange
+    unit: various
+  - name: crop fertilizer / management data
+    unit: '-'
+  - name: observed discharge (for calibration)
+    unit: m^3/s
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - cout
+  - snow
+  - evap
+  - soim
+  - gwat
+  - wcom
+  - c1TN
+  - c1TP
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.656, KGE=0.728, R=0.880, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.6565
+    best_kge: 0.728
+    best_r: 0.88
+summary:
+  total_tools: 5
+  total_stage_docs: 5
+  total_diagnostic_triplets: 22
+  generated: '2026-08-23'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

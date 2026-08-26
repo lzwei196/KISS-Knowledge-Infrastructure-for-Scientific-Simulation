@@ -1,14 +1,3 @@
----
-name: lohmann-routing
-description: >-
-  Lohmann diffusive-wave routing. Covers Within-cell routing of daily grid-cell total
-  runoff (surface runoff + baseflow) to the cell outlet…; Channel/river-network routing of
-  cell-outlet flow to gauge/outlet points using the linearized…; Source-to-sink
-  convolution and fraction-weighted accumulation of upstream cell contributions into…. Use
-  when the task involves running, configuring, calibrating or interpreting
-  Lohmann_Routing.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -32,7 +21,250 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (1 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (3 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (23 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (15 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `s5_routing_param/run_build_routing_new.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s5_routing_param/run_build_routing_new.py --help` |
+| `tools/preprocess_vic_for_routing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/preprocess_vic_for_routing.py --help` |
+
+*2 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 ---
+
+# Lohmann Routing -- Knowledge Infrastructure Skill Document
+
+> **Version**: route_1.0
+> **Domain**: hydrology / river routing
+> **Last updated**: 2026-08-18
+> **Validation status**: see `knowledge_infrastructure.yaml` and `docs/validation_convention.yaml`
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | Lohmann Routing / VIC Routing module |
+| Version | route_1.0 |
+| Language | Fortran |
+| Primary domain | Hydrology, river routing |
+| Spatial mode | Distributed gridded routing to defined station/outlet locations |
+| Executable | `route_1.0/src/rout` after compilation |
+| KI contract | `dag.yaml` defines observable outputs; `docs/validation_convention.yaml` defines the cited validation bars |
+
+## 2. What This Model Does
+
+This KI runs the Lohmann/VIC routing module to route upstream hydrological-model runoff and baseflow into streamflow at configured stations or outlets. The model uses gridded flow direction, fraction, distance mask, station location, and unit hydrograph inputs, then writes daily, monthly, yearly, and depth-normalized discharge products.
+
+## 3. Input Requirements
+
+**Exact shapes live in `docs/format_spec.yaml`** (projected from `dag.yaml` and `diagnostics/triplets.yaml`; regenerate it, never hand-edit it). This section explains intent and common traps; the spec file is the contract.
+
+### 3.1 Upstream Hydrological Inputs
+
+Routing expects preprocessed VIC-style daily files with exactly seven no-header columns:
+
+```text
+YEAR MONTH DAY PREC EVAP RUNOFF BASEFLOW
+```
+
+For VIC 5.x output, do not feed the raw 22+ column files directly. Preprocess each file to the seven routing columns documented below in "重要：VIC输出预处理（必须步骤）".
+
+### 3.2 Static Routing Inputs
+
+| Input | Purpose | Notes |
+|-------|---------|-------|
+| Flow direction file (`*_direc.txt`) | D8 routing direction grid | Prepared by the routing parameter build workflow |
+| Fraction file (`*_frac.txt`) | Active basin/grid area fraction | Must align with the VIC grid |
+| Distance mask (`*_xmask.txt`) | Flow distance / mask grid | Coordinate origin must match VIC file naming |
+| Station file (`*_staloc.txt`) | Outlet/station position | Must include the required second line (`NONE` or `.uh_s` path) |
+| Unit hydrograph file (`UH.all`) | Routing response parameters | Must use the documented 12-line format |
+| Global configuration (`rout_global.txt`) | Model run control | See the checklist below for line-by-line expectations |
+
+### 3.3 Configuration Files
+
+| File | Format | Notes |
+|------|--------|-------|
+| `rout_global.txt` | Fixed-order text control file | Paths are line-position sensitive; avoid long absolute paths that Fortran may truncate |
+| `*_staloc.txt` | Two-line station control | First line has station count/name/grid location; second line is `NONE` or a `.uh_s` file path |
+| `UH.all` | Whitespace-delimited 12-line table | Each row contains a time index and unit-hydrograph weight |
+
+## 4. Build Instructions
+
+Compile the actual Fortran routing executable when `rout` is missing or stale:
+
+```bash
+cd /path/to/route_1.0/src
+make clean
+make
+```
+
+Known build issue: if the model reports `Incorrect dimensions: Reset nrow and ncol in main to X Y`, edit the Fortran `NROW` and `NCOL` parameters to fit the domain, then rebuild.
+
+## 5. Execution
+
+Before any run, execute the KI preflight:
+
+```bash
+python preflight_check.py
+```
+
+Then run the real model executable with the prepared global configuration:
+
+```bash
+/path/to/route_1.0/src/rout rout_global.txt
+```
+
+The complete operational sequence is documented below in "完整运行流程"; follow that sequence before attempting custom orchestration.
+
+## 6. Output Description
+
+**Source: `dag.yaml`.** The dag is the model's identity: every observable output's `var`, unit, description, and validation rank live there. If this section ever disagrees with `dag.yaml`, `dag.yaml` wins and this section must be corrected.
+
+**Headline output** (the dag's `validation_rank: 1` variable -- the one this model is judged by):
+
+> `discharge_daily` -- Routed daily streamflow at each defined station/outlet (FLOW). (`m3/s`)
+
+| Output variable (dag `var`) | Rank / role | Unit stated in this section | Description |
+|-----------------------------|-------------|-----------------------------|-------------|
+| `discharge_daily` | rank 1 headline output | `m3/s` | Routed daily streamflow at each defined station/outlet (FLOW). |
+| `discharge_monthly` | other dag output | see `dag.yaml` | listed by the dag; read `dag.yaml` for the source description |
+| `discharge_yearly` | other dag output | see `dag.yaml` | listed by the dag; read `dag.yaml` for the source description |
+| `discharge_daily_mm` | other dag output | see `dag.yaml` | listed by the dag; read `dag.yaml` for the source description |
+| `discharge_monthly_mm` | other dag output | see `dag.yaml` | listed by the dag; read `dag.yaml` for the source description |
+
+Runtime files documented by this KI include `XX.day`, `XX.day_mm`, `XX.month`, `XX.month_mm`, `XX.year`, and `XX.uh_s`; see "输出文件说明" for file-level details.
+
+## 7. Tool Inventory
+
+| Tool / component | Purpose | Inputs | Outputs |
+|------------------|---------|--------|---------|
+| `preflight_check.py` | Verify environment, binary/package, and data availability | KI directory | `PREFLIGHT_REPORT=` line and pass/fail status |
+| `tools/` | Executable KI pipeline stages | Stage-specific inputs | Stage-specific outputs |
+| `run_build_routing_new.py` workflow | Build routing parameter files | Soil parameters, DEM, basin boundary, outlet/station information | Direction, fraction, xmask, staloc, unit hydrograph, global config |
+| `route_1.0/src/rout` | Run the actual routing model | `rout_global.txt` plus routing/VIC input files | Station/outlet discharge files |
+
+Shared forcing utilities are available for upstream data work:
+
+```python
+from ki_tools_common.load_forcing import load_daily_forcing
+```
+
+## 8. Unit Table / Unit Conversion Table
+
+**Source: `dag.yaml` and the KI's routing format notes.** This unit table documents the units that must be preserved or checked when preparing inputs and reading outputs. Do not infer additional output units here; for full machine-readable shapes, read `docs/format_spec.yaml`.
+
+| Variable / file product | Source unit or source form | Model/output unit | Conversion / handling | Type |
+|-------------------------|----------------------------|-------------------|-----------------------|------|
+| `RUNOFF` input column | upstream VIC/routing-preprocessed daily value | routing input column | extracted from VIC output column 16 in the documented preprocessing script | column selection |
+| `BASEFLOW` input column | upstream VIC/routing-preprocessed daily value | routing input column | extracted from VIC output column 17 in the documented preprocessing script | column selection |
+| `EVAP` input column | upstream VIC/routing-preprocessed daily value | routing input column | extracted from VIC output column 18 in the documented preprocessing script | column selection |
+| `discharge_daily` | model-routed streamflow | `m3/s` | no post-run unit conversion for the headline FLOW output | output unit |
+| `XX.day` | routing output file | `m3/s` | read as daily flow with columns `year month day flow` | output unit |
+| `XX.day_mm` | routing output file | `mm` | read as daily depth-normalized flow | output unit |
+| `XX.month` | routing output file | `m3/s` | read as monthly mean flow | output unit |
+| `XX.month_mm` | routing output file | `mm` | read as monthly depth-normalized flow | output unit |
+| `XX.year` | routing output file | `m3/s` | read as monthly flow summary by month | output unit |
+
+## 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| `discharge_daily` | Routed streamflow at station/outlet in `m3/s` | Depth-normalized discharge in `mm` | Metrics compare wrong magnitude and may fail silently |
+| `discharge_daily_mm` | Depth-normalized daily discharge output | Absolute streamflow in `m3/s` | Flow-volume interpretation is wrong |
+| `RUNOFF` / `BASEFLOW` inputs | Routed from the preprocessed VIC runoff/baseflow columns | Raw VIC 22+ column file | Routing reads wrong columns, producing extreme or negative flows |
+
+Output unit verification checklist:
+
+- Read the `dag.yaml` output definition before scoring any output.
+- Confirm that `discharge_daily` is the rank-1 `m3/s` FLOW variable.
+- Print the first rows of `XX.day` and check that the four columns are year, month, day, and flow.
+- Do not compare `XX.day_mm` or `XX.month_mm` directly against `m3/s` observed discharge.
+
+## 9. Diagnostic Triplets (Top 5)
+
+The full error corpus is `diagnostics/triplets.yaml`; check it first on any failure. These rows cite real triplet IDs and intentionally summarize rather than duplicate the YAML.
+
+| ID | Error / symptom | Diagnosis | Remedy |
+|----|-----------------|-----------|--------|
+| `dt_001` | Routing runs but writes no output | Flow-direction network may not reach the outlet | Rebuild routing parameters with the documented connect-and-repair workflow |
+| `dt_002` | Model exits immediately with no output | `staloc` file format is incomplete | Ensure the file has the station line and a second line containing `NONE` or a `.uh_s` path |
+| `dt_003` | End-of-file while reading `UH.all` | Unit hydrograph file does not match the expected 12-line form | Regenerate or rewrite `UH.all` with index and weight on each line |
+| `dt_005` | Extreme or negative discharge values | Raw VIC output columns were fed to routing | Preprocess VIC 5.x output to the seven routing columns |
+| `dt_006` | `NOT FOUND` or all-zero/NaN output with existing files | Fortran path truncation | Use short symlinked paths or run from a short-path directory |
+
+## 10. Coupling Interfaces
+
+| Upstream model | Variable exchanged | Unit | Temporal resolution |
+|----------------|-------------------|------|---------------------|
+| VIC / mHM / other upstream hydrological model | Runoff and baseflow routed through the seven-column input format | use upstream-preprocessed routing columns | daily |
+
+| Downstream use | Variable exchanged | Unit | Temporal resolution |
+|----------------|-------------------|------|---------------------|
+| Observed discharge validation / station hydrograph analysis | `discharge_daily` | `m3/s` | daily |
+| Monthly validation / summaries | `discharge_monthly` | see `dag.yaml` | monthly |
+
+## 11. Validated Results
+
+**Source: `docs/validation_convention.yaml`.** A metric value without the field's pass-band is not a verdict. The convention file wins over remembered thresholds. Null convention bands are written as "no cited threshold".
+
+### Headline Validation Variable
+
+| Property | Value |
+|----------|-------|
+| Dag variable | `discharge_daily` |
+| Rank | 1 |
+| Unit | `m3/s` |
+| Description | Routed daily streamflow at each defined station/outlet (FLOW). |
+
+### Convention Bars
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation keys |
+|--------------|--------|-----------|-----------|------|--------------|---------------|
+| `discharge_daily` | `nse` | maximize | `0.8` (`moriasi2015`, `arnold2012`) | `0.7` (`moriasi2015`, `arnold2012`) | `0.5` (`moriasi2015`, `arnold2012`) | `moriasi2015`, `arnold2012` |
+| `discharge_daily` | `pbias` | zero_centered | `5.0` (`moriasi2015`, `arnold2012`) | `10.0` (`moriasi2015`, `arnold2012`) | `15.0` (`moriasi2015`, `arnold2012`) | `moriasi2015`, `arnold2012` |
+| `discharge_daily` | `csi` | maximize | no cited threshold | no cited threshold | no cited threshold | none |
+| `discharge_monthly` | `nse` | maximize | `0.8` (`moriasi2015`, `arnold2012`) | `0.7` (`moriasi2015`, `arnold2012`) | `0.5` (`moriasi2015`, `arnold2012`) | `moriasi2015`, `arnold2012` |
+| `discharge_monthly` | `pbias` | zero_centered | `5.0` (`moriasi2015`, `arnold2012`) | `10.0` (`moriasi2015`, `arnold2012`) | `15.0` (`moriasi2015`, `arnold2012`) | `moriasi2015`, `arnold2012` |
+
+### Achieved Results
+
+This SKILL does not state achieved calibration or validation metric values. To judge a run, compute metrics against observed discharge and compare them with the convention bars above; the cited bars come from `docs/validation_convention.yaml`.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Routing executable | Actual Fortran model | Required | The mandatory policy forbids substituting a simplified formula |
+| Upstream runoff/baseflow | VIC, mHM, or equivalent hydrological-model outputs | Required | Must be converted to the seven-column routing input format |
+| Observed discharge | `data_ki/ObservedQ/SKILL.md` | Required for validation | Use for station/outlet validation |
+| Field performance bars | `docs/validation_convention.yaml` | Required for verdicts | Use cited per-variable bars above |
+
+## 12. Parameter Selection by Region
+
+This KI does not provide regional calibrated parameter tables. Use the routing parameter preparation workflow below to derive basin-specific direction, fraction, xmask, station, and unit hydrograph files from the domain DEM, basin boundary, VIC grid, and outlet information.
 
 ## Data Preparation
 

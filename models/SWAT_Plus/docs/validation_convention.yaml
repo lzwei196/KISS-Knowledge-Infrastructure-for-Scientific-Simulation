@@ -1,490 +1,522 @@
 schema_version: 1
 model_id: SWAT+
 domain: hydrology
-generated_by: "self-improve session (Claude Opus 4.8 [1m]) — Step-B validation-convention build, general schema"
+generated_by: self-improve session (Claude Opus 4.8 [1m]) — Step-B validation-convention build, general
+  schema
 generated_at: 2026-07-09
-
-# Grounded in locally-fetched full texts. The headline convention for SWAT/SWAT+ is the ASABE
-# Moriasi guidance: Moriasi et al. 2007 (Table 4 general performance ratings, monthly step:
-# NSE/RSR/PBIAS tiers for streamflow, sediment, and N/P) and the updated Moriasi et al. 2015
-# recommended watershed-scale satisfactory thresholds. Both originals are locally fetched
-# (paper_cache), so they are cited directly. These are STRONG for discharge, sediment and
-# nutrient (N & P). Crop yield lacks a formal Moriasi-style tier in the fetched set; it is
-# grounded on an empirical SWAT PBIAS envelope (Meaurio/Ayana w13162238) + Arnold 2012's
-# "reasonable yield" verification rule (moderate/weak; the nRMSE tier source, Jamieson 1991, is
-# paywalled -> deferred). Evapotranspiration and SWE bands are TRANSFERRED from the Moriasi
-# watershed-flow convention (SWAT ET/snow studies apply it), hence moderate/weak + lower
-# confidence. Spatial CSI comparisons (ET, soil moisture, snow, gwflow head) and the point
-# water-table correlation have NO cited numeric threshold in the fetched set -> null bands,
-# confidence <= 0.4, deferred. Bands are plain numbers read via `direction`.
-
 references:
   moriasi2007:
     doi: 10.13031/2013.23153
-    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
-    venue: "Transactions of the ASABE"
+    title: Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations
+    venue: Transactions of the ASABE
     year: 2007
     oa: manual
-    resolves: manual  # ASABE; locally fetched full text (paper_cache)
+    resolves: manual
   moriasi2015:
     doi: 10.13031/trans.58.10715
-    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
-    venue: "Transactions of the ASABE"
+    title: 'Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria'
+    venue: Transactions of the ASABE
     year: 2015
     oa: manual
-    resolves: manual  # ASABE; locally fetched full text (paper_cache)
+    resolves: manual
   arnold2012:
     doi: 10.13031/2013.42256
-    title: "SWAT: Model Use, Calibration, and Validation"
-    venue: "Transactions of the ASABE"
+    title: 'SWAT: Model Use, Calibration, and Validation'
+    venue: Transactions of the ASABE
     year: 2012
     oa: manual
     resolves: manual
   meaurio_w13162238:
     doi: 10.3390/w13162238
-    title: "Multi-Step Calibration Approach for SWAT Model Using Soil Moisture and Crop Yields in a Small Agricultural Catchment"
-    venue: "Water"
+    title: Multi-Step Calibration Approach for SWAT Model Using Soil Moisture and Crop Yields in a Small
+      Agricultural Catchment
+    venue: Water
     year: 2021
     oa: gold
     resolves: https://www.mdpi.com/2073-4441/13/16/2238
   bauwe2019:
     doi: 10.5194/adgeo-48-1-2019
-    title: "Evaluating the SWAT model to predict streamflow, nitrate loadings and crop yields in a small agricultural catchment"
-    venue: "Advances in Geosciences"
+    title: Evaluating the SWAT model to predict streamflow, nitrate loadings and crop yields in a small
+      agricultural catchment
+    venue: Advances in Geosciences
     year: 2019
     oa: gold
     resolves: https://adgeo.copernicus.org/articles/48/1/2019/
   betrie2011:
     doi: 10.5194/hess-15-807-2011
-    title: "Sediment management modelling in the Blue Nile Basin using SWAT model"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Sediment management modelling in the Blue Nile Basin using SWAT model
+    venue: Hydrol. Earth Syst. Sci.
     year: 2011
     oa: gold
     resolves: https://hess.copernicus.org/articles/15/807/2011/
   hess2019_et:
     doi: 10.5194/hess-23-1113-2019
-    title: "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Multi-site calibration and validation of SWAT with satellite-based evapotranspiration
+    venue: Hydrol. Earth Syst. Sci.
     year: 2019
     oa: gold
     resolves: https://hess.copernicus.org/articles/23/1113/2019/
   ahl2008_snow:
     doi: 10.1111/j.1752-1688.2008.00233.x
-    title: "Hydrologic Calibration and Validation of SWAT in a Snow-Dominated Rocky Mountain Watershed, Montana, U.S.A."
-    venue: "J. Am. Water Resour. Assoc."
+    title: Hydrologic Calibration and Validation of SWAT in a Snow-Dominated Rocky Mountain Watershed,
+      Montana, U.S.A.
+    venue: J. Am. Water Resour. Assoc.
     year: 2008
     oa: manual
     resolves: manual
-
 validation:
-
-  # ==================== DISCHARGE / streamflow — point time series (STRONG) ====================
-  - canonical_quantity: discharge
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        cites: [moriasi2007, moriasi2015]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, satisfactory: 15}
-        pass_band: satisfactory
-        band_note: "very_good <±10% streamflow (Moriasi 2007 Table 4); satisfactory tightened to ≤±15% for watershed-scale models (Moriasi 2015)."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics:
-      - metric: rsr
-        direction: minimize
-        status: supportive
-        ceiling_reason: null
-        cites: [moriasi2007]
-      - metric: r2
-        direction: maximize
-        status: supportive
-        ceiling_reason: null
-        cites: [moriasi2015]
-    validated_when: "NSE > 0.50 (Moriasi 2015 watershed-scale; 2007 Table 4 satisfactory 0.50<NSE<0.65) AND |PBIAS| ≤ 15% (Moriasi 2015). RSR ≤ 0.70 and R² > 0.60 are co-reported supports."
-    evidence_strength: strong
-    confidence: 0.9
-    notes: >-
-      Moriasi 2007 Table 4 (monthly step): streamflow satisfactory 0.50<NSE<0.65, 0.60<RSR<0.70,
-      ±15<PBIAS<±25; very good 0.75<NSE<1.00, RSR<0.50, PBIAS<±10. Moriasi 2015 abstract: "daily,
-      monthly, or annual R2 > 0.60, NSE > 0.50, and PBIAS ≤ ±15% for watershed-scale models" (used
-      here as the current satisfactory gate). Exclude warmup years (nyskip); SWAT+ flo_out is emitted
-      in ha-m/day and must be converted to m3/s before comparison (dag caveat).
-
-  # =============== DISCHARGE / streamflow — regional aggregate time series (STRONG) ===============
-  - canonical_quantity: discharge
-    obs_shape: regional_aggregate_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, satisfactory: 15}
-        pass_band: satisfactory
-        band_note: "Watershed-scale flow satisfactory |PBIAS| ≤ ±15% (Moriasi 2015); very_good <±10% (Moriasi 2007)."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics:
-      - metric: nse
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Aggregate/annual gauge series carry abstraction and management trends absent from the forcing; magnitude bias (PBIAS) is the defensible headline, temporal NSE is co-reported."
-        cites: [moriasi2015]
-    validated_when: "|PBIAS| ≤ 15% on the basin-aggregate flow series (Moriasi 2015)."
-    evidence_strength: strong
-    confidence: 0.8
-    notes: >-
-      Detrend abstraction/management effects before comparison (dag caveat). PBIAS is the dag
-      determining_metric here and matches the Moriasi watershed-flow convention.
-
-  # ==================== SEDIMENT — point time series (STRONG) ====================
-  - canonical_quantity: sediment
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 15, satisfactory: 20}
-        pass_band: satisfactory
-        band_note: "very_good <±15% (Moriasi 2007 Table 4, sediment); satisfactory ≤±20% watershed-scale (Moriasi 2015)."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics:
-      - metric: nse
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Gauged sediment series are sparse and rating-curve-derived; NSE agreement is weaker than for flow, so PBIAS is the headline. Moriasi 2015 sets sediment satisfactory NSE > 0.45."
-        cites: [moriasi2015, betrie2011]
-    validated_when: "|PBIAS| ≤ 20% for sediment (Moriasi 2015); NSE > 0.45 supportive."
-    evidence_strength: strong
-    confidence: 0.8
-    notes: >-
-      Moriasi 2007 Table 4: sediment satisfactory ±30<PBIAS<±55, very good <±15; Moriasi 2015
-      tightens watershed-scale satisfactory to "monthly R2 > 0.40 and NSE > 0.45 and daily, monthly,
-      or annual PBIAS ≤ ±20% for sediment" (used as the gate). Betrie et al. 2011 is an OA SWAT
-      sediment benchmark (Blue Nile) corroborating the NSE/PBIAS convention.
-
-  # ==================== SEDIMENT — regional aggregate time series (STRONG) ====================
-  - canonical_quantity: sediment
-    obs_shape: regional_aggregate_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 15, satisfactory: 20}
-        pass_band: satisfactory
-        band_note: "Sediment satisfactory |PBIAS| ≤ ±20% (Moriasi 2015); very_good <±15% (Moriasi 2007)."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics: []
-    validated_when: "|PBIAS| ≤ 20% on the aggregate sediment-load series (Moriasi 2015)."
-    evidence_strength: strong
-    confidence: 0.75
-    notes: >-
-      Basin/annual sediment loads; same Moriasi sediment convention. Rating-curve uncertainty is
-      typically wide, so PBIAS alone is the defensible metric.
-
-  # ==================== NUTRIENT (N & P) — point time series (STRONG convention) ====================
-  - canonical_quantity: nutrient
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 25, satisfactory: 30}
-        pass_band: satisfactory
-        band_note: "N & P satisfactory |PBIAS| ≤ ±30% watershed-scale (Moriasi 2015); very_good <±25% (Moriasi 2007 Table 4, N/P column)."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics:
-      - metric: nse
-        direction: maximize
-        status: supportive
-        ceiling_reason: "In-stream nutrient concentrations are driven by exogenous loading and initial pools; Moriasi 2015 sets N and P satisfactory NSE > 0.35 (looser than flow). Temporal NSE is co-reported, not the headline."
-        cites: [moriasi2015]
-    validated_when: "|PBIAS| ≤ 30% for N or P (Moriasi 2015); NSE > 0.35 supportive."
-    evidence_strength: strong
-    confidence: 0.75
-    notes: >-
-      Moriasi 2015 abstract: "monthly R2 > 0.40 and NSE > 0.35 and daily, monthly, or annual PBIAS ≤
-      ±30% for phosphorus (P); and monthly R2 > 0.30 and NSE > 0.35 and daily, monthly, or annual
-      PBIAS ≤ ±30% for nitrogen (N)." Moriasi 2007 Table 4 N,P: very good <±25, good ±25<PBIAS<±40,
-      satisfactory ±40<PBIAS<±70. The tighter 2015 values are used as the gate. IMPORTANT CAVEAT
-      (dag): SWAT+ Rev 59.3 QUAL2E in-channel solver is numerically unstable at extreme flows and can
-      blow up to physically impossible magnitudes (>1e9 mg/L); prefer landscape (basin_ls) / balance
-      (basin_nb) nutrient outputs, and compare only when wq_cha=1 on a non-flashy basin. NOTE:
-      skeleton validation_rows mark nutrient has_obs_binding=false, but model_obs_map DOES bind
-      total_nitrogen/TP (channel loads) and NO3N/Nrate (basin_ls/basin_nb), so a gradeable convention
-      is recorded here.
-
-  # ==================== NUTRIENT (N & P) — regional aggregate time series (STRONG convention) ====================
-  - canonical_quantity: nutrient
-    obs_shape: regional_aggregate_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 25, satisfactory: 30}
-        pass_band: satisfactory
-        band_note: "N & P satisfactory |PBIAS| ≤ ±30% (Moriasi 2015); very_good <±25% (Moriasi 2007)."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics: []
-    validated_when: "|PBIAS| ≤ 30% on the basin-aggregate N or P load/balance series (Moriasi 2015)."
-    evidence_strength: strong
-    confidence: 0.7
-    notes: >-
-      Landscape (basin_ls) and balance (basin_nb) nutrient losses; inventory-based reference loads
-      carry wide uncertainty, so PBIAS is the only defensible metric (dag caveat). Covers NO3N and
-      Nrate obs bindings.
-
-  # ==================== CROP YIELD — regional aggregate time series (MODERATE) ====================
-  - canonical_quantity: yield
-    obs_shape: regional_aggregate_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {satisfactory: 20}
-        pass_band: satisfactory
-        band_note: "No formal Moriasi-style yield tier in the fetched set; band grounded on the SWAT well-calibrated crop-yield PBIAS envelope (Meaurio/Ayana 2021: −17% to 14%)."
-        cites: [meaurio_w13162238]
-    secondary_metrics:
-      - metric: nrmse
-        direction: minimize
-        status: supportive
-        ceiling_reason: "The canonical crop-yield skill tier (nRMSE excellent<10 / good10-20 / fair20-30 / poor>30%, Jamieson 1991) is paywalled and not in the fetched set — see deferred_paywalled; only PBIAS is grounded here."
-        cites: []
-    validated_when: "|PBIAS| ≤ 20% for detrended provincial/national yield (Meaurio 2021 well-calibrated envelope); Arnold 2012 requires yields be 'reasonable for the study region'."
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      Meaurio et al. 2021 (w13162238): "Crop yields were also well simulated with a percent bias
-      (PBIAS) ranging from −17% to 14%." Arnold 2012 (soft calibration): verify plant yield/biomass
-      are "reasonable for the study region or watershed." National/provincial yield series carry
-      strong technology trends not represented by a weather-driven process model — DETREND before
-      comparison (dag caveat). nRMSE (Jamieson 1991) and Willmott d-index would strengthen this to
-      strong but their sources are paywalled.
-
-  # ==================== CROP YIELD — point time series (MODERATE) ====================
-  - canonical_quantity: yield
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {satisfactory: 20}
-        pass_band: satisfactory
-        band_note: "Single-site experimental yield; same SWAT well-calibrated PBIAS envelope (Meaurio 2021: −17% to 14%)."
-        cites: [meaurio_w13162238, bauwe2019]
-    secondary_metrics: []
-    validated_when: "|PBIAS| ≤ 20% at the trial site (Meaurio 2021 envelope; Bauwe 2019 reproduced average annual crop yields for winter wheat/maize)."
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      Bauwe et al. 2019 (adgeo-48): SWAT reproduced average annual crop yields (winter wheat, silage
-      maize) in a small agricultural catchment. Detrending typically not needed for a stable-management
-      single site. HRU containing the trial must be identified and management aligned (dag caveat).
-
-  # ==================== CROP YIELD — spatial snapshot (WEAK / transferred) ====================
-  - canonical_quantity: yield
-    obs_shape: spatial_snapshot
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {satisfactory: 30}
-        pass_band: satisfactory
-        band_note: "Admin-unit yield map vs HRU zonal aggregate; PBIAS envelope transferred from Meaurio 2021 and loosened to ±30% for the coarser spatial comparison — low confidence."
-        cites: [meaurio_w13162238]
-    secondary_metrics: []
-    validated_when: "|PBIAS| ≤ 30% of admin-unit average yield, only where basin coverage of the admin unit is high (transferred band, low confidence)."
-    evidence_strength: weak
-    confidence: 0.4
-    notes: >-
-      Other yield obs_shapes in the dag (point_snapshot, regional_aggregate_snapshot,
-      spatial_time_series/RS surrogates) share this same PBIAS convention and confidence tier; not
-      emitted as separate blocks to bound block count. Zonal stats required to align HRU yield to the
-      admin unit / pixel grid.
-
-  # ==================== EVAPOTRANSPIRATION — regional aggregate time series (MODERATE / transferred) ====================
-  - canonical_quantity: evapotranspiration
-    obs_shape: regional_aggregate_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {satisfactory: 15}
-        pass_band: satisfactory
-        band_note: "No ET-specific PBIAS tier in the fetched set; transferred from the Moriasi 2015 watershed satisfactory (±15%). SWAT ET evaluations apply the Moriasi convention and report 'very low bias'."
-        cites: [moriasi2015, hess2019_et]
-    secondary_metrics:
-      - metric: nse
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Remote-sensing/reanalysis ET references carry their own bias; SWAT ET calibrations report NSE 0.72–0.78 (hess-23-1113-2019) but no formal ET NSE tier exists in the fetched set."
-        cites: [hess2019_et]
-    validated_when: "|PBIAS| ≤ 15% against a basin ET reference (transferred Moriasi watershed convention; hess-23-1113-2019 achieved acceptable correlation and very low bias)."
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      hess-23-1113-2019: multi-site SWAT calibration to satellite ET reached "NSE of 0.72 ... R2 of
-      0.76 for the calibration period ... NSE of 0.78" and describes "very low bias and acceptable
-      correlation." Band transferred from the flow convention because ET has no distinct ASABE tier;
-      remote-sensing ET (8-day) needs temporal aggregation first (dag caveat).
-
-  # ==================== EVAPOTRANSPIRATION — spatial time series (WEAK / no cited CSI threshold) ====================
-  - canonical_quantity: evapotranspiration
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited categorical-skill (CSI) threshold for spatial ET pattern match in the fetched set."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited spatial-ET CSI threshold; treat as data/convention gap. Do NOT auto-validate or loosen."
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      SWAT ET vs remote-sensing ET is usually judged by NSE/PBIAS/R2 (see the regional block), not
-      CSI. A categorical spatial-skill benchmark would be needed to set this band.
-
-  # ==================== SWE — point time series (MODERATE / transferred) ====================
-  - canonical_quantity: swe
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "No snow-specific NSE tier in the fetched set; satisfactory transferred from the Moriasi 2015/2007 streamflow NSE>0.50, corroborated by a snow-dominated SWAT application."
-        cites: [moriasi2007, ahl2008_snow]
-    secondary_metrics:
-      - metric: pbias
-        direction: zero_centered
-        status: supportive
-        ceiling_reason: "Snowmelt water-yield PBIAS/Dv are co-reported; Ahl et al. 2008 report mean paired deviation (Dv) of 31–36% for a snow-dominated SWAT watershed — snow magnitude bias is larger than for rain-driven flow."
-        cites: [ahl2008_snow]
-    validated_when: "NSE > 0.50 against snow-pillow/snow-course SWE or snowmelt-driven flow (transferred Moriasi streamflow convention; Ahl 2008 snow-dominated SWAT)."
-    evidence_strength: moderate
-    confidence: 0.45
-    notes: >-
-      Ahl et al. 2008: snow-dominated Rocky Mountain SWAT calibration/validation with Nash-Sutcliffe
-      efficiencies and "mean paired deviations (Dv) of 36 and 31%." Peak SWE depth and ablation rate
-      are the magnitude targets. No SWE-specific ASABE tier exists, so the flow NSE>0.50 is transferred
-      with reduced confidence.
-
-  # ==================== SWE — spatial time series (WEAK / no cited CSI threshold) ====================
-  - canonical_quantity: swe
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited snow-cover-extent CSI/accuracy threshold in the fetched set."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited snow-cover CSI threshold; treat as convention gap. Do NOT auto-validate or loosen."
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      Remote-sensing SWE/snow-cover products are coarser than HRUs; aggregate HRU output to pixel
-      before comparison (dag caveat). A categorical snow-cover benchmark would be needed to set the CSI band.
-
-  # ==================== SOIL MOISTURE — spatial time series (WEAK / no cited threshold) ====================
-  - canonical_quantity: soil_moisture
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited CSI (or correlation) threshold for spatial soil-moisture pattern match in the fetched set."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited soil-moisture spatial-skill threshold. Do NOT auto-validate or loosen."
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      model_obs_map uses correlation (r) as the determining metric for soil moisture; SWAT satellite-SM
-      calibration studies (e.g., hess-21-3125-2017, w13162238) report R without a universal acceptance
-      threshold, so no numeric band is grounded here. HRU geometry is irregular — remap to grid for
-      raster comparison (dag caveat).
-
-  # ==================== SOIL MOISTURE — spatial snapshot (WEAK / no cited threshold) ====================
-  - canonical_quantity: soil_moisture
-    obs_shape: spatial_snapshot
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited spatial soil-moisture CSI threshold in the fetched set."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited threshold; treat as convention gap."
-    evidence_strength: weak
-    confidence: 0.3
-    notes: "Single-date soil-moisture map; same gap as the spatial time-series block."
-
-  # ==================== WATER TABLE / groundwater head — point time series (WEAK / no cited r threshold) ====================
-  - canonical_quantity: water_table
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: r
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited correlation threshold for water-table/head time series in the fetched set; the standard head convention (normalized RMSE, Anderson & Woessner / Hill 1998) is not in cache."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited water-table r or normalized-RMSE threshold; treat as data/convention gap. Do NOT auto-validate or loosen."
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      Lumped aquifer (aqu_1d) has one storage per aquifer object; point-well head comparison is only
-      meaningful under the distributed gwflow=1 module (dag caveat). The groundwater-modelling
-      convention (calibration target normalized head RMSE, typically <10%) is paywalled — see
-      deferred_paywalled.
-
-  # ==================== WATER TABLE / head — spatial snapshot (WEAK / no cited CSI threshold) ====================
-  - canonical_quantity: water_table
-    obs_shape: spatial_snapshot
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited spatial head-agreement (CSI) threshold in the fetched set; meaningful only under gwflow=1."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited threshold; requires gwflow=1 distributed heads and a head-RMSE convention."
-    evidence_strength: weak
-    confidence: 0.3
-    notes: "Distributed gwflow head snapshot; grounding blocked on a fetched head-error convention."
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - moriasi2007
+    - moriasi2015
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      satisfactory: 15
+    pass_band: satisfactory
+    band_note: very_good <±10% streamflow (Moriasi 2007 Table 4); satisfactory tightened to ≤±15% for
+      watershed-scale models (Moriasi 2015).
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics:
+  - metric: rsr
+    direction: minimize
+    status: supportive
+    ceiling_reason: null
+    cites:
+    - moriasi2007
+  - metric: r2
+    direction: maximize
+    status: supportive
+    ceiling_reason: null
+    cites:
+    - moriasi2015
+  validated_when: NSE > 0.50 (Moriasi 2015 watershed-scale; 2007 Table 4 satisfactory 0.50<NSE<0.65) AND
+    |PBIAS| ≤ 15% (Moriasi 2015). RSR ≤ 0.70 and R² > 0.60 are co-reported supports.
+  evidence_strength: strong
+  confidence: 0.9
+  notes: 'Moriasi 2007 Table 4 (monthly step): streamflow satisfactory 0.50<NSE<0.65, 0.60<RSR<0.70, ±15<PBIAS<±25;
+    very good 0.75<NSE<1.00, RSR<0.50, PBIAS<±10. Moriasi 2015 abstract: "daily, monthly, or annual R2
+    > 0.60, NSE > 0.50, and PBIAS ≤ ±15% for watershed-scale models" (used here as the current satisfactory
+    gate). Exclude warmup years (nyskip); SWAT+ flo_out is emitted in ha-m/day and must be converted to
+    m3/s before comparison (dag caveat).'
+  dag_variable: streamflow at channel outlet (flo_out)
+- obs_shape: regional_aggregate_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      satisfactory: 15
+    pass_band: satisfactory
+    band_note: Watershed-scale flow satisfactory |PBIAS| ≤ ±15% (Moriasi 2015); very_good <±10% (Moriasi
+      2007).
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics:
+  - metric: nse
+    direction: maximize
+    status: supportive
+    ceiling_reason: Aggregate/annual gauge series carry abstraction and management trends absent from
+      the forcing; magnitude bias (PBIAS) is the defensible headline, temporal NSE is co-reported.
+    cites:
+    - moriasi2015
+  validated_when: '|PBIAS| ≤ 15% on the basin-aggregate flow series (Moriasi 2015).'
+  evidence_strength: strong
+  confidence: 0.8
+  notes: Detrend abstraction/management effects before comparison (dag caveat). PBIAS is the dag determining_metric
+    here and matches the Moriasi watershed-flow convention.
+  dag_variable: streamflow at channel outlet (flo_out)
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 15
+      satisfactory: 20
+    pass_band: satisfactory
+    band_note: very_good <±15% (Moriasi 2007 Table 4, sediment); satisfactory ≤±20% watershed-scale (Moriasi
+      2015).
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics:
+  - metric: nse
+    direction: maximize
+    status: supportive
+    ceiling_reason: Gauged sediment series are sparse and rating-curve-derived; NSE agreement is weaker
+      than for flow, so PBIAS is the headline. Moriasi 2015 sets sediment satisfactory NSE > 0.45.
+    cites:
+    - moriasi2015
+    - betrie2011
+  validated_when: '|PBIAS| ≤ 20% for sediment (Moriasi 2015); NSE > 0.45 supportive.'
+  evidence_strength: strong
+  confidence: 0.8
+  notes: 'Moriasi 2007 Table 4: sediment satisfactory ±30<PBIAS<±55, very good <±15; Moriasi 2015 tightens
+    watershed-scale satisfactory to "monthly R2 > 0.40 and NSE > 0.45 and daily, monthly, or annual PBIAS
+    ≤ ±20% for sediment" (used as the gate). Betrie et al. 2011 is an OA SWAT sediment benchmark (Blue
+    Nile) corroborating the NSE/PBIAS convention.'
+  dag_variable: sediment yield (HRU sedyld; channel sed_in/sed_out)
+- obs_shape: regional_aggregate_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 15
+      satisfactory: 20
+    pass_band: satisfactory
+    band_note: Sediment satisfactory |PBIAS| ≤ ±20% (Moriasi 2015); very_good <±15% (Moriasi 2007).
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics: []
+  validated_when: '|PBIAS| ≤ 20% on the aggregate sediment-load series (Moriasi 2015).'
+  evidence_strength: strong
+  confidence: 0.75
+  notes: Basin/annual sediment loads; same Moriasi sediment convention. Rating-curve uncertainty is typically
+    wide, so PBIAS alone is the defensible metric.
+  dag_variable: sediment yield (HRU sedyld; channel sed_in/sed_out)
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 25
+      satisfactory: 30
+    pass_band: satisfactory
+    band_note: N & P satisfactory |PBIAS| ≤ ±30% watershed-scale (Moriasi 2015); very_good <±25% (Moriasi
+      2007 Table 4, N/P column).
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics:
+  - metric: nse
+    direction: maximize
+    status: supportive
+    ceiling_reason: In-stream nutrient concentrations are driven by exogenous loading and initial pools;
+      Moriasi 2015 sets N and P satisfactory NSE > 0.35 (looser than flow). Temporal NSE is co-reported,
+      not the headline.
+    cites:
+    - moriasi2015
+  validated_when: '|PBIAS| ≤ 30% for N or P (Moriasi 2015); NSE > 0.35 supportive.'
+  evidence_strength: strong
+  confidence: 0.75
+  notes: 'Moriasi 2015 abstract: "monthly R2 > 0.40 and NSE > 0.35 and daily, monthly, or annual PBIAS
+    ≤ ±30% for phosphorus (P); and monthly R2 > 0.30 and NSE > 0.35 and daily, monthly, or annual PBIAS
+    ≤ ±30% for nitrogen (N)." Moriasi 2007 Table 4 N,P: very good <±25, good ±25<PBIAS<±40, satisfactory
+    ±40<PBIAS<±70. The tighter 2015 values are used as the gate. IMPORTANT CAVEAT (dag): SWAT+ Rev 59.3
+    QUAL2E in-channel solver is numerically unstable at extreme flows and can blow up to physically impossible
+    magnitudes (>1e9 mg/L); prefer landscape (basin_ls) / balance (basin_nb) nutrient outputs, and compare
+    only when wq_cha=1 on a non-flashy basin. NOTE: skeleton validation_rows mark nutrient has_obs_binding=false,
+    but model_obs_map DOES bind total_nitrogen/TP (channel loads) and NO3N/Nrate (basin_ls/basin_nb),
+    so a gradeable convention is recorded here.'
+  dag_variable: 'basin landscape nutrient losses (basin_ls: sedorgn, surqno3, sedmin)'
+- obs_shape: regional_aggregate_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 25
+      satisfactory: 30
+    pass_band: satisfactory
+    band_note: N & P satisfactory |PBIAS| ≤ ±30% (Moriasi 2015); very_good <±25% (Moriasi 2007).
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics: []
+  validated_when: '|PBIAS| ≤ 30% on the basin-aggregate N or P load/balance series (Moriasi 2015).'
+  evidence_strength: strong
+  confidence: 0.7
+  notes: Landscape (basin_ls) and balance (basin_nb) nutrient losses; inventory-based reference loads
+    carry wide uncertainty, so PBIAS is the only defensible metric (dag caveat). Covers NO3N and Nrate
+    obs bindings.
+  dag_variable: 'basin landscape nutrient losses (basin_ls: sedorgn, surqno3, sedmin)'
+- obs_shape: regional_aggregate_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: 20
+    pass_band: satisfactory
+    band_note: 'No formal Moriasi-style yield tier in the fetched set; band grounded on the SWAT well-calibrated
+      crop-yield PBIAS envelope (Meaurio/Ayana 2021: −17% to 14%).'
+    cites:
+    - meaurio_w13162238
+  secondary_metrics:
+  - metric: nrmse
+    direction: minimize
+    status: supportive
+    ceiling_reason: The canonical crop-yield skill tier (nRMSE excellent<10 / good10-20 / fair20-30 /
+      poor>30%, Jamieson 1991) is paywalled and not in the fetched set — see deferred_paywalled; only
+      PBIAS is grounded here.
+    cites: []
+  validated_when: '|PBIAS| ≤ 20% for detrended provincial/national yield (Meaurio 2021 well-calibrated
+    envelope); Arnold 2012 requires yields be ''reasonable for the study region''.'
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: 'Meaurio et al. 2021 (w13162238): "Crop yields were also well simulated with a percent bias (PBIAS)
+    ranging from −17% to 14%." Arnold 2012 (soft calibration): verify plant yield/biomass are "reasonable
+    for the study region or watershed." National/provincial yield series carry strong technology trends
+    not represented by a weather-driven process model — DETREND before comparison (dag caveat). nRMSE
+    (Jamieson 1991) and Willmott d-index would strengthen this to strong but their sources are paywalled.'
+  dag_variable: crop yield (basin yield_yr / yield_aa, hru_pw)
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: 20
+    pass_band: satisfactory
+    band_note: 'Single-site experimental yield; same SWAT well-calibrated PBIAS envelope (Meaurio 2021:
+      −17% to 14%).'
+    cites:
+    - meaurio_w13162238
+    - bauwe2019
+  secondary_metrics: []
+  validated_when: '|PBIAS| ≤ 20% at the trial site (Meaurio 2021 envelope; Bauwe 2019 reproduced average
+    annual crop yields for winter wheat/maize).'
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: 'Bauwe et al. 2019 (adgeo-48): SWAT reproduced average annual crop yields (winter wheat, silage
+    maize) in a small agricultural catchment. Detrending typically not needed for a stable-management
+    single site. HRU containing the trial must be identified and management aligned (dag caveat).'
+  dag_variable: crop yield (basin yield_yr / yield_aa, hru_pw)
+- obs_shape: spatial_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: 30
+    pass_band: satisfactory
+    band_note: Admin-unit yield map vs HRU zonal aggregate; PBIAS envelope transferred from Meaurio 2021
+      and loosened to ±30% for the coarser spatial comparison — low confidence.
+    cites:
+    - meaurio_w13162238
+  secondary_metrics: []
+  validated_when: '|PBIAS| ≤ 30% of admin-unit average yield, only where basin coverage of the admin unit
+    is high (transferred band, low confidence).'
+  evidence_strength: weak
+  confidence: 0.4
+  notes: Other yield obs_shapes in the dag (point_snapshot, regional_aggregate_snapshot, spatial_time_series/RS
+    surrogates) share this same PBIAS convention and confidence tier; not emitted as separate blocks to
+    bound block count. Zonal stats required to align HRU yield to the admin unit / pixel grid.
+  dag_variable: crop yield (basin yield_yr / yield_aa, hru_pw)
+- obs_shape: regional_aggregate_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: 15
+    pass_band: satisfactory
+    band_note: No ET-specific PBIAS tier in the fetched set; transferred from the Moriasi 2015 watershed
+      satisfactory (±15%). SWAT ET evaluations apply the Moriasi convention and report 'very low bias'.
+    cites:
+    - moriasi2015
+    - hess2019_et
+  secondary_metrics:
+  - metric: nse
+    direction: maximize
+    status: supportive
+    ceiling_reason: Remote-sensing/reanalysis ET references carry their own bias; SWAT ET calibrations
+      report NSE 0.72–0.78 (hess-23-1113-2019) but no formal ET NSE tier exists in the fetched set.
+    cites:
+    - hess2019_et
+  validated_when: '|PBIAS| ≤ 15% against a basin ET reference (transferred Moriasi watershed convention;
+    hess-23-1113-2019 achieved acceptable correlation and very low bias).'
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: 'hess-23-1113-2019: multi-site SWAT calibration to satellite ET reached "NSE of 0.72 ... R2 of
+    0.76 for the calibration period ... NSE of 0.78" and describes "very low bias and acceptable correlation."
+    Band transferred from the flow convention because ET has no distinct ASABE tier; remote-sensing ET
+    (8-day) needs temporal aggregation first (dag caveat).'
+  dag_variable: evapotranspiration (basin et, eplant, esoil, pet)
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited categorical-skill (CSI) threshold for spatial ET pattern match in the fetched
+      set.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited spatial-ET CSI threshold; treat as data/convention gap. Do NOT
+    auto-validate or loosen.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: SWAT ET vs remote-sensing ET is usually judged by NSE/PBIAS/R2 (see the regional block), not
+    CSI. A categorical spatial-skill benchmark would be needed to set this band.
+  dag_variable: evapotranspiration (basin et, eplant, esoil, pet)
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: No snow-specific NSE tier in the fetched set; satisfactory transferred from the Moriasi
+      2015/2007 streamflow NSE>0.50, corroborated by a snow-dominated SWAT application.
+    cites:
+    - moriasi2007
+    - ahl2008_snow
+  secondary_metrics:
+  - metric: pbias
+    direction: zero_centered
+    status: supportive
+    ceiling_reason: Snowmelt water-yield PBIAS/Dv are co-reported; Ahl et al. 2008 report mean paired
+      deviation (Dv) of 31–36% for a snow-dominated SWAT watershed — snow magnitude bias is larger than
+      for rain-driven flow.
+    cites:
+    - ahl2008_snow
+  validated_when: NSE > 0.50 against snow-pillow/snow-course SWE or snowmelt-driven flow (transferred
+    Moriasi streamflow convention; Ahl 2008 snow-dominated SWAT).
+  evidence_strength: moderate
+  confidence: 0.45
+  notes: 'Ahl et al. 2008: snow-dominated Rocky Mountain SWAT calibration/validation with Nash-Sutcliffe
+    efficiencies and "mean paired deviations (Dv) of 36 and 31%." Peak SWE depth and ablation rate are
+    the magnitude targets. No SWE-specific ASABE tier exists, so the flow NSE>0.50 is transferred with
+    reduced confidence.'
+  dag_variable: snow water equivalent (hru%sno_mm; snofall, snomlt fluxes)
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited snow-cover-extent CSI/accuracy threshold in the fetched set.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited snow-cover CSI threshold; treat as convention gap. Do NOT auto-validate
+    or loosen.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: Remote-sensing SWE/snow-cover products are coarser than HRUs; aggregate HRU output to pixel before
+    comparison (dag caveat). A categorical snow-cover benchmark would be needed to set the CSI band.
+  dag_variable: snow water equivalent (hru%sno_mm; snofall, snomlt fluxes)
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited CSI (or correlation) threshold for spatial soil-moisture pattern match in the
+      fetched set.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited soil-moisture spatial-skill threshold. Do NOT auto-validate or
+    loosen.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: model_obs_map uses correlation (r) as the determining metric for soil moisture; SWAT satellite-SM
+    calibration studies (e.g., hess-21-3125-2017, w13162238) report R without a universal acceptance threshold,
+    so no numeric band is grounded here. HRU geometry is irregular — remap to grid for raster comparison
+    (dag caveat).
+  dag_variable: 'HRU water balance (hru_wb: per-HRU surq, latq, perc, et, sw)'
+- obs_shape: spatial_snapshot
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited spatial soil-moisture CSI threshold in the fetched set.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited threshold; treat as convention gap.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: Single-date soil-moisture map; same gap as the spatial time-series block.
+  dag_variable: 'HRU water balance (hru_wb: per-HRU surq, latq, perc, et, sw)'
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: r
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited correlation threshold for water-table/head time series in the fetched set; the
+      standard head convention (normalized RMSE, Anderson & Woessner / Hill 1998) is not in cache.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited water-table r or normalized-RMSE threshold; treat as data/convention
+    gap. Do NOT auto-validate or loosen.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: Lumped aquifer (aqu_1d) has one storage per aquifer object; point-well head comparison is only
+    meaningful under the distributed gwflow=1 module (dag caveat). The groundwater-modelling convention
+    (calibration target normalized head RMSE, typically <10%) is paywalled — see deferred_paywalled.
+  dag_variable: aquifer state (storage, water-table depth, baseflow flo)
+- obs_shape: spatial_snapshot
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited spatial head-agreement (CSI) threshold in the fetched set; meaningful only under
+      gwflow=1.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited threshold; requires gwflow=1 distributed heads and a head-RMSE
+    convention.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: Distributed gwflow head snapshot; grounding blocked on a fetched head-error convention.
+  dag_variable: aquifer state (storage, water-table depth, baseflow flo)
 deferred_paywalled:
-  - ref: "Jamieson et al. 1991 — crop-yield nRMSE skill tiers (excellent<10 / good10-20 / fair20-30 / poor>30%)"
-    doi: 10.1016/0378-4290(91)90040-3
-    needed_for: [yield]
-  - ref: "Willmott 1981 — index of agreement (d) for crop/model skill"
-    doi: 10.1080/02723646.1981.10642213
-    needed_for: [yield]
-  - ref: "Anderson & Woessner / Hill 1998 — groundwater head calibration target (normalized RMSE < ~10%)"
-    doi: null
-    needed_for: [water_table]
-  - ref: "A New Physically-Based Spatially-Distributed Groundwater Flow Module for SWAT+ (gwflow head evaluation)"
-    doi: 10.3390/hydrology7040075
-    needed_for: [water_table]
-  - ref: "Bennett et al. 2013 / Wing et al. 2017 — categorical spatial skill (CSI/POD/FAR) thresholds for gridded fields"
-    doi: null
-    needed_for: [evapotranspiration, soil_moisture, swe, water_table]
+- ref: Jamieson et al. 1991 — crop-yield nRMSE skill tiers (excellent<10 / good10-20 / fair20-30 / poor>30%)
+  doi: 10.1016/0378-4290(91)90040-3
+  needed_for:
+  - yield
+- ref: Willmott 1981 — index of agreement (d) for crop/model skill
+  doi: 10.1080/02723646.1981.10642213
+  needed_for:
+  - yield
+- ref: Anderson & Woessner / Hill 1998 — groundwater head calibration target (normalized RMSE < ~10%)
+  doi: null
+  needed_for:
+  - water_table
+- ref: A New Physically-Based Spatially-Distributed Groundwater Flow Module for SWAT+ (gwflow head evaluation)
+  doi: 10.3390/hydrology7040075
+  needed_for:
+  - water_table
+- ref: Bennett et al. 2013 / Wing et al. 2017 — categorical spatial skill (CSI/POD/FAR) thresholds for
+    gridded fields
+  doi: null
+  needed_for:
+  - evapotranspiration
+  - soil_moisture
+  - swe
+  - water_table

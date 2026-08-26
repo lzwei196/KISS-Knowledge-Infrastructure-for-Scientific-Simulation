@@ -1,106 +1,130 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:02:28.391989'
-  domain: cryosphere
   name: openAMUNDSEN
-  version: auto-generated
+  language: python
+  implementation:
+    id: openamundsen-py
+    version: openamundsen Python package (1.x; HydroCraft KI package hydrocraft-openamundsen-snow)
+    provenance: Python (Numba-JIT-accelerated); openAMUNDSEN distributed snow-hydrological framework from
+      github.com/openamundsen/openamundsen.
+  scientific_reference_version: openAMUNDSEN v1.0 (Strasser, Warscher, Rottler & Hanzer, GMD 17:6775,
+    2024)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/openAMUNDSEN/venv/bin/python
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s1_grid_setup
+  - s2_meteo_forcing
+  - s3_configuration
+  - s4_model_execution
+  - s5_output_analysis
+tools:
+  count: 4
+  files:
+  - tools/convert_meteo_forcing.py
+  - tools/convert_soil_params.py
+  - tools/parse_output.py
+  - tools/run_openamundsen.py
+inputs:
+  forcing:
+  - name: temp (air temperature)
+    unit: K
+  - name: precip (precipitation)
+    unit: kg m-2 per timestep (CSV) / kg m-2 s-1 (NetCDF rate)
+  - name: rel_hum (relative humidity)
+    unit: '%'
+  - name: sw_in (incoming shortwave radiation)
+    unit: W m-2
+  - name: wind_speed
+    unit: m s-1
+  - name: wind_direction
+    unit: degrees
+  - name: cloud_fraction
+    unit: '% (0-100)'
+  - name: lw_in (incoming longwave radiation)
+    unit: W m-2
+  parameters:
+  - name: snow.albedo.max (fresh-snow albedo)
+    unit: '-'
+  - name: snow.albedo.min (old-snow albedo)
+    unit: '-'
+  - name: snow.albedo.cold_snow_decay_timescale
+    unit: h
+  - name: snow.albedo.melting_snow_decay_timescale
+    unit: h
+  - name: snow.albedo.refresh_snowfall
+    unit: kg m-2 h-1
+  - name: snow.thermal_conductivity
+    unit: W m-1 K-1
+  - name: snow.melt.degree_day_factor
+    unit: mm degC-1 d-1
+  - name: meteo.interpolation.temperature.lapse_rate
+    unit: K m-1
+  - name: meteo.interpolation.precipitation.lapse_rate
+    unit: fraction m-1 (monthly)
+  - name: DEM (digital elevation model)
+    unit: m
+  - name: land cover grid
+    unit: class
+  - name: soil texture / parameters grid
+    unit: class
+  - name: soil layer thicknesses
+    unit: m
+  - name: station metadata (id, name, x, y, alt)
+    unit: x/y in meteo.crs; alt in m
+  initial_conditions:
+  - name: snow.swe (initial snow water equivalent)
+    unit: kg m-2
+  - name: initial snow density / layer structure
+    unit: kg m-3 / m
+  - name: soil temperature profile
+    unit: K
+  boundary_conditions:
+  - name: domain
+    unit: '-'
+  - name: start_date / end_date
+    unit: date
+  - name: resolution
+    unit: m (integer)
+  - name: timestep
+    unit: pandas frequency string
+  - name: crs (model grid) / input_data.meteo.crs (stations)
+    unit: EPSG
+  - name: snow model scheme (multilayer | cryolayers)
+    unit: '-'
+  - name: melt method (energy_balance | temperature_index | enhanced_temperature_index)
+    unit: '-'
+  - name: snow compaction method (Anderson 1976 | empirical)
+    unit: '-'
+  - name: meteo interpolation method (regression+IDW | fixed/fractional lapse | MicroMet)
+    unit: '-'
+  - name: canopy.enabled / evapotranspiration.enabled / glaciers.enabled
+    unit: '-'
+  - name: meteo.precipitation_phase.threshold_temp
+    unit: K
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - swe
+  - snow_depth
+  - snow_cover (area fraction / extent)
+  - snow_melt
+  - snow_runoff
+  - snow_density
+  - evapotranspiration
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.942, R=0.987, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.942
+    best_r: 0.9874
+summary:
+  total_tools: 4
+  total_stage_docs: 5
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

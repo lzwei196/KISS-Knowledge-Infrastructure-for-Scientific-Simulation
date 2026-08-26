@@ -149,6 +149,55 @@ def process():
         logger.info("Step 7: Define subbasins")
         subbasins_raster = str(output_dir / "subbasins.tif")
         wbt.subbasins(fdir, streams_raster, subbasins_raster)
+
+        # ------------------------------------------------------------------
+        # Step 7b: MASK subbasins and streams to the delineated watershed.
+        #
+        # wbt.subbasins()/wbt.extract_streams() run over the WHOLE input DEM,
+        # not over the basin. Un-masked, subbasins.shp is a partition of the
+        # entire DEM clip: on the Rio San Pedro Mezquital (25,657 km2 basin in
+        # a ~100,000 km2 DEM box) it came out with 639 polygons reaching
+        # 1.1 deg beyond the watershed. Downstream that is not a cosmetic
+        # problem — s2/generate_hru_from_global.py --subbasin_shp would build a
+        # deck of 639 subbasins covering land the basin does not contain, and
+        # s1/build_channel_topology.py traces once per polygon, so it also
+        # turns a 20 s step into hours. Fixed 2026-08-20.
+        # ------------------------------------------------------------------
+        try:
+            import numpy as np
+            import rasterio
+            with rasterio.open(watershed_raster) as wsrc:
+                wmask = wsrc.read(1)
+                wnod = wsrc.nodata
+            keep = np.isfinite(wmask.astype(float))
+            if wnod is not None:
+                keep &= (wmask != wnod)
+            keep &= (wmask > 0)
+            n_keep = int(keep.sum())
+            if n_keep == 0:
+                raise ValueError("watershed raster is empty")
+
+            for rpath in (subbasins_raster, streams_raster):
+                with rasterio.open(rpath) as src:
+                    arr = src.read(1)
+                    prof = src.profile
+                    nod = src.nodata
+                if arr.shape != keep.shape:
+                    logger.warning(
+                        "shape mismatch masking %s (%s vs watershed %s) — "
+                        "left unmasked", rpath, arr.shape, keep.shape)
+                    continue
+                fill = nod if nod is not None else 0
+                arr = np.where(keep, arr, fill)
+                prof.update(nodata=fill)
+                with rasterio.open(rpath, "w", **prof) as dst:
+                    dst.write(arr, 1)
+            logger.info("Step 7b: masked subbasins/streams to the watershed "
+                        "(%d cells)", n_keep)
+        except Exception as e:
+            logger.warning("Could not mask subbasins/streams to the watershed: "
+                           "%s — subbasins.shp will cover the whole DEM", e)
+
         subbasins_shp = str(output_dir / "subbasins.shp")
         wbt.raster_to_vector_polygons(subbasins_raster, subbasins_shp)
 

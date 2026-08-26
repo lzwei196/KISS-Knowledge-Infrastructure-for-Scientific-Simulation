@@ -1,106 +1,98 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:03:59.302656'
-  domain: geophysics
   name: GemPy
-  version: auto-generated
+  language: python
+  implementation:
+    id: gempy-v3
+    version: 3.x (gempy_engine 2026.0.1a2.dev0)
+    provenance: Python; multi-package — gempy high-level API/data classes wrapping the gempy_engine NumPy/PyTorch
+      cokriging numerics that perform the actual computation
+  scientific_reference_version: GemPy v3 implicit potential-field geomodeling (Lajaunie 1997 / Calcagno
+    2008 universal cokriging), de la Varga et al. 2019 stochastic formulation
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/bin/python
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s1_input_data_preparation
+  - s2_model_initialization
+  - s3_structural_organization
+  - s4_grid_configuration
+  - s5_fault_configuration
+  - s6_computation
+  - s7_output_analysis
+tools:
+  count: 4
+  files:
+  - tools/build_structural_params.py
+  - tools/convert_geological_data.py
+  - tools/parse_gempy_output.py
+  - tools/run_gempy_model.py
+inputs:
+  forcing: []
+  parameters:
+  - name: surface_points (interface contact points)
+    unit: meters (project CRS)
+  - name: orientations (dip/polarity gradient constraints)
+    unit: gradient components dimensionless (-1..1); or azimuth/dip in degrees + polarity
+  - name: nugget_surface_points
+    unit: dimensionless
+  - name: nugget_orientations
+    unit: dimensionless
+  - name: kriging_range
+    unit: dimensionless (rescaled unit-cube space)
+  - name: covariance_scale (c_o)
+    unit: dimensionless
+  - name: covariance/kernel function
+    unit: '-'
+  - name: universal drift degree (uni_degree)
+    unit: dimensionless
+  - name: sigmoid_slope
+    unit: dimensionless
+  - name: per-unit densities / magnetic susceptibilities
+    unit: kg/m^3 ; SI susceptibility
+  initial_conditions: []
+  boundary_conditions:
+  - name: model extent
+    unit: meters (project CRS)
+  - name: grid type
+    unit: '-'
+  - name: octree refinement level
+    unit: dimensionless
+  - name: dense grid resolution
+    unit: cells
+  - name: structural_mapping (map_stack_to_surfaces / stack order)
+    unit: '-'
+  - name: structural relation type per group
+    unit: '-'
+  - name: fault_relations matrix
+    unit: '-'
+  - name: compute backend
+    unit: '-'
+  - name: topography (optional)
+    unit: meters elevation
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - lith_block
+  - scalar_field
+  - surfaces_and_sections
+  - uncertainty_distribution
+  - geophysics_forward
+  - topology
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: NSE=0.657, KGE=0.737, R=0.811, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.6566687632296628
+    best_kge: 0.7367049720186305
+    best_r: 0.8106368109664154
+summary:
+  total_tools: 4
+  total_stage_docs: 7
+  total_diagnostic_triplets: 17
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

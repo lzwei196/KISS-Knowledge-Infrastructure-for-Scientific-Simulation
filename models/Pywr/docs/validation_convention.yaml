@@ -1,0 +1,260 @@
+schema_version: 1
+model_id: Pywr
+domain: hydrology
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+# Blocks are keyed by Pywr dag output names, per the Step-B campaign instruction.
+# Numeric hydrologic bands are only used where a fetched source supplied or reproduced
+# the convention. Demand-deficit and reliability thresholds remain null because the
+# fetched water-resources literature defines the indices but does not provide a
+# transferable validation pass band.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  shrestha2018:
+    doi: 10.2166/nh.2017.189
+    title: "Evaluation of the SWAT model performance for simulating river discharge in the Himalayan and tropical basins of Asia"
+    venue: "Hydrology Research"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_nh.2017.189.txt
+  tomlinson2020:
+    doi: 10.1016/j.envsoft.2020.104635
+    title: "A water resource simulator in Python"
+    venue: "Environmental Modelling and Software"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2020.104635.txt
+  hamilton2024:
+    doi: 10.1016/j.envsoft.2024.106185
+    title: "Pywr-DRB: An open-source Python model for water availability and drought risk assessment in the Delaware River Basin"
+    venue: "Environmental Modelling and Software"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2024.106185.txt
+  gonzalez2021:
+    doi: 10.3389/fenvs.2021.596612
+    title: "Quantifying Cooperation Benefits for New Dams in Transboundary Water Systems Without Formal Operating Rules"
+    venue: "Frontiers in Environmental Science"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_fenvs.2021.596612.txt
+  yassin2019:
+    doi: 10.5194/hess-23-3735-2019
+    title: "Representation and improved parameterization of reservoir operation in hydrological and land-surface models"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-3735-2019.txt
+  hashimoto1982:
+    doi: 10.1029/WR018i001p00014
+    title: "Reliability, resiliency, and vulnerability criteria for water resource system performance evaluation"
+    venue: "Water Resources Research"
+    year: 1982
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_wr018i001p00014.txt
+
+validation:
+  - dag_variable: storage_volume
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred to reservoir storage because fetched reservoir-operation studies evaluate observed versus simulated storage with NSE and explicitly classify storage NSE by Moriasi et al. (2007)."
+        cites: [moriasi2007, gonzalez2021]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Reservoir storage checks should include water-balance magnitude diagnostics where available, but no fetched storage-specific PBIAS tier was found."
+        cites: [yassin2019, hamilton2024]
+    validated_when: "NSE >= 0.50 against observed reservoir storage or storage converted from level at the modeled dam; treat rule/inflow mismatch as a diagnostic caveat, not an internal mass-balance validation."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Moriasi 2007 states model performance can be judged satisfactory if "NSE > 0.50" and gives
+      very good/good/satisfactory tiers. Gonzalez 2021 used observed reservoir storage time series,
+      selected policies by maximum Nash-Sutcliffe values, and says Akosombo 0.75 and Bagre 0.63
+      are classified as good and satisfactory by Moriasi et al. Hamilton 2024 reports Pywr-DRB
+      storage reproduced historical NYC reservoir storage dynamics relatively well, but without a
+      storage-specific numeric threshold.
+
+  - dag_variable: release_discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Hydrologic discharge convention; Pywr-DRB benchmarks regulated downstream flows using NSE."
+        cites: [moriasi2007, shrestha2018, hamilton2024]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Streamflow PBIAS bands from Moriasi 2007; interpreted as absolute percent bias."
+        cites: [moriasi2007, shrestha2018]
+      - metric: rsr
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.50, good: 0.60, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "RSR is the RMSE-observations standard deviation ratio recommended with NSE and PBIAS."
+        cites: [moriasi2007, shrestha2018]
+    secondary_metrics:
+      - metric: correlation
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Pywr-DRB co-reports Pearson correlation and relative bias as diagnostic components for regulated flow but does not use them as universal pass bands."
+        cites: [hamilton2024]
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Pywr-DRB notes NSE, correlation, relative bias, and relative standard deviation as components related to KGE, but no fetched Pywr-specific KGE pass tier was found."
+        cites: [hamilton2024]
+    validated_when: "All discharge headline metrics meet the satisfactory hydrology bands: NSE >= 0.50, |PBIAS| <= 25%, and RSR <= 0.70."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Moriasi 2007 recommends NSE, PBIAS, and RSR for model evaluation and says satisfactory
+      streamflow performance is NSE > 0.50, RSR < 0.70, and PBIAS within +/-25%. Shrestha 2018
+      reproduces the Moriasi rating table for daily discharge. Hamilton 2024 is the model-specific
+      Pywr-DRB benchmark, using NSE as "one of the most widely used measures" and reporting
+      managed-flow NSE ranges from -0.12 to 0.38 at Cannonsville and 0.18 to 0.68 at NYC Total.
+
+  - dag_variable: spill_discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred from discharge validation; spill is an event-like outflow component, so also inspect event timing and zero-flow periods."
+        cites: [moriasi2007, shrestha2018]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Transferred streamflow magnitude band; compute only where observed spill volume/discharge is available over matching periods."
+        cites: [moriasi2007, shrestha2018]
+    secondary_metrics:
+      - metric: event_hit_rate
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Pywr-DRB describes spill as additional release when a reservoir is full and shows spill can dominate downstream flow in high-inflow/full-storage periods, but no fetched paper gives a numeric spill-event validation tier."
+        cites: [hamilton2024]
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RSR is recommended for discharge generally, but zero-inflated spill series can make residual ratios unstable; use as a diagnostic unless the evaluation period contains observed spill events."
+        cites: [moriasi2007, hamilton2024]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 25% for observed spill-discharge periods, with event timing inspected because spill is intermittent."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      No fetched source provides a spill-specific tier table. Moriasi/Shrestha discharge bands are
+      therefore transferred to this Pywr outflow component. Hamilton 2024 describes Pywr-DRB spill
+      as extra release when storage is full and reports that spill can become the dominant source of
+      flow downstream during high-inflow/full-reservoir periods.
+
+  - dag_variable: demand_deficit
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a universal NSE pass band for intermittent unmet-demand or shortage records."
+        cites: []
+      - metric: mean_deficit_bias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched source defines a transferable percent-bias validation band for demand deficits."
+        cites: []
+    secondary_metrics:
+      - metric: reliability
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hashimoto 1982 defines reliability as the frequency or probability that a system is in a satisfactory state; it is a design/performance descriptor rather than a universal validation threshold."
+        cites: [hashimoto1982]
+      - metric: vulnerability
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hashimoto 1982 defines vulnerability as expected maximum severity of a failure sojourn; useful for shortage severity diagnostics, but no general pass tier is provided."
+        cites: [hashimoto1982]
+    validated_when: "UNRESOLVED - compare deficit timing and magnitude to observed shortage records when available, but do not auto-validate from uncited numeric bands."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Hashimoto 1982 supplies the accepted reliability/resiliency/vulnerability framework for
+      water-resource failures and deficits. Hamilton 2024 uses reliability, duration, and intensity to
+      assess Pywr-DRB flow-target and diversion-demand shortfalls. Neither fetched source supplies
+      a general numeric validation threshold for demand_deficit NSE or bias, so bands remain null.
+
+  - dag_variable: supply_reliability
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a transferable PBIAS band for a scalar supply-reliability fraction; reliability targets are system-specific."
+        cites: []
+      - metric: absolute_error
+        direction: minimize
+        unit: fraction
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched source defines a universal absolute-error threshold for simulated reliability fractions."
+        cites: []
+    secondary_metrics:
+      - metric: reliability
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Reliability is the percent/frequency of satisfactory states; Hashimoto 1982 and Hamilton 2024 use it to characterize system performance, not as a universal validation pass band."
+        cites: [hashimoto1982, hamilton2024]
+      - metric: duration
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hamilton 2024 assesses shortfall-event duration along with reliability and intensity for Pywr-DRB, but reports no general pass/fail threshold."
+        cites: [hamilton2024]
+      - metric: intensity
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hamilton 2024 defines intensity as average shortfall magnitude for an event; it is diagnostic and system-specific."
+        cites: [hamilton2024]
+    validated_when: "UNRESOLVED - reliability should match an observed or legally specified service level for the modeled demand, but no fetched universal numeric validation band exists."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Hashimoto 1982 defines reliability as the probability/frequency of satisfactory system states and
+      distinguishes it from failure severity. Hamilton 2024 defines reliability as the percentage of
+      days on which a flow target or demand is met, with 100% ideal, and analyzes duration and
+      intensity of shortfall events. Those are system performance measures, not a transferable
+      validation convention for a scalar reliability snapshot.
+
+deferred_paywalled:
+  - ref: "Harmonisation of Reliability Performance Indices for Planning and Operational Evaluation of Water Supply Reservoirs"
+    doi: 10.1007/s11269-016-1561-x
+    needed_for: [supply_reliability, demand_deficit]
+  - ref: "Testing the resilience of water supply systems to long droughts"
+    doi: 10.1016/j.jhydrol.2011.10.038
+    needed_for: [supply_reliability, demand_deficit]

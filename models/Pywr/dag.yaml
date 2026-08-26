@@ -246,7 +246,7 @@ outputs:
   - var: "storage_volume"
     validation_rank: 3
     unit: "m3"
-    description: "Daily reservoir storage volume per storage node, carried across timesteps with continuity."
+    description: "Daily reservoir water storage volume per storage node, carried across timesteps with continuity."
     emitted_in: "NumpyArrayStorageRecorder (e.g. storage timeseries CSV via CSVRecorder)"
     observability:
       comparable_obs_shapes:
@@ -272,7 +272,7 @@ outputs:
   - var: "spill_discharge"
     validation_rank: 2
     unit: "m3/s"
-    description: "Uncontrolled overflow when the reservoir is at capacity."
+    description: "Uncontrolled water overflow when the reservoir is at capacity."
     emitted_in: "NumpyArrayNodeRecorder (spill link)"
     observability:
       comparable_obs_shapes:
@@ -285,7 +285,7 @@ outputs:
   - var: "demand_deficit"
     validation_rank: 4
     unit: "m3/s"
-    description: "Unmet demand at each demand node (requested minus delivered)."
+    description: "Unmet water demand at each demand node (requested minus delivered)."
     emitted_in: "NumpyArrayNodeDeficitRecorder / TotalDeficitNodeRecorder"
     observability:
       comparable_obs_shapes:
@@ -298,7 +298,7 @@ outputs:
   - var: "supply_reliability"
     validation_rank: 5
     unit: "fraction"
-    description: "Fraction of timesteps where a priority demand is fully met."
+    description: "Fraction of timesteps where a priority water demand is fully met."
     emitted_in: "DeficitFrequencyNodeRecorder (derived)"
     observability:
       comparable_obs_shapes:
@@ -443,3 +443,21 @@ safety:
       scope: "solver selection"
       source: "Pywr JSON solver docs; https://pywr.github.io/pywr/json.html"
       status: "adopted"
+
+medium_evidence:
+  - var: "storage_volume"
+    source: "dag.yaml"
+    quote: "Generalised directed-network resource allocation, primarily water-resource systems"
+    note: "boundary.scope_in declares Pywr's allocation network as a water-resource system; storage_volume is reservoir water storage."
+  - var: "spill_discharge"
+    source: "dag.yaml"
+    quote: "Reservoir/storage operation: storage continuity, control curves, min/max volume, regulated release and spill"
+    note: "boundary.scope_in places spill in reservoir/storage operation for the water-resource network."
+  - var: "demand_deficit"
+    source: "SKILL.md"
+    quote: "Pywr requires time-varying forcing input files that drive the water allocation model:"
+    note: "The KI defines Pywr demand forcing in a water allocation model, so deficit is unmet water demand."
+  - var: "supply_reliability"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_wr018i001p00014.txt"
+    quote: "Three criteria for evaluating the possible performance of water resource systems are discussed."
+    note: "Reliability is a water-resource system performance criterion; here it summarizes priority water-demand fulfillment."

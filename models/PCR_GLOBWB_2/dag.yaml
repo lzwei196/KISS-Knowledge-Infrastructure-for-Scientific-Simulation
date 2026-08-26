@@ -318,7 +318,7 @@ outputs:
   - var: "actualET"
     validation_rank: 3
     unit: "m/day"
-    description: "Actual evapotranspiration."
+    description: "Actual evapotranspiration — water flux from the land surface to the atmosphere."
     emitted_in: "actualET_monthTot_output.nc"
     observability:
       comparable_obs_shapes:

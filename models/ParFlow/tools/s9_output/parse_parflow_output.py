@@ -122,10 +122,39 @@ def compute_overland_flow_depth(pressure, mask_3d, nz):
     return ponding
 
 
+def station_cells(domain, stations_csv):
+    """Map station lon/lat to grid (i, j). Returns list of dicts."""
+    import csv as _csv
+    from pyproj import Transformer
+    grid = domain["grid"]
+    nx, ny = grid["nx"], grid["ny"]
+    dx, dy = grid["dx"], grid["dy"]
+    ox, oy = domain["origin"]["x"], domain["origin"]["y"]
+    tr = Transformer.from_crs("EPSG:4326", f"EPSG:{domain['crs']['epsg']}",
+                              always_xy=True)
+    out = []
+    with open(stations_csv) as f:
+        for row in _csv.DictReader(f):
+            x, y = tr.transform(float(row["lon"]), float(row["lat"]))
+            i = int((x - ox) / dx)
+            j = int((y - oy) / dy)
+            if 0 <= i < nx and 0 <= j < ny:
+                out.append({"id": row["id"], "i": i, "j": j})
+    return out
+
+
 def process(run_dir, run_name, domain_json, mask_npy, output_dir,
-            start_date="2000-01-01", dt_hours=1, dump_hours=24):
+            start_date="2000-01-01", dt_hours=1, dump_hours=24,
+            stations_csv=None):
     """
     Parse ParFlow output files.
+
+    With --stations_csv (columns id,lon,lat), also extracts a per-station
+    depth-to-water series from the BOTTOM-CELL hydraulic head:
+        dtw = total_depth - dz0/2 - pressure[k=0]
+    (terrain-following local column; matched-depth head comparison per the
+    dag's pressure_head caveat -- continuous, unlike the saturation>=0.99
+    surface which quantizes to layer thickness).
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -136,6 +165,7 @@ def process(run_dir, run_name, domain_json, mask_npy, output_dir,
     grid = domain["grid"]
     nx, ny, nz = grid["nx"], grid["ny"], grid["nz"]
     dx, dy = grid["dx"], grid["dy"]
+    stations = station_cells(domain, stations_csv) if stations_csv else []
 
     # Find output files
     press_files = sorted(glob.glob(os.path.join(run_dir, f"{run_name}.out.press.*.pfb")))
@@ -156,22 +186,38 @@ def process(run_dir, run_name, domain_json, mask_npy, output_dir,
             "search_pattern": os.path.join(run_dir, f"{run_name}.out.press.*.pfb"),
         }
 
-    # Process each timestep
+    # Process each timestep. The dump NUMBER in the filename is authoritative
+    # for the time axis (restart segments start at StartCount>0).
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     dates = []
     wtd_timeseries = []
     ponding_timeseries = []
     storage_timeseries = []
+    station_rows = []  # (date, {id: dtw})
+    dz_layers = grid["dz_layers_m"]
+    total_depth = grid["total_depth_m"]
 
     for step_idx in range(n_steps):
-        t = start_dt + timedelta(hours=step_idx * dump_hours)
-        dates.append(t.strftime("%Y-%m-%d"))
+        fname = os.path.basename(press_files[step_idx])
+        try:
+            dump_num = int(fname.split(".press.")[1].split(".")[0])
+        except (IndexError, ValueError):
+            dump_num = step_idx
+        t = start_dt + timedelta(hours=dump_num * dump_hours)
 
         try:
             pressure = read_pfb_or_npy(press_files[step_idx])
             saturation = read_pfb_or_npy(satur_files[step_idx]) if step_idx < len(satur_files) else None
-        except Exception as e:
+        except Exception:
             continue
+        dates.append(t.strftime("%Y-%m-%d"))
+
+        if stations:
+            row = {}
+            for s in stations:
+                p_bot = float(pressure[0, s["j"], s["i"]])
+                row[s["id"]] = total_depth - dz_layers[0] / 2.0 - p_bot
+            station_rows.append((t.strftime("%Y-%m-%d"), row))
 
         # Water table depth
         if saturation is not None:
@@ -209,6 +255,15 @@ def process(run_dir, run_name, domain_json, mask_npy, output_dir,
     with open(ts_file, "w") as f:
         json.dump(timeseries, f, indent=2)
 
+    station_file = None
+    if station_rows:
+        station_file = os.path.join(output_dir, "station_dtw.csv")
+        ids = [s["id"] for s in stations]
+        with open(station_file, "w") as f:
+            f.write("date," + ",".join(ids) + "\n")
+            for d, row in station_rows:
+                f.write(d + "," + ",".join(f"{row[i]:.4f}" for i in ids) + "\n")
+
     # Save final water table depth map
     if satur_files:
         try:
@@ -225,6 +280,8 @@ def process(run_dir, run_name, domain_json, mask_npy, output_dir,
         "status": "success",
         "timesteps_processed": n_steps,
         "timeseries_file": ts_file,
+        "station_dtw_file": station_file,
+        "n_stations": len(stations),
         "final_wtd_file": wtd_file,
         "summary": {
             "mean_wtd_m": float(np.nanmean(wtd_timeseries)) if wtd_timeseries else None,
@@ -244,6 +301,9 @@ def main():
     parser.add_argument("--start_date", default="2000-01-01")
     parser.add_argument("--dt_hours", type=float, default=1)
     parser.add_argument("--dump_hours", type=float, default=24)
+    parser.add_argument("--stations_csv", default=None,
+                        help="CSV with columns id,lon,lat for per-station "
+                             "depth-to-water extraction")
     args = parser.parse_args()
 
     errs = validate_inputs(args.run_dir, args.run_name, args.domain_json, args.mask_npy)
@@ -252,7 +312,8 @@ def main():
         sys.exit(1)
 
     result = process(args.run_dir, args.run_name, args.domain_json, args.mask_npy,
-                     args.output_dir, args.start_date, args.dt_hours, args.dump_hours)
+                     args.output_dir, args.start_date, args.dt_hours, args.dump_hours,
+                     stations_csv=args.stations_csv)
     print(json.dumps(result, indent=2))
 
 

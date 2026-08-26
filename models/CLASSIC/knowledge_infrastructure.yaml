@@ -1,77 +1,136 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:00:15.848456'
-  domain: biogeochemistry
   name: CLASSIC
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: classic-v100
+    version: v1.0.0
+    provenance: Fortran 2008; ECCC/CCCma stand-alone offline land-surface scheme, run as a serial or MPI-parallel
+      build over point or gridded domains.
+  scientific_reference_version: CLASSIC v1.0 (Melton et al. 2020, GMD 13:2825; CLASS 3.6.2 physics + CTEM
+    v2.0 biogeochemistry lineage)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CLASSIC/source/repo/bin/CLASSIC_serial
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_met_forcing_skill
+  - s2_soil_init_skill
+  - s3_configuration_skill
+  - s4_execution_skill
+  - s5_output_analysis_skill
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_classic.py
+  - tools/convert_soil_to_classic.py
+  - tools/parse_classic_output.py
+  - tools/run_classic.py
+inputs:
+  forcing:
+  - name: FSS — downwelling shortwave radiation
+    unit: W m-2
+  - name: FDL — downwelling longwave radiation
+    unit: W m-2
+  - name: PRE — precipitation rate
+    unit: kg m-2 s-1
+  - name: TA — air temperature at reference height
+    unit: deg C
+  - name: QA — specific humidity at reference height
+    unit: kg kg-1
+  - name: VMOD — wind speed at reference height
+    unit: m s-1
+  - name: PRES — surface air pressure
+    unit: Pa
+  - name: CO2 — atmospheric CO2 concentration
+    unit: ppmv
+  - name: CH4 — atmospheric CH4 concentration
+    unit: ppmv
+  - name: POPD — population density (fire ignition)
+    unit: people km-2
+  - name: LGHT — lightning strike density (fire ignition)
+    unit: strikes km-2 yr-1
+  - name: LUC — prescribed land-use-change PFT fractions
+    unit: fraction
+  - name: OBSWETF — observed wetland fraction
+    unit: fraction
+  parameters:
+  - name: SAND / CLAY / ORGM — soil texture
+    unit: '% (0-100)'
+  - name: SDEP — permeable/bedrock depth
+    unit: m
+  - name: DRN — drainage index
+    unit: '-'
+  - name: SOCI — soil colour index (bare-soil albedo)
+    unit: 1-20 index
+  - name: DELZ — ground-layer thickness
+    unit: m
+  - name: FCAN / ALVC / ALIC / CMAS / LNZ0 / PAMN / PAMX / ROOT — CLASS PFT canopy parameters
+    unit: mixed (fraction, albedo, kg m-2, m, ln(m))
+  - name: CTEM PFT-specific physiology (vmax, quantum efficiency, specific leaf area, stomatal-conductance,
+      allocation, respiration coefficients)
+    unit: mixed
+  - name: ZRFH / ZRFM / ZBLD — reference and blending heights
+    unit: m
+  - name: grclarea / FARE / GC / MID — cell area, tile fraction, land mask, mosaic id
+    unit: km2 / fraction / index
+  initial_conditions:
+  - name: TBAR — soil layer temperature
+    unit: K
+  - name: THLQ / THIC — liquid / frozen soil moisture
+    unit: m3 m-3
+  - name: SNO / TSNO / ALBS / RHOS / WSNO — snowpack mass, temperature, albedo, density, liquid water
+    unit: kg m-2 / K / - / kg m-3 / kg m-2
+  - name: gleafmas / bleafmas / stemmass / rootmass / litrmass / soilcmas — CTEM carbon pools
+    unit: kgC m-2
+  - name: fcancmx — CTEM PFT fractional coverage
+    unit: fraction
+  boundary_conditions:
+  - name: ctem_on — enable CTEM biogeochemistry
+    unit: logical
+  - name: spinfast — soil-carbon spin-up acceleration factor
+    unit: integer
+  - name: metLoop — number of forcing-cycle repeats for spin-up
+    unit: integer
+  - name: dofire / PFTCompetition / lnduseon — disturbance, competition, land-use switches
+    unit: logical
+  - name: ITC / ITCG / ITG — surface-temperature iteration scheme
+    unit: 1=bisection | 2=Newton-Raphson
+  - name: IDISP / IZREF / ISLFD / IPCP / IWF / isnoalb — physics method switches
+    unit: integer codes
+  - name: run coordinates (lon/lat or lon/lon/lat/lat box)
+    unit: degrees
+  - name: PFT counts ican / icc / l2max
+    unit: integer
+  - name: JMOSTY / JDSTY — monthly/daily output start years
+    unit: year
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - rss
+  - hfss
+  - hfls
+  - gpp
+  - nep
+  - nbp
+  - rh
+  - mrro
+  - snw
+  - lai
+  - cSoil
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: NSE=0.828, KGE=0.859, R=0.972, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.828
+    best_kge: 0.859
+    best_r: 0.972
+summary:
+  total_tools: 4
+  total_stage_docs: 5
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

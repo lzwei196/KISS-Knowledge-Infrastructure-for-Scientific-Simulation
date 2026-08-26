@@ -1,170 +1,620 @@
-model:
-  name: "ELM"
-  full_name: "E3SM Land Model"
-  version: "E3SM v3"
-  domain: "land_surface"
-  description: "Land surface component of E3SM — simulates energy, water, carbon, nitrogen, and phosphorus exchange between land and atmosphere"
-  binary_path: "KISSPATH_BINARIES/ELM/source/repo/cime_config/config_grids.xml"
-  execution_mode: "HPC batch (MPI+OpenMP via CIME framework)"
-  build_system: "CIME/CMake"
-  requires_hpc: true
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: ELM
+  language: fortran
+  implementation:
+    id: elm-e3sm
+    version: E3SM v2/v3-era ELM (components/elm)
+    provenance: Fortran; E3SM Land Model component of DOE E3SM, CLM4.5-derived, DATM-forced offline, with
+      optional FATES vegetation demography.
+  scientific_reference_version: E3SM Land Model (ELM), E3SM v2/v3 lineage — CLM4.5-derived land-surface
+    scheme with CN(P) biogeochemistry and optional FATES vegetation demography
 inputs:
   forcing:
-    - name: "TBOT"
-      long_name: "Air temperature"
-      unit: "K"
-      valid_range: [180.0, 340.0]
-      common_error: "Passing Celsius instead of Kelvin (dt_001)"
-    - name: "PRECTmms"
-      long_name: "Precipitation rate (rain)"
-      unit: "mm/s"
-      valid_range: [0.0, 0.1]
-      common_error: "Passing mm/day instead of mm/s — 86400x error (dt_002)"
-    - name: "SNOW"
-      long_name: "Precipitation rate (snow)"
-      unit: "mm/s"
-      valid_range: [0.0, 0.05]
-    - name: "SHUM"
-      long_name: "Specific humidity"
-      unit: "kg/kg"
-      valid_range: [0.0, 0.04]
-      common_error: "Passing relative humidity (%) instead of specific humidity (dt_003)"
-    - name: "FSDS"
-      long_name: "Downwelling shortwave radiation"
-      unit: "W/m2"
-      valid_range: [0.0, 1400.0]
-    - name: "FLDS"
-      long_name: "Downwelling longwave radiation"
-      unit: "W/m2"
-      valid_range: [50.0, 600.0]
-    - name: "WIND"
-      long_name: "Wind speed"
-      unit: "m/s"
-      valid_range: [0.0, 75.0]
-    - name: "PSRF"
-      long_name: "Surface pressure"
-      unit: "Pa"
-      valid_range: [50000.0, 110000.0]
-      common_error: "Passing hPa instead of Pa (dt_004)"
-
-  surface_data:
-    - name: "PCT_PFT"
-      unit: "%"
-      valid_range: [0.0, 100.0]
-      description: "Plant functional type fractions"
-    - name: "PCT_SAND"
-      unit: "%"
-      valid_range: [0.0, 100.0]
-      description: "Sand fraction per soil layer"
-    - name: "PCT_CLAY"
-      unit: "%"
-      valid_range: [0.0, 100.0]
-      description: "Clay fraction per soil layer"
-    - name: "ORGANIC"
-      unit: "kg/m3"
-      valid_range: [0.0, 130.0]
-      description: "Soil organic matter density"
-    - name: "MONTHLY_LAI"
-      unit: "m2/m2"
-      valid_range: [0.0, 12.0]
-      description: "Monthly leaf area index per PFT"
-    - name: "TOPO"
-      unit: "m"
-      valid_range: [-500.0, 9000.0]
-      description: "Surface elevation"
-
+  - name: TBOT (near-surface air temperature)
+    unit: K
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: DATM atmospheric forcing stream (per-timestep gridded)
+  - name: QBOT (near-surface specific humidity)
+    unit: kg/kg
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: DATM atmospheric forcing stream
+  - name: WIND (near-surface wind speed)
+    unit: m/s
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: DATM atmospheric forcing stream
+  - name: PRECTmms (total precipitation rate)
+    unit: mm/s
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: DATM atmospheric forcing stream
+    notes: Partitioned into rain/snow by the model; precipitation is supplied as a mass flux rate, not
+      an accumulation.
+  - name: FSDS (downward shortwave radiation)
+    unit: W/m2
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: DATM atmospheric forcing stream
+  - name: FLDS (downward longwave radiation)
+    unit: W/m2
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: DATM atmospheric forcing stream
+  - name: PSRF (surface pressure)
+    unit: Pa
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: DATM atmospheric forcing stream
+  - name: ZBOT (atmospheric reference height)
+    unit: m
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: DATM atmospheric forcing stream
+  - name: Atmospheric CO2 mixing ratio
+    unit: ppmv
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: DATM / namelist scalar or time series
+    notes: Drives photosynthesis CO2 response; can be a constant or time-varying atmospheric driver.
   parameters:
-    critical:
-      - name: "slatop"
-        unit: "m2/gC"
-        valid_range: [0.001, 0.1]
-        description: "Specific leaf area at top of canopy"
-      - name: "vcmaxha"
-        unit: "J/mol"
-        valid_range: [40000.0, 80000.0]
-        description: "Activation energy for Vcmax"
-      - name: "medlynslope"
-        unit: "dimensionless"
-        valid_range: [1.0, 15.0]
-        description: "Medlyn stomatal slope parameter"
-      - name: "froot_leaf"
-        unit: "gC/gC"
-        valid_range: [0.5, 5.0]
-        description: "Fine root to leaf allocation ratio"
-      - name: "flnr"
-        unit: "fraction"
-        valid_range: [0.01, 0.25]
-        description: "Fraction of leaf nitrogen in Rubisco"
-      - name: "dtime"
-        unit: "s"
-        valid_range: [900, 3600]
-        description: "Model timestep (default 1800s)"
-      - name: "co2_ppmv"
-        unit: "ppmv"
-        valid_range: [180.0, 1000.0]
-        description: "Atmospheric CO2 concentration"
-
+  - name: WATSAT (saturated volumetric water content / porosity)
+    unit: mm3/mm3
+    category: soil_hydraulic
+    source_kind: dataset_lookup
+    model_input_format: surface dataset (per soil layer)
+    notes: Derived from soil texture via Clapp-Hornberger / Cosby et al. (1984) pedotransfer functions.
+  - name: SUCSAT (saturated soil matric potential)
+    unit: mm
+    category: soil_hydraulic
+    source_kind: dataset_lookup
+    model_input_format: surface dataset (per soil layer)
+  - name: BSW (Clapp-Hornberger b exponent)
+    unit: dimensionless
+    category: soil_hydraulic
+    source_kind: dataset_lookup
+    model_input_format: surface dataset (per soil layer)
+  - name: HKSAT (saturated hydraulic conductivity)
+    unit: mm/s
+    category: soil_hydraulic
+    source_kind: dataset_lookup
+    model_input_format: surface dataset (per soil layer)
+  - name: PFT composition and plant functional type parameters
+    unit: mixed
+    category: vegetation
+    source_kind: dataset_lookup
+    model_input_format: surface dataset
+    notes: Vegetation class fractions and physiological coefficients per gridcell.
+  - name: Soil layer discretization (levgrnd / levsoi depths and thicknesses)
+    unit: m
+    category: grid_structure
+    source_kind: default
+    model_input_format: model configuration
+  initial_conditions:
+  - name: Initial H2OSOI / SOILLIQ / SOILICE (soil water and ice)
+    unit: mm3/mm3 ; kg/m2
+    category: soil_water
+    source_kind: user_provided
+    model_input_format: restart / initial-conditions file (finidat) or cold start
+  - name: Initial TSOI (soil temperature profile)
+    unit: K
+    category: soil_thermal
+    source_kind: user_provided
+    model_input_format: restart / initial-conditions file or cold start
+  - name: Initial ZWT (water-table depth)
+    unit: m
+    category: hydrology
+    source_kind: user_provided
+    model_input_format: restart / initial-conditions file or cold start
+  - name: Initial carbon-nitrogen pools (TOTSOMC and associated C/N pools)
+    unit: gC/m2
+    category: biogeochem
+    source_kind: user_provided
+    model_input_format: spin-up restart file
+    notes: Soil organic carbon and biogeochemical pools require multi-century spin-up to equilibrate;
+      cold start is far from steady state.
+  - name: Initial TLAI (leaf area index)
+    unit: m2/m2
+    category: vegetation
+    source_kind: user_provided
+    model_input_format: restart file or prognostically grown from CN allocation
+  boundary_conditions:
+  - name: use_cn (carbon-nitrogen biogeochemistry enabled)
+    unit: boolean
+    category: model_switch
+    source_kind: user_provided
+    model_input_format: namelist switch
+    notes: Selects prognostic CN cycling vs prescribed-phenology mode; governs whether GPP/NPP/NEE/TOTSOMC
+      are prognostic and whether LAI is grown.
+  - name: use_vertsoilc (vertically-resolved soil carbon)
+    unit: boolean
+    category: model_switch
+    source_kind: user_provided
+    model_input_format: namelist switch
+  - name: use_fates (FATES vegetation demography enabled)
+    unit: boolean
+    category: model_switch
+    source_kind: user_provided
+    model_input_format: namelist switch
+    notes: Activates the optional dynamic vegetation demography module in place of the default prescribed/CN
+      vegetation.
+  - name: Simulation domain / surface dataset selection and run period
+    unit: n/a
+    category: domain
+    source_kind: user_provided
+    model_input_format: domain + surface dataset + namelist run period
 outputs:
   primary:
-    - name: "GPP"
-      long_name: "Gross primary production"
-      unit: "gC/m2/s"
-      valid_range: [0.0, 5.0e-5]
-    - name: "NPP"
-      long_name: "Net primary production"
-      unit: "gC/m2/s"
-      valid_range: [-1.0e-5, 3.0e-5]
-    - name: "NEE"
-      long_name: "Net ecosystem exchange"
-      unit: "gC/m2/s"
-      valid_range: [-5.0e-5, 5.0e-5]
-    - name: "HR"
-      long_name: "Heterotrophic respiration"
-      unit: "gC/m2/s"
-      valid_range: [0.0, 3.0e-5]
-    - name: "FSH"
-      long_name: "Sensible heat flux"
-      unit: "W/m2"
-      valid_range: [-200.0, 500.0]
-    - name: "EFLX_LH_TOT"
-      long_name: "Total latent heat flux"
-      unit: "W/m2"
-      valid_range: [-50.0, 500.0]
-    - name: "QRUNOFF"
-      long_name: "Total runoff"
-      unit: "mm/s"
-      valid_range: [0.0, 0.01]
-      common_error: "Forgetting to multiply by 86400 for daily totals (dt_020)"
-    - name: "QOVER"
-      long_name: "Surface runoff"
-      unit: "mm/s"
-      valid_range: [0.0, 0.01]
-    - name: "QDRAI"
-      long_name: "Subsurface drainage"
-      unit: "mm/s"
-      valid_range: [0.0, 0.005]
-    - name: "H2OSOI"
-      long_name: "Volumetric soil moisture"
-      unit: "mm3/mm3"
-      valid_range: [0.0, 1.0]
-    - name: "TSOI"
-      long_name: "Soil temperature"
-      unit: "K"
-      valid_range: [200.0, 350.0]
-    - name: "TLAI"
-      long_name: "Total leaf area index"
-      unit: "m2/m2"
-      valid_range: [0.0, 12.0]
-    - name: "TOTECOSYSC"
-      long_name: "Total ecosystem carbon"
-      unit: "gC/m2"
-      valid_range: [0.0, 100000.0]
-
+  - name: QRUNOFF
+    unit: mm/s
+    description: Total runoff (surface runoff plus sub-surface drainage) leaving the land column.
+    validation_rank: 1
+    emitted_in: ELM history file (*.elm.h0/h1*.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - ELM runoff is per-column; comparing to a gauge requires routing runoff through a river network
+          to streamflow first.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Gridded runoff products carry their own structural uncertainty.
+      detrending_options:
+      - none
+  - name: QDRAI
+    unit: mm/s
+    description: Sub-surface drainage flux from the soil column.
+    validation_rank: 2
+    emitted_in: ELM history file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Rarely measured directly; usually evaluated as part of total runoff or baseflow separation.
+      detrending_options:
+      - none
+  - name: H2OSOI
+    unit: mm3/mm3
+    description: Volumetric soil moisture by layer.
+    validation_rank: 3
+    emitted_in: ELM history file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Model and probe layer depths must be matched; absolute volumetric water content is sensitive
+          to soil texture parameters.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Satellite soil moisture senses only the top few centimeters; compare to the shallowest model
+          layer.
+      detrending_options:
+      - none
+  - name: EFLX_LH_TOT
+    unit: W/m2
+    description: Total latent heat flux from the land surface to the atmosphere (land evapotranspiration
+      in energy units).
+    validation_rank: 4
+    emitted_in: ELM history file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against eddy-covariance flux towers; tower energy-balance closure error affects the
+          reference.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Remote-sensing ET products are themselves model-derived.
+      detrending_options:
+      - none
+  - name: FSH
+    unit: W/m2
+    description: Sensible heat flux to the atmosphere.
+    validation_rank: 5
+    emitted_in: ELM history file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance reference; closure error shared with latent heat.
+      detrending_options:
+      - none
+  - name: GPP
+    unit: gC/m2/s
+    description: Gross primary production (canopy photosynthetic carbon uptake).
+    validation_rank: 6
+    emitted_in: ELM history file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Tower GPP is a partitioned (not directly measured) quantity derived from NEE.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Satellite GPP products are upscaled/model-assisted estimates.
+      detrending_options:
+      - none
+  - name: NEE
+    unit: gC/m2/s
+    description: Net ecosystem exchange of carbon (negative = net uptake).
+    validation_rank: 7
+    emitted_in: ELM history file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - NEE is the directly-measured flux-tower quantity but is biased by long spin-up disequilibrium
+          in TOTSOMC.
+      detrending_options:
+      - none
+  - name: TSOI
+    unit: K
+    description: Soil temperature by layer.
+    validation_rank: 8
+    emitted_in: ELM history file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Match model and sensor depths.
+      detrending_options:
+      - none
+  - name: TWS
+    unit: mm
+    description: Total terrestrial water storage (soil water + ice + canopy + snow + aquifer).
+    validation_rank: 9
+    emitted_in: ELM history file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - temporal_pattern_match
+        determining_metric: r
+        caveats:
+        - GRACE observes basin-scale storage ANOMALIES, not absolute storage; compare anomalies/trends
+          after removing the mean, and at basin aggregation scale.
+      detrending_options:
+      - linear_residual
+      - decadal_mean
+  secondary: []
 known_issues:
-  - id: "no_hpc"
-    description: "Cannot run native ELM binary without HPC cluster — requires CIME/MPI infrastructure"
-  - id: "bengbu_cross_val_low_nse"
-    description: "Cross-validation of Bengbu params to Wangjiaba gives NSE=0.056 — requires local calibration"
-  - id: "spinup_required"
-    description: "Cold start runs need 200-500 year spin-up for C/N/P pools to equilibrate"
+- id: dt_001
+  symptom: 'Unrealistic energy balance: perpetual snow/ice cover even in tropical regions, ground temperature
+    well below freezing year-round, or model crashes with "temperature out of range" errors.
+
+    '
+  diagnosis: Atmospheric temperature provided in °C instead of K; ELM expects air temperature (TBOT) in
+    Kelvin. If Celsius values (e.g., 20°C) are passed, the model interprets them as 20 K (-253°C). This
+    causes the surface energy balance to compute extreme cooling, resulting in perpetual ice/snow cover
+    and event
+  remedy: 'Convert temperature from °C to K by adding 273.15; convert_forcing_to_elm.py; [''Check forcing
+    file: median TBOT should be 250-300 K, not -20 to 40'', ''Apply: TBOT_K = TBOT_C + 273.15'', ''Rewrite
+    forcing NetCDF with corrected values'']; The forcing converter auto-detects °C vs K and converts'
+  severity: silent
+- id: dt_002
+  symptom: 'Extreme flooding or unrealistic drought. If mm/day is passed as mm/s, precipitation is 86400x
+    too high — every grid cell floods. If mm/s is treated as mm/day, precipitation is 86400x too low —
+    extreme drought.
+
+    '
+  diagnosis: Precipitation in mm/day, mm/hr, or m/day instead of mm/s; ELM expects precipitation rate
+    in mm/s (= kg/m²/s). ERA5 provides total precipitation in m/timestep or mm/day. GSWP3 uses mm/3hr.
+    Passing mm/day as mm/s makes rainfall 86400x too intense. A typical 10 mm/day rain becomes 10 mm/s
+    = 864,000 mm/
+  remedy: 'Divide mm/day by 86400, mm/hr by 3600, or m/day by 86.4; convert_forcing_to_elm.py; [''Check:
+    PRECTmms max should be < 0.1 mm/s for most locations'', ''If max > 1.0, likely in mm/day → divide
+    by 86400'', ''If max > 0.5 but < 30, likely in mm/hr → divide by 3600'']; Use convert_forcing_to_elm.py
+    which auto'
+  severity: silent
+- id: dt_003
+  symptom: 'Wildly wrong latent heat flux. If relative humidity (0-100%) is passed as specific humidity
+    (kg/kg), the model interprets values like 60 as 60 kg/kg of water vapor — physically impossible and
+    causing extreme condensation or numerical overflow.
+
+    '
+  diagnosis: Relative humidity (%) passed instead of specific humidity (kg/kg); ELM expects specific humidity
+    (SHUM) in kg/kg, typically 0.001-0.025. Relative humidity (0-100%) or g/kg (1-25) are commonly confused
+    with this. Values > 0.06 kg/kg are physically impossible and indicate unit errors. The conversion
+    f
+  remedy: 'Convert RH to specific humidity using saturation vapor pressure; convert_forcing_to_elm.py;
+    [''Check: SHUM values should be 0.0001-0.04 kg/kg'', ''If values are 1-100: these are RH% — convert
+    using T and P'', ''If values are 1-25: these are g/kg — divide by 1000'']; The forcing converter auto-detects
+    humi'
+  severity: silent
+- id: dt_004
+  symptom: 'Wrong surface energy partitioning. Sensible and latent heat fluxes are systematically too
+    low or too high. Air density computed from pressure is 100x too low (if hPa passed as Pa) or 1000x
+    too low (if kPa).
+
+    '
+  diagnosis: Surface pressure in hPa or kPa instead of Pa; ELM expects surface pressure (PSRF) in Pa,
+    typically 50000-110000 Pa. Passing hPa (500-1100) or kPa (50-110) causes air density to be computed
+    as 100x or 1000x too low. This affects all turbulent flux calculations (sensible heat, latent heat,
+    momentum) w
+  remedy: 'Multiply hPa by 100 or kPa by 1000 to get Pa; convert_forcing_to_elm.py; [''Check: PSRF should
+    be 50000-110000 Pa'', ''If values are 500-1100: these are hPa → multiply by 100'', ''If values are
+    50-110: these are kPa → multiply by 1000'']; The forcing converter auto-detects pressure units'
+  severity: silent
+- id: dt_005
+  symptom: 'Numerical instability: model crashes with floating-point exceptions (FPE), NaN values in soil
+    temperature, or energy balance residuals > 50 W/m². Often occurs in high-latitude or mountainous grid
+    cells.
+
+    '
+  diagnosis: Model timestep (dtime) too large for the physics; ELM default timestep is 1800s (30 minutes).
+    For certain configurations (high resolution, steep topography, permafrost), this can exceed the CFL
+    stability condition for soil thermal diffusion. Doubling the timestep to 3600s almost always causes
+    instab
+  remedy: 'Reduce dtime to 900s or 600s in user_nl_elm; ; ["Add ''dtime = 900'' to user_nl_elm", ''Rebuild
+    namelists: ./preview_namelists'', ''Resubmit the run'']; Keep dtime=1800 unless running at very high
+    resolution'
+  severity: degraded
+- id: dt_006
+  symptom: 'Zero or extreme photosynthesis. If LAI is in % (0-100) instead of m²/m² (0-12), the canopy
+    is either completely opaque (100% treated as 100 m²/m²) or negligible (1% treated as 0.01 m²/m²).
+
+    '
+  diagnosis: 'Leaf Area Index in wrong units (% or fraction instead of m²/m²); ELM expects MONTHLY_LAI
+    in m²/m², typical range 0-12. Values from some remote sensing products may be in different units or
+    have scale factors. MODIS LAI has a scale factor of 0.1 that must be applied.
+
+    ; [''SatellitePhenologyMod'', ''Cano'
+  remedy: 'Verify LAI is in m²/m² with values 0-12; convert_surface_data.py; [''Check MONTHLY_LAI range
+    in surfdata.nc'', ''If max > 15: likely has wrong scale factor'', ''If values are 0-1: might be fraction
+    — multiply by typical max LAI'']; validate_outputs in convert_surface_data.py checks range'
+  severity: silent
+- id: dt_007
+  symptom: 'Fatal crash during initialization with "invalid soil hydraulic parameters" or negative porosity.
+    Occurs when reading the surface dataset.
+
+    '
+  diagnosis: Sand + clay percentages sum to more than 100%; ELM computes silt as 100 - sand - clay. If
+    sand + clay > 100, silt becomes negative, which is used to compute soil hydraulic parameters (saturated
+    conductivity, wilting point, field capacity). Negative silt produces physically impossible hydraulic
+    param
+  remedy: 'Ensure sand + clay <= 100% for all soil layers; convert_surface_data.py; [''Check surfdata.nc:
+    ncdump -v PCT_SAND,PCT_CLAY surfdata.nc'', ''Verify sand[i] + clay[i] <= 100 for all layers'', ''If
+    > 100, normalize: sand = sand/(sand+clay)*100, clay = 100-sand'']; validate_outputs in convert_surface_data.py '
+  severity: fatal
+- id: dt_008
+  symptom: 'Model fails to start with "STOP: No valid entries in namelist" or "Fortran runtime error:
+    bad integer for item in namelist". The namelist file cannot be parsed.
+
+    '
+  diagnosis: 'Double quotes used in Fortran namelist instead of single quotes; Fortran namelists require
+    single quotes for character strings. Double quotes are not valid Fortran namelist syntax, even though
+    they work in many other contexts. This is especially common when using Python or shell scripts to
+    generate '
+  remedy: 'Replace all double quotes with single quotes in user_nl_elm and lnd_in; ; [''Open user_nl_elm'',
+    ''Replace all " with \'''', ''Rebuild namelists: ./preview_namelists'']; run_elm.py configure_namelist
+    function ensures single quotes'
+  severity: fatal
+- id: dt_009
+  symptom: 'Unrealistic carbon cycle: TOTSOMC near zero, NEE strongly negative (large carbon sink), heterotrophic
+    respiration near zero, while GPP looks reasonable. The model appears to absorb carbon indefinitely.
+
+    '
+  diagnosis: BGC simulation started without spin-up (cold start); Cold-start ELM initializes all soil
+    carbon pools to zero. Since soil organic carbon takes 200-1000 years to accumulate, a production run
+    from cold start has essentially no decomposable substrate. GPP is controlled by leaf properties and
+    is unaffec
+  remedy: 'Run 200-500 year spin-up before production simulation; ; [''Create AD spin-up case: spinup_state=1,
+    run 200+ years'', ''Switch to normal mode: spinup_state=0, run 100+ more years'', ''Use final restart
+    as finidat for production run'', ''Verify TOTECOSYSC is stable (< 1% annual change)'']; Always check
+    TOTSO'
+  severity: degraded
+- id: dt_010
+  symptom: 'Incorrect canopy radiation absorption profile. If total shortwave is provided without splitting
+    into direct/diffuse and visible/near-infrared components, the canopy radiative transfer is wrong.
+
+    '
+  diagnosis: Shortwave radiation provided as total only, not split into components; ELM's two-stream canopy
+    radiation model needs separate direct/diffuse and visible/near-infrared components. DATM can handle
+    total-only input by applying empirical splitting functions, but results are less accurate. If the
+    splitti
+  remedy: 'Ensure DATM is configured for appropriate SW splitting; ; [''Check if source data has separate
+    direct/diffuse components'', ''If total only: DATM applies default splitting (OK for most cases)'',
+    ''For higher accuracy, provide 4-component SW (direct vis/nir, diffuse vis/nir)'']; Document the SW
+    splitting m'
+  severity: silent
+- id: dt_011
+  symptom: 'Wrong soil thermal conductivity in organic-rich or permafrost soils. Soil temperatures in
+    upper layers are systematically too warm or too cold compared to observations.
+
+    '
+  diagnosis: Soil organic matter in wrong units (% or g/g instead of kg/m³); ELM expects ORGANIC in kg/m³
+    (typical range 0-130). Organic matter strongly affects soil thermal conductivity and water retention.
+    If values from SoilGrids (in g/kg or %) are passed without conversion, organic content is either vastly
+    o
+  remedy: 'Convert organic matter to kg/m³; convert_surface_data.py; [''If source is in % (0-100): multiply
+    by ~13 (approx bulk density × 10)'', ''If source is in g/kg: multiply by bulk density / 1000'', ''Verify
+    final values 0-130 kg/m³'']; validate_outputs in convert_surface_data.py checks range'
+  severity: silent
+- id: dt_012
+  symptom: 'GPP magnitude is 30-50% too high or too low compared to expectations. All other forcing data
+    is correct but carbon fluxes are systematically biased.
+
+    '
+  diagnosis: CO2 concentration (co2_ppmv) set to wrong value or wrong units; ELM expects CO2 in ppmv (parts
+    per million by volume). For 1850 simulations, co2_ppmv should be ~284.7; for 2000, ~370; for present
+    day, ~420. If the wrong value is used, photosynthesis rates are directly affected through the Farquhar
+    m
+  remedy: 'Set co2_ppmv to the correct value for your simulation period; ; [''For 1850: co2_ppmv = 284.7'',
+    ''For 2000: co2_ppmv = 369.0'', ''For 2020: co2_ppmv = 412.0'', ''Verify units are ppmv, NOT mol/mol
+    or Pa'']; Check co2_ppmv matches the compset time period'
+  severity: silent
+- id: dt_013
+  symptom: 'Date drift over multi-year simulations: forcing data and model time gradually desynchronize.
+    After several years, January forcing data is applied in February.
+
+    '
+  diagnosis: Calendar mismatch between forcing data and model (noleap vs gregorian); ELM typically uses
+    a noleap (365-day) calendar. If forcing data uses a gregorian calendar (with leap years), the time
+    axes diverge by 1 day every 4 years. After 120 years, forcing is misaligned by a full month. DATM
+    can handle t
+  remedy: 'Ensure forcing data calendar matches the model calendar; ; [''Check model calendar: grep calendar
+    lnd_in'', ''Check forcing calendar: ncdump -h forcing.nc | grep calendar'', ''If mismatch: either
+    convert forcing to noleap or configure DATM for gregorian'']; Always specify calendar=''noleap'' when
+    writing fo'
+  severity: degraded
+- id: dt_014
+  symptom: 'Model runs but results make no sense for the study location: tropical site shows tundra vegetation
+    responses, or vice versa. No error messages.
+
+    '
+  diagnosis: Latitude orientation flipped in surface or forcing data; Some datasets store latitude from
+    North to South (90 to -90), while ELM and most climate data use South to North (-90 to 90). If the
+    orientation is wrong, grid cell (40°N, 117°E) gets data for (40°S, 117°E) — a completely different
+    climate zon
+  remedy: 'Verify latitude orientation in all input files; ; [''Check: ncdump -v lat forcing.nc | head
+    → should increase from S to N'', ''If decreasing: flip the latitude dimension'', ''Verify surface
+    data lat matches forcing data lat orientation'']; Always check lat[0] < lat[-1] before writing input
+    files'
+  severity: silent
+- id: dt_015
+  symptom: 'Energy and water balance do not close. Some grid cells have excess or deficit energy/water.
+    Spatial patterns of fluxes show discontinuities.
+
+    '
+  diagnosis: 'PFT fractions do not sum to 100% per grid cell; ELM requires that all PFT fractions (PCT_NAT_PFT)
+    sum to exactly 100% for each grid cell. If the sum is < 100%, some land area is unaccounted for; if
+    > 100%, area is double-counted. Both cause energy/water balance errors because fluxes are weighted
+    by '
+  remedy: 'Normalize PFT fractions to sum to 100%; convert_surface_data.py; [''Check: sum PCT_NAT_PFT
+    for each grid cell'', ''If != 100: pft_frac = pft_frac / sum(pft_frac) * 100'']; validate_outputs
+    in convert_surface_data.py checks the sum'
+  severity: degraded
+- id: dt_016
+  symptom: 'Model crashes during initialization with "decomposition failed" or "invalid processor layout"
+    error. Cannot start the simulation.
+
+    '
+  diagnosis: 'MPI task count doesn''t match the grid decomposition requirements; ELM decomposes the global
+    grid across MPI tasks. Some task counts cannot evenly divide certain grids, causing the decomposition
+    algorithm to fail. This is especially common with non-standard grids or very small task counts.
+
+    ; [''decomp'
+  remedy: 'Adjust NTASKS_LND to be compatible with the grid; ; [''Try common task counts: 1, 2, 4, 8,
+    16, 32'', ''./xmlchange NTASKS_LND=4'', ''./case.setup --reset && ./case.build'']; Use power-of-2
+    task counts for safe decomposition'
+  severity: fatal
+- id: dt_017
+  symptom: 'Runtime crash: "error while loading shared libraries: libnetcdf.so: cannot open shared object
+    file" or similar library-not-found errors.
+
+    '
+  diagnosis: 'NetCDF or HDF5 shared library not in LD_LIBRARY_PATH at runtime; ELM links dynamically against
+    NetCDF and HDF5 libraries. If the runtime environment doesn''t have these in LD_LIBRARY_PATH (common
+    when batch scheduler resets environment), the executable fails at startup.
+
+    ; [''e3sm binary'']'
+  remedy: 'Load NetCDF/HDF5 modules in the job script; ; ["Check: ldd $(./xmlquery --value EXEROOT)/e3sm.exe
+    | grep ''not found''", ''Load missing modules: module load netcdf hdf5'', ''Or set LD_LIBRARY_PATH
+    explicitly in env_mach_specific.xml'']; Verify library paths before submitting'
+  severity: fatal
+- id: dt_018
+  symptom: 'Model starts but soil moisture and temperature profiles show unrealistic patterns. Spatial
+    discontinuities in surface fluxes. Values are wrong for the first several years, then gradually improve.
+
+    '
+  diagnosis: Initial conditions file (finidat) from a different resolution or grid; If finidat was generated
+    for a different grid (e.g., 1° global) and used for a different resolution (e.g., regional 0.25°),
+    the interpolation introduces artifacts. Soil state variables may not be physically consistent after
+    inter
+  remedy: 'Run additional 20-50 years of spin-up after interpolation; ; [''Use interpinic tool: ./interpinic
+    -i old_finidat.nc -o new_finidat.nc'', ''Run 20-50 year adjustment period before production'', ''Or
+    use cold start with full spin-up for best results'']; Generate finidat at the target resolution whenever
+    pos'
+  severity: silent
+- id: dt_019
+  symptom: 'Model crashes mid-run with "No space left on device" or stops writing output. History files
+    consume more disk than expected.
+
+    '
+  diagnosis: 'History file output exceeds available disk space; ELM history files can be very large, especially
+    with high-frequency output (hourly or sub-hourly) at high resolution. A single year of hourly global
+    output at 1° resolution can be 50+ GB. Many users don''t anticipate this and run out of space.
+
+    ; [''his'
+  remedy: 'Reduce output frequency or variable count; ; [''Use hist_empty_htapes = .true. to clear defaults'',
+    ''Only include needed variables in hist_fincl1'', ''Use monthly output (hist_nhtfrq=0) unless sub-monthly
+    is required'', ''Enable compression: hist_ndens = 2'']; Estimate output size: n_vars × n_gridcells
+    × n'
+  severity: fatal
+- id: dt_020
+  symptom: 'Runoff or carbon flux values are 86400x too high when comparing to observations. Annual runoff
+    is reported as thousands of mm/yr instead of hundreds. GPP is reported as millions of gC/m²/yr.
+
+    '
+  diagnosis: ELM output flux rates (mm/s, gC/m²/s) treated as daily totals; All ELM flux outputs are in
+    per-second rates. QRUNOFF is mm/s (not mm/day), GPP is gC/m²/s (not gC/m²/day). Forgetting to multiply
+    by 86400 when computing daily totals, or conversely treating already per-second rates as daily, causes
+    864
+  remedy: Multiply per-second rates by 86400 for daily, by 86400×365 for annual; parse_elm_output.py --to_daily;
+    ['QRUNOFF_mm_day = QRUNOFF_mm_s × 86400', 'GPP_gC_m2_day = GPP_gC_m2_s × 86400', 'Use --to_daily flag
+    in parse_elm_output.py']; Always check output variable units with ncdump -h before analysis
+  severity: silent

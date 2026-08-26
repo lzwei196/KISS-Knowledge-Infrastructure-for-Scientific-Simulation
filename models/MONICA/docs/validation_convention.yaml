@@ -1,0 +1,459 @@
+schema_version: 1
+model_id: MONICA
+domain: crop
+generated_by: "Step-B fleet agent; literature-grounded validation convention"
+generated_at: 2026-08-14
+
+references:
+  sarkar2014:
+    doi: 10.5027/jnrd.v4i0.01
+    title: "A new novel index for evaluating model performance"
+    venue: "Journal of Natural Resources and Development"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5027_jnrd.v4i0.01.txt
+  bergez2022:
+    doi: 10.1007/s11119-022-09885-4
+    title: "A review of methods to evaluate crop model performance at multiple and changing spatial scales"
+    venue: "Precision Agriculture"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s11119-022-09885-4.txt
+  nendel2011:
+    doi: 10.1016/j.ecolmodel.2011.02.018
+    title: "The MONICA model: Testing predictability for crop growth, soil moisture and nitrogen dynamics"
+    venue: "Ecological Modelling"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.ecolmodel.2011.02.018.txt
+  aiteew2024:
+    doi: 10.5194/gmd-17-1349-2024
+    title: "Evaluation and optimisation of the soil carbon turnover routine in the MONICA model (version 3.3.1)"
+    venue: "Geoscientific Model Development"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-17-1349-2024.txt
+  khaledi2024:
+    doi: 10.1016/j.scitotenv.2024.174995
+    title: "Evaluating MONICA's capability to simulate water, carbon and nitrogen fluxes"
+    venue: "Science of the Total Environment"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.scitotenv.2024.174995.txt
+  wallach2023:
+    doi: 10.1007/s13593-023-00900-0
+    title: "Proposal and extensive test of a calibration protocol for crop phenology models"
+    venue: "Agronomy for Sustainable Development"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13593-023-00900-0.txt
+  palosuo2011:
+    doi: 10.1016/j.eja.2011.05.001
+    title: "Simulation of winter wheat yield and its variability in different climates of Europe"
+    venue: "European Journal of Agronomy"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.eja.2011.05.001.txt
+  roetter2016:
+    doi: 10.1017/s0021859615001124
+    title: "Comparing the performance of 11 crop simulation models in predicting yield response to nitrogen fertilization"
+    venue: "Journal of Agricultural Science"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1017_s0021859615001124.txt
+  zhang2016:
+    doi: 10.1038/srep25755
+    title: "An integrated soil-crop system model for water and nitrogen management in North China"
+    venue: "Scientific Reports"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_srep25755.txt
+  weber2020:
+    doi: 10.1002/vzj2.20058
+    title: "Crop growth and soil water fluxes at erosion-affected arable sites: Using weighing lysimeter data"
+    venue: "Vadose Zone Journal"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_vzj2.20058.txt
+  weber2023:
+    doi: 10.1002/vzj2.20202
+    title: "Same soil, different climate: Crop model intercomparison on translocated lysimeters"
+    venue: "Vadose Zone Journal"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_vzj2.20202.txt
+  dueri2023:
+    doi: 10.1016/j.agrformet.2023.109619
+    title: "Sources of uncertainty in simulating crop N2O emissions under contrasting environmental conditions"
+    venue: "Agricultural and Forest Meteorology"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agrformet.2023.109619.txt
+  jahr2016:
+    doi: 10.1371/journal.pone.0151782
+    title: "Impact of Spatial Soil and Climate Input Data Aggregation on Regional Yield Simulations"
+    venue: "PLOS ONE"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1371_journal.pone.0151782.txt
+
+validation:
+  - dag_variable: Yield
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pmare
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Sarkar 2014 gives PMARE ratings: 5-10 very good, 10-15 good, 20-25 moderate, and >25 unsatisfactory."
+        cites: [sarkar2014]
+      - metric: nmae
+        direction: minimize
+        unit: fraction
+        bands: {very_good: 0.19, good: 0.29, satisfactory: 0.30}
+        pass_band: satisfactory
+        band_note: "MONICA crop biomass/yield variables were described as simulated well at nMAE 0.07-0.29; the paper warns MAE can exceed 30% when used outside calibration."
+        cites: [nendel2011]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The dag determining metric is magnitude bias, but crop-model papers prefer relative error plus bias diagnostics because bias alone can hide compensating errors."
+        cites: [palosuo2011, bergez2022]
+    validated_when: "Point yield is validated when relative absolute percent error is not worse than 25% and MONICA-like normalized absolute error is not above 0.30."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Retains dag pbias as supportive; literature clearly supersedes bias-only grading with relative error. Nendel 2011 says biomass-growth variables, including yield, were simulated well; Sarkar 2014 supplies the explicit percent-error bands."
+
+  - dag_variable: Yield
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pmare
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Single-season plot yield uses the same relative absolute error convention; Sarkar 2014 labels >25% unsatisfactory."
+        cites: [sarkar2014]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "For a single harvest, percent absolute error is more interpretable than signed bias; bias remains useful for direction of error."
+        cites: [palosuo2011]
+    validated_when: "Single-season yield is validated when PMARE <= 25%."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Palosuo 2011 reports dry-matter grain-yield evaluation with CV(RMSE), MBE and Willmott IA; the numeric gate is transferred from the fetched general model-performance PMARE table."
+
+  - dag_variable: Yield
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 3, good: 4, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Jahr 2016 reports regional yield ensemble median biases below 3%, maximum single-model biases below 4% in key aggregation cases, and a 13.9% simulated-to-observed maximum bias."
+        cites: [jahr2016, bergez2022]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Spatial crop-model reviews stress that aspatial RMSE alone misses scale and spatial-structure errors."
+        cites: [bergez2022]
+    validated_when: "Regional aggregate yield is validated when absolute PBIAS <= 15%, after representative aggregation and detrending where technology trend is present."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "This is a transferred regional crop-model convention, not a MONICA-only validation threshold. Bergez 2022 says evaluation must match model use and scale."
+
+  - dag_variable: LAI
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.37, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Sarkar 2014 states ENS <= 0 is unsatisfactory and 0 < ENS < 1 is acceptable; MONICA LAI ME/NSE-like values reached 0.24-0.37 in Nendel 2011, while WHCNS LAI validation NSE reached 0.74-0.95."
+        cites: [sarkar2014, nendel2011, zhang2016]
+      - metric: nmae
+        direction: minimize
+        unit: fraction
+        bands: {very_good: 0.27, good: 0.35, satisfactory: 0.35}
+        pass_band: satisfactory
+        band_note: "Nendel 2011 reports LAI nMAE 0.27-0.35 and describes LAI as more poorly simulated than biomass variables."
+        cites: [nendel2011]
+    secondary_metrics: []
+    validated_when: "LAI is validated when NSE is above the observed-mean baseline and normalized absolute error is no worse than 0.35."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "The dag determining metric NSE is retained. Roetter 2016 notes severe systematic LAI errors under unfertilized N-stress, so N-stress LAI should be interpreted cautiously."
+
+  - dag_variable: Stage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse_stage_doy
+        direction: minimize
+        unit: days
+        bands: {very_good: 5, good: 6, satisfactory: 10}
+        pass_band: satisfactory
+        band_note: "Wallach 2023 reports protocol-calibrated phenology RMSE averages near 5-6 days for French data and 10.7 days for Australian evaluation; Roetter 2016 says 6-8 days was common and 10 days or more was fairly satisfactory under N stress."
+        cites: [wallach2023, roetter2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is NSE, but phenology papers validate transition timing in days to BBCH stages rather than the magnitude of an ordinal stage index."
+        cites: [wallach2023]
+    validated_when: "Phenological stage is validated when transition-date RMSE is <= 10 days."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "This supersedes the dag determining_metric nse for Stage because the 0-7 stage magnitude is not the field target; days to emergence, heading, flowering, anthesis or maturity are."
+
+  - dag_variable: Act_ET
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "General ENS convention: values above the observed-mean baseline are acceptable; variable-specific ET papers use rRMSE/dr instead."
+        cites: [sarkar2014]
+      - metric: rrmse
+        direction: minimize
+        unit: fraction
+        bands: {very_good: 0.40, good: 0.50, satisfactory: 0.54}
+        pass_band: satisfactory
+        band_note: "Khaledi 2024 calls MONICA lysimeter simulations acceptable/even very good and reports ET rRMSE 0.40-0.54; Weber 2023 labels nRMSE <=50% a good fit for measured variables."
+        cites: [khaledi2024, weber2023]
+    secondary_metrics:
+      - metric: dr
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Khaledi 2024 co-reports Willmott's refined index of agreement for ET, with dr 0.72-0.80."
+        cites: [khaledi2024]
+    validated_when: "Actual ET is validated when NSE is above the mean baseline and rRMSE <= 0.54 against lysimeter or eddy-covariance observations."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "The rRMSE band is MONICA-specific but from a wet-grassland lysimeter benchmark; confidence is reduced for arable columns outside similar hydrologic regimes."
+
+  - dag_variable: Mois
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.39, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Sarkar 2014 treats ENS <=0 as unsatisfactory; Aiteew 2024 reports MONICA soil water NSE 0.39, and Zhang 2016 reports soil-water validation NSE 0.34-0.78."
+        cites: [sarkar2014, aiteew2024, zhang2016]
+      - metric: mae
+        direction: minimize
+        unit: percentage_points
+        bands: {very_good: null, good: 5.37, satisfactory: 5.37}
+        pass_band: satisfactory
+        band_note: "Aiteew 2024 reports soil water content average error of 5.37 percentage points and says predictive power was better than the mean observations."
+        cites: [aiteew2024]
+    secondary_metrics:
+      - metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Nendel 2011 co-reports d = 0.82-0.91 for soil moisture and calls simulations satisfactory."
+        cites: [nendel2011]
+    validated_when: "Soil moisture is validated when NSE is above the mean baseline and MAE is no worse than about 5.37 percentage points at matched sensor depth."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "The dag determining metric NSE is retained; the MAE band is a MONICA benchmark rather than a universal threshold."
+
+  - dag_variable: NLeach
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a defensible daily nitrate-leaching NSE threshold for MONICA; soil nitrate concentration NSE is not the same as lower-boundary N leaching."
+        cites: []
+      - metric: pmare
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Seasonal load percent-error grading is plausible, but no fetched leaching-flux paper supplies a numeric band for MONICA."
+        cites: []
+    secondary_metrics:
+      - metric: nitrate_concentration_nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Zhang 2016 says nitrate NSE 0.29-0.63 appeared acceptable given complex N transformation, while earlier soil-crop model comparisons found mineral N dynamics often negative."
+        cites: [zhang2016]
+    validated_when: "UNRESOLVED - grade daily NLeach only with a fetched leaching-flux benchmark; current fetched papers support context, not a gate."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Do not use soil nitrate concentration performance as a hard pass/fail convention for NLeach flux. Prefer cumulative annual loads when a leaching paper is fetched."
+
+  - dag_variable: NLeach
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS threshold for seasonal or annual MONICA nitrate leaching."
+        cites: []
+    secondary_metrics:
+      - metric: nitrate_concentration_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Zhang 2016 reports soil nitrate concentration validation RMSE 2.58-7.04 mg kg-1 and calls the ranges acceptable, but this is concentration rather than leached load."
+        cites: [zhang2016]
+    validated_when: "UNRESOLVED - annual NLeach needs a fetched lysimeter leaching-load convention."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The dag determining metric PBIAS is retained with null bands."
+
+  - dag_variable: N2O
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE pass threshold for episodic chamber N2O flux time series."
+        cites: []
+      - metric: cumulative_relative_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Dueri 2023 evaluates relative error for seasonal cumulative N2O, but the fetched text does not provide a pass/fail numeric band."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Daily N2O flux matching is data- and event-limited: Khaledi 2024 says low measured fluxes were close to measurement error and performance indicators were misleading; Dueri 2023 says accurate field-scale N2O simulation remains challenging due to spatial and temporal soil variability."
+        cites: [khaledi2024, dueri2023]
+    validated_when: "UNRESOLVED - for N2O, prefer seasonal cumulative error against fertilized chamber data; daily NSE should route to data-ceiling unless a better event-scale benchmark is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The only structural ceiling in this file is explicitly cited: low/episodic N2O observations make daily skill metrics misleading."
+
+  - dag_variable: SOC
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mae
+        direction: minimize
+        unit: Mg C ha-1
+        bands: {very_good: 3.81, good: 3.91, satisfactory: 5.01}
+        pass_band: satisfactory
+        band_note: "Aiteew 2024 reports MONICAcal validation-site MAE 3.81, all-site MAE 3.91, and says calibrated MONICA errors were within the all-site measurement-replicate SD of 5.01 Mg C ha-1."
+        cites: [aiteew2024]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.97, good: 0.95, satisfactory: 0.91}
+        pass_band: satisfactory
+        band_note: "Aiteew 2024 reports SOC-stock NSE 0.91 for default MONICA, 0.95 for calibrated all sites, and 0.97 for validation sites."
+        cites: [aiteew2024]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The dag metric is bias, but SOC validation papers judge stock trajectories with MAE, NSE, rank correlation, slope and intercept."
+        cites: [aiteew2024]
+    validated_when: "SOC time series is validated when MAE <= 5.01 Mg C ha-1 and NSE >= 0.91 for comparable long-term monitoring data."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: "SOC is strongly grounded by a MONICA-specific 46-site evaluation and comparison with RothC, C-TOOL, ICBM, CENTURY and CCB. Bias-only grading is superseded."
+
+  - dag_variable: SOC
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: mae
+        direction: minimize
+        unit: Mg C ha-1
+        bands: {very_good: 3.81, good: 3.91, satisfactory: 5.01}
+        pass_band: satisfactory
+        band_note: "The same Aiteew 2024 SOC-stock MAE convention applies to horizon-matched SOC stock snapshots; SOC change is slow, so single snapshots are weaker than trajectories."
+        cites: [aiteew2024]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "SOC snapshot bias is informative but not the main convention in the fetched MONICA SOC benchmark."
+        cites: [aiteew2024]
+    validated_when: "SOC snapshot is validated when horizon-matched SOC stock MAE <= 5.01 Mg C ha-1; prefer long-term change when available."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Transferred from the MONICA long-term SOC benchmark; confidence reduced because one snapshot cannot test decadal SOC turnover."
+
+  - dag_variable: SumNUp
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: rrmse
+        direction: minimize
+        unit: fraction
+        bands: {very_good: 0.20, good: 0.24, satisfactory: 0.31}
+        pass_band: satisfactory
+        band_note: "Khaledi 2024 reports N in biomass rRMSE 0.20-0.31 and calls the overall MONICA simulation acceptable/even very good."
+        cites: [khaledi2024]
+      - metric: pmare
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Sarkar 2014 general percent-error ratings provide the explicit pass/fail tier for harvest N uptake when reported as a relative error."
+        cites: [sarkar2014]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The dag determining metric is signed bias, but fetched nitrogen uptake benchmarks report normalized absolute/relative error and agreement."
+        cites: [nendel2011, khaledi2024]
+    validated_when: "Cumulative crop N uptake is validated when rRMSE <= 0.31 or PMARE <= 25% against measured harvest N offtake."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Nendel 2011 reports total crop N uptake nMAE 0.09-0.19 but weak correlation in some treatments; Khaledi 2024 gives a newer MONICA rRMSE benchmark for Nbiom."
+
+  - dag_variable: GPP
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "General ENS convention retained for the dag metric; GPP benchmark papers in the fetched set use rRMSE/dr."
+        cites: [sarkar2014]
+      - metric: rrmse
+        direction: minimize
+        unit: fraction
+        bands: {very_good: 0.57, good: 0.60, satisfactory: 0.67}
+        pass_band: satisfactory
+        band_note: "Khaledi 2024 reports GPP rRMSE 0.57-0.67 and states that both level and temporal dynamics were well reproduced."
+        cites: [khaledi2024]
+    secondary_metrics:
+      - metric: dr
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Khaledi 2024 co-reports GPP dr 0.62-0.69."
+        cites: [khaledi2024]
+    validated_when: "GPP is validated when NSE is above the mean baseline and rRMSE <= 0.67 against flux-derived GPP."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "The rRMSE band is MONICA-specific for wet grassland lysimeters and should be revisited for arable flux towers."
+
+deferred_paywalled:
+  - ref: "Assessing and Controlling Land Use Impacts on Groundwater Quality"
+    doi: 10.1007/978-3-319-24409-9_29
+    needed_for: [NLeach]
+  - ref: "Primary crop nRMSE tier source often cited as Jamieson et al. 1991; not fetched in this pass"
+    doi: unknown_not_fetched
+    needed_for: [Yield, LAI, Act_ET]

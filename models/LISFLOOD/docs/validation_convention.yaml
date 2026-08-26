@@ -1,0 +1,278 @@
+schema_version: 1
+model_id: LISFLOOD
+domain: hydrology
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  hirpa2018:
+    doi: 10.1016/j.jhydrol.2018.09.052
+    title: "Calibration of the Global Flood Awareness System (GloFAS) using daily streamflow data"
+    venue: "Journal of Hydrology"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2018.09.052.txt
+  lopezlopez2017:
+    doi: 10.5194/hess-21-3125-2017
+    title: "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2017
+    oa: gold
+    resolves: https://doi.org/10.5194/hess-21-3125-2017
+  laguardia2008:
+    doi: 10.5194/hess-12-1339-2008
+    title: "On the comparison between the LISFLOOD modelled and the ERS/SCAT derived soil moisture over Europe"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2008
+    oa: gold
+    resolves: https://doi.org/10.5194/hess-12-1339-2008
+  tong2021:
+    doi: 10.5194/hess-25-1389-2021
+    title: "The value of ASCAT soil moisture and MODIS snow cover data for calibrating a conceptual hydrologic model"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2021
+    oa: gold
+    resolves: https://doi.org/10.5194/hess-25-1389-2021
+  thirel2013:
+    doi: 10.3390/rs5115825
+    title: "Assimilation of MODIS Snow Cover Area Data in a Distributed Hydrological Model Using the Particle Filter"
+    venue: "Remote Sensing"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_rs5115825.txt
+  hanzer2016:
+    doi: 10.5194/tc-10-1859-2016
+    title: "Multilevel spatiotemporal validation of snow/ice mass balance and runoff modeling in glacierized catchments"
+    venue: "The Cryosphere"
+    year: 2016
+    oa: gold
+    resolves: https://doi.org/10.5194/tc-10-1859-2016
+  frey2015:
+    doi: 10.5194/hess-19-4517-2015
+    title: "A conceptual, distributed snow redistribution model"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2015
+    oa: gold
+    resolves: https://doi.org/10.5194/hess-19-4517-2015
+
+validation:
+  - dag_variable: dis
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 9: watershed-scale flow is satisfactory at NSE > 0.50; Moriasi 2007 similarly states satisfactory if NSE > 0.50."
+        cites: [moriasi2015, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 9 gives flow PBIAS very good < +/-5%, good < +/-10%, satisfactory < +/-15%."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "LISFLOOD/GloFAS calibration used KGE as the objective function and reported KGE skill improvement for most gauges; no KGE pass tier was provided."
+        cites: [hirpa2018]
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 recommends reporting RMSE with RSR; the 2007 guideline states satisfactory flow if RSR < 0.70."
+        cites: [moriasi2007, moriasi2015]
+    validated_when: "Gauge-sampled discharge is validated when NSE >= 0.50 and |PBIAS| <= 15% against observed streamflow at the correctly mapped upstream area."
+    evidence_strength: strong
+    confidence: 0.9
+    notes: >-
+      This is the best-grounded LISFLOOD output. The fetched field convention says model performance can be
+      satisfactory for watershed-scale flow when NSE exceeds 0.50 and PBIAS is within +/-15%. Hirpa 2018
+      provides LISFLOOD-specific benchmark context: daily streamflow calibration used KGE and improved
+      validation-period skill for 60% of 1287 stations, but it does not define a KGE pass band.
+
+  - dag_variable: dis
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI pass threshold for gridded discharge fields; discharge validation is normally gauge-sampled."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "When gridded discharge is sampled at gauges, the watershed-flow NSE/PBIAS convention applies; this does not create a CSI convention for the full spatial field."
+        cites: [moriasi2015]
+      - metric: kge_skill_score
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hirpa 2018 quantified LISFLOOD/GloFAS spatially distributed calibration skill as KGE skill scores over 1287 stations, not as a raster CSI."
+        cites: [hirpa2018]
+    validated_when: "UNRESOLVED for raw spatial discharge CSI; sample the field at gauges and use the dis/point_time_series convention."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag headline metric is CSI, but the fetched discharge literature grades routed discharge with
+      station time-series metrics. A CSI band would be appropriate for binary flood extent, not for discharge
+      magnitude fields, unless a specific spatial-discharge benchmark is fetched.
+
+  - dag_variable: snowcov
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Hanzer 2016 defines CSI for binary snow-cover maps and reports mean MODIS CSI = 0.83, but gives no pass/fail tier."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hanzer 2016 uses contingency-table ACC, BIAS, and CSI for binary snow/no-snow maps; CSI is the number of correctly predicted snow events divided by predicted and/or observed snow events."
+        cites: [hanzer2016]
+      - metric: snow_cover_efficiency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Tong 2021 evaluates MODIS snow cover with 1 - (snow overestimation + snow underestimation) rather than a categorical CSI threshold."
+        cites: [tong2021]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Frey 2015 reports MODIS snow-cover depletion-curve validation R2 improving from 0.66 to 0.74, but not as a community pass tier."
+        cites: [frey2015]
+    validated_when: "UNRESOLVED as an automatic gate; use CSI/ACC/BIAS against binary snow-cover maps, but no fetched pass band exists."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The field clearly validates spatial snow cover with binary map scores. Hanzer 2016 gives the exact CSI
+      definition and benchmark values (mean MODIS CSI 0.83), while Tong 2021 and Thirel 2013 show MODIS
+      snow-cover objectives in hydrologic calibration. None of the fetched texts states a numeric CSI threshold
+      that separates validated from not validated, so the headline band remains null.
+
+  - dag_variable: snowcov
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched snow-depth/SWE point paper gives an NSE pass threshold for LISFLOOD snowcov."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hanzer 2016 validates snow depth at meteorological-station points to evaluate accumulation and ablation, but does not provide a general RMSE pass band."
+        cites: [hanzer2016]
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Frey 2015 reports snow-model changes through runoff KGE and MODIS depletion-curve R2, not point SWE NSE thresholds."
+        cites: [frey2015]
+    validated_when: "UNRESOLVED; compare point SWE/snow-depth time series with locally appropriate error metrics, but do not auto-pass on uncited NSE."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The dag determining metric is NSE. The fetched snow literature supports point snow-depth comparison as
+      a useful validation layer, but it does not reproduce a universal point SWE or snow-depth NSE tier. Keep
+      this block low-confidence and non-loosening.
+
+  - dag_variable: theta1/2/3
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: correlation
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.54, satisfactory: 0.48}
+        pass_band: satisfactory
+        band_note: "LISFLOOD-vs-ERS benchmark: spatial-domain mean R = 0.54 and temporal-domain mean R = 0.48; these are benchmarks, not formal community tiers."
+        cites: [laguardia2008]
+      - metric: rmse
+        direction: minimize
+        unit: pF
+        bands: {very_good: null, good: 0.45, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "LISFLOOD-vs-ERS benchmark: temporal-domain mean RMSE = 0.45 pF, spatial-domain mean RMSE = 0.50 pF, and 66% of area had RMSE < 0.5."
+        cites: [laguardia2008]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is NSE, but fetched soil-moisture studies prefer correlation/anomaly matching because absolute magnitudes and layer depths differ between model and satellite products."
+        cites: [tong2021, lopezlopez2017]
+      - metric: ubrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Common in satellite soil-moisture validation, but the candidate full-text sources for a numeric ubRMSE target failed to fetch in this pass."
+        cites: []
+    validated_when: "Spatial theta is validated against remote-sensing soil moisture when temporal/spatial correlation reaches the LISFLOOD benchmark and pF RMSE is no worse than the reported LISFLOOD-ERS benchmark."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      This block intentionally supersedes the dag's NSE headline with correlation plus RMSE, because Tong
+      2021 says correlation is selected for soil moisture to compare temporal dynamics irrespective of
+      magnitude/intercept, and Lopez Lopez 2017 rescales soil moisture before comparison. The numeric bands
+      are LISFLOOD-specific benchmarks from Laguardia 2008, not universal hydrology tiers.
+
+  - dag_variable: theta1/2/3
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE pass threshold for point-depth LISFLOOD soil moisture."
+        cites: []
+    secondary_metrics:
+      - metric: correlation
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Tong 2021 uses correlation for soil moisture because it compares temporal dynamics irrespective of magnitude and intercept; Laguardia 2008 also evaluates LISFLOOD soil moisture with R and RMSE."
+        cites: [tong2021, laguardia2008]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Laguardia 2008 notes field measurements are instantaneous point measurements and that representative points are difficult to select; point-depth RMSE needs local depth/support matching."
+        cites: [laguardia2008]
+    validated_when: "UNRESOLVED for auto-gating; point probes should be depth-matched and judged mainly by anomaly/correlation unless a fetched point-soil-moisture threshold is added."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The fetched literature supports point soil moisture as useful but scale- and depth-sensitive. The
+      OpenAlex coverage check found likely ubRMSE/point-validation sources, but the full texts failed to fetch,
+      so no numeric threshold is cited here.
+
+deferred_paywalled:
+  - ref: "Assessment of the SMAP Level-4 Surface and Root-Zone Soil Moisture Product Using In Situ Measurements"
+    doi: 10.1175/jhm-d-17-0063.1
+    needed_for: [theta1/2/3]
+  - ref: "Upscaling sparse ground-based soil moisture observations for the validation of coarse-resolution satellite soil moisture products"
+    doi: 10.1029/2011rg000372
+    needed_for: [theta1/2/3]
+  - ref: "A dedicated snow-cover validation convention paper with CSI/POD/FAR pass tiers for hydrological model snow maps"
+    doi: unknown_not_fetched
+    needed_for: [snowcov]

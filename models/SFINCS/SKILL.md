@@ -1,14 +1,3 @@
----
-name: sfincs
-description: >-
-  SFINCS reduced-physics solver (Leijnse et al. 2021; local-inertial / SSWE), subgrid per
-  van Ormondt et al. 2025. Covers 2D shallow-water flood inundation (depth and extent)
-  within a local domain; Pluvial flooding from local precipitation; Fluvial flooding from
-  river discharge / source-point inflow; Coastal/compound flooding from tidal/surge
-  water-level boundary (datum-dependent). Use when the task involves running, configuring,
-  calibrating or interpreting SFINCS.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,50 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (13 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (8 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (44 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/s1_domain/setup_sfincs_domain.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_domain/setup_sfincs_domain.py --help` |
+| `tools/s2_topobathy/build_sfincs_topobathy.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_topobathy/build_sfincs_topobathy.py --help` |
+| `tools/s3_roughness/build_sfincs_roughness.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_roughness/build_sfincs_roughness.py --help` |
+| `tools/s4_forcing/cama_to_sfincs_boundary.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_forcing/cama_to_sfincs_boundary.py --help` |
+| `tools/s4_forcing/hydat_to_sfincs_boundary.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_forcing/hydat_to_sfincs_boundary.py --help` |
+| `tools/s4_forcing/prepare_sfincs_rainfall.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_forcing/prepare_sfincs_rainfall.py --help` |
+| `tools/s4_forcing/register_vertical_datum.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_forcing/register_vertical_datum.py --help` |
+| `tools/s6_config/generate_sfincs_inp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_config/generate_sfincs_inp.py --help` |
+| `tools/s7_execution/run_sfincs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_execution/run_sfincs.py --help` |
+| `tools/s8_postprocess/extract_sfincs_results.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_postprocess/extract_sfincs_results.py --help` |
+| `tools/s8_postprocess/plot_sfincs_flood_map.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_postprocess/plot_sfincs_flood_map.py --help` |
+| `tools/s9_validation/screen_obs_independence.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_validation/screen_obs_independence.py --help` |
+
+*13 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -171,7 +204,70 @@ Stage 7 depends on 6. Stage 8 depends on 7.
 
 ---
 
+## 6. Output Description
+
+Source for this section is `dag.yaml`. If this section and `dag.yaml` ever disagree,
+`dag.yaml` wins.
+
+**Headline output**: `flood extent (derived from hmax > threshold)` is the dag's
+rank-1 output and the variable this model is judged by. Dag description, verbatim:
+Flood-water wet/dry extent classification derived from hmax exceeding a depth threshold.
+Unit: `category / area`.
+
+| Output variable (dag `var`) | Validation role | Unit | Description / scoring note |
+|---|---|---|---|
+| `flood extent (derived from hmax > threshold)` | rank 1 headline output | `category / area` | Flood-water wet/dry extent classification derived from hmax exceeding a depth threshold. |
+| `hmax` | other dag output | `m` | Maximum water depth; use this, not `zsmax`, for flood-depth mapping. |
+| `zsmax` | other dag output | `m` | Maximum water-surface elevation. |
+| `zs` | other dag output | `m` | Water-surface elevation. |
+| `point_zs / point_h` | other dag output | `m` | His-point water-surface elevation / depth; requires shared datum before scoring. |
+
+Do not report SFINCS skill from `hmax`, `zsmax`, `zs`, or `point_zs / point_h`
+when the benchmark asks for the dag's headline variable. Convert `hmax` to the
+wet/dry extent classification with the requested threshold, then score that rank-1
+output against an observed inundation mask.
+
+---
+
+## 8. Unit Table and Conversion Table
+
+Exact file shapes live in `docs/format_spec.yaml`; this table records the units that
+agents must preserve when building inputs and interpreting outputs.
+
+| Variable / file | Source unit | SFINCS / KI unit | Conversion | Notes |
+|---|---|---|---|---|
+| CMFD precipitation | `kg m-2 s-1` | `mm/hr` | multiply by `3600` | Current CMFD unit trap; if max precip is below `0.01 mm/hr`, check units. |
+| VIC forcing precipitation | `mm/timestep` for 3-hourly forcing | `mm/hr` | divide by `3` | VIC ASCII precipitation is column 1, not column 0. |
+| SFINCS `precipfile` | `mm/hr` | `mm/hr` | none | ASCII format: `time_seconds precip_mmhr`; prefer `precipfile`, not `netprecipfile`. |
+| CaMa-Flood discharge boundary | `m3/s` | `m3/s` | none | Written as SFINCS source/discharge boundary forcing. |
+| CaMa-Flood water-level boundary | `m` | `m` | none after datum check | DEM and boundary water levels must share a vertical datum. |
+| `hmax` | model output | `m` | none | Maximum water depth. Mask inactive cells and `+9999` fill values before statistics. |
+| `zsmax` / `zs` | model output | `m` | none after datum check | Water-surface elevation; not flood depth. |
+| `point_zs / point_h` | model output | `m` | none after datum check | His-point output; score only against independent stage/depth observations. |
+| `flood extent (derived from hmax > threshold)` | derived from `hmax` | `category / area` | apply the stated wet/dry depth threshold | Dag rank-1 output. Score with CSI against observed inundation masks. |
+
+---
+
 ## Validated Results
+
+### Performance Metrics - judged against the field's bar, not intuition
+
+Source for this subsection is `docs/validation_convention.yaml`. If these bars and
+the convention file ever disagree, the convention file wins. A run with only physical
+sanity checks is not a field validation score unless it is compared to an appropriate
+observation and the metric below is reported.
+
+| Dag variable | Metric | Direction | Convention bar, with citation keys |
+|---|---|---|---|
+| `flood extent (derived from hmax > threshold)` | `csi` | maximize | satisfactory >= `0.5` (`wing2018`, `wing2021`); good >= `0.7` (`wing2018`, `wing2021`); very_good >= `0.8` (`wing2018`, `wing2021`) |
+| `point_zs / point_h` | `rmse` | minimize | very_good <= `0.1` (`garcia2022`, `muis2022`, `wing2021`); good <= `0.2` (`garcia2022`, `muis2022`, `wing2021`); satisfactory <= `0.4` (`garcia2022`, `muis2022`, `wing2021`) |
+| `point_zs / point_h` | `bias` | zero_centered | very_good: no cited threshold; good within `10` of zero (`muis2022`); satisfactory within `18` of zero (`muis2022`) |
+
+The headline bar is for `flood extent (derived from hmax > threshold)`: CSI must be
+reported against an observed inundation mask, with satisfactory >= `0.5`
+(`wing2018`, `wing2021`), good >= `0.7` (`wing2018`, `wing2021`), and very_good >=
+`0.8` (`wing2018`, `wing2021`). If no independent observation exists, report a null
+metric with the reason rather than substituting a proxy score.
 
 ### Chaohe Basin Flood Test (2026-03-21)
 - **Domain**: 174x171 cells at 100m resolution, downstream Chaohe basin (40.50-40.65N, 116.60-116.80E)

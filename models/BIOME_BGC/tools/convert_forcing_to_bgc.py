@@ -11,6 +11,8 @@ CRITICAL UNIT CONVERSIONS:
   - VPD: Must be in Pa (not kPa!) [dt_008]
   - Temperature: Must be in Celsius (not Kelvin!) [dt_010]
   - Day length: Must be computed from latitude + DOY [dt_009]
+  - Shortwave: BIOME-BGC wants the DAYLIGHT-average flux (metv.swavgfd), not the
+    24-h mean that every daily forcing product carries -> x 86400/daylen [dt_027]
 
 This tool reads EITHER:
   (a) VIC forcing files (7-col: PREC TMAX TMIN WIND QAIR SHORTWAVE LONGWAVE, 3-hourly)
@@ -114,7 +116,8 @@ def read_vic_forcing(filepath: str, start_year: int, end_year: int,
     return daily_records
 
 
-def convert_to_bgc_met(daily_records, lat, pressure=101325.0):
+def convert_to_bgc_met(daily_records, lat, pressure=101325.0,
+                       srad_is_daylight_avg=False):
     """
     Convert daily records to BIOME-BGC met format lines.
 
@@ -123,6 +126,13 @@ def convert_to_bgc_met(daily_records, lat, pressure=101325.0):
     - VPD: computed in Pa from q and T
     - Tday: approximated as Tmin + 0.45*(Tmax-Tmin)
     - daylen: computed from latitude and yday (seconds)
+    - srad: BIOME-BGC's met column 8 is metv.swavgfd, the DAYLIGHT-AVERAGE
+      shortwave flux density (bgc_struct.h; users guide "met file" item 8;
+      MTCLIM output). VIC/CMFD/MSWX/NASA POWER/FLUXNET daily radiation is a
+      24-h mean, so it is scaled by 86400/daylen here (same daily energy,
+      spread over the daylight period). Feeding the 24-h mean under-forces
+      photosynthesis by ~1.5x in summer and ~3x in winter at mid-latitudes
+      (dt_027). Pass srad_is_daylight_avg=True ONLY for MTCLIM-style input.
     """
     met_lines = []
 
@@ -142,11 +152,14 @@ def convert_to_bgc_met(daily_records, lat, pressure=101325.0):
         else:
             vpd_pa = compute_vpd_from_tmin_tmax_q(tmin, tmax, r["q"], pressure)
 
-        # Shortwave radiation (already W/m2 in VIC forcing)
-        srad = max(0.0, r["srad"])
-
         # CRITICAL: Day length in seconds, computed from latitude
         dayl = compute_daylength(lat, r["yday"])
+
+        # CRITICAL: shortwave must be the DAYLIGHT average, not the 24-h mean.
+        # Daily energy is conserved: W/m2 (24 h) * 86400 s / daylen s.
+        srad = max(0.0, r["srad"])
+        if not srad_is_daylight_avg and dayl > 0:
+            srad = srad * 86400.0 / dayl
 
         met_lines.append(
             f"  {r['year']:4d}  {r['yday']:4d}"
@@ -188,28 +201,100 @@ def validate_output(met_lines, daily_records):
         warnings.append(f"Max Tmax = {max(tmax_all):.1f} C -- may be in Kelvin?")
     if min(tmin_all) < -80:
         warnings.append(f"Min Tmin = {min(tmin_all):.1f} C -- unrealistic")
+    if any(r["tmax"] < r["tmin"] for r in daily_records):
+        warnings.append("Tmax < Tmin on some days -- columns swapped or proxies used?")
+
+    # Check the written daylight-average shortwave (column 8): a daylight
+    # average can never exceed the solar constant; > 1200 W/m2 means the
+    # input was ALREADY a daylight average and got scaled twice.
+    srad_out = [float(line.split()[7]) for line in met_lines]
+    if srad_out and max(srad_out) > 1200:
+        warnings.append(
+            f"Max daylight-average srad = {max(srad_out):.0f} W/m2 (> 1200). "
+            "Input was probably already a daylight average (MTCLIM-style); "
+            "re-run with --srad_is_daylight_avg.")
 
     return warnings
 
 
-def read_fluxnet_forcing(filepath: str, start_year: int, end_year: int):
+FLUXNET_HH_COLS = ["TIMESTAMP_START", "TA_F", "P_F", "VPD_F", "SW_IN_F", "SW_IN_POT"]
+
+
+def _fluxnet_hh_path(filepath: str):
+    """Sibling FULLSET_HH.csv of a FULLSET_DD.csv (or the file itself if it is HH)."""
+    p = Path(filepath)
+    if "_HH" in p.name:
+        return p
+    cand = p.with_name(p.name.replace("_DD", "_HH"))
+    return cand if cand.is_file() and cand != p else None
+
+
+def read_fluxnet_forcing(filepath: str, start_year: int, end_year: int,
+                         use_hh: bool = True):
     """
-    Read FLUXNET2015 FULLSET_DD.csv and return daily records for BIOME-BGC.
+    Read FLUXNET2015 and return daily records for BIOME-BGC.
 
-    Columns used:
-      TA_F_MDS_DAY   → Tmax proxy (daytime mean, °C)
-      TA_F_MDS_NIGHT → Tmin proxy (nighttime mean, °C)
-      P_F            → precipitation (mm/day)  [BIOME-BGC needs cm — ÷10 done later]
-      VPD_F          → VPD (hPa) [BIOME-BGC needs Pa — ×100 done later]
-      SW_IN_F        → shortwave radiation (W/m²)
+    BIOME-BGC's met columns are defined (bgc_users_guide, "met file") as the
+    DAILY MAXIMUM / MINIMUM temperature, the DAYLIGHT-AVERAGE VPD and the
+    DAYLIGHT-AVERAGE shortwave flux -- i.e. MTCLIM output. The half-hourly
+    FULLSET_HH.csv shipped next to every FULLSET_DD.csv gives those exactly:
+      TA_F      → Tmax = daily max, Tmin = daily min (°C)
+      VPD_F     → VPD  = mean over daylight half-hours (SW_IN_POT > 0), hPa
+      SW_IN_F   → 24-h mean W/m² (scaled to the daylight average later, dt_027)
+      P_F       → mm per half-hour, summed to mm/day
+    When the HH file is absent (or use_hh=False) the daily file is used with
+    PROXIES and the caller is told so in the returned meta:
+      TA_F_MDS_DAY / TA_F_MDS_NIGHT → day/night MEANS standing in for Tmax/Tmin
+      VPD_F (24-h mean)             → stands in for the daylight average
+    Both paths: -9999 → NaN → ffill/bfill; Feb-29 dropped (365-day model year).
 
-    CRITICAL: -9999 fill values replaced with forward-filled or column means.
+    Returns (records, meta).
     """
     import pandas as pd
-    df = pd.read_csv(filepath)
-    df = df.replace(-9999.0, float("nan"))
-    df["_date"] = pd.to_datetime(df["TIMESTAMP"], format="%Y%m%d")
-    df = df[(df["_date"].dt.year >= start_year) & (df["_date"].dt.year <= end_year)]
+    hh_path = _fluxnet_hh_path(filepath) if use_hh else None
+    meta = {"fluxnet_source": None, "tmax_tmin_basis": None, "vpd_basis": None}
+
+    if hh_path is not None:
+        hh = pd.read_csv(hh_path, usecols=lambda c: c in FLUXNET_HH_COLS, dtype=float)
+        missing = [c for c in FLUXNET_HH_COLS if c not in hh.columns and c != "SW_IN_POT"]
+        if missing:
+            raise ValueError(f"Missing column(s) {missing} in {hh_path}")
+        hh = hh.replace(-9999.0, float("nan"))
+        t = pd.to_datetime(hh["TIMESTAMP_START"].astype("int64").astype(str), format="%Y%m%d%H%M")
+        hh["_date"] = t.dt.floor("D")
+        hh = hh[(hh["_date"].dt.year >= start_year) & (hh["_date"].dt.year <= end_year)]
+        if "SW_IN_POT" in hh.columns:
+            daylight = hh["SW_IN_POT"] > 0           # astronomical day, gap-free
+        else:
+            daylight = hh["SW_IN_F"] > 0
+        g = hh.groupby("_date")
+        df = pd.DataFrame({
+            "tmax": g["TA_F"].max(),
+            "tmin": g["TA_F"].min(),
+            "prec_mm": g["P_F"].sum(min_count=1),
+            "srad": g["SW_IN_F"].mean(),               # 24-h mean, daylight-scaled later
+            "vpd_hpa": hh[daylight].groupby("_date")["VPD_F"].mean(),
+        })
+        df = df.reindex(pd.date_range(df.index.min(), df.index.max(), freq="D"))
+        df["_date"] = df.index
+        meta.update(fluxnet_source=str(hh_path),
+                    tmax_tmin_basis="daily max/min of half-hourly TA_F",
+                    vpd_basis="mean of half-hourly VPD_F over daylight (SW_IN_POT>0)")
+    else:
+        df = pd.read_csv(filepath)
+        df = df.replace(-9999.0, float("nan"))
+        df["_date"] = pd.to_datetime(df["TIMESTAMP"], format="%Y%m%d")
+        df = df[(df["_date"].dt.year >= start_year) & (df["_date"].dt.year <= end_year)]
+        required = ["TA_F_MDS_DAY", "TA_F_MDS_NIGHT", "P_F", "VPD_F", "SW_IN_F"]
+        for col in required:
+            if col not in df.columns:
+                raise ValueError(f"Missing column {col} in FULLSET_DD — check file")
+        df = df.rename(columns={"TA_F_MDS_DAY": "tmax", "TA_F_MDS_NIGHT": "tmin",
+                                "P_F": "prec_mm", "VPD_F": "vpd_hpa", "SW_IN_F": "srad"})
+        meta.update(fluxnet_source=str(filepath),
+                    tmax_tmin_basis="PROXY: TA_F_MDS_DAY/NIGHT day- and night-time MEANS "
+                                    "(no FULLSET_HH.csv found; diurnal range compressed)",
+                    vpd_basis="PROXY: 24-h mean VPD_F (daylight average is higher)")
 
     # CRITICAL leap-day fix (dt root-cause): BIOME-BGC metarr_init.c reads EXACTLY
     # 365*nyears met lines sequentially and does NOT index by yday. Emitting 366
@@ -217,27 +302,22 @@ def read_fluxnet_forcing(filepath: str, start_year: int, end_year: int):
     # of phase and tanking NSE on later years. Drop Feb-29 → 365 lines every year.
     df = df[~((df["_date"].dt.month == 2) & (df["_date"].dt.day == 29))]
 
-    required = ["TA_F_MDS_DAY", "TA_F_MDS_NIGHT", "P_F", "VPD_F", "SW_IN_F"]
-    for col in required:
-        if col not in df.columns:
-            raise ValueError(f"Missing column {col} in FULLSET_DD — check file")
+    for col in ["tmax", "tmin", "prec_mm", "vpd_hpa", "srad"]:
         df[col] = df[col].ffill().bfill()
 
     records = []
     for _, row in df.iterrows():
-        tmax = float(row["TA_F_MDS_DAY"])
-        tmin = float(row["TA_F_MDS_NIGHT"])
         records.append({
             "year": int(row["_date"].year),
             "yday": int(row["_date"].timetuple().tm_yday),
-            "tmax": tmax,
-            "tmin": tmin,
-            "prec_mm": max(0.0, float(row["P_F"])),
-            # VPD_F is in hPa; store raw — convert to Pa in convert_to_bgc_met
-            "vpd_hpa": max(0.0, float(row["VPD_F"])),
-            "srad": max(0.0, float(row["SW_IN_F"])),
+            "tmax": float(row["tmax"]),
+            "tmin": float(row["tmin"]),
+            "prec_mm": max(0.0, float(row["prec_mm"])),
+            # hPa; converted to Pa in convert_to_bgc_met
+            "vpd_hpa": max(0.0, float(row["vpd_hpa"])),
+            "srad": max(0.0, float(row["srad"])),
         })
-    return records
+    return records, meta
 
 
 def main():
@@ -256,6 +336,16 @@ def main():
                         help="Sub-daily timesteps per day (VIC only, default 8)")
     parser.add_argument("--pressure", type=float, default=101325.0,
                         help="Surface pressure (Pa) for VPD calculation (VIC only)")
+    parser.add_argument("--fluxnet_daily_only", action="store_true",
+                        help="FLUXNET only: ignore the sibling FULLSET_HH.csv and use the "
+                             "daily file's day/night-mean temperature and 24-h VPD PROXIES "
+                             "(legacy behaviour; Tmax/Tmin/VPD no longer match the model's "
+                             "definitions).")
+    parser.add_argument("--srad_is_daylight_avg", action="store_true",
+                        help="Set ONLY when the input shortwave is already a daylight "
+                             "average (MTCLIM-style). By default the 24-h mean that "
+                             "VIC/CMFD/MSWX/NASA POWER/FLUXNET daily files carry is "
+                             "converted to BIOME-BGC's daylight average (x 86400/daylen).")
     parser.add_argument("--output", required=True,
                         help="Output met file path")
 
@@ -269,10 +359,12 @@ def main():
         sys.exit(1)
 
     # Read and aggregate
+    source_meta = {}
     try:
         if args.source == "fluxnet":
-            daily_records = read_fluxnet_forcing(
-                args.forcing_file, args.start_year, args.end_year)
+            daily_records, source_meta = read_fluxnet_forcing(
+                args.forcing_file, args.start_year, args.end_year,
+                use_hh=not args.fluxnet_daily_only)
             # For FLUXNET, VPD is already known (hPa) — patch convert_to_bgc_met
             # to use vpd_hpa directly instead of computing from q
             for r in daily_records:
@@ -295,7 +387,8 @@ def main():
 
     # Convert
     try:
-        met_lines = convert_to_bgc_met(daily_records, args.lat, args.pressure)
+        met_lines = convert_to_bgc_met(daily_records, args.lat, args.pressure,
+                                       srad_is_daylight_avg=args.srad_is_daylight_avg)
     except Exception as e:
         result = {"status": "error", "stage": "processing",
                   "message": f"Conversion failed: {e}"}
@@ -345,6 +438,13 @@ def main():
         "mean_annual_precip_cm": round(mean_annual_prec_mm / 10.0, 1),
         "tmax_range": [round(min(r["tmax"] for r in daily_records), 1),
                        round(max(r["tmax"] for r in daily_records), 1)],
+        "srad_basis": ("daylight average, input used as given"
+                       if args.srad_is_daylight_avg else
+                       "daylight average, converted from 24-h mean (x 86400/daylen)"),
+        **source_meta,
+        "srad_daylight_avg_range_Wm2": [
+            round(min(float(l.split()[7]) for l in met_lines), 1),
+            round(max(float(l.split()[7]) for l in met_lines), 1)],
         "warnings": warnings,
     }
     print(json.dumps(result, indent=2))

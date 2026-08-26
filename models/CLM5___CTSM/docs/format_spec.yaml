@@ -1,198 +1,722 @@
-model:
-  name: "CLM5___CTSM"
-  full_name: "Community Land Model 5 / Community Terrestrial Systems Model"
-  version: "CTSM 5.4"
-  domain: "Biogeochemistry, Land Surface, Hydrology, Carbon-Nitrogen Cycling"
-  binary_path: "KISSPATH_HOME/cesm/scratch/test_clm5/bld/cesm.exe"
-  source_path: "KISSPATH_BINARIES/CLM5___CTSM/source/repo"
-  language: "Fortran 2003+"
-  build_system: "CIME (CMake 3.10+)"
-  parallelism: "MPI + OpenMP"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: CLM5_CTSM
+  language: fortran
+  implementation:
+    id: clm5-ctsm
+    version: CTSM 5.4
+    provenance: Fortran 2003+; NCAR/UCAR CTSM 5.4, the land component of CESM, realizing the CLM5/CLM6
+      land-surface science.
+  scientific_reference_version: CLM5/CTSM (CTSM 5.4 framework; CLM4.5/CLM5.0/CLM6.0 selectable physics)
 inputs:
   forcing:
-    - name: "PRECTmms"
-      description: "Total precipitation rate"
-      unit: "kg/m2/s"
-      valid_range: [0.0, 0.01]
-      notes: "Equivalent to mm/s. CMFD/ERA5 often in mm/day — divide by 86400"
-    - name: "TBOT"
-      description: "Atmospheric temperature at reference height"
-      unit: "K"
-      valid_range: [200.0, 330.0]
-      notes: "Must be Kelvin, not Celsius"
-    - name: "WIND"
-      description: "Wind speed at reference height"
-      unit: "m/s"
-      valid_range: [0.0, 50.0]
-    - name: "FSDS"
-      description: "Downward shortwave radiation"
-      unit: "W/m2"
-      valid_range: [0.0, 1400.0]
-    - name: "FLDS"
-      description: "Downward longwave radiation"
-      unit: "W/m2"
-      valid_range: [50.0, 600.0]
-      notes: "Must be downward, not net longwave"
-    - name: "QBOT"
-      description: "Specific humidity at reference height"
-      unit: "kg/kg"
-      valid_range: [0.0, 0.04]
-      notes: "Not relative humidity"
-    - name: "PSRF"
-      description: "Surface pressure"
-      unit: "Pa"
-      valid_range: [50000.0, 110000.0]
-
+  - name: TBOT
+    unit: K
+    category: meteorology
+    source_kind: forcing
+    model_input_format: DATM atmospheric forcing stream (NetCDF)
+    notes: bottom-atmosphere air temperature; physical range ~200-330 K
+  - name: QBOT
+    unit: kg/kg
+    category: meteorology
+    source_kind: forcing
+    model_input_format: DATM stream (NetCDF)
+    notes: specific humidity; expected 0-0.04 kg/kg, NOT relative humidity
+  - name: WIND
+    unit: m/s
+    category: meteorology
+    source_kind: forcing
+    model_input_format: DATM stream (NetCDF)
+    notes: wind at the forcing reference height (height mismatch biases aerodynamic resistance)
+  - name: PRECTmms
+    unit: mm/s (kg/m2/s)
+    category: meteorology
+    source_kind: forcing
+    model_input_format: DATM stream (NetCDF)
+    notes: total precipitation rate; must be kg/m2/s, NOT mm/day or mm/hr
+  - name: FSDS
+    unit: W/m2
+    category: radiation
+    source_kind: forcing
+    model_input_format: DATM stream (NetCDF)
+    notes: downward shortwave; range 0-1400
+  - name: FLDS
+    unit: W/m2
+    category: radiation
+    source_kind: forcing
+    model_input_format: DATM stream (NetCDF)
+    notes: downward (not net) longwave, positive 50-600 W/m2
+  - name: PSRF
+    unit: Pa
+    category: meteorology
+    source_kind: forcing
+    model_input_format: DATM stream (NetCDF)
+    notes: surface pressure; range 50000-110000
+  - name: co2_ppmv
+    unit: ppmv
+    category: atmospheric_composition
+    source_kind: forcing
+    model_input_format: clm_inparm namelist value or CO2 stream (NetCDF)
+    notes: atmospheric CO2; expects ppmv (~367 for year 2000), NOT mole fraction
   parameters:
-    critical:
-      - name: "medlynslope"
-        valid_range: [1.0, 15.0]
-        description: "Medlyn stomatal conductance slope parameter"
-        sensitivity: "High"
-      - name: "medlynintercept"
-        valid_range: [100.0, 40000.0]
-        description: "Minimum stomatal conductance (umol/m2/s)"
-        sensitivity: "Medium"
-      - name: "baseflow_scalar"
-        valid_range: [0.0001, 0.01]
-        description: "Subsurface drainage rate scalar"
-        sensitivity: "High"
-      - name: "fff"
-        valid_range: [0.02, 2.0]
-        description: "Decay factor of saturated hydraulic conductivity with depth"
-        sensitivity: "High"
-      - name: "deflmax"
-        valid_range: [0.0, 0.1]
-        description: "Maximum saturated fraction for surface runoff"
-        sensitivity: "Medium"
-      - name: "co2_ppmv"
-        valid_range: [280.0, 560.0]
-        description: "Atmospheric CO2 concentration"
-        sensitivity: "High"
-      - name: "finidat"
-        valid_range: null
-        description: "Initial conditions file path (critical for spinup)"
-        sensitivity: "Critical"
-      - name: "spinup_state"
-        valid_range: [0, 2]
-        description: "Accelerated decomposition mode (0=off, 1=on, 2=exit spinup)"
-        sensitivity: "Critical"
-
-  surface_data:
-    - name: "surfdata"
-      format: "NetCDF"
-      description: "Surface dataset with PFT fractions, soil texture, urban, lake, glacier"
-      notes: "PFT fractions must sum to 1.0 per grid cell"
-    - name: "domain"
-      format: "NetCDF"
-      description: "Domain file defining grid and land mask"
-    - name: "paramdata"
-      format: "NetCDF"
-      description: "CLM parameter file (clm5_params.c*)"
-
+  - name: PFT/CFT fractions
+    unit: fraction
+    category: surface
+    source_kind: dataset_lookup
+    model_input_format: surface dataset fsurdat (NetCDF)
+    notes: natural-veg/crop/lake/wetland/glacier/urban fractions must sum to 1.0 per gridcell
+  - name: soil texture (sand/clay/silt %)
+    unit: '%'
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: surface dataset (NetCDF)
+    notes: mapped to 25 CLM layers via pedotransfer functions
+  - name: soil organic matter
+    unit: kg/m3
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: surface dataset (NetCDF)
+    notes: OM density per layer; held to depth without decay overestimates deep soil C
+  - name: soil bulk density / soil color
+    unit: kg/m3 / index
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: surface dataset (NetCDF)
+  - name: PFT physiological parameters
+    unit: various
+    category: parameter_file
+    source_kind: dataset_lookup
+    model_input_format: paramfile (NetCDF)
+    notes: per-PFT photosynthesis/allocation/turnover coefficients
+  - name: medlynslope
+    unit: dimensionless
+    category: calibration
+    source_kind: calibrated
+    model_input_format: clm_inparm namelist
+    notes: Medlyn stomatal-conductance slope (~1-15)
+  - name: baseflow_scalar
+    unit: dimensionless
+    category: calibration
+    source_kind: calibrated
+    model_input_format: clm_inparm namelist
+    notes: subsurface drainage scalar (~1e-4 to 1e-2)
+  - name: fff
+    unit: 1/m
+    category: calibration
+    source_kind: calibrated
+    model_input_format: clm_inparm namelist
+    notes: decay of saturated hydraulic conductivity with depth (~0.02-2.0)
+  initial_conditions:
+  - name: finidat
+    unit: n/a
+    category: restart
+    source_kind: user_provided
+    model_input_format: initial-conditions file (NetCDF)
+    notes: full prognostic state at simulation start; optional (cold start otherwise)
+  - name: soil/vegetation carbon-nitrogen pools
+    unit: gC/m2
+    category: carbon
+    source_kind: derived
+    model_input_format: finidat / spinup output (NetCDF)
+    notes: must be near-equilibrium for BGC modes; reached via 200-600+ yr spinup
+  - name: initial soil moisture/temperature, snow state
+    unit: mm3/mm3, K, mm
+    category: hydrology
+    source_kind: derived
+    model_input_format: finidat (NetCDF)
+  boundary_conditions:
+  - name: physics/compset mode
+    unit: n/a
+    category: configuration
+    source_kind: user_provided
+    model_input_format: compset (e.g. I2000Clm60Sp/Bgc/BgcCrop/Fates)
+    notes: selects Sp (satellite phenology), Bgc (CN), BgcCrop, or Fates
+  - name: calendar
+    unit: n/a
+    category: configuration
+    source_kind: user_provided
+    model_input_format: CALENDAR xml / time encoding
+    notes: noleap (365-day) by default; must match forcing calendar
+  - name: spinup_state / CLM_ACCELERATED_SPINUP
+    unit: n/a
+    category: configuration
+    source_kind: user_provided
+    model_input_format: namelist / xml switch
+    notes: 0/1/2 controls accelerated decomposition for BGC carbon equilibration
+  - name: land use transitions
+    unit: fraction
+    category: land_use
+    source_kind: dataset_lookup
+    model_input_format: land-use timeseries (NetCDF)
+    notes: transient PFT/management change for historical/scenario runs
+  - name: co2_type
+    unit: n/a
+    category: configuration
+    source_kind: user_provided
+    model_input_format: clm_inparm namelist
+    notes: constant vs diagnostic CO2 source selector
+  - name: resolution / domain file
+    unit: n/a
+    category: domain
+    source_kind: user_provided
+    model_input_format: domain file (NetCDF)
+    notes: spatial grid; must match forcing dimensions
 outputs:
   primary:
-    - name: "GPP"
-      description: "Gross Primary Production"
-      unit: "gC/m2/s"
-      valid_range: [0.0, 5.0e-5]
-      global_mean: "~120 PgC/yr"
-    - name: "NPP"
-      description: "Net Primary Production"
-      unit: "gC/m2/s"
-      valid_range: [-1.0e-5, 3.0e-5]
-    - name: "NEE"
-      description: "Net Ecosystem Exchange"
-      unit: "gC/m2/s"
-      valid_range: [-5.0e-5, 5.0e-5]
-    - name: "EFLX_LH_TOT"
-      description: "Total Latent Heat Flux"
-      unit: "W/m2"
-      valid_range: [-50.0, 500.0]
-    - name: "FSH"
-      description: "Sensible Heat Flux"
-      unit: "W/m2"
-      valid_range: [-100.0, 500.0]
-    - name: "QRUNOFF"
-      description: "Total Runoff (surface + subsurface)"
-      unit: "mm/s"
-      valid_range: [0.0, 0.01]
-      global_mean: "~40000 km3/yr"
-    - name: "H2OSOI"
-      description: "Volumetric Soil Moisture by Layer"
-      unit: "mm3/mm3"
-      valid_range: [0.0, 1.0]
-    - name: "TSOI"
-      description: "Soil Temperature by Layer"
-      unit: "K"
-      valid_range: [200.0, 350.0]
-    - name: "TOTSOMC"
-      description: "Total Soil Organic Carbon"
-      unit: "gC/m2"
-      valid_range: [0.0, 100000.0]
-      global_mean: "~1500 PgC"
-    - name: "TOTVEGC"
-      description: "Total Vegetation Carbon"
-      unit: "gC/m2"
-      valid_range: [0.0, 50000.0]
-      global_mean: "~350 PgC"
-    - name: "SNOW_DEPTH"
-      description: "Snow Depth"
-      unit: "m"
-      valid_range: [0.0, 10.0]
-    - name: "FSNO"
-      description: "Fraction of Ground Covered by Snow"
-      unit: "fraction"
-      valid_range: [0.0, 1.0]
-
-  output_format:
-    type: "NetCDF (history files)"
-    convention: "CF-1.0"
-    naming: "{casename}.clm2.h{N}.{date}.nc"
-    frequency: "configurable via hist_nhtfrq (default: monthly)"
-
-soil_layers:
-  count: 25
-  depth_m: 8.5
-  spacing: "exponential (1.75 cm top to 1.136 m bottom)"
-  notes: "External soil data (HWSD: 6 layers to 2m) requires careful interpolation"
-
-snow_layers:
-  max_count: 12
-  notes: "Dynamic layering based on snow depth"
-
-pft_types:
-  count: 78
-  notes: "78+ PFT/CFT types including natural vegetation and crops"
-
-calendar:
-  type: "noleap"
-  days_per_year: 365
-  notes: "Forcing with gregorian calendar causes date misalignment on leap years"
-
+  - name: GPP
+    unit: gC/m2/s
+    description: Gross primary production (canopy photosynthetic carbon uptake)
+    validation_rank: 1
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - eddy-covariance GPP is a flux-partitioning estimate; gridcell (~100 km) vs tower footprint (~1
+          km) representativeness — use single-point mode for fair comparison
+        - convert per-second flux by 86400*365 (noleap) for annual totals
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - satellite/upscaled GPP products carry their own structural uncertainty
+      detrending_options:
+      - none
+  - name: NPP
+    unit: gC/m2/s
+    description: Vegetation net primary production (GPP minus autotrophic respiration)
+    validation_rank: 2
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - NPP observations are sparse and largely model/inventory-derived
+      detrending_options:
+      - none
+  - name: NEE
+    unit: gC/m2/s
+    description: Net ecosystem exchange (net land-atmosphere CO2 flux)
+    validation_rank: 3
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - sign convention and gap-filling differ between products
+        - insufficient BGC spinup produces an artificial NEE sink
+      detrending_options:
+      - none
+  - name: EFLX_LH_TOT
+    unit: W/m2
+    description: Total latent heat flux — energy of water evaporation/transpiration from the land surface
+      to the atmosphere
+    validation_rank: 4
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - eddy-covariance energy-balance non-closure (~10-30%); footprint vs gridcell scale mismatch
+      detrending_options:
+      - none
+  - name: FSH
+    unit: W/m2
+    description: Sensible heat flux from the land surface to the atmosphere
+    validation_rank: 5
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - energy-balance non-closure at flux towers
+      detrending_options:
+      - none
+  - name: QRUNOFF
+    unit: mm/s
+    description: Total runoff (surface + subsurface)
+    validation_rank: 6
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - gridcell runoff is not routed streamflow; gauge comparison requires MOSART/mizuRoute routing
+          and basin aggregation
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - basin water-balance closure needed
+      detrending_options:
+      - none
+  - name: QDRAI
+    unit: mm/s
+    description: Subsurface drainage
+    validation_rank: 7
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - rarely directly observed; usually inferred from baseflow separation
+      detrending_options:
+      - none
+  - name: H2OSOI
+    unit: mm3/mm3
+    description: Volumetric soil moisture by layer
+    validation_rank: 8
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - in-situ probes sample a specific depth; match to the corresponding CLM layer
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - satellite soil moisture senses only the top few cm; compare to shallow layers
+      detrending_options:
+      - none
+  - name: TSOI
+    unit: K
+    description: Soil temperature by layer
+    validation_rank: 9
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - match observation depth to CLM layer; near-surface diurnal cycle vs daily/monthly history averaging
+      detrending_options:
+      - none
+  - name: TOTSOMC
+    unit: gC/m2
+    description: Total soil organic carbon pool
+    validation_rank: 10
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - requires equilibrated multi-century spinup; soil-C maps (e.g. gridded SOC products) carry large
+          uncertainty and depth-integration assumptions; mask 1e36 fill before statistics
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - integration depth must match between model and inventory
+      detrending_options:
+      - none
+  - name: TOTVEGC
+    unit: gC/m2
+    description: Total vegetation carbon pool
+    validation_rank: 11
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - biomass maps estimate aboveground C; CLM TOTVEGC includes roots — partition consistently
+      detrending_options:
+      - none
+  - name: SNOW_DEPTH
+    unit: m
+    description: Snow depth
+    validation_rank: 12
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - point snow course vs gridcell-average depth; onset/melt timing sensitive to forcing
+      detrending_options:
+      - none
+  - name: FSNO
+    unit: fraction
+    description: Fraction of ground covered by snow
+    validation_rank: 13
+    emitted_in: $CASE.clm2.h0.*.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - satellite snow-cover fraction is cloud-affected; compare clear-sky composites
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    severity: "silent"
-    description: "Precipitation mm/day used as kg/m2/s produces 86400x runoff error"
-  - id: "dt_002"
-    severity: "silent"
-    description: "Temperature in Celsius instead of Kelvin — meaningless energy fluxes"
-  - id: "dt_004"
-    severity: "silent"
-    description: "Relative humidity used as specific humidity — latent heat errors"
-  - id: "dt_007"
-    severity: "fatal"
-    description: "Calendar mismatch (noleap vs gregorian) causes date misalignment"
-  - id: "dt_009"
-    severity: "degraded"
-    description: "Insufficient spinup for BGC mode — 200-600 years needed"
-  - id: "dt_010"
-    severity: "fatal"
-    description: "Surface dataset file not found"
-  - id: "build_pio"
-    severity: "resolved"
-    description: "PIO build failed 3 times before succeeding on 4th attempt (2026-03-30)"
-  - id: "missing_inputdata"
-    severity: "blocking"
-    description: "CIME run blocked by missing CESM inputdata — no output produced"
+- id: dt_001
+  symptom: 'Runoff is unrealistically high (>10000 mm/yr) or model crashes with NaN soil moisture within
+    the first few timesteps.
+
+    '
+  diagnosis: Precipitation in mm/day or mm/hr used directly as kg/m2/s (mm/s); CLM5 DATM expects precipitation
+    as PRECTmms in kg/m2/s (equivalent to mm/s). If precipitation is provided in mm/day (typical for many
+    datasets), the rate is 86400x too high. At 5 mm/day normal rainfall, this becomes 5 mm/s = 432000
+    mm
+  remedy: 'Divide precipitation by 86400 (for mm/day) or 3600 (for mm/hr); convert_forcing_to_clm.py;
+    [''Check input precip units in source documentation'', ''Apply conversion: PRECTmms = precip_mm_day
+    / 86400.0'', ''Verify max rate < 0.1 mm/s after conversion'']; The forcing converter validates max
+    precip rate and '
+  severity: silent
+- id: dt_002
+  symptom: 'All soil layers frozen year-round. Zero or near-zero GPP, NEE, and latent heat flux even in
+    tropical locations.
+
+    '
+  diagnosis: Temperature provided in Celsius instead of Kelvin; CLM5 expects TBOT in Kelvin. If temperature
+    is 20°C but interpreted as 20 K (-253°C), the Stefan-Boltzmann longwave emission is essentially zero,
+    all water freezes, and biogeochemistry shuts down. The model runs to completion but produces physically
+  remedy: 'Add 273.15 to all temperature values; convert_forcing_to_clm.py; [''Check if mean temperature
+    < 200 K (indicates Celsius)'', ''Apply: TBOT = temperature_C + 273.15'']; The forcing converter checks
+    mean temperature and warns if < 200 K'
+  severity: silent
+- id: dt_003
+  symptom: 'Surface temperatures too cold. Energy balance closure fails. Soil temperatures drift downward
+    over time.
+
+    '
+  diagnosis: Net longwave radiation used instead of downward longwave; CLM5 expects downward longwave
+    (FLDS, always positive, 50-600 W/m2). Net longwave can be negative (surface emits more than atmosphere).
+    Using net LW as downward LW creates an energy deficit that causes progressive surface cooling and
+    incorrec
+  remedy: Ensure longwave is downward-only (positive), not net; convert_forcing_to_clm.py; ['Check if
+    any LW values are negative (indicates net LW)', 'If net LW, compute downward LW from upward = sigma*T4
+    and net = down - up']; The converter validates LW range and warns if values < 50 W/m2
+  severity: silent
+- id: dt_004
+  symptom: 'Extreme latent heat flux values. Either model crash (if RH% used as kg/kg) or severe drying/wetting
+    of land surface.
+
+    '
+  diagnosis: 'Relative humidity (0-100 or 0-1) used instead of specific humidity (kg/kg); CLM5 expects
+    QBOT as specific humidity in kg/kg (typical range 0.001-0.025). If RH=80% is entered as 80.0 kg/kg,
+    saturation vapor pressure calculations produce physically impossible results and the model crashes.
+    If RH=0.80 '
+  remedy: Convert RH to specific humidity using Tetens equation and pressure; convert_forcing_to_clm.py;
+    ['q = 0.622 * e / (P - 0.378 * e)', 'e = (RH/100) * 611.2 * exp(17.67 * Tc / (Tc + 243.5))', 'Verify
+    0 < QBOT < 0.04 kg/kg']; The converter validates max humidity and warns if > 0.05 kg/kg
+  severity: silent
+- id: dt_005
+  symptom: 'Deep soil carbon pools unrealistically high. Soil thermal conductivity too high at depth.
+    Water table dynamics incorrect.
+
+    '
+  diagnosis: Soil properties extrapolated as constant below measurement depth; HWSD provides soil data
+    for only 0-30cm (topsoil) and 30-100cm (subsoil). CLM5 has 25 layers extending to 8.5m. Using topsoil
+    organic matter values at all depths massively overestimates deep soil carbon, which affects thermal
+    conducti
+  remedy: 'Apply exponential decay to organic matter below measurement depth; convert_soil_params.py;
+    [''For layers below 1m: OM(z) = OM(1m) * exp(-0.5 * (z - 1.0))'', ''Mineral texture (sand/clay) can
+    be held constant'']; The soil converter applies exponential OM decay by default'
+  severity: degraded
+- id: dt_006
+  symptom: 'Mass conservation errors in land surface budget. Unexpected bare ground appearing in vegetated
+    regions. Warning about PFT fractions in log.
+
+    '
+  diagnosis: PFT fractions do not sum to 1.0 after surface dataset modification; CLM5 surface datasets
+    require that per-gridcell fractions (PCT_NATVEG, PCT_CROP, PCT_LAKE, PCT_WETLAND, PCT_GLACIER, PCT_URBAN)
+    sum to 100%. When modifying one fraction without adjusting others, the total exceeds or falls below
+    100%
+  remedy: Renormalize PFT fractions to sum to 100% after modification; convert_soil_params.py; ['After
+    modifying any land type fraction, check total sum', 'Adjust PCT_NATVEG to absorb the difference'];
+    Always verify sum with ncdump -v PCT_NATVEG,PCT_CROP,... surfdata.nc
+  severity: degraded
+- id: dt_007
+  symptom: 'Model crashes at end of February in leap years. Or forcing data silently shifts by one day
+    per leap year, accumulating multi-day offsets over decades.
+
+    '
+  diagnosis: Calendar mismatch between forcing data and model; CLM5 typically uses noleap (365-day) calendar.
+    ERA5 and most reanalysis products use gregorian calendar with leap years. If forcing files contain
+    Feb 29 data, CLM5 cannot parse the date and crashes. If forcing is pre-processed to remove Feb 29
+    but ti
+  remedy: 'Remove Feb 29 from forcing data and use noleap calendar encoding; convert_forcing_to_clm.py;
+    [''Filter out Feb 29 data from all forcing files'', "Re-encode time dimension with calendar=''noleap''",
+    ''Or set model to use gregorian: ./xmlchange CALENDAR=GREGORIAN'']; The forcing converter detects
+    and remove'
+  severity: fatal
+- id: dt_008
+  symptom: 'Near-zero GPP and NPP despite correct forcing and vegetation. Stomatal conductance extremely
+    low.
+
+    '
+  diagnosis: CO2 concentration in wrong units (mol/mol instead of ppmv); CLM5 namelist variable co2_ppmv
+    expects parts per million by volume. Current atmospheric CO2 is ~420 ppmv. If provided as mol fraction
+    (4.2e-4) or umol/mol without conversion, the photosynthesis module sees essentially zero CO2, shutting
+    do
+  remedy: 'Set co2_ppmv to value in range 280-560 (units: ppmv); None; [''In user_nl_clm: co2_ppmv = 400.0'',
+    "For transient runs: use co2_type=''diagnostic'' with CO2 stream file"]; Check that co2_ppmv is in
+    the hundreds (not fractions or thousands)'
+  severity: silent
+- id: dt_009
+  symptom: 'Soil carbon pools (TOTSOMC) still increasing after decades of simulation. NEE strongly negative
+    (large carbon sink) in pre-industrial or year-2000 simulations that should be near equilibrium.
+
+    '
+  diagnosis: Insufficient spinup for BGC mode; CLM5 BGC mode requires 200-600+ years to equilibrate soil
+    carbon pools. Slow-turnover pools (centuries timescale) take longest. Running without adequate spinup
+    produces artificial carbon sink behavior that does not represent actual ecosystem dynamics. Results
+    from t
+  remedy: 'Run 100+ years with CLM_ACCELERATED_SPINUP=on, then 50+ years normal; run_clm.py; [''./xmlchange
+    CLM_ACCELERATED_SPINUP=on'', ''./xmlchange STOP_OPTION=nyears; ./xmlchange STOP_N=100'', ''After spinup:
+    ./xmlchange CLM_ACCELERATED_SPINUP=off'', ''Run another 50+ years to equilibrate'']; Monitor TOTSOMC
+    trend'
+  severity: degraded
+- id: dt_010
+  symptom: 'Model crashes immediately at startup with file-not-found error for surface dataset or domain
+    file.
+
+    '
+  diagnosis: 'Surface dataset or domain file path incorrect in namelist; The lnd_in namelist variable
+    fsurdat must point to an existing surface dataset file. If resolution, PFT configuration, or data
+    directory changes without updating the path, CLM5 cannot find required input and terminates immediately.
+
+    ; [''contr'
+  remedy: 'Verify file path in lnd_in and update if needed; None; [''Check CaseDocs/lnd_in for fsurdat
+    path'', ''Verify file exists: ls -la $fsurdat_path'', ''If missing, download via ./check_input_data
+    or create with mksurfdata_esmf'']; Run ./check_input_data before submitting'
+  severity: fatal
+- id: dt_011
+  symptom: 'Wind speed consistently too high or too low. Sensible heat flux biased. Evapotranspiration
+    biased but temperature appears correct.
+
+    '
+  diagnosis: Wind speed measured at wrong reference height; CLM5 expects wind at the atmospheric reference
+    height (typically same as forcing data height). ERA5 provides 10m wind. If station data is at 2m or
+    tower data at 30m, the aerodynamic resistance calculation is biased. Wind at 2m is typically 60-70%
+    of 10m
+  remedy: Apply logarithmic wind profile correction to reference height; convert_forcing_to_clm.py; ['u_ref
+    = u_meas * ln(z_ref/z0) / ln(z_meas/z0)', 'Typical z0 = 0.01m for open terrain']; Document measurement
+    height in forcing metadata
+  severity: silent
+- id: dt_012
+  symptom: 'Model crashes during initialization with NetCDF dimension mismatch error.
+
+    '
+  diagnosis: 'Forcing files have different spatial dimensions than domain file; All forcing files and
+    the domain file must share the same spatial grid. If a forcing file was created for a different resolution
+    or the domain file was swapped without updating forcing, dimension mismatches occur at file read time.
+
+    ; '
+  remedy: 'Ensure all input files share the same spatial grid dimensions; None; [''ncdump -h forcing.nc
+    | head  # check dimensions'', ''ncdump -h domain.nc | head    # compare'', ''Regrid forcing if needed:
+    ESMF_RegridWeightGen'']; Check dimension consistency before submitting'
+  severity: fatal
+- id: dt_013
+  symptom: 'Precipitation appears as continuous drizzle instead of realistic storms. Or extreme precipitation
+    spikes at interval boundaries.
+
+    '
+  diagnosis: Temporal interpolation method wrong for precipitation; CLM5 DATM interpolates forcing between
+    timesteps. For precipitation, linear interpolation (tintalgo='linear') spreads events across intervals,
+    creating artificial drizzle. Precipitation should use nearest-neighbor or coszen-weighted interpolatio
+  remedy: 'Set tintalgo=''nearest'' for precipitation, ''coszen'' for radiation; None; [''Edit stream
+    files: set tintalgo for each variable appropriately'', ''Precip: nearest; Radiation: coszen; Temperature/wind:
+    linear'']; Use CDEPS with proper stream configuration'
+  severity: degraded
+- id: dt_014
+  symptom: 'Soil thermal conductivity unrealistic. Soil moisture retention curve wrong. Water table too
+    shallow or too deep compared to observations.
+
+    '
+  diagnosis: Soil organic matter units wrong (g/kg used as kg/m3); SoilGrids provides SOC in g/kg (or
+    dg/kg). CLM5 internally uses organic matter density. If g/kg values are used directly without multiplying
+    by bulk density and dividing by 1000, the organic matter content is typically 10-100x wrong. Since
+    organi
+  remedy: 'Convert SOC from g/kg to kg/m3 using bulk density; convert_soil_params.py; [''OM_kgm3 = SOC_gkg
+    * bulk_density_kgm3 / 1000'', ''Typical bulk density: 1200-1600 kg/m3 for mineral soil'']; The soil
+    converter handles unit conversion automatically'
+  severity: silent
+- id: dt_015
+  symptom: 'Model crashes at startup with Fortran namelist read error. Error message references specific
+    namelist group and variable.
+
+    '
+  diagnosis: 'Fortran namelist syntax error in user_nl_clm; Fortran namelists have strict formatting requirements.
+    Common mistakes: using double quotes instead of single quotes for strings, using Python True/False
+    instead of .true./.false., forgetting commas between array elements, or including comments with #
+    in'
+  remedy: 'Fix namelist syntax in user_nl_clm; None; ["Strings: use single quotes: finidat = ''/path/to/file.nc''",
+    ''Logicals: use .true. or .false. (with dots)'', "Arrays: hist_fincl1 = ''GPP'', ''NPP'', ''NEE''",
+    ''Comments: use ! not #'']; Run ./preview_namelists to catch syntax errors before building'
+  severity: fatal
+- id: dt_016
+  symptom: 'Model runs very slowly, SYPD (simulated years per day) much lower than expected. High memory
+    usage warnings.
+
+    '
+  diagnosis: Too many history fields or too frequent output; CLM5 can output up to 2500 fields on 10 history
+    tapes. Writing all default fields at sub-daily frequency generates enormous I/O load. Each additional
+    history field adds memory and I/O overhead. At daily frequency on f09 grid, output can reach 50+ GB
+    pe
+  remedy: Reduce history output frequency and field count; None; ['Use hist_fexcl1 to exclude unneeded
+    default fields', 'Limit hist_fincl to essential variables', 'Set hist_nhtfrq = 0 for monthly output
+    (default)']; Start with monthly output, add sub-daily only for needed variables
+  severity: degraded
+- id: dt_017
+  symptom: 'Computed statistics (mean, max, std) are wildly wrong. NaN values contaminate entire analysis
+    pipeline.
+
+    '
+  diagnosis: 'CLM5 fill value (1e36) not masked before analysis; CLM5 uses approximately 1e36 as the fill/missing
+    value for inactive grid cells and masked areas. If not explicitly filtered, these values dominate
+    any statistical computation. xarray usually handles this automatically with _FillValue attribute,
+    but '
+  remedy: 'Filter values > 1e35 or use xarray''s built-in masking; parse_clm_output.py; [''data[data >
+    1e35] = np.nan'', "Or use: ds[''GPP''].where(ds[''GPP''] < 1e35)"]; The output parser automatically
+    masks fill values'
+  severity: silent
+- id: dt_018
+  symptom: 'DATM aborts during initialisation of the single-point forcing stream, or every forcing field
+    reads as zero, after writing correct-looking DATM files that contain TBOT/QBOT/WIND/PRECTmms/FSDS/FLDS/PSRF.
+
+    '
+  diagnosis: 'The CLM1PT / CLM_USRDAT stream reads humidity as RH in PERCENT and also requires ZBOT; it
+    never reads QBOT. It also requires ONE FILE PER MONTH named YYYY-MM.nc containing all fields, not
+    one file per variable.
+
+    ; cime/src/components/data_comps_mct/datm/cime_config/ namelist_definition_datm.xml, entr'
+  remedy: Write the CLM1PT monthly layout with RH in percent; convert_forcing_to_clm.py; ['convert_forcing_to_clm.py
+    --datm-layout clm1pt (writes YYYY-MM.nc)', 'RH = 100 * (es(T) - VPD) / es(T), clipped to [1, 100]',
+    'ZBOT must exceed the canopy top on the surface dataset']; The converter emits RH and QBOT fr
+  severity: fatal
+- id: dt_019
+  symptom: 'Requesting ''GPP'' on the history tape of a satellite-phenology (SP) run aborts the namelist/history
+    setup, or the parsed output silently has no GPP column, even though SKILL.md section 7 lists GPP as
+    a key output.
+
+    '
+  diagnosis: GPP is registered only when the carbon-nitrogen model is active; 'GPP' (gC/m^2/s) is added
+    by CNVegCarbonFluxType.F90, which is only allocated when use_cn = .true. (Bgc / BgcCrop compsets).
+    In SP mode (CLM50%SP, use_cn = .false.) the same physical quantity — gross canopy photosynthesis —
+    is on the t
+  remedy: 'Use FPSN in SP mode; use GPP only in Bgc/BgcCrop mode; parse_clm_output.py; ["SP run: hist_fincl1
+    = ''FPSN'', then GPP[gC/m2/d] = FPSN * 1.03775", "Bgc run: ''GPP'' is available but needs 200-600
+    yr spinup (dt_009)"]; Choose SP when the target is the photosynthesis response to observed meteorology
+    with '
+  severity: degraded
+- id: dt_020
+  symptom: 'Namelist generation for an I-compset stops with "ERROR: A DATM_MODE for CLM is incompatible
+    with DATM_PRESAERO=none", and the default aerosol stream then demands a 6.2 GB file that is not in
+    the local inputdata tree.
+
+    '
+  diagnosis: 'CLM always needs prescribed aerosol deposition, and for CESM the clim_2000 stream resolves
+    to aerosoldep_WACCM.ensmean_monthly_hist_1849-2015_0.9x1.25_CMIP6_c180926.nc (6.2 GB) regardless of
+    the CLM_USRDAT grid.
+
+    ; The 1.9x2.5 year-2000 climatology (aerosoldep_monthly_2000_mean_1.9x2.5_c090421.nc) is'
+  remedy: Cut the site column out of the small climatology and override the stream; make_site_dataset.py;
+    ['make_site_dataset.py --aerosol-source <1.9x2.5 clim file> --aerosol-year 2000', 'cp Buildconf/datmconf/datm.streams.txt.presaero.clim_2000
+    to the case as user_datm.streams.txt.presaero.clim_2000 and poi
+  severity: fatal
+- id: dt_021
+  symptom: 'Simulated daily series looks correct but is uniformly one day late against the observation;
+    NSE/r are a few points lower than the visual agreement suggests, and the cross-correlation peaks at
+    lag -1.
+
+    '
+  diagnosis: Averaged history records are stamped at the END of the averaging interval; With hist_nhtfrq
+    < 0 (time-averaged tape) CLM writes the mean for 1999-01-01 with time = 1999-01-02 00:00:00. Taking
+    the raw time coordinate as the date shifts the whole simulated series forward one day. The file also
+    carries
+  remedy: Date each record by the midpoint of time_bounds; parse_clm_output.py; ['mid = time_bounds[:,0]
+    + (time_bounds[:,1] - time_bounds[:,0]) / 2', 'parse_clm_output.py does this automatically when time_bounds
+    exists']; Never pair a CLM averaged tape on its raw time coordinate
+  severity: silent
+- id: dt_022
+  symptom: 'The CTSM-5.4 / NUOPC executable aborts a few seconds after launch, in component initialisation,
+    before writing any history file.
+
+    '
+  diagnosis: The linked ESMF was built without PIO, so NUOPC cannot read mesh files; KISSPATH_HOME/cesm/scratch/test_clm5/bld/cesm.exe
+    (the binary preflight_check.py pins) is a CTSM-5.4 NUOPC build. Its ESMF is statically linked and
+    was built without ESMF_PIO, so ESMCI_mesh_create_from_file() fails in dshr_mod.F9
+  remedy: 'Run CLM5 through CESM 2.2.2 (MCT), not the CTSM-5.4 NUOPC build; run_clm.py; [''run_clm.py
+    --action create --ctsm-root KISSPATH_HOME/cesm/src/cesm-2.2.2'', ''Single point: --compset I1PtClm50SpRsGs
+    --res CLM_USRDAT'', ''mksurfdata_esmf is unusable for the same reason; use make_site_dataset.py''];
+    preflight'
+  severity: fatal

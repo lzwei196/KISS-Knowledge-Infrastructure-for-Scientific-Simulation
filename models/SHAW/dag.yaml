@@ -274,7 +274,7 @@ outputs:
   - var: "solute_concentration_profile"
     validation_rank: 11
     unit: "eq/kg or mol (per species)"
-    description: "Per-node total salt and solution concentration for up to 10 solute species."
+    description: "Per-node soil-profile total salt concentration and soil-solution concentration for up to 10 solute species."
     emitted_in: "salts.out / solute.out"
     observability:
       comparable_obs_shapes:
@@ -520,3 +520,9 @@ safety:
       scope: "implementation boundary"
       source: "SHAW v3.03 source tree (Shaw303.for vs Shaw303-CO2Beta.for) and KI identity note"
       status: "adopted"
+
+medium_evidence:
+  - var: "solute_concentration_profile"
+    source: "dag.yaml"
+    quote: "1-D vertical coupled heat, water, and solute transfer through a single plant canopy - snow - residue - soil column (soil-plant-atmosphere continuum)"
+    note: "scope_in declares solute transfer through the soil column; the fixed description names soil-profile total salt and soil-solution concentration."

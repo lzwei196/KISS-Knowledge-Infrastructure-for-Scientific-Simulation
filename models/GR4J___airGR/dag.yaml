@@ -282,7 +282,7 @@ outputs:
   - var: "AE"
     validation_rank: 2
     unit: "mm/day"
-    description: "Actual evapotranspiration drawn from the production store."
+    description: "Actual evapotranspiration (catchment water loss to the atmosphere) drawn from the production store."
     emitted_in: "OutputsModel$AE (MISC index 6)"
     observability:
       comparable_obs_shapes:

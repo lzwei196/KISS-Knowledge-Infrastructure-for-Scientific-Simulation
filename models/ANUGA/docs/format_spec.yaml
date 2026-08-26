@@ -1,313 +1,651 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: ANUGA Skill
-  domain: flood
-  binary_path: ''
-  language: unknown
+  name: ANUGA
+  language: python
+  implementation:
+    id: anuga-py
+    version: 3.3.2
+    provenance: Python with compiled C core flux kernels; community-maintained ANUGA (Geoscience Australia
+      / ANU MSI), github.com/anuga-community/anuga_core.
+  scientific_reference_version: ANUGA 2D nonlinear shallow-water (Saint-Venant) finite-volume solver,
+    DE0 discontinuous-elevation flow algorithm
 inputs:
-  forcing: []
+  forcing:
+  - name: rainfall
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: volumetric rate per unit area applied via Rate_operator each step
+    notes: Rate_operator expects a rate in m/s; it adds (or, when negative for evaporation/abstraction,
+      removes) water to the continuity equation. Negative rates also scale xmomentum/ymomentum by the
+      local factors, so the rainfall operator can modify momentum, not only stage.
+  - name: inflow discharge
+    unit: m^3/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: prescribed total discharge via Inlet_operator, optional velocity direction
+  parameters:
+  - name: DEM / bed elevation
+    unit: m
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: terrain fitted to mesh as the 'elevation' quantity (per-cell under discontinuous-elevation
+      DE methods)
+    notes: ANUGA uses raw elevation values without vertical-datum awareness; DEM and any prescribed boundary
+      water levels must share the same vertical datum.
+  - name: Manning's n (friction)
+    unit: s/m^(1/3)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: domain.set_quantity('friction', n) field; default 0.03
+    notes: Typical 0.02-0.15 by land cover; 0.0 only for analytical benchmarks. manning_friction_semi_implicit
+      is auto-appended to forcing_terms in Domain.__init__, so friction is always active.
+  - name: maximum_triangle_area
+    unit: m^2
+    category: parameters
+    source_kind: user_provided
+    model_input_format: mesh-generation constraint (Triangle); optional interior_regions for local refinement
+    notes: 'Controls spatial resolution: ~100-1000 m^2 for real-world domains up to 10 km; 1-10 m^2 for
+      benchmark accuracy.'
+  - name: g (gravitational acceleration)
+    unit: m/s^2
+    category: parameters
+    source_kind: default
+    model_input_format: config.py hardcoded default 9.8 (not 9.81)
+    notes: Baked into the flux kernels; affects all wave-speed/celerity terms.
+  - name: minimum_storable_height
+    unit: m
+    category: parameters
+    source_kind: default
+    model_input_format: config default 1e-3 m; cells shallower stored as dry in SWW (affects reported
+      wet area)
+  - name: minimum_allowed_height (H0)
+    unit: m
+    category: parameters
+    source_kind: default
+    model_input_format: 'algorithm-dependent: DE0/DE3 use 1e-12, DE1/DE2 use 1e-5; config global default
+      1e-5'
+    notes: Effective value is set by the flow_algorithm method switch (DE0 forces H0=1e-12), not by config.py
+      default.
+  - name: CFL (Courant number)
+    unit: '-'
+    category: parameters
+    source_kind: default
+    model_input_format: set_CFL(); config default 1.0, DE0 effective 0.9
+    notes: Effective value is set by the flow_algorithm method switch (DE0 forces CFL=0.9), not by config.py
+      default.
+  initial_conditions:
+  - name: initial stage
+    unit: m
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: set_quantity('stage', ...); for dry bed set stage=elevation so depth=0 everywhere
+    notes: Constant initial stage where bed varies produces a spurious startup shock; dry-bed requires
+      stage=elevation at every vertex.
+  - name: initial xmomentum
+    unit: m^2/s
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: set_quantity('xmomentum', ...); default 0.0
+  - name: initial ymomentum
+    unit: m^2/s
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: set_quantity('ymomentum', ...); default 0.0
+  boundary_conditions:
+  - name: flow_algorithm
+    unit: '-'
+    category: boundary_conditions
+    source_kind: default
+    model_input_format: set_flow_algorithm(); DE0 default (discontinuous elevation), DE1 higher order,
+      1_5 legacy
+    notes: Numerical-method / discretization switch (not a tuned physical parameter). DE0 silently overrides
+      config-module defaults (cfl->0.9, beta limiters, minimum_allowed_height->1e-12, compute_fluxes_method->DE);
+      the effective configuration is algorithm-derived, not config.py-derived.
+  - name: Reflective_boundary
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: 'solid wall: interior quantities returned with normal momentum negated'
+    notes: Use on upslope/lateral edges; all-Reflective traps water and grows total volume unbounded.
+  - name: Transmissive boundary
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: weakly-reflective open/free-outflow boundary at outlet/downstream
+    notes: Required at catchment outlet so water can exit; oscillating boundary depth can spuriously inject/remove
+      water and break mass balance.
+  - name: Dirichlet_boundary
+    unit: m
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: fixed constant stage / momenta at the edge
+    notes: Preferred for strict mass conservation at a prescribed-stage outlet.
+  - name: Time_boundary
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: conserved quantities prescribed as a function of simulation time (tides, gate
+      schedules)
+  - name: File_boundary / Field_boundary
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: stage/momentum time series read from an SWW file, space/time interpolated (nesting);
+      Field_boundary adds a mean_stage offset
+  - name: boundary_tags
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: dict mapping tag names to 0-based polygon edge indices (e.g. {bottom:[0],right:[1],top:[2],left:[3]})
+    notes: Wrong or untagged edge indices fail domain creation or misapply boundary conditions.
+  - name: finaltime
+    unit: s
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: evolve endpoint (or duration); yieldstep controls SWW save cadence independently
 outputs:
   primary:
-  - name: discharge
-    unit: '`anuga.get_flow_through_cross_section()` on SWW'
-    format: ''
-    source: skill_md
-  - name: flood_depth
-    canonical_id: flood_depth
+  - name: stage
     unit: m
-  - name: water_surface_elevation
-    canonical_id: water_surface_elevation
+    description: Water surface elevation (bed elevation + water depth); primary conserved quantity stored
+      over the mesh.
+    validation_rank: 3
+    emitted_in: SWW (NetCDF) dynamic variable
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Gauge must report stage on the same vertical datum as the DEM; ANUGA carries no datum awareness.
+        - Confirm whether the gauge records stage (water surface elevation) or depth before comparing.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Single peak-stage mark; sensitive to local mesh resolution.
+      detrending_options:
+      - none
+  - name: depth
     unit: m
+    description: Water depth = stage - elevation (clipped at 0); flood thickness above the bed.
+    validation_rank: 5
+    emitted_in: derived from SWW (stage - elevation)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Must use depth = stage - elevation; never report raw stage as depth.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Peak inundation-depth field; sensitive to DEM/elevation uncertainty and mesh resolution at the
+          wetting front.
+      detrending_options:
+      - none
   - name: inundation_extent
-    canonical_id: inundation_extent
-    unit: km2
+    unit: km^2 (or boolean wet/dry field)
+    description: Surface-water flooded area, derived by thresholding water depth over the mesh at peak
+      inundation.
+    validation_rank: 1
+    emitted_in: derived from SWW depth field
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Compared against observed flood masks (satellite/aerial) via hit-rate / CSI; threshold-dependent.
+        - Extent governed strongly by DEM/elevation uncertainty (Issermann & Chang 2020).
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Flooded/not-flooded classification at points or cells.
+      detrending_options:
+      - none
+  - name: xmomentum
+    unit: m^2/s
+    description: Depth-integrated surface-water momentum in x (uh); conserved quantity.
+    validation_rank: 6
+    emitted_in: SWW (NetCDF) dynamic variable
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Velocity/momentum observations are rare; usually validated indirectly via discharge.
+      detrending_options:
+      - none
+  - name: ymomentum
+    unit: m^2/s
+    description: Depth-integrated surface-water momentum in y (vh); conserved quantity.
+    validation_rank: 7
+    emitted_in: SWW (NetCDF) dynamic variable
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Velocity/momentum observations are rare; usually validated indirectly via discharge.
+      detrending_options:
+      - none
+  - name: discharge
+    unit: m^3/s
+    description: 'Surface-water flow through a cross-section: integral of water momentum (uh, vh) normal
+      to a polyline.'
+    validation_rank: 2
+    emitted_in: derived via get_flow_through_cross_section()
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Cross-section polyline must intersect wet triangles and be perpendicular to flow, else Q is
+          zero or wrong-signed.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Peak-discharge magnitude at a gauging cross-section.
+      detrending_options:
+      - none
+  - name: stage (analytical-benchmark centerline)
+    unit: m
+    description: 1D centerline stage profile at final time, compared against exact shallow-water solutions
+      (dam-break, parabolic basin, runup).
+    validation_rank: 4
+    emitted_in: derived from SWW along the channel centerline
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Validation is against analytical/closed-form solutions (Stoker/Ritter, Carrier-Greenspan, Thacker),
+          not gauge NSE/KGE.
+        - Metrics (NSE, Pearson r, KGE) are computed on the numerical-vs-analytical stage profile at fixed
+          x.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_anuga_001
-  description: '{''description'': ''Entire domain floods unrealistically; flood depths
-    are 1000x too high even for moderate rainfall events. Rate_operator appears to
-    inject vastly too much water.\n''}'
-  affected_output: '{''root_cause'': ''Rainfall rate passed to Rate_operator in mm/hr
-    instead of m/s. ANUGA Rate_operator expects rainfall in m/s. If CMFD precipitation
-    (kg/m2/s, numerically equivalent to mm/s) or mm/hr val'
-  detection: '{''root_cause'': ''Rainfall rate passed to Rate_operator in mm/hr instead
-    of m/s. ANUGA Rate_operator expects rainfall in m/s. If CMFD precipitation (kg/m2/s,
-    numerically equivalent to mm/s) or mm/hr val'
-  fix: '{''action'': ''Convert rainfall to m/s before passing to Rate_operator. CMFD:
-    value is kg/m2/s = mm/s, so divide by 1000 to get m/s. MSWX: mm/3hr, divide by
-    (1000 * 10800). NASA POWER: mm/hr, divide by ('
+  symptom: 'Entire domain floods unrealistically; flood depths are 1000x too high even for moderate rainfall
+    events. Rate_operator appears to inject vastly too much water.
+
+    '
+  diagnosis: 'Rainfall rate passed to Rate_operator in mm/hr instead of m/s. ANUGA Rate_operator expects
+    rainfall in m/s. If CMFD precipitation (kg/m2/s, numerically equivalent to mm/s) or mm/hr values are
+    passed without conversion, the rate is 1000x or 3600x too high. For example, 10 mm/hr = 2.78e-6 m/s,
+    but if '
+  remedy: 'Convert rainfall to m/s before passing to Rate_operator. CMFD: value is kg/m2/s = mm/s, so
+    divide by 1000 to get m/s. MSWX: mm/3hr, divide by (1000 * 10800). NASA POWER: mm/hr, divide by (1000
+    * 3600). Use convert_forcing_to_anuga.py which handles this automatically.
+
+    '
 - id: dt_anuga_002
-  description: '{''description'': ''No flooding at all despite heavy rainfall event
-    being applied. Rate_operator is active but contributes negligible water volume.
-    Max depth remains near zero throughout the simulation.\n''}'
-  affected_output: '{''root_cause'': ''Rainfall rate double-divided: already in m/s
-    but divided by 1000 again (treating m/s as mm/s). For example, CMFD load_hourly_forcing
-    returns precip_mm (mm per timestep). The convert_fo'
-  detection: '{''root_cause'': ''Rainfall rate double-divided: already in m/s but
-    divided by 1000 again (treating m/s as mm/s). For example, CMFD load_hourly_forcing
-    returns precip_mm (mm per timestep). The convert_fo'
-  fix: '{''action'': ''Trace the unit chain: CMFD raw = kg/m2/s. load_hourly_forcing
-    returns mm/timestep (already multiplied by timestep_s). To get m/s: divide by
-    1000 (mm to m) then by timestep_s (per-timestep '
+  symptom: 'No flooding at all despite heavy rainfall event being applied. Rate_operator is active but
+    contributes negligible water volume. Max depth remains near zero throughout the simulation.
+
+    '
+  diagnosis: 'Rainfall rate double-divided: already in m/s but divided by 1000 again (treating m/s as
+    mm/s). For example, CMFD load_hourly_forcing returns precip_mm (mm per timestep). The convert_forcing
+    tool should divide by 1000 (mm to m) and by timestep_s (per-timestep to per-second). If the raw kg/m2/s
+    value '
+  remedy: 'Trace the unit chain: CMFD raw = kg/m2/s. load_hourly_forcing returns mm/timestep (already
+    multiplied by timestep_s). To get m/s: divide by 1000 (mm to m) then by timestep_s (per-timestep to
+    per-second). Verify max rainfall_m_per_s is in the range 1e-7 to 1e-4 for realistic storms (0.36 to
+    360 mm/hr'
 - id: dt_anuga_003
-  description: '{''description'': ''DEM elevations appear shifted by 20-40m compared
-    to expected terrain. Simulated water surface elevation (stage) is systematically
-    offset from reference gauge data. Flood extent is wrong because terrain is too
-    high or too low relative to boundary water levels.\n''}'
-  affected_output: '{''root_cause'': ''Vertical datum mismatch between DEM and boundary
-    condition water levels. China DEM 90m uses EGM96 geoid heights. If boundary water
-    levels are referenced to WGS84 ellipsoid or local cha'
-  detection: '{''root_cause'': ''Vertical datum mismatch between DEM and boundary
-    condition water levels. China DEM 90m uses EGM96 geoid heights. If boundary water
-    levels are referenced to WGS84 ellipsoid or local cha'
-  fix: '{''action'': ''Ensure DEM and all water level boundary conditions use the
-    same vertical datum. If DEM is EGM96-geoid and boundary levels are ellipsoidal,
-    subtract the local geoid undulation from the DEM '
+  symptom: 'DEM elevations appear shifted by 20-40m compared to expected terrain. Simulated water surface
+    elevation (stage) is systematically offset from reference gauge data. Flood extent is wrong because
+    terrain is too high or too low relative to boundary water levels.
+
+    '
+  diagnosis: 'Vertical datum mismatch between DEM and boundary condition water levels. China DEM 90m uses
+    EGM96 geoid heights. If boundary water levels are referenced to WGS84 ellipsoid or local chart datum,
+    the offset can be 20-40m depending on location. ANUGA uses raw elevation values without datum awareness.
+
+    '
+  remedy: 'Ensure DEM and all water level boundary conditions use the same vertical datum. If DEM is EGM96-geoid
+    and boundary levels are ellipsoidal, subtract the local geoid undulation from the DEM or add it to
+    the boundary levels. Check with: gdalinfo dem.tif | grep VERT.
+
+    '
 - id: dt_anuga_004
-  description: '{''description'': "run_anuga.py crashes with KeyError or ValueError
-    when reading the forcing CSV. Error message references missing column name ''time_seconds''
-    or ''rainfall_m_per_s''.\n"}'
-  affected_output: '{''root_cause'': "The rainfall CSV file does not have the expected
-    header row (time_seconds, rainfall_m_per_s). The file may have been hand-edited,
-    saved from Excel with different delimiters, or generat'
-  detection: '{''root_cause'': "The rainfall CSV file does not have the expected header
-    row (time_seconds, rainfall_m_per_s). The file may have been hand-edited, saved
-    from Excel with different delimiters, or generat'
-  fix: '{''action'': ''Ensure the forcing CSV has exactly two columns with header:
-    time_seconds,rainfall_m_per_s. Use convert_forcing_to_anuga.py to regenerate the
-    file. If editing manually, verify no BOM charac'
+  symptom: 'run_anuga.py crashes with KeyError or ValueError when reading the forcing CSV. Error message
+    references missing column name ''time_seconds'' or ''rainfall_m_per_s''.
+
+    '
+  diagnosis: The rainfall CSV file does not have the expected header row (time_seconds, rainfall_m_per_s).
+    The file may have been hand-edited, saved from Excel with different delimiters, or generated by a
+    tool that uses different column names (e.g., 'time', 'precip', 'rate'). run_anuga.py uses csv.DictReader
+    whi
+  remedy: 'Ensure the forcing CSV has exactly two columns with header: time_seconds,rainfall_m_per_s.
+    Use convert_forcing_to_anuga.py to regenerate the file. If editing manually, verify no BOM characters,
+    no trailing commas, and comma (not tab) delimiters.
+
+    '
 - id: dt_anuga_005
-  description: '{''description'': "parse_anuga_output.py fails with ''NetCDFFile''
-    or ''No such variable'' error when reading the SWW file. The SWW file exists and
-    has nonzero size but cannot be parsed.\n"}'
-  affected_output: '{''root_cause'': ''The SWW file was produced by a parallel ANUGA
-    run and consists of multiple per-processor SWW fragments (e.g., anuga_sim_P0_0.sww,
-    anuga_sim_P1_0.sww) that were not merged. The expected'
-  detection: '{''root_cause'': ''The SWW file was produced by a parallel ANUGA run
-    and consists of multiple per-processor SWW fragments (e.g., anuga_sim_P0_0.sww,
-    anuga_sim_P1_0.sww) that were not merged. The expected'
-  fix: '{''action'': ''After domain.evolve completes, call domain.sww_merge(delete_old=True)
-    to combine parallel fragments. If merge fails, run manually: python -c "import
-    anuga; anuga.sww_merge(\''anuga_sim\'', d'
+  symptom: 'parse_anuga_output.py fails with ''NetCDFFile'' or ''No such variable'' error when reading
+    the SWW file. The SWW file exists and has nonzero size but cannot be parsed.
+
+    '
+  diagnosis: The SWW file was produced by a parallel ANUGA run and consists of multiple per-processor
+    SWW fragments (e.g., anuga_sim_P0_0.sww, anuga_sim_P1_0.sww) that were not merged. The expected single
+    anuga_sim.sww either does not exist or is an incomplete fragment. domain.sww_merge() may have failed
+    silentl
+  remedy: 'After domain.evolve completes, call domain.sww_merge(delete_old=True) to combine parallel fragments.
+    If merge fails, run manually: python -c "import anuga; anuga.sww_merge(''anuga_sim'', delete_old=False)".
+    Verify the merged file by checking that ''x'', ''y'', ''stage'', and ''elevation'' variables are presen'
 - id: dt_anuga_006
-  description: '{''description'': ''SWW output file is missing or zero bytes after
-    simulation completes without error. run_summary.json shows sww_exists=false. The
-    ANUGA log shows evolve loop completed normally.\n''}'
-  affected_output: '{''root_cause'': ''domain.set_datadir() was called with a path
-    that does not exist, or domain.set_name() was not called so the output goes to
-    an unexpected default filename. ANUGA writes SWW to datadir/n'
-  detection: '{''root_cause'': ''domain.set_datadir() was called with a path that
-    does not exist, or domain.set_name() was not called so the output goes to an unexpected
-    default filename. ANUGA writes SWW to datadir/n'
-  fix: '{''action'': ''Ensure os.makedirs(output_dir, exist_ok=True) is called before
-    domain creation. Verify domain.set_datadir(output_dir) and domain.set_name("anuga_sim")
-    are both called. After simulation, ch'
+  symptom: 'SWW output file is missing or zero bytes after simulation completes without error. run_summary.json
+    shows sww_exists=false. The ANUGA log shows evolve loop completed normally.
+
+    '
+  diagnosis: domain.set_datadir() was called with a path that does not exist, or domain.set_name() was
+    not called so the output goes to an unexpected default filename. ANUGA writes SWW to datadir/name.sww.
+    If datadir is not created beforehand, ANUGA may silently fail to write output (depending on version)
+    or wri
+  remedy: 'Ensure os.makedirs(output_dir, exist_ok=True) is called before domain creation. Verify domain.set_datadir(output_dir)
+    and domain.set_name("anuga_sim") are both called. After simulation, check: os.path.isfile(os.path.join(output_dir,
+    "anuga_sim.sww")).
+
+    '
 - id: dt_anuga_007
-  description: '{''description'': ''ANUGA produces different results between runs
-    with identical inputs. Or: stage profile has unexpected oscillations near boundaries
-    that differ between flow algorithms. Analytical benchmark (dam_break_wet) fails
-    NSE threshold.\n''}'
-  affected_output: '{''root_cause'': "Incorrect or missing flow algorithm setting.
-    ANUGA supports multiple finite-volume schemes: ''DE0'' (default recommended, discontinuous
-    elevation), ''DE1'' (higher order), ''1_5'' (original '
-  detection: '{''root_cause'': "Incorrect or missing flow algorithm setting. ANUGA
-    supports multiple finite-volume schemes: ''DE0'' (default recommended, discontinuous
-    elevation), ''DE1'' (higher order), ''1_5'' (original '
-  fix: '{''action'': "Explicitly call domain.set_flow_algorithm(''DE0'') after domain
-    creation. For benchmarks requiring higher accuracy, try ''DE1''. Avoid leaving
-    the flow algorithm unset. The run_anuga.py tool a'
+  symptom: 'ANUGA produces different results between runs with identical inputs. Or: stage profile has
+    unexpected oscillations near boundaries that differ between flow algorithms. Analytical benchmark
+    (dam_break_wet) fails NSE threshold.
+
+    '
+  diagnosis: 'Incorrect or missing flow algorithm setting. ANUGA supports multiple finite-volume schemes:
+    ''DE0'' (default recommended, discontinuous elevation), ''DE1'' (higher order), ''1_5'' (original
+    1st/2nd order). If set_flow_algorithm is not called, the default may vary by ANUGA version. ''DE0''
+    is the most stable'
+  remedy: 'Explicitly call domain.set_flow_algorithm(''DE0'') after domain creation. For benchmarks requiring
+    higher accuracy, try ''DE1''. Avoid leaving the flow algorithm unset. The run_anuga.py tool always
+    sets ''DE0''.
+
+    '
 - id: dt_anuga_008
-  description: '{''description'': ''Water accumulates at domain edges and does not
-    leave. The simulation shows artificially high water levels at boundaries. Total
-    water volume in the domain increases over time even after rainfall stops.\n''}'
-  affected_output: '{''root_cause'': ''All boundaries set to Reflective_boundary.
-    Reflective boundaries act as solid walls, preventing water from exiting the domain.
-    For catchment simulations, the downstream outlet boundary'
-  detection: '{''root_cause'': ''All boundaries set to Reflective_boundary. Reflective
-    boundaries act as solid walls, preventing water from exiting the domain. For catchment
-    simulations, the downstream outlet boundary'
-  fix: '{''action'': "Set the outlet/downstream boundary to anuga.Transmissive_boundary(domain)
-    to allow free outflow. Keep Reflective_boundary on upslope/lateral boundaries.
-    In run_anuga.py, the ''bottom'' bound'
+  symptom: 'Water accumulates at domain edges and does not leave. The simulation shows artificially high
+    water levels at boundaries. Total water volume in the domain increases over time even after rainfall
+    stops.
+
+    '
+  diagnosis: 'All boundaries set to Reflective_boundary. Reflective boundaries act as solid walls, preventing
+    water from exiting the domain. For catchment simulations, the downstream outlet boundary must be Transmissive
+    (or Dirichlet with a prescribed stage) to allow outflow.
+
+    '
+  remedy: Set the outlet/downstream boundary to anuga.Transmissive_boundary(domain) to allow free outflow.
+    Keep Reflective_boundary on upslope/lateral boundaries. In run_anuga.py, the 'bottom' boundary is
+    Transmissive by default (outlet), while 'top', 'left', 'right' are Reflective. For coastal domains,
+    use D
 - id: dt_anuga_009
-  description: '{''description'': "ANUGA raises an error during domain creation: ''create_domain_from_regions:
-    boundary_tags do not match polygon edges''. Or the mesh is created but boundary
-    conditions cannot be applied because tag names do not match.\n"}'
-  affected_output: '{''root_cause'': ''The boundary_tags dictionary in create_domain_from_regions
-    must map tag names to polygon edge indices (0-based). For a rectangular bounding
-    polygon with 4 vertices [SW, SE, NE, NW], th'
-  detection: '{''root_cause'': ''The boundary_tags dictionary in create_domain_from_regions
-    must map tag names to polygon edge indices (0-based). For a rectangular bounding
-    polygon with 4 vertices [SW, SE, NE, NW], th'
-  fix: '{''action'': ''Verify that boundary_tags covers all polygon edges. For a 4-vertex
-    rectangle: {"bottom": [0], "right": [1], "top": [2], "left": [3]}. The tag names
-    in set_boundary() must exactly match the'
+  symptom: 'ANUGA raises an error during domain creation: ''create_domain_from_regions: boundary_tags
+    do not match polygon edges''. Or the mesh is created but boundary conditions cannot be applied because
+    tag names do not match.
+
+    '
+  diagnosis: 'The boundary_tags dictionary in create_domain_from_regions must map tag names to polygon
+    edge indices (0-based). For a rectangular bounding polygon with 4 vertices [SW, SE, NE, NW], the edges
+    are: edge 0 = bottom (SW to SE), edge 1 = right (SE to NE), edge 2 = top (NE to NW), edge 3 = left
+    (NW to SW'
+  remedy: 'Verify that boundary_tags covers all polygon edges. For a 4-vertex rectangle: {"bottom": [0],
+    "right": [1], "top": [2], "left": [3]}. The tag names in set_boundary() must exactly match the tag
+    names in boundary_tags. Use domain.get_boundary_tags() to verify available tags.
+
+    '
 - id: dt_anuga_010
-  description: '{''description'': ''Flood wave propagates much faster than expected.
-    Water reaches the domain outlet in a fraction of the expected travel time. Peak
-    discharge is too high and too early compared to observations.\n''}'
-  affected_output: '{''root_cause'': "Manning''s n set too low (e.g., 0.001 or 0.0).
-    Low friction allows unrealistically fast flow velocities. For real-world catchments,
-    Manning''s n should be 0.02-0.15 depending on land cov'
-  detection: '{''root_cause'': "Manning''s n set too low (e.g., 0.001 or 0.0). Low
-    friction allows unrealistically fast flow velocities. For real-world catchments,
-    Manning''s n should be 0.02-0.15 depending on land cov'
-  fix: '{''action'': "Set domain.set_quantity(''friction'', n) with appropriate Manning''s
-    n: 0.02-0.03 for smooth channels, 0.03-0.05 for natural streams, 0.05-0.10 for
-    floodplains with vegetation, 0.10-0.15 for '
+  symptom: 'Flood wave propagates much faster than expected. Water reaches the domain outlet in a fraction
+    of the expected travel time. Peak discharge is too high and too early compared to observations.
+
+    '
+  diagnosis: Manning's n set too low (e.g., 0.001 or 0.0). Low friction allows unrealistically fast flow
+    velocities. For real-world catchments, Manning's n should be 0.02-0.15 depending on land cover. A
+    value of 0.0 (frictionless) is only appropriate for analytical benchmarks like dam_break_wet. The
+    run_anuga.py
+  remedy: 'Set domain.set_quantity(''friction'', n) with appropriate Manning''s n: 0.02-0.03 for smooth
+    channels, 0.03-0.05 for natural streams, 0.05-0.10 for floodplains with vegetation, 0.10-0.15 for
+    dense forest. Use --manning_n flag in run_anuga.py. For spatially varying friction, pass a function
+    or array to '
 - id: dt_anuga_011
-  description: '{''description'': ''Simulation takes hours or days for a modest domain.
-    Memory usage is extremely high (>16 GB). The domain has millions of triangles
-    for a 5-10 km extent.\n''}'
-  affected_output: '{''root_cause'': ''maximum_triangle_area set too small relative
-    to domain size. ANUGA cost scales as O(N * T/dt) where N = number of triangles.
-    For a 5000m x 5000m domain, max_area=1 m2 produces ~25 mill'
-  detection: '{''root_cause'': ''maximum_triangle_area set too small relative to domain
-    size. ANUGA cost scales as O(N * T/dt) where N = number of triangles. For a 5000m
-    x 5000m domain, max_area=1 m2 produces ~25 mill'
-  fix: '{''action'': ''For real-world flood modeling, use max_area = 100-1000 m2 for
-    domains up to 10 km. For analytical benchmarks, use max_area = 1-10 m2 for accuracy.
-    Check mesh size with len(domain) after cr'
+  symptom: 'Simulation takes hours or days for a modest domain. Memory usage is extremely high (>16 GB).
+    The domain has millions of triangles for a 5-10 km extent.
+
+    '
+  diagnosis: maximum_triangle_area set too small relative to domain size. ANUGA cost scales as O(N * T/dt)
+    where N = number of triangles. For a 5000m x 5000m domain, max_area=1 m2 produces ~25 million triangles.
+    The default 10000 m2 produces ~2500 triangles, which is often too coarse but runs fast. A balanced
+    va
+  remedy: For real-world flood modeling, use max_area = 100-1000 m2 for domains up to 10 km. For analytical
+    benchmarks, use max_area = 1-10 m2 for accuracy. Check mesh size with len(domain) after creation.
+    Target 10,000-100,000 triangles for typical catchment simulations. Use interior_regions for local
+    mesh r
 - id: dt_anuga_012
-  description: '{''description'': "Simulation starts with an initial ''splash'' or
-    shock wave even though initial conditions should be calm (dry bed or flat water).
-    The first few timesteps show large transient oscillations that corrupt the early-time
-    solution.\n"}'
-  affected_output: '{''root_cause'': ''Initial stage set to a constant value (e.g.,
-    0.0) rather than to the bed elevation. When stage < elevation, ANUGA clips depth
-    to zero, but when stage > elevation in some cells and < el'
-  detection: '{''root_cause'': ''Initial stage set to a constant value (e.g., 0.0)
-    rather than to the bed elevation. When stage < elevation, ANUGA clips depth to
-    zero, but when stage > elevation in some cells and < el'
-  fix: '{''action'': "For dry-bed simulations, set: domain.set_quantity(''stage'',
-    expression=''elevation''). This ensures depth = stage - elevation = 0 everywhere.
-    For partially wet domains, ensure stage >= elevat'
+  symptom: 'Simulation starts with an initial ''splash'' or shock wave even though initial conditions
+    should be calm (dry bed or flat water). The first few timesteps show large transient oscillations
+    that corrupt the early-time solution.
+
+    '
+  diagnosis: Initial stage set to a constant value (e.g., 0.0) rather than to the bed elevation. When
+    stage < elevation, ANUGA clips depth to zero, but when stage > elevation in some cells and < elevation
+    in others, the discontinuity generates a spurious wave. For dry-bed initial conditions, stage must
+    equal ele
+  remedy: 'For dry-bed simulations, set: domain.set_quantity(''stage'', expression=''elevation''). This
+    ensures depth = stage - elevation = 0 everywhere. For partially wet domains, ensure stage >= elevation
+    at every mesh vertex. The run_anuga.py tool correctly sets stage=elevation by default.
+
+    '
 - id: dt_anuga_013
-  description: '{''description'': "Simulation crashes with NaN or Inf values in stage
-    or momentum after running for some time. The log may show ''WARNING: set_timestep
-    is zero'' or the evolve loop raises a FloatingPointError.\n"}'
-  affected_output: '{''root_cause'': ''CFL violation causing numerical instability.
-    ANUGA uses adaptive timestepping with CFL condition: dt <= CFL * min(dx / sqrt(g*h))
-    across all triangles. If a single triangle has very sm'
-  detection: '{''root_cause'': ''CFL violation causing numerical instability. ANUGA
-    uses adaptive timestepping with CFL condition: dt <= CFL * min(dx / sqrt(g*h))
-    across all triangles. If a single triangle has very sm'
-  fix: '{''action'': "Check mesh quality: avoid degenerate triangles by ensuring the
-    mesh generator has reasonable minimum angle constraints. ANUGA''s default mesh
-    generator (Triangle) usually handles this, but '
+  symptom: 'Simulation crashes with NaN or Inf values in stage or momentum after running for some time.
+    The log may show ''WARNING: set_timestep is zero'' or the evolve loop raises a FloatingPointError.
+
+    '
+  diagnosis: 'CFL violation causing numerical instability. ANUGA uses adaptive timestepping with CFL condition:
+    dt <= CFL * min(dx / sqrt(g*h)) across all triangles. If a single triangle has very small area (high
+    resolution) combined with deep water, dt becomes extremely small. If the mesh has degenerate (very
+    th'
+  remedy: 'Check mesh quality: avoid degenerate triangles by ensuring the mesh generator has reasonable
+    minimum angle constraints. ANUGA''s default mesh generator (Triangle) usually handles this, but imported
+    meshes may have poor quality. Use anuga.mesh_statistics(domain) to check. If NaN occurs with deep
+    water'
 - id: dt_anuga_014
-  description: '{''description'': ''Checkerboard pattern in water depth: alternating
-    wet and dry cells across the mesh. Small spurious oscillations appear near the
-    wetting front. The wet/dry interface shows unrealistic behavior.\n''}'
-  affected_output: '{''root_cause'': ''Wet/dry instability in the shallow water solver.
-    ANUGA handles wetting and drying, but on coarse meshes or with abrupt topography
-    transitions, the wetting front can oscillate. The DE0 '
-  detection: '{''root_cause'': ''Wet/dry instability in the shallow water solver.
-    ANUGA handles wetting and drying, but on coarse meshes or with abrupt topography
-    transitions, the wetting front can oscillate. The DE0 '
-  fix: '{''action'': "Increase mesh resolution near the expected wetting front using
-    interior_regions with smaller max_area. Ensure the ''DE0'' flow algorithm is selected
-    (most stable for wet/dry). Adding a small'
+  symptom: 'Checkerboard pattern in water depth: alternating wet and dry cells across the mesh. Small
+    spurious oscillations appear near the wetting front. The wet/dry interface shows unrealistic behavior.
+
+    '
+  diagnosis: Wet/dry instability in the shallow water solver. ANUGA handles wetting and drying, but on
+    coarse meshes or with abrupt topography transitions, the wetting front can oscillate. The DE0 algorithm
+    is more robust than older schemes but can still exhibit this on meshes with insufficient resolution
+    at the
+  remedy: Increase mesh resolution near the expected wetting front using interior_regions with smaller
+    max_area. Ensure the 'DE0' flow algorithm is selected (most stable for wet/dry). Adding a small Manning's
+    n (>= 0.01) helps dampen oscillations. For very flat terrain, ensure the DEM does not have single-cel
 - id: dt_anuga_015
-  description: '{''description'': ''Total water volume in the domain does not balance:
-    rainfall input minus outflow does not equal stored volume change. Mass conservation
-    error exceeds 5-10% over the simulation.\n''}'
-  affected_output: '{''root_cause'': ''Transmissive boundaries can both remove and
-    inject water depending on local flow conditions. If the boundary water depth oscillates,
-    small amounts of water can be spuriously injected a'
-  detection: '{''root_cause'': ''Transmissive boundaries can both remove and inject
-    water depending on local flow conditions. If the boundary water depth oscillates,
-    small amounts of water can be spuriously injected a'
-  fix: '{''action'': ''Check mass balance with domain.report_water_volume_statistics().
-    Reduce yieldstep to capture transient behavior. For strict mass conservation,
-    use Dirichlet_boundary with a prescribed cons'
+  symptom: 'Total water volume in the domain does not balance: rainfall input minus outflow does not equal
+    stored volume change. Mass conservation error exceeds 5-10% over the simulation.
+
+    '
+  diagnosis: 'Transmissive boundaries can both remove and inject water depending on local flow conditions.
+    If the boundary water depth oscillates, small amounts of water can be spuriously injected at each
+    cycle. Additionally, very coarse meshes lose mass accuracy in the finite-volume integration. Large
+    yieldstep '
+  remedy: Check mass balance with domain.report_water_volume_statistics(). Reduce yieldstep to capture
+    transient behavior. For strict mass conservation, use Dirichlet_boundary with a prescribed constant
+    stage at the outlet instead of Transmissive_boundary. Increase mesh resolution in areas with complex
+    flow p
 - id: dt_anuga_016
-  description: '{''description'': "''import anuga'' fails with ImportError referencing
-    a missing .so or .cpython-312-x86_64-linux-gnu.so file. Error mentions ''undefined
-    symbol'' or ''cannot open shared object file''.\n"}'
-  affected_output: '{''root_cause'': "ANUGA''s C extensions (finite-volume kernels,
-    mesh operations) were compiled for a different Python version or architecture.
-    The .so files in the anuga package directory do not match th'
-  detection: '{''root_cause'': "ANUGA''s C extensions (finite-volume kernels, mesh
-    operations) were compiled for a different Python version or architecture. The
-    .so files in the anuga package directory do not match th'
-  fix: '{''action'': ''Reinstall ANUGA for the current Python: pip install --force-reinstall
-    anuga. Verify with: python -c "import anuga; print(anuga.__file__)". The preflight_check.py
-    script tests this automati'
+  symptom: '''import anuga'' fails with ImportError referencing a missing .so or .cpython-312-x86_64-linux-gnu.so
+    file. Error mentions ''undefined symbol'' or ''cannot open shared object file''.
+
+    '
+  diagnosis: ANUGA's C extensions (finite-volume kernels, mesh operations) were compiled for a different
+    Python version or architecture. The .so files in the anuga package directory do not match the current
+    Python interpreter. This commonly happens after a Python upgrade (e.g., 3.11 to 3.12) without reinstalling
+  remedy: 'Reinstall ANUGA for the current Python: pip install --force-reinstall anuga. Verify with: python
+    -c "import anuga; print(anuga.__file__)". The preflight_check.py script tests this automatically.
+    If using the HydroCraft python_env, ensure the path KISSPATH_PYTHON_ENV/lib/python3.1'
 - id: dt_anuga_017
-  description: '{''description'': "ANUGA simulation hangs or produces a segfault during
-    domain.evolve() when running in parallel (MPI). Or: sww_merge fails with ''file
-    not found'' for one of the processor SWW fragments.\n"}'
-  affected_output: '{''root_cause'': ''ANUGA parallel execution via mpirun creates
-    per-processor domains and SWW files. If one MPI rank fails or is killed (e.g.,
-    OOM), its SWW fragment is missing or truncated, and sww_merge'
-  detection: '{''root_cause'': ''ANUGA parallel execution via mpirun creates per-processor
-    domains and SWW files. If one MPI rank fails or is killed (e.g., OOM), its SWW
-    fragment is missing or truncated, and sww_merge'
-  fix: '{''action'': ''For the KI workflow, run ANUGA in serial (single process) which
-    is the default in run_anuga.py. If parallel is needed, use: domain = anuga.distribute(domain)
-    after setup, then mpirun -np N'
+  symptom: 'ANUGA simulation hangs or produces a segfault during domain.evolve() when running in parallel
+    (MPI). Or: sww_merge fails with ''file not found'' for one of the processor SWW fragments.
+
+    '
+  diagnosis: ANUGA parallel execution via mpirun creates per-processor domains and SWW files. If one MPI
+    rank fails or is killed (e.g., OOM), its SWW fragment is missing or truncated, and sww_merge cannot
+    combine the outputs. Additionally, running parallel ANUGA requires anuga.distribute to partition the
+    domain,
+  remedy: 'For the KI workflow, run ANUGA in serial (single process) which is the default in run_anuga.py.
+    If parallel is needed, use: domain = anuga.distribute(domain) after setup, then mpirun -np N python
+    run_anuga.py. Ensure all ranks complete before calling sww_merge. For most catchment sizes (<100K
+    triang'
 - id: dt_anuga_018
-  description: '{''description'': ''DEM elevation values are all NaN or a single constant
-    across the entire mesh. The terrain appears completely flat despite using a real
-    DEM. Simulation produces uniform shallow flow everywhere.\n''}'
-  affected_output: '{''root_cause'': ''The DEM GeoTIFF extent does not overlap with
-    the ANUGA domain in local coordinates. run_anuga.py converts lat/lon to a local
-    meter coordinate system centered at (0,0) and builds the do'
-  detection: '{''root_cause'': ''The DEM GeoTIFF extent does not overlap with the
-    ANUGA domain in local coordinates. run_anuga.py converts lat/lon to a local meter
-    coordinate system centered at (0,0) and builds the do'
-  fix: '{''action'': "Verify DEM coverage: the bounding box [lat-extent/2/111320,
-    lon-extent/2/(111320*cos(lat))] must fall within the DEM file extent. Check with:
-    gdalinfo china_dem_90m.tif | grep ''Upper Left\'
+  symptom: 'DEM elevation values are all NaN or a single constant across the entire mesh. The terrain
+    appears completely flat despite using a real DEM. Simulation produces uniform shallow flow everywhere.
+
+    '
+  diagnosis: The DEM GeoTIFF extent does not overlap with the ANUGA domain in local coordinates. run_anuga.py
+    converts lat/lon to a local meter coordinate system centered at (0,0) and builds the domain polygon
+    in that system. The DEM window is extracted using the lat/lon bounding box. If the conversion between
+    l
+  remedy: 'Verify DEM coverage: the bounding box [lat-extent/2/111320, lon-extent/2/(111320*cos(lat))]
+    must fall within the DEM file extent. Check with: gdalinfo china_dem_90m.tif | grep ''Upper Left\|Lower
+    Right''. If using a different DEM, ensure it covers the study area. The elevation_func returned by
+    load_de'
 - id: dt_anuga_019
-  description: '{''description'': ''Flood map is spatially displaced from the actual
-    terrain by several hundred meters or more. Water flows in unexpected directions.
-    Channels visible in the DEM do not appear in the correct location in ANUGA output.\n''}'
-  affected_output: '{''root_cause'': ''x/y axis swap in the DEM-to-mesh coordinate
-    transformation. The RegularGridInterpolator in load_dem_elevation takes (y, x)
-    order for the points argument, but the ANUGA mesh uses (x, y)'
-  detection: '{''root_cause'': ''x/y axis swap in the DEM-to-mesh coordinate transformation.
-    The RegularGridInterpolator in load_dem_elevation takes (y, x) order for the points
-    argument, but the ANUGA mesh uses (x, y)'
-  fix: '{''action'': ''Verify the elevation_func: sample a few known (x,y) points
-    and compare against the DEM. The current run_anuga.py interpolator uses pts =
-    np.column_stack([y, x]) which is correct for Regula'
+  symptom: 'Flood map is spatially displaced from the actual terrain by several hundred meters or more.
+    Water flows in unexpected directions. Channels visible in the DEM do not appear in the correct location
+    in ANUGA output.
+
+    '
+  diagnosis: x/y axis swap in the DEM-to-mesh coordinate transformation. The RegularGridInterpolator in
+    load_dem_elevation takes (y, x) order for the points argument, but the ANUGA mesh uses (x, y). If
+    the elevation_func is called with (x, y) but interpolates as (x, y) instead of (y, x), the DEM is
+    rotated 90 de
+  remedy: 'Verify the elevation_func: sample a few known (x,y) points and compare against the DEM. The
+    current run_anuga.py interpolator uses pts = np.column_stack([y, x]) which is correct for RegularGridInterpolator((y_coords,
+    x_coords), grid). If modifying the code, ensure the axis ordering is preserved.
+
+    '
 - id: dt_anuga_020
-  description: '{''description'': ''ANUGA mesh has very few triangles in critical
-    areas (channels, flood zones) but excessive refinement in unimportant areas. Simulation
-    accuracy is poor despite high total triangle count.\n''}'
-  affected_output: '{''root_cause'': "Uniform maximum_triangle_area used across the
-    entire domain. ANUGA''s create_domain_from_regions supports interior_regions for
-    local mesh refinement, but the default run_anuga.py applie'
-  detection: '{''root_cause'': "Uniform maximum_triangle_area used across the entire
-    domain. ANUGA''s create_domain_from_regions supports interior_regions for local
-    mesh refinement, but the default run_anuga.py applie'
-  fix: '{''action'': ''Use interior_regions parameter in create_domain_from_regions
-    to specify polygons with smaller max_area for channels and flood zones. Example:
-    interior_regions=[[channel_polygon, 100.0]] fo'
+  symptom: 'ANUGA mesh has very few triangles in critical areas (channels, flood zones) but excessive
+    refinement in unimportant areas. Simulation accuracy is poor despite high total triangle count.
+
+    '
+  diagnosis: 'Uniform maximum_triangle_area used across the entire domain. ANUGA''s create_domain_from_regions
+    supports interior_regions for local mesh refinement, but the default run_anuga.py applies a single
+    max_area. Channel areas and expected flood zones need finer resolution, while hilltops and dry areas
+    can '
+  remedy: 'Use interior_regions parameter in create_domain_from_regions to specify polygons with smaller
+    max_area for channels and flood zones. Example: interior_regions=[[channel_polygon, 100.0]] for 100
+    m2 triangles in the channel, with 10000 m2 elsewhere. This can reduce total triangles by 10x while
+    maintai'
 - id: dt_anuga_021
-  description: '{''description'': ''Reported flood depth at a gauge location is 150-300m,
-    which is physically impossible. The parse_anuga_output.py tool reports stage_m
-    values that match terrain elevation rather than water depth.\n''}'
-  affected_output: '{''root_cause'': "Stage (water surface elevation in m above datum)
-    confused with depth (water thickness above bed). ANUGA stores ''stage'' in the
-    SWW file, which equals bed_elevation + water_depth. For te'
-  detection: '{''root_cause'': "Stage (water surface elevation in m above datum) confused
-    with depth (water thickness above bed). ANUGA stores ''stage'' in the SWW file,
-    which equals bed_elevation + water_depth. For te'
-  fix: '{''action'': ''Always compute depth = stage - elevation. In parse_anuga_output.py,
-    the extract_stage_at_gauge function correctly returns both stage and depth = max(stage
-    - elevation, 0). Use the depth_m '
+  symptom: 'Reported flood depth at a gauge location is 150-300m, which is physically impossible. The
+    parse_anuga_output.py tool reports stage_m values that match terrain elevation rather than water depth.
+
+    '
+  diagnosis: Stage (water surface elevation in m above datum) confused with depth (water thickness above
+    bed). ANUGA stores 'stage' in the SWW file, which equals bed_elevation + water_depth. For terrain
+    at 150m elevation with 0.5m of water, stage = 150.5m. If stage is reported as 'flood depth', the value
+    appears
+  remedy: Always compute depth = stage - elevation. In parse_anuga_output.py, the extract_stage_at_gauge
+    function correctly returns both stage and depth = max(stage - elevation, 0). Use the depth_m column
+    from the output CSV for flood depth analysis, not stage_m. When comparing to gauge data, verify whether
+    t
 - id: dt_anuga_022
-  description: '{''description'': ''Discharge extracted via get_flow_through_cross_section
-    is zero or near-zero despite visible water flow in the domain. Or: discharge has
-    the wrong sign (negative when inflow is expected).\n''}'
-  affected_output: '{''root_cause'': "The cross-section polyline does not intersect
-    any wet mesh triangles, or it is oriented perpendicular to the expected flow direction.
-    ANUGA computes discharge as the integral of (uh, v'
-  detection: '{''root_cause'': "The cross-section polyline does not intersect any
-    wet mesh triangles, or it is oriented perpendicular to the expected flow direction.
-    ANUGA computes discharge as the integral of (uh, v'
-  fix: '{''action'': ''Ensure the cross-section polyline is perpendicular to the expected
-    flow direction and fully within the mesh domain. The polyline coordinates must
-    be in the same local coordinate system as '
-unit_conversions: []
+  symptom: 'Discharge extracted via get_flow_through_cross_section is zero or near-zero despite visible
+    water flow in the domain. Or: discharge has the wrong sign (negative when inflow is expected).
+
+    '
+  diagnosis: The cross-section polyline does not intersect any wet mesh triangles, or it is oriented perpendicular
+    to the expected flow direction. ANUGA computes discharge as the integral of (uh, vh) dot n along the
+    cross-section, where n is the outward normal. If the cross-section is parallel to the flow instea
+  remedy: 'Ensure the cross-section polyline is perpendicular to the expected flow direction and fully
+    within the mesh domain. The polyline coordinates must be in the same local coordinate system as the
+    mesh (meters, centered at 0,0 for run_anuga.py). For run_anuga.py with extent_m=5000, valid coordinates
+    are '
+- id: dt_anuga_023
+  symptom: 'run_anuga.py aborts on any non-China site with "RuntimeError: DEM load failed for declared
+    DEM KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif: DEM not found" -- or, worse
+    on an older build, silently loads a DEM window whose bbox lies entirely OUTSIDE the China raster and
+    retur'
+  diagnosis: 'load_dem_elevation() HARDCODED the China 90 m DEM path. There was no --dem_path option and
+    no global fallback, so every basin outside China was structurally unrunnable even though MERIT DEM
+    90 m covers the whole globe on this server.
+
+    '
+  remedy: 'Use run_anuga.py --dem_path <geotiff>, or rely on the automatic resolution added 2026-08-09:
+    --dem_path -> China 90 m DEM (only when the whole domain bbox fits inside its footprint) -> the overlapping
+    MERIT DEM v1.0.2 tiles under KISSPATH_DATA/MERIT_DEM, mosaicked across a seam when the domain strad'
+- id: dt_anuga_024
+  symptom: 'Simulated stage at a gauge is a perfectly FLAT line (zero variance), so NSE is NaN or hugely
+    negative while the flood is clearly evolving elsewhere in the domain. depth == 0 for every stored
+    timestep.
+
+    '
+  diagnosis: extract_stage_at_gauge() takes the mesh vertex NEAREST the gauge lat/lon. A published gauge
+    position is a bank, bridge pier or cableway location, not a point in the channel; on a 30-90 m DEM
+    meshed at 200-350 m the nearest vertex is routinely a floodplain/bank cell that never wets. A dry
+    vertex repo
+  remedy: Pass parse_anuga_output.py --snap_to_channel_m <radius> (e.g. 400 m, ~2 mesh spacings) to move
+    the extraction point to the LOWEST-elevation vertex within that radius -- the local channel low point,
+    which is what the gauge actually measures. The tool logs the snap distance and the elevation drop,
+    rec
+- id: dt_anuga_025
+  symptom: 'Stage NSE against a real gauge is large and negative with a constant offset of several metres,
+    even though Pearson r is high and the hydrograph timing looks right.
+
+    '
+  diagnosis: 'Two independent datum/terrain problems, both invisible to ANUGA: (1) the gauge is published
+    on an ARBITRARY vertical datum. HYDAT STATIONS.DATUM_ID 10 = "ASSUMED DATUM" has a meaningless zero
+    (e.g. 08MF005 needs +27.926 m to reach the geodetic datum), so raw levels are not comparable to DEM
+    elevatio'
+  remedy: Read <csv>.meta.json from load_hydat_series.py and confirm datum_name is geodetic BEFORE scoring;
+    otherwise apply the published STN_DATUM_CONVERSION offset or pick a different station. Never apply
+    an ad-hoc "fitted" shift -- that manufactures the agreement being tested. When the DEM is the binding
+    c

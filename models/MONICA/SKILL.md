@@ -1,14 +1,3 @@
----
-name: monica
-description: >-
-  MONICA 3.6.x. Covers Coupled daily turnover of carbon, nitrogen and water in a 1-D
-  agro-ecosystem soil-plant column; Soil water balance (capacity-based): infiltration,
-  interception, evaporation, transpiration…; Soil heat conduction (per-layer temperature)
-  with snow-cover and frost effects; Soil organic matter C/N turnover (AOM/SMB/SOM
-  multi-pool) with mineralisation, nitrification…. Use when the task involves running,
-  configuring, calibrating or interpreting MONICA.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (32 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-22 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_climate_to_monica.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_climate_to_monica.py --help` |
+| `tools/convert_soil_to_monica.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_monica.py --help` |
+| `tools/parse_monica_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_monica_output.py --help` |
+| `tools/run_monica.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_monica.py --help` |
+| `tools/site_photoperiod.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/site_photoperiod.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # MONICA — Model of Nitrogen and Carbon in Agro-ecosystems
 
@@ -193,7 +217,35 @@ applies a `/100` conversion in `header-to-acd-names`. The internal unit is
 
 ---
 
-## Output Format
+## Output Description
+
+**Source of truth:** `dag.yaml`. The dag is the authoritative description of
+MONICA's observable outputs; if this section ever disagrees with `dag.yaml`, the
+dag wins and this section must be corrected.
+
+### Headline output
+
+> `Yield` — Harvested crop marketable dry-matter yield. (`kg DM ha-1`)
+
+This is the rank-1 output in `dag.yaml`: `var='Yield'`, `unit='kg DM ha-1'`,
+`description='Harvested crop marketable dry-matter yield.'`
+
+### Dag output inventory
+
+| Output variable (dag `var`) | Validation rank | Unit | Description |
+|-----------------------------|-----------------|------|-------------|
+| Yield | 1 | kg DM ha-1 | Harvested crop marketable dry-matter yield. |
+| LAI | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| Stage | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| Act_ET | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| Mois | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| NLeach | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| N2O | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| SOC | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| SumNUp | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| GPP | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+
+### Output CSV Format
 
 Output CSV has 3+ header rows:
 1. Field names (Date, Crop, Yield, Mois/1, …)
@@ -227,6 +279,34 @@ Output CSV has 3+ header rows:
 | GPP            | kg C ha⁻¹    | Gross primary production             |
 
 ---
+
+## Unit Table / Unit Conversion Table
+
+This table records the unit conversions documented for MONICA input preparation,
+output comparison, and known silent traps. Exact machine-readable I/O shapes live
+in `docs/format_spec.yaml`; regenerate that file from the KI rather than
+hand-editing it.
+
+| Variable | Source unit or condition | MONICA / comparison unit | Conversion | Notes |
+|----------|--------------------------|---------------------------|------------|-------|
+| globrad | J cm⁻² | MJ m⁻² d⁻¹ | ÷100 | Hohenfinow2-style radiation trap |
+| globrad / CMFD shortwave rad | W m⁻² | MJ m⁻² d⁻¹ | ×0.0864 | Daily radiation conversion |
+| precip | m d⁻¹ | mm d⁻¹ | ×1000 | Silent magnitude trap |
+| CMFD precipitation | kg m⁻² s⁻¹ | mm/day | ×86400 | Daily CMFD workflow |
+| CMFD 3-hour precipitation | kg/m²/s | mm/day | ×10800 per step, sum 8 steps | `8b. CMFD/MSWX Data Conventions` |
+| MSWX 3-hour precipitation | mm/3hr | mm/day | sum 8 steps | No ×10800 conversion |
+| CMFD temperature | K | °C | −273.15 | Use sub-daily observations for Tmin/Tmax |
+| MSWX temperature | °C | °C | none | Already Celsius |
+| wind | km h⁻¹ | m s⁻¹ | ÷3.6 | Silent magnitude trap |
+| relhumid | fraction 0–1 | % 0–100 | ×100 | Silent magnitude trap |
+| vappd | mm Hg | kPa | ×0.1333 | Vapour pressure deficit |
+| Thickness | cm | m | ÷100 | Fatal soil-layer trap |
+| SoilRawDens | g cm⁻³ | kg m⁻³ | ×1000 | Soil bulk density |
+| SOC | g kg⁻¹ | % | ÷10 | Soil organic carbon input |
+| NDeposition | kg N ha⁻¹ d⁻¹ | kg N ha⁻¹ yr⁻¹ | ×365 | Deposition period trap |
+| Fertiliser | kg ha⁻¹ product | kg N ha⁻¹ | ×N% | Convert product mass to nitrogen mass |
+| Sand/Clay | % | fraction 0–1 | ÷100 | Soil texture fractions |
+| Yield comparison | kg DM ha⁻¹ | kg FW ha⁻¹ at ~12% harvest moisture | ÷0.88 | `yield_FW = yield_DM ÷ 0.88` |
 
 ## Unit Trap Table
 
@@ -388,6 +468,50 @@ See `diagnostics/triplets.yaml` for the full set. Key entries:
 
 ---
 
+## Validated Results
+
+Validation is judged against `docs/validation_convention.yaml`, not against
+intuition or remembered thresholds. The convention wins over any threshold stated
+elsewhere in prose.
+
+### Rank-1 validation target
+
+| Property | Value |
+|----------|-------|
+| Dag variable | Yield |
+| Dag unit | kg DM ha-1 |
+| Dag description | Harvested crop marketable dry-matter yield. |
+| Direction of headline judging | Lower error is better for PMARE and NMAE; PBIAS is zero-centered |
+
+### Performance bars from `docs/validation_convention.yaml`
+
+| Variable | Metric | Direction | Very good band | Good band | Satisfactory band | Citation key(s) |
+|----------|--------|-----------|----------------|-----------|-------------------|-----------------|
+| Yield | pmare | minimize | ≤10 (sarkar2014) | ≤15 (sarkar2014) | ≤25 (sarkar2014) | sarkar2014 |
+| Yield | nmae | minimize | ≤0.19 (nendel2011) | ≤0.29 (nendel2011) | ≤0.3 (nendel2011) | nendel2011 |
+| Yield | pmare | minimize | ≤10 (sarkar2014) | ≤15 (sarkar2014) | ≤25 (sarkar2014) | sarkar2014 |
+| Yield | pbias | zero_centered | within ±3 (jahr2016, bergez2022) | within ±4 (jahr2016, bergez2022) | within ±15 (jahr2016, bergez2022) | jahr2016, bergez2022 |
+
+### Current documented validation run
+
+The body currently documents a China multi-site CMFD workflow validated on 5
+provinces for winter wheat during 1991–2000, with default parameters and PBIAS
+reported against provincial reference yields.
+
+| Province | Lat | Metric reported | Result |
+|----------|-----|-----------------|--------|
+| Hebei | 38.5° | PBIAS | +5.8% |
+| Shandong | 36.5° | PBIAS | +10.3% |
+| Henan | 34.0° | PBIAS | -13.3% |
+| Jiangsu | 33.5° | PBIAS | +19.7% |
+| Anhui | 32.5° | PBIAS | +16.4% |
+
+These PBIAS results should be interpreted with the zero-centered Yield PBIAS
+bands above: within ±3 is very good (jahr2016, bergez2022), within ±4 is good
+(jahr2016, bergez2022), and within ±15 is satisfactory (jahr2016, bergez2022).
+
+---
+
 ## Coupling Points
 
 - **Climate forcing**: any gridded product (ERA5, CMFD, MSWX) → convert to MONICA CSV
@@ -473,6 +597,53 @@ Also relax AutomaticHarvest precip conditions (original too strict for China):
 "max-curr-day-precip": 5
 ```
 
+**5. Cultivar photoperiod transfer + emergence control + phenology gate (MANDATORY outside Central Europe; 2026-08-22, dt_29 / dt_30)**
+
+MONICA's stock long-day cultivars (`crops/wheat/winter-wheat.json`: `DaylengthRequirement` 20 h, `BaseDaylength`
+0/7 h, `VernalisationRequirement` 50 d) are a ~52°N parameterisation: MONICA's photoperiodic daylength (sun at −6°,
+`src/core/crop-module.cpp` "old DLP") peaks at 18.5 h there, at 35°N at only 15.5 h, so the long-day factor
+`(DL − base) / (20 − base)` that multiplies every stage's thermal time stays ~0.45–0.55 through the whole spring.
+Probe (34.6°N / 115.1°E, CMFD, 1999–2015, irrigated, N 203): stem elongation starts ~Apr 2, anthesis ~May 27,
+maturity ~Jun 22 — real NCP wheat joints mid-March, flowers late April–early May and matures Jun 5–10. Grain
+fill lands in the >30 °C late-June window, the harvest index collapses to ~0.2 (AbBiom 16–17 t, Yield ~3 t DM ha⁻¹),
+and 11/17 seasons are cut by `latest-date` — the −50 % PBIAS of the 2026-08-22 GDHY run, NOT a water/N problem
+(TraDef ≈ 1, NDef ≈ 1, HeatRed = 1).
+
+Rule (latitude-derived, NO yield fitting): set every positive `DaylengthRequirement` entry to the site's maximum
+photoperiodic daylength, so the photoperiod factor saturates at the local solstice:
+```bash
+python tools/site_photoperiod.py daylength --lat 35.0          # -> dl_max_photoperiodic_h 15.5 (52.5N: 18.5)
+python tools/site_photoperiod.py adapt --lat 35.0 \
+    --base $MONICA_PARAMETERS/crops/wheat/winter-wheat.json --out winter-wheat_35N.json
+```
+and use the written object as `cropParams.cultivar` (inline it, or include it by path). The tool is for LONG-DAY
+cultivars only: it refuses (exit 2, nothing written) any base carrying a negative short-day `DaylengthRequirement`
+entry in ANY stage (e.g. `crops/soybean/*.json`), an `--out` that resolves to `--base`, and any `--out` inside the
+monica-parameters repository (detected from `--base`; `$MONICA_PARAMETERS` is protected too). It creates NO
+directories — the parent of `--out` must already exist (make your run directory first) — and writes exactly
+`<out>.tmp` then `<out>` (rename); a pre-existing `<out>.tmp` is refused. EVERY refusal, including command-line
+usage errors (missing `--out`, non-numeric `--lat`, …), is one JSON `{"status":"error","error":…}` on stdout with
+exit 2 (only `-h/--help` prints usage text, exit 0), so a caller can always `json.loads` the stdout. Same probe after the rule:
+anthesis ~May 9, maturity ~Jun 9, 2/17 seasons at the cap, HI 0.28, mean 4849 kg DM ha⁻¹ (+54 %). Keep
+`VernalisationRequirement` (30 vs 50 changes < 2 %) and the stage temperature sums. The shipped low-latitude
+`winter-wheat_AgMIP4_bacanora_St1.json` is a spring type (vern 1, DL 11.5/16.67 h) and is WRONG for the NCP
+(anthesis Apr 1, 2923 kg DM ha⁻¹).
+
+Also set `"EmergenceMoistureControlOn": false` in sim.json (the validated multisite sim.json had it; the MODEL
+DEFAULT IS TRUE — `monica-parameters.h` `pc_EmergenceMoistureControlOn{true}` — docs/06 used to say false).
+With it on, a dry NCP autumn seedbed (e.g. the 2010 drought) keeps the crop in germination (output Stage 1) from
+October to March: auto-irrigation cannot help because `SoilColumn::applyIrrigationViaTrigger` only fires inside
+the cultivar's heat-sum window (`HeatSumIrrigationStart/End` 461–1676 °Cd, i.e. never before emergence), and
+the season yields 0 (13 % of the 2026-08-22 column-seasons; 1999: 63/80 columns).
+
+Phenology gate BEFORE scoring Yield: add the event blocks `"anthesis", ["Date","Crop"]` and
+`"maturity", ["Date","Crop"]` next to the `"crop"` block (parse with `parse_monica_output.py --columns section
+Date ...`; rows of those blocks carry `section` = anthesis/maturity), and require the median simulated
+anthesis/maturity within ±10 d of the regional calendar (validation_convention Stage band) with < 10 % of the
+seasons cut at `latest-date` without a maturity row. A season harvested ON `latest-date` without maturity is a
+phenology failure, not a yield. Do NOT add `["Stage|harvest","LAST"]` to the crop block — it duplicates the
+`harvest` header and the parser then returns the stage instead of the harvest date.
+
 ### Validated performance (5 sites, default parameters)
 
 | Province | Lat   | PBIAS (sim DM vs. prov. ref FW) | Irrigation/yr |
@@ -489,6 +660,15 @@ MONICA yields are **kg DM ha⁻¹**. National/provincial statistics are **kg FW 
 at ~12% harvest moisture.
 
 Conversion: `yield_FW = yield_DM ÷ 0.88` (÷ (1 − 0.12))
+
+**Which obs are fresh weight (2026-08-22, dt_31):** every statistics-derived yield — FAOSTAT, provincial
+yearbooks, and the gridded GDHY v1.2/1.3 product, which is harmonised to FAO/national statistics (its `.nc4`
+files carry no unit attribute) — is FW: apply the ÷0.88 to the MONICA DM yield BEFORE scoring and STATE the
+convention in the result (keep the DM-direct number as an auxiliary). Compare DM-direct only against obs
+explicitly reported as dry matter (field trials, GGCMI/AgMIP protocol data). 2026-08-22 GDHY NCP block
+(20 × 0.5° cells, 2000–2016, `run_and_score.py`, phenology gate PASS): per-site median PBIAS −16.0 % DM-direct
+→ −4.6 % FW (block mean sim 4.38 t DM = 4.97 t FW vs obs 5.31 t/ha). The validated 5-site table above is
+DM-direct legacy (dt_25) — never mix it with FW numbers.
 
 CMFD forcing gives ~26% higher yields than NASA POWER at the same site (higher
 observed radiation → more photosynthesis).
@@ -512,3 +692,29 @@ structurally invalid for this obs_shape and must NOT gate a retry.
     point cannot reproduce).
   - This applies to BOTH NASA POWER and CMFD forcing — it is a property of the
     obs_shape, not of the radiation product.
+
+**Reporting contract for regional-aggregate / gridded-statistics yield obs (2026-08-22, dt_32).** When the
+obs_shape is `regional_aggregate_time_series` (FAOSTAT, provincial yearbooks, and GDHY/SPAM pixels — statistics-
+harmonised area means with a technology trend), the result's headline `metrics` block and EVERY `test_runs[]` row
+carry ONLY the dag-valid families: `pbias` (+ `rmse`) for magnitude_accuracy and `trend_error` / `decadal_pbias` /
+`slope_ratio` for trend_match, plus `determining_metric: pbias`, `obs_shape`, `metric_families_valid` and
+`detrending_applied`. NSE/KGE/r from the SAME `all_metrics` call go to `aux_temporal_pattern_not_gate_valid`
+(transparency) — NEVER into `metrics` or a `test_runs` row: the orchestrator's dag_driven_gate REJECTs the whole
+retest (`REJECT_WRONG_METRIC … families not in valid_families=['trend_match','magnitude_accuracy']`) as soon as a
+row carries nse/kge/r for this obs_shape, and the route reader takes the first of r/nse/kge it finds as the verdict
+stat, so a structurally ~0 r (dt_24/dt_25) would route the case to fix_ki for ever. Definitions (`run_and_score.py`
+stage 5): `trend_error` = slope of (sim − obs) over the scored years × (n − 1) / mean(obs) — the fraction of the obs
+mean the bias drifts across the record (0 = no residual trend; negative = the sim falls behind a rising obs);
+`decadal_pbias` = max |PBIAS| of the first-half and second-half means; `slope_ratio` = sim/obs linear slope
+(`ki_tools_common.metrics.trend_metrics`). A fixed-management run does NOT carry the technology trend — NCP block
+2000–2016: slope_ratio 0.15, trend_error −0.36, half-period PBIAS +7.8 % → −14.4 % — report it, do not tune for it
+(dt_25). `run_and_score.py` writes `metrics`, `test_runs[0]` and the aux block in exactly this shape; a retest/report
+agent hands the runner off with `kdt_detached_run.py`, returns `run_detached` and lets the orchestrator harvest
+`result.json` itself — it copies the row VERBATIM and never re-authors it from the generic nse/kge/pbias template.
+The runner refuses to start (rc 1) without `KDT_RUN_CONTEXT` (exported by `kdt_detached_run.py`) or `KDT_STATE_DIR`
+— the check is the first statement after the stdlib imports (before numpy/pandas/xarray/ki_tools_common are imported
+and before the work dir is created), it never guesses a state dir, so a `result.json` can never land in a stale
+detached dir (2026-08-22 v6/v7). Every KI-tool call (stage 0 and the parser included) must return rc 0 AND a trailing
+stdout JSON object with `status: success` AND its output file, else `tools_failed` + RuntimeError — no silent fallback;
+`tools_used` lists only the KI tools / `ki_tools_common` functions the process actually invoked, and
+`tools_reused_from_cache` counts the cached tool outputs a resumed run consumed instead (2026-08-22 v8).

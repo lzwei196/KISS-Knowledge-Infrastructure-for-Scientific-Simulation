@@ -33,8 +33,8 @@ from datetime import datetime, timedelta
 ROOT   = "KISSPATH_KI_ROOT/Noah_MP"
 KI     = f"{ROOT}/knowledge_infrastructure"
 TOOLS  = f"{KI}/tools"
-BIN    = "KISSPATH_BINARIES/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
-SRCDIR = "KISSPATH_BINARIES/Noah_MP/source/repo"
+BIN    = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
+SRCDIR = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/repo"
 MSWX   = "KISSPATH_FORCING"
 HYBAS  = "KISSPATH_DATA/awd_paper/hydrobasins/north_america/hybas_na_lev12_v1c.shp"
 ESA    = "KISSPATH_DATA/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_1992_01deg.tif"
@@ -44,6 +44,7 @@ WORK   = f"{ROOT}/detached/verify_3"
 CELLS  = f"{WORK}/cells"
 BOX    = f"{WORK}/mswx_cmfd"            # CMFD-style box forcing derived from MSWX
 RESULT = f"{WORK}/result.json"
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 
 # ----------------------------------------------------------------------------- config
 GAUGE       = "04LJ001"

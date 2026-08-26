@@ -206,7 +206,7 @@ outputs:
   - var: "N2_emission"
     validation_rank: 6
     unit: "kgN/ha/yr"
-    description: "Dinitrogen emission from complete denitrification (reported as N)"
+    description: "Soil-to-atmosphere dinitrogen emission from complete denitrification (reported as N)"
     emitted_in: "Summary (annual N budget)"
     observability:
       comparable_obs_shapes:
@@ -219,7 +219,7 @@ outputs:
   - var: "NH3_volatilization"
     validation_rank: 7
     unit: "kgN/ha/yr"
-    description: "Ammonia volatilization from fertilizer and manure (reported as N)"
+    description: "Atmospheric ammonia volatilization from soil-applied fertilizer and manure (reported as N)"
     emitted_in: "Summary (annual N budget)"
     observability:
       comparable_obs_shapes:
@@ -258,7 +258,7 @@ outputs:
   - var: "NO3_leaching"
     validation_rank: 10
     unit: "kgN/ha/yr"
-    description: "Nitrate leaching below the root zone or to tile drains"
+    description: "Nitrate leaching in soil drainage water below the root zone or to tile drains"
     emitted_in: "Summary (annual N budget)"
     observability:
       comparable_obs_shapes:
@@ -547,3 +547,17 @@ safety:
       scope: "version / implementation identity"
       source: "DNDCv.CAN SKILL.md identity section vs UNH GuideDNDC95.pdf"
       status: adopted
+
+medium_evidence:
+  - var: "N2_emission"
+    source: dag.yaml
+    quote: "Trace-gas emissions (N2O, NO, N2, CO2, CH4) from soil biogeochemical processes"
+    note: "scope_in identifies N2 as a soil biogeochemical trace-gas output, so the description states soil-to-atmosphere."
+  - var: "NH3_volatilization"
+    source: SKILL.md
+    quote: "| NH3 volatilization | kgN/ha | Ammonia loss to atmosphere |"
+    note: "The key output table identifies NH3 volatilization as an atmospheric loss."
+  - var: "NO3_leaching"
+    source: SKILL.md
+    quote: "| NO3 leaching | kgN/ha | Nitrate leached below root zone or to tile drains |"
+    note: "The key output table places NO3 leaching below the root zone or in tile drains; the description states the soil drainage water medium."

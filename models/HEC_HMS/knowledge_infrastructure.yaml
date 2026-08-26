@@ -1,106 +1,102 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-27T23:36:15.749505'
-  domain: hydrology
-  name: HEC_HMS
-  version: auto-generated
+  name: HEC-HMS
+  language: python
+  implementation:
+    id: hec-hms-python-equiv
+    version: HydroCraft Python equivalent of HEC-HMS 4.x lumped methods
+    provenance: Python; HydroCraft reimplementation of the public-domain SCS-CN / SCS-UH / Muskingum /
+      Linear-Reservoir algorithms, producing equivalent results for lumped/semi-distributed basins.
+  scientific_reference_version: HEC-HMS public-domain rainfall-runoff method set (USACE HEC; SCS Curve
+    Number loss, SCS dimensionless Unit Hydrograph transform, Muskingum channel routing, Linear Reservoir
+    baseflow)
+  binary:
+    path: KISSPATH_KI_ROOT/HEC_HMS/knowledge_infrastructure/tools/run_hec_hms.py
+    type: Python
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s0_configuration_skill
+  - s1_domain_setup_skill
+tools:
+  count: 6
+  files:
+  - tools/calibrate_hms.py
+  - tools/convert_forcing_to_hms.py
+  - tools/convert_soil_to_hms.py
+  - tools/parse_hms_output.py
+  - tools/run_hec_hms.py
+  - tools/validate_hms.py
+inputs:
+  forcing:
+  - name: precipitation
+    unit: mm/day (daily); mm/hr at sub-daily step; mm in event mode
+  - name: temperature
+    unit: degC
+  - name: potential_evapotranspiration
+    unit: mm/day (Priestley-Taylor) or mm/month (Monthly Average)
+  - name: solar_radiation
+    unit: MJ/m^2/day
+  parameters:
+  - name: Curve Number (CN)
+    unit: dimensionless
+  - name: Hydrologic Soil Group (A/B/C/D)
+    unit: categorical
+  - name: initial abstraction ratio (lambda_ia)
+    unit: dimensionless
+  - name: time of concentration (Tc)
+    unit: hr
+  - name: Muskingum K
+    unit: hr
+  - name: Muskingum X
+    unit: dimensionless
+  - name: Muskingum Steps
+    unit: count
+  - name: baseflow recession constant (k_base)
+    unit: dimensionless
+  - name: recharge_fraction
+    unit: dimensionless
+  - name: basin area
+    unit: km^2
+  - name: basin slope / longest-flow-path length
+    unit: '% or m/m ; m or km'
+  initial_conditions:
+  - name: initial baseflow (q_base_init)
+    unit: m^3/s
+  - name: initial soil-moisture / retention state
+    unit: mm
+  boundary_conditions:
+  - name: loss method selection (SCS Curve Number)
+    unit: categorical
+  - name: transform method selection (SCS Unit Hydrograph)
+    unit: categorical
+  - name: routing method selection (Muskingum)
+    unit: categorical
+  - name: baseflow method selection (Linear Reservoir)
+    unit: categorical
+  - name: computational interval D
+    unit: hr
+  - name: simulation period (start/end)
+    unit: date
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - discharge
+  - runoff_depth
+  - loss
+  - subbasin_outflow
+  other: []
+validation:
+  tier: not_runnable
+  tier_justification: 'measured: NSE=0.909, KGE=0.948, R=0.955'
+  metrics:
+    best_nse: 0.9086
+    best_kge: 0.9475
+    best_r: 0.9554
+summary:
+  total_tools: 6
+  total_stage_docs: 2
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

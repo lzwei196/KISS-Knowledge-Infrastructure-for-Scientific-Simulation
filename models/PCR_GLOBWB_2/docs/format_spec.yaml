@@ -1,142 +1,619 @@
-model:
-  name: "PCR_GLOBWB_2"
-  full_name: "PCRaster Global Water Balance model version 2"
-  domain: "global_hydrology"
-  developer: "Utrecht University, Department of Physical Geography"
-  binary_type: "python_conda_env"
-  binary_path: "KISSPATH_BINARIES/PCR_GLOBWB_2/miniconda/_conda"
-  conda_env: "KISSPATH_BINARIES/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3"
-  entry_point: "model/deterministic_runner.py"
-  config_format: "ini"
-  timestep: "daily"
-  spatial_resolution: ["5_arcmin", "30_arcmin"]
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: PCR_GLOBWB_2
+  language: python
+  implementation:
+    id: pcr-globwb-2
+    version: 2 (Python 3, develop branch)
+    provenance: Python with PCRaster Python (DynamicModel/DynamicFramework); Utrecht University UU-Hydro.
+  scientific_reference_version: PCR-GLOBWB 2 (Sutanudjaja et al. 2018, GMD 11:2429-2453) — 5 arcmin global
+    hydrology & water resources spec
 inputs:
   forcing:
-    - name: "precipitation"
-      unit: "m/day"
-      valid_range: [0.0, 0.5]
-      netcdf_varname: "precipitation"
-      common_source_unit: "mm/day"
-      conversion: "divide_by_1000"
-      trap_id: "dt_001"
-    - name: "temperature"
-      unit: "degrees_Celsius"
-      valid_range: [-60.0, 60.0]
-      netcdf_varname: "temperature"
-      common_source_unit: "Kelvin"
-      conversion: "subtract_273.15"
-      trap_id: "dt_002"
-    - name: "reference_potential_ET"
-      unit: "m/day"
-      valid_range: [0.0, 0.02]
-      netcdf_varname: "evapotranspiration"
-      common_source_unit: "mm/day"
-      conversion: "divide_by_1000"
-      trap_id: "dt_003"
-
+  - name: precipitation
+    unit: m/day
+    category: meteorology
+    source_kind: forcing
+    model_input_format: daily NetCDF variable named exactly 'precipitation'
+    notes: Model expects m/day; most global datasets ship mm/day (1000x trap, dt_001).
+  - name: air temperature
+    unit: degC
+    category: meteorology
+    source_kind: forcing
+    model_input_format: daily NetCDF variable named exactly 'temperature'
+    notes: Celsius required; Kelvin forcing (ERA5/W5E5) silently kills snow and inflates ET (dt_002).
+  - name: reference potential evapotranspiration
+    unit: m/day
+    category: meteorology
+    source_kind: forcing
+    model_input_format: daily NetCDF variable named 'referencePotET' (alias 'evapotranspiration')
+    notes: Required unless referenceETPotMethod=Hamon, which derives refET internally from temperature;
+      m/day expected (mm/day is a 1000x trap, dt_003).
   parameters:
-    critical:
-      - name: "degreeDayFactor"
-        valid_range: [0.001, 0.01]
-        unit: "m/day/degC"
-        description: "Snow melt rate factor (degree-day method)"
-        sensitivity: "HIGH"
-      - name: "minRecessionCoeff"
-        valid_range: [1.0e-5, 1.0e-2]
-        unit: "1/day"
-        description: "Minimum groundwater recession coefficient controlling baseflow"
-        sensitivity: "HIGH"
-      - name: "manningsN"
-        valid_range: [0.01, 0.10]
-        unit: "dimensionless"
-        description: "Manning roughness coefficient for channel routing"
-        sensitivity: "MEDIUM"
-      - name: "kSatAquifer"
-        valid_range: [0.01, 100.0]
-        unit: "m/day"
-        description: "Saturated hydraulic conductivity of aquifer"
-        sensitivity: "MEDIUM"
-      - name: "arnoBeta"
-        valid_range: [0.01, 1.2]
-        unit: "dimensionless"
-        description: "Improved Arno scheme runoff generation curve shape parameter"
-        sensitivity: "MEDIUM"
-      - name: "irrigationEfficiency"
-        valid_range: [0.3, 1.0]
-        unit: "fraction"
-        description: "Fraction of abstracted water effectively used for irrigation"
-        sensitivity: "LOW"
-
-  soil:
-    - name: "KSat1"
-      unit: "m/day"
-      description: "Saturated hydraulic conductivity, upper layer"
-    - name: "KSat2"
-      unit: "m/day"
-      description: "Saturated hydraulic conductivity, lower layer"
-    - name: "satVolWC1"
-      unit: "m3/m3"
-      description: "Saturated volumetric water content, upper layer"
-    - name: "satVolWC2"
-      unit: "m3/m3"
-      description: "Saturated volumetric water content, lower layer"
-    - name: "resVolWC1"
-      unit: "m3/m3"
-      description: "Residual volumetric water content, upper layer"
-    - name: "resVolWC2"
-      unit: "m3/m3"
-      description: "Residual volumetric water content, lower layer"
-    - name: "specificYield"
-      unit: "m3/m3"
-      valid_range: [0.0, 1.0]
-      description: "Aquifer specific yield (fraction)"
-      trap_id: "dt_007"
-
+  - name: land cover classification (forest, grassland, irrPaddy, irrNonPaddy)
+    unit: '-'
+    category: land_cover
+    source_kind: dataset_lookup
+    model_input_format: per-cover-type PCRaster maps / NetCDF
+  - name: saturated hydraulic conductivity per layer (KSat1/KSat2)
+    unit: m/day
+    category: soil
+    source_kind: calibrated
+    model_input_format: PCRaster maps / NetCDF
+  - name: saturated & residual volumetric water content (satVolWC, resVolWC)
+    unit: m3/m3
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: PCRaster maps / NetCDF
+  - name: air entry value and pore-size distribution (airEntryValue, poreSizeBeta)
+    unit: m, -
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: PCRaster maps / NetCDF
+  - name: soil storage capacity / depth per layer
+    unit: m
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: PCRaster maps; meters expected (mm saturates soil in one step, dt_004)
+  - name: tangent slope, hillslope length, orographic correction (tanslope, slopeLength, orographyBeta)
+    unit: -, m, -
+    category: topography
+    source_kind: dataset_lookup
+    model_input_format: topography NetCDF; zero tanslope zeros interflow (dt_019)
+  - name: aquifer conductivity, specific yield, recession coefficient (kSatAquifer, specificYield, recessionCoeff)
+    unit: m/day, fraction 0-1, day-1
+    category: groundwater
+    source_kind: calibrated
+    model_input_format: PCRaster maps; specificYield as fraction not percent (dt_007)
+  - name: Manning's roughness (manningsN)
+    unit: '-'
+    category: routing
+    source_kind: calibrated
+    model_input_format: PCRaster map / scalar (default 0.04)
+  - name: reservoir characteristics (GRanD) and lake/water-body extents (GLWD)
+    unit: mixed
+    category: routing
+    source_kind: dataset_lookup
+    model_input_format: PCRaster maps / NetCDF
+  initial_conditions:
+  - name: snow water equivalent and interception storage
+    unit: m
+    category: state
+    source_kind: user_provided
+    model_input_format: NetCDF state files; spin-up convergence used if absent
+  - name: upper/lower soil storage (storUpp, storLow)
+    unit: m
+    category: state
+    source_kind: user_provided
+    model_input_format: NetCDF state files; else spin-up
+  - name: groundwater storage (storGroundwater)
+    unit: m
+    category: state
+    source_kind: user_provided
+    model_input_format: NetCDF state file; zero/low initial store gives zero baseflow (dt_018)
+  - name: channel and water-body storage
+    unit: m3
+    category: state
+    source_kind: user_provided
+    model_input_format: NetCDF state files; else spin-up
+  boundary_conditions:
+  - name: clone map (resolution and spatial extent)
+    unit: '-'
+    category: domain
+    source_kind: user_provided
+    model_input_format: PCRaster .map; MUST be local, corners aligned to integer cell multiples (dt_010,
+      dt_011)
+  - name: landmask (area of interest restriction)
+    unit: '-'
+    category: domain
+    source_kind: user_provided
+    model_input_format: PCRaster .map; None falls back to LDD extent
+  - name: local drainage direction network (LDD, from HydroSHEDS)
+    unit: '-'
+    category: routing_topology
+    source_kind: dataset_lookup
+    model_input_format: PCRaster .map defining flow routing topology
+  - name: human-influence toggles (includeIrrigation / includeDomestic / includeIndustry / includeLivestock
+      WaterDemand)
+    unit: '-'
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: INI flags selecting natural-only vs non-natural run
+  - name: 'soil layering (numberOfUpperSoilLayers: 2 vs 3) and routing method (accuTravelTime vs kinematic
+      wave)'
+    unit: '-'
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: INI structural selectors
+  - name: 'reference ET method (referenceETPotMethod: input vs Hamon) and dynamicFloodPlain toggle'
+    unit: '-'
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: INI selectors; floodplain off gives zero inundation (dt_017)
+  - name: water demand by sector (domestic, industry, livestock)
+    unit: m/day depth
+    category: management
+    source_kind: user_provided
+    model_input_format: NetCDF maps; m/day depth not mm/day or m3/day (dt_005)
+  - name: irrigation area, irrigation efficiency, desalination supply, pumping capacity
+    unit: ha, fraction 0-1, m/day, billion m3/year
+    category: management
+    source_kind: user_provided
+    model_input_format: NetCDF/maps; missing/zero irrigation area yields no irrigation (dt_016)
 outputs:
   primary:
-    - name: "discharge"
-      unit: "m3/s"
-      valid_range: [0.0, 300000.0]
-      description: "River discharge at each grid cell"
-    - name: "totalRunoff"
-      unit: "m/day"
-      valid_range: [0.0, 0.5]
-      description: "Total runoff (surface + subsurface)"
-    - name: "gwRecharge"
-      unit: "m/day"
-      valid_range: [0.0, 0.1]
-      description: "Groundwater recharge"
-    - name: "actualET"
-      unit: "m/day"
-      valid_range: [0.0, 0.02]
-      description: "Actual evapotranspiration"
-  secondary:
-    - name: "storGroundwater"
-      unit: "m"
-      description: "Groundwater storage"
-    - name: "channelStorage"
-      unit: "m3"
-      description: "Channel water storage"
-    - name: "snowCoverSWE"
-      unit: "m"
-      description: "Snow water equivalent"
-    - name: "totalWaterStorageThickness"
-      unit: "m"
-      description: "Total terrestrial water storage"
-    - name: "surfaceWaterStorage"
-      unit: "m3"
-      description: "Total surface water storage"
-    - name: "waterBodyStorage"
-      unit: "m3"
-      description: "Lake and reservoir storage"
-
+  - name: discharge
+    unit: m3/s
+    description: River channel discharge at each cell.
+    validation_rank: 1
+    emitted_in: discharge_dailyTot_output.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Default global run is uncalibrated; gauge-scale skill is modest (median gauge-network correlation
+          ~0.60).
+        - Cell discharge must be matched to the gauge's contributing cell on the LDD.
+      detrending_options:
+      - none
+  - name: totalRunoff
+    unit: m/day
+    description: Total runoff (surface plus subsurface) generated per cell.
+    validation_rank: 2
+    emitted_in: totalRunoff_dailyTot_output.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Gridded runoff products carry their own model structure; treat as soft reference.
+      detrending_options:
+      - none
+  - name: actualET
+    unit: m/day
+    description: Actual evapotranspiration — water flux from the land surface to the atmosphere.
+    validation_rank: 3
+    emitted_in: actualET_monthTot_output.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Satellite ET products are themselves model-derived; compare patterns and seasonal magnitude.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: gwRecharge
+    unit: m/day
+    description: Groundwater recharge flux from the lower soil store.
+    validation_rank: 4
+    emitted_in: gwRecharge_dailyTot_output.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Direct recharge observations are scarce; usually evaluated against other model/reanalysis estimates.
+      detrending_options:
+      - none
+  - name: storGroundwater
+    unit: m
+    description: Groundwater reservoir storage (S3).
+    validation_rank: 5
+    emitted_in: storGroundwater_monthAvg_output.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Comparison to observed groundwater-head series is via storage anomaly, not absolute head (single
+          linear reservoir, no lateral flow).
+      detrending_options:
+      - linear_residual
+  - name: totalWaterStorageThickness
+    unit: m
+    description: Total water storage (snow + interception + soil + groundwater + surface water), comparable
+      to satellite total-water-storage-anomaly retrievals.
+    validation_rank: 6
+    emitted_in: totalWaterStorageThickness_monthAvg_output.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Satellite TWS products provide total-storage anomalies; compare detrended/de-meaned anomalies,
+          not absolute storage.
+        - Inter-annual anomaly skill is weak and can be negative in some basins (e.g. Amazon, Niger).
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Basin-averaged TWS anomaly; seasonal storage is poorly captured in cold regions.
+      detrending_options:
+      - linear_residual
+      - first_difference
+  - name: snowCoverSWE
+    unit: m
+    description: Snow water equivalent.
+    validation_rank: 7
+    emitted_in: snowCoverSWE_dailyTot_output.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Degree-day snow with indefinite polar accumulation; avoid permanent-ice cells.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "ki_001"
-    description: "Allocation segments float32 precision error — yearly accumulated actSurfaceWaterAbstract and allocSurfaceWaterAbstract may differ slightly"
-  - id: "ki_002"
-    description: "Script backup does not include subfolders (e.g., evaporation/)"
-  - id: "ki_003"
-    description: "Variable name inconsistency between model versions for initial conditions — repair_ini_key_names() handles backward compatibility"
-  - id: "ki_004"
-    description: "OPeNDAP input access is 10-100x slower than local files; network timeouts common for large domains"
+- id: dt_001
+  symptom: Extreme flooding, unrealistic runoff values. River discharge 1000x too high.
+  diagnosis: Precipitation in mm/day instead of m/day — 1000x too much input; PCR-GLOBWB expects precipitation
+    in meters per day (m/day). Most global datasets (ERA5, CMFD, CRU) provide precipitation in mm/day.
+    If the mm-to-m conversion is omitted (divide by 1000), the model receives 1000x too much precipitation.
+  remedy: Divide precipitation values by 1000 to convert mm/day to m/day; convert_forcing_to_pcrglobwb;
+    ['Check max precipitation in forcing NetCDF — should be < 0.5 m/day', 'If max precip > 1.0, values
+    are likely in mm/day — divide by 1000']; validate_outputs() checks for unrealistic precipitation values
+  severity: silent
+- id: dt_002
+  symptom: No snow accumulation even in cold regions. Wrong ET calculation. Temperature values above 200.
+  diagnosis: 'Temperature in Kelvin instead of Celsius; PCR-GLOBWB expects temperature in degrees Celsius.
+    ERA5 and W5E5 provide temperature in Kelvin (typically 250-310 K). If not converted, the model treats
+    293 K as 293 deg C, causing zero snow (always above freezing), enormous ET, and numerical instabilities. '
+  remedy: Subtract 273.15 from temperature values to convert K to C; convert_forcing_to_pcrglobwb; ['Check
+    temperature range in forcing NetCDF', 'If values > 100, likely in Kelvin — subtract 273.15']; validate_outputs()
+    checks for T > 100 deg C
+  severity: silent
+- id: dt_003
+  symptom: Soil is always dry. Excessive actual ET. Groundwater depletes rapidly.
+  diagnosis: 'Reference ET in mm/day instead of m/day — 1000x too much evaporation; PCR-GLOBWB expects
+    reference potential ET in m/day. Most global datasets provide ET in mm/day. Without dividing by 1000,
+    the model computes enormous actual ET, rapidly depleting soil moisture and groundwater.
+
+    ; [''convert_forcing_t'
+  remedy: Divide reference ET values by 1000 to convert mm/day to m/day; convert_forcing_to_pcrglobwb;
+    ['Check max reference ET in forcing NetCDF — should be < 0.02 m/day', 'If max ET > 1.0, values are
+    in mm/day — divide by 1000']; validate_outputs() checks for unrealistic ET values
+  severity: silent
+- id: dt_004
+  symptom: Soil saturates in one timestep. Extreme surface runoff, no infiltration.
+  diagnosis: 'Soil water capacity in mm instead of m; PCR-GLOBWB stores all soil water quantities in meters.
+    If soil properties are provided in millimeters (e.g., soil depth = 1500 mm instead of 1.5 m), the
+    soil capacity is 1000x too small, causing immediate saturation and excessive surface runoff.
+
+    ; [''convert_so'
+  remedy: Divide soil depth/capacity values by 1000 if in mm; convert_soil_params; ['Check soil property
+    ranges — total depth should be 0.5-5.0 m', 'If values > 100, likely in mm — divide by 1000']; validate_outputs()
+    in convert_soil_params checks value ranges
+  severity: silent
+- id: dt_005
+  symptom: Rivers run dry even in wet regions. Excessive water abstraction.
+  diagnosis: 'Water demand in mm/day or m3/day instead of m/day (depth); PCR-GLOBWB expects water demand
+    as depth over cell area in m/day. If demand is in mm/day (1000x too high) or in absolute volume (m3/day),
+    the model abstracts far too much water, depleting rivers and reservoirs.
+
+    ; [''landSurface.py'', ''landCove'
+  remedy: 'Convert demand to m/day depth: demand_m_per_day = demand_mm / 1000 or demand_m3 / cell_area_m2;
+    [''Check demand values — domestic demand should be 0.0001-0.01 m/day'', ''If values > 0.1, likely
+    in wrong units'']; Check unit attributes in demand NetCDF files'
+  severity: silent
+- id: dt_006
+  symptom: Groundwater depletes unrealistically fast. Fossil groundwater exhausted quickly.
+  diagnosis: 'Groundwater abstraction in wrong units (not m/day depth); All PCR-GLOBWB abstraction quantities
+    are in m/day as a depth over the cell area. If abstraction values are in m3/day (volume) instead of
+    m/day (depth), and cells have area ~10^8 m2, the abstraction is enormously overestimated.
+
+    ; [''groundwate'
+  remedy: Ensure all abstraction quantities are in m/day depth (= volume / cell_area); ['Check maximumDailyGroundwaterAbstraction
+    — default is 0.050 m/day', 'Check pumpingCapacityNC units — should be billion m3/year per region'];
+    Configuration repair_ini_key_names() sets defaults
+  severity: silent
+- id: dt_007
+  symptom: Unrealistic groundwater storage. Baseflow too high or too low.
+  diagnosis: 'Specific yield in percentage (0-100) instead of fraction (0-1); Specific yield must be a
+    fraction (typically 0.01-0.3). If provided as a percentage (1-30), the groundwater store capacity
+    is 100x too large, causing unrealistic groundwater storage dynamics.
+
+    ; [''convert_soil_params'', ''groundwater.py'']'
+  remedy: Divide specific yield by 100 if values > 1.0; convert_soil_params; ['Check specificYield range
+    — must be 0.01-0.30']; convert_soil_params auto-detects and corrects
+  severity: silent
+- id: dt_008
+  symptom: Baseflow recession is extremely fast or slow.
+  diagnosis: 'kSatAquifer in cm/hr instead of m/day; PCR-GLOBWB expects aquifer saturated hydraulic conductivity
+    in m/day. If provided in cm/hr, the values are off by a factor of ~0.24. This affects groundwater
+    flow rates and baseflow generation.
+
+    ; [''convert_soil_params'', ''groundwater.py'']'
+  remedy: Multiply kSat by 0.24 to convert cm/hr to m/day; convert_soil_params; ['Check kSatAquifer range
+    — typical 0.01-100 m/day']; convert_soil_params validates ranges
+  severity: silent
+- id: dt_009
+  symptom: Model reads zero forcing. No precipitation, zero temperature. Silent failure.
+  diagnosis: 'NetCDF variable name does not match expected name; PCR-GLOBWB reads forcing by exact variable
+    name: ''precipitation'', ''temperature'', ''evapotranspiration'' or ''referencePotET''. Common alternative
+    names like ''tp'', ''precip'', ''PRECIP'', ''Precipitation'' will NOT be found. The model silently
+    uses zeros for m'
+  remedy: 'Rename NetCDF variable to match expected name exactly; [''Use ncrename: ncrename -v tp,precipitation
+    input.nc'', ''Or use convert_forcing_to_pcrglobwb tool which handles renaming'']; Always use convert_forcing_to_pcrglobwb
+    for format standardization'
+  severity: silent
+- id: dt_010
+  symptom: 'Crash on startup: cannot read clone map from OPeNDAP.'
+  diagnosis: 'Clone map specified as OPeNDAP URL instead of local file path; The clone map (PCRaster format)
+    defines the spatial extent and resolution. PCRaster cannot read .map files from OPeNDAP — they must
+    be local. All other inputs CAN use OPeNDAP, but the clone map is the exception.
+
+    ; [''configuration.py'', ''p'
+  remedy: 'Download clone map to local disk and update cloneMap path in .ini; [''Download from examples:
+    clone_landmask_maps/clone_landmask_examples.zip'', ''Set cloneMap to local absolute path'']; run_pcrglobwb
+    preflight checks for local clone map'
+  severity: crash
+- id: dt_011
+  symptom: Spatial misalignment between forcing and parameters. Checkerboard artifacts.
+  diagnosis: Clone map corner coordinates not at nicely-rounded integer values; The corner coordinates
+    of the clone map must be integer multiples of the cell size. For 5 arcmin, corners must be at multiples
+    of 5/60 degrees. For 30 arcmin, at multiples of 0.5 degrees. Non-aligned corners cause half-cell shifts
+    in
+  remedy: 'Use clone maps from the official examples or ensure corners are aligned; [''Check clone map
+    properties with PCRaster: pcrcalc --clone map.map'', ''Verify corner coordinates are nicely rounded''];
+    Use pre-made clone maps from clone_landmask_maps/'
+  severity: silent
+- id: dt_012
+  symptom: 'Error message: ''The model runs only on daily time step.'''
+  diagnosis: 'timeStep or timeStepUnit in .ini not set to daily; PCR-GLOBWB 2 operates exclusively on
+    daily timesteps. The model checks that timeStep=1.0 and timeStepUnit=day. Any other value triggers
+    an error.
+
+    ; [''configuration.py'']'
+  remedy: 'Set timeStep=1.0 and timeStepUnit=day in [globalOptions], or remove these keys; [''Edit .ini:
+    timeStep = 1.0 and timeStepUnit = day'', ''Or simply remove these keys — daily is the default''];
+    run_pcrglobwb preflight checks timestep settings'
+  severity: crash
+- id: dt_013
+  symptom: Spin-up never converges. Model runs indefinitely through spin-up cycles.
+  diagnosis: Convergence thresholds too strict or too few spin-up years; Spin-up convergence is checked
+    by comparing total storage change between beginning and end of each cycle. If thresholds (minConvForSoilSto,
+    etc.) are set too tight (e.g., 0.001 m), convergence may never be reached. For global runs, 20-50
+    ye
+  remedy: Relax convergence thresholds or increase maxSpinUpsInYears; ['Set all minConv* = 0.0 to skip
+    convergence check (run full spin-up)', 'Or increase maxSpinUpsInYears to 30-50', 'Monitor log for
+    convergence progress between cycles']; Start with minConv* = 0.0 and fixed number of spin-up years
+  severity: runtime
+- id: dt_014
+  symptom: Model runs extremely slowly. Minutes per timestep instead of seconds.
+  diagnosis: 'Reading all input data from OPeNDAP (remote server); PCR-GLOBWB supports reading input files
+    directly from the 4TU OPeNDAP server, but network latency makes each file access 10-100x slower than
+    local disk. For a global run reading hundreds of variables daily, this accumulates to enormous slowdowns.
+
+    '
+  remedy: 'Download input data locally for production runs; [''Download from: https://opendap.4tu.nl/thredds/catalog/data2/pcrglobwb/'',
+    ''Total size: ~250 GB for global 5 arcmin'', ''Update inputDir in .ini to local path'']; Use OPeNDAP
+    only for testing; download for production'
+  severity: performance
+- id: dt_015
+  symptom: MemoryError or system kills process. Model crashes during global 5 arcmin run.
+  diagnosis: 'Insufficient memory for global high-resolution run; A global 5 arcmin PCR-GLOBWB run requires
+    ~50-100 GB RAM due to the large number of grid cells (~7.2M land cells) and state variables. Running
+    on a single machine with < 64 GB RAM will likely fail.
+
+    ; [''pcrglobwb.py'', ''all modules'']'
+  remedy: Split domain into multiple clones and run in parallel; ['Prepare clone maps for subdomains (e.g.,
+    53 clones for global)', 'Create separate .ini files for each clone', 'Run in parallel on HPC cluster',
+    'Merge outputs using merge_netcdf.py']; Use 30 arcmin for testing; split clones for 5 arcmin produc
+  severity: crash
+- id: dt_016
+  symptom: No irrigation water use in output despite includeIrrigation=True.
+  diagnosis: Historical irrigation area file not provided or has zero values; Even with includeIrrigation=True,
+    PCR-GLOBWB requires irrigated area data (historicalIrrigationArea) to determine where irrigation occurs.
+    If this file is missing, has wrong units (should be hectares), or covers a different time period
+  remedy: Verify historicalIrrigationArea file has non-zero values and covers simulation period; ['Check
+    historicalIrrigationArea in .ini is not None', 'Verify NetCDF has data for simulation years', 'Unit
+    must be hectares']; Always verify irrigation area coverage before running
+  severity: silent
+- id: dt_017
+  symptom: Dynamic flood plain shows zero inundation even during high flows.
+  diagnosis: dynamicFloodPlain = False or missing relative elevation files; Dynamic flood plain simulation
+    requires dynamicFloodPlain=True and the relativeElevationFiles and relativeElevationLevels parameters
+    in [routingOptions]. Without these, channel overflow does not spread to the flood plain, and all water
+    s
+  remedy: Set dynamicFloodPlain=True and provide relative elevation data; ['Set dynamicFloodPlain = True
+    in [routingOptions]', 'Provide relativeElevationFiles and relativeElevationLevels', 'Set floodplainManningsN
+    (typically 0.07)']; Check routing options for flood plain settings
+  severity: silent
+- id: dt_018
+  symptom: Baseflow is always zero. No groundwater contribution to streamflow.
+  diagnosis: 'Groundwater recession coefficient too low or initial storage is zero; Baseflow = recessionCoeff
+    * storGroundwater. If recessionCoeff is extremely low (< 1e-6 day-1) or initial groundwater storage
+    is zero and recharge is too small, baseflow will be effectively zero.
+
+    ; [''groundwater.py'']'
+  remedy: Check minRecessionCoeff and initial groundwater storage; ['Verify minRecessionCoeff in [groundwaterOptions]
+    — default 1.0e-4 day-1', 'Check storGroundwaterIni — should not be zero everywhere', 'Run spin-up
+    to initialize groundwater storage']; Always use spin-up or proper initial conditions
+  severity: silent
+- id: dt_019
+  symptom: Interflow and lateral subsurface flow are zero. Only surface runoff and baseflow.
+  diagnosis: 'Topographic slope (tanslope) is zero or missing; Interflow in PCR-GLOBWB is driven by slope:
+    interflow = f(Ksat, tanslope, slopeLength). If tanslope is zero (flat terrain or missing data), interflow
+    will be zero. This is physically correct for very flat regions but may indicate missing data.
+
+    ; [''par'
+  remedy: Verify topographyNC contains non-zero tanslope values; ['Check topographyNC file for tanslope
+    variable', 'Verify values are physically reasonable (0.001-1.0)']; Use default topography from 4TU
+    OPeNDAP
+  severity: silent
+- id: dt_020
+  symptom: Float32 numerical differences in surface water allocation reporting.
+  diagnosis: PCRaster float32 precision limitation in allocation operations; When using allocation segments
+    for surface water abstraction, the yearly accumulated values of actSurfaceWaterAbstract and allocSurfaceWaterAbstract
+    may differ slightly. This is documented as a known issue due to PCRaster's float32 impl
+  remedy: Accept small numerical differences (< 0.1%) in allocation reporting; ['Compare actSurfaceWaterAbstract
+    vs allocSurfaceWaterAbstract', 'Differences should be < 0.1% of total — this is expected']; This is
+    a known PCRaster limitation — cannot be fixed
+  severity: cosmetic
+- id: dt_021
+  symptom: 'Crash on startup: IndexError: list index out of range at virtualOS.py:1842.'
+  diagnosis: '''mapattr'' binary not in PATH used by subprocess; virtualOS.getMapAttributesALL() calls
+    subprocess.Popen(''mapattr -p <cloneMap>'', shell=True). The mapattr binary lives in the conda env''s
+    bin/ directory, which is NOT in the shell PATH when launching Python from outside that activated environment
+    (e.g.'
+  remedy: 'Prepend the conda env bin directory to PATH before running the model; [''CONDA_BIN=KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin'',
+    ''Run: env PATH=$CONDA_BIN:$PATH $CONDA_BIN/python deterministic_runner.py setup.ini'', ''Verify first:
+    env '
+  severity: crash
+- id: dt_022
+  symptom: 'Crash on startup: KeyError: ''refETPotFileNC'' in configuration.py:268.'
+  diagnosis: refETPotFileNC key missing from [meteoOptions] when referenceETPotMethod = Hamon; configuration.py
+    iterates over ALL expected [meteoOptions] keys (including refETPotFileNC) and checks if they differ
+    from 'None'. Even when Hamon ET method is selected (which does not use a refET file), the key must
+    be
+  remedy: 'Always include ''refETPotFileNC = None'' in [meteoOptions] regardless of ET method; [''The
+    key must be PRESENT for every ET method, including Hamon: refETPotFileNC = None'', "The ''None'' value
+    tells the model to skip reading the file", ''This is a config-parse requirement only -- it is NOT
+    a reason to pre'
+  severity: crash
+- id: dt_023
+  symptom: 'RuntimeError: NetCDF: DAP failure for large static parameter files (>5MB).'
+  diagnosis: "virtualOS.py line 187 reads full global array before spatial subsetting; singleTryNetcdf2PCRobjCloneWithoutTime()\
+    \ reads data as:\n  cropData = f.variables[varName][:,:]   # reads ENTIRE global array\nThis sends\
+    \ a request for the full global data volume to the 4TU OPeNDAP server, which enforces size li"
+  remedy: 'Download static inputs via HTTP fileServer and subset locally; use MSWX for forcing; [''HTTP
+    fileServer base: https://opendap.4tu.nl/thredds/fileServer/data2/pcrglobwb/version_2019_11_beta/pcrglobwb2_input/'',
+    ''Download: wget -q $FS/$rel -O /tmp/full_global.nc'', ''Subset: ncks -O -d lat,45.75,52.75 -d '
+  severity: crash
+- id: dt_024
+  symptom: FileNotFoundError for dzRel0200.nc, dzRel0300.nc etc. during routing init.
+  diagnosis: 'dzRel filenames use level*100 format, not level*1000; The relativeElevationFiles format
+    string is ''dzRel%04d.nc''. The model computes the filename as: relZFileName % (areaFractions[iCnt]
+    * 100)  [routing.py line 489]. For level 0.20, this gives dzRel0020.nc — NOT dzRel0200.nc. The correct
+    set of 13 f'
+  remedy: Download dzRel0000, 0001, 0005, 0010, 0020, 0030, 0040, 0050, 0060, 0070, 0080, 0090, 0100.nc;
+    ['FS=https://opendap.4tu.nl/thredds/fileServer/data2/pcrglobwb/version_2019_11_beta/pcrglobwb2_input',
+    'for L in 0000 0001 0005 0010 0020 0030 0040 0050 0060 0070 0080 0090 0100:', '  wget $FS/global_30min
+  severity: crash
+- id: dt_025
+  symptom: MSWX forcing prep extremely slow (>20 min/year). Python hangs reading MSWX files.
+  diagnosis: MSWX files have HDF5 chunk layout [1, 1800, 3600] — full global per timestep; MSWX 3-hourly
+    files at KISSPATH_FORCING/ are structured with one HDF5 chunk per timestep, each covering the full
+    1800×3600 global grid. P_YYYY.nc is 3.0GB, Tair_YYYY.nc is 9.0GB. Reading a spatial subset in Python
+    (e.g., ar
+  remedy: 'Pre-extract Rhine region with ncks in parallel (all 6 years × 2 vars = 12 jobs); [''Run all
+    12 ncks extractions in parallel — CPU-bound, 192-core machine handles it'', ''ncks -O -d lat,46.05,52.45
+    -d lon,3.55,11.95 KISSPATH_FORCING/P/P_YYYY.nc /tmp/P_YYYY_rhine.nc'', ''Total parallel wall time:
+    ~7 min (bo'
+  severity: performance
+- id: dt_026
+  symptom: 'ValueError: cannot reshape array of size 15310512 into shape (366,8,65,85).'
+  diagnosis: 'ncks float32 boundary exclusion yields 63×83 cells instead of expected 65×85; MSWX lat/lon
+    coordinates are stored as float32, which cannot represent values like 46.05 or 52.45 exactly (e.g.,
+    stored as 46.04999... or 52.45001...). ncks''s coordinate-based subsetting with -d lat,46.05,52.45
+    uses exact '
+  remedy: 'Pad 1 cell on each edge with np.pad(..., mode=''edge'') or use wider ncks bounds; [''After
+    reading extracted file, check shape: ntime, ny, nx = p_raw.shape'', "If ny != 65 or nx != 85: p_raw
+    = np.pad(p_raw, [(0,0),(1,1),(1,1)], mode=''edge'')", ''Alternative: use -d lat,46.0,52.5 -d lon,3.5,12.0
+    (wider) to'
+  severity: crash
+- id: dt_030
+  symptom: Subsetting an OPeNDAP input to a local NetCDF dies immediately on the first file.
+  diagnosis: 'Copying the reserved global attribute ''_NCProperties'' onto a new NetCDF file; THREDDS/OPeNDAP
+    exposes the netCDF-library-reserved global attribute ''_NCProperties'' through Dataset.ncattrs().
+    A verbatim dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()}) then tries to SET that reserved
+    name an'
+  remedy: 'Skip underscore-prefixed attributes when copying; ["dst.setncatts({k: src.getncattr(k) for
+    k in src.ncattrs() if not k.startswith(''_'')})", "out.setncatts({k: var.getncattr(k) for k in var.ncattrs()
+    if not k.startswith(''_'')})"]; Never copy underscore-prefixed NetCDF attributes to a new file.'
+  severity: crash
+- id: dt_027
+  symptom: 'parse_pcrglobwb_output.py returns an EMPTY CSV (header only) for a short run, or -- far worse
+    -- a handful of ANNUAL values silently presented as a daily discharge series for a multi-year run.
+
+    '
+  diagnosis: 'Output file selected by first-alphabetical match instead of temporal aggregation; [reportingOptions]
+    emits the same variable at several aggregations, one file each: discharge_dailyTot_output.nc, discharge_monthAvg_output.nc,
+    discharge_monthMax_output.nc, discharge_annuaAvg_output.nc. The old extract'
+  remedy: 'Select the output file by aggregation token, never by sort order; [''parse_pcrglobwb_output.py
+    --variable discharge --aggregation dailyTot ...'', ''dag.yaml declares the canonical file: outputs[discharge].emitted_in
+    = discharge_dailyTot_output.nc'', ''Without --aggregation the tool now prefers dailyTot a'
+  severity: silent_wrong_result
+- id: dt_028
+  symptom: 'Basin is dead: near-zero runoff and discharge everywhere, soil never wets up.'
+  diagnosis: CMFD precipitation treated as mm/day when it is kg/m2/s; CMFD V0200 (Data_forcing_01dy_010deg
+    and Data_forcing_03hr_010deg) stores 'prec' with units "kg m-2 s-1", i.e. mm/s, and 'temp' in K. The
+    variables are named 'prec'/'temp' -- there is no 'prcp' and no 'pet'. Applying the generic mm/day
+    -> m/da
+  remedy: 'Use precip_factor = 86.4 for raw CMFD NetCDF; ["Raw-file mode: precip_varname=''prec'', temp_varname=''temp'',
+    precip_factor=86400/1000", ''CMFD DOES ship srad/wind/shum/pres: derive Penman-Monteith refET and
+    set referenceETPotMethod = Input -- do NOT fall back to Hamon (dt_031)'', ''Sanity check: domain-m'
+  severity: silent_wrong_result
+- id: dt_029
+  symptom: 'Parallel OPeNDAP downloads fail with "NetCDF: String match to name in use" or a bogus "[Errno
+    -90] NetCDF: file not found" on files that plainly exist and download fine one at a time.
+
+    '
+  diagnosis: netCDF4/HDF5 C library is not thread-safe; The netCDF4 build in pcrglobwb_python3 is compiled
+    without the HDF5 thread-safety option. Concurrent nc.Dataset() opens from a ThreadPoolExecutor corrupt
+    each other's handle table, producing errors that point at the wrong file. Symptoms are non-deterministi
+  remedy: 'Parallelise with ProcessPoolExecutor, not ThreadPoolExecutor; [''Each worker PROCESS gets its
+    own netCDF/HDF5 library state.'', "Keep --workers modest (2-6); the 4TU THREDDS server also throttles,
+    and genuine transient ''NetCDF: DAP failure'' / ''I/O failure'' still occur -- retry per file (dt_023)."];
+    Ne'
+  severity: crash
+- id: dt_031
+  symptom: 'Simulated discharge tracks the observed hydrograph well (r ~ 0.85-0.90) but sits uniformly
+    too high: PBIAS strongly positive in nearly every month AND every scored year, NSE negative. A pure
+    volume offset on a well-correlated hydrograph.
+
+    '
+  diagnosis: referenceETPotMethod = Hamon selected although the forcing ships radiation, wind and humidity;
+    Temperature-only Hamon PET under-estimates reference ET in cold continental monsoon basins (~665 vs
+    ~907 mm/yr FAO-56 Penman-Monteith at Songhua). PCR-GLOBWB caps actualET by referencePotET (model/meteo.py
+  remedy: Check the forcing for radiation/wind/humidity/pressure BEFORE choosing a PET method; ['CMFD
+    V0200 ships srad/wind/shum/pres -- Penman-Monteith refET IS computable', "convert_forcing_to_pcrglobwb.build_from_ki_forcing(...,
+    refet_method='penman') is the default; it writes referencePotET.nc", 'Set refe
+  severity: silent_wrong_result
+- id: dt_032
+  symptom: make_clone_map reports an EXCELLENT area match (< 1-2%) at a gauge whose basin is known to
+    be poorly resolved at 30 arcmin, and the snapped cell centre sits one or more cells away from the
+    reported lon/lat in a direction perpendicular to the river. Discharge then correlates poorly with
+    the gauge for
+  diagnosis: 'snap_gauge selected on |area - target| ALONE, with no test that the candidate cell is on
+    the reported location''s river; A neighbouring tributary can carry a near-identical upstream area
+    and win the area contest while being a completely different river. Measured at Wangjiaba (Huai, 2026-07-19):
+    repor'
+  remedy: 'Require the cell containing the reported lon/lat to lie on the snapped cell''s flow path; ["make_clone_map.py
+    now applies a river-identity guard: the reported location''s own cell must be in the candidate''s
+    upstream catchment (or be the candidate), which restricts candidates to the gauge cell and its '
+  severity: silent_wrong_result

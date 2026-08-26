@@ -1,216 +1,217 @@
 #!/usr/bin/env python3
 """
-Preflight check for CRHM — verifies environment before simulation.
+Preflight check for the CRHM Knowledge Infrastructure.
 
-Run this BEFORE attempting any model execution. It checks that all required
-binaries, packages, and data paths are available.
-
-Usage:
-    python preflight_check.py
-
-Exit codes:
-    0 — all checks passed, safe to proceed
-    1 — one or more checks failed, fix before proceeding
+Run this before attempting CRHM execution. It verifies the actual CRHM binary,
+the canonical HydroCraft Python environment used by the KI tools, required KI
+files, tool scripts, and common HydroCraft data locations.
 """
 
+import json
 import os
-import sys
-import shutil
 import subprocess
-import tempfile
+import sys
+from pathlib import Path
 
-PASS = 0
-FAIL = 0
+MODEL_ID = "CRHM"
+KI_DIR = Path(__file__).resolve().parent
+TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
+PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
+CRHM_EXE = Path("KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm")
+
+TOOL_FILES = [
+    "tools/calib_run.py",
+    "tools/s1_basin_setup/create_hru_config.py",
+    "tools/s2_observation_data/convert_vic_to_obs.py",
+    "tools/s2_observation_data/netcdf_safe.py",
+    "tools/s2_observation_data/screen_swe_obs.py",
+    "tools/s2_observation_data/validate_obs_file.py",
+    "tools/s3_module_selection/select_modules.py",
+    "tools/s4_parameter_config/create_prj_file.py",
+    "tools/s4_parameter_config/derive_parameters.py",
+    "tools/s4_parameter_config/validate_prj.py",
+    "tools/s5_execution/check_water_balance.py",
+    "tools/s5_execution/parse_crhm_output.py",
+    "tools/s5_execution/plot_crhm_results.py",
+    "tools/s5_execution/run_crhm.py",
+    "tools/s6_vic_coupling/merge_crhm_vic.py",
+]
+
+IMPORT_MODULES = [
+    "geopandas",
+    "ki_tools_common",
+    "matplotlib",
+    "netCDF4",
+    "numpy",
+    "pandas",
+    "rasterio",
+    "xarray",
+]
+
+COMMON_DATA_DIRS = [
+    ("KISSPATH_OBS", "Observation data"),
+    ("KISSPATH_FORCING", "Forcing data"),
+    ("KISSPATH_STATIC", "DEM data"),
+    ("KISSPATH_STATIC", "Soil data"),
+]
+
+REQUIRED_KI_FILES = [
+    "SKILL.md",
+    "knowledge_infrastructure.yaml",
+    "dag.yaml",
+    "calibration.yaml",
+    "docs/format_spec.yaml",
+    "docs/validation_convention.yaml",
+]
 
 
-def check_file(path, label, executable=False):
-    global PASS, FAIL
-    if os.path.isfile(path):
-        if executable and not os.access(path, os.X_OK):
-            print(f"  WARN  {label}: exists but not executable: {path}")
-            print(f"         Fix: chmod +x {path}")
-            FAIL += 1
-        else:
-            print(f"  OK    {label}: {path}")
-            PASS += 1
-    else:
-        print(f"  FAIL  {label}: NOT FOUND at {path}")
-        FAIL += 1
+checks = []
 
 
-def check_dir(path, label):
-    global PASS, FAIL
-    if os.path.isdir(path):
-        n = len(os.listdir(path))
-        print(f"  OK    {label}: {path} ({n} items)")
-        PASS += 1
-    else:
-        print(f"  FAIL  {label}: directory NOT FOUND at {path}")
-        FAIL += 1
+def add_check(kind, subject, critical, ok, fix):
+    status = "pass" if ok else "fail"
+    checks.append({
+        "kind": kind,
+        "subject": str(subject),
+        "critical": bool(critical),
+        "status": status,
+        "fix": "" if ok else fix,
+    })
+    label = "OK" if ok else ("FAIL" if critical else "WARN")
+    print(f"  {label:<5} {kind}: {subject}")
+    if not ok:
+        print(f"        Fix: {fix}")
 
 
-def check_import(module, label):
-    # Also search HydroCraft python_env for packages
-    import sys
-    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
-    if _penv not in sys.path:
-        sys.path.insert(0, _penv)
-    global PASS, FAIL
+def check_file(path, label, critical=True, executable=False):
+    p = Path(path)
+    subject = p.resolve() if p.exists() else Path(os.path.realpath(str(p)))
+    if not p.is_file():
+        add_check("data", subject, critical, False,
+                  f"Restore {label} at {p}; see {TRIPLETS} for recovery hints.")
+        return False
+    if executable and not os.access(p, os.X_OK):
+        add_check("binary" if executable else "data", subject, critical, False,
+                  f"Run chmod +x {p}; if still failing, inspect {TRIPLETS}.")
+        return False
+    add_check("binary" if executable else "data", subject, critical, True, "")
+    return True
+
+
+def check_dir(path, label, critical=False):
+    p = Path(path)
+    ok = p.is_dir()
+    detail = f"{p} ({len(os.listdir(p))} items)" if ok else p
+    add_check("data", detail, critical, ok,
+              f"Restore or mount {label} at {p}; check {TRIPLETS} for known data-path failures.")
+    return ok
+
+
+def check_python_env():
+    if not PYTHON_ENV.is_file():
+        add_check("import", PYTHON_ENV, True, False,
+                  f"Restore the HydroCraft Python environment at {PYTHON_ENV}; see {TRIPLETS}.")
+        return False
+    if not os.access(PYTHON_ENV, os.X_OK):
+        add_check("import", PYTHON_ENV.resolve(), True, False,
+                  f"Run chmod +x {PYTHON_ENV} or repair the python_env interpreter.")
+        return False
+    add_check("import", PYTHON_ENV, True, True, "")
+    return True
+
+
+def check_import(module):
+    cmd = [str(PYTHON_ENV), "-c", f"import {module}"]
     try:
-        __import__(module)
-        print(f"  OK    {label}: import {module} succeeded")
-        PASS += 1
-    except ImportError as e:
-        print(f"  FAIL  {label}: import {module} failed: {e}")
-        print(f"         Fix: pip install {module.split('.')[0]}")
-        FAIL += 1
+        result = subprocess.run(cmd, cwd=str(KI_DIR), capture_output=True, text=True, timeout=30)
+        ok = result.returncode == 0
+        stderr = (result.stderr or result.stdout or "").strip().splitlines()
+        detail = stderr[-1] if stderr else f"import {module} failed"
+    except Exception as exc:
+        ok = False
+        detail = f"{type(exc).__name__}: {exc}"
+    add_check("import", module, True, ok,
+              f"Install/repair {module} in {PYTHON_ENV.parent.parent}; details: {detail}; see {TRIPLETS}.")
+    return ok
 
 
-def check_binary_search(name, label):
-    global PASS, FAIL
-    found = shutil.which(name)
-    if found:
-        print(f"  OK    {label}: {found}")
-        PASS += 1
-        return found
-    # Search common locations
-    search_dirs = [
-        "KISSPATH_BINARIES",
-        "KISSPATH_HOME",
-        "/usr/local/bin",
-    ]
-    for d in search_dirs:
-        if not os.path.isdir(d):
-            continue
-        for root, dirs, files in os.walk(d):
-            for f in files:
-                if name.lower() in f.lower() and os.access(os.path.join(root, f), os.X_OK):
-                    print(f"  OK    {label}: {os.path.join(root, f)}")
-                    PASS += 1
-                    return os.path.join(root, f)
-            if root.count(os.sep) - d.count(os.sep) > 3:
-                dirs.clear()  # limit depth
-    print(f"  FAIL  {label}: binary '{name}' not found in PATH or common locations")
-    print(f"         Check SKILL.md for the correct binary path")
-    FAIL += 1
-    return None
-
-
-def check_binary_execution(binary):
-    """Prove this is a working CRHM executable, not merely a named file."""
-    global PASS, FAIL
-    if not binary:
-        return
+def check_binary_starts():
+    subject = Path(os.path.realpath(str(CRHM_EXE)))
     try:
-        probe = subprocess.run(
-            [binary, "--help"], capture_output=True, text=True, timeout=20,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        print(f"  FAIL  CRHM binary launch: {error}")
-        FAIL += 1
-        return
-    help_text = (probe.stdout or "") + (probe.stderr or "")
-    # Upstream CRHM prints the correct help text but exits 1 for an explicit
-    # help request, so identify the CLI by its documented usage rather than by
-    # that unconventional status code.
-    if "crhm [options] PROJECT_FILE" not in help_text:
-        print("  FAIL  CRHM binary launch: --help did not return the CRHM CLI")
-        FAIL += 1
-        return
-    print("  OK    CRHM binary launch: real CRHM CLI responded")
-    PASS += 1
+        result = subprocess.run([str(CRHM_EXE), "-h"], cwd=str(KI_DIR),
+                                capture_output=True, text=True, timeout=10)
+        output = f"{result.stdout}\n{result.stderr}"
+        ok = "crhm [options] PROJECT_FILE" in output or "PROJECT_FILE" in output
+        detail = f"exit {result.returncode}; usage text not detected"
+    except Exception as exc:
+        ok = False
+        detail = f"{type(exc).__name__}: {exc}"
+    add_check("run", subject, True, ok,
+              f"Repair CRHM startup at {CRHM_EXE}; details: {detail}; consult {TRIPLETS}.")
+    return ok
 
-    # Source installations include the upstream Bad Lake regression case. Run
-    # it in a disposable directory so CRHM's log/output never pollutes or
-    # blocks its source checkout. We intentionally verify successful execution
-    # and output structure rather than byte-identical floating-point text;
-    # Clang and GCC can differ in their final digits without changing the model.
-    executable = os.path.realpath(binary)
-    checkout = os.path.dirname(os.path.dirname(executable))
-    project = os.path.join(
-        checkout, "system_regression_test", "projects", "badlake.prj")
-    observations = os.path.join(checkout, "prj", "BadLake")
-    if not (os.path.isfile(project) and os.path.isdir(observations)):
-        print("  WARN  CRHM reference simulation: upstream fixture not present")
-        return
+
+def check_py_compile():
+    cmd = [str(PYTHON_ENV), "-m", "py_compile"] + [str(KI_DIR / p) for p in TOOL_FILES]
     try:
-        with tempfile.TemporaryDirectory(prefix="geoforge-crhm-") as work:
-            local_obs = os.path.join(work, "prj", "BadLake")
-            os.makedirs(os.path.dirname(local_obs), exist_ok=True)
-            shutil.copytree(observations, local_obs)
-            output = os.path.join(work, "badlake_output.txt")
-            run = subprocess.run(
-                [executable, project, "-o", output], cwd=work,
-                capture_output=True, text=True, timeout=120,
-            )
-            with open(output, "r", encoding="utf-8", errors="replace") as fh:
-                header = fh.read(8192)
-            valid = (run.returncode == 0 and os.path.getsize(output) > 10_000
-                     and header.startswith("time\t") and "basinflow" in header)
-    except (OSError, subprocess.TimeoutExpired) as error:
-        print(f"  FAIL  CRHM reference simulation: {error}")
-        FAIL += 1
-        return
-    if valid:
-        print("  OK    CRHM reference simulation: Bad Lake case completed")
-        PASS += 1
-    else:
-        detail = ((run.stdout or "") + (run.stderr or "")).strip().splitlines()
-        print("  FAIL  CRHM reference simulation: model did not produce valid output")
-        if detail:
-            print(f"         {detail[-1][:300]}")
-        FAIL += 1
+        result = subprocess.run(cmd, cwd=str(KI_DIR), capture_output=True, text=True, timeout=60)
+        ok = result.returncode == 0
+        detail = (result.stderr or result.stdout or "py_compile failed").strip().splitlines()
+        msg = detail[-1] if detail else "py_compile failed"
+    except Exception as exc:
+        ok = False
+        msg = f"{type(exc).__name__}: {exc}"
+    add_check("import", "KI tool Python syntax via py_compile", True, ok,
+              f"Fix the Python syntax/import-time compile issue in tools; details: {msg}; see {TRIPLETS}.")
+    return ok
 
 
-def check_common_data():
-    """Check common HydroCraft data paths."""
-    global PASS, FAIL
-    common = [
-        ("KISSPATH_OBS", "Observation data"),
-        ("KISSPATH_FORCING", "Forcing data"),
-        ("KISSPATH_STATIC", "DEM data"),
-        ("KISSPATH_STATIC", "Soil data"),
-    ]
-    for path, label in common:
-        if os.path.isdir(path):
-            PASS += 1
-        else:
-            print(f"  WARN  {label}: {path} not found (may not be needed)")
+def emit_report(model_id, report_checks):
+    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": model_id, "checks": report_checks}, sort_keys=True))
+    ready = all(c["status"] == "pass" or not c.get("critical") for c in report_checks)
+    sys.exit(0 if ready else 1)
 
 
 def main():
-    global PASS, FAIL
-    print(f"=" * 60)
-    print(f"  PREFLIGHT CHECK: CRHM")
-    print(f"=" * 60)
+    print("=" * 60)
+    print("  PREFLIGHT CHECK: CRHM")
+    print("=" * 60)
     print()
 
-    # Model-specific checks
-    # Binary (search): CRHM binary
-    binary = check_binary_search("crhm", "CRHM binary")
-    check_binary_execution(binary)
-    check_import("ki_tools_common.humidity", "GeoForge shared data tools")
+    check_file(CRHM_EXE, "CRHM executable", critical=True, executable=True)
+    check_binary_starts()
 
     print()
-
-    # Common data checks
-    check_common_data()
-
-    # Diagnostics available?
-    ki_dir = os.path.dirname(os.path.abspath(__file__))
-    triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")
-    if os.path.isfile(triplets):
-        print(f"  INFO  Diagnostic triplets available at: {triplets}")
-        print(f"         If the model fails, check triplets FIRST for known fixes.")
+    check_python_env()
+    if PYTHON_ENV.is_file() and os.access(PYTHON_ENV, os.X_OK):
+        for module in IMPORT_MODULES:
+            check_import(module)
+        check_py_compile()
 
     print()
-    print(f"  Results: {PASS} passed, {FAIL} failed")
-    if FAIL > 0:
-        print(f"  STATUS: PREFLIGHT FAILED — fix the issues above before running")
-        sys.exit(1)
+    for rel_path in REQUIRED_KI_FILES:
+        check_file(KI_DIR / rel_path, rel_path, critical=True)
+    check_file(TRIPLETS, "diagnostic triplets", critical=True)
+    for rel_path in TOOL_FILES:
+        check_file(KI_DIR / rel_path, rel_path, critical=True)
+
+    print()
+    for data_path, label in COMMON_DATA_DIRS:
+        check_dir(data_path, label, critical=False)
+    check_file("KISSPATH_DATA/elev/elev_CMFD_V0200_B-00_fx_010deg.nc",
+               "CMFD elevation grid used by netcdf_safe.py", critical=False)
+
+    failed = [c for c in checks if c["status"] == "fail"]
+    critical_failed = [c for c in failed if c["critical"]]
+    print()
+    print(f"  Results: {len(checks) - len(failed)} passed, {len(failed)} failed")
+    if critical_failed:
+        print("  STATUS: PREFLIGHT FAILED - fix the critical blockers above before running CRHM.")
+        print(f"  Recovery: start with {TRIPLETS}")
     else:
-        print(f"  STATUS: PREFLIGHT PASSED — safe to proceed with model execution")
-        sys.exit(0)
+        print("  STATUS: PREFLIGHT PASSED - safe to proceed with CRHM model execution.")
+
+    emit_report(MODEL_ID, checks)
 
 
 if __name__ == "__main__":

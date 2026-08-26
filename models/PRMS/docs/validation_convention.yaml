@@ -1,0 +1,374 @@
+schema_version: 1
+model_id: PRMS
+domain: hydrology
+generated_by: "Step-B agent (Codex GPT-5)"
+generated_at: 2026-08-14
+
+# Convention is keyed by dag_variable per the 2026-08-14 Step-B campaign instruction.
+# Numeric streamflow gates come from watershed-model evaluation criteria and a PRMS
+# Red River Basin report that applies them directly to seg_outflow at streamgages.
+# Non-streamflow process variables keep the dag determining metric, but bands are
+# transferred only where the fetched literature supports a watershed-scale convention;
+# spatial CSI and conceptual-storage diagnostics remain null/low-confidence.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt"
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt"
+  arnold2012:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: green
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42256.txt"
+  hay2022_redriver:
+    doi: 10.3133/sir20225105
+    title: "Application of the Precipitation-Runoff Modeling System (PRMS) to simulate the streamflows and water balance of the Red River Basin, 1980-2016"
+    venue: "U.S. Geological Survey Scientific Investigations Report"
+    year: 2022
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3133_sir20225105.txt"
+  regan2023_routing:
+    doi: 10.1111/1752-1688.13134
+    title: "Development and evaluation of the channel routing model and parameters within the National Hydrologic Model"
+    venue: "Journal of the American Water Resources Association"
+    year: 2023
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1111_1752-1688.13134.txt"
+  hay2019_nhm:
+    doi: 10.3133/tm6b10
+    title: "Parameter estimation at the conterminous United States scale and streamflow routing enhancements for the National Hydrologic Model infrastructure"
+    venue: "U.S. Geological Survey Techniques and Methods"
+    year: 2019
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3133_tm6b10.txt"
+  zhang2022_streamflow:
+    doi: 10.1038/s41467-022-28010-7
+    title: "The sensitivity of simulated streamflow to individual hydrologic processes across North America"
+    venue: "Nature Communications"
+    year: 2022
+    oa: gold
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41467-022-28010-7.txt"
+  addor2021_components:
+    doi: 10.5194/hess-25-1529-2021
+    title: "Implications of model selection: a comparison of publicly available, conterminous US-extent hydrologic component estimates"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2021
+    oa: gold
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-25-1529-2021.txt"
+  fang2013_multivar:
+    doi: 10.5194/hess-17-1635-2013
+    title: "Multi-variable evaluation of hydrological model predictions for a headwater basin in the Canadian Rocky Mountains"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2013
+    oa: gold
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-17-1635-2013.txt"
+  koch2018_spatial_et:
+    doi: 10.5194/hess-22-1299-2018
+    title: "Combining satellite data and appropriate objective functions for improved spatial pattern performance of a distributed hydrologic model"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2018
+    oa: gold
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-22-1299-2018.txt"
+  rakovec2017_sm_et:
+    doi: 10.5194/hess-21-3125-2017
+    title: "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2017
+    oa: gold
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-21-3125-2017.txt"
+  schirmer2021_snow_ppt:
+    doi: 10.5194/hess-25-2109-2021
+    title: "Learning about precipitation lapse rates from snow course data improves water balance modeling"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2021
+    oa: gold
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-25-2109-2021.txt"
+
+validation:
+  - dag_variable: basin_cfs
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Watershed-flow convention; Moriasi 2015 gives flow daily/monthly/annual satisfactory at NSE > 0.50, and the PRMS Red River report defines the passing NSE threshold as 0.5 or greater."
+        cites: [moriasi2015, hay2022_redriver, arnold2012, zhang2022_streamflow]
+      - metric: rsr
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.50, good: 0.60, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 states lower RSR is better and rates satisfactory streamflow at RSR < 0.70; the PRMS Red River report uses RSR <= 0.7 as passing."
+        cites: [moriasi2007, hay2022_redriver]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: good
+        band_note: "Moriasi 2015 gives flow PBIAS tiers through +/-15%; the PRMS Red River report used the stricter +/-10.0 passing threshold."
+        cites: [moriasi2015, hay2022_redriver]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 recommends R2 > 0.60 alongside NSE > 0.50 and PBIAS <= +/-15% for watershed-scale models."
+        cites: [moriasi2015]
+    validated_when: "Outlet streamflow is validated when NSE >= 0.50, RSR <= 0.70, and |PBIAS| <= 10% against gauge discharge in matching units after warmup."
+    evidence_strength: strong
+    confidence: 0.88
+    notes: >-
+      Keep the dag determining metric nse as headline, but field practice grades streamflow with
+      a multi-metric set. Arnold 2012 notes Moriasi's "NSE values should exceed 0.5" criterion for
+      hydrologic evaluations; Zhang 2022 used basins with NSE of at least 0.5 and reported median
+      validation NSE 0.64, supporting the same cutoff as a large-sample hydrologic benchmark.
+
+  - dag_variable: basin_stflow_out
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Same streamflow timing criterion as basin_cfs after converting observed discharge to basin-average runoff depth."
+        cites: [moriasi2015, hay2022_redriver]
+      - metric: rsr
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.50, good: 0.60, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "RSR normalizes RMSE by measured-flow variability, making it transferable to runoff-depth units."
+        cites: [moriasi2007, hay2022_redriver]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: good
+        band_note: "Use the PRMS-specific +/-10% passing volume-bias threshold after discharge-to-depth conversion."
+        cites: [moriasi2015, hay2022_redriver]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "R2 is recommended as a companion watershed-scale performance measure, not the sole pass/fail metric."
+        cites: [moriasi2015]
+    validated_when: "Basin runoff depth is validated when gauge-derived runoff depth meets NSE >= 0.50, RSR <= 0.70, and |PBIAS| <= 10%."
+    evidence_strength: strong
+    confidence: 0.84
+    notes: >-
+      This is the same physical streamflow comparison as basin_cfs, expressed as basin-average depth.
+      The block is separate only because dag.yaml exposes basin_stflow_out as its own output name.
+
+  - dag_variable: seg_outflow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "The Red River PRMS calibration compares measured streamflow to the PRMS variable seg_outflow and defines passing NSE as 0.5 or greater."
+        cites: [hay2022_redriver, moriasi2015]
+      - metric: rsr
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.50, good: 0.60, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "The same PRMS report defines passing RSR as less than or equal to 0.7 for seg_outflow streamgage comparisons."
+        cites: [hay2022_redriver, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: good
+        band_note: "The PRMS report defines passing Pbias as within plus or minus 10.0 for streamgage locations."
+        cites: [hay2022_redriver, moriasi2015]
+    secondary_metrics:
+      - metric: log_nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The National Hydrologic Model parameter-estimation report evaluates daily, log-daily, and monthly NSE for routed streamflow."
+        cites: [hay2019_nhm, regan2023_routing]
+    validated_when: "Segment outflow at the gauge-matched stream segment is validated when NSE >= 0.50, RSR <= 0.70, and |PBIAS| <= 10%."
+    evidence_strength: strong
+    confidence: 0.90
+    notes: >-
+      This is the most directly grounded PRMS block: the Red River report states that LUCA compared
+      USGS measured streamflow and "the PRMS variable, seg_outflow" for the stream segment associated
+      with each calibration streamgage. The routing-specific JAWRA paper is supporting benchmark
+      context, but the executable bands come from the fetched PRMS report and Moriasi criteria.
+
+  - dag_variable: basin_actet
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred watershed-scale time-series convention; Moriasi 2015 summarizes daily/monthly/annual watershed-scale criteria as NSE > 0.50."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred watershed-scale water-balance criterion; Moriasi 2015 recommends PBIAS <= +/-15% for watershed-scale models."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Satellite/flux ET calibration studies commonly report KGE, NSE, r, and PBias rather than a universal ET pass table."
+        cites: [rakovec2017_sm_et]
+    validated_when: "Basin-average actual ET is provisionally validated when temporal NSE >= 0.50 and |PBIAS| <= 15% against scale-matched ET observations."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      The dag determining metric nse is retained. This is a transferred watershed-scale convention,
+      not a PRMS actET-specific threshold; Addor 2021 emphasizes that CONUS component estimates
+      differ substantially across ET products, so confidence is lower than for streamflow.
+
+  - dag_variable: basin_actet
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched ET-pattern paper provides a CSI validation threshold for HRU-to-grid actual ET."
+        cites: []
+    secondary_metrics:
+      - metric: spatial_efficiency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Koch 2018 evaluates spatial pattern performance using satellite-derived AET objectives and reports KGElow and BIAS rather than CSI pass bands."
+        cites: [koch2018_spatial_et]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Bias is reported as a diagnostic in spatial AET calibration, but no fetched paper gives a CSI-to-validation tier."
+        cites: [koch2018_spatial_et]
+    validated_when: "UNRESOLVED - no cited CSI threshold for spatial ET; use this block only to flag that the dag metric lacks a literature band."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      The dag asks for CSI, but fetched ET spatial-pattern literature uses spatial efficiency,
+      KGE-like objectives, and BIAS. Null bands are intentional and must not loosen validation.
+
+  - dag_variable: basin_pweqv
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred watershed time-series convention; no fetched SWE-specific tier table supersedes Moriasi 2015."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Snow studies report SWE magnitude errors and seasonal NSE/RMSD, but the fetched set does not establish a universal RMSE pass band."
+        cites: [fang2013_multivar, schirmer2021_snow_ppt]
+    validated_when: "Basin-average SWE time series is provisionally validated when NSE >= 0.50 against SNOTEL/snow-course SWE after snow-season alignment."
+    evidence_strength: moderate
+    confidence: 0.52
+    notes: >-
+      Fang 2013 shows multi-variable snow evaluation with seasonal NSE and RMSD, and Schirmer 2021
+      shows snow-course data improving water-balance modeling, but neither supplies a general SWE
+      threshold table. The numeric gate is therefore transferred and lower-confidence.
+
+  - dag_variable: basin_pweqv
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a CSI threshold for PRMS HRU SWE or snow-covered-area spatial snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched snow papers support comparing SWE magnitude and snow-course patterns, but do not convert those comparisons into CSI pass/fail bands."
+        cites: [fang2013_multivar, schirmer2021_snow_ppt]
+    validated_when: "UNRESOLVED - no cited CSI band for spatial SWE snapshots; require an HRU-to-grid snow validation paper before auto-grading."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      Keep the dag determining metric csi, but leave the band null because the fetched literature
+      supports SWE evaluation generally, not a numeric CSI convention for PRMS spatial snapshots.
+
+  - dag_variable: basin_soil_moist
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric NSE threshold for PRMS conceptual basin_soil_moist storage against observed soil moisture."
+        cites: []
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Large-scale satellite soil-moisture calibration papers report KGE, NSE, r, and PBias, but do not establish PRMS storage pass bands."
+        cites: [rakovec2017_sm_et]
+      - metric: anomaly_correlation
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Component-comparison literature emphasizes uncertainty among soil-moisture products, making anomaly/pattern comparison more defensible than absolute storage grading."
+        cites: [addor2021_components]
+    validated_when: "UNRESOLVED - no cited soil-moisture storage threshold; treat comparisons as supportive diagnostics unless a PRMS soil-moisture benchmark is fetched."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      The dag caveat says PRMS soil_moist is a conceptual capillary-reservoir depth rather than
+      measured volumetric water content. That caveat is not elevated to a structural-ceiling status because
+      no fetched paper explicitly states a numeric or formal validation ceiling for this PRMS output.
+
+  - dag_variable: basin_ppt
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE validation band for PRMS basin_ppt, which is a forcing-derived diagnostic rather than an independent process prediction."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Snow/water-balance studies show precipitation lapse-rate and gauge-blending uncertainty, but not an executable validation tier for PRMS basin precipitation."
+        cites: [schirmer2021_snow_ppt, addor2021_components]
+    validated_when: "UNRESOLVED - use basin_ppt as an input-sanity/water-balance diagnostic, not an auto-validation target, until a precipitation-forcing benchmark supplies bands."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      The output is observationally comparable after basin averaging and unit conversion, but the
+      fetched literature does not define an NSE threshold for a forcing-derived precipitation diagnostic.
+
+deferred_paywalled: []

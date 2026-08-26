@@ -1,250 +1,570 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["groundwater"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "MODFLOW 6.6.1"
-  domain: "groundwater"
-  secondary_domains: ["solute_transport", "streamflow_routing"]
-  binary: "mf6"
-  binary_path: "System PATH or specified path"
-  language: "Fortran 90"
-  python_interface: "flopy >= 3.10.0"
-  working_directory: "user-specified workspace"
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: MODFLOW6
+  language: fortran
+  implementation:
+    id: mf6-661
+    version: 6.6.1
+    provenance: Fortran; USGS-distributed mf6 command-line executable, control-volume finite-difference
+      groundwater flow/transport solver.
+  scientific_reference_version: MODFLOW 6 Groundwater Flow (GWF) Model — USGS TM 6-A55 (Langevin et al.
+    2017) on the TM 6-A57 framework (Hughes et al. 2017); GWT transport per TM 6-A61 (Langevin et al.
+    2022)
 inputs:
-
   forcing:
-    - name: "recharge"
-      file: "RCH package (via FloPy)"
-      unit: "m/day"
-      valid_range: [0.0, 0.01]
-      format: "FloPy array or list-based stress period data"
-      missing_value: null
-      conversion_from_vic: "VIC baseflow_out (mm/day) / 1000 -> m/day"
-      notes: "Recharge is a rate (LENGTH/TIME), NOT a volume. Common silent error: passing mm/day without dividing by 1000."
-
-    - name: "river_stage"
-      file: "RIV package (via FloPy)"
-      unit: "m"
-      valid_range: [0.0, 10000.0]
-      format: "FloPy stress period data: [(cellid, stage, conductance, rbot)]"
-      conversion_from_cama: "CaMa sfcelv (m) direct"
-      notes: "rbot must be above cell BOTM or MODFLOW aborts."
-
-    - name: "well_pumping"
-      file: "WEL package (via FloPy)"
-      unit: "m3/day"
-      valid_range: [-1e6, 1e6]
-      format: "FloPy stress period data: [(cellid, Q)]"
-      notes: "Negative Q = extraction, Positive Q = injection."
-
+  - name: Areal recharge (RCH RATE)
+    unit: m/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: RCH package; array-based applied to highest active cell per column, or list-based
+      per cellid
+    notes: A RATE in LENGTH/TIME, NOT a volume. Primary inflow driving head/water-table elevation. List-based
+      cellid with layer>0 silently injects recharge into a deep layer and leaves the water table unresponsive.
+  - name: Evapotranspiration demand (EVT)
+    unit: m/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: EVT package (surface elevation, max rate, extinction depth)
+    notes: Optional head-dependent sink representing ET withdrawal from the saturated zone.
   parameters:
-    critical:
-      - name: "hydraulic_conductivity"
-        file: "NPF package"
-        description: "Horizontal hydraulic conductivity"
-        valid_range: [1e-7, 1000.0]
-        default: 1.0
-        unit: "m/day"
-        bug_history: >
-          HWSD soil Ksat (~0.01 m/day) is NOT aquifer K. Aquifer K is typically
-          1-10 m/day. Scale HWSD by ~100x for Layer 1. Using unscaled HWSD K
-          produces unrealistically high water tables.
-
-      - name: "specific_yield"
-        file: "STO package"
-        description: "Specific yield for unconfined layers"
-        valid_range: [0.01, 0.45]
-        default: 0.15
-        unit: "fraction"
-
-      - name: "specific_storage"
-        file: "STO package"
-        description: "Specific storage for confined layers"
-        valid_range: [1e-6, 1e-3]
-        default: 1e-5
-        unit: "1/m"
-
-      - name: "icelltype"
-        file: "NPF package"
-        description: "Cell type flag: 0=confined, 1=convertible (unconfined)"
-        valid_range: [0, 1]
-        default: 1
-        unit: "flag"
-        bug_history: >
-          ICELLTYPE=0 for top layer with water table causes heads to rise
-          above cell top with no error. Set ICELLTYPE=1 for all water-table layers.
-
-      - name: "solver_complexity"
-        file: "IMS package"
-        description: "Iterative solver complexity level"
-        valid_range: ["SIMPLE", "MODERATE", "COMPLEX"]
-        default: "MODERATE"
-        bug_history: >
-          Newton formulation requires MODERATE or COMPLEX solver. SIMPLE uses CG
-          which fails on asymmetric Newton matrices. Newton + SIMPLE = ERROR.
-
-      - name: "recharge_unit_check"
-        file: "RCH package"
-        description: "Recharge in m/day, NOT mm/day"
-        valid_range: [0.0, 0.01]
-        unit: "m/day"
-        bug_history: >
-          Passing VIC deep percolation as mm/day without dividing by 1000
-          gives 1000x too much recharge. Silent error -- no warning from MODFLOW.
-          Triplet dt_mf6_004.
-
-  files:
-    required:
-      - name: "mfsim.nam"
-        description: "Simulation name file listing all models, exchanges, and solutions"
-        format: "Block/keyword text (BEGIN...END blocks)"
-
-      - name: "gwf.nam"
-        description: "GWF model name file listing all packages"
-
-      - name: "DIS/DISV package"
-        description: "Spatial discretization (structured or vertex grid)"
-
-      - name: "NPF package"
-        description: "Node property flow (K, ICELLTYPE)"
-
-      - name: "IC package"
-        description: "Initial conditions (starting heads)"
-
-      - name: "OC package"
-        description: "Output control (what to save and when)"
-
-      - name: "TDIS package"
-        description: "Temporal discretization (stress periods, timesteps)"
-
-      - name: "IMS package"
-        description: "Iterative model solution (solver settings)"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: Hydraulic conductivity tensor (K11/K22/K33)
+    unit: m/day
+    category: parameters
+    source_kind: calibrated
+    model_input_format: NPF package; K (horizontal), K33 (vertical), optional angle1/2/3 rotation
+    notes: Material-dependent (gravel 100-1000 to clay 1e-4..0.01 m/day); K33/K typically ~0.1 for layered
+      sediments. NPF stores a pristine copy (k11input) so TVK/VSC can recompute working K each step.
+  - name: Cell type (ICELLTYPE)
+    unit: dimensionless
+    category: parameters
+    source_kind: user_provided
+    model_input_format: NPF package; 0=confined (full thickness), 1=convertible (saturated thickness varies
+      with head)
+  - name: Specific storage (Ss)
+    unit: 1/m
+    category: parameters
+    source_kind: calibrated
+    model_input_format: STO package
+    notes: Confined transient storage term.
+  - name: Specific yield (Sy)
+    unit: dimensionless
+    category: parameters
+    source_kind: calibrated
+    model_input_format: STO package
+    notes: Water-table drainable porosity, 0.01-0.35 for natural materials (>0.5 physically impossible).
+  - name: Grid geometry (TOP/BOTM, DELR/DELC)
+    unit: m
+    category: parameters
+    source_kind: user_provided
+    model_input_format: DIS/DISV/DISU package; TOP (2-D), BOTM (3-D), DELR/DELC cell spacing
+    notes: BOTM must be monotonically decreasing; zero-thickness layers (TOP==BOTM) produce NaN heads.
+  - name: Active-domain mask (IDOMAIN)
+    unit: dimensionless
+    category: parameters
+    source_kind: user_provided
+    model_input_format: DIS package; 1=active, 0=inactive, -1=vertical pass-through
+  - name: GWT dispersivity (ALH/ATH1/ATV) and diffusion
+    unit: m (dispersivity); m2/s (diffusion)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: DSP package; ALH longitudinal (~L/10), ATH1 transverse (~ALH/10), ATV vertical
+      (~ALH/100), diffc
+  - name: GWT mobile-storage / sorption / decay (porosity, bulk_density, distcoef, decay)
+    unit: porosity [-]; rho_b kg/L; Kd L/kg; lambda 1/day
+    category: parameters
+    source_kind: calibrated
+    model_input_format: MST package
+  - name: SFR reach geometry and roughness (rlen, rwid, rgrd, rtp, rbth, rhk, man)
+    unit: m (length/width/thickness); dimensionless (gradient); m/day (rhk); s/m^(1/3) (Manning n)
+    category: parameters
+    source_kind: user_provided
+    model_input_format: SFR package per-reach connection data
+    notes: rgrd must be > 0; rtp - rbth must lie above the cell BOTM.
+  initial_conditions:
+  - name: Starting hydraulic head (STRT)
+    unit: m
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: IC package
+    notes: Must be >= BOTM and within layer bounds, else cells start dry and may never rewet. Also seeds
+      NPF saturated-thickness initialization (THICKSTRT), not only the head vector.
+  - name: Initial solute concentration
+    unit: mg/L
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: IC package (GWT), typically 0
+  boundary_conditions:
+  - name: Constant head (CHD)
+    unit: m
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: CHD package; (cellid, head) — acts as infinite source/sink
+  - name: Well pumping/injection (WEL)
+    unit: m3/day
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: WEL package; volumetric rate, negative=pumping, positive=injection
+  - name: Drain (DRN)
+    unit: elevation m; conductance m2/day
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: DRN package; (cellid, elevation, conductance) — removes water when head > elevation
+  - name: River (RIV)
+    unit: stage m; conductance m2/day; rbot m
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: RIV package; (cellid, stage, conductance, rbot) — rbot must be > cell BOTM and
+      < stage
+  - name: General head boundary (GHB)
+    unit: head m; conductance m2/day
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: GHB package; head-dependent flux boundary
+  - name: Temporal discretization (TDIS)
+    unit: dimensionless
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: TDIS package; TIME_UNITS, NPER stress periods, PERLEN, NSTP, TSMULT
+    notes: Per-period boundary conditions held constant; steady-state vs transient set per period via
+      the STO iss flag.
+  - name: Solver configuration (IMS complexity preset)
+    unit: dimensionless
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: IMS package; COMPLEXITY SIMPLE/MODERATE/COMPLEX selecting linear method (CG vs
+      BICGSTAB), under-relaxation, backtracking, DVCLOSE/RCLOSE
+    notes: 'Structural switch. SIMPLE/CG fails on the asymmetric matrix produced by Newton or convertible
+      layers; GWT must use BICGSTAB. Default SIMPLE preset: DVCLOSE=1e-3, MXITER=25, no under-relaxation.'
+  - name: Newton-Raphson formulation switch (NEWTON UNDER_RELAXATION)
+    unit: dimensionless
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: GWF model NEWTON option
+    notes: Structural switch enabling stable drying/rewetting of unconfined cells; requires MODERATE/COMPLEX
+      solver.
+  - name: Output control (OC) save/print settings
+    unit: dimensionless
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: OC package; HEAD/BUDGET SAVE/PRINT directives
+    notes: Required to write .hds/.cbc spatial output; without it mf6 runs but emits no spatial output.
+  - name: Advection scheme (ADV)
+    unit: dimensionless
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: ADV package; UPSTREAM (stable), CENTRAL, or TVD (accurate)
 outputs:
-
   primary:
-    - name: "hydraulic_head"
-      file: "gwf.hds"
-      unit: "m"
-      valid_range: [-100, 10000]
-      format: "Binary, read with flopy.utils.HeadFile (precision='double' for double-precision builds)"
-      notes: "HDRY sentinel (1.0e30) marks dry cells. Filter before computing statistics."
-
-    - name: "cell_budget"
-      file: "gwf.cbc"
-      unit: "m3/day"
-      valid_range: null
-      format: "Binary, read with flopy.utils.CellBudgetFile"
-      notes: "Contains flow terms for each package (RCH, DRN, RIV, etc.)"
-
-    - name: "concentration"
-      file: "gwt.ucn"
-      unit: "mg/L (user-defined)"
-      valid_range: [0.0, null]
-      format: "Binary, read with flopy.utils.HeadFile(text='CONCENTRATION')"
-      notes: "Only present when GWT model is included."
-
-    - name: "sfr_stage"
-      file: "gwf.sfr.stg"
-      unit: "m"
-      valid_range: null
-      format: "Binary, read with flopy.utils.HeadFile"
-      notes: "DNODATA sentinel (-1e30) marks dry reaches. Only present when SFR package is used."
-
-  diagnostics:
-    - name: "budget_closure"
-      file: "gwf.lst (listing file)"
-      check: "Budget percent discrepancy < 1%"
-      tolerance_pct: 1.0
-      notes: "Typical well-posed models have < 0.01%. Large discrepancy indicates convergence failure."
-
-    - name: "water_table_depth"
-      check: "WT depth median 1-10 m for alluvial basins"
-      reference: "Bengbu validation: median 0.9m, mean 2.0m"
-
-    - name: "dry_cells"
-      check: "Layer 1 dry cells < 20%"
-      notes: "Deep layer dry cells are normal for unconfined aquifer with WT in Layer 1."
-
-    - name: "convergence_failures"
-      check: "0 convergence failures"
-      file: "gwf.lst"
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: hydraulic_head
+    unit: m
+    description: Hydraulic head per active cell; water table is the head in the topmost active non-dry
+      cell per column.
+    validation_rank: 1
+    emitted_in: .hds (binary head file)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - Compare at observation-well screen depth/layer, not the column top.
+        - Dry cells carry HDRY=1e30; mask heads>0.9e30 before any comparison.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Steady-state or single-period head; verify the cell did not go dry.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Interpolated water-table surface; mask HDRY before contouring.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: water_table_elevation
+    unit: m
+    description: Head in the topmost active non-dry cell per column; the simulated water-table surface.
+    validation_rank: 2
+    emitted_in: derived from .hds (flopy get_water_table; nodata 1e30)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - Depth-to-water observations must be referenced to the same datum as TOP.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+      - linear_residual
+  - name: cell_budget_flux_terms
+    unit: m3/day
+    description: Groundwater cell-by-cell flow terms (STO-SS, STO-SY, FLOW-JA-FACE, CHD, RCH, DRN, RIV,
+      WEL) with sign convention positive=inflow, negative=outflow.
+    validation_rank: 3
+    emitted_in: .cbc (binary cell-by-cell budget file)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - DRN/RIV baseflow is negative (outflow); negate before comparing to stream-gauge baseflow.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Sum the relevant budget term over the comparison domain (basin/zone).
+      detrending_options:
+      - none
+  - name: solute_concentration
+    unit: mg/L
+    description: Groundwater (GWT) solute concentration per cell from advection-dispersion-reaction.
+    validation_rank: 4
+    emitted_in: .ucn (binary concentration file)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Breakthrough timing is sensitive to advection scheme (numerical dispersion in UPSTREAM).
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Plume extent depends on scale-dependent dispersivity (ALH).
+      detrending_options:
+      - none
+  - name: stream_stage
+    unit: m
+    description: SFR stream stage per reach per timestep from Manning's equation.
+    validation_rank: 5
+    emitted_in: .sfr.stg (binary)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Dry reaches carry DNODATA=-1e30; filter before statistics.
+      detrending_options:
+      - none
+  - name: stream_aquifer_exchange
+    unit: m3/day
+    description: SFR stream-aquifer exchange (gaining/losing) and reach inflow/outflow.
+    validation_rank: 6
+    emitted_in: .sfr.cbc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Compare against gauge-derived baseflow/seepage estimates, mind sign convention.
+      detrending_options:
+      - none
+  - name: volumetric_budget_discrepancy
+    unit: percent
+    description: Listing-file volumetric groundwater-budget summary (numerical solver diagnostic, not
+      a field observable); PERCENT DISCREPANCY is the primary convergence/balance diagnostic.
+    validation_rank: 7
+    emitted_in: .lst (gwf.lst / mfsim.lst)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Internal self-consistency diagnostic, not an observation; |discrepancy| > 1% indicates unreliable
+          results.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "convergence_failure"
-    triplet: "dt_mf6_001"
-    description: "Solver did not converge within iteration limit"
-    affected_output: "All head and budget outputs"
-    detection: "Non-convergence messages in listing file"
-    fix: "Increase OUTER_MAXIMUM, tighten DVCLOSE/RCLOSE, use UNDER_RELAXATION"
+- id: dt_mf6_001
+  symptom: MODFLOW 6 fails to converge within the maximum number of outer iterations for one or more stress
+    periods. Listing file shows 'FAILED TO CONVERGE' messages.
+  diagnosis: Solver settings are insufficient for the problem nonlinearity, or the problem itself is ill-posed
+    (e.g., conflicting boundary conditions, extreme parameter contrasts).; MODFLOW 6 uses an iterative
+    solver (IMS) that must converge within OUTER_MAXIMUM iterations. For nonlinear problems (unconfined
+    flo
+  remedy: 'Increase solver iterations and enable advanced convergence aids.; build_ims_package; [''Switch
+    to COMPLEX complexity: set COMPLEXITY=COMPLEX in IMS'', ''Increase OUTER_MAXIMUM to 500'', ''Enable
+    Newton: add NEWTON UNDER_RELAXATION to GWF OPTIONS'', ''Check K contrasts: ratio between adjacent
+    cells should b'
+  severity: fatal
+- id: dt_mf6_002
+  symptom: Many cells go dry during simulation. Listing file shows large numbers of 'DRY' cells. Heads
+    in affected cells are set to HDRY (1e30). May lead to convergence failure.
+  diagnosis: Water table drops below cell bottom, typically due to insufficient recharge, excessive pumping,
+    or incorrect layer geometry.; When head in a convertible cell (ICELLTYPE=1) drops below the cell bottom,
+    the cell goes dry. In the standard formulation, dry cells are removed from the solution and can cau
+  remedy: 'Address the physical cause (insufficient recharge or excessive extraction) and use Newton formulation.;
+    ; [''Enable Newton formulation: NEWTON UNDER_RELAXATION in GWF OPTIONS'', ''Check recharge: is RCH
+    rate realistic? Compare to precipitation'', ''Check pumping: are WEL rates sustainable for the aquifer'
+  severity: degraded
+- id: dt_mf6_003
+  symptom: Water budget percent discrepancy exceeds 0.1%. Listing file shows high PERCENT DISCREPANCY
+    values. Total inflow and outflow do not balance.
+  diagnosis: Solver did not achieve sufficient accuracy, or convergence criteria (DVCLOSE, RCLOSE) are
+    too loose for the problem.; MODFLOW 6 computes a volumetric water budget at each timestep. In a perfectly
+    converged solution, IN = OUT + STORAGE_CHANGE. A nonzero discrepancy indicates the iterative solution
+    st
+  remedy: Tighten solver convergence criteria.; build_ims_package; ['Reduce DVCLOSE by 10x (e.g., 0.001
+    -> 0.0001)', 'Reduce RCLOSE by 10x (e.g., 0.1 -> 0.01)', 'Increase OUTER_MAXIMUM and INNER_MAXIMUM',
+    'Check if specific stress periods have high discrepancy (transient vs steady)', 'If discrepancy is
+    in sto
+  severity: silent
+- id: dt_mf6_004
+  symptom: Water table rises unrealistically high, possibly above land surface. Heads are much higher
+    than expected. No error message from MODFLOW.
+  diagnosis: Recharge rate passed in mm/day instead of m/day (1000x too high). VIC deep percolation is
+    in mm/day; MODFLOW RCH expects m/day.; VIC's OUT_BASEFLOW (deep percolation / baseflow) is output
+    in mm/day. MODFLOW 6 RCH package expects recharge in the model's length/time units (typically m/day).
+    If the use
+  remedy: 'Divide VIC baseflow by 1000 before passing to MODFLOW RCH.; build_rch_package; [''Verify VIC
+    output units: OUT_BASEFLOW is in mm/day'', ''Convert: recharge_m_day = vic_baseflow_mm_day / 1000.0'',
+    ''Sanity check: typical recharge 0.0001 to 0.01 m/day'', ''Re-run with corrected values'']; Always
+    include unit '
+  severity: silent
+- id: dt_mf6_005
+  symptom: MODFLOW 6 aborts during initialization with error about layer bottom elevation being above
+    layer top or the layer above it.
+  diagnosis: 'Layer bottom elevations are not monotonically decreasing with depth. BOTM[k] must be < BOTM[k-1]
+    (or TOP for k=0).; MODFLOW 6 requires that each layer''s bottom elevation is below the bottom of the
+    layer above it (or below TOP for the first layer). This ensures positive layer thickness everywhere.
+    A '
+  remedy: 'Fix layer bottom elevation ordering.; build_dis_package; [''Verify: TOP > BOTM[0] > BOTM[1]
+    > ... > BOTM[nlay-1] for all cells'', ''If using relative depths: BOTM[k] = TOP - sum(thicknesses[0:k+1])'',
+    ''Check for cells where DEM (TOP) is very low — may invert layer order'', ''Ensure minimum layer thickness'
+  severity: fatal
+- id: dt_mf6_006
+  symptom: Statistics or contour plots show extreme values (near 1e30). Mean head is unrealistically high.
+    Contour map colorbar spans from realistic values to 1e30.
+  diagnosis: Dry cell sentinel value (HDRY = 1e30) included in analysis without masking. MODFLOW sets
+    head to 1e30 for cells that go dry.; When a convertible cell goes dry, MODFLOW 6 assigns the HDRY
+    sentinel value (1.0e30) to that cell's head. This is not a real head value — it is a flag. If included
+    in numpy o
+  remedy: 'Mask HDRY values before any analysis.; extract_heads; [''Apply mask: heads_masked = np.where(heads
+    > 0.9e30, np.nan, heads)'', ''Or use: heads_masked = np.ma.masked_where(heads > 0.9e30, heads)'',
+    ''Verify: np.nanmax(heads_masked) < 1e6 (reasonable head range)'', ''Report dry cell count: (heads
+    > 0.9e30).s'
+  severity: fatal
+- id: dt_mf6_007
+  symptom: FloPy raises AttributeError or TypeError when creating MODFLOW 6 packages. Package classes
+    may be missing or have changed signatures.
+  diagnosis: FloPy version is too old for the MODFLOW 6 version being used, or too new and has deprecated
+    APIs.; FloPy's MODFLOW 6 support evolved significantly between versions 3.2 and 3.5. Package class
+    names, constructor arguments, and data handling changed. Using FloPy 3.2 with MODFLOW 6.5+ will fail
+    because
+  remedy: 'Upgrade FloPy to latest version.; verify_mf6_installation; [''pip install --upgrade flopy'',
+    ''Verify: python -c "import flopy; print(flopy.__version__)"'', ''Minimum recommended: FloPy >= 3.4.0'',
+    ''Check MODFLOW 6 compatibility notes in FloPy changelog'']; Pin FloPy version in requirements.txt.
+    Test with '
+  severity: fatal
+- id: dt_mf6_008
+  symptom: Recharge has no visible effect on water table. Water table does not respond to changes in recharge
+    rate. Budget shows recharge entering a deep layer.
+  diagnosis: 'List-based RCH package with explicit cellid specifying a deep layer instead of the top active
+    cell. Or READASARRAYS RCH with IRCH pointing to wrong layer.; MODFLOW 6 has two RCH implementations:
+    array-based (READASARRAYS, applies to highest active cell automatically) and list-based (cellid specified'
+  remedy: 'Use array-based RCH (ModflowGwfrcha) which auto-applies to top active cell.; build_rch_package;
+    [''Replace ModflowGwfrch with ModflowGwfrcha (array-based)'', ''Or ensure all cellid tuples in list-based
+    RCH have layer=0'', ''Verify: check budget term — RCH flux should affect layer 1 in listing file''];
+    Alw'
+  severity: silent
+- id: dt_mf6_009
+  symptom: Solver oscillates without converging. Outer iteration count hits maximum every timestep. Head
+    changes alternate between positive and negative between iterations.
+  diagnosis: Using SIMPLE solver complexity (CG, no under-relaxation) for a nonlinear problem with convertible
+    layers or Newton formulation.; The CG (Conjugate Gradient) linear solver used in SIMPLE complexity
+    works well for linear (all confined) problems. For nonlinear problems where transmissivity depends
+    on h
+  remedy: 'Switch to MODERATE or COMPLEX solver complexity.; build_ims_package; [''Change COMPLEXITY from
+    SIMPLE to COMPLEX'', ''This enables BICGSTAB solver, DBD under-relaxation, and backtracking'', ''If
+    using Newton: COMPLEX is mandatory'', ''Increase OUTER_MAXIMUM to at least 100'']; Always use MODERATE
+    or COMPLEX'
+  severity: degraded
+- id: dt_mf6_010
+  symptom: Groundwater flow velocities are unrealistically fast. Water table responds too quickly to recharge.
+    Heads equilibrate almost instantly. No error from MODFLOW.
+  diagnosis: Hydraulic conductivity from VIC soil parameters used without unit conversion. VIC Ksat is
+    in mm/day; MODFLOW expects m/day (1000x smaller).; VIC's Ksat parameter is stored in mm/day in the
+    soil parameter file. MODFLOW expects K in the model's length/time units (m/day if LENGTH_UNITS=meters).
+    Using V
+  remedy: 'Divide VIC Ksat by 1000 to convert mm/day to m/day.; build_npf_package; [''K_m_day = VIC_Ksat_mm_day
+    / 1000.0'', ''Verify K range: sand 1-100 m/day, silt 0.01-1, clay 0.0001-0.01'', ''If K > 100 m/day
+    for non-gravel materials, units are likely wrong'']; Include unit conversion in all VIC-to-MODFLOW
+    parame'
+  severity: silent
+- id: dt_mf6_011
+  symptom: Many cells are immediately dry at simulation start. Model may converge but with large areas
+    of no-data. Or Newton solver has difficulty converging in early timesteps.
+  diagnosis: Initial conditions (IC) specify starting heads below layer bottom elevations. These cells
+    start as dry and may never rewet.; If STRT < BOTM for a convertible cell, that cell is immediately
+    dry at time 0. In standard formulation, dry cells cannot rewet. With Newton, they can potentially
+    rewet but req
+  remedy: 'Set starting heads above layer bottom for all active cells.; build_ic_package; [''Compute safe
+    starting head: STRT = max(BOTM[layer] + 1.0, TOP - 5.0)'', ''Or use a spatially varying STRT: interpolate
+    from known water levels'', ''Or run a steady-state simulation first and use those heads as STRT'',
+    ''Verif'
+  severity: fatal
+- id: dt_mf6_012
+  symptom: mf6 exits immediately with error about missing mfsim.nam file. No output files are created.
+  diagnosis: mf6 is run from a directory that does not contain mfsim.nam. MODFLOW 6 always reads mfsim.nam
+    from the current working directory.; Unlike many programs that accept input file paths as arguments,
+    mf6 ALWAYS looks for 'mfsim.nam' in the current working directory. If you run mf6 from the wrong director
+  remedy: 'Change to the simulation workspace directory before running mf6.; write_and_run_simulation;
+    [''cd workspace && mf6'', ''Or use FloPy: sim.run_simulation()'', "Or specify: sim.run_simulation(exe_name=''/path/to/mf6'')",
+    ''Verify: ls mfsim.nam should succeed from the mf6 working directory'']; Always use the w'
+  severity: fatal
+- id: dt_mf6_013
+  symptom: Recharge or pumping rates do not correspond to the correct time periods. Seasonal patterns
+    are shifted. Summer recharge appears in winter stress periods.
+  diagnosis: Stress period indices in MODFLOW do not align with the time periods of VIC output. Off-by-one
+    error in stress period mapping or mismatched period lengths.; VIC outputs monthly or daily data indexed
+    by date. MODFLOW stress periods are indexed by integer (0, 1, 2, ...) with lengths defined in TDIS.
+    If
+  remedy: 'Verify date-to-stress-period mapping.; assign_transient_stress; [''Print stress period dates:
+    for each period, compute start/end date from PERLEN'', ''Print VIC dates: check which VIC output corresponds
+    to each period'', ''Verify: VIC month 1 (January) maps to the correct MODFLOW stress period'', ''Account'
+  severity: silent
+- id: dt_mf6_014
+  symptom: Model computes heads for cells outside the basin boundary. Water budget includes flow through
+    cells that should be inactive. Model area is larger than the actual basin.
+  diagnosis: IDOMAIN array is all 1s (all cells active). Cells outside the basin boundary are included
+    in the simulation, artificially expanding the model domain.; The IDOMAIN array controls which cells
+    are active (solved), inactive (excluded), or pass-through (vertical connection only). If IDOMAIN is
+    not masked
+  remedy: 'Set IDOMAIN=0 for cells outside the basin boundary.; create_grid_from_basin; [''Intersect grid
+    cells with basin shapefile'', ''Set IDOMAIN=0 for cells whose centroid is outside the basin'', ''Or
+    use cell area overlap: IDOMAIN=0 if overlap < 50%'', ''Apply to all layers: IDOMAIN[:, i, j] = 0 if
+    cell (i,j) i'
+  severity: silent
+- id: dt_mf6_015
+  symptom: Baseflow exported to routing model has wrong sign. Routing receives negative flow values. Or
+    baseflow is subtracted from streamflow instead of added.
+  diagnosis: 'MODFLOW budget convention uses negative values for outflow (DRN, WEL extraction). Routing
+    models expect positive baseflow. The sign was not negated during coupling.; In MODFLOW''s cell budget
+    file, DRN flux is negative (water leaving the aquifer). Routing models (Lohmann, CaMa-Flood) expect
+    baseflow '
+  remedy: 'Negate DRN flux when exporting to routing: baseflow = -drn_flux; extract_budget; ["Extract
+    DRN budget: drn_flux = cbb.get_data(text=''DRN'')", ''Negate: baseflow = -drn_flux (makes outflow
+    positive)'', ''Verify: baseflow values should be positive'', ''Convert units if needed: m3/day to
+    mm/day or m3/s'']; Do'
+  severity: silent
+- id: dt_v001
+  symptom: 'OSError: [Errno 22] Invalid argument when reading .hds or .cbc binary files with FloPy'
+  diagnosis: 'FloPy HeadFile/CellBudgetFile defaults to single precision but MODFLOW 6 writes double precision;
+    MODFLOW 6 writes binary output in double precision by default. FloPy''s HeadFile() and CellBudgetFile()
+    default to precision=''single''. The mismatch causes incorrect byte offsets when seeking through the '
+  remedy: 'Use precision=''double'': flopy.utils.HeadFile(''model.hds'', precision=''double''); extract_heads;
+    ["HeadFile: hds = flopy.utils.HeadFile(path, precision=''double'')", "CellBudgetFile: cbc = flopy.utils.CellBudgetFile(path,
+    precision=''double'')", ''If double fails, try single — some older MODFLOW 6 builds us'
+  severity: fatal
+- id: dt_mf6_016
+  symptom: MODFLOW 6 aborts with error about river bottom elevation being below the cell bottom elevation.
+  diagnosis: RIV package rbot value is below the BOTM of the cell it is assigned to. This commonly occurs
+    when river bottom elevations are computed from DEM minus river depth without checking against MODFLOW
+    layer geometry.; The RIV package requires that the river bottom elevation (rbot) is above the cell
+    bottom
+  remedy: 'Clamp rbot to max(rbot, botm + 0.5) for each river cell.; build_riv_from_cama; [''For each
+    RIV cell: rbot = max(rbot, botm[layer, row, col] + 0.5)'', ''Ensure river stage > rbot after clamping'',
+    ''Log how many cells were clamped — if > 50%, layer geometry may need revision'', ''Consider deepening
+    BOTM in '
+  severity: fatal
+- id: dt_v002
+  symptom: 'FloPy 3.10 raises TypeError on run_simulation(exe_name=...) or ModflowIms(inner_rclose=...).
+    STO PERIOD DATA causes MODFLOW error ''LOOKING FOR END PERIOD. FOUND: TRANSIENT.'''
+  diagnosis: 'FloPy 3.10.0 breaking API changes from 3.9.x; FloPy 3.10.0 removed/renamed several parameters:
+    (1) MFSimulation.run_simulation() no longer accepts exe_name keyword. (2) ModflowIms inner_rclose
+    replaced with rcloserecord=[value, "strict"]. (3) ModflowGwfsto steady_state/transient period data
+    uses dic'
+  remedy: 'Update API calls for FloPy 3.10+; write_and_run_simulation; [''Replace sim.run_simulation(exe_name=path)
+    with subprocess.run([path])'', "Replace inner_rclose=X with rcloserecord=[X, ''strict'']", ''Use steady_state={0:
+    True}, transient={1: True} for STO period data'', ''Use continue_=True in MFSimulation c'
+  severity: fatal
+- id: dt_v003
+  symptom: 'MODFLOW 6 error: ''MODEL GWF PRODUCES AN ASYMMETRIC COEFFICIENT MATRIX, BUT THE CONJUGATE
+    GRADIENT METHOD WAS SELECTED. USE BICGSTAB INSTEAD.'''
+  diagnosis: 'IMS complexity=SIMPLE uses CG solver, but Newton formulation produces asymmetric matrix;
+    Newton-Raphson formulation produces an asymmetric Jacobian matrix. CG only works with symmetric matrices.
+    SIMPLE complexity defaults to CG. MODERATE/COMPLEX use BICGSTAB.
 
-  - id: "dry_cells_oscillation"
-    triplet: "dt_mf6_002"
-    description: "Cells repeatedly wetting and drying cause oscillation"
-    affected_output: "Heads and budget in unconfined layers"
-    detection: "Oscillating heads, many inner iterations per outer"
-    fix: "Use NEWTON UNDER_RELAXATION in GWF model options"
+    ; [''s6_solver'']'
+  remedy: Use complexity='MODERATE' or 'COMPLEX' when Newton is enabled; build_ims_package; ["Change complexity='SIMPLE'
+    to 'MODERATE' or 'COMPLEX'"]; Never use SIMPLE complexity with Newton formulation.
+  severity: fatal
+- id: dt_v004
+  symptom: Convergence failure on first timestep with reasonable recharge but very low K (~0.01 m/day).
+    Water backs up.
+  diagnosis: 'HWSD soil Ksat underestimates regional aquifer K by ~100x; HWSD/VIC Ksat is for shallow
+    soil (~0.01 m/day for clay). Regional aquifer K for alluvial plains is 1-15 m/day. Using soil K directly
+    prevents lateral drainage.
 
-  - id: "budget_imbalance"
-    triplet: "dt_mf6_003"
-    description: "Budget percent discrepancy > 0.1%"
-    affected_output: "All water balance terms"
-    detection: "Large percent discrepancy in listing file budget summary"
-    fix: "Check convergence, tighten DVCLOSE/RCLOSE"
+    ; [''s3_layer_properties'', ''NPF package'']'
+  remedy: 'Scale HWSD Ksat by ~100x. Use GLHYMPS for deep layers when available.; assign_k_from_glhymps;
+    [''K_aquifer = K_HWSD * 100, clipped to 0.1-50 m/day'', ''Layer 2: K/3. Layer 3: K/30'']; Always use
+    assign_k_from_glhymps with correct scaling.'
+  severity: silent
+- id: dt_v005
+  symptom: DRN outflow 10^13 m3/day, 200% budget discrepancy. Conductance C = K * delr * delc gives ~10^8
+    m2/day.
+  diagnosis: 'Drain conductance too high: using full cell area instead of realistic river dimensions;
+    C = K * L * W / M. Full cell: L=23km, W=27km, M=1m -> C=7e8. Realistic: drain_width=1km, bed=10m ->
+    C=1e6. 700x difference.
 
-  - id: "recharge_unit_error"
-    triplet: "dt_mf6_004"
-    description: "Recharge in mm/day instead of m/day (silent 1000x error)"
-    affected_output: "Water table depth, all flow terms"
-    detection: "Water table at surface, massive budget imbalance"
-    fix: "Divide VIC recharge by 1000"
-
-  - id: "riv_rbot_below_botm"
-    description: "RIV rbot below cell BOTM causes fatal abort"
-    detection: "MODFLOW error: RIVER BOTTOM IS LESS THAN CELL BOTTOM"
-    fix: "Clamp rbot = max(rbot, botm + 0.5)"
-
-  - id: "gwt_no_cnc_source_warning"
-    description: "GWT model without CNC or SRC source produces zero concentrations silently"
-    affected_output: "gwt.ucn all zeros"
-    detection: "Concentration == 0 everywhere despite expected contamination"
-    fix: "Add CNC constant concentration boundary or SRC mass source, or use SSM with GWF package auxiliaries"
-
-  - id: "sfr_zero_slope"
-    description: "SFR reach with gradient <= 0 causes fatal termination"
-    detection: "MODFLOW error about negative or zero slope"
-    fix: "Clamp minimum slope to 1e-6 when building from DEM"
-
-  - id: "newton_simple_incompatible"
-    description: "Newton formulation with SIMPLE solver (CG) fails"
-    detection: "CG incompatible with asymmetric matrix error"
-    fix: "Use MODERATE or COMPLEX solver complexity"
-
-# =========================================================================
-# EXPECTED RANGES (Bengbu Basin reference)
-# =========================================================================
-expected_ranges:
-  bengbu_basin:
-    grid: "16x24, 224 active cells, 0.25deg"
-    wt_depth_median_m: 0.9
-    wt_depth_mean_m: 2.0
-    wt_depth_range_m: [0.5, 5.0]
-    budget_closure_pct: 0.0002
-    convergence_failures: 0
-    runtime_seconds: 0.4
+    ; [''s4_boundary_conditions'', ''DRN package'']'
+  remedy: 'Use realistic drain dimensions: C = K * drain_width * cell_width / bed_thickness; build_drn_package;
+    [''C = K * 1000 * min(delr,delc) / 10'']; Never use full cell area for drain conductance.'
+  severity: silent
+- id: dt_mf6_017
+  symptom: 'FloPy raises error when setting IC (strt) or STO (sy) package data. Error message: ''Unable
+    to set data layer 0. Data is not in a valid format''.'
+  diagnosis: Array passed to FloPy is 2D (nrow x ncol) instead of 3D (nlay x nrow x ncol). FloPy mf6 packages
+    require explicit 3D arrays for layered data.; FloPy's MODFLOW 6 data handling expects layered arrays
+    to have shape (nlay, nrow, ncol). If a 2D array (nrow, ncol) is passed for strt or sy, FloPy cannot
+    de
+  remedy: 'Reshape 2D arrays to 3D using np.broadcast_to or np.stack before passing to FloPy.; build_ic_package;
+    [''Check array shape: if arr.ndim == 2, it needs expansion'', ''For strt: strt_3d = np.broadcast_to(strt_2d,
+    (nlay, nrow, ncol)).copy()'', ''For sy: sy_3d = np.stack([sy_2d] * nlay)'', ''Verify: assert arr'
+  severity: fatal

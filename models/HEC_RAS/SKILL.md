@@ -1,13 +1,3 @@
----
-name: hec-ras
-description: >-
-  HEC-RAS Hydraulic Reference Manual v6.1/6.5 (1-D Saint-Venant + standard-step energy
-  equation; 2-D shallow-water equations). Covers 1-D steady-flow water-surface profile
-  computations in gradually varied open-channel flow…; 1-D unsteady-flow hydrodynamics via
-  Saint-Venant equations (continuity + momentum, implicit…. Use when the task involves
-  running, configuring, calibrating or interpreting HEC_RAS.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -42,6 +32,45 @@ description: >-
 > Resist the urge to write diagnostic/debug Python scripts. The answers are almost
 > always in the official docs and working examples, not in reverse-engineering the binary.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (11 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/author_steady_geometry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/author_steady_geometry.py --help` |
+| `tools/convert_flow_to_hecras.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_flow_to_hecras.py --help` |
+| `tools/edit_boundaries.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/edit_boundaries.py --help` |
+| `tools/edit_geometry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/edit_geometry.py --help` |
+| `tools/parse_output_hecras.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output_hecras.py --help` |
+| `tools/prepare_steady_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/prepare_steady_run.py --help` |
+| `tools/preprocess_geometry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/preprocess_geometry.py --help` |
+| `tools/rating_curve.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/rating_curve.py --help` |
+| `tools/run_hecras.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_hecras.py --help` |
+| `tools/validate_hecras.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/validate_hecras.py --help` |
+
+*10 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # HEC-RAS (Hydrologic Engineering Center — River Analysis System) — Knowledge Infrastructure
 
 **Package**: `hydrocraft-hec-ras` v2.0.0
@@ -49,7 +78,7 @@ description: >-
 **Domain**: River / open-channel hydraulics (1-D & 2-D)
 **Binary**: `KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe`
 **Last updated**: 2026-06-03
-**Stats**: 10 tools | 6 docs | ≥15 diagnostic triplets
+**Stats**: 11 tools | 6 docs | 20 diagnostic triplets
 **Validation status**: `real` — computed vs **observed** water-surface elevations
 on the *Mixed Flow Regime Channel* example: **NSE 0.9965, RMSE 0.096 ft,
 KGE 0.977, PBIAS −0.09 %** (19 cross sections).
@@ -196,7 +225,37 @@ failure (validate→process→validate contract).
 
 ---
 
-## 6. Input / output reference
+## 6. Output Description and Input Reference
+
+**Source of truth:** `dag.yaml`. The dag is the model identity for observable
+outputs: variable names, units, media, descriptions, observability, and
+`validation_rank` come from the dag. If this section ever disagrees with
+`dag.yaml`, the dag wins and this section is the bug.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `discharge_out` — Open-channel surface-water discharge at each cross section / structure / 2-D cell-face. For STEADY flow this is a conserved pass-through of the input forcing, NOT a model product. (`cfs or m^3/s`)
+
+Other dag outputs currently named by this KI are:
+`water_surface_elevation`, `energy_grade`, `velocity_channel`,
+`velocity_total`, `flood_inundation_extent`, `froude_number`,
+`shear_stress_channel`, `friction_slope`, `sediment_transport_rate`,
+`bed_elevation_change`, and `water_quality_constituent`.
+
+| Output variable (dag `var`) | Rank | File / location | Unit | Notes |
+|-----------------------------|------|-----------------|------|-------|
+| `discharge_out` | 1 | HEC-RAS results HDF / cross sections, structures, or 2-D cell faces | `cfs or m^3/s` | Open-channel surface-water discharge; for steady flow this is conserved pass-through forcing, not a model product. |
+| `water_surface_elevation` | dag-defined | HEC-RAS results HDF cross-section output | project elevation unit (`ft` for English, `m` for SI) | Validated in the bundled Mixed Flow steady example against observed WS. |
+| `energy_grade` | dag-defined | HEC-RAS results HDF cross-section output | project elevation unit (`ft` for English, `m` for SI) | Parsed from steady results. |
+| `velocity_channel` | dag-defined | HEC-RAS results HDF additional variables | project velocity unit (`ft/s` for English, `m/s` for SI) | Parsed from steady results. |
+| `velocity_total` | dag-defined | HEC-RAS results HDF additional variables | project velocity unit (`ft/s` for English, `m/s` for SI) | Parsed from steady results. |
+| `flood_inundation_extent` | dag-defined | HEC-RAS mapper / results products | project spatial unit | Documented capability; not the validated steady headline in this KI. |
+| `froude_number` | dag-defined | HEC-RAS results HDF additional variables | dimensionless | Parsed from steady results. |
+| `shear_stress_channel` | dag-defined | HEC-RAS results HDF additional variables | project stress unit | Parsed from steady results where available. |
+| `friction_slope` | dag-defined | HEC-RAS results HDF additional variables | dimensionless | Parsed from steady results where available. |
+| `sediment_transport_rate` | dag-defined | sediment solver output | dag-defined | Solver present; end-to-end sediment workflow not validated here. |
+| `bed_elevation_change` | dag-defined | sediment solver output | dag-defined | Solver present; end-to-end sediment workflow not validated here. |
+| `water_quality_constituent` | dag-defined | water-quality solver output | dag-defined | Solver present; end-to-end water-quality workflow not validated here. |
 
 ### Inputs (per project `<PRJ>`)
 
@@ -235,8 +294,6 @@ holds `Water Surface`, `Energy Grade`, `Flow` (shape `[n_profiles, n_xs]`) and a
 The unit system is declared in the `.prj` (`English Units` / `SI Units`); changing
 discharge units without changing the project unit system silently corrupts results.
 
----
-
 ## 7. Unsteady / sediment / water quality (documented, not validated here)
 
 The unsteady, sediment, and water-quality solvers are present and **execute under
@@ -251,24 +308,27 @@ licensed HEC-RAS install. See `docs/06_capabilities.md` and triplets
 
 ---
 
-## 8. Validation summary
+## 8. Unit Conversion Table
 
-| Item | Value |
-|------|-------|
-| Benchmark | HEC-RAS *Mixed Flow Regime Channel* example (ships with HEC-RAS) |
-| Reference | **Observed WS** lines in `MIXED.f01` (19 cross sections, PF1 @ Q=500 cfs) |
-| Tier | **real** (independent observed water-surface elevations) |
-| NSE | 0.9965 |
-| KGE | 0.977 |
-| RMSE | 0.096 ft |
-| PBIAS | −0.09 % |
-| r | 0.999 |
-| max abs err | 0.28 ft |
-| Figure | `figures/s8_validation.png` |
+This table documents the unit conversions used by the HEC-RAS KI pipeline. HEC-RAS
+projects are either English or SI; the project unit system controls geometry,
+boundary conditions, and result interpretation.
 
-The computed profile correctly reproduces the supercritical→subcritical
-transition (hydraulic jump) of the mixed-flow regime — Froude > 1 in the steep
-upstream reach, < 1 downstream.
+| Variable | Source unit (verified) | Model unit | Factor | Type |
+|----------|------------------------|------------|--------|------|
+| `discharge_out` / input discharge in an English project | `m^3/s` | `cfs` | `35.3147` | multiplicative |
+| `discharge_out` / input discharge in an SI project | `cfs` | `m^3/s` | `1 / 35.3147` | multiplicative |
+| Geometry station / reach length / water-surface elevation | `m` | `ft` | `3.28084` | multiplicative |
+| Geometry station / reach length / water-surface elevation | `ft` | `m` | `1 / 3.28084` | multiplicative |
+| Velocity | `m/s` | `ft/s` | `3.28084` | multiplicative |
+| Velocity | `ft/s` | `m/s` | `1 / 3.28084` | multiplicative |
+| Slope / friction slope | dimensionless | dimensionless | `1` | no conversion |
+| Manning `n` | dimensionless | dimensionless | `1` | no conversion; the solver applies the English/SI conveyance factor internally |
+| Froude number | dimensionless | dimensionless | `1` | no conversion |
+
+Do not convert meteorological forcing into HEC-RAS. This KI consumes geometry,
+roughness, discharge, and boundary stage/slope; precipitation, temperature,
+radiation, wind, and soil tables are not HEC-RAS inputs.
 
 ---
 
@@ -311,7 +371,7 @@ upstream reach, < 1 downstream.
 > count/spacing additionally needs regenerating the array-size header (next
 > `tool_build`). And steady **produces stage, consumes discharge** — a
 > `discharge_m3s` validation target is the *forcing input*, not an output; for
-> discharge-vs-discharge routing fidelity use unsteady (§11, still needs the
+> discharge-vs-discharge routing fidelity use unsteady (§12, still needs the
 > plan-HDF skeleton — open question whether the unsteady solver is likewise
 > `.rNN`/`.uNN`-authoritative).
 >
@@ -326,7 +386,7 @@ upstream reach, < 1 downstream.
 > run pipeline** — a `tool_build` TODO, NOT a missing library. Author new-river
 > steps with the venv interpreter (see §2). Verified-working scope today
 > is **steady water-surface profiles on geometry that already ships a
-> `.gNN.hdf` + `.rNN`** (the bundled MixedFlowSteady example, NSE 0.9965 §8).
+> `.gNN.hdf` + `.rNN`** (the bundled MixedFlowSteady example, NSE 0.9965 §11).
 >
 > The intended (currently non-executable) workflow for a new basin would be:
 >
@@ -357,7 +417,7 @@ upstream reach, < 1 downstream.
 > **produces** water-surface stage. A verifier target of `Variable=discharge_m3s`
 > is wrong for this domain — discharge is the *forcing input*, not an output.
 > The comparison variable must be **water-surface stage** (the observed `z`
-> column / observed-WS lines), as validated in §8.
+> column / observed-WS lines), as validated in §11.
 
 - **Geometry** — surveyed cross sections (station, elevation) in the project unit
   system. The bundled template (`examples/MixedFlowSteady/`) is a prismatic
@@ -377,9 +437,67 @@ error→remedy catalogue (HDF seeding, LD_PRELOAD, unit traps, Wine Mono, etc.).
 
 ---
 
-## 11. Routing-test recipe (Wangjiaba → Bengbu, Huai River)
+## 11. Validated Results
 
-> ⚠️ **STEADY new-river now works (§10); this §11 UNSTEADY Q→Q routing recipe is
+### Test Case: Mixed Flow Regime Channel
+
+| Property | Value |
+|----------|-------|
+| Benchmark | HEC-RAS *Mixed Flow Regime Channel* example (ships with HEC-RAS) |
+| Reference | **Observed WS** lines in `MIXED.f01` (19 cross sections, PF1 @ Q=500 cfs) |
+| Tier | **real** (independent observed water-surface elevations) |
+| Figure | `figures/s8_validation.png` |
+
+The dag's rank-1 output is `discharge_out`: Open-channel surface-water discharge
+at each cross section / structure / 2-D cell-face. For STEADY flow this is a
+conserved pass-through of the input forcing, NOT a model product. The validated
+body campaign here is therefore reported on `water_surface_elevation`, the
+observable steady-flow model product with observed WS lines in the bundled
+example.
+
+### Performance Metrics
+
+| Metric | Calibration | Validation | Full Period | Bar (convention, cited) |
+|--------|-------------|------------|-------------|-------------------------|
+| NSE | not separated | not separated | 0.9965 | For `water_surface_elevation`, direction maximize: satisfactory 0.5 (`arnold2012`), good no cited threshold (`arnold2012`), very_good 0.75 (`arnold2012`). |
+| KGE | not separated | not separated | 0.977 | no convention entry supplied |
+| RMSE | not separated | not separated | 0.096 ft | For `water_surface_elevation`, direction minimize: satisfactory 1.0 (`wing2021`, `bates2021`, `shustikova2019`), good 0.8 (`wing2021`, `bates2021`, `shustikova2019`), very_good 0.5 (`wing2021`, `bates2021`, `shustikova2019`). |
+| PBIAS (%) | not separated | not separated | -0.09 | no convention entry supplied |
+| r | not separated | not separated | 0.999 | no convention entry supplied |
+| max abs err | not separated | not separated | 0.28 ft | no convention entry supplied |
+
+The computed profile correctly reproduces the supercritical→subcritical
+transition (hydraulic jump) of the mixed-flow regime: Froude > 1 in the steep
+upstream reach, < 1 downstream.
+
+### Convention Bars Restated From `docs/validation_convention.yaml`
+
+These are the convention entries supplied for `water_surface_elevation`. They
+must not be copied onto `discharge_out`; no cited `discharge_out` pass-band is
+stated here.
+
+| Variable | Metric | Direction | Satisfactory | Good | Very good | Cites |
+|----------|--------|-----------|--------------|------|-----------|-------|
+| `water_surface_elevation` | RMSE | minimize | 1.0 (`wing2021`, `bates2021`, `shustikova2019`) | 0.8 (`wing2021`, `bates2021`, `shustikova2019`) | 0.5 (`wing2021`, `bates2021`, `shustikova2019`) | `wing2021`, `bates2021`, `shustikova2019` |
+| `water_surface_elevation` | NSE | maximize | 0.5 (`arnold2012`) | no cited threshold (`arnold2012`) | 0.75 (`arnold2012`) | `arnold2012` |
+| `water_surface_elevation` | RMSE | minimize | 1.0 (`wing2021`, `bates2021`) | 0.8 (`wing2021`, `bates2021`) | 0.5 (`wing2021`, `bates2021`) | `wing2021`, `bates2021` |
+| `water_surface_elevation` | RMSE | minimize | 1.0 (`wing2021`, `bates2021`, `shustikova2019`) | 0.8 (`wing2021`, `bates2021`, `shustikova2019`) | 0.5 (`wing2021`, `bates2021`, `shustikova2019`) | `wing2021`, `bates2021`, `shustikova2019` |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Geometry | Bundled HEC-RAS Mixed Flow steady project / authored `.rNN` path | Validated for steady template; new-river steady path demonstrated | Geometry is cross-section station/elevation, not meteorological forcing. |
+| Discharge | `.fNN` steady flow profiles or `ObservedQ` via `convert_flow_to_hecras.py` | Validated as input forcing | For steady runs, discharge is conserved pass-through forcing. |
+| Boundary conditions | HEC-RAS steady flow/run files | Validated for steady template | Downstream normal-depth slope is edited by `edit_boundaries.py`. |
+| Water-surface observations | `MIXED.f01` observed WS lines | Validated | 19 cross sections, PF1 at Q=500 cfs. |
+| Unsteady / sediment / water quality | HEC-RAS solvers under WINE | Pending end-to-end validation | Solver executables load, but full headless plan-HDF skeleton generation remains blocked without Wine Mono. |
+
+---
+
+## 12. Routing-test recipe (Wangjiaba → Bengbu, Huai River)
+
+> ⚠️ **STEADY new-river now works (§10); this §12 UNSTEADY Q→Q routing recipe is
 > still blocked.** For a steady water-surface profile on a new reach use
 > `tools/author_steady_geometry.py` (no Wine Mono). The unsteady routing below
 > needs the plan-HDF skeleton with boundary time series baked in — open question
@@ -395,7 +513,7 @@ error→remedy catalogue (HDF seeding, LD_PRELOAD, unit traps, Wine Mono, etc.).
 > **structurally blocked at the authoring stage** — the Bengbu Q/stage metrics
 > are *uncomputable*, not poor. The recipe is kept as the design target for when
 > those dependencies are added. Until then HEC-RAS validates only on geometry
-> that already ships a `.gNN.hdf` + `.rNN` (dev example, §8).
+> that already ships a `.gNN.hdf` + `.rNN` (dev example, §11).
 
 This is the orchestrator's primary real-case validation for HEC-RAS. It tests
 **hydrodynamic routing fidelity** (attenuation + lag) on a real river reach,

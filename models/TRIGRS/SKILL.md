@@ -1,13 +1,3 @@
----
-name: trigrs
-description: >-
-  TRIGRS 2.0 (USGS Open-File Report 2008-1159) infiltration + infinite-slope theory, as
-  realized by the v2.1.00c serial code. Covers Transient rainfall infiltration via 1-D
-  vertical analytical flow, one independent soil column per…; Saturated/tension-saturated
-  infiltration (Iverson 2000 linearized Richards solution, with finite-…. Use when the
-  task involves running, configuring, calibrating or interpreting TRIGRS.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (22 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_rainfall_to_trigrs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_rainfall_to_trigrs.py --help` |
+| `tools/convert_soil_to_trigrs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_trigrs.py --help` |
+| `tools/generate_tr_in.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_tr_in.py --help` |
+| `tools/parse_trigrs_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_trigrs_output.py --help` |
+| `tools/run_trigrs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_trigrs.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # TRIGRS v2.1 (Transient Rainfall Infiltration and Grid-Based Regional Slope-Stability) --- Knowledge Infrastructure
 
@@ -163,6 +188,27 @@ The TRIGRS initialization file `tr_in.txt` is a line-oriented text file where ea
 
 ---
 
+## 8. Unit Conversion Table
+
+**Critical**: TRIGRS is unit-sensitive and many mistakes produce plausible-looking files with wrong magnitudes. This unit table documents the pipeline conversions that must be verified before generating `tr_in.txt` or raster inputs.
+
+| Variable | Source unit | TRIGRS unit | Conversion | Type |
+|---|---|---|---|---|
+| Rainfall intensity (`cri`) | mm/hr | m/s | divide by 3.6e6 | multiplicative |
+| Rainfall intensity (`cri`) | mm/day | m/s | divide by 8.64e7 | multiplicative |
+| Time duration (`t`, `capt`) | hours | seconds | multiply by 3600 | multiplicative |
+| Cohesion (`c`) | kPa | Pa | multiply by 1000 | multiplicative |
+| Unit weight water (`uww`) | kN/m^3 | N/m^3 | multiply by 1000 | multiplicative |
+| Unit weight soil (`uws`) | kN/m^3 | N/m^3 | multiply by 1000 | multiplicative |
+| Slope angle grid | radians | degrees | multiply by 180/pi | multiplicative |
+| Depth (`zmax`, `dep`) | feet | meters | multiply by 0.3048 | multiplicative |
+| K-sat | cm/hr | m/s | multiply by 2.778e-6 | multiplicative |
+| Diffusivity (`D0`) | cm^2/s | m^2/s | multiply by 1e-4 | multiplicative |
+| Alpha (unsaturated) | 1/cm | 1/m | multiply by 100 | multiplicative |
+| DEM and slope grids | mixed CRS/cell size | same CRS/cell size | use GridMatch | validation |
+
+---
+
 ## Unit Trap Table (CRITICAL)
 
 These are the most dangerous unit conversion errors when setting up TRIGRS. All cause **silent** failures (wrong results, no crash).
@@ -181,6 +227,27 @@ These are the most dangerous unit conversion errors when setting up TRIGRS. All 
 | dt_010 | Diffusivity (D0) | **m^2/s** | cm^2/s | Multiply by 1e-4 | Timing off |
 | dt_011 | Alpha (unsaturated) | **1/m** | 1/cm | Multiply by 100 | Wrong retention |
 | dt_012 | DEM & slope grids | same CRS, cell size | mixed sources | Use GridMatch | Grid mismatch crash |
+
+---
+
+## 6. Output Description (dag.yaml)
+
+**Source of truth**: `dag.yaml`. The dag defines the model's observable outputs, units, and validation rank. If this section ever disagrees with `dag.yaml`, the dag wins.
+
+**Headline output**: `minimum_factor_of_safety` is the dag's rank-1 variable and the primary variable this model is judged by.
+
+> `minimum_factor_of_safety` — Minimum computed factor of safety in the soil column across all computation depths at each cell for a given elapsed time; Fs<1 predicts failure, Fs=1 limiting equilibrium, Fs>=1 stable. Clamped to a maximum of 10; cells below slomin assigned 11. (dimensionless)
+
+Other dag outputs named by this KI: `depth_of_minimum_FS`, `pressure_head_at_min_FS`, `water_table_depth`, `actual_infiltration_rate`, `surface_runoff`.
+
+| Output variable (dag `var`) | Validation role | Unit | File pattern in this KI |
+|---|---|---|---|
+| `minimum_factor_of_safety` | rank 1 headline output | dimensionless | `TRfs_min_SUFFIX_#.asc` |
+| `depth_of_minimum_FS` | other dag output | m | `TRz_at_fs_min_SUFFIX_#.asc` |
+| `pressure_head_at_min_FS` | other dag output | m | `TRp_at_fs_min_SUFFIX_#.asc` |
+| `water_table_depth` | other dag output | m | `TRwater_depth_SUFFIX_#.asc` |
+| `actual_infiltration_rate` | other dag output | m/s | `TRinfiltration_SUFFIX_#.asc` |
+| `surface_runoff` | other dag output | m/s | `TRrunoff_SUFFIX_#.asc` |
 
 ---
 
@@ -318,6 +385,34 @@ cd src/TRIGRS && make trg
 - **output_interpretation** (2 triplets, 11%) -- Misreading FS, depth values
 
 See `diagnostics/triplets.yaml` for full symptom-diagnosis-remedy entries.
+
+---
+
+## 11. Validated Results
+
+**Status**: body campaign pending. This KI is marked `tutorial_validated` for the USGS tutorial dataset and Srivastava-Yeh column test, but this body does not record a completed field validation campaign.
+
+### Performance Metrics -- judged against `docs/validation_convention.yaml`
+
+The convention file supplies the pass-bands below. Null bands are written as `no cited threshold`; no uncited thresholds are substituted.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band |
+|---|---|---|---|---|---|
+| `minimum_factor_of_safety` | `tpr_fpr_ratio` | maximize | 1.0 (`raia2014`) | no cited threshold (`raia2014`) | no cited threshold (`raia2014`) |
+| `minimum_factor_of_safety` | `rmse_fs` | minimize | 0.15 (`godt2012`) | no cited threshold (`godt2012`) | 0.06 (`godt2012`) |
+| `depth_of_minimum_FS` | `pbias` | zero_centered | no cited threshold (no convention citation key) | no cited threshold (no convention citation key) | no cited threshold (no convention citation key) |
+
+No achieved calibration, validation, or full-period metric values are stated in this SKILL body until a sourced body campaign result is added.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|---|---|---|---|
+| Forcing | Pipeline | pending field validation | Prepared through the TRIGRS rainfall conversion workflow; field campaign score not recorded in this body. |
+| Soil | Pipeline | pending field validation | Prepared through the TRIGRS soil conversion workflow; field campaign score not recorded in this body. |
+| DEM and slope | Pipeline / GIS | pending field validation | Grid congruence must be verified before execution. |
+| Initial conditions | Pipeline / `tr_in.txt` | pending field validation | Water table depth and initial infiltration must keep TRIGRS units. |
+| Outputs | TRIGRS binary/package | tutorial validated | Headline output is `minimum_factor_of_safety`; field campaign score not recorded in this body. |
 
 ---
 

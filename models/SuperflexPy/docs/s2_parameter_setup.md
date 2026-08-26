@@ -30,7 +30,7 @@ applies default/literature values as starting points for calibration.
 ### For GR4J
 
 1. **Set x1** (Production Store capacity, mm): Start 100-500 for humid, 50-200 for arid
-2. **Set x2** (Exchange coefficient, mm/d): Start 0 (positive = import)
+2. **Set x2** (Exchange coefficient, mm/d): Start 0 (positive = EXPORT/loss, negative = import — see dt_018; corrected 2026-08-22)
 3. **Set x3** (Routing Store capacity, mm): Start 10-200
 4. **Set x4** (UH time base, d): Start 1-5
 5. **Fix structural parameters**: alpha=2.0, beta=5.0, ni=4/9, gamma=5.0, omega=3.5

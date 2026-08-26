@@ -1,126 +1,498 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: DART
-  full_name: Data Assimilation Research Testbed
-  version: Manhattan Release
-  domain: data_assimilation
-  language: Fortran 90+
-  developer: DAReS / NSF NCAR
-  binary_path: KISSPATH_BINARIES/DART/source/repo/models/lorenz_63/work/filter
-  additional_executables:
-  - KISSPATH_BINARIES/DART/source/repo/models/lorenz_63/work/perfect_model_obs
-  - KISSPATH_BINARIES/DART/source/repo/models/lorenz_63/work/obs_diag
+  language: fortran
+  implementation:
+    id: dart-manhattan
+    version: 11.24.x (Manhattan release)
+    provenance: Fortran 90+ with NetCDF I/O; DAReS / NSF NCAR; github.com/NCAR/DART. Model-agnostic assimilation
+      core coupled to a host model_mod.
+  scientific_reference_version: DART Manhattan release — ensemble data-assimilation framework (EAKF /
+    EnKF / QCEFF), Anderson/DAReS lineage
 inputs:
   forcing:
-  - name: obs_seq.in
-    description: Observation sequence definition (types, locations, times)
-    format: DART obs_seq (ASCII or binary)
-  - name: obs_seq.out
-    description: Observation values for assimilation (from perfect_model_obs or converters)
-    format: DART obs_seq (ASCII or binary)
-  state:
-  - name: filter_input.nc
-    description: Ensemble initial conditions (NetCDF)
-    format: NetCDF
-    variables:
-    - name: state
-      description: State vector for each ensemble member
-      unit: model-dependent
-  configuration:
-  - name: input.nml
-    description: Fortran namelist controlling all DART programs
-    format: Fortran namelist
+  - name: observation sequence (obs_seq)
+    unit: observation-type dependent (host-model units)
+    category: observations
+    source_kind: forcing
+    model_input_format: 'obs_seq ASCII or binary file: header (copies, QC fields, count) + per-obs {location,
+      time (days,seconds), obs type, error variance, value, QC}'
+    notes: Consumed per assimilation window. Error field stores VARIANCE (sigma^2), NOT standard deviation.
+      Missing-value sentinel is exactly -888888.0 (a valid float, never NaN).
   parameters:
-    critical:
-    - name: ens_size
-      valid_range:
-      - 2
-      - 10000
-      description: Number of ensemble members
-      namelist: filter_nml
-    - name: cutoff
-      valid_range:
-      - 0.001
-      - 1000000.0
-      description: Localization half-width (radians for 3D sphere, fraction for 1D)
-      namelist: assim_tools_nml
-    - name: inf_flavor
-      valid_range:
-      - 0
-      - 5
-      description: 'Inflation scheme: 0=none, 2=adaptive spatially-varying, 3=uniform,
-        4=RTPS, 5=enhanced'
-      namelist: filter_nml
-    - name: inf_initial
-      valid_range:
-      - 1.0
-      - 2.0
-      description: Initial inflation magnitude
-      namelist: filter_nml
-    - name: outlier_threshold
-      valid_range:
-      - 2.0
-      - 100.0
-      description: Observation outlier rejection threshold (in std devs)
-      namelist: filter_nml
-    - name: async
-      valid_range:
-      - 0
-      - 4
-      description: 'Model advance mode: 0=synchronous, 2=shell, 4=parallel shell'
-      namelist: filter_nml
+  - name: cutoff
+    unit: radians (threed_sphere) / host-distance units
+    category: localization
+    source_kind: user_provided
+    model_input_format: '&assim_tools_nml cutoff (real)'
+    notes: Gaspari-Cohn localization half-width; observations beyond 2x cutoff have zero impact. Hardcoded
+      default 0.2.
+  - name: inflation parameters (inf_initial, inf_damping, inf_lower_bound, inf_upper_bound, inf_sd_*)
+    unit: dimensionless
+    category: inflation
+    source_kind: user_provided
+    model_input_format: '&filter_nml inf_* as 2-element [prior, posterior] arrays'
+    notes: 'Multiplicative covariance inflation magnitude/persistence. Defaults: inf_initial=1.0 (none),
+      inf_damping=1.0 (no damping), inf_upper_bound=1e6 (effectively unbounded), inf_sd_max_change=1.05.'
+  - name: ens_size
+    unit: count
+    category: ensemble
+    source_kind: user_provided
+    model_input_format: '&filter_nml ens_size (integer)'
+    notes: Number of ensemble members (20-1000 typical); trades sampling error against cost and keys the
+      sampling-error-correction table. Default 20.
+  - name: perturbation_amplitude
+    unit: state units (Gaussian sigma)
+    category: ensemble
+    source_kind: user_provided
+    model_input_format: '&filter_nml perturbation_amplitude (real)'
+    notes: Stddev of Gaussian perturbation when building an ensemble from a single state (perturb_from_single_instance).
+      Default 0.2; near-machine-epsilon values give zero spread.
+  - name: outlier_threshold / input_qc_threshold
+    unit: innovation-stddev multiple / QC value
+    category: quality_control
+    source_kind: user_provided
+    model_input_format: '&filter_nml outlier_threshold; &quality_control_nml input_qc_threshold'
+    notes: outlier_threshold default -1 (disabled); positive N rejects obs with |obs - prior_mean| > N*sqrt(spread^2
+      + obs_err^2). input_qc_threshold default 3.0 rejects high incoming QC.
+  initial_conditions:
+  - name: ensemble state files
+    unit: host-model state units
+    category: state
+    source_kind: user_provided
+    model_input_format: NetCDF filter_input*.nc (input_state_file_list, or single_file_in with an ens
+      dimension)
+    notes: Ensemble of host-model restart states at cycle start; dimensionality and variables set by the
+      host model. ens_size must match the available member count.
+  - name: inflation restart fields
+    unit: dimensionless inflation factor
+    category: inflation_state
+    source_kind: user_provided
+    model_input_format: prior_inf_mean.nc / prior_inf_sd.nc (and posterior counterparts)
+    notes: Adaptive inflation mean/sd fields carried across cycles; required when inf_initial_from_restart=.true.
+      Persistence governed by inf_damping.
+  boundary_conditions:
+  - name: model-advance mode (async)
+    unit: enum {0,2,4}
+    category: control
+    source_kind: user_provided
+    model_input_format: '&filter_nml async'
+    notes: 0 = synchronous in-binary adv_1step (built-in models e.g. Lorenz); 2 = shell command adv_ens_command;
+      4 = parallel shell launching concurrent advances (external models e.g. WRF, CAM).
+  - name: filter algorithm (filter_kind / QCEFF table)
+    unit: enum / per-quantity table
+    category: method
+    source_kind: user_provided
+    model_input_format: algorithm_info QCEFF table; filter_kind codes (EAKF=1, ENKF=2, KERNEL=3, OBS_PARTICLE=4,
+      UNBOUNDED_RHF=8, GAMMA=11, BOUNDED_NORMAL_RHF=101, KDE=102)
+    notes: EAKF is the default per-obs increment kernel; QCEFF assigns per-quantity distributions/bounds
+      to relax the Gaussian assumption for variables like precipitation and snow depth.
+  - name: localization function (select_localization)
+    unit: enum
+    category: method
+    source_kind: default
+    model_input_format: '&cov_cutoff_nml select_localization'
+    notes: 1 = Gaspari-Cohn 5th-order (default, recommended); Boxcar and Ramped Boxcar also available.
+  - name: stages_to_write
+    unit: list
+    category: control
+    source_kind: user_provided
+    model_input_format: '&filter_nml stages_to_write (subset of forecast/preassim/postassim/analysis/output)'
+    notes: Selects which NetCDF state stages are emitted. Default writes only the final 'output' stage;
+      preassim/analysis diagnostics are suppressed unless listed.
+  - name: assimilate_these_obs_types / evaluate_these_obs_types
+    unit: list
+    category: control
+    source_kind: user_provided
+    model_input_format: '&obs_kind_nml'
+    notes: Types in the evaluate-only list get DART_qc=5 (forward operator computed but not assimilated).
 outputs:
   primary:
-  - name: analysis.nc
-    description: Post-assimilation ensemble state
-    format: NetCDF
-    variables:
-    - name: state
-      unit: model-dependent
-      description: Analysis state vector per member
-    - name: state_mean
-      unit: model-dependent
-      description: Ensemble mean of analysis
-    - name: state_sd
-      unit: model-dependent
-      description: Ensemble standard deviation
-  - name: preassim.nc
-    description: Pre-assimilation (prior) ensemble state
-    format: NetCDF
-  - name: obs_seq.final
-    description: Observations with prior/posterior values and QC flags
-    format: DART obs_seq
-  - name: true_state.nc
-    description: True state trajectory (OSSE only, from perfect_model_obs)
-    format: NetCDF
-  diagnostics:
-  - name: obs_diag_output.nc
-    description: Observation-space statistics from obs_diag
-    format: NetCDF
-unit_traps:
-- variable: obs error
-  expected: variance (sigma^2)
-  common_mistake: standard deviation (sigma)
-  consequence: Wrong assimilation weights
-- variable: localization cutoff
-  expected: radians (3D sphere)
-  common_mistake: degrees or km
-  consequence: Spurious correlations or no localization
-- variable: pressure
-  expected: Pascals (Pa)
-  common_mistake: hPa or mb
-  consequence: Wrong vertical localization
-- variable: missing data
-  expected: '-888888.0'
-  common_mistake: NaN or -9999
-  consequence: Silent data corruption
-validation:
-  test_case: Lorenz 63 OSSE
-  metrics:
-  - name: RMSE
-    expected: ~2.0
-    threshold: 4.0
-  - name: ensemble_spread
-    expected: ~RMSE
-  - name: filter_divergence
-    expected: none
-known_issues: []
+  - name: analysis ensemble mean (posterior state)
+    unit: host-model state units
+    description: Posterior ensemble-mean estimate in the coupled host model's physical medium (atmosphere,
+      ocean, land, ice, etc.) and state space after assimilation and posterior inflation; the primary
+      analysis product seeding the next cycle.
+    validation_rank: 1
+    emitted_in: analysis_mean.nc / output_mean.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Verify against withheld (non-assimilated) observations to avoid circularity
+        - Skip spinup (10-50 cycles) before computing skill metrics
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Host-model grid; compare against independent reanalysis or gridded obs
+      detrending_options:
+      - none
+  - name: analysis ensemble spread (posterior sd)
+    unit: host-model state units
+    description: Posterior ensemble standard deviation in the coupled host model's physical medium (atmosphere,
+      ocean, land, ice, etc.) and state space (N-1 normalized); for a well-calibrated ensemble it should
+      approximately equal the analysis RMSE (spread-skill consistency).
+    validation_rank: 2
+    emitted_in: analysis_sd.nc / output_sd.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - 'Spread-skill diagnostic: compare ensemble sd against RMSE of the ensemble mean versus obs;
+          persistent sd << RMSE indicates filter divergence'
+      detrending_options:
+      - none
+  - name: observation-space innovations and QC (obs_seq.final)
+    unit: observation units
+    description: 'Per-observation diagnostics in the coupled host model''s physical observation medium
+      (atmosphere, ocean, land, ice, etc.) and observation space: prior/posterior ensemble-mean expected
+      obs, prior/posterior spread, and DART_qc flag; prior innovations measure forecast skill, posterior
+      measures analysis fit.'
+    validation_rank: 3
+    emitted_in: obs_seq.final
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Filter the -888888.0 sentinel before any statistic (np.nanmean does NOT exclude it)
+        - A high QC>0 fraction signals forward-operator (QC4), vertical-coordinate (QC8), or too-tight
+          outlier (QC7) problems
+      detrending_options:
+      - none
+  - name: binned observation-space diagnostics (bias, rmse, totalspread)
+    unit: observation units
+    description: Time/region/level-binned observation-space innovation statistics in the coupled host
+      model's physical observation medium (atmosphere, ocean, land, ice, etc.) (bias = mean innovation,
+      RMSE, totalspread, obs counts used/possible) for verification.
+    validation_rank: 4
+    emitted_in: obs_diag_output.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - These ARE the verification statistics; the reference 'truth' is the assimilated or withheld
+          observations
+        - Skip spinup cycles before interpreting; totalspread should track RMSE for a calibrated ensemble
+      detrending_options:
+      - none
+  secondary: []
+known_issues:
+- id: dt_001
+  symptom: 'Assimilation has very small (near-zero) increments despite large observation-minus-background
+    departures. Filter runs but state barely changes.
+
+    '
+  diagnosis: 'Observation error stored as standard deviation instead of variance. DART expects error VARIANCE
+    (sigma^2). If sigma=2.0 is passed directly, DART treats it as variance=2.0 (sigma=1.41), making observations
+    overly trusted or undertrusted.
+
+    ; The obs_seq format stores error as variance in the error_var '
+  remedy: Square the observation error before writing to obs_seq; convert_obs_to_dart; ['Check error_var
+    values in obs_seq.out — should be sigma^2', 'If error_var = sigma (not squared), re-run converter
+    with --error_variance set to sigma^2']; validate_outputs() checks for suspiciously small error variance
+  severity: silent
+- id: dt_002
+  symptom: 'For 3D sphere models, observations have no impact on state despite being co-located. Localization
+    appears to reject all observations.
+
+    '
+  diagnosis: 'Localization cutoff specified in degrees instead of radians. For threed_sphere location
+    module, cutoff is in RADIANS. 0.2 degrees ≈ 22 km — far too small. 0.2 radians ≈ 1146 km.
+
+    ; The assim_tools_nml cutoff defines the Gaspari-Cohn half-width. For threed_sphere, this is in radians
+    of great-circle di'
+  remedy: 'Convert cutoff from degrees to radians: cutoff_rad = cutoff_deg * pi / 180; generate_input_nml;
+    [''Check cutoff value in input.nml &assim_tools_nml'', ''For threed_sphere: typical cutoff is 0.05-1.0
+    radians (300-6400 km)'', ''If cutoff < 0.01, it is likely in degrees — multiply by pi/180'']; generate_inpu'
+  severity: silent
+- id: dt_003
+  symptom: 'Vertical localization rejects observations that should be nearby. Radiosonde observations
+    at 500 hPa have no impact on model levels near 500 hPa.
+
+    '
+  diagnosis: 'Pressure vertical coordinate in hPa instead of Pascals. DART which_vert=2 (pressure) uses
+    PASCALS. 500 hPa should be stored as 50000.0 Pa. Storing 500.0 places the obs near the top of the
+    atmosphere.
+
+    ; DART location module uses Pa for pressure coordinates. 1 hPa = 100 Pa. Converting requires multipl'
+  remedy: Multiply pressure values by 100 to convert hPa → Pa; convert_obs_to_dart; ['Check vertical location
+    values in obs_seq — surface should be ~101325', 'If values are ~1013 or ~500, they are in hPa — multiply
+    by 100', 'Use --pressure_in_hpa flag in convert_obs_to_dart.py']; validate_outputs() checks pre
+  severity: silent
+- id: dt_004
+  symptom: 'Observations placed at wrong geographic locations. Weather station at 120°E appears at 120°W
+    or wraps incorrectly on the globe.
+
+    '
+  diagnosis: 'Longitude values outside [0, 360] degree range. DART stores longitude internally as radians
+    in [0, 2π]. Input should be degrees in [0, 360]. Negative longitudes (-180 to 0) must be shifted by
+    +360.
+
+    ; Most US/Atlantic sources use [-180, 180] convention. DART uses [0, 360]. Without conversion, -120
+    be'
+  remedy: Add 360 to negative longitudes before conversion; convert_obs_to_dart; ['Check longitude range
+    in input CSV', 'If any values < 0, add 360 to them', 'If any values > 360, subtract 360']; normalize_longitude()
+    in convert_obs_to_dart.py handles this
+  severity: silent
+- id: dt_005
+  symptom: 'Temperature observations systematically ~273 K too warm or too cold compared to model. Large
+    positive or negative bias in temperature assimilation.
+
+    '
+  diagnosis: 'Temperature in Celsius instead of Kelvin (or vice versa). Most atmospheric models in DART
+    use Kelvin. Some land/ocean datasets provide Celsius.
+
+    ; DART itself is unit-agnostic, but the model_mod forward operators expect specific units matching
+    the model. CAM uses Kelvin, CLM uses Kelvin for most vari'
+  remedy: 'Convert Celsius to Kelvin: T_K = T_C + 273.15; convert_obs_to_dart; [''Check temperature range
+    — values near 0-40 suggest Celsius'', ''Values near 200-320 suggest Kelvin'', ''Apply T_K = T_C +
+    273.15 if needed'']; validate_outputs() warns if temperature range looks wrong'
+  severity: silent
+- id: dt_006
+  symptom: 'DART program crashes immediately with ''namelist read error'' or ''invalid namelist input''.
+    No output files produced.
+
+    '
+  diagnosis: 'Fortran namelist syntax error in input.nml. Common issues: double quotes instead of single
+    quotes, missing dots around booleans, missing / terminator, or missing & prefix.
+
+    ; Fortran namelist format requires: &name ... / with single-quoted strings (''value''), dotted booleans
+    (.true., .false.), and pro'
+  remedy: Fix namelist syntax in input.nml; generate_input_nml; ['Check for double quotes — replace with
+    single quotes', 'Check booleans — must be .true. or .false. (with dots)', 'Check each block has &
+    prefix and / terminator', 'Check arrays use comma separation']; generate_input_nml validates output
+    format
+  severity: fatal
+- id: dt_007
+  symptom: 'Inflation is applied to prior but not posterior (or vice versa), despite intending to configure
+    both. Only one inflation affects the analysis.
+
+    '
+  diagnosis: 'inf_flavor set as scalar instead of 2-element array. DART expects inf_flavor = prior_value,
+    posterior_value. Setting inf_flavor = 2 only sets the prior; posterior remains at default (typically
+    0).
+
+    ; All inflation parameters are 2-element arrays: inf_flavor, inf_initial, inf_damping, etc. The first
+    e'
+  remedy: 'Set inf_flavor as 2-element array: inf_flavor = 2, 0; generate_input_nml; [''Check inf_flavor
+    in input.nml — should have two values'', ''Example: inf_flavor = 2, 0 (adaptive prior, no posterior)'',
+    ''Check all other inf_* parameters also have two values'']; generate_input_nml always writes 2-element
+    array'
+  severity: silent
+- id: dt_008
+  symptom: 'No output NetCDF files (preassim_mean.nc, analysis_mean.nc) are generated despite filter running
+    successfully. Only obs_seq.final is produced.
+
+    '
+  diagnosis: 'stages_to_write not configured in &filter_nml. By default, DART may only write ''output''
+    stage, not ''preassim'' or ''analysis''.
+
+    ; The stages_to_write parameter controls which diagnostic files are produced. Common stages: ''preassim'',
+    ''analysis'', ''output''. If empty or omitted, minimal output is generated'
+  remedy: Add stages_to_write = 'preassim', 'analysis', 'output' to filter_nml; generate_input_nml; ['Add/update
+    stages_to_write in &filter_nml', 'Rerun filter']; generate_input_nml includes all three stages by
+    default
+  severity: silent
+- id: dt_009
+  symptom: 'Observations are present in obs_seq.out but filter reports ''obs assimilated = 0, evaluated
+    = N''. All observations evaluated but none assimilated.
+
+    '
+  diagnosis: 'Observation type not listed in assimilate_these_obs_types in &obs_kind_nml. Types listed
+    in evaluate_these_obs_types are computed but do not affect the state.
+
+    ; DART separates assimilated types (update the state) from evaluated types (compute forward operator
+    but don''t update). If your obs type is i'
+  remedy: Move observation type to assimilate_these_obs_types; generate_input_nml; ['Check obs_kind_nml
+    in input.nml', 'Ensure your obs type is in assimilate_these_obs_types', 'Remove it from evaluate_these_obs_types
+    if present']; generate_input_nml sets RAW_STATE_VARIABLE by default
+  severity: silent
+- id: dt_010
+  symptom: '''Error reading obs_seq file'' when filter tries to read observations. File exists but cannot
+    be parsed.
+
+    '
+  diagnosis: 'Binary/ASCII mismatch. Obs_seq file is binary but write_binary_obs_sequence = .false. in
+    obs_sequence_nml (or vice versa).
+
+    ; DART can write obs_seq in ASCII or binary format. The reader auto-detects format, but binary files
+    created on a different architecture may have wrong endianness.
+
+    ; [''obs_seque'
+  remedy: Set read_binary_file_format = 'big_endian' or 'little_endian'; generate_input_nml; ["Check if
+    obs_seq file starts with 'obs_sequence' (ASCII) or binary data", 'If binary, set read_binary_file_format
+    in obs_sequence_nml', "Try both 'big_endian' and 'little_endian'"]; Use ASCII format (write_binary_ob
+  severity: fatal
+- id: dt_011
+  symptom: '''NetCDF: Not a valid ID'' or ''undefined variable'' error when filter reads ensemble input
+    files.
+
+    '
+  diagnosis: 'NetCDF file format version mismatch. DART was compiled against NetCDF v4 but input files
+    are NetCDF classic, or vice versa. Can also occur if NetCDF libraries were compiled with a different
+    compiler than DART.
+
+    ; NetCDF Fortran interface must match the installed library. Library version and compiler '
+  remedy: 'Verify NetCDF installation and rebuild if needed; None; [''Run: ncdump -h input_file.nc (should
+    work)'', ''Check: nf-config --all (shows NetCDF Fortran config)'', ''Ensure NETCDF path in mkmf.template
+    matches nf-config --prefix'', ''Rebuild DART if mismatch'']; Verify NetCDF before building DART'
+  severity: fatal
+- id: dt_012
+  symptom: 'Missing data values (-888888.0) included in statistics calculations, causing huge negative
+    biases or unrealistic RMSE.
+
+    '
+  diagnosis: 'DART missing value (-888888.0) not filtered before computing statistics. Unlike NaN, -888888.0
+    is a valid float that passes through numpy/pandas operations without warning.
+
+    ; DART uses -888888.0 as the missing data sentinel, not NaN. Standard missing-data handling (np.nanmean,
+    dropna) does not catch'
+  remedy: 'Filter out -888888.0 values before computing statistics; parse_dart_output; [''Replace -888888.0
+    with NaN: data[data == -888888.0] = np.nan'', ''Then use np.nanmean, np.nanstd, etc.'']; parse_dart_output.py
+    excludes -888888.0 from CSV output'
+  severity: silent
+- id: dt_013
+  symptom: 'Filter crashes with ''ensemble member has NaN values'' or ''model advance failed''. Happens
+    after several assimilation cycles.
+
+    '
+  diagnosis: 'Filter divergence. Ensemble spread has collapsed to zero, causing division-by-zero in the
+    update step. Or inflation has driven state values to extreme magnitudes.
+
+    ; Without sufficient spread, the Kalman gain becomes ill-conditioned. This typically happens when:
+    (a) no inflation is used with small en'
+  remedy: Enable inflation and/or increase ensemble size; generate_input_nml; ['Set inf_flavor = 2, 0
+    (adaptive prior inflation)', 'Set inf_initial = 1.02, 1.0 (slight initial inflation)', 'Increase ens_size
+    if < 20', 'Check observation error — may be too small']; Use inflation for all but the simplest test
+    c
+  severity: fatal
+- id: dt_014
+  symptom: 'Filter runs for hours without producing output. Appears hung or extremely slow. No error messages
+    in dart_log.out.
+
+    '
+  diagnosis: 'MPI configuration mismatch. Filter was built with MPI but launched without mpirun, or np
+    parameter doesn''t match available cores. Filter is waiting for MPI sync that never comes.
+
+    ; MPI programs must be launched with mpirun/mpiexec. Running an MPI binary directly may work on some
+    systems but hang on '
+  remedy: 'Launch with mpirun or rebuild without MPI; run_dart; [''If MPI build: mpirun -np 4 ./filter'',
+    ''If serial needed: rebuild with ./quickbuild.sh nompi'', ''Check: ldd filter | grep mpi (shows MPI
+    linkage)'']; run_dart.py validates MPI configuration'
+  severity: fatal
+- id: dt_015
+  symptom: 'quickbuild.sh fails with ''undefined reference to nf90_open'' or similar NetCDF symbol errors
+    during linking.
+
+    '
+  diagnosis: 'NetCDF library not found or wrong library linked. LIBS in mkmf.template must include both
+    -lnetcdff (Fortran) and -lnetcdf (C).
+
+    ; NetCDF has separate C and Fortran libraries. DART''s Fortran code uses nf90_* functions from libnetcdff.
+    Missing the double-f library is a common error.
+
+    ; [''mkmf.template'''
+  remedy: 'Update LIBS in mkmf.template to include -lnetcdff -lnetcdf; None; [''Check: nf-config --flibs
+    (shows correct link flags)'', ''Update LIBS in mkmf.template'', ''May also need: -lhdf5_hl -lhdf5
+    -lz for NetCDF-4'', ''Rebuild: ./quickbuild.sh nompi'']; Test with: echo ''use netcdf'' | gfortran
+    -x f95 - -lnetcdff '
+  severity: fatal
+- id: dt_016
+  symptom: 'Ensemble spread is zero after initialization. All members are identical. Filter reports no
+    updates because ensemble covariance is zero.
+
+    '
+  diagnosis: 'perturbation_amplitude is too small (near machine epsilon) or perturb_from_single_instance
+    = .false. without providing distinct member files.
+
+    ; If all members start from the same state with zero perturbation, the ensemble covariance is zero
+    and the Kalman gain is zero. No observations can update the'
+  remedy: Increase perturbation_amplitude or provide distinct member files; generate_input_nml; ['Set
+    perturbation_amplitude = 0.2 (or larger for chaotic models)', 'Verify perturb_from_single_instance
+    = .true.', 'OR provide pre-generated diverse ensemble members']; generate_input_nml sets perturbation_amplitu
+  severity: silent
+- id: dt_017
+  symptom: 'Filter error: ''number of ensemble members in file does not match ens_size''. Filter cannot
+    read input state files.
+
+    '
+  diagnosis: 'ens_size in filter_nml doesn''t match the number of input files or the number of members
+    in a single-file input.
+
+    ; For single_file_in = .true., the file must have ens_size members as separate copies/times. For single_file_in
+    = .false., the number of listed files must equal ens_size.
+
+    ; [''filter_nml'', '
+  remedy: 'Match ens_size to the number of available ensemble members; generate_input_nml; ["Check: ncdump
+    -h input_file.nc | grep ''member\\|copy\\|time''", ''Or: wc -l input_file_list.txt'', ''Set ens_size
+    to match'']; run_dart.py could verify member count before execution'
+  severity: fatal
+- id: dt_018
+  symptom: 'Inflation values grow to very large numbers (>100). State values become unrealistic. RMSE
+    increases over assimilation cycles.
+
+    '
+  diagnosis: 'Adaptive inflation without proper bounds or damping. If inf_upper_bound is too high and
+    inf_damping is 1.0 (no damping), inflation can grow without limit.
+
+    ; Adaptive inflation increases when obs-minus-background departures are larger than expected. If the
+    model has systematic errors, inflation grows'
+  remedy: Set inf_upper_bound = 10.0 and inf_damping = 0.9; generate_input_nml; ['Set inf_upper_bound
+    = 10.0, 10.0', 'Set inf_damping = 0.9, 1.0', 'Consider switching to RTPS (inf_flavor = 4) for posterior'];
+    generate_input_nml sets conservative defaults
+  severity: silent
+- id: dt_019
+  symptom: 'All observations have QC = 7 (outlier rejected). No observations are assimilated despite being
+    physically reasonable.
+
+    '
+  diagnosis: 'outlier_threshold too tight (small value). DART rejects any observation where |obs - prior_mean|
+    > outlier_threshold * sqrt(spread^2 + obs_error^2). Default is 3.0 but can be too strict for poorly
+    initialized ensembles.
+
+    ; During early spinup, the ensemble may be far from truth. A tight threshold rej'
+  remedy: Increase outlier_threshold to 5.0 or set -1 to disable; generate_input_nml; ['Set outlier_threshold
+    = -1 (disable) for testing', 'For production, use 3.0-5.0', 'Check obs_seq.final QC values to verify
+    fix']; Monitor QC distribution in obs_seq.final
+  severity: silent
+- id: dt_020
+  symptom: 'perfect_model_obs crashes with ''forward operator failed'' for observations that should be
+    valid. Model state exists at obs time.
+
+    '
+  diagnosis: 'Observation location outside model domain, or model_interpolate() in model_mod.f90 doesn''t
+    handle the requested observation type.
+
+    ; Each model''s model_mod.f90 implements model_interpolate() for supported observation types. If an
+    obs type is not handled, the forward operator returns failure status.
+
+    ;'
+  remedy: Verify observation type is supported by the model_mod; None; ['Check model_mod.f90 model_interpolate()
+    for your obs type', 'Verify obs locations are within model domain', 'For new obs types, implement
+    forward operator in model_mod']; Use model_mod_check program to test forward operators
+  severity: fatal

@@ -1,13 +1,3 @@
----
-name: lisflood
-description: >-
-  EC-JRC LISFLOOD (Van Der Knijff et al. 2010; Burek et al. 2013 Revised User Manual, JRC
-  EUR 26162 EN) — distributed rainfall-runoff core of…. Covers Spatially distributed
-  catchment-scale water balance and rainfall-runoff simulation; Snow accumulation, melt
-  and glacier icemelt over sub-pixel elevation zones. Use when the task involves running,
-  configuring, calibrating or interpreting LISFLOOD.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,39 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (14 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_lisflood.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_lisflood.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # LISFLOOD — Knowledge Infrastructure
 
@@ -234,6 +257,59 @@ Lake and reservoir lookup tables (`TabLakeArea`, `TabTotStorage`, etc.) must con
 
 ---
 
+## 6. Output Description
+
+This section is sourced from `dag.yaml`. The dag is the source of truth for
+observable output identity; if this section and `dag.yaml` ever disagree, the
+dag wins.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `dis` — River channel discharge at every channel pixel (primary product); also written as gauge-point .tss time series. (m³/s)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `dis` | 1 | m³/s | River channel discharge at every channel pixel (primary product); also written as gauge-point .tss time series. |
+
+Other dag outputs currently recorded by the KI: `snowcov`, `theta1/2/3`, `twb`.
+
+---
+
+## 8. Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`, projected from `dag.yaml` and
+`diagnostics/triplets.yaml`; regenerate that file after changing either source,
+never hand-edit it. This table restates the KI's pipeline unit traps for run
+preparation and post-processing.
+
+| Variable | Source unit (verified or common source) | Model unit | Conversion | Diagnostic |
+|----------|------------------------------------------|------------|------------|------------|
+| Precipitation | mm/3hr (CMFD) | mm/day or mm/timestep | ×8 for 3hr to day | dt_001 |
+| Precipitation | m/s (ERA5) | mm/day or mm/timestep | ×86400×1000 for m/s to mm/day | dt_001 |
+| Temperature | K | °C, or K with `TemperatureInKelvin=1` | −273.15, or set `TemperatureInKelvin=1` | dt_002 |
+| ET0 / E0 | W/m² | mm/day potential rate | ÷(2.45×10⁶)×86400×1000 | dt_003 |
+| Soil depth | m | mm | ×1000 | dt_007 |
+| Soil depth | cm | mm | ×10 | dt_007 |
+| KSat | cm/day | mm/day | ×10 | dt_008 |
+| KSat | m/s | mm/day | ×86400×1000 | dt_008 |
+| GenuAlpha | 1/m | 1/cm | ÷100 | dt_005 |
+| Channel slope | % | m/m | ÷100 | dt_009 |
+| ChanLength | km | m | ×1000 | dt_009 |
+| Manning's n | n value | calibration multiplier | use `CalChanMan` as multiplier on `ChanManMaps` | dt_009 |
+
+### Output Unit Table (source: `dag.yaml`)
+
+The dag is the source of truth for observable output identity. If this section
+and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `dis` | 1 | m³/s | River channel discharge at every channel pixel (primary product); also written as gauge-point .tss time series. |
+
+Other dag outputs currently recorded by the KI: `snowcov`, `theta1/2/3`, `twb`.
+
+---
+
 ## Calibration Parameters (Priority Order)
 
 | Parameter | XML element | Range | Controls | Sensitivity |
@@ -367,6 +443,45 @@ print('Max Q:', ds['dis'][:].max(), 'm3/s')
 ds.close()
 "
 ```
+
+---
+
+## 11. Validated Results
+
+### Test Case
+
+| Property | Value |
+|----------|-------|
+| Validation status | `test_case_validated` |
+| Test case | `LF_ETRS89_UseCase` cold run |
+| Body campaign metrics | pending |
+
+The rank-1 output judged by this KI is `dis`: River channel discharge at every
+channel pixel (primary product); also written as gauge-point .tss time series.
+The dag unit for `dis` is m³/s.
+
+### Performance Metrics — Convention Bars
+
+These bars restate `docs/validation_convention.yaml`. Achieved calibration,
+validation, and full-period metric values are not recorded in this SKILL body;
+the body campaign is pending.
+
+| Dag variable | Metric | Direction | Convention bar (cited) | Achieved |
+|--------------|--------|-----------|-------------------------|----------|
+| `dis` | nse | maximize | very_good ≥ 0.8 (moriasi2015, moriasi2007); good ≥ 0.7 (moriasi2015, moriasi2007); satisfactory ≥ 0.5 (moriasi2015, moriasi2007) | pending |
+| `dis` | pbias | zero_centered | very_good within ±5.0 (moriasi2015); good within ±10.0 (moriasi2015); satisfactory within ±15.0 (moriasi2015) | pending |
+| `dis` | csi | maximize | satisfactory: no cited threshold | pending |
+| `snowcov` | csi | maximize | satisfactory: no cited threshold | pending |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | pending | See `docs/format_spec.yaml` and the data KI references before replacing source data. |
+| Soil | Pipeline | pending | See `tools/convert_soil_params.py` and HWSD/SoilGrids documentation. |
+| Land cover | Pipeline | pending | Preserve LISFLOOD map naming and fraction conventions. |
+| DEM / routing | Pipeline | pending | Preserve PCRaster LDD convention and channel network consistency. |
+| Initial conditions | Pipeline | pending | Cold-run end states can seed warm starts. |
 
 ---
 

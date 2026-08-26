@@ -48,15 +48,20 @@ CANDIDATE ISOLATION + STALE-OUTPUT SAFETY
 -----------------------------------------
 The model runs ONLY inside the `--workdir` the kit hands this candidate:
 `<workdir>/run` is WIPED AND REBUILT at the start of every evaluation, and
-`<workdir>` is held under an exclusive non-blocking lock for the whole run, so no
-concurrent or retried candidate can share a run directory or read another
-candidate's inputs/outputs.  The shared `--prep-dir` cache is serialised under its
-own blocking lock and published with atomic replaces.  `--out` is deleted as the
-FIRST action of main(), before the workdir is created or locked, and again on
-EVERY failure path — so even lock contention (which raises before the model runs)
-cannot leave a stale metrics file.  The metrics JSON is only ever created by a
-completed, fully validated evaluation (tmp + os.replace); a failed run leaves
-NOTHING behind, so the kit reads +inf instead of a stale success.
+`<workdir>` is held under an exclusive lock for the whole run, so no concurrent
+or retried candidate can share a run directory or read another candidate's
+inputs/outputs.  A candidate that finds the workdir busy QUEUES behind the holder
+(bounded by KDT_CALIB_LOCK_WAIT_S, default 4 h) and then runs its own full
+evaluation — it never fails merely because the kit gave two concurrent runs of
+this model the same workdir, which is what turned a scheduling collision into a
+bogus `screen_failed` (see the LOCK CONTENTION note further down).  The shared
+`--prep-dir` cache is serialised under its own blocking lock and published with
+atomic replaces.  `--out` is deleted as the FIRST action of main(), before the
+workdir is created or locked, and again on EVERY failure path — so even a lock
+wait that times out cannot leave a stale metrics file.  The metrics JSON is only
+ever created by a completed, fully validated evaluation (tmp + os.replace); a
+failed run leaves NOTHING behind, so the kit reads +inf instead of a stale
+success.
 
 Commissioning helper (NOT used by the kit; never emits metrics):
     python3 calib_run.py --readback-probe --workdir <wd> --set NAME=VALUE ...
@@ -87,9 +92,9 @@ import numpy as np
 KI = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(KI, "tools")
 ROOT = os.path.dirname(KI)
-BIN = "KISSPATH_BINARIES/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
-SRCDIR = "KISSPATH_BINARIES/Noah_MP/source/repo"
-TBL_SRC = "KISSPATH_BINARIES/Noah_MP/source/hrldas/hrldas/run/NoahmpTable.TBL"
+BIN = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
+SRCDIR = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/repo"
+TBL_SRC = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/NoahmpTable.TBL"
 KDT = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
 PREFLIGHT = os.path.join(KDT, "validators", "preflight_forcing.py")
 
@@ -280,29 +285,103 @@ def log(*a):
 #   1. the model runs ONLY inside `<workdir>/run`, which is REBUILT FROM SCRATCH
 #      at the start of every evaluation (reset_rundir), so no artifact of a
 #      previous or concurrent candidate can be read as this one's output;
-#   2. `<workdir>` is held under an EXCLUSIVE non-blocking lock for the whole
-#      evaluation, so two processes can never share one run directory (a retry
-#      that collides fails closed instead of interleaving into it);
+#   2. `<workdir>` is held under an EXCLUSIVE lock for the whole evaluation, so
+#      two processes can never share one run directory — a colliding candidate
+#      QUEUES behind the holder and then runs its own full evaluation in its own
+#      freshly rebuilt `<workdir>/run` (see the note on lock contention below);
 #   3. `--out` (and its .tmp) is deleted as the FIRST action of main() — before
 #      the workdir is created or locked, so the lock itself is inside the guarded
 #      region — and again on EVERY failure path, so a failed run leaves NOTHING
 #      behind and the kit reads +inf rather than a previous candidate's metrics.
+#
+# LOCK CONTENTION MUST QUEUE, NOT FAIL (2026-08-13 driver repair)
+# ---------------------------------------------------------------
+# The workdir lock used to be NON-BLOCKING: a second process fell straight
+# through to `Fail` -> exit 1 -> no metrics -> the kit scored +inf.  That is the
+# right answer for a corrupt run, but the WRONG answer for mere contention,
+# because the kit does NOT give a model's concurrent calibration runs distinct
+# workdirs: `auto_dissect_multi_agent.calibrate --model M --case C` always uses
+# `<models>/calib_<M>`, so two runs of the SAME model (e.g. the sceua and dream
+# sweeps of one matrix) hand this driver the SAME `--workdir`.  The second run's
+# very first evaluation is the DEFAULT-params baseline probe, so it died on the
+# lock, `_probe_runner_metrics` read {}, and calib.py's fail-closed baseline gate
+# reported `screen_failed: runner produced NO finite objective metric at DEFAULT
+# params` — a driver verdict for what was only a scheduling collision.
+# Waiting is safe and correct: the kit imposes NO subprocess timeout by default
+# (calibration_kit/runner.py: "TIME IS NEVER A CONSTRAINT"; only an explicit
+# KDT_CALIB_EVAL_TIMEOUT bounds a run), mutual exclusion is fully preserved (the
+# waiter never enters the run directory before the holder is gone, and rebuilds
+# it from scratch when it does), and a genuinely stuck holder still fails closed
+# via the bounded deadline below.
 # --------------------------------------------------------------------------
 _LOCKS = []                    # keep lock file objects alive for the process
 
+# How long a candidate waits for a busy `--workdir` before failing closed.  One
+# evaluation is ~8 min, so the default (4 h) queues behind a realistic backlog of
+# concurrent runs while still catching a holder that has genuinely hung.
+LOCK_WAIT_S = 4 * 3600
+LOCK_POLL_S = 5.0
 
-def _lock_dir(path, blocking, what):
-    """flock `path`/.kdt_calib.lock.  Non-blocking -> Fail on contention."""
+
+def _lock_wait_seconds():
+    """`KDT_CALIB_LOCK_WAIT_S` overrides the deadline; 0 restores fail-fast."""
+    raw = (os.environ.get("KDT_CALIB_LOCK_WAIT_S") or "").strip()
+    if not raw:
+        return LOCK_WAIT_S
+    try:
+        return max(float(raw), 0.0)
+    except ValueError:
+        raise Fail(f"KDT_CALIB_LOCK_WAIT_S={raw!r} is not a number")
+
+
+def _lock_dir(path, blocking, what, wait_s=None):
+    """flock `path`/.kdt_calib.lock.
+
+    blocking=True   wait indefinitely (the shared prep cache: the holder is only
+                    ever doing the one-time preparation).
+    blocking=False  wait up to `wait_s` seconds (default `_lock_wait_seconds()`)
+                    for the holder to finish, polling non-blockingly so the
+                    deadline is enforceable, then Fail — no metrics, exit 1.
+                    wait_s=0 is the old fail-fast behaviour.
+    """
+    import time
+
     os.makedirs(path, exist_ok=True)
     fh = open(os.path.join(path, ".kdt_calib.lock"), "w")
-    try:
-        fcntl.flock(fh, fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError as exc:
-        fh.close()
-        if exc.errno in (errno.EACCES, errno.EAGAIN):
-            raise Fail(f"{what} {path} is already in use by another calib_run.py "
-                       "process — refusing to share a run directory")
-        raise
+    if blocking:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        except OSError:
+            fh.close()
+            raise
+        _LOCKS.append(fh)
+        return fh
+
+    deadline = time.monotonic() + (_lock_wait_seconds() if wait_s is None else wait_s)
+    waited, announced = 0.0, False
+    while True:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                fh.close()
+                raise
+            if time.monotonic() >= deadline:
+                fh.close()
+                raise Fail(
+                    f"{what} {path} is still held by another calib_run.py process "
+                    f"after waiting {waited:.0f}s — refusing to share a run "
+                    "directory (raise KDT_CALIB_LOCK_WAIT_S if the queue is long)")
+            if not announced:
+                log(f"[calib_run] {what} {path} is busy — queueing behind the "
+                    f"running evaluation (up to {deadline - time.monotonic():.0f}s)")
+                announced = True
+            time.sleep(LOCK_POLL_S)
+            waited += LOCK_POLL_S
+            continue
+        break
+    if announced:
+        log(f"[calib_run] acquired {what} {path} after waiting {waited:.0f}s")
     _LOCKS.append(fh)
     return fh
 
@@ -1090,10 +1169,12 @@ def main():
     try:
         os.makedirs(a.workdir, exist_ok=True)
         # CANDIDATE ISOLATION: this process owns <workdir> (and therefore
-        # <workdir>/run) exclusively for the whole evaluation.  Concurrent
-        # candidates get DIFFERENT workdirs from the kit and so never contend; a
-        # retry that reuses a workdir still in flight fails closed instead of
-        # writing into a live run directory.
+        # <workdir>/run) exclusively for the whole evaluation.  Candidates of ONE
+        # kit run are sequential and never contend; a candidate from a SECOND
+        # concurrent kit run of this model (which the kit hands the very same
+        # workdir) waits here for the holder to finish and then rebuilds
+        # <workdir>/run from scratch for itself — it never writes into a live run
+        # directory, and it never dies just because the workdir was busy.
         _lock_dir(a.workdir, blocking=False, what="workdir")
         return _run(a)
     except BaseException:

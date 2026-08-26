@@ -224,7 +224,7 @@ outputs:
   - var: "MLD_003"
     validation_rank: 5
     unit: "m"
-    description: "Mixed-layer depth (0.03 kg/m^3 density criterion)."
+    description: "Ocean mixed-layer depth (0.03 kg/m^3 density criterion)."
     emitted_in: "diag_table NetCDF"
     observability:
       comparable_obs_shapes:
@@ -480,3 +480,9 @@ safety:
       scope: "Boussinesq scaling, pressure-gradient and heat-budget calculations"
       source: "MOM_verticalGrid.F90 / MOM.F90 get_param defaults"
       status: "adopted"
+
+medium_evidence:
+  - var: "MLD_003"
+    source: "dag.yaml"
+    quote: "Ocean general circulation (horizontal velocity u, v)"
+    note: "boundary.scope_in declares MOM6's physical medium as ocean; MLD_003 is therefore an ocean mixed-layer depth diagnostic."

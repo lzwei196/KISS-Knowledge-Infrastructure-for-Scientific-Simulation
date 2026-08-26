@@ -446,99 +446,99 @@ entries:
   promoted: false
   promoted_as: ''
 
-- id: "err_018"
-  timestamp: "2026-03-17T20:00:00"
-  recorded_by: "claude-code"
-  run_context:
-    basin: "hutuo"
-    model: "RZWQM2"
-    run_name: "hutuo_wheat_maize_26sites"
-  stage: "s6_5_management_write"
-  failure_domain: "parameter_format"
-  symptom:
-    description: "RZWQM2 crashes with 'INPUT INCORRECT FOR IRRIGATION => IDOI' when irrigation is enabled."
-    error_pattern: "INPUT INCORRECT FOR IRRIGATION.*IDOI"
-    detection_method: "log_match"
-  diagnosis:
-    root_cause: "write_management_events used timing=4 (ET-deficit) with MAD fraction 0.50 for irrigation. RZWQM2 expects timing=2 (specific dates) with integer date fields. The model tries to parse 0.50 as a date and fails."
-    affected_components: ["tools/s6_management_write/write_management_events.py _format_irrigation_lines()"]
-  resolution:
-    action: "Rewrote irrigation to use timing=2 (specific dates), type=2 (flood), methodology=1 (fixed amount). Mid-season irrigation date auto-calculated from planting/harvest DOY."
-    files_changed: ["tools/s6_management_write/write_management_events.py"]
-  severity: "fatal"
-  promoted: false
-  promoted_as: ""
+  - id: "err_018"
+    timestamp: "2026-03-17T20:00:00"
+    recorded_by: "claude-code"
+    run_context:
+      basin: "hutuo"
+      model: "RZWQM2"
+      run_name: "hutuo_wheat_maize_26sites"
+    stage: "s6_5_management_write"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "RZWQM2 crashes with 'INPUT INCORRECT FOR IRRIGATION => IDOI' when irrigation is enabled."
+      error_pattern: "INPUT INCORRECT FOR IRRIGATION.*IDOI"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "write_management_events used timing=4 (ET-deficit) with MAD fraction 0.50 for irrigation. RZWQM2 expects timing=2 (specific dates) with integer date fields. The model tries to parse 0.50 as a date and fails."
+      affected_components: ["tools/s6_management_write/write_management_events.py _format_irrigation_lines()"]
+    resolution:
+      action: "Rewrote irrigation to use timing=2 (specific dates), type=2 (flood), methodology=1 (fixed amount). Mid-season irrigation date auto-calculated from planting/harvest DOY."
+      files_changed: ["tools/s6_management_write/write_management_events.py"]
+    severity: "fatal"
+    promoted: false
+    promoted_as: ""
 
-- id: "err_019"
-  timestamp: "2026-03-17T20:10:00"
-  recorded_by: "claude-code"
-  run_context:
-    basin: "hutuo"
-    model: "RZWQM2"
-    run_name: "hutuo_wheat_maize_26sites"
-  stage: "s7_scenario_assembly"
-  failure_domain: "path_resolution"
-  symptom:
-    description: "RZWQM2 crashes at day 77 with 'end-of-file during read' on .sno file. Snow file is 0 bytes in Meteorology/."
-    error_pattern: "forrtl.*end-of-file.*sno"
-    detection_method: "exit_code"
-  diagnosis:
-    root_cause: "initialize_scenario and mass_project_generator create empty .sno files in Meteorology/ but don't copy the template snow data. The template has akron-updated.sno in the scenario dir but it's not copied to the Meteorology/ path that ipnames references."
-    affected_components: ["tools/s7_scenario_assembly/initialize_scenario.py", "mass_project_generator.py"]
-  resolution:
-    action: "Orchestration scripts (run_iowa.py, run_bengbu.py) already copy sno explicitly. The initialize_scenario tool should also ensure the sno copy. For now, documented in workflow.md as a required step."
-    files_changed: []
-  severity: "fatal"
-  promoted: false
-  promoted_as: ""
+  - id: "err_019"
+    timestamp: "2026-03-17T20:10:00"
+    recorded_by: "claude-code"
+    run_context:
+      basin: "hutuo"
+      model: "RZWQM2"
+      run_name: "hutuo_wheat_maize_26sites"
+    stage: "s7_scenario_assembly"
+    failure_domain: "path_resolution"
+    symptom:
+      description: "RZWQM2 crashes at day 77 with 'end-of-file during read' on .sno file. Snow file is 0 bytes in Meteorology/."
+      error_pattern: "forrtl.*end-of-file.*sno"
+      detection_method: "exit_code"
+    diagnosis:
+      root_cause: "initialize_scenario and mass_project_generator create empty .sno files in Meteorology/ but don't copy the template snow data. The template has akron-updated.sno in the scenario dir but it's not copied to the Meteorology/ path that ipnames references."
+      affected_components: ["tools/s7_scenario_assembly/initialize_scenario.py", "mass_project_generator.py"]
+    resolution:
+      action: "Orchestration scripts (run_iowa.py, run_bengbu.py) already copy sno explicitly. The initialize_scenario tool should also ensure the sno copy. For now, documented in workflow.md as a required step."
+      files_changed: []
+    severity: "fatal"
+    promoted: false
+    promoted_as: ""
 
-- id: "err_020"
-  timestamp: "2026-03-17T21:50:00"
-  recorded_by: "claude-code"
-  run_context:
-    basin: "hutuo"
-    model: "RZWQM2"
-    run_name: "hutuo_wheat_maize_26sites"
-  stage: "s2_met_prep"
-  failure_domain: "silent_error"
-  symptom:
-    description: "Annual precipitation 76 mm/yr in RZWQM2 vs 693 mm/yr in VIC (10% of actual). Crop yields near zero. Model runs to completion without error."
-    error_pattern: ""
-    detection_method: "value_comparison"
-  diagnosis:
-    root_cause: "Agent converted VIC flux output (hutuo_fluxes_*.txt) to RZWQM2 weather CSV instead of using CMFD forcing directly. VIC OUT_PREC values are daily model output in mm but the conversion script likely applied additional unit conversions that reduced the values. The forcing_source_adapter tool with source='cmfd' produces correct precipitation."
-    explanation: >
-      The workflow.md did not explicitly warn against using VIC output as RZWQM2 weather input.
-      The agent found VIC flux files in the project directory and reasonably tried to convert them.
-      But VIC flux output should never be used as RZWQM2 forcing — always use the raw gridded
-      dataset (CMFD/MSWX) via forcing_source_adapter.
-    affected_components:
-      - "weather_csv generation (custom script, not our tools)"
-      - "workflow.md (missing guidance)"
-  resolution:
-    action: "Updated workflow.md with explicit warning: never use VIC flux as RZWQM2 weather. Always use CMFD/MSWX via forcing_source_adapter. Added as dt_015 candidate."
-    files_changed:
-      - "workflow/workflow.md"
-    prevention: "Workflow.md now has critical warning in Step 2 and in Critical Domain Knowledge section."
-  severity: "silent"
-  promoted: false
-  promoted_as: ""
+  - id: "err_020"
+    timestamp: "2026-03-17T21:50:00"
+    recorded_by: "claude-code"
+    run_context:
+      basin: "hutuo"
+      model: "RZWQM2"
+      run_name: "hutuo_wheat_maize_26sites"
+    stage: "s2_met_prep"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Annual precipitation 76 mm/yr in RZWQM2 vs 693 mm/yr in VIC (10% of actual). Crop yields near zero. Model runs to completion without error."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Agent converted VIC flux output (hutuo_fluxes_*.txt) to RZWQM2 weather CSV instead of using CMFD forcing directly. VIC OUT_PREC values are daily model output in mm but the conversion script likely applied additional unit conversions that reduced the values. The forcing_source_adapter tool with source='cmfd' produces correct precipitation."
+      explanation: >
+        The workflow.md did not explicitly warn against using VIC output as RZWQM2 weather input.
+        The agent found VIC flux files in the project directory and reasonably tried to convert them.
+        But VIC flux output should never be used as RZWQM2 forcing — always use the raw gridded
+        dataset (CMFD/MSWX) via forcing_source_adapter.
+      affected_components:
+        - "weather_csv generation (custom script, not our tools)"
+        - "workflow.md (missing guidance)"
+    resolution:
+      action: "Updated workflow.md with explicit warning: never use VIC flux as RZWQM2 weather. Always use CMFD/MSWX via forcing_source_adapter. Added as dt_015 candidate."
+      files_changed:
+        - "workflow/workflow.md"
+      prevention: "Workflow.md now has critical warning in Step 2 and in Critical Domain Knowledge section."
+    severity: "silent"
+    promoted: false
+    promoted_as: ""
 
-- id: "err_021"
-  timestamp: "2026-03-17T23:30:00"
-  recorded_by: "claude-code"
-  stage: "s0_global_data"
-  failure_domain: "runtime"
-  symptom:
-    description: "CMFD forcing retrieval takes ~18 min per site (19 years). 13 sites = 4+ hours. Sequential netCDF4 reads on 1368 monthly files."
-    error_pattern: ""
-    detection_method: "value_comparison"
-  diagnosis:
-    root_cause: "CMFD backend in forcing_source_adapter.py read files sequentially. MSWX backend had multiprocessing but CMFD did not."
-    affected_components: ["tools/s0_global_data/forcing_source_adapter.py _retrieve_cmfd()"]
-  resolution:
-    action: "Added multiprocessing.Pool to CMFD backend (same pattern as MSWX). 6 parallel workers read different variables simultaneously. Expected 4-5x speedup."
-    files_changed: ["tools/s0_global_data/forcing_source_adapter.py"]
-  severity: "degraded"
-  promoted: false
-  promoted_as: ""
+  - id: "err_021"
+    timestamp: "2026-03-17T23:30:00"
+    recorded_by: "claude-code"
+    stage: "s0_global_data"
+    failure_domain: "runtime"
+    symptom:
+      description: "CMFD forcing retrieval takes ~18 min per site (19 years). 13 sites = 4+ hours. Sequential netCDF4 reads on 1368 monthly files."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "CMFD backend in forcing_source_adapter.py read files sequentially. MSWX backend had multiprocessing but CMFD did not."
+      affected_components: ["tools/s0_global_data/forcing_source_adapter.py _retrieve_cmfd()"]
+    resolution:
+      action: "Added multiprocessing.Pool to CMFD backend (same pattern as MSWX). 6 parallel workers read different variables simultaneously. Expected 4-5x speedup."
+      files_changed: ["tools/s0_global_data/forcing_source_adapter.py"]
+    severity: "degraded"
+    promoted: false
+    promoted_as: ""

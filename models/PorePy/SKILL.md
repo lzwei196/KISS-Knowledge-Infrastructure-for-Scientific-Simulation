@@ -1,14 +1,3 @@
----
-name: porepy
-description: >-
-  PorePy multiphysics fractured-porous-media framework. Covers Single-phase Darcy fluid
-  mass balance in mixed-dimensional fractured media; Linear-elastic momentum balance with
-  frictional fracture contact mechanics; Energy balance (advective + conductive heat
-  transport, local thermal equilibrium); Biot poromechanics (coupled flow + mechanics);
-  Thermoporomechanics (coupled THM). Use when the task involves running, configuring,
-  calibrating or interpreting PorePy.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_data.py --help` |
+| `tools/convert_material_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_material_params.py --help` |
+| `tools/parse_porepy_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_porepy_output.py --help` |
+| `tools/run_porepy.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_porepy.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # PorePy Knowledge Infrastructure
 
@@ -253,7 +276,28 @@ mdg = pp.create_mdg(grid_type="simplex", meshing_args={"cell_size": 0.1},
 
 ---
 
-## 6  Output Format
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag defines what this KI predicts; if the body
+and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `temperature` — Subsurface fractured-porous-medium temperature field at cell centers (energy / THM models). (`K`)
+
+### Dag Output Inventory
+
+| Output variable (dag `var`) | Unit | Description |
+|-----------------------------|------|-------------|
+| `temperature` | K | Subsurface fractured-porous-medium temperature field at cell centers (energy / THM models). |
+| `pressure` | See `dag.yaml` | Listed as an additional dag output. |
+| `displacement` | See `dag.yaml` | Listed as an additional dag output. |
+| `darcy_flux` | See `dag.yaml` | Listed as an additional dag output. |
+| `stress` | See `dag.yaml` | Listed as an additional dag output. |
+| `fracture_aperture` | See `dag.yaml` | Listed as an additional dag output. |
+| `contact_traction` | See `dag.yaml` | Listed as an additional dag output. |
+
+### Output Format
 
 ### Primary: VTU/VTK Files
 
@@ -366,7 +410,38 @@ print('Simulation complete. Check test_output/ for VTU files.')
 
 ---
 
-## 11  File Structure
+## 11. Validated Results
+
+**Source of truth**: `docs/validation_convention.yaml`. A run is judged against the
+field convention recorded there, not against remembered thresholds or intuition. Null
+bands in the convention are written here as `no cited threshold`.
+
+### Headline Output Validation Status
+
+The dag rank-1 output is `temperature` with unit `K` and description: Subsurface
+fractured-porous-medium temperature field at cell centers (energy / THM models).
+The extracted convention facts provided for this update cover `pressure` and
+`displacement`; this section restates those bars without adding thresholds.
+
+### Convention Bars Restated from the KI
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band |
+|--------------|--------|-----------|-------------------|-----------|----------------|
+| `pressure` | `nse` | maximize | `0.5` (`das2019`) | `0.75` (`das2019`) | no cited threshold |
+| `pressure` | `csi` | maximize | no cited threshold | no cited threshold | no cited threshold |
+| `displacement` | `nse` | maximize | no cited threshold | no cited threshold | no cited threshold |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Output identity | `dag.yaml` | Sourced | Rank-1 output is `temperature`; other dag outputs are `pressure`, `displacement`, `darcy_flux`, `stress`, `fracture_aperture`, and `contact_traction`. |
+| Validation convention | `docs/validation_convention.yaml` | Sourced | Pressure NSE has cited `das2019` satisfactory and good bands; the listed null bands have no cited threshold. |
+| Achieved metrics | Model run outputs | Pending | Record achieved values only after running the actual PorePy package and comparing against observations or benchmark data. |
+
+---
+
+## 12  File Structure
 
 ```
 ki/

@@ -1,0 +1,288 @@
+schema_version: 1
+model_id: GIFMod
+domain: hydrology
+generated_by: "Step-B validation-convention agent; dag-variable vocabulary"
+generated_at: 2026-08-14
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  saran2022:
+    doi: 10.3390/su14031086
+    title: "Efficient Urban Runoff Quantity and Quality Modelling Using SWMM Model and Field Data"
+    venue: "Sustainability"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_su14031086.txt
+  massoudieh2017:
+    doi: 10.1016/j.envsoft.2017.02.013
+    title: "A flexible modeling framework for hydraulic and water quality performance assessment of stormwater green infrastructure"
+    venue: "Environmental Modelling & Software"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2017.02.013.txt
+  lisenbee2021:
+    doi: 10.1016/j.envsoft.2021.105146
+    title: "Modeling bioretention stormwater systems: Current models and future research needs"
+    venue: "Environmental Modelling & Software"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2021.105146.txt
+  bonneau2021:
+    doi: 10.1016/j.jclepro.2021.127636
+    title: "Field validation of a physically-based model for bioretention systems"
+    venue: "Journal of Cleaner Production"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jclepro.2021.127636.txt
+  meng2014:
+    doi: 10.1155/2014/521047
+    title: "Modelling Hydrology of a Single Bioretention System with HYDRUS-1D"
+    venue: "The Scientific World Journal"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1155_2014_521047.txt
+  mccutcheon2018:
+    doi: 10.14796/jwmm.c474
+    title: "Modeling a Bioretention Basin and Vegetated Swale with a Trapezoidal Cross Section using SWMM LID Controls"
+    venue: "Journal of Water Management Modeling"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.14796_jwmm.c474.txt
+
+validation:
+  - dag_variable: head
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mae
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.10, good: 0.15, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Transferred from the fetched DRAINMOD water-table-depth daily MAE criteria: <10, <15, <20 cm."
+        cites: [moriasi2015]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.60, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Transferred from the fetched DRAINMOD water-table-depth daily NSE criteria: >0.75, >0.60, >0.40."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag uses r for head, but the fetched water-table convention uses MAE and NSE; Meng 2014 reports water-level RMSE/MRE/R2 for validation, not an r pass tier."
+        cites: [moriasi2015, meng2014]
+    validated_when: "Water level/head time series validate when MAE <= 0.20 m and NSE >= 0.40, with observations on the same datum as the modeled block head."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Literature supersedes the dag's r headline for head because the fetched water-table-depth convention
+      gives MAE and NSE bands. Meng 2014 used RMSE, MRE, and R2 for bioretention water-level validation and
+      reported well-matched ponding levels, but did not give a general pass threshold for r.
+
+  - dag_variable: flow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 monthly hydrology table rates NSE above 0.50 as satisfactory; Saran 2022 reproduces NSC >0.50 as satisfactory."
+        cites: [moriasi2007, saran2022]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 streamflow PBIAS tiers use ±10, ±15, ±25%; Saran 2022 applies <=±25% as acceptable for runoff discharge."
+        cites: [moriasi2007, saran2022]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 recommends RSR alongside NSE and PBIAS; it is useful diagnostic context but the dag determining metric is NSE."
+        cites: [moriasi2007]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Saran 2022 reproduces R2 >=0.6 as satisfactory and reports hydraulic validation R2=0.73, but NSE/PBIAS remain the headline hydrograph criteria here."
+        cites: [saran2022]
+    validated_when: "Outflow/underdrain/overflow hydrographs validate when NSE >= 0.50 and absolute PBIAS <= 25%."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      This block is directly grounded in hydrology model evaluation practice and stormwater/SWMM validation.
+      GIFMod-specific review text reports calibrated GIFMod outflow NSE=0.86 and 0.68 for upper/lower rain
+      gardens, consistent with the general NSE threshold.
+
+  - dag_variable: moisture
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a general numeric validation tier for soil-moisture time series in GIFMod/bioretention blocks."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: fraction
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Report against sensor-depth-specific error, but no cited numeric band was found after the capped OpenAlex check."
+        cites: []
+    secondary_metrics:
+      - metric: soil_water_characteristic_curve
+        direction: minimize
+        status: supportive
+        ceiling_reason: "GIFMod and HYDRUS use soil-water characteristic curves; the review notes measured soil attributes vary strongly, so depth-matched measurements and site-specific soil parameters are essential context."
+        cites: [lisenbee2021, massoudieh2017]
+    validated_when: "UNRESOLVED - require depth-matched soil-moisture observations and report NSE/RMSE, but do not auto-validate from uncited bands."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      OpenAlex searches for GIFMod/bioretention soil-moisture validation thresholds returned no usable OA
+      convention beyond already cached bioretention model papers. Keep the dag determining metric nse as
+      an unevaluable headline rather than fabricating a moisture threshold.
+
+  - dag_variable: storage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.60, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Transferred from fetched DRAINMOD drainage-volume NSE tiers for daily volume-like water-balance outputs."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Use the fetched hydrology/runoff-volume PBIAS convention when storage observations are compared as a water-balance volume."
+        cites: [moriasi2007, saran2022]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Residual variation should be reported with NSE/PBIAS for hydrologic water-balance simulations, following Moriasi 2007."
+        cites: [moriasi2007]
+    validated_when: "Storage time series validate when NSE >= 0.40 and absolute PBIAS <= 25% for a comparable block/storage water-balance record."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The dag declares storage as water volume in a block. No fetched paper gives a GIFMod-specific storage
+      time-series tier, so this uses water-table/drainage-volume and runoff-volume conventions from fetched
+      hydrologic model guidance.
+
+  - dag_variable: storage
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "For event-total or period-total storage/runoff-volume comparisons, fetched guidance uses absolute PBIAS <=25% as satisfactory."
+        cites: [moriasi2007, saran2022]
+    secondary_metrics: []
+    validated_when: "Event-total or period-total storage validates when absolute PBIAS <= 25%."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: "Snapshot storage is treated as a volume-balance comparison; it should not be used to validate hydrograph timing."
+
+  - dag_variable: concentration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Saran 2022 pollutograph table applies NSC >0.50 as satisfactory and >0.65 as good for TSS/TP/TKN simulations."
+        cites: [saran2022]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Saran 2022 pollutograph table applies PBIAS <=±15% as good and <=±25% as satisfactory for TSS/TP/TKN."
+        cites: [saran2022]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Saran 2022 reports R2 >=0.6 as acceptable for pollutant concentration correlations; it is supportive because the dag determining metric is NSE."
+        cites: [saran2022]
+    validated_when: "Concentration/pollutograph time series validate when NSE >= 0.50 and absolute PBIAS <= 25%, with constituent units matched exactly."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      GIFMod can simulate user-defined dissolved, sorbed, particle-bound, and transformed constituents.
+      Because the dag variable is user-defined, apply these bands only after confirming the modeled and
+      observed constituent and units match.
+
+  - dag_variable: concentration
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Use the fetched pollutograph/event-load PBIAS convention for event-mean concentration or load-based removal comparisons."
+        cites: [saran2022]
+    secondary_metrics: []
+    validated_when: "Event-mean concentration or load/removal snapshot validates when absolute PBIAS <= 25% and constituent units are identical."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "No separate GIFMod snapshot concentration tier was fetched; this is transferred from stormwater runoff-quality validation."
+
+  - dag_variable: velocity
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "No fetched velocity-specific tier exists; use the fetched hydrograph NSE convention only for connector hydraulic time series."
+        cites: [moriasi2007, mccutcheon2018]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Velocity should also be checked for magnitude bias when observations support it, but the fetched convention is for hydrologic flow volume rather than direct velocity."
+        cites: [moriasi2007]
+    validated_when: "Connector velocity time series validate only by transferred hydrograph skill: NSE >= 0.50, with bias reported as context."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      GIFMod exposes flow velocity in connectors, and Massoudieh 2017 documents velocity-dependent particle
+      terms and pipe/overland connector hydraulics. The validation literature found in the cache judges
+      flow hydrographs rather than velocity observations, so this is a low-confidence transferred band.
+
+deferred_paywalled:
+  - ref: "Modeling and Design Scenario Analysis of Long-Term Monitored Bioretention System for Rainfall-Runoff Reduction to Combined Sewer in Cincinnati, OH"
+    doi: 10.1061/jswbay.0000903
+    needed_for: [flow, storage, head]
+  - ref: "Rapid Remote Assessment of Culvert Flooding Risk"
+    doi: 10.1061/jswbay.0000900
+    needed_for: [velocity]

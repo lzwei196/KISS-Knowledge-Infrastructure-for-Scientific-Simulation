@@ -1,534 +1,1229 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: SWAT+ Rev 60.5
-  domain: hydrology
-  secondary_domains:
-  - water_quality
-  binary: swatplus_rev59
-  binary_path: KISSPATH_BINARIES/swatplus/swatplus_rev59
-  language: Fortran 90
-  working_directory: TxtInOut
+  name: SWAT+
+  language: fortran
+  implementation:
+    id: swat-plus-rev593
+    version: Rev 59.3
+    provenance: Fortran 90; USDA-ARS / Texas A&M AgriLife operational SWAT+ Rev 59.3 binary; sd_channel-stable
+      pre-2023 build.
+  scientific_reference_version: SWAT+ Rev 59.3 (operational HydroCraft binary; watershed water/sediment/nutrient
+    process spec inherited from SWAT 2012 with object-based restructuring per Bieger et al. 2017)
 inputs:
   forcing:
   - name: precipitation
-    file: pcp.cli
     unit: mm/day
-    valid_range:
-    - 0.0
-    - 500.0
-    format: space-delimited, 3-line header (title, columns, station metadata)
-    missing_value: -99.0
-    conversion_from_cmfd: 'kg/m2/s -> mm/day: multiply by 86400'
-  - name: temperature_max
-    file: tmp.cli
-    unit: degC
-    valid_range:
-    - -50.0
-    - 60.0
-    format: space-delimited, 3-line header
-    missing_value: -99.0
-    conversion_from_cmfd: 'K -> degC: subtract 273.15; split daily mean: Tmax = Tmean
-      + 5'
-  - name: temperature_min
-    file: tmp.cli
-    unit: degC
-    valid_range:
-    - -60.0
-    - 50.0
-    format: space-delimited, 3-line header
-    missing_value: -99.0
-    conversion_from_cmfd: 'K -> degC: subtract 273.15; split daily mean: Tmin = Tmean
-      - 5'
-  - name: solar_radiation
-    file: slr.cli
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Daily station time series, one .pcp file per station; missing values flagged -99.0
+  - name: maximum air temperature
+    unit: deg C
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Daily station time series in .tmp
+    notes: SWAT+ does not validate Tmax >= Tmin or Celsius range; Kelvin (~300) is silently consumed as
+      Celsius.
+  - name: minimum air temperature
+    unit: deg C
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Daily station time series in .tmp
+  - name: solar radiation
     unit: MJ/m2/day
-    valid_range:
-    - 0.0
-    - 35.0
-    format: space-delimited, 3-line header
-    missing_value: -99.0
-    conversion_from_cmfd: 'W/m2 -> MJ/m2/day: multiply by 0.0864'
-  - name: relative_humidity
-    file: hmd.cli
-    unit: fraction
-    valid_range:
-    - 0.0
-    - 1.0
-    format: space-delimited, 3-line header
-    missing_value: -99.0
-  - name: wind_speed
-    file: wnd.cli
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Daily station time series in .slr
+    notes: Unit is MJ/m2/day, NOT W/m2; W/m2 inputs are silently consumed and inflate PET ~12x.
+  - name: relative humidity
+    unit: fraction (0-1)
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Daily station time series in .hmd
+    notes: Fraction, not percent; percent values are silently consumed.
+  - name: wind speed
     unit: m/s
-    valid_range:
-    - 0.0
-    - 80.0
-    format: space-delimited, 3-line header
-    missing_value: -99.0
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Daily station time series in .wnd
+  - name: atmospheric CO2 concentration
+    unit: ppm
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Annual basin-scale series (co2.bsn) or constant via bsn_prm%co2 default 400
+  - name: atmospheric nitrogen deposition
+    unit: kgN/ha/yr (wet+dry)
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Optional atmo.cli station series
   parameters:
-    critical:
-    - name: n_perc
-      file: parameters.bsn
-      description: Nitrogen percolation coefficient (NPERCO)
-      valid_range:
-      - 0.0
-      - 1.0
-      default: 0.2
-      unit: fraction
-      bug_history: 'Found at 20.0 during Wangjiaba testing -- caused TN 6x overestimate
-        (35 kgN/ha/yr vs expected 5-20 kgN/ha/yr). Value was copy-pasted from SWAT2012
-        documentation which lists range as 0-1 but some templates ship with erroneous
-        values. Triplet dt_wq_006 now catches this.
-
-        '
-    - name: p_perc
-      file: parameters.bsn
-      description: Phosphorus percolation coefficient (PPERCO)
-      valid_range:
-      - 10.0
-      - 17.5
-      default: 10.0
-      unit: m3/Mg
-      bug_history: Less prone to silent error than NPERCO but out-of-range values
-        still distort P export.
-    - name: rtu_wq
-      file: codes.bsn
-      description: Routing unit water quality transfer flag
-      valid_range:
-      - 0
-      - 1
-      default: 0
-      unit: flag
-      bug_history: 'rtu_wq=0 disables all WQ routing between landscape and channel.
-        All TP columns become zero when P fertilizer is applied. Must be 0 for Rev
-        59.3 due to QUAL2E instability.
-
-        '
-    - name: wq_cha
-      file: codes.bsn
-      description: Channel QUAL2E water quality processing flag
-      valid_range:
-      - 0
-      - 1
-      default: 0
-      unit: flag
-      bug_history: 'wq_cha=1 enables QUAL2E in-stream routing which has numerical
-        instability at high flows (>10x bankfull). Produces 1e9+ mg/L NO3. Keep at
-        0 and use HRU-level outputs instead (basin_ls_day.txt).
-
-        '
-    - name: cn3_swf
-      file: codes.bsn
-      description: CN3 adjustment factor for soil water
-      valid_range:
-      - 0.0
-      - 1.0
-      default: 0.0
-      unit: fraction
-      bug_history: Non-zero values inflate runoff in humid basins. Set to 0.0 for
-        Huai River.
-    calibration:
-    - name: cn2
-      file: cntable.lum
-      description: Curve Number for moisture condition II
-      valid_range:
-      - 25
-      - 98
-      typical_adjustment: -20% to -50% pctchg for Chinese agriculture
-      change_type: pctchg
-      sensitivity: very high
-      notes: Use pctchg to preserve spatial heterogeneity across HRUs
-    - name: esco
-      file: hru-data.hru
-      description: Soil evaporation compensation factor
-      valid_range:
-      - 0.0
-      - 1.0
-      default: 0.95
-      typical_value: 0.15
-      change_type: absval
-      sensitivity: high
-      notes: Lower values allow deeper soil layers to satisfy ET demand
-    - name: perco
-      file: hru-data.hru
-      description: Percolation coefficient
-      valid_range:
-      - 0.0
-      - 1.0
-      default: 0.5
-      typical_value: 0.75
-      change_type: absval
-      sensitivity: high
-    - name: alpha_bf
-      file: aqu.aqu
-      description: Baseflow recession constant
-      valid_range:
-      - 0.0
-      - 1.0
-      default: 0.048
-      change_type: absval
-      sensitivity: high
-      notes: Controls groundwater contribution timing; higher = faster response
-    - name: gw_delay
-      file: aqu.aqu
-      description: Groundwater delay time
-      valid_range:
-      - 0
-      - 500
-      default: 31
-      unit: days
-      change_type: absval
-      sensitivity: moderate
-    - name: awc
-      file: soils.sol
-      description: Available water capacity
-      valid_range:
-      - -50
-      - 50
-      unit: percent change
-      change_type: pctchg
-      sensitivity: moderate
-      notes: Use pctchg to preserve layer-by-layer variation
-    - name: surlag
-      file: bsn_prm.bsn
-      description: Surface runoff lag coefficient
-      valid_range:
-      - 0.05
-      - 24.0
-      default: 4.0
-      change_type: absval
-      sensitivity: moderate
-    - name: lat_ttime
-      file: hru-data.hru
-      description: Lateral flow travel time
-      valid_range:
-      - 0
-      - 180
-      unit: days
-      change_type: absval
-      sensitivity: moderate
-    - name: canmx
-      file: hru-data.hru
-      description: Maximum canopy storage
-      valid_range:
-      - 0
-      - 100
-      unit: mm
-      change_type: absval
-      sensitivity: low
-    - name: epco
-      file: hru-data.hru
-      description: Plant uptake compensation factor
-      valid_range:
-      - 0.0
-      - 1.0
-      default: 1.0
-      change_type: absval
-      sensitivity: low
-    - name: revap_co
-      file: aqu.aqu
-      description: Groundwater revap coefficient
-      valid_range:
-      - 0.02
-      - 0.2
-      default: 0.02
-      change_type: absval
-      sensitivity: moderate
-    - name: flo_min
-      file: aqu.aqu
-      description: Minimum flow to shallow aquifer
-      valid_range:
-      - 0
-      - 5000
-      unit: mm
-      change_type: absval
-      sensitivity: low
-    water_quality:
-    - name: cdn
-      file: codes.bsn
-      description: Denitrification exponential rate coefficient
-      valid_range:
-      - 0.0
-      - 3.0
-      default: 1.4
-      sensitivity: high
-    - name: sdnco
-      file: codes.bsn
-      description: Denitrification threshold water content
-      valid_range:
-      - 0.0
-      - 1.0
-      default: 1.1
-      sensitivity: moderate
-    - name: usle_p
-      file: hru-data.hru
-      description: USLE support practice factor
-      valid_range:
-      - 0.0
-      - 1.0
-      default: 1.0
-      sensitivity: moderate for sediment
-    - name: filterw
-      file: filterstrip.str
-      description: Filter strip width
-      valid_range:
-      - 0
-      - 100
-      unit: meters
-      sensitivity: moderate for P
-  files:
-    required:
-    - name: file.cio
-      description: Master control file listing all input files by category
-      format: text, category-ordered key-value; category order is strict
-      notes: Use 'null' for unused categories; do not delete lines
-    - name: time.sim
-      description: Simulation time period and warmup
-      format: text; contains jday_start, yrc_start, jday_end, yrc_end, nyskip
-      notes: nyskip >= 2 for hydrology, >= 3 for water quality warmup
-    - name: print.prt
-      description: Output printing configuration
-      format: text; lists which output files to generate
-    - name: codes.bsn
-      description: Basin-level code switches and WQ parameters
-      format: text; position-dependent flags
-    - name: parameters.bsn
-      description: Basin-level continuous parameters (NPERCO, PPERCO, etc.)
-      format: text; named parameter-value pairs
-    - name: weather-sta.cli
-      description: Weather station listing with file references
-      format: text; station metadata + pointers to .pcp/.tmp/.slr/.hmd/.wnd
-    - name: soils.sol
-      description: Soil profile database (multi-line records)
-      format: text; line 1 = profile header, lines 2-N = per-layer properties
-      notes: Number of layer lines must match number of soil layers. Mismatch causes
-        silent wrong results.
-    - name: cntable.lum
-      description: CN lookup table by land use and hydrologic soil group
-    - name: hru-data.hru
-      description: HRU-level properties (ESCO, EPCO, PERCO, etc.)
-    optional:
-    - name: calibration.cal
-      description: Calibration parameter adjustment file
-      format: 'text; columns: cal_parm, chg_typ (absval/abschg/pctchg), chg_val, obj_typ'
-      notes: absval replaces value; abschg adds; pctchg multiplies by (1+val/100)
-    - name: om_water.ini
-      description: Channel initial nutrient concentrations
-      notes: Set ALL values to 0 to avoid mass generation from channel storage
-    - name: recall.rec
-      description: Point source nutrient inputs
-      format: text; daily or monthly time series of flow + nutrient loads
+  - name: soil hydraulic profile (SOL_BD, SOL_AWC, SOL_K, SOL_CBN, CLAY/SILT/SAND, ROCK, SOL_ALB, USLE_K,
+      SOL_EC, SOL_CAL, SOL_PH)
+    unit: mixed (g/cm3, mm/mm, mm/hr, %, ...)
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: Multi-layer soils.sol records; profile line + N layer lines in increasing-depth
+      order
+    notes: Pedotransfer chain (Saxton & Rawls 2006 for AWC and Ksat; Williams 1995 for USLE_K) is typical
+      upstream; nly mismatch silently corrupts subsequent profiles.
+  - name: structural hydrology defaults per HRU (esco, epco, perco, cn3_swf, lat_ttime, canmx)
+    unit: mixed
+    category: soil-structural
+    source_kind: calibrated
+    model_input_format: hydrology.hyd
+    notes: perco and cn3_swf live in hydrology.hyd, not in cal_parms.cal — runtime calibration.cal cannot
+      adjust them; changing them requires regenerating the HRU layer.
+  - name: basin scalar coefficients (surlag, cn_froz, cmn, cdn, sdnco, nperco, pperco, phoskd, psp, rsdco,
+      tlaps, plaps, evlai, nfixmx, uhalpha, prf, n_updis, p_updis)
+    unit: mixed
+    category: basin-scalar
+    source_kind: default
+    model_input_format: parameters.bsn with hard-coded fallbacks in basin_module.f90
+    notes: Many defaults are baked into source (e.g., surlag=4.0, sdnco=1.30 which effectively disables
+      denitrification unless reset, prf=484 legacy ft-unit constant, igen=5 undocumented RNG seed).
+  - name: channel hydraulic and morphological parameters (chw, chd, chs, chl, chn, chk, bank cohesion,
+      floodplain geometry)
+    unit: m, m/m, dimensionless
+    category: channel
+    source_kind: dataset_lookup
+    model_input_format: channel-hyd.cha, channel-lte.cha, hyd-sed-lte.cha
+  - name: lumped aquifer parameters (alpha_bf, gw_delay, revap_co, rchrg_dp, flo_min, gw_spyld)
+    unit: mixed (1/day, days, fraction, mm)
+    category: aquifer
+    source_kind: calibrated
+    model_input_format: aquifer.aqu and initial.aqu
+  - name: distributed aquifer grid parameters (K, specific yield, streambed thickness and Ksat, drain
+      perimeter K)
+    unit: m/day, dimensionless
+    category: gwflow-grid
+    source_kind: calibrated
+    model_input_format: gwflow.* input files
+    notes: Only consulted when bsn_cc%gwflow=1; otherwise replaced by lumped aqu_1d module.
+  - name: plant species/cultivar coefficients (bio_e, hvsti, blai, dlai, t_base, t_opt, gsi, vpdfr, frgrw1/2,
+      laimx1/2, alai_min, bio_leaf, mat_yrs)
+    unit: mixed
+    category: plant
+    source_kind: dataset_lookup
+    model_input_format: plants.plt
+  - name: land-use coefficient table including CN2 lookup by hydrologic soil group
+    unit: dimensionless
+    category: landuse
+    source_kind: dataset_lookup
+    model_input_format: cntable.lum and landuse.lum (links each HRU LU code to management, CN2, urban
+      params, tile drains)
+  - name: USLE practice and cover factors (USLE_P, USLE_C via plant cover, slope length)
+    unit: dimensionless / m
+    category: erosion
+    source_kind: dataset_lookup
+    model_input_format: hru-data.hru and plants.plt
+  initial_conditions:
+  - name: initial soil water content per layer
+    unit: mm
+    category: soil-water
+    source_kind: default
+    model_input_format: Initialized to field capacity unless overridden; basin_sw_init in time_control
+  - name: initial soil N (NO3, NH4, organic) and P pools per layer
+    unit: kg/ha
+    category: soil-nutrient
+    source_kind: user_provided
+    model_input_format: nutrients.sol (optional); else initialized from SOL_CBN via mineralization defaults
+    notes: Zero or under-initialized pools force the model to mine soil organic matter to balance crop
+      uptake (silent negative nutrient balance).
+  - name: initial aquifer storage and water-table depth
+    unit: mm, m
+    category: aquifer-storage
+    source_kind: user_provided
+    model_input_format: initial.aqu
+  - name: initial channel water organic/mineral constituent concentrations
+    unit: mg/L
+    category: channel-constituents
+    source_kind: user_provided
+    model_input_format: om_water.ini
+    notes: Bundled defaults (orgn=90, no3=70 mg/L) are placeholder values; they create massive stored
+      channel mass that dominates HRU loads unless zeroed.
+  - name: initial surface residue and plant biomass / heat-unit accumulators
+    unit: kg/ha, heat units
+    category: plant-residue
+    source_kind: default
+    model_input_format: plant_all_init, structure_init at startup; nyskip warmup years recommended (2-3,
+      5 for arid)
+  - name: initial snow water equivalent per HRU
+    unit: mm H2O
+    category: snow
+    source_kind: default
+    model_input_format: Initialized to zero unless snow.sno provides override
+  boundary_conditions:
+  - name: PET method selector
+    unit: enum (0=Priestley-Taylor, 1=Penman-Monteith, 2=Hargreaves)
+    category: method-switch
+    source_kind: user_provided
+    model_input_format: basin code (bsn_cc%pet)
+  - name: surface runoff method selector
+    unit: enum (0=SCS Curve Number, 1=Green-Ampt)
+    category: method-switch
+    source_kind: user_provided
+    model_input_format: basin code (bsn_cc%cn)
+  - name: channel routing method selector
+    unit: enum (0=variable storage, 1=Muskingum)
+    category: method-switch
+    source_kind: user_provided
+    model_input_format: basin code (bsn_cc%rte)
+  - name: carbon cycle selector
+    unit: enum (0=static, 1=CENTURY/Zhang2, 2=Kemanian)
+    category: method-switch
+    source_kind: user_provided
+    model_input_format: basin code (bsn_cc%cswat)
+    notes: Switches between three mutually-exclusive residue/N mineralization chains sharing soil carbon
+      pools.
+  - name: in-stream water quality toggle
+    unit: enum (0=off, 1=QUAL2E)
+    category: method-switch
+    source_kind: user_provided
+    model_input_format: basin code (bsn_cc%wq_cha)
+    notes: Rev 59.3 QUAL2E solver is numerically unstable for flashy/extreme flows; recommended OFF (use
+      HRU-level loads).
+  - name: groundwater module selector
+    unit: enum (0=lumped aquifer, 1=gwflow 2-D grid)
+    category: method-switch
+    source_kind: user_provided
+    model_input_format: basin code (bsn_cc%gwflow)
+  - name: land-use management schedule (plant, fert, irrigate, tillage, harvest, kill, graze, burn)
+    unit: operations indexed by date or heat-unit fraction
+    category: management
+    source_kind: user_provided
+    model_input_format: management.sch driven by landuse.lum links; decision tables in lum.dtl for condition-triggered
+      actions
+  - name: fertilizer application schedule and product
+    unit: kg N/ha, kg P/ha
+    category: management
+    source_kind: user_provided
+    model_input_format: management.sch operations referencing fertilizer.frt entries (elem_n, elem_p,
+      28-0-0, beef_fr, dairy_fr, poultry)
+  - name: irrigation source, amount, and trigger
+    unit: mm, source object id
+    category: management
+    source_kind: user_provided
+    model_input_format: irr.ops / decision tables; can withdraw from channel, reservoir, aquifer, or external
+      source via wallo
+  - name: spatial connectivity (HRU -> LSU -> channel -> aquifer -> reservoir chain)
+    unit: object id graph
+    category: watershed-topology
+    source_kind: user_provided
+    model_input_format: hru.con, chandeg.con, aquifer.con, reservoir.con, recall.con + rout_unit.con
+  - name: weather station to spatial object mapping
+    unit: station id per HRU/channel
+    category: watershed-topology
+    source_kind: user_provided
+    model_input_format: weather-sta.cli (nearest-station assignment by centroid)
+  - name: weather generator monthly statistics per station
+    unit: 12 monthly rows of climate statistics
+    category: watershed-topology
+    source_kind: user_provided
+    model_input_format: wgn.wgn (read at initialization even when daily data are complete)
+  - name: simulation calendar (start/end day, year)
+    unit: Julian day, year
+    category: simulation-control
+    source_kind: user_provided
+    model_input_format: time.sim
+  - name: runtime parameter overrides
+    unit: cal_parm name + chg_typ (absval | abschg | pctchg) + value + spatial condition
+    category: calibration
+    source_kind: calibrated
+    model_input_format: calibration.cal
+    notes: Misspelled parameter names are silently ignored; absval on cn2/awc destroys spatial heterogeneity;
+      structural defaults in hydrology.hyd cannot be overridden here.
 outputs:
   primary:
-  - name: discharge
-    file: channel_sd_day.txt
-    unit: m3/s
-    valid_range:
-    - 0
-    - null
-    key_columns:
-    - flo_out
-    notes: Channel flow routing is reliable in Rev 59.3. Use for hydrology.
-    canonical_id: discharge
-  - name: total_nitrogen_export
-    canonical_id: total_nitrogen
-    unit: kgN/ha/day
-  - name: total_phosphorus_export
-    canonical_id: total_phosphorus
-    unit: kgP/ha/day
-  - name: sediment_yield
-    canonical_id: sediment_yield
-    unit: t/ha/day
-  - name: crop_yield
-    canonical_id: yield
-    unit: kg/ha
-  water_quality_reliable:
-  - name: total_nitrogen_export
-    file: basin_ls_day.txt
-    unit: kgN/ha/day
-    valid_range:
-    - 0
-    - 0.5
-    key_columns:
-    - sedorgn
-    - surqno3
-    - sedmin
-    aggregation: TN_load (kg/yr) = basin_area_ha * sum(sedorgn + surqno3 + sedmin)
-    notes: HRU-level export; avoids QUAL2E channel routing bugs
-  - name: total_phosphorus_export
-    file: basin_ls_day.txt
-    unit: kgP/ha/day
-    valid_range:
-    - 0
-    - 0.05
-    key_columns:
-    - sedorgp
-    - surqsolp
-    - sedminp
-    aggregation: TP_load (kg/yr) = basin_area_ha * sum(sedorgp + surqsolp + sedminp)
-  - name: sediment_yield
-    file: basin_ls_day.txt
-    unit: t/ha/day
-    valid_range:
-    - 0
-    - 5.0
-    key_columns:
-    - sedyld
-    aggregation: Annual sediment = sum(sedyld) * area_ha
-  - name: nitrogen_budget
-    file: basin_nb_yr.txt
+  - name: streamflow at channel outlet (flo_out)
+    unit: m3/s (after conversion from ha-m/day)
+    description: Daily channel discharge leaving each routed segment; primary calibration target for hydrology.
+    validation_rank: 1
+    emitted_in: channel_sd_day.txt / channel_sd_mon.txt / channel_sd_yr.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - SWAT+ emits flo_out in ha-m/day; downstream consumers must convert to m3/s before comparison.
+        - Exclude warmup years (nyskip) from any goodness-of-fit calculation.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Annual or basin-aggregate gauge series carry abstraction/management trends not in the forcing;
+          detrend before comparison.
+      detrending_options:
+      - none
+      - linear_residual
+      - decadal_mean
+  - name: basin water balance components (precip, snofall, snomlt, surq_gen, latq, perc, et, qtile, wateryld,
+      sw_final)
+    unit: mm/day or mm/yr
+    description: Closed water-balance accounting at the basin level.
+    validation_rank: 3
+    emitted_in: basin_wb_day.txt / basin_wb_mon.txt / basin_wb_yr.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - magnitude_accuracy
+        - trend_match
+        determining_metric: pbias
+        caveats:
+        - ET and recharge observations at basin scale are typically remote-sensing or reanalysis products
+          with their own bias structure.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Spatial comparison meaningful only when HRU output (hru_wb) is mapped back to a grid; basin_wb
+          is a scalar series.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: 'HRU water balance (hru_wb: per-HRU surq, latq, perc, et, sw)'
+    unit: mm/yr (typical)
+    description: Yearly per-HRU water balance components; daily writing produces multi-GB files for large
+      basins.
+    validation_rank: 4
+    emitted_in: hru_wb_yr.txt / hru_wb_aa.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - HRU geometry is irregular; remap to grid for raster comparison.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: 'basin landscape nutrient losses (basin_ls: sedorgn, surqno3, sedmin)'
+    unit: kgN/ha/day or kgN/ha/yr; kgP/ha/yr
+    description: Landscape-level (pre-channel) nutrient losses from HRUs; reliable alternative to in-channel
+      nutrient outputs when QUAL2E is unstable.
+    validation_rank: 7
+    emitted_in: basin_ls_day.txt / basin_ls_yr.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - magnitude_accuracy
+        - trend_match
+        determining_metric: pbias
+        caveats:
+        - Landscape losses differ from in-stream loads by channel processing; pair with HRU export coefficients
+          when possible.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: 'basin nutrient balance (basin_nb: fertn, denit, act_nit_n, plant uptake)'
     unit: kgN/ha/yr
-    valid_range:
-    - 0
-    - null
-    key_columns:
-    - fertn
-    - denit
-    - act_nit_n
-    notes: Annual N mass balance components
-  - name: hru_nutrient_detail
-    file: hru_nb_yr.txt
-    unit: kgN/ha/yr, kgP/ha/yr
-    valid_range:
-    - 0
-    - null
-    notes: Most spatially detailed nutrient output
-  water_quality_unreliable:
-  - name: channel_no3
-    file: channel_day.txt
-    key_columns:
-    - no3_out
-    - orgn_out
-    status: UNRELIABLE
-    reason: QUAL2E numerical instability at high flows; produces 1e9+ kgN values
-  - name: channel_solp
-    file: channel_day.txt
-    key_columns:
-    - solp_out
-    status: UNRELIABLE
-    reason: Division by zero in P routing produces NaN
-  diagnostics:
-  - name: water_balance
-    file: basin_wb_yr.txt
-    check: precip approx_eq et + surq + latq + perc + delta_SW
-    tolerance_mm: 10
-    notes: Verify mass balance closure each year; imbalance > 10 mm indicates config
-      error
-  - name: annual_tn_sanity
-    check: TN from basin_ls_day < 50 kgN/ha/yr
-    reference: debug_framework DOMAIN_CHECKS water_quality.tn_kg_ha_yr (0, 50)
-    trigger_if_exceeded: Check NPERCO in parameters.bsn, fertilizer rates
-  - name: annual_tp_sanity
-    check: TP from basin_ls_day < 10 kgP/ha/yr
-    reference: debug_framework DOMAIN_CHECKS water_quality.tp_kg_ha_yr (0, 10)
-  - name: annual_sediment_sanity
-    check: Sediment < 100 t/ha/yr
-    reference: debug_framework DOMAIN_CHECKS water_quality.sediment_t_ha_yr (0, 100)
+    description: Closed nutrient-balance accounting per basin per year.
+    validation_rank: 8
+    emitted_in: basin_nb_yr.txt / basin_nb_day.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Inventory-based reference loads have wide uncertainty; PBIAS is the only defensible metric in
+          most basins.
+      detrending_options:
+      - none
+  - name: channel nutrient loads (orgn_out, no3_out, sedp_out, solp_out)
+    unit: kg/day
+    description: In-stream nutrient mass fluxes routed by QUAL2E.
+    validation_rank: 9
+    emitted_in: channel_sd_day.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Rev 59.3 QUAL2E solver is numerically unstable at extreme flows (>10x bankfull); values can
+          blow up to physically impossible magnitudes (>1e9 mg/L). Use basin_ls and basin_nb for nutrient
+          loads instead.
+        - Compare only when wq_cha=1 and the basin is non-flashy; otherwise treat as not observable.
+      detrending_options:
+      - none
+  - name: sediment yield (HRU sedyld; channel sed_in/sed_out)
+    unit: t/ha; t
+    description: MUSLE-based HRU sediment yield and routed channel sediment load.
+    validation_rank: 10
+    emitted_in: basin_ls_day.txt, channel_sd_day.txt, channel_sdmorph_yr.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Gauged sediment series are typically sparse and rating-curve-derived; agreement weaker than
+          streamflow.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: crop yield (basin yield_yr / yield_aa, hru_pw)
+    unit: t/ha
+    description: Per-crop yield at harvest, aggregated to basin or kept per-HRU.
+    validation_rank: 11
+    emitted_in: yield_yr.txt / yield_aa.txt / hru_pw_yr.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/provincial yield series carry strong technology trends not represented by a weather-driven
+          process model; detrending is required.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Yield aggregated to admin unit; per-HRU comparison requires zonal stats.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Single-site experimental yield series; detrending typically not needed if site management is
+          stable across years.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Single-year, single-site trial; HRU containing the trial site must be identified and management
+          aligned.
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Admin-unit average for a single year; only meaningful when basin coverage of the admin unit
+          is high.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        - trend_match
+        determining_metric: pbias
+        caveats:
+        - Remote-sensed yield surrogates (e.g., crop-yield-from-VI products) at coarser grain than HRU;
+          aggregate to pixel before comparison; detrending recommended.
+      detrending_options:
+      - linear_residual
+      - decadal_mean
+  - name: aquifer state (storage, water-table depth, baseflow flo)
+    unit: mm, m, mm
+    description: Per-aquifer storage and baseflow; gwflow grid-cell head when gwflow=1.
+    validation_rank: 6
+    emitted_in: aquifer_day.txt / aquifer_yr.txt / gwflow output files
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - Lumped aquifer (aqu_1d) has one storage per aquifer object; point-well comparison only meaningful
+          under gwflow=1.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Only meaningful under gwflow=1 distributed module.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: snow water equivalent (hru%sno_mm; snofall, snomlt fluxes)
+    unit: mm H2O
+    description: Snowpack water equivalent per HRU and daily snowfall/melt fluxes.
+    validation_rank: 5
+    emitted_in: hru_wb_day.txt, basin_wb_day.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - Remote-sensing SWE products coarser than HRU; aggregate HRU output to pixel before comparison.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Peak SWE depth and ablation rate are the magnitude targets; snow-pillow / snow-course stations
+          are the typical reference.
+      detrending_options:
+      - none
+  - name: evapotranspiration (basin et, eplant, esoil, pet)
+    unit: mm/day
+    description: Actual ET partitioned into plant transpiration and bare-soil evaporation, plus PET.
+    validation_rank: 2
+    emitted_in: basin_wb_day.txt, hru_wb_day.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Remote-sensing ET (e.g., 8-day) requires temporal aggregation.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - magnitude_accuracy
+        - trend_match
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+      - linear_residual
+  secondary: []
 known_issues:
-- id: nperco_silent
-  triplet: dt_wq_006
-  description: NPERCO > 1.0 silently inflates N export by 5-20x
-  affected_output: basin_ls_day.txt sedorgn, surqno3
-  detection: TN > 50 kgN/ha/yr
-  fix: Set n_perc to 0.2 in parameters.bsn
-- id: rtu_wq_disabled
-  description: rtu_wq=0 in codes.bsn disables WQ routing between landscape and channel
-  affected_output: All TP columns zero in channel output when P fertilizer applied
-  detection: TP == 0.0 in channel output despite non-zero fertilizer
-  notes: This is actually the recommended setting for Rev 59.3
-- id: qual2e_blowup
-  description: QUAL2E in-stream routing has numerical instability at extreme flows
-  affected_output: channel_day.txt no3_out, orgn_out, solp_out
-  detection: Any nutrient concentration > 1e6 mg/L or NaN values
-  fix: Set wq_cha=0 in codes.bsn; use basin_ls_day HRU-level outputs
-- id: om_water_ini_defaults
-  description: Default om_water.ini ships with extreme initial concentrations (90
-    mg/L orgn)
-  affected_output: Channel nutrient outputs massively inflated at simulation start
-  detection: First-year channel nutrients >> HRU exports
-  fix: Set all nutrient initial concentrations to 0.0 in om_water.ini
-- id: cn3_swf_runoff_bias
-  description: cn3_swf > 0 inflates runoff in humid subtropical basins
-  affected_output: channel_sd_day.txt flo_out
-  detection: PBIAS > +100% in humid basins
-  fix: Set cn3_swf = 0.0 in codes.bsn for Huai River and similar climates
-- id: tmax_lt_tmin
-  triplet: dt_003
-  description: Tmax < Tmin in weather files causes silent ET and snowmelt errors
-  affected_output: All ET-dependent outputs
-  detection: Any day where Tmax < Tmin in tmp.cli
-  fix: Regenerate weather files with correct CMFD aggregation
-- id: solar_unit_wrong
-  triplet: dt_012
-  description: Solar radiation in W/m2 instead of MJ/m2/day
-  affected_output: ET, crop growth, all water balance components
-  detection: SRAD values > 35 MJ/m2/day (debug_framework sw_radiation_W check)
-  fix: Multiply by 0.0864
-expected_ranges:
-  huai_river:
-    basin_area_km2: 121330
-    mean_annual_precip_mm: 800-1000
-    mean_discharge_m3s: 800-1100
-    hydrology:
-      nse_calibrated: '>0.5'
-      kge_calibrated: '>0.5'
-      pbias_calibrated: <25%
-      nse_uncalibrated: -1 to 0.3 typical
-      pbias_uncalibrated: +100% to +300% (massive overestimation without calibration)
-    water_quality:
-      tn_load_kg_ha_yr:
-      - 5
-      - 20
-      tp_load_kg_ha_yr:
-      - 0.5
-      - 3.0
-      sediment_t_ha_yr:
-      - 5
-      - 50
-    fertilizer_rates:
-      winter_wheat_total_n_kg_ha: 225
-      summer_maize_total_n_kg_ha: 180
-      rotation_total_n_kg_ha: 405
-      p_application_kg_ha: 75
-calibration_reference:
-  recommended_sequence:
-  - cn2 (pctchg -20 to -50%)
-  - esco (absval 0.10-0.30)
-  - awc (pctchg -30 to +30%)
-  - perco (absval 0.5-0.9)
-  - alpha_bf (absval 0.01-0.5)
-  - gw_delay (absval 10-200)
-  - surlag (absval 0.5-12)
-  preset_humid_subtropical:
-    description: Starting point for Huai River and similar humid Chinese basins
-    cn2: pctchg -50
-    esco: absval 0.15
-    cn3_swf: absval 0.0
-    perco: absval 0.75
-  preset_semiarid:
-    cn2: pctchg -20
-    esco: absval 0.50
-    perco: absval 0.30
-  target_metrics:
-  - NSE > 0.5
-  - KGE > 0.5
-  - PBIAS < 25%
-  - 'For WQ: TN PBIAS < 50%'
-  reference: See SKILL.md Section 'Key Calibration Parameters (Hydrology)' and docs/s6_calibration_parameters_skill.md
-unit_conversions:
-- variable: precipitation
-  source: CMFD (kg/m2/s)
-  target: SWAT+ (mm/day)
-  factor: 86400
-  operation: multiply
-  trap_if_wrong: Runoff 86400x too high or near zero
-- variable: temperature
-  source: CMFD (K)
-  target: SWAT+ (degC)
-  offset: -273.15
-  operation: subtract
-  trap_if_wrong: Crops never grow; perpetual snow
-- variable: solar_radiation
-  source: CMFD (W/m2)
-  target: SWAT+ (MJ/m2/day)
-  factor: 0.0864
-  operation: multiply
-  trap_if_wrong: Zero or excess growth; wrong ET
+- id: dt_001
+  symptom: SWAT+ crashes immediately at startup with a Fortran 'file not found' or 'cannot open file'
+    error. The binary exits with a non-zero code within the first second of execution.
+  diagnosis: A file listed in file.cio does not exist in the TxtInOut directory.; file.cio lists all required
+    input files by category. SWAT+ opens every referenced file at initialization. If any file is missing,
+    the Fortran OPEN statement fails and the program stops. This commonly happens when optional files
+    are
+  remedy: 'Run validate_txtinout to identify the missing file(s). Either create the file or replace the
+    reference with ''null'' in file.cio.; validate_txtinout; [''Parse file.cio and list all referenced
+    filenames'', ''Check each filename exists in TxtInOut: ls TxtInOut/<filename>'', "For missing files:
+    replace filen'
+  severity: fatal
+- id: dt_002
+  symptom: SWAT+ crashes during initialization when reading weather files. Error message references weather
+    file parsing or unexpected data format. May also manifest as NaN values in output.
+  diagnosis: 'Weather input files (.pcp, .tmp, .slr, .hmd, .wnd) have wrong number of header lines or
+    incorrect column format.; SWAT+ expects exactly 3 header lines in each weather file: (1) title, (2)
+    column headers, (3) station metadata (nbyr, tstep, lat, lon, elev). Data starts on line 4. If header
+    lines are m'
+  remedy: 'Verify each weather file has exactly 3 header lines. Check for tabs (replace with spaces).
+    Validate column count matches expected format.; validate_weather_data; [''head -5 TxtInOut/<station>.pcp
+    — line 4 should be first data row'', ''Check for tab characters: cat -A TxtInOut/<station>.pcp | head
+    -5'', '
+  severity: fatal
+- id: dt_003
+  symptom: SWAT+ runs to completion but ET is unreasonably high or low, snowmelt timing is wrong, or hydrograph
+    shape does not match observations. No error messages.
+  diagnosis: Temperature file has Tmax < Tmin for some or all days, or temperature is in wrong units (K
+    vs C).; SWAT+ does not validate that Tmax >= Tmin. If they are swapped, the model computes negative
+    temperature range, which produces wrong PET (Hargreaves method uses Tmax-Tmin), wrong snowmelt (depends
+    on me
+  remedy: 'Validate all .tmp files: check Tmax >= Tmin for every row. If mean temperature > 200, data
+    is likely in Kelvin — subtract 273.15.; validate_weather_data; [''python -c "import pandas as pd;
+    df=pd.read_csv(\''station.tmp\'', skiprows=3, delim_whitespace=True, names=[\''yr\'',\''jday\'',\''tmax\'',\''tmin\'']);
+    p'
+  severity: silent
+- id: dt_004
+  symptom: Simulated water yield or nutrient loads are significantly biased compared to observations,
+    despite reasonable weather and soil inputs. Model runs without errors.
+  diagnosis: 'HRU thresholds are too aggressive (>20%), removing significant land use or soil types and
+    biasing the basin-average properties.; When HRU thresholds eliminate land uses that occupy <20% of
+    a subbasin, the redistributed area changes the effective land use distribution. Agricultural land
+    (often small '
+  remedy: 'Reduce HRU thresholds to 5-10% for land use and soil, 10-20% for slope. For water quality studies,
+    use 0% threshold (all HRUs).; apply_hru_threshold; [''Compare land use distribution before and after
+    threshold: does any land use type lose >50% of its original area?'', ''Regenerate HRUs with lower
+    thres'
+  severity: silent
+- id: dt_005
+  symptom: SWAT+ crashes during simulation with a segmentation fault, Fortran runtime error 'Index N is
+    out of bounds', or 'STOP' message with a line reference.
+  diagnosis: Array dimensions in compiled binary are too small for the number of HRUs, subbasins, channels,
+    or soil layers in the model.; Some SWAT+ versions have hardcoded array dimensions (PARAMETER statements
+    in Fortran source). If the model setup has more objects than the compiled limit (e.g., >2000 HRUs
+    whe
+  remedy: 'Reduce HRU count via thresholds, or recompile SWAT+ with larger array dimensions.; compile_swatplus;
+    [''Check object.cnt for total HRU/subbasin/channel counts'', ''If counts exceed compiled limits: either
+    reduce via thresholds or edit Fortran source PARAMETER statements and recompile'', ''Recompile with '
+  severity: fatal
+- id: dt_006
+  symptom: SWAT+ crashes when reading soils.sol, or produces obviously wrong soil water content values.
+    Error may reference soil reading routines.
+  diagnosis: 'soils.sol has mismatched layer count — the nly value in the profile line does not match
+    the actual number of layer lines that follow.; soils.sol uses a multi-line record format: one profile
+    line (with nly=N) followed by exactly N layer lines. If nly says 3 but only 2 layer lines follow,
+    SWAT+ reads '
+  remedy: 'Verify nly matches actual layer line count for every soil in soils.sol.; validate_soil_properties;
+    [''Parse soils.sol: for each profile line, count subsequent lines until next profile line'', ''Compare
+    count to nly value'', ''Fix mismatches by adding/removing layer lines or correcting nly'']; Always
+    use b'
+  severity: fatal
+- id: dt_007
+  symptom: SWAT+ Fortran source fails to compile with gfortran. Errors about non-standard Fortran syntax,
+    missing modules, or undefined references.
+  diagnosis: SWAT+ source code contains Intel Fortran extensions or non-standard constructs that gfortran
+    does not support, or the gfortran version is too old.; SWAT+ is primarily developed with Intel Fortran
+    (ifort). Some code uses Intel-specific features or relies on behavior that gfortran handles differently.
+  remedy: 'Upgrade gfortran to >= 9.0. Apply known patches for gfortran compatibility. Use the CMake build
+    system from the official repository.; ; [''Check gfortran version: gfortran --version (need >= 9.0)'',
+    ''Clone official repo: git clone https://github.com/swat-model/swatplus.git'', ''Use CMake: mkdir
+    build &&'
+  severity: fatal
+- id: dt_008
+  symptom: Delineated watershed area is much larger (>2x) or smaller (<0.5x) than expected. Model runs
+    successfully but discharge is completely wrong.
+  diagnosis: Outlet point snapped to the wrong stream — typically a larger river at a confluence, or a
+    smaller tributary.; The pour-point snapping algorithm finds the highest-accumulation cell within a
+    search radius. If the outlet is near a confluence, the algorithm snaps to the larger river (higher
+    accumulation
+  remedy: 'Compare delineated area to known/published area. If wrong, adjust outlet coordinates or manually
+    specify the snap point.; delineate_watershed; [''Check delineated area against published basin area'',
+    ''If >2x expected: outlet snapped to larger river — move coordinates upstream of confluence'', ''If
+    <0.5x'
+  severity: silent
+- id: dt_009
+  symptom: SWAT+ crashes during initialization with array index errors, or produces wrong results because
+    it reads too few or too many objects from data files.
+  diagnosis: object.cnt specifies wrong counts that do not match actual records in data files (hru-data.hru,
+    chandeg.con, aquifer.aqu, etc.).; SWAT+ allocates arrays based on object.cnt counts. If object.cnt
+    says 245 HRUs but hru-data.hru has 250, the binary either crashes (if compiled with bounds checking)
+    or r
+  remedy: 'Regenerate object.cnt by counting actual records in each data file.; validate_txtinout; [''Count
+    records: wc -l TxtInOut/hru-data.hru (subtract header lines)'', ''Update object.cnt to match actual
+    counts'', ''Verify all object types: hru, lsu, aqu, cha, res, rec, exco, dr, ru'']; Always regenerate
+    object.'
+  severity: fatal
+- id: dt_010
+  symptom: Basin nutrient balance does not close — total N/P inputs significantly exceed outputs + storage
+    change, or vice versa. Water balance may be acceptable but nutrient loads are wrong.
+  diagnosis: Nutrient sources or sinks are not properly configured — commonly missing atmospheric deposition
+    (atmo.cli), point sources (recall.rec), or initial nutrient pools.; SWAT+ tracks N and P through 5+
+    pools each. If atmospheric deposition is not configured (atmo.cli = null in file.cio), wet and dry
+    depos
+  remedy: 'Check that all nutrient sources are configured. Enable atmospheric deposition. Add point sources
+    if applicable.; check_mass_balance; ["Check atmo.cli: is it ''null'' in file.cio? If the basin has
+    >5 kg N/ha/yr expected deposition, enable it", ''Check recall.rec: are all known point sources included?'', '
+  severity: silent
+- id: dt_011
+  symptom: Crop yields are zero or unreasonably low. Biomass does not accumulate. No harvest output in
+    management output file.
+  diagnosis: Management schedule has missing or misordered operations — planting after harvest, missing
+    kill operation, or crop name not matching plants.plt.; SWAT+ processes management operations sequentially.
+    If harvest is scheduled before planting, no crop exists to harvest. If the crop name in the plant
+    oper
+  remedy: 'Verify management sequence: plant -> fertilize -> harvest -> kill. Verify crop names match
+    plants.plt entries exactly.; build_management_schedules; [''Check management.sch: is plant operation
+    before harvest?'', ''Check crop name in plant operation matches plants.plt (case-sensitive)'', ''Ensure
+    kill oper'
+  severity: degraded
+- id: dt_012
+  symptom: SWAT+ runs successfully but ET is 3-12x higher than expected. Water yield is near zero despite
+    normal precipitation. No error messages.
+  diagnosis: 'Solar radiation input is in W/m2 instead of MJ/m2/day. W/m2 values (100-400) are ~12x higher
+    than MJ/m2/day values (8-30).; CMFD and many reanalysis products provide solar radiation as instantaneous
+    power (W/m2). SWAT+ expects daily total energy (MJ/m2/day). The conversion is: MJ/m2/day = W/m2 *
+    864'
+  remedy: 'Check solar radiation values in .slr files. If daily mean > 50, they are likely in W/m2. Convert:
+    MJ/m2/day = W/m2 * 0.0864.; validate_weather_data; ["Check .slr file: awk ''NR>3{sum+=$3;n++}END{print
+    sum/n}'' station.slr", ''If mean > 50: data is in W/m2, multiply all values by 0.0864'', ''Expected
+    rang'
+  severity: silent
+- id: dt_013
+  symptom: Calibration has no effect — results identical to uncalibrated run. Or calibration produces
+    physically impossible parameter values (e.g., CN2 > 100).
+  diagnosis: Parameter name misspelled in calibration.cal (SWAT+ silently ignores unknown names), or absval
+    used for cn2/awc destroying spatial variability, or pctchg value produces out-of-range results.; SWAT+
+    reads calibration.cal and applies adjustments at runtime. If a parameter name is misspelled (e.g.,
+    'cn
+  remedy: 'Verify parameter names against SWAT+ documentation. Use pctchg for cn2/awc. Check that resulting
+    values stay within physical bounds.; apply_calibration; [''Cross-check parameter names with SWAT+
+    variable list'', ''For pctchg: verify that original_value * (1 + chg_val/100) stays in valid range'',
+    ''Compar'
+  severity: degraded
+- id: dt_014
+  symptom: SWAT+ crashes partway through simulation (not at startup). Output files are partially written.
+    Error may be 'Floating point exception', 'Division by zero', or generic STOP.
+  diagnosis: 'Numerical instability from extreme parameter values, missing data (-99 not handled properly),
+    or zero-area HRUs/channels.; SWAT+ can crash mid-simulation if: (1) a soil parameter is zero (e.g.,
+    SOL_K=0 causes division by zero in infiltration), (2) weather data has -99 (missing) values not caught
+    by '
+  remedy: 'Identify the crash date from partial output. Check weather data for that date. Check soil/channel
+    parameters for zero or extreme values.; ; [''Find last date in partial output: tail -1 TxtInOut/basin_wb_day.txt'',
+    ''Check weather data for crash date: any -99 values? any extreme values?'', ''Check soils.s'
+  severity: fatal
+- id: dt_015
+  symptom: Basin water balance error exceeds 5% — precipitation does not equal ET + runoff + percolation
+    + storage change. Model ran without errors.
+  diagnosis: Time period mismatch between water balance components, or deep aquifer loss not accounted,
+    or irrigation from external source not tracked.; The SWAT+ water balance includes a deep aquifer loss
+    term (recharge that exits the system permanently) and potentially irrigation from an external source.
+    If de
+  remedy: 'Exclude warmup years from balance calculation. Include deep aquifer loss. Account for irrigation
+    imports.; check_mass_balance; [''Recalculate balance excluding warmup period (first nyskip years)'',
+    ''Check deep aquifer: revap_co and flo_min parameters — deep percolation is a legitimate loss'', ''Check
+    ir'
+  severity: silent
+- id: dt_v001
+  symptom: 'Fortran runtime error in sd_hydsed_init: Index ''1'' of dimension 1 of array ''om_init_water''
+    above upper bound of 0'
+  diagnosis: TxtInOut test data is incompatible with the compiled SWAT+ binary version; SWAT+ input file
+    formats change between versions. The bundled refdata/Osu_1hru test case was created for an older SWAT+
+    version. The latest source code expects additional fields in channel initialization files that the
+    old te
+  remedy: Generate fresh TxtInOut files using SWAT+ Editor or QSWAT+ for the compiled version; ; ['Do
+    NOT use bundled refdata — it is version-mismatched', 'Use SWAT+ Editor (Python) to generate new TxtInOut
+    from watershed data', 'Or use QSWAT+ (QGIS plugin) for full watershed setup', 'Match TxtInOut version
+    t
+  severity: fatal
+- id: dt_v002
+  symptom: SIGSEGV Segmentation fault in time_control_ during SWAT+ execution
+  diagnosis: 'Version mismatch between TxtInOut data and compiled SWAT+ binary; The Ames_sub1 refdata
+    test case also causes segfault due to incompatible file formats. SWAT+ reads array dimensions from
+    input files and allocates memory accordingly. If the file format has changed, wrong dimensions are
+    read, leading '
+  remedy: 'Same as dt_v001 — regenerate TxtInOut with matching SWAT+ Editor version; ; [''Check SWAT+
+    version: run binary without arguments, note revision'', ''Download matching SWAT+ Editor version from
+    swatplus.gitbook.io'', "Generate new TxtInOut using Editor''s watershed delineation + HRU tools"];
+    Never use tes'
+  severity: fatal
+- id: dt_v003
+  symptom: pySWATPlus raises ParserError 'Expected 5 fields, saw 6' or KeyError 'name' when reading cal_parms.cal
+  diagnosis: "cal_parms.cal has uppercase headers and multi-word units incompatible with pySWATPlus; pySWATPlus\
+    \ reads cal_parms.cal using pandas.read_csv with whitespace separator. Three incompatibilities with\
+    \ SWAT+ Editor output: (1) SWAT+ Editor writes uppercase headers (NAME, OBJ_TYP) but pySWATPlus expects\n\
+    \  "
+  remedy: 'Run fix_cal_parms_cal() from adapt_swatplus_project.py, or manually fix headers and units;
+    adapt_swatplus_project; [''Lowercase the header line: NAME→name, OBJ_TYP→obj_typ, ABSMIN→absmin, ABSMAX→absmax,
+    UNITS→units'', "Replace multi-word units: ''kg P''→''kg_P'', ''kg N''→''kg_N'', ''julian day''→''julian_day'', '
+  severity: fatal
+- id: dt_v004
+  symptom: SWAT+ segfaults in mgt_operatn_ when using generated management schedules (generic_ag)
+  diagnosis: 'Custom management.sch operations format incompatible with SWAT+ rev59; The simplified generic_ag
+    schedule (5 ops: till/plnt/fert/harv/skip) causes a segfault during the first timestep. The SWAT+
+    rev59 management reader expects a specific format for operation data fields that our simplified version
+    d'
+  remedy: 'Use no_mgt for all land uses in landuse.lum. For crop-specific management, use pySWATPlus to
+    set up management after project generation.; generate_hru_from_global; ["Set mgt = ''no_mgt'' for
+    all land use types in landuse.lum", ''For crop management, use pySWATPlus: reader.run_swat(parameters=[...])
+    wit'
+  severity: fatal
+- id: dt_v005
+  symptom: basin_wb_yr.txt is empty (3 header lines, no data) while hru_wb and channel output work fine
+  diagnosis: 'Missing soils_lte.sol file and its reference in file.cio soils line; SWAT+ requires soils_lte.sol
+    to be listed as the third entry on the soils line in file.cio: ''soils  soils.sol  nutrients.sol  soils-lte.sol''.
+    The file can be empty (0 bytes) but MUST exist and be referenced. Without it, SWAT+ runs '
+  remedy: 'Create empty soils_lte.sol and add ''soils-lte.sol'' as third entry in file.cio soils line;
+    generate_hru_from_global; [''touch soils_lte.sol (create empty file)'', "Update file.cio: ''soils  soils.sol  nutrients.sol  soils-lte.sol''"];
+    generate_hru_from_global.py Step 8 creates empty soils_lte.sol automat'
+  severity: silent
+- id: dt_v006
+  symptom: SWAT+ channel discharge appears 200x too high when compared to VIC routing output
+  diagnosis: SWAT+ channel output flo_out is in ha-m/day, not m³/s; SWAT+ channel daily output (channel_day.txt)
+    reports flo_out in hectare-meters per day (ha-m/day), not cubic meters per second (m³/s). The units
+    row in the output file shows 'ha-m' for flow columns. VIC routing output is in m³/s. Without convers
+  remedy: 'Convert SWAT+ channel flow: Q_cms = flo_out_ham * 10000 / 86400; compare_swatplus_vic; [''Read
+    units row (line 3) from channel output'', "If flo_out unit is ''ha-m'': multiply by 10000/86400 to
+    get m³/s", "If flo_out unit is ''m^3/s'' or ''cms'': no conversion needed"]; compare_swatplus_vic.py
+    should auto-d'
+  severity: silent
+- id: dt_v007
+  symptom: Channel output files (channel_day.txt, channel_yr.txt) not generated despite print.prt enabling
+    them
+  diagnosis: print.prt format must exactly match SWAT+ editor output for channel output to work; The generated
+    print.prt enables channel output (y for daily/yearly) but SWAT+ may not produce the files if the print.prt
+    format has subtle whitespace differences. Using the exact print.prt from a working SWAT+ Editor
+  remedy: 'Copy print.prt from a working SWAT+ Editor project (e.g., LREW demo); ; [''Copy print.prt from
+    a known-working SWAT+ project'', "Enable desired outputs: sed -i ''s/^channel .*/channel  y  n  y  n/''
+    print.prt", ''Ensure soils_lte.sol exists (dt_v005)'']; generate_hru_from_global.py copies print.prt
+    from L'
+  severity: degraded
+- id: dt_v008
+  symptom: SWAT+ generates thousands of subbasins (>2000) causing extremely slow execution or crash. With
+    channel_threshold=100 cells on 90m DEM for 9,000 km2 basin, 2,847 subbasins generated — 12x slower
+    than needed.
+  diagnosis: 'Stream channel threshold too low for basin scale. Default=100 accumulation cells at 90m
+    DEM creates micro-watersheds. For large basins (>5000 km2), threshold=5000 cells gives proper stream
+    density.; The channel threshold controls the minimum contributing area required for a cell to be classified
+    as '
+  remedy: 'Set channel_threshold=5000 for basins >5000 km2 at 90m DEM. Scale proportionally for smaller
+    basins or finer DEMs.; generate_hru_from_global; [''Check current subbasin count in object.cnt'',
+    ''If >500 subbasins for a single basin: increase channel threshold'', ''Re-run generate_hru_from_global.py
+    with --'
+  severity: degraded
+- id: dt_020
+  symptom: SWAT+ runs to completion but nutrient output (orgn_out, no3_out, solp_out, sedp_out) in channel_sd_day.txt
+    is all zeros, despite fertilizer being applied in management.sch.
+  diagnosis: Nutrient output is not enabled in print.prt. basin_nb and/or channel_sd nutrient columns
+    are disabled (set to 'n').; SWAT+ computes nutrient cycling internally regardless of print.prt settings,
+    but only writes output to files when the corresponding line in print.prt is set to 'y'. If basin_nb=n
+    (nut
+  remedy: 'Run configure_nutrient_output.py to enable basin_nb and channel_sd nutrient output. Verify
+    management.sch has fertilizer operations.; configure_nutrient_output; ["Open print.prt: check basin_nb
+    daily is ''y''", "Check channel_sd daily is ''y'' (nutrient columns are included automatically)",
+    "Verify mana'
+  severity: silent
+- id: dt_021
+  symptom: Simulated sediment yield exceeds 100 t/ha/yr, which is unreasonable for agricultural land without
+    active gully erosion. Sediment output dominates nutrient transport via sediment-bound P.
+  diagnosis: USLE_K (soil erodibility) or slope values are incorrect, or USLE_P (practice factor) is not
+    calibrated.; SWAT+ computes sediment yield using the Modified Universal Soil Loss Equation (MUSLE).
+    Sediment yield is proportional to USLE_K * LS * C * P. If USLE_K is derived from wrong soil texture
+    (e.g., s
+  remedy: 'Check USLE_K values against soil texture expectations. Verify slope values are reasonable.
+    Set USLE_P < 1.0 for terraced agricultural land.; validate_soil_properties; [''Check USLE_K in soils.sol:
+    typical range 0.10-0.45 for agricultural soils'', ''Check slope in hru-data.hru: mean slope >30% is
+    unusua'
+  severity: silent
+- id: dt_022
+  symptom: Basin nutrient balance (basin_nb output) shows nutrient outputs exceeding inputs — more N or
+    P leaving the basin than entering through fertilizer, atmospheric deposition, and fixation combined.
+    Soil nutrient pools decline rapidly.
+  diagnosis: Initial soil nitrogen and phosphorus pools (in nutrients.sol) are set too low or zero, causing
+    the model to mine soil organic matter to balance crop uptake.; SWAT+ initializes soil N and P pools
+    from nutrients.sol (or defaults from soil organic carbon in soils.sol). If nutrients.sol is missing
+    or ha
+  remedy: 'Check and initialize soil nutrient pools in nutrients.sol. Verify SOL_CBN is reasonable in
+    soils.sol.; ; [''Check soils.sol: SOL_CBN should be 0.5-3% for agricultural soils'', ''Check nutrients.sol:
+    sol_no3 should be 5-20 mgN/kg, sol_orgn should be 500-2000 mgN/kg'', ''If nutrients.sol is missing:
+    SWAT+ '
+  severity: silent
+- id: dt_wq_001
+  symptom: QUAL2E in-stream routing produces physically impossible nutrient concentrations (>1e9 mg/L)
+    during flood events in Rev 59.3
+  diagnosis: Rev 59.3 wq_semianalyt function numerically unstable for extreme flow events; During monsoon
+    peak flows, the semi-analytical QUAL2E solver diverges. Small channels generate unrealistic NO3 from
+    benthic NH4 nitrification, cascading downstream.
+  remedy: '[''Do NOT use channel_day.txt no3_out/orgn_out for nutrient loads'', ''Use basin_ls_day.txt
+    (sedorgn, surqno3) for HRU-level nutrient export'', ''Use basin_nb_yr.txt for basin N budget (fertn,
+    denit)'', ''Keep wq_cha=0 in codes.bsn'']; Use HRU-level nutrient outputs. A newer SWAT+ binary (Rev
+    60.5+) fixes t'
+  severity: degraded
+- id: dt_wq_002
+  symptom: Default om_water.ini has unrealistically high initial nutrient concentrations
+  diagnosis: HRU generator creates placeholder values, not physically calibrated initial conditions; Initial
+    concentrations create massive stored nutrient mass in 215 channels. Benthic sources + nitrification
+    further amplify. Channel storage nutrient mass dominates over HRU inputs.
+  remedy: '[''Set all nutrient initial concentrations in om_water.ini to 0'', ''Only keep dox (dissolved
+    oxygen) = 7-8 mg/L and temp = 15-20'', ''Let HRU nutrient outputs build up naturally during warmup
+    period'']; Always zero out nutrient initial concentrations. Use 3+ year warmup.'
+  severity: silent
+- id: dt_wq_003
+  symptom: Segmentation fault during channel initialization with post-2023 SWAT+ source
+  diagnosis: New source code allocates ch array for regular channels only, but project uses sd_channels;
+    channel_allo is commented out in proc_cha.f90. The ch array has size 0 but ch_initial accesses ch(1).
+    Projects using sd_channel_control3 (all HydroCraft projects) trigger this crash.
+  remedy: '[''Use the original Rev 59.3 binary (swatplus_rev59, 5.6MB, Jul 2019)'', ''Do NOT recompile
+    from latest source without fixing proc_cha.f90'', "If recompiling: add ''if (allocated(ch)) then''
+    guard around ch_initial loop in proc_cha.f90"]; Always test newly compiled binaries before replacing
+    working ones.'
+  severity: fatal
+- id: dt_023
+  symptom: TN export exceeds 50 kgN/ha/yr — far above any observed basin
+  diagnosis: n_perc (NPERCO) in parameters.bsn exceeds valid range [0-1]; NPERCO is the nitrogen percolation
+    coefficient (dimensionless, 0-1). Values >1 are physically impossible but SWAT+ does not enforce the
+    range. An out-of-range value silently inflates nitrate leaching at every soil layer computation step,
+    l
+  remedy: '[''Open parameters.bsn and check n_perc value'', ''Valid range is 0-1, default 0.2'', ''If
+    >1, set to 0.2 and re-run'']; Add preflight check: assert 0 <= n_perc <= 1 in parameters.bsn'
+  severity: silent
+- id: dt_024
+  symptom: TP output is always 0.000 in channel_sd_yr.txt despite fertilizer application
+  diagnosis: rtu_wq = 0 in codes.bsn when water quality output was requested; codes.bsn controls which
+    modules are active. rtu_wq must be set to 1 for nutrient routing in channels. When rtu_wq=0, phosphorus
+    is computed at HRU level but never routed to channels, so channel TP output is zero. This is silent
+    — no e
+  remedy: '[''Set rtu_wq = 1 in codes.bsn'', ''Ensure om_water.ini initial P concentrations are zeroed
+    (see dt_wq_002)'', ''Re-run with 3+ year warmup'']; If TP output is needed, always verify rtu_wq=1
+    in codes.bsn.'
+  severity: silent
+- id: dt_025
+  symptom: TP in basin_nb_yr.txt is 0 or near-zero despite P being important in the basin
+  diagnosis: No phosphorus fertilizer defined in management schedules; If management.sch references only
+    N fertilizer (e.g., urea, elem_n) but no P-containing fertilizer (e.g., DAP, MAP, 11-52-0), TP export
+    will be near-zero because SWAT+ has no background P mineralization strong enough to produce realistic
+    load
+  remedy: '[''Check fertilizer.frt for P content: frt_p column must be > 0 for at least one entry'', ''Add
+    DAP or compound fertilizer (e.g., 18-46-0) to management.sch'', ''Typical rice paddy: 40-60 kgP2O5/ha
+    = ~17-26 kgP/ha applied'']; Preflight: warn if management.sch has fertilizer ops but no P in fertilizer.frt.'
+  severity: silent
+- id: dt_026
+  symptom: Runoff is unrealistically high or low; hydrograph shape wrong regardless of calibration
+  diagnosis: CN2 values in hru-data.hru are outside physically realistic range (25-98); CN2 (curve number
+    for moisture condition II) must be 25-98 for SCS method. Values <25 produce almost no runoff even
+    in storms; values >98 make every HRU behave like impervious surface. SWAT+ does not clamp this value
+    and will
+  remedy: '[''Check CN2 values: sort hru-data.hru by cn2 column'', ''Forest on good soil: CN2 ~ 36-70;
+    Cropland: 67-85; Urban: 89-98'', ''If auto-generated, verify land use to CN lookup table'']; Preflight
+    check: assert 25 <= CN2 <= 98 for all HRUs.'
+  severity: silent
+- id: dt_027
+  symptom: PBIAS exceeds +/- 100% when comparing simulated vs observed streamflow
+  diagnosis: 'Model is fundamentally miscalibrated or has structural issues; PBIAS > +100% means simulated
+    flow is more than double observed (volume overestimation). PBIAS < -100% means simulated is less than
+    zero relative to observed mean. Common causes: wrong basin area, wrong precipitation forcing, ESCO/EPCO
+    w'
+  remedy: '[''Verify basin area matches between HRU definitions and watershed delineation'', ''Check precipitation:
+    compare station data with basin average rainfall'', ''If PBIAS > +50%: increase ESCO (0.7-1.0), check
+    for duplicate precipitation'', ''If PBIAS < -50%: decrease ESCO, check for missing stations or irrig'
+  severity: degraded
+- id: dt_028
+  symptom: Simulated total basin area does not match GIS delineation; water balance off by fixed ratio
+  diagnosis: Sum of HRU areas in hru-data.hru does not match sub_area in watershed file; If HRUs were
+    generated from a different DEM resolution or clipped differently than the watershed boundary, total
+    HRU area can differ from the watershed area used for unit-area calculations. This causes a systematic
+    bias in a
+  remedy: '[''Sum area_ha column in hru-data.hru'', ''Compare to total watershed area from GIS shapefile'',
+    ''If >5% mismatch, regenerate HRUs from correct DEM/boundary'']; Preflight: compare sum(hru_area)
+    vs watershed boundary area.'
+  severity: silent
+- id: dt_029
+  symptom: SWAT+ crashes with cryptic Fortran error 'end of file' or 'input conversion error' during weather
+    read
+  diagnosis: A weather station referenced in weather-sta.cli is missing its .pcp, .tmp, or other forcing
+    file; weather-sta.cli lists station names; SWAT+ expects corresponding files (e.g., stationname.pcp,
+    stationname.tmp) in TxtInOut. If any file is missing or has fewer records than the simulation period,
+    the F
+  remedy: '[''List all station names in weather-sta.cli'', ''Verify each name.pcp, name.tmp, etc. exists
+    in TxtInOut'', ''Check line count: need nbyr*365 (or 366) data lines + header'', ''Use: wc -l *.pcp
+    to quickly spot short files'']; Preflight: for each station in weather-sta.cli, assert all required
+    files exist an'
+  severity: fatal
+- id: dt_030
+  symptom: Simulation runs but final years produce NaN or sudden zero in all outputs
+  diagnosis: Simulation end date extends beyond available weather data; If time.sim end_yr/end_jday exceeds
+    the period covered by .pcp/.tmp files, SWAT+ may read garbage values or zeros beyond the file end
+    (depending on Fortran runtime). No explicit error is raised in some builds; outputs simply degrade
+    or go to
+  remedy: '[''Check time.sim start/end dates'', ''Check last date in .pcp and .tmp files'', ''Ensure weather
+    data covers full simulation period + warmup'']; Preflight: assert weather file date range >= time.sim
+    range.'
+  severity: silent
+- id: dt_031
+  symptom: Expected output file (e.g., channel_sd_yr.txt) is empty or missing
+  diagnosis: 'print.prt does not have the required output category enabled; print.prt controls which SWAT+
+    output files are written. Each category (basin_wb, channel_sd, hru, etc.) must be explicitly enabled
+    with daily/monthly/yearly flags. If a category is not listed or its flags are all ''n'', the output
+    file is '
+  remedy: '[''Open print.prt and check that the desired category is listed'', "Set the time step flag
+    (daily/monthly/yearly) to ''y''", ''Common categories: basin_wb, channel_sd, hru, lsunit_wb'', ''For
+    nutrients: add channel_sd_nr or basin_nb'']; Preflight: verify print.prt enables all output categories
+    needed for va'
+  severity: silent
+- id: dt_032
+  symptom: Simulated baseflow is zero or near-zero; entire hydrograph is surface runoff
+  diagnosis: GW_DELAY too high (>500 days) or ALPHA_BF too low (<0.001) in aquifer.aqu; GW_DELAY controls
+    the lag between water leaving the soil profile and entering the shallow aquifer. Very high values
+    (>500 days) mean percolation water never reaches the aquifer during a typical simulation. Similarly,
+    ALPHA_BF
+  remedy: '[''Check aquifer.aqu: gw_delay should be 1-365 days (default 31)'', ''Check alpha_bf: typical
+    range 0.01-0.3 (default 0.048)'', ''If both look reasonable, check that soils have percolation path
+    (SOL_K > 0)'', ''Verify with basin_wb_yr.txt: latq + perc should be > 0'']; Preflight: assert gw_delay
+    < 500 and a'
+  severity: silent
+- id: dt_033
+  symptom: NSE is negative (often -0.5 to -10) despite seemingly correct setup
+  diagnosis: 'Model needs systematic calibration; default parameters are not appropriate for this basin;
+    Negative NSE means the model performs worse than using the observed mean as a predictor. Common causes:
+    (1) wrong CN2 for land use, (2) ESCO default 0.95 wrong for climate, (3) AWC from HWSD not representative'
+  remedy: '[''First check for structural issues (dt_026, dt_027, dt_028, dt_029)'', ''If no structural
+    issues, run calibration with SWAT-CUP or iPySwat'', ''Priority parameters: CN2, ESCO, AWC, GW_DELAY,
+    ALPHA_BF, SURLAG'', ''Target: NSE > 0.5 (good), NSE > 0.3 (acceptable for uncalibrated)'']; Always
+    calibrate before'
+  severity: degraded
+- id: dt_034
+  symptom: Sediment yield exceeds 100 t/ha/yr — unrealistic for most non-loess regions
+  diagnosis: 'USLE_K or USLE_C factors are too high, or slope length/steepness from DEM is incorrect;
+    MUSLE sediment yield > 100 t/ha/yr is physically unrealistic for all but the most extreme erosion
+    environments (e.g., Chinese Loess Plateau). Common causes: USLE_K auto-calculated too high for organic
+    soils, USLE'
+  remedy: '[''Check USLE_K in soils.sol: typical range 0.01-0.45'', ''Check USLE_C in management.sch:
+    bare soil ~0.5, crops 0.01-0.2'', ''Check slope_len in topography.hyd: >100m may be unrealistic'',
+    ''For regions <30 t/ha/yr expected, reduce USLE_P or adjust practices'']; Compare sediment yield against
+    regional lite'
+  severity: silent
+- id: dt_035
+  symptom: 'basin_wb_yr.txt water balance does not close: precip differs significantly from ET + Q + delta_storage'
+  diagnosis: 'Water balance residual indicates a storage term or flux is missing or miscounted; In basin_wb_yr.txt,
+    precip should approximately equal ET + surq_gen + latq + tile + perc - revap +/- change in soil/aquifer
+    storage. A residual >5% of precip after warmup suggests: (1) aquifer deep percolation losing w'
+  remedy: '[''Extract annual values from basin_wb_yr.txt'', ''Compute: residual = precip - (et + surq_gen
+    + latq + tile + perc - revap)'', ''If residual > 0: check rchrg_dp (deep aquifer recharge fraction)
+    — reduce if >0.3'', ''If residual < 0: check for irrigation or reservoir inflows'', ''First year is
+    warmup — focus'
+  severity: silent
+- id: dt_036
+  symptom: Channel nutrient concentrations oscillate wildly or go negative between time steps
+  diagnosis: 'QUAL2E in-stream routing solver is numerically unstable at daily time step; The QUAL2E solver
+    in SWAT+ uses an analytical steady-state solution that assumes constant flow within a day. In flashy
+    basins with large flow variation, this produces numerical instability: concentrations oscillate, go
+    negat'
+  remedy: '[''Set wq_cha = 0 in codes.bsn to disable in-stream WQ (use HRU outputs instead)'', ''Use basin_nb_yr.txt
+    for N and P budgets at basin scale'', ''If in-stream WQ needed: use SWAT+ Rev 60.5+ with improved
+    solver'', ''Alternatively: aggregate to monthly output to smooth oscillations'']; Use HRU-level nutrient'
+  severity: degraded
+- id: dt_037
+  symptom: SWAT+ runs with default parameters; calibration.cal file is missing or empty
+  diagnosis: calibration.cal was not created or was accidentally deleted from TxtInOut; calibration.cal
+    contains parameter adjustment instructions (chg_typ, chg_val) that modify base parameter values at
+    runtime. Without it, SWAT+ runs with raw parameter values from input files, which are rarely appropriate
+    for a
+  remedy: '[''Check if calibration.cal exists in TxtInOut: ls -la calibration.cal'', ''If missing, generate
+    from SWAT-CUP or manually create with key parameters'', ''Minimum calibration parameters: cn2, esco,
+    awc, gw_delay, alpha_bf, surlag'', "Format: ''chg_typ absval chg_val 0.75 ... '' (see SWAT+ documentation)"]; '
+  severity: silent
+- id: dt_wq_004
+  symptom: WQ verifier against a China National guokongzhan (e.g. station 2258 Bengbu Sluice) reports
+    r<0.5 and large negative NSE on derived in-stream concentration, despite clean run and water balance.
+    NH3-N PBIAS approaches -3000%.
+  diagnosis: Obs is in-stream CONCENTRATION (mg/L) of a single species at a gate-regulated station with
+    no co-located discharge. With wq_cha=0 mandatory (Rev 59.3 QUAL2E blowup, dt_wq_001/dt_036), SWAT+
+    has no in-stream concentration state and exports only HRU LOADS (kg). Deriving conc as HRU_load/channel_flo_ou
+  remedy: Do not derive in-stream concentration from HRU_load/flow and do not compare TOTAL-N to NH3-N.
+    Remap the verifier target to LOADS (kg) via validate_water_quality.py, or use concentration paired
+    with measured discharge so load = C x Q. A bare concentration series at a guokongzhan is not a valid
+    target
+  severity: silent
+- id: dt_038
+  symptom: Delineated basin area is 5-15% larger than the gauge's published drainage area, and the snapped
+    outlet sits km downstream of the requested lat/lon. Sim discharge is biased high in proportion to
+    the extra area.
+  diagnosis: 'delineate_watershed.py passed snap_dist=0.15 (DEM map units = DEGREES, ~17 km) to whitebox
+    snap_pour_points, which relocates the pour point to the MAXIMUM flow-accumulation cell within that
+    radius. Any outlet within 17 km of a larger channel is dragged downstream past confluences.; snap_pour_points '
+  remedy: 'Pass snap_dist explicitly (6th CLI arg, default 0.01 deg ~1 km) and ALWAYS compare the tool''s
+    reported delineated_area_km2 against the gauge''s published drainage area before proceeding.; [''python
+    tools/s1/delineate_watershed.py <dem> <lat> <lon> <out_dir> 25 0.01'', ''Locate the true gauge cell
+    first:'
+  severity: silent
+- id: dt_039
+  symptom: SWAT+ runs but every HRU/subbasin behaves as if at sea level; station files (.pcp/.tmp) all
+    carry elev 0.0 in their 3rd header line even in a mountain basin.
+  diagnosis: prepare_weather_files.py did `from ki_tools_common.terrain import point_elevation` inside
+    a bare try/except. That symbol does not exist (the module exports get_terrain), so ImportError was
+    swallowed and elev fell back to 0.0 for every station in every basin.; A bare `except Exception` around
+    an impo
+  remedy: 'Use get_terrain(lat, lon)[''elevation'']; warn (do not silently accept) when elev == 0.; [''python3
+    -c "from ki_tools_common.terrain import get_terrain; print(get_terrain(39.32, 114.58))"'', ''Check
+    line 3 of each .pcp: `nbyr tstep lat lon elev`'']; Never wrap an import of a specific symbol in a
+    broad exc'
+  severity: silent
+- id: dt_040
+  symptom: 'SWAT+ cannot bind weather to objects, or reads the wrong file per variable: hru.con/rout_unit.con
+    name station `sta01` while pcp.cli lists `p000001.pcp`; or weather-sta.cli exists but SWAT+ behaves
+    as if there were no precipitation.'
+  diagnosis: Two contract breaks between S2 and S3. (a) prepare_weather_files.py hardcoded station names
+    p%06d while generate_hru_from_global.py writes wst=staNN. (b) generate_weather_stations.py wrote weather-sta.cli
+    in the WRONG column order (pcp first, wgn last, no wnd_dir/atmo_dep) using bare stems, and wrot
+  remedy: Pass S2's station names into S3 (7th arg), and let generate_weather_stations reuse the names
+    already declared in weather-sta.cli.; ['names=$(python3 -c "print([l.split()[8] for l in open(\'TxtInOut/rout_unit.con\').read().split(chr(10))[2:]
+    if l.strip()])")', 'python tools/s3/prepare_weather_files.p
+  severity: fatal
+- id: dt_041
+  symptom: 'After calling configure_print_prt.py the model produces the wrong output files, or reads garbage
+    flags: requested daily channel output never appears, or SWAT+ stops with a read error in print.prt.'
+  diagnosis: configure_print_prt.py regenerated print.prt from a 21-entry object list that was in the
+    wrong order, omitted `channel`, basin_pw/basin_res/basin_cha/basin_sd_cha, every region_*, hyd and
+    ru, invented `channel_sdmorph`, and dropped the csvout/dbout/cdfout and soilout/mgtout/hydcon/fdcout
+    header bloc
+  remedy: 'Edit the existing print.prt in place: change nyskip and only the flags of the requested categories,
+    preserving structure and row order. The tool now does this, with a canonical 37-row fallback.; ["diff
+    <(awk ''/^objects/,0{print $1}'' TxtInOut/print.prt) <(awk ''/^objects/,0{print $1}'' /mnt/disk1/Hydro'
+  severity: fatal
+- id: dt_042
+  symptom: calibration.cal is written and SWAT+ runs, but the simulated hydrograph is bit-identical to
+    the uncalibrated run for some parameters (notably alpha_bf, gw_delay, perco, cn3_swf) while others
+    (cn2, esco) do take effect.
+  diagnosis: 'SWAT+ matches calibration.cal rows against the names in cal_parms.cal. Rev59 spells the
+    aquifer recession/delay parameters `alpha` and `delay`; the SWAT2012-era `alpha_bf`/`gw_delay` do
+    not match and are silently ignored. `perco` and `cn3_swf` are not in cal_parms.cal at all (they are
+    hydrology.hyd '
+  remedy: 'Use the rev59 names. The tool now aliases alpha_bf->alpha and gw_delay->delay, and DROPS (with
+    a warning) any name absent from the project''s own cal_parms.cal.; ["awk ''NR>2{print $1}'' TxtInOut/cal_parms.cal
+    | grep -x alpha", ''Set perco / cn3_swf structurally: tools/s2/generate_hru_from_global.py --p'
+  severity: silent
+- id: dt_043
+  symptom: CMFD forcing for a year contains more days than the calendar year (e.g. 396 days for 2003),
+    or annual precipitation shifts when the requested period changes. Tmax == Tmin on every day.
+  diagnosis: 'TWO independent CMFD traps. (1) ki_tools_common.load_forcing._load_cmfd globbed `*{year}*.nc`,
+    which matches the year as a SUBSTRING of another stamp: `*2003*` also matches `..._202003.nc` (March
+    2020). Years 2001-2012 silently absorbed a 2020 month. (2) The CMFD 01dy (daily) store carries only
+    a da'
+  remedy: 'Anchor the year glob to the `_YYYYMM` stamp and force sub-daily forcing for temperature. Both
+    are fixed: the loader now rejects out-of-range/duplicate dates, and validate_weather_data flags >95%
+    Tmax==Tmin.; [''Use forcing_dir=KISSPATH_FORCING/Data_forcing_03hr_010deg'', ''Assert
+    len(dates)'
+  severity: silent
+- id: dt_044
+  symptom: SWAT+ over-predicts discharge and rchg_dp barely moves total volume. aquifer_yr.txt prints
+    an absurd dep_wt (e.g. 976 m) and aquifer flo + seep EXCEEDS rchrg every year (the store drains its
+    initial condition for the whole run). Raising rchg_dp 0.05 -> 0.6 changes aquifer flo only 99.84 ->
+    95.36 mm/
+  diagnosis: 'tools/s2/generate_hru_from_global.py write_aquifer_files() wrote FABRICATED aquifer.aqu
+    defaults and MIS-NAMED two columns. Against the only ground truth on disk (demo_lrew/swatplus_rev60_demo/aquifer.aqu,
+    written by SWAT+ Editor v2.1.0): gw_flo 2500.0 vs 0.05; dep_bot (called ''gw_dp'') 1000.0 m vs 1'
+  remedy: 'Take aquifer.aqu column names and default magnitudes verbatim from the shipped SWAT+ Editor
+    demo. FIXED in s2.; [''head -4 demo_lrew/swatplus_rev60_demo/aquifer.aqu   # ground truth'', ''Assert
+    aquifer_yr.txt dep_wt is O(1-10 m), not O(1000 m)'', ''Assert area-weighted (flo + seep + revap) <=
+    rchrg + sto'
+  severity: silent
+- id: dt_045
+  symptom: A SWAT+ calibration sweep reports 'calibrated' but successive trials produce BIT-IDENTICAL
+    output. Sweeping surlag, awc, canmx, delay or revap_co changes nothing, even though every one of those
+    names is present in the project's own cal_parms.cal.
+  diagnosis: 'Membership in cal_parms.cal is NECESSARY BUT NOT SUFFICIENT: the rev59 binary declares many
+    parameter names it never actually applies from calibration.cal. Measured at Zijingguan 2026-07-10
+    by running the real binary once per parameter at an extreme value and md5-ing the 18-yr daily outlet
+    series ag'
+  remedy: 'Route cal-ignored names to their real home file, and DROP the rest with a loud warning. FIXED
+    in s6: perco/canmx/cn3_swf/harg_pet -> hydrology.hyd; awc/soil_k/dp -> soils.sol; lat_len/slope_len
+    -> topography.hyd; revap_co -> aquifer.aqu; surlag/msk_co1/msk_co2/msk_x -> parameters.bsn (surlag
+    lives t'
+  severity: silent
+- id: dt_046
+  symptom: You suspect a routing/topology error (water reaching the stream more than once) because the
+    outlet volume exceeds the basin's `wateryld`. Ratio outlet/wateryld ~ 1.5-1.7.
+  diagnosis: outlet/wateryld is NOT a mass-balance test. SWAT+'s basin_wb `wateryld` column is surq_gen
+    + latq ONLY; it EXCLUDES aquifer return flow. So outlet = wateryld + aquifer flo > wateryld for ANY
+    basin with an aquifer, and the ratio trips on a perfectly mass-conserving model. The invariant that
+    DOES catc
+  remedy: rout_unit.con must be `cha <id> tot 1.00000` + `aqu <id> rhg 1.00000` (rhg = recharge hydrograph;
+    rev59 accepts it). The `cha ... tot 0.70` seen in the old SWAT+ Editor v1.0.0 demo sums to 1.0 only
+    because a RESERVOIR takes the other 0.30 — do not copy the 0.70 without the reservoir.; ['Assert area_
+  severity: silent
+- id: dt_047
+  symptom: Daily SWAT+ NSE is stuck near its r^2 ceiling and the simulated flood peak arrives exactly
+    ONE DAY after the observed peak, no matter which parameters are swept. Shifting the simulated series
+    back one day would raise r from 0.65 to 0.82 (do NOT do this — it is a fudge).
+  diagnosis: 'The lag lives in Muskingum CHANNEL routing, whose coefficients msk_co1/msk_co2/msk_x are
+    `bsn` objects — and EVERY bsn-object name is a calibration.cal no-op in rev59 (dt_045). So the routing
+    could not be calibrated at all and sat at the shipped default msk_co1/msk_co2 = 0.75/0.25. Only the
+    msk_co1:'
+  remedy: 'Calibrate msk_co1/msk_co2/msk_x STRUCTURALLY in parameters.bsn. s6 now routes them there (STRUCTURAL_BSN).;
+    [''If the sim peak is a day late, sweep the msk_co1:msk_co2 ratio BEFORE touching volume params'',
+    ''Never fix a timing lag by shifting the simulated series'', ''Check NSE against its r^2 ceiling: '
+  severity: silent
+- id: dt_048
+  symptom: SWAT+ rev59 crashes ~0.8 s into a run, immediately after 'reading from wx station file', on
+    a LARGE basin (>~1e6 km2). It reads all the weather files fine, then dies before the daily loop. Small
+    basins built by the SAME chain run cleanly.
+  diagnosis: 'object.cnt field overflow. write_object_cnt (s2/generate_hru_from_global.py) wrote each
+    column as f''{v:>12}'' with NO separator. A basin-scale ls_area/tot_area like 151683475.87 (=1.52M
+    km2 in ha) is EXACTLY 12 chars, so it fills its field and TOUCHES the neighbour: ''name''+''ls_area''+''tot_area''
+    merge '
+  remedy: 'In write_object_cnt, prepend a space to EVERY field ('' {v:>12}'' not ''{v:>12}'') for both
+    header and data rows, so there is always >=1 separator regardless of value width. FIXED 2026-07-11.;
+    [''Quick repair of an existing broken deck: rewrite object.cnt line 3 so name and the two area values
+    are space-'
+  severity: fatal
+- id: dt_049
+  symptom: TN load parsed from basin_ls_day.txt is systematically too high, and lateral/tile nitrate never
+    appears in the total. No error is raised — the number is simply wrong.
+  diagnosis: '`sedmin` in basin_ls / hru_ls output is MINERAL PHOSPHORUS (kg P/ha), not nitrogen.; SKILL.md
+    and tools/s10/parse_nutrient_output.py both documented sedmin as "sediment-bound mineral N" and summed
+    it into TN, while omitting the two genuine N terms lat3no3 (NO3-N in lateral runoff) and tileno3 (NO3-N'
+  remedy: TN = sedorgn + surqno3 + lat3no3 + tileno3 (kg N/ha/day); TP = sedorgp + surqsolp + sedmin (kg
+    P/ha/day). FIXED 2026-08-20.; parse_nutrient_output; ['Take species and units from output_landscape_module.f90,
+    never from the printed unit row.']; Any *min / *orgp / *solp column in a SWAT+ landscape outp
+  severity: silent_wrong_result
+- id: dt_050
+  symptom: 'tools/s10/validate_water_quality.py runs to completion after parse_nutrient_output.py --basin_ls
+    but compares nothing: every simulated load reads as zero / the paired count is 0. Exit code is 0 and
+    no error is printed.'
+  diagnosis: Column-name mismatch between the two halves of the documented S10 chain.; validate_water_quality.py
+    reads the simulated columns TN_kg / TP_kg / sed_out (absolute loads). parse_nutrient_output.py --basin_ls
+    wrote only per-HECTARE columns (TN_kgha). csv.DictReader simply never sees TN_kg, the aggregat
+  remedy: 'parse_nutrient_output.py --basin_ls now also writes TN_kg, TP_kg and sed_out (per-hectare value
+    x basin_area_ha). FIXED 2026-08-20.; [''Sanity check: the sim CSV from --basin_ls must contain a TN_kg
+    column before you call validate_water_quality.py.'']; When two tools are chained in SKILL.md, assert
+    th'
+  severity: silent_no_comparison
+- id: dt_051
+  symptom: configure_fertilizer.py reports success, management.sch contains the schedule, the model runs
+    — and basin_nb fertn is 0 with N export unchanged from a no-management run.
+  diagnosis: Nothing references the schedule. tools/s2/generate_hru_from_global.py writes `mgt = no_mgt`
+    for EVERY land use in landuse.lum (a deliberate dt_v004 workaround), so the schedule in management.sch
+    is orphaned.; configure_fertilizer.py only ever wrote management.sch; its own notes said "update landuse.
+  remedy: 'Pass --landuse_lum TxtInOut/landuse.lum to configure_fertilizer.py — it repoints the mgt column
+    of agrl_lum/agrr_lum/agrc_lum/rice_lum at the new schedule. Added 2026-08-20. Then run the binary
+    once: if it dies in mgt_operatn_, apply dt_v004 (restore no_mgt) and report that the N export is unfertili'
+  severity: silent_no_op
+- id: dt_052
+  symptom: 'Building a basin OUTSIDE China: prepare_weather_files.py exits 1 with "Forcing directory not
+    found:" for source=nasa_power, and every weather station is written with elev = 0.0 / 100.0 m even
+    when the basin is at 2000 m.'
+  diagnosis: Two China-only assumptions in the forcing path.; (1) prepare_weather_files.validate_inputs()
+    demanded an EXISTING forcing directory for every source, but nasa_power is an online point API with
+    no directory — process() already passed forcing_dir=None for it, so the source was listed as valid
+    yet unre
+  remedy: 'FIXED 2026-08-20: validate_inputs skips the directory check for nasa_power (pass "-" as the
+    placeholder argument); the date vector is normalised through pandas.Timestamp; and terrain.get_terrain
+    gained a GLOBAL MERIT DEM 90 m fallback (KISSPATH_DATA/MERIT_DEM, 5x5 deg tiles named by SW corner,
+    e.g. '
+  severity: fatal_outside_china
+- id: dt_053
+  symptom: r ~ 0 with a smooth hydrograph but TUNABLE PBIAS; sim daily std far below obs (e.g. 49 vs 191);
+    sim peak an order of magnitude under obs (302 vs 3,370 m3/s) even though heavy rain is present in
+    the forcing files. The run completes without any error.
+  diagnosis: 'weather-sta.cli wiring is null or single-station: SWAT+ SILENTLY substitutes GENERATED weather
+    (weather-wgn.cli climatology — possibly a template like gatifton, US Georgia) instead of reading the
+    prepared forcing files.; The deck generator writes pcp=null tmp=null on every station row BY DESIGN;
+    wir'
+  remedy: Run s3/generate_weather_stations.py after ANY deck regeneration; it derives per-station lat/lon
+    from the deck's own rout_unit.con (authoritative wst binding). Then verify with s7/validate_txtinout.py
+    — it now FAILS (exit 1) on null or single-station wiring while matching .pcp/.tmp files exist.; /mnt
+  severity: silent

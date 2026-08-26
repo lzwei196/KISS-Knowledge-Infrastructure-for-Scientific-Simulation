@@ -1,246 +1,471 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: GIFMod Knowledge Infrastructure
-  domain: water_quality
-  binary_path: ''
-  language: unknown
+  name: GIFMod
+  language: c++
+  implementation:
+    id: gifmod-usepa
+    version: 0.1.26
+    provenance: C++ (Qt5 GUI); US EPA / Catholic University of America GIFMod, driven by .GIFMod project
+      files and an embedded JavaScript scripting engine.
+  scientific_reference_version: GIFMod (Massoudieh et al. 2017 framework; block-connector variably-saturated
+    flow + ADR reactive transport)
 inputs:
   forcing:
   - name: Precipitation
     unit: m/day
-    format: ''
-    source: skill_md
+    category: forcing
+    source_kind: forcing
+    model_input_format: CSV time series (Time, Precipitation, ...)
+    notes: Time-varying driver of infiltration and surface runoff; routine events should be < ~0.5 m/day.
   - name: Temperature
     unit: Celsius
-    format: ''
-    source: skill_md
+    category: forcing
+    source_kind: forcing
+    model_input_format: CSV time series column
+    notes: Drives ET and temperature-dependent reaction kinetics (theta correction).
   - name: Humidity
-    unit: unknown
-    format: ''
-    source: skill_md
-  - name: Wind
-    unit: unknown
-    format: ''
-    source: skill_md
-  - name: precip
-    unit: unknown
-    format: ''
-    source: skill_md
-  - name: temp
-    unit: unknown
-    format: ''
-    source: skill_md
+    unit: fraction (0-1)
+    category: forcing
+    source_kind: forcing
+    model_input_format: CSV time series column
+    notes: Used by ET methods.
+  - name: Wind speed
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: CSV time series column
+    notes: Used by aerodynamic/Penman ET methods.
+  - name: Solar radiation
+    unit: W/m^2
+    category: forcing
+    source_kind: forcing
+    model_input_format: CSV time series column
+    notes: Used by Penman/Priestley-Taylor ET methods.
+  - name: External inflow
+    unit: m^3/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: Prescribed-flow connector time series Q(t)
+    notes: User-prescribed inflow to a block (e.g., upstream drainage).
+  parameters:
+  - name: Saturated hydraulic conductivity (Ks)
+    unit: m/day
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .GIFMod block property
+    notes: Soil/Darcy blocks; typical 0.001-100 m/day; controls infiltration and exfiltration.
+  - name: Porosity
+    unit: fraction (0-1)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .GIFMod block property
+    notes: Soil/Darcy blocks; valid 0.20-0.65; values > 1 destabilize the Richards solver.
+  - name: Residual moisture content (theta_r)
+    unit: fraction
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .GIFMod block property
+    notes: van Genuchten-Mualem retention curve.
+  - name: Saturated moisture content (theta_s)
+    unit: fraction
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .GIFMod block property
+    notes: van Genuchten-Mualem retention curve.
+  - name: van Genuchten-Mualem retention parameters (alpha, n)
+    unit: 1/m, dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .GIFMod block property
+    notes: Soil-water characteristic curve controlling unsaturated infiltration timing.
+  - name: Bulk density
+    unit: kg/m^3
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .GIFMod block property
+    notes: Typical 800-2000 kg/m^3; scales sorbed-phase mass.
+  - name: Dispersivity
+    unit: m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .GIFMod block/connector property
+    notes: Longitudinal dispersivity; scale-dependent 0.01-10 m.
+  - name: Manning roughness (n)
+    unit: s/m^(1/3)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .GIFMod connector property
+    notes: Pipe/Stream connectors; 0.010-0.035; controls flow velocity.
+  - name: Partition coefficient (Kd)
+    unit: L/kg
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .GIFMod reaction/block property
+    notes: Linear-isotherm sorption S = Kd*C; 0.1-1000 L/kg.
+  - name: Reaction rate constants
+    unit: 1/day
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Petersen-matrix reaction network
+    notes: User-defined transformation kinetics (e.g., denitrification, nitrification); 0.001-100 1/day.
+  - name: Particle settling velocity
+    unit: m/day
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .GIFMod block property
+    notes: Gravity settling for particle classes; fine silt 1-10, sand 100-1000 m/day.
+  - name: Particle attachment/release coefficients
+    unit: 1/day
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .GIFMod block property
+    notes: Mobile <-> attached phase exchange for colloid transport.
+  - name: Block geometry (Area, Depth, Bottom elevation)
+    unit: m^2, m, m
+    category: parameter
+    source_kind: user_provided
+    model_input_format: .GIFMod block property
+    notes: Defines block volume and head datum.
+  - name: Evaporation/transpiration coefficients
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .GIFMod block property
+    notes: 0.5-1.5; scales ET water loss (Pond/Soil/Plant blocks).
+  initial_conditions:
+  - name: Initial head / water storage
+    unit: m / m^3
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: .GIFMod block initial condition
+    notes: Block state at simulation start.
+  - name: Initial soil moisture
+    unit: fraction
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: .GIFMod block initial condition
+    notes: Initial theta in Soil blocks.
+  - name: Initial constituent concentration
+    unit: user-defined
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: .GIFMod block initial condition
+    notes: Per-block starting concentration; unit must be consistent across all blocks.
+  boundary_conditions:
+  - name: Block-connector network topology
+    unit: n/a
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .GIFMod block + connector definitions
+    notes: User-defined blocks (Soil/Pond/Storage/Catchment/Manhole/Darcy/Stream/Plant) and connectors
+      (Pipe/Porous/Non-Porous/Rating Curve/Prescribed Flow/Controlled) defining the simulated GI system.
+  - name: ET method selection
+    unit: n/a
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .GIFMod project option
+    notes: Penman vs Priestley-Taylor vs aerodynamic.
+  - name: Rating-curve / prescribed-flow boundaries
+    unit: stage-discharge or Q(t)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Connector property (Q=f(H) table or time series)
+    notes: External hydraulic boundary on the network.
+  - name: Bottom groundwater-head boundary
+    unit: m
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Block bottom boundary condition
+    notes: Prescribed lower head (e.g., from an external groundwater model).
+  - name: Process-inclusion switches
+    unit: n/a
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .GIFMod project option
+    notes: Per-model inclusion/exclusion of hydraulics, particle transport, and reactive transport levels.
 outputs:
   primary:
-  - name: Temperature
-    unit: Celsius
-    format: ''
-    source: skill_md
-  - name: Concentration
+  - name: head
+    unit: m
+    description: Water level / pressure head in a block.
+    validation_rank: 2
+    emitted_in: GIFMod time-series output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - Observed water level must be referenced to the same datum as the block bottom elevation.
+      detrending_options:
+      - none
+  - name: flow
+    unit: m^3/day
+    description: Water flow between blocks through a connector (outflow / underdrain / overflow hydrograph).
+    validation_rank: 3
+    emitted_in: GIFMod time-series output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Hydrograph falling-limb fit is dominated by soil Ks; event timing depends on adaptive time-step
+          resolution.
+      detrending_options:
+      - none
+  - name: moisture
+    unit: fraction
+    description: Volumetric water content in soil/porous-media blocks.
+    validation_rank: 4
+    emitted_in: GIFMod time-series output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Sensor depth must align with the modeled block/layer.
+      detrending_options:
+      - none
+  - name: storage
+    unit: m^3
+    description: Water storage in a block; basis for runoff-volume reduction metrics.
+    validation_rank: 5
+    emitted_in: GIFMod time-series output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Event-total or period-total runoff-reduction comparisons.
+      detrending_options:
+      - none
+  - name: concentration
     unit: user-defined
-    format: ''
-    source: skill_md
-  - name: Head
-    unit: H
-    format: ''
-    source: skill_md
-  - name: discharge
-    unit: unknown
-    format: ''
-    source: skill_md
+    description: Dissolved or particle-bound constituent concentration in a block or outflow (e.g., nitrate,
+      total nitrogen, sediment).
+    validation_rank: 6
+    emitted_in: GIFMod time-series output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Constituent unit is user-defined and must match the observation unit; water-quality kinetic
+          parameters are often weakly identifiable from outflow data alone.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Event-mean or load-based concentration / removal-efficiency comparison.
+      detrending_options:
+      - none
+  - name: velocity
+    unit: m/day
+    description: Water flow velocity within a pipe/stream/overland connector.
+    validation_rank: 1
+    emitted_in: GIFMod time-series output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  secondary:
+  - name: mass_balance_error
+    unit: user-defined
+    description: Cumulative mass-balance error; a diagnostic of numerical closure rather than a physical
+      observable.
+    validation_rank: null
+    emitted_in: GIFMod time-series output
+    observability:
+      comparable_obs_shapes: []
+      detrending_options:
+      - none
 known_issues:
 - id: dt_001
-  description: '{''description'': ''Near-zero infiltration; all precipitation runs
-    off surface; pond/catchment blocks fill rapidly'', ''error_pattern'': ''Head in
-    surface blocks >> expected; soil blocks remain dry'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Hydraulic conductivity (Ks) entered in cm/s
-    instead of m/day'', ''explanation'': ''GIFMod expects Ks in m/day. Most soil databases
-    (HWSD, SoilGrids, USDA) report Ks in cm/s. The conversion'
-  detection: '{''root_cause'': ''Hydraulic conductivity (Ks) entered in cm/s instead
-    of m/day'', ''explanation'': ''GIFMod expects Ks in m/day. Most soil databases
-    (HWSD, SoilGrids, USDA) report Ks in cm/s. The conversion'
-  fix: '{''action'': ''Multiply Ks by 864.0 to convert from cm/s to m/day'', ''tool_to_run'':
-    ''convert_soil_params.py'', ''manual_steps'': [''Check Ks unit in source database'',
-    ''Apply: Ks_m_day = Ks_cm_s * 864.0'', ''Ver'
+  symptom: Near-zero infiltration; all precipitation runs off surface; pond/catchment blocks fill rapidly
+  diagnosis: Hydraulic conductivity (Ks) entered in cm/s instead of m/day; GIFMod expects Ks in m/day.
+    Most soil databases (HWSD, SoilGrids, USDA) report Ks in cm/s. The conversion factor is 864.0 (= 0.01
+    m/cm * 86400 s/day). Without conversion, Ks is 864x too low, effectively making the soil impermeable.
+    The mo
+  remedy: 'Multiply Ks by 864.0 to convert from cm/s to m/day; convert_soil_params.py; [''Check Ks unit
+    in source database'', ''Apply: Ks_m_day = Ks_cm_s * 864.0'', ''Verify: typical sandy soil Ks = 5-50
+    m/day, clay = 0.01-0.5 m/day'']; convert_soil_params.py auto-detects and converts cm/s to m/day'
+  severity: silent
 - id: dt_002
-  description: '{''description'': ''Catastrophic flooding; all blocks overflow; head
-    values orders of magnitude too high'', ''error_pattern'': ''Precipitation values
-    > 0.5 m/day for routine events'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Precipitation entered in mm/day instead of
-    m/day'', ''explanation'': ''GIFMod requires precipitation in m/day. Common weather
-    data sources provide mm/day or mm/hr. Entering mm/day directly'
-  detection: '{''root_cause'': ''Precipitation entered in mm/day instead of m/day'',
-    ''explanation'': ''GIFMod requires precipitation in m/day. Common weather data
-    sources provide mm/day or mm/hr. Entering mm/day directly'
-  fix: '{''action'': ''Multiply mm/day by 0.001 or mm/hr by 0.024 to get m/day'',
-    ''tool_to_run'': ''convert_forcing.py'', ''manual_steps'': [''Check precipitation
-    unit in source data'', ''Apply: P_m_day = P_mm_day * 0.00'
+  symptom: Catastrophic flooding; all blocks overflow; head values orders of magnitude too high
+  diagnosis: Precipitation entered in mm/day instead of m/day; GIFMod requires precipitation in m/day.
+    Common weather data sources provide mm/day or mm/hr. Entering mm/day directly means precipitation
+    is 1000x too high (e.g., 5 mm/day becomes 5 m/day = 5000 mm/day). The model will run but every block
+    will overfl
+  remedy: 'Multiply mm/day by 0.001 or mm/hr by 0.024 to get m/day; convert_forcing.py; [''Check precipitation
+    unit in source data'', ''Apply: P_m_day = P_mm_day * 0.001'', ''Or: P_m_day = P_mm_hr * 0.024'', ''Verify:
+    typical rain event = 0.005-0.05 m/day'']; convert_forcing.py validates that precip < 0.5 m/day'
+  severity: silent
 - id: dt_003
-  description: '{''description'': ''Block volumes and storage capacities wrong by
-    ~10x; water balance does not close'', ''error_pattern'': ''Area values appear
-    ~10x smaller than expected'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Block area entered in ft^2 instead of m^2'',
-    ''explanation'': ''GIFMod uses m^2 for all area properties. US engineering data
-    often reports area in ft^2. The conversion is: m^2 = ft^2 * 0.0'
-  detection: '{''root_cause'': ''Block area entered in ft^2 instead of m^2'', ''explanation'':
-    ''GIFMod uses m^2 for all area properties. US engineering data often reports area
-    in ft^2. The conversion is: m^2 = ft^2 * 0.0'
-  fix: '{''action'': ''Multiply ft^2 by 0.09290304 to get m^2'', ''tool_to_run'':
-    '''', ''manual_steps'': [''Identify area units in source data'', ''Apply: A_m2
-    = A_ft2 * 0.09290304''], ''prevention'': ''Always verify area un'
+  symptom: Block volumes and storage capacities wrong by ~10x; water balance does not close
+  diagnosis: 'Block area entered in ft^2 instead of m^2; GIFMod uses m^2 for all area properties. US engineering
+    data often reports area in ft^2. The conversion is: m^2 = ft^2 * 0.0929. Without conversion, areas
+    are ~10.76x too large, causing incorrect volumes and flow rates.
+
+    ; [''Soil blocks'', ''Pond blocks'', ''Cat'
+  remedy: 'Multiply ft^2 by 0.09290304 to get m^2; ; [''Identify area units in source data'', ''Apply:
+    A_m2 = A_ft2 * 0.09290304'']; Always verify area units before entering block properties'
+  severity: silent
 - id: dt_004
-  description: '{''description'': ''Soil layers 100x too deep; unrealistic storage
-    volumes; very long drain times'', ''error_pattern'': ''Depth values in range 50-200
-    instead of 0.5-2.0'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Depth entered in cm instead of m'', ''explanation'':
-    ''GIFMod expects depth and elevation in meters. Soil databases commonly report
-    depth in cm. Entering 100 cm as 100 m creates a 100-mete'
-  detection: '{''root_cause'': ''Depth entered in cm instead of m'', ''explanation'':
-    ''GIFMod expects depth and elevation in meters. Soil databases commonly report
-    depth in cm. Entering 100 cm as 100 m creates a 100-mete'
-  fix: '{''action'': ''Multiply cm by 0.01 to get meters'', ''tool_to_run'': ''convert_soil_params.py'',
-    ''manual_steps'': [''Check depth units'', ''Apply: depth_m = depth_cm * 0.01''],
-    ''prevention'': ''convert_soil_params.p'
+  symptom: Soil layers 100x too deep; unrealistic storage volumes; very long drain times
+  diagnosis: 'Depth entered in cm instead of m; GIFMod expects depth and elevation in meters. Soil databases
+    commonly report depth in cm. Entering 100 cm as 100 m creates a 100-meter soil column.
+
+    ; [''convert_soil_params.py'', ''Soil blocks'']'
+  remedy: 'Multiply cm by 0.01 to get meters; convert_soil_params.py; [''Check depth units'', ''Apply:
+    depth_m = depth_cm * 0.01'']; convert_soil_params.py auto-converts depth > 10 from cm to m'
+  severity: silent
 - id: dt_005
-  description: '{''description'': ''Sorption calculations wrong by 1000x; constituent
-    mass balance errors'', ''error_pattern'': ''Bulk density values in range 1.0-2.0
-    instead of 1000-2000'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Bulk density entered in g/cm^3 instead of kg/m^3'',
-    ''explanation'': ''GIFMod uses kg/m^3 for bulk density (typical range 1200-1800
-    kg/m^3). Soil databases report in g/cm^3 (range 1.2-1.8)'
-  detection: '{''root_cause'': ''Bulk density entered in g/cm^3 instead of kg/m^3'',
-    ''explanation'': ''GIFMod uses kg/m^3 for bulk density (typical range 1200-1800
-    kg/m^3). Soil databases report in g/cm^3 (range 1.2-1.8)'
-  fix: '{''action'': ''Multiply g/cm^3 by 1000 to get kg/m^3'', ''tool_to_run'': ''convert_soil_params.py'',
-    ''manual_steps'': [''Check bulk density units'', ''Apply: bd_kg_m3 = bd_g_cm3
-    * 1000'', ''Verify: typical range 12'
+  symptom: Sorption calculations wrong by 1000x; constituent mass balance errors
+  diagnosis: Bulk density entered in g/cm^3 instead of kg/m^3; GIFMod uses kg/m^3 for bulk density (typical
+    range 1200-1800 kg/m^3). Soil databases report in g/cm^3 (range 1.2-1.8). Without multiplying by 1000,
+    sorption mass calculations are 1000x too low, causing overestimation of dissolved phase concentrations
+  remedy: 'Multiply g/cm^3 by 1000 to get kg/m^3; convert_soil_params.py; [''Check bulk density units'',
+    ''Apply: bd_kg_m3 = bd_g_cm3 * 1000'', ''Verify: typical range 1200-1800 kg/m^3'']; convert_soil_params.py
+    auto-converts values < 10 to kg/m^3'
+  severity: silent
 - id: dt_006
-  description: '{''description'': ''Solute transport shows almost no dispersion; sharp
-    concentration fronts'', ''error_pattern'': ''Dispersivity values 100x smaller
-    than expected'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Dispersivity entered in cm instead of m'',
-    ''explanation'': ''GIFMod expects dispersivity (alpha) in meters. Literature often
-    reports dispersivity in cm. Entering 10 cm as 10 m gives 100x '
-  detection: '{''root_cause'': ''Dispersivity entered in cm instead of m'', ''explanation'':
-    ''GIFMod expects dispersivity (alpha) in meters. Literature often reports dispersivity
-    in cm. Entering 10 cm as 10 m gives 100x '
-  fix: '{''action'': ''Multiply cm by 0.01 to get meters'', ''tool_to_run'': '''',
-    ''manual_steps'': [''Check dispersivity units in source'', ''Apply: alpha_m =
-    alpha_cm * 0.01'', ''Typical range: 0.01-10 m (scale-dependent'
+  symptom: Solute transport shows almost no dispersion; sharp concentration fronts
+  diagnosis: 'Dispersivity entered in cm instead of m; GIFMod expects dispersivity (alpha) in meters.
+    Literature often reports dispersivity in cm. Entering 10 cm as 10 m gives 100x too much dispersion,
+    while entering 0.1 as cm instead of m gives 100x too little.
+
+    ; [''Soil blocks'', ''Darcy blocks'', ''Constituent tran'
+  remedy: 'Multiply cm by 0.01 to get meters; ; [''Check dispersivity units in source'', ''Apply: alpha_m
+    = alpha_cm * 0.01'', ''Typical range: 0.01-10 m (scale-dependent)'']; Validate dispersivity range
+    in block properties'
+  severity: silent
 - id: dt_007
-  description: '{''description'': ''Vapor transport 86400x too fast or too slow; unrealistic
-    gas exchange'', ''error_pattern'': ''Diffusion coefficient off by ~5 orders of
-    magnitude'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Diffusion coefficient in m^2/s instead of m^2/day'',
-    ''explanation'': ''GIFMod uses m^2/day for diffusion coefficients. Literature
-    reports in m^2/s. The conversion is: D_m2_day = D_m2_s * '
-  detection: '{''root_cause'': ''Diffusion coefficient in m^2/s instead of m^2/day'',
-    ''explanation'': ''GIFMod uses m^2/day for diffusion coefficients. Literature
-    reports in m^2/s. The conversion is: D_m2_day = D_m2_s * '
-  fix: '{''action'': ''Multiply m^2/s by 86400 to get m^2/day'', ''tool_to_run'':
-    '''', ''manual_steps'': [''Identify diffusion coefficient units'', ''Apply: D_m2_day
-    = D_m2_s * 86400''], ''prevention'': ''Document expected r'
+  symptom: Vapor transport 86400x too fast or too slow; unrealistic gas exchange
+  diagnosis: 'Diffusion coefficient in m^2/s instead of m^2/day; GIFMod uses m^2/day for diffusion coefficients.
+    Literature reports in m^2/s. The conversion is: D_m2_day = D_m2_s * 86400. Missing this yields vapor
+    diffusion rates that are either negligible or explosively fast.
+
+    ; [''Soil blocks'', ''Darcy blocks'']'
+  remedy: 'Multiply m^2/s by 86400 to get m^2/day; ; [''Identify diffusion coefficient units'', ''Apply:
+    D_m2_day = D_m2_s * 86400'']; Document expected ranges in property catalog'
+  severity: silent
 - id: dt_008
-  description: '{''description'': ''Evapotranspiration rates wrong; temperature-dependent
-    reactions miscalculated'', ''error_pattern'': ''Temperature values in range 50-100
-    instead of 10-40'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Temperature in Fahrenheit instead of Celsius'',
-    ''explanation'': ''GIFMod uses Celsius for all temperature-dependent calculations
-    (evaporation, reaction rate correction via theta factor, v'
-  detection: '{''root_cause'': ''Temperature in Fahrenheit instead of Celsius'', ''explanation'':
-    ''GIFMod uses Celsius for all temperature-dependent calculations (evaporation,
-    reaction rate correction via theta factor, v'
-  fix: '{''action'': ''Convert: T_C = (T_F - 32) * 5/9'', ''tool_to_run'': ''convert_forcing.py'',
-    ''manual_steps'': [''Check temperature units in source data'', ''Apply Fahrenheit
-    to Celsius conversion''], ''prevention'': '''
+  symptom: Evapotranspiration rates wrong; temperature-dependent reactions miscalculated
+  diagnosis: Temperature in Fahrenheit instead of Celsius; GIFMod uses Celsius for all temperature-dependent
+    calculations (evaporation, reaction rate correction via theta factor, vapor pressure). Fahrenheit
+    values produce temperatures ~1.8x too high plus offset, causing excessive evaporation and incorrect
+    reacti
+  remedy: 'Convert: T_C = (T_F - 32) * 5/9; convert_forcing.py; [''Check temperature units in source data'',
+    ''Apply Fahrenheit to Celsius conversion'']; convert_forcing.py supports --temp-unit fahrenheit flag'
+  severity: degraded
 - id: dt_009
-  description: '{''description'': ''Constituent mass balance does not close; apparent
-    creation or destruction of mass'', ''error_pattern'': ''Mass balance error grows
-    linearly over time'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Mixed concentration units across blocks (e.g.,
-    mg/L in some, ug/L in others)'', ''explanation'': ''GIFMod allows user-defined
-    concentration units but ALL blocks and inflow boundary conditi'
-  detection: '{''root_cause'': ''Mixed concentration units across blocks (e.g., mg/L
-    in some, ug/L in others)'', ''explanation'': ''GIFMod allows user-defined concentration
-    units but ALL blocks and inflow boundary conditi'
-  fix: '{''action'': ''Ensure all concentration values use the same unit throughout
-    the model'', ''tool_to_run'': '''', ''manual_steps'': [''Audit all block initial
-    conditions and inflow concentrations'', ''Convert all to'
+  symptom: Constituent mass balance does not close; apparent creation or destruction of mass
+  diagnosis: 'Mixed concentration units across blocks (e.g., mg/L in some, ug/L in others); GIFMod allows
+    user-defined concentration units but ALL blocks and inflow boundary conditions must use the same unit
+    system. If Block A uses mg/L and Block B uses ug/L, the model treats both as the same unit, causing
+    1000x '
+  remedy: Ensure all concentration values use the same unit throughout the model; ; ['Audit all block
+    initial conditions and inflow concentrations', 'Convert all to a single unit (e.g., mg/L)', 'Check
+    reaction rate constant units for consistency']; Document chosen concentration unit in project file
+    header
+  severity: silent
 - id: dt_010
-  description: '{''description'': ''Reactions proceed 24x too fast or too slow; constituent
-    removal/production rates unrealistic'', ''error_pattern'': ''Rate constants off
-    by factor of 24'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Reaction rate constants in 1/hr instead of
-    1/day'', ''explanation'': ''GIFMod Petersen matrix rate constants must be in 1/day.
-    Literature commonly reports kinetic constants in 1/hr or 1/s.'
-  detection: '{''root_cause'': ''Reaction rate constants in 1/hr instead of 1/day'',
-    ''explanation'': ''GIFMod Petersen matrix rate constants must be in 1/day. Literature
-    commonly reports kinetic constants in 1/hr or 1/s.'
-  fix: '{''action'': ''Multiply 1/hr by 24 to get 1/day; multiply 1/s by 86400'',
-    ''tool_to_run'': '''', ''manual_steps'': [''Check rate constant units in literature
-    source'', ''Apply: k_per_day = k_per_hr * 24'', ''Or: k_p'
+  symptom: Reactions proceed 24x too fast or too slow; constituent removal/production rates unrealistic
+  diagnosis: 'Reaction rate constants in 1/hr instead of 1/day; GIFMod Petersen matrix rate constants
+    must be in 1/day. Literature commonly reports kinetic constants in 1/hr or 1/s. Using 1/hr values
+    directly means reactions run 24x slower than intended.
+
+    ; [''CRxnNetwork'', ''CReaction'', ''Petersen matrix'']'
+  remedy: 'Multiply 1/hr by 24 to get 1/day; multiply 1/s by 86400; ; [''Check rate constant units in
+    literature source'', ''Apply: k_per_day = k_per_hr * 24'', ''Or: k_per_day = k_per_s * 86400'']; Always
+    annotate rate constant units in Petersen matrix definition'
+  severity: silent
 - id: dt_011
-  description: '{''description'': ''Particle settling occurs in seconds instead of
-    hours; all particles deposit instantly'', ''error_pattern'': ''Settling velocity
-    values in range 0.001-0.01 instead of 1-100'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Settling velocity in m/s instead of m/day'',
-    ''explanation'': ''GIFMod expects settling velocity in m/day. Stokes law and laboratory
-    measurements typically report in m/s. Missing the conve'
-  detection: '{''root_cause'': ''Settling velocity in m/s instead of m/day'', ''explanation'':
-    ''GIFMod expects settling velocity in m/day. Stokes law and laboratory measurements
-    typically report in m/s. Missing the conve'
-  fix: '{''action'': ''Multiply m/s by 86400 to get m/day'', ''tool_to_run'': '''',
-    ''manual_steps'': [''Convert: vs_m_day = vs_m_s * 86400'', ''Typical range: fine
-    silt = 1-10 m/day, sand = 100-1000 m/day''], ''prevention'''
+  symptom: Particle settling occurs in seconds instead of hours; all particles deposit instantly
+  diagnosis: 'Settling velocity in m/s instead of m/day; GIFMod expects settling velocity in m/day. Stokes
+    law and laboratory measurements typically report in m/s. Missing the conversion by 86400 causes particles
+    to settle in a single timestep.
+
+    ; [''CConnection'', ''Particle transport'']'
+  remedy: 'Multiply m/s by 86400 to get m/day; ; [''Convert: vs_m_day = vs_m_s * 86400'', ''Typical range:
+    fine silt = 1-10 m/day, sand = 100-1000 m/day'']; Validate settling velocity range before run'
+  severity: silent
 - id: dt_012
-  description: '{''description'': ''Solver immediately diverges; NaN values in first
-    timestep; simulation crashes'', ''error_pattern'': ''NaN|Inf|diverge|numerical
-    instability'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''Porosity entered as percent (40) instead of
-    fraction (0.40)'', ''explanation'': ''GIFMod expects porosity as a decimal fraction
-    (0-1). Entering percent values (e.g., 40 for 40%) means poro'
-  detection: '{''root_cause'': ''Porosity entered as percent (40) instead of fraction
-    (0.40)'', ''explanation'': ''GIFMod expects porosity as a decimal fraction (0-1).
-    Entering percent values (e.g., 40 for 40%) means poro'
-  fix: '{''action'': ''Divide percent by 100 to get fraction: porosity = percent /
-    100'', ''tool_to_run'': ''convert_soil_params.py'', ''manual_steps'': [''Check
-    if porosity values > 1.0'', ''Apply: porosity_frac = porosi'
+  symptom: Solver immediately diverges; NaN values in first timestep; simulation crashes
+  diagnosis: Porosity entered as percent (40) instead of fraction (0.40); GIFMod expects porosity as a
+    decimal fraction (0-1). Entering percent values (e.g., 40 for 40%) means porosity > 1.0, which is
+    physically impossible. This causes immediate numerical instability in the Richards equation solver
+    because moist
+  remedy: 'Divide percent by 100 to get fraction: porosity = percent / 100; convert_soil_params.py; [''Check
+    if porosity values > 1.0'', ''Apply: porosity_frac = porosity_pct / 100'', ''Valid range: 0.20-0.65
+    for most soils'']; convert_soil_params.py rejects porosity > 1.0'
+  severity: fatal
 - id: dt_013
-  description: '{''description'': ''Solver fails to converge; timestep reduces to
-    dt_min and simulation stalls'', ''error_pattern'': ''Maximum iterations exceeded|dt
-    below minimum'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''Negative or zero hydraulic conductivity causes
-    division by zero in Darcy flux'', ''explanation'': ''If Ks <= 0 for any block,
-    the flow equation becomes undefined. The Newton- Raphson solve'
-  detection: '{''root_cause'': ''Negative or zero hydraulic conductivity causes division
-    by zero in Darcy flux'', ''explanation'': ''If Ks <= 0 for any block, the flow
-    equation becomes undefined. The Newton- Raphson solve'
-  fix: '{''action'': ''Ensure all Ks values are strictly positive (minimum 0.001 m/day)'',
-    ''tool_to_run'': ''convert_soil_params.py'', ''manual_steps'': [''Check all Ks
-    values in soil parameter file'', ''Set minimum Ks ='
+  symptom: Solver fails to converge; timestep reduces to dt_min and simulation stalls
+  diagnosis: Negative or zero hydraulic conductivity causes division by zero in Darcy flux; If Ks <= 0
+    for any block, the flow equation becomes undefined. The Newton- Raphson solver cannot compute a valid
+    Jacobian, leading to convergence failure. This can result from incorrect pedotransfer function inputs
+    (negat
+  remedy: Ensure all Ks values are strictly positive (minimum 0.001 m/day); convert_soil_params.py; ['Check
+    all Ks values in soil parameter file', 'Set minimum Ks = 0.001 m/day for impermeable layers', 'Verify
+    sand + clay + silt = 100% in input data']; convert_soil_params.py clamps Ks to minimum 0.01 m/day
+  severity: fatal
 - id: dt_014
-  description: '{''description'': ''Build fails with Qt-related errors; undefined
-    symbols for Qt classes'', ''error_pattern'': ''undefined reference to.*Q|No rule
-    to make target.*moc'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''Qt version mismatch between qmake and installed
-    Qt libraries'', ''explanation'': ''GIFMod requires Qt5. If the system has Qt4
-    as default (qmake points to Qt4) or Qt6 with incompatible API '
-  detection: '{''root_cause'': ''Qt version mismatch between qmake and installed Qt
-    libraries'', ''explanation'': ''GIFMod requires Qt5. If the system has Qt4 as
-    default (qmake points to Qt4) or Qt6 with incompatible API '
-  fix: '{''action'': ''Install Qt5 and ensure qmake-qt5 is used'', ''tool_to_run'':
-    ''run_gifmod.py'', ''manual_steps'': [''Install: sudo apt-get install qtbase5-dev
-    qt5-qmake'', ''Use: qmake-qt5 instead of qmake'', ''Verif'
+  symptom: Build fails with Qt-related errors; undefined symbols for Qt classes
+  diagnosis: 'Qt version mismatch between qmake and installed Qt libraries; GIFMod requires Qt5. If the
+    system has Qt4 as default (qmake points to Qt4) or Qt6 with incompatible API changes, the build will
+    fail with undefined references to Qt classes or missing MOC-generated files.
+
+    ; [''run_gifmod.py'', ''Build syste'
+  remedy: 'Install Qt5 and ensure qmake-qt5 is used; run_gifmod.py; [''Install: sudo apt-get install qtbase5-dev
+    qt5-qmake'', ''Use: qmake-qt5 instead of qmake'', ''Verify: qmake --version shows Qt 5.x'']; run_gifmod.py
+    checks for qmake-qt5 before falling back to qmake'
+  severity: degraded
 - id: dt_015
-  description: '{''description'': ''Linker error during build: cannot find -llapack
-    or -lblas'', ''error_pattern'': ''cannot find -llapack|cannot find -lblas'', ''detection_method'':
-    ''log_match''}'
-  affected_output: '{''root_cause'': ''LAPACK/BLAS development libraries not installed'',
-    ''explanation'': ''GIFMod uses Armadillo for matrix operations, which requires
-    LAPACK and BLAS. The .pro file links with -llapack -lblas.'
-  detection: '{''root_cause'': ''LAPACK/BLAS development libraries not installed'',
-    ''explanation'': ''GIFMod uses Armadillo for matrix operations, which requires
-    LAPACK and BLAS. The .pro file links with -llapack -lblas.'
-  fix: '{''action'': ''Install LAPACK and BLAS development packages'', ''tool_to_run'':
-    '''', ''manual_steps'': [''sudo apt-get install liblapack-dev libblas-dev'', ''Verify:
-    ldconfig -p | grep lapack'', ''Re-run: make clea'
-unit_conversions: []
+  symptom: 'Linker error during build: cannot find -llapack or -lblas'
+  diagnosis: 'LAPACK/BLAS development libraries not installed; GIFMod uses Armadillo for matrix operations,
+    which requires LAPACK and BLAS. The .pro file links with -llapack -lblas. Without the development
+    packages installed, the linker cannot find these shared libraries.
+
+    ; [''run_gifmod.py'', ''lapack.pri'', ''Build '
+  remedy: 'Install LAPACK and BLAS development packages; ; [''sudo apt-get install liblapack-dev libblas-dev'',
+    ''Verify: ldconfig -p | grep lapack'', ''Re-run: make clean && make'']; run_gifmod.py checks for LAPACK
+    before starting build'
+  severity: fatal

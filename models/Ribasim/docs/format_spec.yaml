@@ -1,141 +1,528 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "Ribasim"
-  version: "2026.1.0-rc2"
-  domain: "water_resources"
-  description: "Network-based water resources model for regional surface water management"
-  developer: "Deltares"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  core_language: "Julia (SciML ODE solvers)"
-  api_language: "Python"
-
+  name: Ribasim
+  language: julia
+  implementation:
+    id: ribasim-julia
+    version: 2026.1.0-rc2
+    provenance: Julia; Deltares open-source Ribasim.jl, SciML/DifferentialEquations.jl ODE core with JuMP/HiGHS
+      allocation LP.
+  scientific_reference_version: Ribasim 2026.1 (open-source Julia network water-resources model; SciML
+    ODE core)
 inputs:
-  configuration:
-    - name: "ribasim.toml"
-      format: "TOML"
-      description: "Main configuration file with solver, allocation, logging settings"
-    - name: "database.gpkg"
-      format: "GeoPackage (SQLite + spatial)"
-      description: "All node/link/parameter data in spatial database"
-
   forcing:
-    - name: "precipitation"
-      unit: "m/s"
-      valid_range: [0, 1.0e-5]
-      description: "Vertical precipitation flux (NOTE: NOT mm/day)"
-    - name: "evaporation"
-      unit: "m/s"
-      valid_range: [0, 5.0e-6]
-      description: "Vertical evaporation flux (NOTE: NOT mm/day)"
-    - name: "flow_boundary"
-      unit: "m3/s"
-      valid_range: [0, 100000]
-      description: "External prescribed inflow at FlowBoundary nodes"
-    - name: "level_boundary"
-      unit: "m"
-      valid_range: [-100, 10000]
-      description: "External prescribed water level at LevelBoundary nodes"
-
+  - name: precipitation
+    unit: m/s
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Basin/time or Basin/static table in database.gpkg (or NetCDF basin/time.nc)
+    notes: Per-area vertical flux in m/s; mm/day authoring is a silent ~86M-fold over-input.
+  - name: potential evaporation
+    unit: m/s
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Basin/time or Basin/static table
+    notes: Per-area flux in m/s; negative values are treated as condensation (adds water).
+  - name: drainage
+    unit: m³/s
+    category: lateral
+    source_kind: forcing
+    model_input_format: Basin/time or Basin/static table
+    notes: Prescribed lateral inflow to the basin (e.g. from an external runoff source).
+  - name: infiltration
+    unit: m³/s
+    category: lateral
+    source_kind: forcing
+    model_input_format: Basin/time or Basin/static table
+    notes: Prescribed loss flux out of the basin.
+  - name: FlowBoundary flow_rate
+    unit: m³/s
+    category: boundary_inflow
+    source_kind: forcing
+    model_input_format: FlowBoundary/static or /time table
+    notes: External prescribed inflow/outflow time series; block (step) interpolation by default. Gaps
+      may interpolate to zero (dry-spell artifact).
+  - name: LevelBoundary level
+    unit: m
+    category: boundary_level
+    source_kind: forcing
+    model_input_format: LevelBoundary/static or /time table
+    notes: External prescribed water level at a system edge.
+  - name: UserDemand demand time series
+    unit: m³/s
+    category: demand
+    source_kind: forcing
+    model_input_format: UserDemand/time table
+    notes: Time-varying demand per priority; consumes (1-return_factor) and returns the rest.
   parameters:
-    critical:
-      - name: "basin_profile_area"
-        unit: "m2"
-        valid_range: [0, 1.0e12]
-        description: "Area-level curve for basins; must be monotonically increasing with level"
-      - name: "basin_profile_level"
-        unit: "m"
-        valid_range: [-1000, 10000]
-        description: "Level values in area-level curve; must be monotonically increasing"
-      - name: "basin_state_level"
-        unit: "m"
-        valid_range: [-1000, 10000]
-        description: "Initial water level for each basin"
-      - name: "resistance"
-        unit: "s/m2"
-        valid_range: [100, 1.0e8]
-        description: "LinearResistance flow parameter; too high = no flow (silent error)"
-      - name: "manning_n"
-        unit: "s*m^(-1/3)"
-        valid_range: [0.01, 0.10]
-        description: "Manning roughness coefficient"
-      - name: "pump_flow_rate"
-        unit: "m3/s"
-        valid_range: [0, 1000]
-        description: "Maximum pump capacity"
-      - name: "outlet_flow_rate"
-        unit: "m3/s"
-        valid_range: [0, 1000]
-        description: "Maximum gravity-driven outflow"
-
-    solver:
-      - name: "algorithm"
-        valid_values: ["QNDF", "FBDF", "Rosenbrock23", "Rodas4P"]
-        default: "QNDF"
-        description: "ODE solver algorithm"
-      - name: "saveat"
-        unit: "seconds"
-        valid_range: [60, 2678400]
-        default: 86400
-        description: "Output interval (86400 = daily)"
-      - name: "abstol"
-        valid_range: [1.0e-10, 1.0e-1]
-        default: 1.0e-5
-        description: "Absolute solver tolerance"
-      - name: "reltol"
-        valid_range: [1.0e-10, 1.0e-1]
-        default: 1.0e-5
-        description: "Relative solver tolerance"
-      - name: "depth_threshold"
-        unit: "m"
-        valid_range: [0.01, 1.0]
-        default: 0.1
-        description: "Low-storage reduction threshold"
-
+  - name: Basin profile (area-level-storage curve)
+    unit: level m / area m² / storage m³
+    category: basin_geometry
+    source_kind: dataset_lookup
+    model_input_format: Basin/profile table
+    notes: Most critical input; storage derived by trapezoidal integration of area over level. Levels
+      must be strictly monotonically increasing.
+  - name: Pump flow_rate / min_upstream_level
+    unit: m³/s / m
+    category: structure
+    source_kind: calibrated
+    model_input_format: Pump/static table
+  - name: Outlet flow_rate / min_upstream_level
+    unit: m³/s / m
+    category: structure
+    source_kind: calibrated
+    model_input_format: Outlet/static table
+  - name: TabulatedRatingCurve Q(h) table
+    unit: level m / flow_rate m³/s
+    category: structure
+    source_kind: calibrated
+    model_input_format: TabulatedRatingCurve/static table
+    notes: Stage-discharge lookup; one-directional upstream-head flow.
+  - name: LinearResistance resistance / max_flow_rate
+    unit: s/m² / m³/s
+    category: structure
+    source_kind: calibrated
+    model_input_format: LinearResistance/static table
+    notes: Q = Δh/R; natural channels typically 1e2-1e6 s/m². Too high silently disconnects basins.
+  - name: ManningResistance length / manning_n / profile_width / profile_slope
+    unit: m / s·m^(-1/3) / m / -
+    category: structure
+    source_kind: calibrated
+    model_input_format: ManningResistance/static table
+    notes: manning_n typically 0.01-0.10.
+  - name: PidControl gains (proportional, integral, derivative) and target
+    unit: s⁻¹ / s⁻² / - / m
+    category: control
+    source_kind: calibrated
+    model_input_format: PidControl/static table
+    notes: Gains must be NEGATIVE for outlet/pump-based level regulation; positive gains cause runaway
+      oscillation.
+  - name: DiscreteControl conditions and logic (thresholds, truth-state→control-state)
+    unit: varies / -
+    category: control
+    source_kind: user_provided
+    model_input_format: DiscreteControl/condition and /logic tables
+    notes: Hysteresis band (threshold_high/threshold_low); too-small gap causes per-timestep chatter.
+  - name: UserDemand return_factor / min_level / demand_priority
+    unit: '- / m / integer'
+    category: allocation
+    source_kind: user_provided
+    model_input_format: UserDemand/time table
+    notes: return_factor in [0,1]; >1 creates water from nothing. Lower priority number = higher priority.
+  initial_conditions:
+  - name: Basin initial level
+    unit: m
+    category: basin_state
+    source_kind: user_provided
+    model_input_format: Basin/state table
+    notes: Must fall within the Basin profile level range; missing Basin/state table is FATAL. Storage
+      initialized from level via the profile. Final levels in basin_state.nc are reusable as restart.
+  - name: PidControl integral term initial value
+    unit: integral of error
+    category: control_state
+    source_kind: default
+    model_input_format: internal ODE state (du.integral)
+    notes: Accumulated integral-error state; not typically user-set.
+  boundary_conditions:
+  - name: Node table (node_id, node_type, subnetwork_id, geometry)
+    unit: '-'
+    category: topology
+    source_kind: user_provided
+    model_input_format: Node table in database.gpkg
+    notes: subnetwork_id=0 excludes a node from allocation. Geometry must match declared CRS (no auto-reproject).
+  - name: Link table (from_node_id, to_node_id, link_type)
+    unit: '-'
+    category: topology
+    source_kind: user_provided
+    model_input_format: Link table in database.gpkg
+    notes: link_type ∈ flow/control/listen. Strict allowed from→to connectivity; Basin→Basin direct links
+      are fatal. Control nodes must use 'control' links.
+  - name: CRS (coordinate reference system)
+    unit: EPSG code
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: crs field in ribasim.toml
+    notes: All geometries must use this CRS; mismatch silently corrupts distances/areas/Manning flows.
+  - name: Solver algorithm selection
+    unit: '-'
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: solver.algorithm in ribasim.toml (QNDF default; FBDF/Rosenbrock23/Rodas4P)
+    notes: FBDF preferred over QNDF for very stiff systems.
+  - name: Output interval (saveat)
+    unit: seconds
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: solver.saveat in ribasim.toml (default 86400 = daily)
+    notes: In seconds; too large misses sub-daily peaks/control switching.
+  - name: Allocation enable + allocation timestep
+    unit: '- / seconds'
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: allocation block in ribasim.toml (experimental, off by default; timestep default
+      86400)
+    notes: Timestep in seconds; days-vs-seconds confusion starves demands or crawls.
+  - name: Simulation period (starttime / endtime)
+    unit: ISO 8601 datetime
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: ribasim.toml; UTC
+    notes: Must cover all time-series data; non-ISO formats cause fatal TOML parse errors.
 outputs:
   primary:
-    - name: "level"
-      unit: "m"
-      valid_range: [-1000, 50000]
-      file: "basin.nc"
-      description: "Basin water level over time"
-    - name: "storage"
-      unit: "m3"
-      valid_range: [0, 1.0e12]
-      file: "basin.nc"
-      description: "Basin water volume over time"
-    - name: "inflow_rate"
-      unit: "m3/s"
-      valid_range: [0, 100000]
-      file: "basin.nc"
-      description: "Total inflow to each basin"
-    - name: "outflow_rate"
-      unit: "m3/s"
-      valid_range: [0, 100000]
-      file: "basin.nc"
-      description: "Total outflow from each basin"
-    - name: "flow_rate"
-      unit: "m3/s"
-      valid_range: [-100000, 100000]
-      file: "flow.nc"
-      description: "Flow on each link per timestep"
-    - name: "balance_error"
-      unit: "m3/s"
-      valid_range: [-0.001, 0.001]
-      file: "basin.nc"
-      description: "Water balance error (should be near zero)"
-
-  secondary:
-    - name: "basin_state.nc"
-      description: "Final basin levels for restart"
-    - name: "solver_stats.nc"
-      description: "Solver performance metrics"
-    - name: "subgrid_level.nc"
-      description: "Detailed sub-basin water levels"
-
+  - name: level
+    unit: m
+    description: Basin water surface level, derived from storage via the area-level profile.
+    validation_rank: 4
+    emitted_in: basin.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Level is relative to the CRS vertical datum; observed gauge datum offsets must be reconciled
+          before comparison.
+      detrending_options:
+      - none
+      - first_difference
+  - name: storage
+    unit: m³
+    description: Basin water storage volume, the prognostic ODE state.
+    validation_rank: 5
+    emitted_in: basin.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Storage is profile-derived; comparability requires the same area-level curve assumptions as
+          the observation source.
+      detrending_options:
+      - none
+      - first_difference
+  - name: flow_rate
+    unit: m³/s
+    description: Water flow rate on each network link (per from_node→to_node connection).
+    validation_rank: 1
+    emitted_in: flow.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Link flow is comparable to a gauge only where a network link maps to the gauged cross-section.
+        - saveat-averaged output; timestamps mark the START of the averaging period.
+      detrending_options:
+      - none
+  - name: balance_error / relative_error
+    unit: m³/s / dimensionless
+    description: Per-basin water-balance closure error (absolute and relative) computed each saveat.
+    validation_rank: 2
+    emitted_in: basin.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Internal diagnostic, not an observable; compared against the solver tolerance (rel < 1%), not
+          field data.
+      detrending_options:
+      - none
+  - name: allocated / supplied / demand
+    unit: m³/s
+    description: Per-water-demand-node allocation results (requested water demand, allocated and supplied
+      volumes) when allocation is enabled.
+    validation_rank: 3
+    emitted_in: allocation.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - ranking_quality
+        determining_metric: nse
+        caveats:
+        - Experimental module (off by default); supply/deficit depends on the priority configuration.
+        - Reliability/deficit comparisons are scenario-defined, not a unique physical observable.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "Precipitation/evaporation must be in m/s, NOT mm/day — 86 million x error if wrong"
-  - "Area must be in m2, NOT km2 — basin drains instantly if wrong"
-  - "Allocation timestep must be in seconds, NOT days"
-  - "Basin profile area-level must be monotonically increasing"
-  - "Resistance too high causes silent zero-flow between basins"
-  - "PID gains wrong sign causes oscillation/instability"
-  - "depth_threshold too high prevents basin from filling"
+- id: dt_001
+  symptom: 'Basin level rises to maximum within first few timesteps. Basin floods instantly regardless
+    of outflow capacity. Storage increases at extreme rate.
+
+    '
+  diagnosis: 'Precipitation is in mm/day instead of m/s. Ribasim expects vertical fluxes in meters per
+    second. 5 mm/day = 5.787e-8 m/s. If passed as 5.0 (mm/day value), the basin receives ~86 million times
+    too much water.
+
+    '
+  remedy: 'Convert precipitation: value_ms = value_mm_day / 86400000. Verify: max precipitation should
+    be < 1e-5 m/s (< 864 mm/day). Add validation: assert precip < 1e-5, "Precipitation likely in wrong
+    units"
+
+    '
+  severity: silent
+- id: dt_002
+  symptom: 'Basin level drops continuously. Evaporation exceeds all inflows. Basin dries out even with
+    substantial precipitation and inflow.
+
+    '
+  diagnosis: 'Evaporation is in mm/day instead of m/s. Ribasim expects m/s. Typical evaporation is 2-5
+    mm/day = 2.3e-8 to 5.8e-8 m/s. If passed as 3.0 (mm/day), it''s 2.6e8 times too high.
+
+    '
+  remedy: 'Convert evaporation: value_ms = value_mm_day / 86400000. Verify: max evaporation should be
+    < 1.2e-7 m/s (< 10 mm/day).
+
+    '
+  severity: silent
+- id: dt_003
+  symptom: 'Basin level barely responds to inflows. Large inflows produce negligible level changes. Storage
+    changes are minuscule.
+
+    '
+  diagnosis: 'Basin profile area is in km² instead of m². Ribasim expects m². An area of 10 km² = 1e7
+    m², but if entered as 10, the basin has only 10 m² surface area — it fills in milliseconds with any
+    inflow, or if the area is too large relative to expected, level changes are tiny.
+
+    '
+  remedy: 'Convert area: area_m2 = area_km2 * 1e6. Or ha: area_m2 = area_ha * 1e4. Verify: basin area
+    should be consistent with expected storage volumes.
+
+    '
+  severity: silent
+- id: dt_004
+  symptom: 'FlowBoundary inflows are 1000x smaller than expected. Basin levels are much lower than observed.
+    Water balance shows deficit.
+
+    '
+  diagnosis: 'Flow boundary values are in L/s instead of m³/s. Ribasim expects flow in cubic meters per
+    second. 100 L/s = 0.1 m³/s.
+
+    '
+  remedy: 'Convert flow: flow_m3s = flow_ls / 1000. Verify: compare flow magnitudes with expected catchment
+    runoff.
+
+    '
+  severity: silent
+- id: dt_005
+  symptom: 'Allocation optimization runs at every timestep, making the simulation extremely slow. Or allocation
+    updates are so infrequent that demands are never served in time.
+
+    '
+  diagnosis: 'Allocation timestep is in days instead of seconds. timestep = 1 means every second (very
+    slow). timestep = 86400 means daily (typical).
+
+    '
+  remedy: 'Set allocation.timestep in seconds: 86400 for daily, 3600 for hourly. saveat in [solver] is
+    also in seconds.
+
+    '
+  severity: silent
+- id: dt_006
+  symptom: 'Ribasim crashes at startup with error about basin profile or monotonicity violation. Error
+    message references profile levels.
+
+    '
+  diagnosis: 'Basin / profile levels are not monotonically increasing. Each level value must be strictly
+    greater than the previous one. This often happens when data is sorted incorrectly or when duplicate
+    level values exist.
+
+    '
+  remedy: 'Sort profile data by level (ascending). Remove duplicate level values. Verify: np.all(np.diff(levels)
+    > 0) for each basin.
+
+    '
+  severity: fatal
+- id: dt_007
+  symptom: 'Ribasim crashes at startup with error about missing initial state or basin state table. Error
+    references Basin / state.
+
+    '
+  diagnosis: 'Missing Basin / state table in GeoPackage. Every basin node requires an initial water level
+    specification.
+
+    '
+  remedy: 'Add Basin / state table with initial level for each basin node. Level must be within the range
+    defined in Basin / profile.
+
+    '
+  severity: fatal
+- id: dt_008
+  symptom: 'Ribasim crashes at startup with connectivity validation error. Error message about invalid
+    node connections.
+
+    '
+  diagnosis: 'Node connectivity rules violated. Common cases: - Basin connected directly to Basin (needs
+    structure between them) - FlowBoundary connected to non-Basin node - Control node connected via "flow"
+    instead of "control" link
+
+    '
+  remedy: 'Check connectivity rules in SKILL.md. Ensure structure nodes (Pump, Outlet, LinearResistance,
+    etc.) separate basins. Use link_type="control" for control connections.
+
+    '
+  severity: fatal
+- id: dt_009
+  symptom: 'Model runs but distances and areas are incorrect. Manning resistance flows are wrong magnitude.
+    Spatial operations give unexpected results.
+
+    '
+  diagnosis: 'CRS mismatch between declared CRS and actual node coordinates. E.g., coordinates in WGS84
+    (degrees) but CRS declared as EPSG:28992 (meters). Ribasim doesn''t reproject automatically.
+
+    '
+  remedy: 'Ensure all coordinates match the declared CRS. Use GIS tools to reproject if needed. Verify
+    by plotting nodes on a map.
+
+    '
+  severity: silent
+- id: dt_010
+  symptom: 'No water flows between connected basins despite level differences. LinearResistance links
+    show zero or near-zero flow. Basins behave as if isolated.
+
+    '
+  diagnosis: 'Resistance value is too high. LinearResistance uses Q = Δh / R. With R = 1e10 s/m² and Δh
+    = 1m, Q = 1e-10 m³/s (negligible). This effectively disconnects the basins.
+
+    '
+  remedy: 'Typical resistance values: 1e2 to 1e6 s/m² for natural channels. Start with R = 1e4 and adjust.
+    Lower R = more flow. Check: with expected Δh, does Q = Δh/R give reasonable flow?
+
+    '
+  severity: silent
+- id: dt_011
+  symptom: 'Basin levels stay near zero or at minimum despite inflows. Pump/outlet flows are zero even
+    when they should be active. Basin never "fills up" to expected operating level.
+
+    '
+  diagnosis: 'depth_threshold in solver settings is too high. When basin depth is below this threshold,
+    flows are progressively reduced to zero. Default is 0.1 m. If set to e.g. 5.0 m, basins must reach
+    5m before structures activate.
+
+    '
+  remedy: 'Keep depth_threshold at default 0.1 m for most applications. Only increase for very deep basins
+    where sub-meter levels are numerically problematic.
+
+    '
+  severity: silent
+- id: dt_012
+  symptom: 'PID-controlled structure oscillates wildly. Basin level swings between extremes instead of
+    approaching target. Solver takes very small timesteps. Simulation is extremely slow.
+
+    '
+  diagnosis: "PID gains have wrong sign. For level regulation where the controlled structure is an outlet\
+    \ (removing water to lower level): - Proportional and integral gains must be NEGATIVE - Positive gains\
+    \ increase outflow when level is BELOW target,\n  further lowering the level (positive feedback →\
+    \ instability)"
+  remedy: "For outlet/pump control to maintain level:\n  proportional = -1e-3 (negative)\n  integral =\
+    \ -1e-7 (negative)\nFor inlet control to maintain level:\n  proportional = +1e-3 (positive)\n"
+  severity: silent
+- id: dt_013
+  symptom: 'Solver throws NaN or Inf error. Model crashes during integration. Error message about divergence
+    or unstable ODE solution.
+
+    '
+  diagnosis: 'Extreme forcing values cause numerical overflow. Common causes: - Precipitation in wrong
+    units (see dt_001) - Very steep basin profiles (small area change per level change) - Flow boundary
+    with unrealistically large flow rate
+
+    '
+  remedy: 'Check all input values for physical plausibility. Reduce solver tolerances (increase abstol/reltol).
+    Smooth steep basin profiles by adding intermediate level-area points.
+
+    '
+  severity: fatal
+- id: dt_014
+  symptom: 'Water balance error exceeds tolerance. Warning messages about mass conservation. Results may
+    be inaccurate.
+
+    '
+  diagnosis: 'Solver is struggling with the ODE system. Typically caused by: - Abrupt forcing changes
+    (step functions in time series) - Very different time scales between connected basins - High flow
+    rates through narrow constraints
+
+    '
+  remedy: 'Reduce tolerances (abstol = 1e-7, reltol = 1e-7). Smooth abrupt forcing transitions. Consider
+    using FBDF instead of QNDF for very stiff systems.
+
+    '
+  severity: degraded
+- id: dt_015
+  symptom: 'Output time series misses important dynamics. Peak flows are underestimated. Control state
+    changes not captured. Daily output looks smooth when hourly dynamics are important.
+
+    '
+  diagnosis: 'saveat interval is too large relative to system dynamics. Default saveat = 86400 (daily)
+    misses sub-daily control switching, short flood peaks, and rapid level changes.
+
+    '
+  remedy: 'Reduce saveat: 3600 for hourly, 900 for 15-minute. Note: smaller saveat increases output file
+    size proportionally. For control systems, saveat should be <= control response time.
+
+    '
+  severity: silent
+- id: dt_016
+  symptom: 'FlowBoundary or LevelBoundary suddenly drops to zero or goes flat partway through the simulation.
+    Basin inflows stop unexpectedly.
+
+    '
+  diagnosis: 'Time series data has gaps or doesn''t cover the full simulation period. Ribasim interpolates
+    between data points but may use zero or last value for periods beyond the time series range.
+
+    '
+  remedy: 'Ensure all time series cover [starttime, endtime]. Check for gaps: pd.date_range vs actual
+    timestamps. Fill gaps with appropriate interpolation before input.
+
+    '
+  severity: silent
+- id: dt_017
+  symptom: 'Ribasim crashes at startup with "file not found" error. Error references database.gpkg or
+    a NetCDF file path.
+
+    '
+  diagnosis: 'GeoPackage or NetCDF file path is incorrect. Ribasim resolves paths relative to the TOML
+    file location, not the working directory. input_dir = "input" means <toml_dir>/input/.
+
+    '
+  remedy: 'Ensure input_dir path is relative to TOML file location. Verify: ls <toml_dir>/<input_dir>/database.gpkg
+    Avoid absolute paths in TOML configuration.
+
+    '
+  severity: fatal
+- id: dt_018
+  symptom: 'Ribasim crashes with error about missing NetCDF file when time series are stored externally
+    (not in GeoPackage).
+
+    '
+  diagnosis: 'NetCDF time series file referenced in TOML section (e.g., [basin] time = "basin/time.nc")
+    doesn''t exist at the expected path relative to input_dir.
+
+    '
+  remedy: 'Check file path: <toml_dir>/<input_dir>/<nc_path>. Ensure the NetCDF file has correct dimensions
+    and variable names. Alternative: store time series directly in GeoPackage tables.
+
+    '
+  severity: fatal

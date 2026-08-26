@@ -1,0 +1,369 @@
+schema_version: 1
+model_id: EPANET
+domain: water_distribution
+generated_by: "step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  shiu2024:
+    doi: 10.1007/s11269-023-03672-0
+    title: "Enhancing the EPANET Hydraulic Model through Genetic Algorithm Optimization of Pipe Roughness Coefficients"
+    venue: "Water Resources Management"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s11269-023-03672-0.txt
+  zanfei2020:
+    doi: 10.3390/w12051421
+    title: "Calibration Procedure for Water Distribution Systems: Comparison among Hydraulic Models"
+    venue: "Water"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w12051421.txt
+  zhang2018:
+    doi: 10.1061/(asce)wr.1943-5452.0000986
+    title: "Efficient Numerical Approach for Simultaneous Calibration of Pipe Roughness Coefficients and Nodal Demands for Water Distribution Systems"
+    venue: "Journal of Water Resources Planning and Management"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1061_(asce)wr.1943-5452.0000986.txt
+  das2019:
+    doi: 10.1007/s13201-019-1013-x
+    title: "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India"
+    venue: "Applied Water Science"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13201-019-1013-x.txt
+  garcia2021:
+    doi: 10.1186/s42834-021-00084-w
+    title: "Modeling of residual chlorine in a drinking water network in times of pandemic of the SARS-CoV-2 (COVID-19)"
+    venue: "Sustainable Environment Research"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1186_s42834-021-00084-w.txt
+  peirovi2019:
+    doi: 10.1016/j.mex.2019.03.008
+    title: "Calibration of water quality model for distribution networks using genetic algorithm, particle swarm optimization, and hybrid methods"
+    venue: "MethodsX"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.mex.2019.03.008.txt
+  dini2016:
+    doi: 10.2166/ws.2016.166
+    title: "Water distribution network quality model calibration: a case study - Ahar"
+    venue: "Water Science and Technology: Water Supply"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_ws.2016.166.txt
+  blokker2008:
+    doi: 10.5194/dwes-1-27-2008
+    title: "Importance of demand modelling in network water quality models: a review"
+    venue: "Drinking Water Engineering and Science"
+    year: 2008
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_dwes-1-27-2008.txt
+  marchi2014:
+    doi: 10.1061/(asce)wr.1943-5452.0000378
+    title: "Battle of the Water Networks II"
+    venue: "Journal of Water Resources Planning and Management"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1061_(asce)wr.1943-5452.0000378.txt
+
+validation:
+  - dag_variable: Pressure
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mean_absolute_percentage_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: 10.0, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "WDS pressure calibration practice in Shiu 2024: pressure error within +/-20% is the criterion, while errors below 10% are a tighter reported bin; the 24-hour EPANET-GA mean error rate was 8.93%."
+        cites: [shiu2024]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.90}
+        pass_band: satisfactory
+        band_note: "Shiu 2024 reported a correlation coefficient of 0.90 and called it reasonable for simulated versus measured pressure."
+        cites: [shiu2024]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG metric is NSE, but the fetched WDS pressure-calibration papers judge pressure by percentage/absolute error and correlation."
+        cites: [shiu2024, zhang2018]
+    validated_when: "Pressure time series are validated when mean absolute percentage error <= 20% and r >= 0.90."
+    evidence_strength: moderate
+    confidence: 0.72
+    notes: "Literature supersedes the DAG's nse headline for pressure: Shiu 2024 states that steady-state calibration must satisfy a 0.2 kg/cm2 pressure difference and translates that to +/-20% in its study area; it also reports 8.93% for 24-hour predictions."
+
+  - dag_variable: Pressure
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: absolute_pressure_difference
+        direction: minimize
+        unit: kg/cm2
+        bands: {very_good: null, good: 0.10, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Shiu 2024 quotes WRC practice that steady-state calibration must satisfy a 0.2 kg/cm2 pressure difference; 0.1 kg/cm2 is the tighter bin used in its before/after calibration table."
+        cites: [shiu2024]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG metric is pbias, but the fetched WDS snapshot convention is absolute pressure difference, not signed mean bias."
+        cites: [shiu2024]
+    validated_when: "Single-period pressure is validated when absolute pressure difference <= 0.2 kg/cm2."
+    evidence_strength: moderate
+    confidence: 0.76
+    notes: "Do not convert this band blindly without unit handling; 0.2 kg/cm2 is about 2 m pressure head."
+
+  - dag_variable: Head
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: absolute_head_residual
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: 1.0, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "Zhang 2018 says most pressure differences at validation points were within +/-1 m and all were lower than the +/-2 m Water Research Centre criterion."
+        cites: [zhang2018]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.90}
+        pass_band: satisfactory
+        band_note: "Shiu 2024 reports a strong correlation coefficient of 0.9 between simulated and measured pressure/head data."
+        cites: [shiu2024]
+    secondary_metrics: []
+    validated_when: "Nodal hydraulic head/pressure head is validated when absolute head residual <= 2 m and r >= 0.90."
+    evidence_strength: moderate
+    confidence: 0.72
+    notes: "The DAG's r metric is retained. Absolute residual is added because WDS calibration papers express the field criterion in m or kg/cm2."
+
+  - dag_variable: Flow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.75, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred from open-access hydrologic discharge convention: Das 2019 reproduces Moriasi monthly streamflow criteria as NSE > 0.50 satisfactory and Nash-Sutcliffe > 0.75 good."
+        cites: [das2019]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred from streamflow convention reproduced by Das 2019: PBIAS +/-25% for streamflow."
+        cites: [das2019]
+    secondary_metrics:
+      - metric: mean_absolute_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "WDS calibration papers also report pipe-flow MAE; Zanfei 2020 called a final DPD model with mean pipe-flow error 2.55 L/s a good estimation, but this is case-scale dependent."
+        cites: [zanfei2020]
+    validated_when: "Pipe-flow time series pass when NSE >= 0.50 and |PBIAS| <= 25%; this is a transferred discharge convention, not a WDS-specific universal threshold."
+    evidence_strength: moderate
+    confidence: 0.50
+    notes: "No fetched WDS pipe-flow paper gave universal NSE/PBIAS tiers; hydrologic discharge tiers are used because the DAG explicitly grades Flow with NSE/PBIAS. Treat with caution for very small distribution pipes or sign-changing flow."
+
+  - dag_variable: Flow
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred from the streamflow PBIAS +/-25% criterion reproduced in Das 2019; no WDS snapshot-specific PBIAS band was fetched."
+        cites: [das2019]
+    secondary_metrics:
+      - metric: mean_absolute_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Zanfei 2020 reports a physically based final solution with mean flow-rate error 2.55 L/s, but the acceptable L/s value depends on pipe scale."
+        cites: [zanfei2020]
+    validated_when: "Single-period pipe flow passes when |PBIAS| <= 25%, using transferred discharge practice."
+    evidence_strength: moderate
+    confidence: 0.48
+    notes: "The flow sign convention must be aligned before applying any magnitude or bias metric."
+
+  - dag_variable: Velocity
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a numeric velocity time-series validation threshold for EPANET/WDS velocity."
+        cites: []
+    secondary_metrics:
+      - metric: threshold_velocity
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Velocity is often a process/diagnostic variable for sediment and water-quality behavior; Blokker 2008 discusses threshold velocities for resuspension/deposition, not a model-observation skill gate."
+        cites: [blokker2008]
+    validated_when: "UNRESOLVED - validate only with direct velocity observations and a future cited skill threshold."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "Cached WDS calibration papers rely on pressure and flow observations; direct link-velocity validation is rare and usually diagnostic rather than a calibration target."
+
+  - dag_variable: Tank water level
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a numeric SCADA tank-level NSE/RMSE validation threshold."
+        cites: []
+    secondary_metrics:
+      - metric: constraint_violation_count
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Battle of the Water Networks II used tank-empty and head constraints in extended-period operation, but it was a design/optimization constraint, not an observed tank-level skill band."
+        cites: [marchi2014]
+    validated_when: "UNRESOLVED - no automatic validation band; compare SCADA tank-level traces only after a cited tank-level benchmark is fetched."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "OpenAlex coverage check returned optimization papers rather than tank-level validation conventions."
+
+  - dag_variable: Node quality (chemical concentration)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.805, good: 0.769, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Garcia-Avila 2021 used Moriasi performance ratings for chlorine: calibration E=0.805 was very good and validation E=0.769 confirmed validity; Das 2019 reproduces the general NSE > 0.50 satisfactory convention."
+        cites: [garcia2021, das2019]
+      - metric: rsr
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.442, good: 0.480, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "Garcia-Avila 2021 reports calibration RSR=0.442 and validation RSR=0.480; Das 2019 reproduces RSR <= 0.70 as satisfactory."
+        cites: [garcia2021, das2019]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Garcia-Avila 2021 reports Pearson R=0.9301 during calibration and R=0.9898 during validation for chlorine residual."
+        cites: [garcia2021]
+    validated_when: "Residual chlorine time series are validated when NSE >= 0.50 and RSR <= 0.70; Garcia-Avila's EPANET validation exceeded both."
+    evidence_strength: moderate
+    confidence: 0.78
+    notes: "This block is specific to residual chlorine or comparable chemical concentration with field samples. It keeps the DAG's nse metric and adds RSR because the fetched chlorine paper uses both."
+
+  - dag_variable: Node quality (chemical concentration)
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: absolute_concentration_error
+        direction: minimize
+        unit: mg/L
+        bands: {very_good: 0.022, good: 0.10, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Peirovi Minaee 2019 reports residual-chlorine differences from 0 to 0.18 mg/L and none above 0.2 mg/L; Dini 2016 reports 0.022 mg/L average test error and calls 3.85% acceptable."
+        cites: [peirovi2019, dini2016]
+      - metric: rmse
+        direction: minimize
+        unit: mg/L
+        bands: {very_good: null, good: 0.091, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Peirovi Minaee 2019 reports RMSE=0.091 mg/L and maximum point difference 0.18 mg/L in residual chlorine calibration."
+        cites: [peirovi2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG metric is pbias, but fetched water-quality calibration papers report residual absolute error/RMSE rather than a signed bias threshold."
+        cites: [peirovi2019, dini2016]
+    validated_when: "Snapshot residual chlorine passes when absolute concentration error <= 0.2 mg/L and RMSE <= 0.2 mg/L."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: "The 0.2 mg/L band is a benchmark envelope from fetched residual-chlorine calibration papers, not a universal regulatory residual target."
+
+  - dag_variable: Water age
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a numeric water-age time-series validation threshold against tracer observations."
+        cites: []
+    secondary_metrics:
+      - metric: tracer_match
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Blokker 2008 notes that water-quality model validation can require fluoride/chlorine measurements or tracer studies, but does not provide numeric water-age skill tiers."
+        cites: [blokker2008]
+      - metric: maximum_water_age
+        direction: minimize
+        status: supportive
+        ceiling_reason: "BWN-II used water age as an optimization/design performance metric with a 48 h threshold, not as an observed model validation threshold."
+        cites: [marchi2014]
+    validated_when: "UNRESOLVED - water age needs tracer-derived observations and a fetched numeric skill convention before automatic validation."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "The 48 h BWN-II water-age number is intentionally not used as a pass band because it is an operating objective, not model-observation validation."
+
+  - dag_variable: Source trace percentage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a numeric source-trace percentage validation threshold."
+        cites: []
+    secondary_metrics:
+      - metric: tracer_match
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Blokker 2008 describes tracer studies as relevant validation evidence for distribution-network water quality models, but no numeric source-provenance band is given."
+        cites: [blokker2008]
+    validated_when: "UNRESOLVED - validate source trace only against tracer/blending observations after a cited metric band is fetched."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "Source trace percentage is an EPANET diagnostic/provenance output; cached papers did not provide an automatic pass threshold."
+
+  - dag_variable: Pump energy and cost
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a numeric pump-energy/cost time-series validation threshold against metered billing or SCADA energy observations."
+        cites: []
+    secondary_metrics:
+      - metric: energy_accounting_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "BWN-II found validation discrepancies in energy calculations from incorrect pump efficiency values and computational time-step handling; this supports accounting checks, not a model-observation skill band."
+        cites: [marchi2014]
+    validated_when: "UNRESOLVED - compare against metered pump energy/billing, but no cited numeric validation convention was fetched."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "OpenAlex coverage check returned pump optimization and digital-twin papers, not validation bands for EPANET pump energy."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 model evaluation guidelines"
+    doi: 10.13031/trans.58.10715
+    needed_for: [Flow, "Node quality (chemical concentration)"]
+  - ref: "Application of Formal and Informal Bayesian Methods for Water Distribution Hydraulic Model Calibration"
+    doi: 10.1061/(asce)wr.1943-5452.0000412
+    needed_for: [Pressure, Head, Flow]
+  - ref: "Water Research Centre pressure-calibration criterion cited by Shiu 2024 and Zhang 2018"
+    doi: unknown_not_fetched
+    needed_for: [Pressure, Head]

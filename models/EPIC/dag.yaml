@@ -428,7 +428,7 @@ outputs:
   - var: "ET"
     validation_rank: 2
     unit: "mm/yr"
-    description: "Actual evapotranspiration"
+    description: "Actual evapotranspiration — water flux from the modeled field (soil + crop canopy) to the atmosphere"
     emitted_in: ".ANN"
     observability:
       comparable_obs_shapes:
@@ -472,7 +472,7 @@ outputs:
   - var: "DN2O / VN2O"
     validation_rank: 6
     unit: "kg/ha"
-    description: "Nitrous-oxide loss from denitrification / nitrification (annual)"
+    description: "Nitrous-oxide gas emission to the atmosphere from soil denitrification / nitrification (annual)"
     emitted_in: ".ANN"
     observability:
       comparable_obs_shapes:
@@ -511,7 +511,7 @@ outputs:
   - var: "NPPC"
     validation_rank: 9
     unit: "kg/ha"
-    description: "Net primary productivity (carbon); VAR(99) = dry matter x 420.0"
+    description: "Crop/vegetation net primary productivity (carbon); VAR(99) = dry matter x 420.0"
     emitted_in: ".ANN"
     observability:
       comparable_obs_shapes:

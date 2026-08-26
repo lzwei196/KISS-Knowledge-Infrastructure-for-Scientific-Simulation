@@ -285,7 +285,7 @@ outputs:
   - var: "subl"
     validation_rank: 9
     unit: "kg m-2 s-1"
-    description: "Sublimation rate"
+    description: "Snow-surface/canopy sublimation rate"
     emitted_in: "{runid}flux.txt"
     observability:
       comparable_obs_shapes:
@@ -298,7 +298,7 @@ outputs:
   - var: "H"
     validation_rank: 10
     unit: "W m-2"
-    description: "Sensible heat flux (positive upward)"
+    description: "Surface/canopy sensible heat flux to atmosphere (positive upward)"
     emitted_in: "{runid}flux.txt"
     observability:
       comparable_obs_shapes:
@@ -311,7 +311,7 @@ outputs:
   - var: "LE"
     validation_rank: 11
     unit: "W m-2"
-    description: "Latent heat flux (positive upward)"
+    description: "Surface/canopy latent heat flux to atmosphere (positive upward)"
     emitted_in: "{runid}flux.txt"
     observability:
       comparable_obs_shapes:
@@ -648,3 +648,17 @@ safety:
       scope: "version labeling"
       source: "FSM2 user guide header vs README / Essery et al. 2025 (doi:10.5194/gmd-18-3583-2025)"
       status: tentative
+
+medium_evidence:
+  - var: "subl"
+    source: "dag.yaml"
+    quote: "Mass-balance closure applies to snow water (Sf - Melt - subl - Roff ~= dSWE) and energy-balance closure to the surface/soil column."
+    note: "DAG closure names subl as a snow-water mass loss; SRFEBAL/source shows surface and vegetation moisture fluxes are summed."
+  - var: "H"
+    source: "dag.yaml"
+    quote: "Surface + canopy energy balance: iterates surface/canopy/veg temperatures with turbulent exchange to produce H, LE, LWout, Melt, subl, Gsrf and subcanopy diagnostics."
+    note: "DAG process description names H as produced by the surface/canopy energy-balance medium."
+  - var: "LE"
+    source: "dag.yaml"
+    quote: "Surface + canopy energy balance: iterates surface/canopy/veg temperatures with turbulent exchange to produce H, LE, LWout, Melt, subl, Gsrf and subcanopy diagnostics."
+    note: "DAG process description names LE as produced by the surface/canopy energy-balance medium."

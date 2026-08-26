@@ -191,7 +191,7 @@ outputs:
   - var: "recovered_model"
     validation_rank: 1
     unit: "model space (e.g. ln(S/m); kg/m^3 under identity map)"
-    description: "Recovered model vector, one value per active mesh cell, in model space; returned by the inversion."
+    description: "Recovered subsurface model vector, one value per active mesh cell, in model space; returned by the inversion."
     emitted_in: "BaseInversion.run(m0) return value"
     observability:
       comparable_obs_shapes:
@@ -209,7 +209,7 @@ outputs:
   - var: "physical_property"
     validation_rank: 2
     unit: "kg/m^3 (density), S/m (conductivity), SI (susceptibility), Ohm*m (resistivity), V/V (chargeability)"
-    description: "Recovered model transformed back to physical-property space via the forward map (model_map * m_recovered)."
+    description: "Recovered subsurface model transformed back to subsurface physical-property space via the forward map (model_map * m_recovered)."
     emitted_in: "model-map application to recovered_model"
     observability:
       comparable_obs_shapes:
@@ -227,7 +227,7 @@ outputs:
   - var: "predicted_data"
     validation_rank: 3
     unit: "method-specific (mGal, nT, Ohm*m, A/m, V/m^2, T/s)"
-    description: "Forward response (dpred) of the recovered (or forward) model at the survey receivers."
+    description: "Geophysical forward response (dpred) of the recovered (or forward) subsurface model at the survey receivers."
     emitted_in: "sim.dpred(model)"
     observability:
       comparable_obs_shapes:
@@ -245,7 +245,7 @@ outputs:
   - var: "fields"
     validation_rank: 4
     unit: "mesh-based field values (potentials, E/H fields, pressure head)"
-    description: "Full PDE field solution on the mesh for DC/EM/flow methods (optional diagnostic)."
+    description: "Full PDE field solution on the Earth/subsurface mesh for DC/EM/flow methods (optional diagnostic)."
     emitted_in: "sim.fields(m)"
     observability:
       comparable_obs_shapes:
@@ -382,3 +382,21 @@ safety:
       scope: "inversion control"
       source: "Cockett et al. 2015, Computers & Geosciences 85 (DOI 10.1016/j.cageo.2015.09.015)"
       status: "adopted"
+
+medium_evidence:
+  - var: "recovered_model"
+    source: "dag.yaml"
+    quote: "Gradient-based deterministic inversion / parameter estimation for subsurface physical properties (Tikhonov and sparse-norm regularization)"
+    note: "scope_in declares recovered inversion models as subsurface physical properties"
+  - var: "physical_property"
+    source: "dag.yaml"
+    quote: "Gradient-based deterministic inversion / parameter estimation for subsurface physical properties (Tikhonov and sparse-norm regularization)"
+    note: "scope_in declares mapped physical-property outputs as subsurface"
+  - var: "predicted_data"
+    source: "dag.yaml"
+    quote: "Forward simulation of geophysical responses (gravity, magnetics, DC resistivity, IP/SIP, self-potential, FDEM, TDEM, natural-source/MT, VRM, seismic straight-ray tomography, Richards-equation unsaturated flow)"
+    note: "scope_in declares predicted receiver responses as geophysical responses of the subsurface model"
+  - var: "fields"
+    source: "SKILL.md"
+    quote: "The mesh discretizes the Earth volume."
+    note: "field diagnostics are full solutions on the Earth/subsurface mesh"

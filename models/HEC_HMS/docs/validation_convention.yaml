@@ -1,0 +1,206 @@
+schema_version: 1
+model_id: HEC-HMS
+domain: hydrology
+generated_by: "Step-B validation-convention agent (Codex GPT-5)"
+generated_at: 2026-08-14
+
+# Hydrologic validation conventions are grounded in fetched/cached full texts only.
+# Moriasi et al. 2015 is the updated watershed-scale flow criterion used for
+# NSE and PBIAS bands. Moriasi et al. 2007 is retained for the older RSR rule
+# and for the widely reproduced hydrologic model evaluation context. HEC-HMS
+# application papers corroborate that field practice evaluates HEC-HMS by
+# observed-vs-simulated hydrographs using NSE/PBIAS/R2/RMSE-style measures.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  hussain2021:
+    doi: 10.51400/2709-6998.1003
+    title: "Application of Physically Based Semi-Distributed HEC-HMS Model for Flow Simulation"
+    venue: "Engineering and Technology Journal"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.51400_2709-6998.1003.txt
+  tassew2019:
+    doi: 10.3390/hydrology6010021
+    title: "Application of HEC-HMS Model for Flow Simulation in the Lake Tana Basin: The Case of Gilgel Abay Catchment, Upper Blue Nile Basin, Ethiopia"
+    venue: "Hydrology"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_hydrology6010021.txt
+  hamdan2021:
+    doi: 10.3390/hydrology8020058
+    title: "Rainfall-Runoff Modeling Using the HEC-HMS Model for the Al-Adhaim River Catchment, Northern Iraq"
+    venue: "Hydrology"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_hydrology8020058.txt
+  fanta2021:
+    doi: 10.24425/jwld.2021.138185
+    title: "Performance evaluation of HEC-HMS model for continuous runoff simulation of Gilgel Gibe watershed, Southwest Ethiopia"
+    venue: "Journal of Water and Land Development"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.24425_jwld.2021.138185.txt
+
+validation:
+  - dag_variable: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final watershed-scale flow PEC: very good NSE > 0.80, good 0.70 < NSE <= 0.80, satisfactory 0.50 < NSE <= 0.70; schema stores the threshold value."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final watershed-scale flow PEC: very good PBIAS < +/-5, good +/-5 to +/-10, satisfactory +/-10 to +/-15; schema evaluates as abs(PBIAS) <= band."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 recommends R2 with NSE and PBIAS for flow, while HEC-HMS benchmark papers co-report R2 with NSE for hydrograph agreement."
+        cites: [moriasi2015, hussain2021, tassew2019, fanta2021]
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 recommends reporting RMSE alongside RSR and says to use the Moriasi 2007 RSR PEC until new PEC are developed."
+        cites: [moriasi2007, moriasi2015]
+    validated_when: "Observed outlet flow hydrograph is validated when NSE >= 0.50 and |PBIAS| <= 15% under the updated watershed-scale flow convention."
+    rule:
+      all_of:
+        - {metric: nse, op: gte, value: 0.50}
+        - {metric: pbias, op: abs_lte, value: 15.0}
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Moriasi 2015 states flow simulations are satisfactory for watershed-scale models when
+      daily, monthly, or annual R2 > 0.60, NSE > 0.50, and PBIAS <= +/-15%, and Table 9 notes
+      "Flow" includes stream flow, surface runoff, base flow, and tile flow as appropriate.
+      HEC-HMS papers in this cache validate discharge/runoff hydrographs with NSE, PBIAS,
+      R2, RMSE, RSR, and peak/volume errors; for example Hussain 2021 reproduces HEC-HMS
+      criteria with satisfactory NSE 0.50 to 0.65 and reports performance "satisfactory"
+      with NSE 0.51 to 0.86.
+
+  - dag_variable: runoff_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 watershed-scale flow PEC; Table 9 footnote includes surface runoff under flow where appropriate."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 flow PBIAS PEC because direct-runoff depth is normally judged through runoff volume/hydrograph agreement."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 and Moriasi 2015 recommend RSR/RMSE as supporting error-index measures; RMSE alone has no universal mm threshold."
+        cites: [moriasi2007, moriasi2015]
+    validated_when: "Direct-runoff depth is validated only when compared to an observed or independently inferred runoff-depth time series and both NSE >= 0.50 and |PBIAS| <= 15% pass."
+    rule:
+      all_of:
+        - {metric: nse, op: gte, value: 0.50}
+        - {metric: pbias, op: abs_lte, value: 15.0}
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The DAG caveat is important: excess-rainfall depth is rarely observed directly and is usually
+      inferred. The numeric bands are not loss-method-specific; they are transferred from the
+      fetched Moriasi 2015 watershed-scale flow criteria, whose Table 9 footnote explicitly includes
+      surface runoff under flow where appropriate. HEC-HMS benchmark papers such as Tassew 2019,
+      Hamdan 2021, and Fanta 2021 evaluate the rainfall-runoff result against observed streamflow
+      or event runoff/volume rather than direct excess-rainfall observations.
+
+  - dag_variable: loss
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provided a numeric validation threshold for HEC-HMS loss/infiltration-retention time series itself; flow/runoff validation thresholds must not be reused as a loss gate."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - validate the coupled rainfall-runoff result through discharge/runoff_depth blocks; do not auto-validate the internal loss series without a fetched loss-specific convention."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      Cached HEC-HMS papers document SCS-CN and related loss methods but judge model performance
+      from observed-vs-simulated hydrographs, peak flow, runoff volume, NSE, PBIAS, R2, RMSE, or RSR.
+      No fetched source gives a field-standard numeric PBIAS band for the internal loss = precipitation
+      minus runoff time series. Keeping the band null prevents an inferred diagnostic from loosening
+      validation.
+
+  - dag_variable: subbasin_outflow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Same watershed-scale flow convention as outlet discharge; applicable when an internal gauge provides observed inflow/outflow at the subbasin or junction."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Same Moriasi 2015 flow PBIAS PEC used for internal streamflow comparisons when observations exist."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "R2 is a recommended co-metric for flow and is commonly reported in HEC-HMS streamflow/runoff evaluations, but NSE and PBIAS remain the headline gate here."
+        cites: [moriasi2015, hussain2021, tassew2019, fanta2021]
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RSR/RMSE is a recommended supporting error-index family; the updated flow gate keeps NSE and PBIAS as headline metrics."
+        cites: [moriasi2007, moriasi2015]
+    validated_when: "Internal subbasin outflow is validated against a gauged internal flow time series when NSE >= 0.50 and |PBIAS| <= 15%."
+    rule:
+      all_of:
+        - {metric: nse, op: gte, value: 0.50}
+        - {metric: pbias, op: abs_lte, value: 15.0}
+    evidence_strength: strong
+    confidence: 0.80
+    notes: >-
+      This block uses the same convention as discharge because the DAG variable is a flow at an
+      internal subbasin/junction rather than a new physical quantity. Confidence is slightly lower
+      than outlet discharge because many HEC-HMS benchmark papers report outlet gauges, but the
+      Moriasi 2015 watershed-scale flow PEC still applies when internal observed flow exists.
+
+deferred_paywalled:
+  - ref: "Depression threshold control proxy to improve HEC-HMS modeling of depression-dominated areas"
+    doi: 10.1080/02626667.2019.1690148
+    needed_for: [loss]

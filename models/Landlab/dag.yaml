@@ -424,7 +424,7 @@ outputs:
   - var: "concavity (theta)"
     validation_rank: 5
     unit: "dimensionless"
-    description: "Slope-area concavity index theta = -d(logS)/d(logA); at steady state expected to approach m_sp/n_sp."
+    description: "Land-surface/channel-topography slope-area concavity index theta = -d(logS)/d(logA); at steady state expected to approach m_sp/n_sp."
     emitted_in: "derived metric from slope-area regression on the grid"
     observability:
       comparable_obs_shapes:
@@ -528,6 +528,12 @@ outputs:
           caveats:
             - "This is a steady-state spatial field, not a gauge hydrograph; do not compare against a daily discharge time series."
       detrending_options: ["none"]
+
+medium_evidence:
+  - var: "concavity (theta)"
+    source: dag.yaml
+    quote: "Final landscape topography and derived slope-area metrics (concavity, steepness, relief, sediment yield)."
+    note: "Process edge declares concavity as a derived slope-area metric of final landscape topography."
 
 influence:
   edges:

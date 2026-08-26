@@ -1,106 +1,188 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:02:28.486174'
-  domain: cryosphere
   name: FSM2
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: fsm2
+    version: 2.1.2
+    provenance: Fortran 90 with C-preprocessor compile-time physics switches; R. Essery, University of
+      Edinburgh.
+  scientific_reference_version: FSM2 (Flexible Snow Model) 2.1.x lineage; Essery et al. 2025 (GMD 18,
+    3583-3605) forest-canopy extension of FSM 1.0 (Essery 2015)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/FSM2/source/repo/FSM2
+    type: work_dir
 pipeline:
-  stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  stages: []
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_fsm2.py
+  - tools/convert_soil_params.py
+  - tools/parse_fsm2_output.py
+  - tools/run_fsm2.py
+inputs:
+  forcing:
+  - name: SW
+    unit: W m-2
+  - name: LW
+    unit: W m-2
+  - name: Sf
+    unit: kg m-2 s-1
+  - name: Rf
+    unit: kg m-2 s-1
+  - name: Ta
+    unit: K
+  - name: RH
+    unit: '% (0-100)'
+  - name: Ua
+    unit: m s-1
+  - name: Ps
+    unit: Pa
+  parameters:
+  - name: asmn
+    unit: '-'
+  - name: asmx
+    unit: '-'
+  - name: rhof
+    unit: kg m-3
+  - name: rfix
+    unit: kg m-3
+  - name: rhow
+    unit: kg m-3
+  - name: hfsn
+    unit: m
+  - name: kfix
+    unit: W m-1 K-1
+  - name: rgr0
+    unit: m
+  - name: Wirr
+    unit: '-'
+  - name: z0sn
+    unit: m
+  - name: z0sf
+    unit: m
+  - name: gsat
+    unit: m s-1
+  - name: alb0
+    unit: '-'
+  - name: vegh
+    unit: m
+  - name: VAI
+    unit: '-'
+  - name: fcly
+    unit: fraction 0-1
+  - name: fsnd
+    unit: fraction 0-1
+  - name: lat
+    unit: degrees
+  - name: zT
+    unit: m
+  - name: zU
+    unit: m
+  - name: Dzsnow
+    unit: m
+  - name: Dzsoil
+    unit: m
+  initial_conditions:
+  - name: Nsnow
+    unit: '-'
+  - name: albs
+    unit: '-'
+  - name: Dsnw
+    unit: m
+  - name: Sice
+    unit: kg m-2
+  - name: Sliq
+    unit: kg m-2
+  - name: Rgrn
+    unit: m
+  - name: Tsnow
+    unit: K
+  - name: Tsoil
+    unit: K
+  - name: Vsmc
+    unit: m3 m-3
+  - name: Tsrf
+    unit: K
+  - name: Sveg
+    unit: kg m-2
+  - name: Tveg
+    unit: K
+  - name: Tcan
+    unit: K
+  - name: Qcan
+    unit: kg kg-1
+  boundary_conditions:
+  - name: ALBEDO
+    unit: '-'
+  - name: DENSTY
+    unit: '-'
+  - name: CONDCT
+    unit: '-'
+  - name: HYDROL
+    unit: '-'
+  - name: SGRAIN
+    unit: '-'
+  - name: SNFRAC
+    unit: '-'
+  - name: EXCHNG
+    unit: '-'
+  - name: CANMOD
+    unit: '-'
+  - name: CANRAD
+    unit: '-'
+  - name: CANINT
+    unit: '-'
+  - name: CANUNL
+    unit: '-'
+  - name: SWPART
+    unit: '-'
+  - name: ZOFFST
+    unit: '-'
+  - name: DRIV1D
+    unit: '-'
+  - name: PROFNC
+    unit: '-'
+  - name: Npnts
+    unit: '-'
+  - name: dt
+    unit: s
+  - name: start_file
+    unit: '-'
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - snw
+  - snd
+  - svg
+  - Tsrf
+  - Tsoil
+  - Tveg
+  - Melt
+  - Roff
+  - subl
+  - H
+  - LE
+  - LWout
+  - SWout
+  - LWsub
+  - SWsub
+  - Tsub
+  - Usub
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.648, KGE=0.514, R=0.891, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.6481
+    best_kge: 0.5140027947208845
+    best_r: 0.891119560251964
+summary:
+  total_tools: 4
+  total_stage_docs: 0
+  total_diagnostic_triplets: 25
+  generated: '2026-08-23'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

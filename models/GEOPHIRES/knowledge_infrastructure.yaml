@@ -1,106 +1,121 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:03:50.743560'
-  domain: geothermal
   name: GEOPHIRES
-  version: auto-generated
+  language: Python
+  implementation:
+    id: geophires-x
+    version: 3.11.25
+    provenance: Python; NREL GEOPHIRES-X (geophires_x package), object-oriented v3 lineage; repo NREL/python-geophires-x.
+  scientific_reference_version: GEOPHIRES-X (object-oriented v3 lineage)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GEOPHIRES/venv/bin/python
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s0_site_characterization
+  - s1_reservoir_parameter_conversion
+  - s2_economic_parameter_setup
+  - s3_input_assembly_and_execution
+  - s5_output_parsing
+  - s6_validation_and_sensitivity
+tools:
+  count: 6
+  files:
+  - tools/convert_reservoir_params.py
+  - tools/convert_site_economics.py
+  - tools/generate_input_file.py
+  - tools/parse_geophires_output.py
+  - tools/run_geophires.py
+  - tools/validate_geophires_results.py
+inputs:
+  forcing_note: 'GEOPHIRES is a site techno-economic model, not a weather/time-series-forced model. No
+    external time-varying driver is consumed each timestep; the time-evolving production temperature is
+    a COMPUTED state (thermal drawdown), not an input forcing. (HydroCraft CMFD/MSWX/NASA POWER scaffolding
+    referenced in the KI is wrapper plumbing, not a GEOPHIRES input.)
+
+    '
+  forcing: []
+  parameters:
+  - name: Geothermal Gradient (Gradient 1..N, up to 4 segments)
+    unit: degC/km
+  - name: Reservoir Depth
+    unit: km
+  - name: Maximum Temperature
+    unit: degC
+  - name: Surface Temperature
+    unit: degC
+  - name: Reservoir Heat Capacity
+    unit: J/kg/K
+  - name: Reservoir Density
+    unit: kg/m3
+  - name: Reservoir Thermal Conductivity
+    unit: W/m/K
+  - name: Drawdown Parameter
+    unit: fraction/year
+  - name: Fracture geometry (Number of Fractures / Shape / Height / Width)
+    unit: -, m
+  - name: Reservoir Porosity
+    unit: '-'
+  - name: Production / Injection Well Diameter
+    unit: inch
+  - name: Circulation Pump Efficiency
+    unit: fraction
+  - name: Utilization Factor
+    unit: fraction
+  - name: Discount Rate
+    unit: fraction
+  - name: Fixed Charge Rate
+    unit: fraction
+  - name: BICYCLE financial parameters (bond fraction, inflated bond/equity interest, inflation rate,
+      combined income tax rate)
+    unit: fraction
+  - name: Cost overrides (drilling, surface plant CAPEX, O&M)
+    unit: MUSD
+  initial_conditions_note: 'GEOPHIRES derives its start-state reservoir/bottom-hole temperature at runtime
+    from Surface Temperature + Gradient*Depth (capped by Maximum Temperature); there is no user-supplied
+    prognostic start-state field. Reservoir heat content and thermal drawdown are initialized internally.
+
+    '
+  initial_conditions: []
+  boundary_conditions:
+  - name: Reservoir Model
+    unit: enum 0-8
+  - name: End-Use Option
+    unit: enum (1 Electricity, 2 Direct-Use Heat, 31-52 Cogeneration)
+  - name: Power Plant Type
+    unit: enum 1-9
+  - name: Economic Model
+    unit: enum 1-5 (FCR, Standard, BICYCLE, CLGS, SAM PPA)
+  - name: Number of Production Wells / Number of Injection Wells
+    unit: '-'
+  - name: Production Flow Rate per Well
+    unit: kg/s
+  - name: Injection Temperature
+    unit: degC
+  - name: Plant Lifetime
+    unit: years
+  - name: Time steps per year / Construction Years
+    unit: integer / years
+  - name: User-provided temperature-vs-time / external simulator files
+    unit: file
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - LCOE
+  - LCOH
+  - Average Net Power
+  - geofluid_production_temperature
+  - total_capex
+  - annual_energy_production
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: 2 scorecard(s)'
+summary:
+  total_tools: 6
+  total_stage_docs: 6
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

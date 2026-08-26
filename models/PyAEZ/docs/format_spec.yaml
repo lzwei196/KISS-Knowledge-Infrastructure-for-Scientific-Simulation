@@ -1,220 +1,431 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: PyAEZ v2.2 Knowledge Infrastructure
-  domain: crop
-  binary_path: ''
-  language: unknown
+  name: PyAEZ
+  language: python
+  implementation:
+    id: pyaez-2.2
+    version: '2.2'
+    provenance: Python; FAO/AIT Geo-informatics Center PyAEZ 2.2 (Numba-accelerated AEZ implementation),
+      MIT-licensed.
+  scientific_reference_version: FAO/IIASA Agro-Ecological Zoning (AEZ/GAEZ) framework as implemented in
+    PyAEZ 2.2 (six-module land-evaluation pipeline)
 inputs:
   forcing:
-  - name: Precipitation
-    unit: '`precipitation`'
-    format: ''
-    source: skill_md
-  - name: Temperature
-    unit: "\xB0C"
-    format: ''
-    source: skill_md
-  - name: Radiation
-    unit: "W/m\xB2"
-    format: ''
-    source: skill_md
-  - name: Rain
-    unit: unknown
-    format: ''
-    source: skill_md
+  - name: minimum air temperature
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: 3-D climate array (H, W, 12) monthly or (H, W, 365) daily, time on last axis
+    notes: Celsius required; Kelvin causes vapor-pressure overflow. Internally drives thermal regime,
+      LGP and ETo.
+  - name: maximum air temperature
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: 3-D climate array (H, W, 12|365), time on last axis
+    notes: Celsius required.
+  - name: precipitation
+    unit: mm/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: 3-D climate array (H, W, 12|365), time on last axis
+    notes: Daily rate, not monthly total and not m/day; drives the LGP soil water balance.
+  - name: shortwave downward radiation
+    unit: W/m^2
+    category: forcing
+    source_kind: forcing
+    model_input_format: 3-D climate array (H, W, 12|365), time on last axis
+    notes: Internally converted to cal/cm^2/day for the GAEZ biomass routine; drives potential biomass.
+  - name: wind speed
+    unit: m/s at 2 m reference height
+    category: forcing
+    source_kind: forcing
+    model_input_format: 3-D climate array (H, W, 12|365), time on last axis
+    notes: Penman-Monteith assumes 2 m reference height; 10 m wind inflates ETo ~20%.
+  - name: relative humidity
+    unit: 0-1 fraction
+    category: forcing
+    source_kind: forcing
+    model_input_format: 3-D climate array (H, W, 12|365), time on last axis
+    notes: Fraction (0-1), not percent; used directly in Penman-Monteith saturation deficit.
+  parameters:
+  - name: elevation (DEM)
+    unit: meters
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: 2-D raster (H, W)
+    notes: Affects atmospheric pressure and ETo.
+  - name: slope
+    unit: percent (%)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: 2-D raster (H, W)
+    notes: Percent, not degrees/radians; feeds Fournier-index terrain constraint (fc5).
+  - name: soil mapping unit (SMU) map
+    unit: integer HWSD SMU codes
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: 2-D raster (H, W); codes must match soil-characteristics SMU IDs
+    notes: Keys the SQ1-SQ7 soil-quality lookup for fc4.
+  - name: available soil moisture capacity (Sa)
+    unit: mm/m
+    category: parameters
+    source_kind: default
+    model_input_format: scalar or 2-D map; model default Sa=100 mm/m
+    notes: With rooting depth D sets the LGP water-storage buffer; default strongly affects fc2.
+  - name: rooting depth (D) for LGP water balance
+    unit: m
+    category: parameters
+    source_kind: default
+    model_input_format: scalar; model default D=1.0 m
+    notes: Sa x D = available water buffer in the LGP soil water balance.
+  - name: soil water depletion fraction (pc)
+    unit: 0-1 fraction
+    category: parameters
+    source_kind: default
+    model_input_format: scalar; default 0.5
+  - name: crop biophysical parameters (LAI, HI, height, kc, legume flag, adaptability/photosynthesis class,
+      cycle length, yield-loss factors, reference est_yield)
+    unit: mixed (LAI unitless, HI 0-1, kc unitless, est_yield kg/ha, cycle days)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: per-crop parameter table (one sheet per crop)
+    notes: Drive the GAEZ biomass/yield response and crop-water demand; est_yield is kg/ha (model-internal).
+  - name: agro-climatic (fc3) reduction lookup factors
+    unit: 0-1 reduction factors
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: per-crop reduction table keyed by LGP class and wetness days
+  - name: soil-quality (SQ1-SQ7) characteristics and reduction factors
+    unit: 0-100 ratings / 0-1 reductions
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: topsoil/subsoil characteristics + rainfed/irrigated reduction tables keyed by
+      SMU
+  - name: terrain reduction factors
+    unit: 0-1 reduction factors
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: reduction table keyed by Fournier-index x slope class (rainfed/irrigated)
+  - name: economic cost / price / yield reference points
+    unit: currency/ha, currency/ton, ton/ha
+    category: parameters
+    source_kind: user_provided
+    model_input_format: paired cost-yield data points and historical farm prices
+    notes: Module VI expects yield in ton/ha (kg/ha must be divided by 1000 by the caller).
+  initial_conditions: []
+  boundary_conditions:
+  - name: study-area mask
+    unit: binary 0/1
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: 2-D raster (H, W); mask_value pixels excluded
+    notes: Shape must match climate array (H, W); selects which pixels are computed.
+  - name: latitude extent (lat_min, lat_max)
+    unit: decimal degrees
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: two scalars, lat_min < lat_max; Southern hemisphere negative
+    notes: Controls solar declination and day length for ETo and biomass.
+  - name: water-supply mode
+    unit: categorical (rainfed | irrigated)
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: mode selector applied throughout the suitability chain
+    notes: Irrigated path removes the moisture limitation; irrigated yield >= rainfed yield.
+  - name: climate temporal mode
+    unit: categorical (monthly=12 | daily=365)
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: selector; monthly inputs are cubic-spline interpolated to daily
+    notes: Monthly mode triggers internal cubic-spline interpolation that can overshoot negative.
 outputs:
   primary:
-  - name: LAI
-    unit: unitless
-    format: ''
-    source: skill_md
-  - name: pet
+  - name: lgp
+    unit: days
+    description: Moisture-dependent Length of Growing Period from the reference-crop soil water balance.
+    validation_rank: 5
+    emitted_in: GeoTIFF raster (Module I)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against long-term-climatology LGP products (e.g. GAEZ); LGP is a derived classification,
+          not a measured field.
+      detrending_options:
+      - none
+  - name: thermal_zone
+    unit: class 1-12
+    description: Atmospheric thermal climate / thermal zone classification.
+    validation_rank: 6
+    emitted_in: GeoTIFF raster (Module I)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Categorical class agreement vs a reference AEZ/GAEZ zonation.
+      detrending_options:
+      - none
+  - name: pet_daily
     unit: mm/day
-    format: ''
-    source: skill_md
-  - name: yield
+    description: Atmospheric Penman-Monteith reference-crop evapotranspiration (ETo).
+    validation_rank: 4
+    emitted_in: GeoTIFF raster (Module I)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - magnitude_accuracy
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Physically plausible ETo is ~2-8 mm/day; >15 indicates an input-unit error rather than a true
+          field mismatch.
+      detrending_options:
+      - none
+  - name: yield_rain
     unit: kg/ha
-    format: ''
-    source: skill_md
-  - name: Temperature
-    unit: "\xB0C"
-    format: ''
-    source: skill_md
+    description: Rainfed maximum attainable yield (best of 365 planting dates).
+    validation_rank: 1
+    emitted_in: GeoTIFF raster (Module II)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Attainable (potential) yield is an upper envelope; observed farm yields sit below it, so expect
+          positive bias vs actuals.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/regional yield aggregates carry a technology trend a climate-only attainable-yield
+          model cannot reproduce; compare detrended trends or rankings, not inter-annual correlation.
+      detrending_options:
+      - none
+      - linear_residual
+      - decadal_mean
+  - name: yield_irr
+    unit: kg/ha
+    description: Irrigated crop maximum attainable yield (moisture limitation removed).
+    validation_rank: 2
+    emitted_in: GeoTIFF raster (Module II)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Irrigated attainable yield >= rainfed by construction; an upper-envelope quantity.
+      detrending_options:
+      - none
+  - name: terrain_yield
+    unit: kg/ha
+    description: Attainable yield after the full fc1..fc5 reduction chain (climate, agro-climatic, soil,
+      terrain).
+    validation_rank: 3
+    emitted_in: GeoTIFF raster (Module V)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Closest model output to observed potential; still an attainable (not actual) yield.
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Aggregate to admin units before comparison; unit is kg/ha (divide by 1000 for ton/ha).
+      detrending_options:
+      - none
+  - name: suitability_class
+    unit: class
+    description: Land suitability class derived from the constrained attainable yield / reduction factors
+      (crop suitability rating).
+    validation_rank: 7
+    emitted_in: GeoTIFF raster (Modules III-V)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Class-agreement vs reference GAEZ suitability maps; thresholds for class boundaries are framework-defined.
+      detrending_options:
+      - none
+  - name: net_revenue
+    unit: currency/ha
+    description: Net revenue per land pixel (clamped >= 0) from the crop economic break-even analysis.
+    validation_rank: 8
+    emitted_in: GeoTIFF raster (Module VI)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Depends on user-supplied cost/price points; not a model-physics quantity. Module VI expects
+          yield in ton/ha.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: All yields are NaN or unrealistically high (>1e6 kg/ha). ETo values
-    are extreme (>100 mm/day).
-  affected_output: "Temperature data is in Kelvin instead of Celsius. CMFD and MSWX\
-    \ store temperature in K. PyAEZ interprets 290 K as 290\xB0C, causing exponential\
-    \ vapor pressure overflow."
-  detection: "Temperature data is in Kelvin instead of Celsius. CMFD and MSWX store\
-    \ temperature in K. PyAEZ interprets 290 K as 290\xB0C, causing exponential vapor\
-    \ pressure overflow."
-  fix: "Convert temperature before input: temp_C = temp_K - 273.15. Verify: mean temperature\
-    \ should be -30 to +45\xB0C, not 240\u2013320."
+  symptom: All yields are NaN or unrealistically high (>1e6 kg/ha). ETo values are extreme (>100 mm/day).
+  diagnosis: Temperature data is in Kelvin instead of Celsius. CMFD and MSWX store temperature in K. PyAEZ
+    interprets 290 K as 290°C, causing exponential vapor pressure overflow.
+  remedy: 'Convert temperature before input: temp_C = temp_K - 273.15. Verify: mean temperature should
+    be -30 to +45°C, not 240–320.'
+  severity: critical
 - id: dt_002
-  description: LGP = 0 for all pixels. ETo is extremely large (>50 mm/day). P/PET
-    ratio near zero everywhere.
-  affected_output: "Relative humidity is in percentage (0\u2013100) instead of fraction\
-    \ (0\u20131). CMFD rhum variable is 0\u2013100%. PyAEZ uses RH directly in Penman-Monteith;\
-    \ values >1 produce extreme saturation deficit."
-  detection: "Relative humidity is in percentage (0\u2013100) instead of fraction\
-    \ (0\u20131). CMFD rhum variable is 0\u2013100%. PyAEZ uses RH directly in Penman-Monteith;\
-    \ values >1 produce extreme saturation deficit."
-  fix: "Divide by 100: rh_frac = rh_pct / 100.0. Verify: max value should be \u2264\
-    1.0."
+  symptom: LGP = 0 for all pixels. ETo is extremely large (>50 mm/day). P/PET ratio near zero everywhere.
+  diagnosis: Relative humidity is in percentage (0–100) instead of fraction (0–1). CMFD rhum variable
+    is 0–100%. PyAEZ uses RH directly in Penman-Monteith; values >1 produce extreme saturation deficit.
+  remedy: 'Divide by 100: rh_frac = rh_pct / 100.0. Verify: max value should be ≤1.0.'
+  severity: critical
 - id: dt_003
-  description: LGP = 365 everywhere. All areas classified as per-humid. P/PET >> 1
-    across entire domain.
-  affected_output: "Precipitation is in mm/month instead of mm/day. Monthly totals\
-    \ fed as daily rates make rainfall appear 28\u201331\xD7 too high."
-  detection: "Precipitation is in mm/month instead of mm/day. Monthly totals fed as\
-    \ daily rates make rainfall appear 28\u201331\xD7 too high."
-  fix: "Divide monthly totals by days per month: precip_daily[m] = precip_monthly[m]\
-    \ / days_in_month[m]. Verify: typical daily precip is 0\u201350 mm/day."
+  symptom: LGP = 365 everywhere. All areas classified as per-humid. P/PET >> 1 across entire domain.
+  diagnosis: Precipitation is in mm/month instead of mm/day. Monthly totals fed as daily rates make rainfall
+    appear 28–31× too high.
+  remedy: 'Divide monthly totals by days per month: precip_daily[m] = precip_monthly[m] / days_in_month[m].
+    Verify: typical daily precip is 0–50 mm/day.'
+  severity: critical
 - id: dt_004
-  description: Results vary wildly across pixels with no spatial coherence. Patterns
-    look like noise despite correct mean values.
-  affected_output: Climate 3D arrays have wrong axis order. Source data is (time,
-    lat, lon) but PyAEZ expects (lat, lon, time). Each pixel reads the wrong time
-    series.
-  detection: Climate 3D arrays have wrong axis order. Source data is (time, lat, lon)
-    but PyAEZ expects (lat, lon, time). Each pixel reads the wrong time series.
-  fix: 'Transpose arrays: data = np.transpose(data, (1, 2, 0)). Verify shape: last
-    dimension should be 12 (monthly) or 365 (daily).'
+  symptom: Results vary wildly across pixels with no spatial coherence. Patterns look like noise despite
+    correct mean values.
+  diagnosis: Climate 3D arrays have wrong axis order. Source data is (time, lat, lon) but PyAEZ expects
+    (lat, lon, time). Each pixel reads the wrong time series.
+  remedy: 'Transpose arrays: data = np.transpose(data, (1, 2, 0)). Verify shape: last dimension should
+    be 12 (monthly) or 365 (daily).'
+  severity: critical
 - id: dt_005
-  description: ETo has a strong north-south gradient that is inverted. Solar radiation
-    calculations produce wrong day lengths.
-  affected_output: lat_min and lat_max are swapped or set to wrong values. These define
-    the latitude grid used for solar declination and day length calculations.
-  detection: lat_min and lat_max are swapped or set to wrong values. These define
-    the latitude grid used for solar declination and day length calculations.
-  fix: Ensure lat_min < lat_max and both match the actual spatial extent of your input
-    data. For Southern hemisphere, use negative values.
+  symptom: ETo has a strong north-south gradient that is inverted. Solar radiation calculations produce
+    wrong day lengths.
+  diagnosis: lat_min and lat_max are swapped or set to wrong values. These define the latitude grid used
+    for solar declination and day length calculations.
+  remedy: Ensure lat_min < lat_max and both match the actual spatial extent of your input data. For Southern
+    hemisphere, use negative values.
+  severity: high
 - id: dt_006
-  description: ETo is ~20% higher than expected. Water stress (fc2) is slightly too
-    severe. LGP is slightly too short.
-  affected_output: Wind speed is at 10m reference height instead of 2m. CMFD and many
-    reanalysis products provide 10m wind. PyAEZ Penman-Monteith assumes 2m.
-  detection: Wind speed is at 10m reference height instead of 2m. CMFD and many reanalysis
-    products provide 10m wind. PyAEZ Penman-Monteith assumes 2m.
-  fix: 'Apply height correction: u2 = u10 * 4.87 / ln(67.8 * 10 - 5.42). The correction
-    factor is approximately 0.748.'
+  symptom: ETo is ~20% higher than expected. Water stress (fc2) is slightly too severe. LGP is slightly
+    too short.
+  diagnosis: Wind speed is at 10m reference height instead of 2m. CMFD and many reanalysis products provide
+    10m wind. PyAEZ Penman-Monteith assumes 2m.
+  remedy: 'Apply height correction: u2 = u10 * 4.87 / ln(67.8 * 10 - 5.42). The correction factor is approximately
+    0.748.'
+  severity: medium
 - id: dt_007
-  description: Negative precipitation on some days. Negative ETo for a few days. Negative
-    radiation values.
-  affected_output: Cubic spline interpolation from 12 monthly to 365 daily values
-    can produce negative overshoots, especially for variables with sharp seasonal
-    transitions.
-  detection: Cubic spline interpolation from 12 monthly to 365 daily values can produce
-    negative overshoots, especially for variables with sharp seasonal transitions.
-  fix: 'After interpolation, clamp values: precip = np.maximum(precip, 0). Or use
-    daily input data directly (daily=True mode).'
+  symptom: Negative precipitation on some days. Negative ETo for a few days. Negative radiation values.
+  diagnosis: Cubic spline interpolation from 12 monthly to 365 daily values can produce negative overshoots,
+    especially for variables with sharp seasonal transitions.
+  remedy: 'After interpolation, clamp values: precip = np.maximum(precip, 0). Or use daily input data
+    directly (daily=True mode).'
+  severity: medium
 - id: dt_008
-  description: Water stress factor (fc2) is too high or too low across all pixels
-    uniformly. Yields are insensitive to precipitation patterns.
-  affected_output: "Default soil water parameters Sa=100 mm/m and D=1.0 m are used\
-    \ instead of site-specific values. Sa\xD7D = available water = 100 mm, which may\
-    \ not match actual soil."
-  detection: "Default soil water parameters Sa=100 mm/m and D=1.0 m are used instead\
-    \ of site-specific values. Sa\xD7D = available water = 100 mm, which may not match\
-    \ actual soil."
-  fix: 'Provide spatially varying Sa from HWSD: sim.setSoilWaterParameters(Sa=sa_map,
-    pc=0.5). Typical Sa: sand=60, loam=140, clay=120 mm/m.'
+  symptom: Water stress factor (fc2) is too high or too low across all pixels uniformly. Yields are insensitive
+    to precipitation patterns.
+  diagnosis: Default soil water parameters Sa=100 mm/m and D=1.0 m are used instead of site-specific values.
+    Sa×D = available water = 100 mm, which may not match actual soil.
+  remedy: 'Provide spatially varying Sa from HWSD: sim.setSoilWaterParameters(Sa=sa_map, pc=0.5). Typical
+    Sa: sand=60, loam=140, clay=120 mm/m.'
+  severity: medium
 - id: dt_009
-  description: "Module II takes hours for a 100\xD7100 grid. CPU usage is 100% on\
-    \ single core. No Numba compilation messages at startup."
-  affected_output: "Numba JIT compiler is not installed or not functioning. PyAEZ's\
-    \ core loops (ETOCalc, BioMassCalc, CropWatCalc) fall back to pure Python, which\
-    \ is 10\u2013100\xD7 slower."
-  detection: "Numba JIT compiler is not installed or not functioning. PyAEZ's core\
-    \ loops (ETOCalc, BioMassCalc, CropWatCalc) fall back to pure Python, which is\
-    \ 10\u2013100\xD7 slower."
-  fix: 'Install Numba: pip install numba>=0.56 llvmlite>=0.40.1. Verify: python -c
-    ''import numba; print(numba.__version__)''. First run will be slow due to JIT
-    compilation.'
+  symptom: Module II takes hours for a 100×100 grid. CPU usage is 100% on single core. No Numba compilation
+    messages at startup.
+  diagnosis: Numba JIT compiler is not installed or not functioning. PyAEZ's core loops (ETOCalc, BioMassCalc,
+    CropWatCalc) fall back to pure Python, which is 10–100× slower.
+  remedy: 'Install Numba: pip install numba>=0.56 llvmlite>=0.40.1. Verify: python -c ''import numba;
+    print(numba.__version__)''. First run will be slow due to JIT compilation.'
+  severity: medium
 - id: dt_010
-  description: All outputs are zero or empty. No pixels are processed. Module runs
-    instantly without computation.
-  affected_output: Study area mask is set incorrectly. If mask_value matches all pixels
-    in the mask array, or mask and data arrays have different shapes, no pixels are
-    processed.
-  detection: Study area mask is set incorrectly. If mask_value matches all pixels
-    in the mask array, or mask and data arrays have different shapes, no pixels are
-    processed.
-  fix: 'Check: np.sum(mask != mask_value) should be >0. Verify mask.shape matches
-    climate array shape[:2]. mask_value=0 means 0-valued pixels are excluded.'
+  symptom: All outputs are zero or empty. No pixels are processed. Module runs instantly without computation.
+  diagnosis: Study area mask is set incorrectly. If mask_value matches all pixels in the mask array, or
+    mask and data arrays have different shapes, no pixels are processed.
+  remedy: 'Check: np.sum(mask != mask_value) should be >0. Verify mask.shape matches climate array shape[:2].
+    mask_value=0 means 0-valued pixels are excluded.'
+  severity: high
 - id: dt_011
-  description: KeyError or IndexError when reading crop parameters. Module II crashes
-    during readCropandCropCycleParameters().
-  affected_output: Crop parameter Excel file is missing required columns or the crop_name
-    does not match a sheet name in the Excel file.
-  detection: Crop parameter Excel file is missing required columns or the crop_name
-    does not match a sheet name in the Excel file.
-  fix: 'Verify Excel has all required columns: LAI, HI, legume, adaptability, min_cycle_length,
-    max_cycle_length, kc, yloss_f, est_yield, D1, D2, pc. Check sheet name matches
-    crop_name argument.'
+  symptom: KeyError or IndexError when reading crop parameters. Module II crashes during readCropandCropCycleParameters().
+  diagnosis: Crop parameter Excel file is missing required columns or the crop_name does not match a sheet
+    name in the Excel file.
+  remedy: 'Verify Excel has all required columns: LAI, HI, legume, adaptability, min_cycle_length, max_cycle_length,
+    kc, yloss_f, est_yield, D1, D2, pc. Check sheet name matches crop_name argument.'
+  severity: high
 - id: dt_012
-  description: "Biomass calculation produces very low values. Yield is ~10\xD7 lower\
-    \ than expected. Ac/Bc ratio is off."
-  affected_output: "Solar radiation is in MJ/m\xB2/day instead of W/m\xB2. PyAEZ expects\
-    \ W/m\xB2 and internally converts to cal/cm\xB2/day. MJ/m\xB2/day values (0\u2013\
-    30) are ~11.6\xD7 too low for W/m\xB2 input."
-  detection: "Solar radiation is in MJ/m\xB2/day instead of W/m\xB2. PyAEZ expects\
-    \ W/m\xB2 and internally converts to cal/cm\xB2/day. MJ/m\xB2/day values (0\u2013\
-    30) are ~11.6\xD7 too low for W/m\xB2 input."
-  fix: "Convert: srad_wm2 = srad_mjm2day * 1e6 / 86400 (or multiply by 11.574). Verify:\
-    \ typical range 50\u2013350 W/m\xB2."
+  symptom: Biomass calculation produces very low values. Yield is ~10× lower than expected. Ac/Bc ratio
+    is off.
+  diagnosis: Solar radiation is in MJ/m²/day instead of W/m². PyAEZ expects W/m² and internally converts
+    to cal/cm²/day. MJ/m²/day values (0–30) are ~11.6× too low for W/m² input.
+  remedy: 'Convert: srad_wm2 = srad_mjm2day * 1e6 / 86400 (or multiply by 11.574). Verify: typical range
+    50–350 W/m².'
+  severity: medium
 - id: dt_013
-  description: fc4 = 0 for most pixels. Soil-constrained yield drops to zero across
-    large areas.
-  affected_output: Soil mapping unit (SMU) integer codes in the raster do not match
-    the codes in the soil characteristics Excel. Common when HWSD versions differ
-    (v1 vs v2) or when raster was reclassified.
-  detection: Soil mapping unit (SMU) integer codes in the raster do not match the
-    codes in the soil characteristics Excel. Common when HWSD versions differ (v1
-    vs v2) or when raster was reclassified.
-  fix: 'Cross-check: unique values in soil_map raster must all appear in the SMU column
-    of the Excel files. Re-derive soil Excel from the same HWSD version as the raster.'
+  symptom: fc4 = 0 for most pixels. Soil-constrained yield drops to zero across large areas.
+  diagnosis: Soil mapping unit (SMU) integer codes in the raster do not match the codes in the soil characteristics
+    Excel. Common when HWSD versions differ (v1 vs v2) or when raster was reclassified.
+  remedy: 'Cross-check: unique values in soil_map raster must all appear in the SMU column of the Excel
+    files. Re-derive soil Excel from the same HWSD version as the raster.'
+  severity: critical
 - id: dt_014
-  description: fc5 is extremely low even for gentle terrain. Terrain reduction factor
-    penalizes flat areas.
-  affected_output: "Slope is in degrees instead of percent. 5\xB0 \u2248 8.7% slope,\
-    \ but PyAEZ reads 5 as 5% which may map to a different reduction class than intended."
-  detection: "Slope is in degrees instead of percent. 5\xB0 \u2248 8.7% slope, but\
-    \ PyAEZ reads 5 as 5% which may map to a different reduction class than intended."
-  fix: 'Convert: slope_pct = np.tan(np.radians(slope_deg)) * 100. Or verify slope
-    GeoTIFF metadata for units.'
+  symptom: fc5 is extremely low even for gentle terrain. Terrain reduction factor penalizes flat areas.
+  diagnosis: Slope is in degrees instead of percent. 5° ≈ 8.7% slope, but PyAEZ reads 5 as 5% which may
+    map to a different reduction class than intended.
+  remedy: 'Convert: slope_pct = np.tan(np.radians(slope_deg)) * 100. Or verify slope GeoTIFF metadata
+    for units.'
+  severity: medium
 - id: dt_015
-  description: "Economic analysis gives revenue values that seem 1000\xD7 too large\
-    \ or too small."
-  affected_output: Yield units mismatch between Module V output (kg/ha) and Module
-    VI input expectation (ton/ha). Module V outputs kg/ha but the economic function
-    expects ton/ha.
-  detection: Yield units mismatch between Module V output (kg/ha) and Module VI input
-    expectation (ton/ha). Module V outputs kg/ha but the economic function expects
-    ton/ha.
-  fix: 'Divide by 1000 before Module VI: yield_tons = terrain_yield_rain / 1000. Check
-    that cost and price units are consistent (per-ton or per-kg).'
+  symptom: Economic analysis gives revenue values that seem 1000× too large or too small.
+  diagnosis: Yield units mismatch between Module V output (kg/ha) and Module VI input expectation (ton/ha).
+    Module V outputs kg/ha but the economic function expects ton/ha.
+  remedy: 'Divide by 1000 before Module VI: yield_tons = terrain_yield_rain / 1000. Check that cost and
+    price units are consistent (per-ton or per-kg).'
+  severity: low
 - id: dt_016
-  description: All pixels have identical yield regardless of climate. Yield map is
-    spatially uniform.
-  affected_output: LGP indicators from Module I were not imported before simulation.
-    Without lgp/lgpt5/lgpt10, the crop simulation uses fallback values that produce
-    uniform results.
-  detection: LGP indicators from Module I were not imported before simulation. Without
-    lgp/lgpt5/lgpt10, the crop simulation uses fallback values that produce uniform
-    results.
-  fix: Call sim.ImportLGPandLGPT(lgp=lgp, lgpt5=lgpt5, lgpt10=lgpt10) BEFORE sim.simulateCropCycle().
+  symptom: All pixels have identical yield regardless of climate. Yield map is spatially uniform.
+  diagnosis: LGP indicators from Module I were not imported before simulation. Without lgp/lgpt5/lgpt10,
+    the crop simulation uses fallback values that produce uniform results.
+  remedy: Call sim.ImportLGPandLGPT(lgp=lgp, lgpt5=lgpt5, lgpt10=lgpt10) BEFORE sim.simulateCropCycle().
     These must come from Module I output.
+  severity: high
 - id: dt_017
-  description: LGP values are implausibly high in arid regions. Water balance never
-    depletes.
-  affected_output: Soil available moisture (Sa) or rooting depth (D) set too high,
-    giving large water storage buffer. Sa=100 mm/m with D=2m = 200mm buffer, which
-    can sustain crops through dry spells.
-  detection: Soil available moisture (Sa) or rooting depth (D) set too high, giving
-    large water storage buffer. Sa=100 mm/m with D=2m = 200mm buffer, which can sustain
-    crops through dry spells.
-  fix: "Use realistic values: Sa from HWSD (typically 50\u2013150 mm/m), D appropriate\
-    \ for the crop (0.5\u20131.5 m). For initial screening, Sa=100, D=1.0 is standard."
-unit_conversions: []
+  symptom: LGP values are implausibly high in arid regions. Water balance never depletes.
+  diagnosis: Soil available moisture (Sa) or rooting depth (D) set too high, giving large water storage
+    buffer. Sa=100 mm/m with D=2m = 200mm buffer, which can sustain crops through dry spells.
+  remedy: 'Use realistic values: Sa from HWSD (typically 50–150 mm/m), D appropriate for the crop (0.5–1.5
+    m). For initial screening, Sa=100, D=1.0 is standard.'
+  severity: medium

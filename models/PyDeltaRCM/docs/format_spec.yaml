@@ -1,146 +1,598 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "PyDeltaRCM"
-  version: "2.2.0"
-  domain: "Geomorphology / Delta Evolution / Sediment Transport"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  binary_type: "python_package"
-  cli_command: "pyDeltaRCM --config <config.yml>"
-  python_api: "pyDeltaRCM.DeltaModel"
-
+  name: PyDeltaRCM
+  language: python
+  implementation:
+    id: pydeltarcm
+    version: 2.2.0
+    provenance: Python; pyDeltaRCM package (Moodie, Hariharan, Barefoot, Passalacqua / UT Austin), numba
+      JIT-compiled routing kernels.
+  scientific_reference_version: DeltaRCM reduced-complexity delta morphodynamics (Liang, Voller & Paola
+    2015 Part 1 + Liang, Geleynse, Edmonds & Passalacqua 2015 Part 2), as realized by pyDeltaRCM 2.x
 inputs:
-  config_format: "YAML"
-  forcing:
-    - name: "u0"
-      unit: "m/s"
-      description: "Reference inlet velocity"
-      valid_range: [0.1, 5.0]
-      default: 1.0
-    - name: "h0"
-      unit: "m"
-      description: "Reference inlet depth"
-      valid_range: [0.5, 20.0]
-      default: 5.0
-    - name: "C0_percent"
-      unit: "%"
-      description: "Sediment concentration as percentage"
-      valid_range: [0.01, 1.0]
-      default: 0.1
-    - name: "f_bedload"
-      unit: "fraction"
-      description: "Fraction of sediment as bedload"
-      valid_range: [0.0, 1.0]
-      default: 0.5
-    - name: "SLR"
-      unit: "m/s"
-      description: "Sea level rise rate in model time"
-      valid_range: [0.0, 1.0e-6]
-      default: 0.0
-    - name: "subsidence_rate"
-      unit: "m/s"
-      description: "Maximum subsidence rate in model time"
-      valid_range: [0.0, 1.0e-6]
-      default: 2.0e-9
+  forcing: []
   parameters:
-    critical:
-      - name: "Length"
-        unit: "m"
-        valid_range: [500, 100000]
-        default: 5000
-        description: "Domain length (parallel to inlet)"
-      - name: "Width"
-        unit: "m"
-        valid_range: [500, 200000]
-        default: 10000
-        description: "Domain width (perpendicular to inlet)"
-      - name: "dx"
-        unit: "m"
-        valid_range: [5, 500]
-        default: 50
-        description: "Cell face length (grid resolution)"
-      - name: "N0_meters"
-        unit: "m"
-        valid_range: [50, 5000]
-        default: 250
-        description: "Inlet channel width"
-      - name: "S0"
-        unit: "dimensionless"
-        valid_range: [0.00001, 0.01]
-        default: 0.00015
-        description: "Characteristic topset slope"
-      - name: "Np_water"
-        unit: "count"
-        valid_range: [100, 50000]
-        default: 2000
-        description: "Number of water parcels per timestep"
-      - name: "Np_sed"
-        unit: "count"
-        valid_range: [100, 50000]
-        default: 2000
-        description: "Number of sediment parcels per timestep"
-      - name: "itermax"
-        unit: "count"
-        valid_range: [1, 20]
-        default: 3
-        description: "Water routing iterations per timestep"
-    stability:
-      - name: "gamma"
-        unit: "dimensionless"
-        formula: "g * S0 * dx / u0^2"
-        valid_range: [0.0, 0.1]
-        description: "Water routing weight coefficient; >0.1 causes instability"
-
+  - name: Length
+    unit: m
+    category: domain_geometry
+    source_kind: user_provided
+    model_input_format: YAML key in config (default.yml)
+    notes: Domain length parallel to inlet; default 5000 m. Must be in meters (km gives 1000x-too-small
+      domain).
+  - name: Width
+    unit: m
+    category: domain_geometry
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Domain width perpendicular to inlet; default 10000 m.
+  - name: dx
+    unit: m
+    category: domain_geometry
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Cell face length / grid resolution; default 50 m. Must satisfy 0 < dx < Length and dx < Width.
+  - name: L0_meters
+    unit: m
+    category: domain_geometry
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Inlet channel length; default 150 m. Realized inlet length L0 (in cells) is silently capped
+      at L//4.
+  - name: N0_meters
+    unit: m
+    category: domain_geometry
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Inlet channel width; default 250 m. Realized N0 (cells) is floored at 3 and capped at W//4;
+      N0_meters/dx >= 3 required.
+  - name: S0
+    unit: '-'
+    category: domain_geometry
+    source_kind: calibrated
+    model_input_format: YAML key
+    notes: Characteristic dimensionless topset slope; default 0.00015. Enters the stability coefficient
+      gamma = g*S0*dx/u0^2.
+  - name: u0
+    unit: m/s
+    category: inlet_flow
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Reference inlet velocity; default 1.0. Sets Qw0, gamma, and the velocity cap u_max = 2*u0.
+  - name: h0
+    unit: m
+    category: inlet_flow
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Reference inlet depth; default 5.0. Sets reference cell volume V0 = h0*dx^2 and dry_depth =
+      min(0.1, 0.1*h0).
+  - name: hb
+    unit: m
+    category: inlet_flow
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Basin depth; default null => hb = h0.
+  - name: C0_percent
+    unit: '%'
+    category: inlet_flow
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Inlet sediment concentration as volume percent; default 0.1. Internally C0 = C0_percent/100;
+      authoring as a fraction (0.001) makes supply 100x too low.
+  - name: f_bedload
+    unit: fraction (0-1)
+    category: sediment_partition
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Fraction of sediment routed as sand/bedload; default 0.5. Natural deltas 0.2-0.7; 0 or 1 gives
+      all-mud or all-sand.
+  - name: Np_water
+    unit: count
+    category: routing
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Number of water parcels routed per timestep; default 2000. Too low -> checkerboard/noisy free
+      surface.
+  - name: Np_sed
+    unit: count
+    category: routing
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Number of sediment parcels per timestep; default 2000. Split f_bedload sand / (1-f_bedload)
+      mud.
+  - name: itermax
+    unit: count
+    category: routing
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Water-routing iterations per timestep; default 3; >=3 for free-surface convergence.
+  - name: theta_water
+    unit: '-'
+    category: routing
+    source_kind: calibrated
+    model_input_format: YAML key
+    notes: Depth-weighting exponent in routing weights (R_i = 1/h_i^theta); default 1.0. Higher concentrates
+      flow into deep channels.
+  - name: coeff_theta_sand
+    unit: '-'
+    category: routing
+    source_kind: calibrated
+    model_input_format: YAML key
+    notes: Multiplier on theta_water for sand routing; default 2.0.
+  - name: coeff_theta_mud
+    unit: '-'
+    category: routing
+    source_kind: calibrated
+    model_input_format: YAML key
+    notes: Multiplier on theta_water for mud routing; default 1.0.
+  - name: beta
+    unit: '-'
+    category: sediment_thresholds
+    source_kind: calibrated
+    model_input_format: YAML key
+    notes: Exponent in sand transport capacity q_s_cap = q_s0 (u_loc/u0)^beta (Meyer-Peter & Muller 1948).
+  - name: coeff_U_ero_sand
+    unit: '-'
+    category: sediment_thresholds
+    source_kind: calibrated
+    model_input_format: YAML key
+    notes: Velocity-threshold coefficient (x u0) for sand erosion.
+  - name: coeff_U_ero_mud
+    unit: '-'
+    category: sediment_thresholds
+    source_kind: calibrated
+    model_input_format: YAML key
+    notes: Velocity-threshold coefficient (x u0) for mud erosion.
+  - name: coeff_U_dep_mud
+    unit: '-'
+    category: sediment_thresholds
+    source_kind: calibrated
+    model_input_format: YAML key
+    notes: Velocity-threshold coefficient (x u0) below which mud deposits.
+  - name: alpha
+    unit: '-'
+    category: sediment_thresholds
+    source_kind: calibrated
+    model_input_format: YAML key
+    notes: Topographic cross-stream diffusion coefficient (bank erodibility / cross-slope sediment flux).
+  - name: sed_lag
+    unit: '-'
+    category: sediment_thresholds
+    source_kind: calibrated
+    model_input_format: YAML key
+    notes: Lambda-style lag weighting on mud deposition.
+  - name: Csmooth / omega_sfc / omega_flow / Nsmooth
+    unit: '-'
+    category: numerical_smoothing
+    source_kind: calibrated
+    model_input_format: YAML keys
+    notes: Free-surface smoothing and flow under-relaxation coefficients controlling stability of the
+      reconstructed stage and flow fields.
+  - name: stepmax
+    unit: cells
+    category: numerical_smoothing
+    source_kind: default
+    model_input_format: YAML key (default null)
+    notes: Max parcel walk steps; when null defaults to 2*(L+W) cells.
+  initial_conditions:
+  - name: eta (initial bed)
+    unit: m
+    category: bed
+    source_kind: derived
+    model_input_format: constructed by init_tools.create_domain
+    notes: Initial bed elevation built from S0 topset slope, h0, and basin geometry; not a user-supplied
+      field.
+  - name: H_SL
+    unit: m
+    category: sea_level
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Initial sea-level elevation; default 0.0. Advances each timestep by SLR*dt.
+  - name: seed
+    unit: integer
+    category: rng
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Random seed (numba RNG, not numpy). If unset a random seed is generated and always logged;
+      required for reproducible runs.
+  - name: resume_checkpoint state
+    unit: '-'
+    category: resume
+    source_kind: user_provided
+    model_input_format: pyDeltaRCM_checkpoint.npz
+    notes: 'Optional restart: restores all grids, counters, H_SL, and RNG state from a prior checkpoint.'
+  boundary_conditions:
+  - name: SLR
+    unit: m/s (model time)
+    category: sea_level
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Sea-level-rise rate; default 0.0. Must be m/s of model time (convert mm/yr via /1000/(365.25*86400)*If);
+      realistic O(1e-12)-O(1e-9).
+  - name: toggle_subsidence
+    unit: boolean
+    category: subsidence
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Enables the radial subsidence sub-system; default false.
+  - name: subsidence_rate
+    unit: m/s (model time)
+    category: subsidence
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Maximum subsidence rate; default 2e-9. Same unit pitfall as SLR (mm/yr vs m/s).
+  - name: start_subsidence
+    unit: s (model time)
+    category: subsidence
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Model time at which subsidence begins; default 216000 s. Authoring in years starts subsidence
+      immediately.
+  - name: timesteps / target model time
+    unit: count or s
+    category: run_control
+    source_kind: user_provided
+    model_input_format: loop / Preprocessor time_years
+    notes: Run length; the run ends when elapsed model time >= requested time, so realized duration may
+      exceed the request.
+  - name: save_dt
+    unit: s (model time)
+    category: output_control
+    source_kind: user_provided
+    model_input_format: YAML key
+    notes: Output save interval in seconds of model time; default 86400 (=daily). save_dt=1 yields per-second
+      frames.
+  - name: save_<var>_grids flags
+    unit: boolean
+    category: output_control
+    source_kind: user_provided
+    model_input_format: YAML keys (save_eta_grids, save_depth_grids, ...)
+    notes: Select which fields are written; with none enabled the NetCDF has coordinates only.
 outputs:
-  format: "NetCDF4"
-  filename_pattern: "pyDeltaRCM_output.nc"
-  dimensions:
-    - name: "seconds"
-      description: "Model time in seconds (unlimited)"
-    - name: "x"
-      unit: "m"
-      description: "Grid x-coordinates (Length/dx cells)"
-    - name: "y"
-      unit: "m"
-      description: "Grid y-coordinates (Width/dx cells)"
   primary:
-    - name: "eta"
-      unit: "m"
-      dimensions: ["seconds", "x", "y"]
-      valid_range: [-50.0, 50.0]
-      description: "Bed elevation"
-    - name: "depth"
-      unit: "m"
-      dimensions: ["seconds", "x", "y"]
-      valid_range: [0.0, 50.0]
-      description: "Water depth"
-    - name: "stage"
-      unit: "m"
-      dimensions: ["seconds", "x", "y"]
-      valid_range: [-50.0, 50.0]
-      description: "Water surface elevation"
-    - name: "velocity"
-      unit: "m/s"
-      dimensions: ["seconds", "x", "y"]
-      valid_range: [0.0, 10.0]
-      description: "Flow velocity magnitude"
-    - name: "discharge"
-      unit: "m2/s"
-      dimensions: ["seconds", "x", "y"]
-      valid_range: [0.0, 1000.0]
-      description: "Water discharge magnitude"
-    - name: "sedflux"
-      unit: "m3/s"
-      dimensions: ["seconds", "x", "y"]
-      valid_range: [0.0, 100.0]
-      description: "Sediment flux"
-    - name: "sandfrac"
-      unit: "fraction"
-      dimensions: ["seconds", "x", "y"]
-      valid_range: [0.0, 1.0]
-      description: "Sand fraction"
-
+  - name: eta
+    unit: m
+    description: Bed (topographic) elevation field; the primary morphodynamic state defining delta planform
+      and topography.
+    validation_rank: 3
+    emitted_in: pyDeltaRCM_output.nc (save_eta_grids)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Stochastic parcel routing makes a single realization non-deterministic except under a fixed
+          seed; compare planform statistics/morphometrics rather than cell-by-cell elevation against a
+          natural or experimental delta.
+        - Model x-axis is downstream-oriented, not standard Cartesian; align orientation before comparison.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - Model time is bankfull-event time; map to real years via the intermittency factor before temporal
+          alignment.
+      detrending_options:
+      - none
+  - name: stage
+    unit: m
+    description: Water-surface elevation reconstructed from the weighted-random-walk free-surface scheme.
+    validation_rank: 2
+    emitted_in: pyDeltaRCM_output.nc (save_stage_grids)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Stage is a smoothed statistical reconstruction, not a momentum-conserving solution; treat as
+          a coarse free-surface proxy.
+      detrending_options:
+      - none
+  - name: depth
+    unit: m
+    description: Water flow depth, depth = max(stage - eta, 0).
+    validation_rank: 4
+    emitted_in: pyDeltaRCM_output.nc (save_depth_grids)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Cells below the dry_depth threshold (min(0.1, 0.1*h0)) are treated as dry; compare wet-cell
+          distributions, not absolute depths in shallow areas.
+      detrending_options:
+      - none
+  - name: velocity
+    unit: m/s
+    description: Water-flow velocity magnitude uw = sqrt(ux^2 + uy^2), clamped to u_max = 2*u0.
+    validation_rank: 5
+    emitted_in: pyDeltaRCM_output.nc (save_velocity_grids)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Velocity is hard-capped at 2*u0 by the flow limiter; peak velocities are not physically resolved.
+      detrending_options:
+      - none
+  - name: discharge
+    unit: m3/s
+    description: Water-discharge magnitude (CF long_name channel_water_flowing__volume_rate).
+    validation_rank: 1
+    emitted_in: pyDeltaRCM_output.nc (save_discharge_grids)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Discharge partitioning is meaningful for channel-network pattern comparison, not for absolute
+          gauged-discharge magnitude.
+        - The saved NetCDF discharge variable carries volume-rate units (m3/s, CF channel_water_flowing__volume_rate);
+          the model's internal qw field is per-unit-cell-width discharge (m2/s = sqrt(qx^2+qy^2)). Do
+          not conflate the two when comparing magnitudes.
+      detrending_options:
+      - none
+  - name: sedflux
+    unit: m3/s
+    description: Sediment flux field qs (combined sand + mud transport).
+    validation_rank: 6
+    emitted_in: pyDeltaRCM_output.nc (save_sedflux_grids)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Reduced-complexity transport (capacity for sand, threshold for mud) is phenomenological; suited
+          to pattern, not absolute load validation.
+      detrending_options:
+      - none
+  - name: sandfrac
+    unit: '-'
+    description: Surface bed sand fraction (0-1) from active-layer mixing during deposition.
+    validation_rank: 7
+    emitted_in: pyDeltaRCM_output.nc (save_sandfrac_grids)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Sand fraction is sensitive to the prescribed f_bedload partition; compare relative sand/mud
+          distribution patterns.
+      detrending_options:
+      - none
+  - name: strata_sand_frac
+    unit: '-'
+    description: Stratigraphic (subsurface) sand fraction recorded at each bed elevation over time; reconstructable
+      from saved eta + sandfrac surfaces.
+    validation_rank: 8
+    emitted_in: pyDeltaRCM_output.nc (stratigraphy) / reconstructed from eta + sandfrac
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Compares subsurface sand-body connectivity / stratigraphic architecture against cores or seismic
+          interpretation; statistical, not deterministic.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "gamma > 0.1 causes numerical instability — reduce dx, reduce S0, or increase u0"
-  - "SLR and subsidence_rate are in m/s of MODEL time, not real time — must convert via intermittency factor"
-  - "C0_percent is in %, not fraction — common mistake causes 100x sediment error"
-  - "f_bedload must be fraction 0-1, not percentage — crash if >1"
-  - "save_dt is in seconds of model time, not days"
+- id: dt_001
+  symptom: No delta formation after many timesteps. Sediment flux is negligible.
+  diagnosis: 'C0_percent specified as fraction (0.001) instead of percentage (0.1); pyDeltaRCM expects
+    sediment concentration as a volume percentage. C0_percent=0.1 means 0.1% by volume. If the user provides
+    a fraction (e.g., 0.001 meaning 0.1%), the concentration is 100x too low. Internally: C0 = C0_percent
+    / 10'
+  remedy: 'Use percentage value for C0_percent (e.g., 0.1 for 0.1% concentration); generate_yaml_config;
+    [''Check C0_percent in config — typical values are 0.01 to 1.0'', ''If using mg/L from literature,
+    convert: C0_percent = conc_mgL / (rho_sed * 1000) * 100'']; validate_inputs() in generate_yaml_config
+    checks C0'
+  severity: silent
+- id: dt_002
+  symptom: Sea level change is imperceptible or absurdly fast. Delta drowns in 1 timestep or SLR has zero
+    effect after thousands of timesteps.
+  diagnosis: SLR specified in mm/yr instead of m/s of model time; pyDeltaRCM expects SLR in meters per
+    second of model time. A value of 3 (mm/yr) passed directly as SLR means 3 m/s — the basin floods instantly.
+    Conversely, a correctly-computed value of ~5e-12 m/s is so small that it looks like zero if the user
+    e
+  remedy: 'Convert SLR from mm/yr to m/s using: SLR = mmyr / 1000 / (365.25*86400) * If; convert_parameters;
+    [''Check SLR value — should be O(1e-12) to O(1e-9) m/s for realistic rates'', ''Use convert_parameters.py
+    --slr <mm/yr> --If <factor>'']; convert_parameters.py handles this conversion automatically'
+  severity: silent
+- id: dt_003
+  symptom: Subsidence starts immediately or never starts. Unrealistic subsidence magnitude.
+  diagnosis: 'start_subsidence in years instead of seconds, or subsidence_rate in mm/yr instead of m/s;
+    start_subsidence expects seconds of model time. A value of 10 (years) is interpreted as 10 seconds
+    — subsidence starts almost immediately. The subsidence_rate has the same unit trap as SLR: must be
+    m/s of model'
+  remedy: 'Convert: start_subsidence = years * 365.25 * 86400. Rate same as SLR conversion.; convert_parameters;
+    [''start_subsidence should be O(1e5) to O(1e7) seconds for typical scenarios'', ''subsidence_rate
+    should be O(1e-12) to O(1e-8) m/s'']; generate_yaml_config accepts start_subsidence_years and converts'
+  severity: silent
+- id: dt_004
+  symptom: save_dt=1 produces millions of output frames. Or save_dt=86400 appears to never save.
+  diagnosis: save_dt confusion between seconds and days; save_dt is in seconds of model time. save_dt=1
+    saves every second of model time, creating enormous output files. save_dt=86400 saves every model
+    day (the default and usually reasonable). Users who think save_dt is in days will set save_dt=1 expecting
+    daily
+  remedy: 'Set save_dt in seconds. For daily output: save_dt=86400. For every 10 days: save_dt=864000.;
+    generate_yaml_config; [''Check output NetCDF time dimension — if it has millions of entries, save_dt
+    is too small'', ''Typical: save_dt = 86400 (1 day) to 864000 (10 days)'']; generate_yaml_config accepts
+    save_d'
+  severity: silent
+- id: dt_005
+  symptom: Domain is tiny (few cells) or enormous (millions of cells). Model crashes with memory error
+    or finishes in milliseconds.
+  diagnosis: 'Length/Width in km instead of meters, or dx in cm instead of meters; All spatial dimensions
+    are in meters. Length=5 (km intended) creates a 5m domain — only a few cells. Length=5000000 (cm intended)
+    creates a 100km domain. Grid cells = Length/dx × Width/dx. With Length=5000, Width=10000, dx=50: 100×'
+  remedy: Ensure all dimensions in meters. Grid should be 50-500 cells per side.; generate_yaml_config;
+    ['Check L = Length/dx and W = Width/dx — should be 50-500 for typical runs', 'If L*W > 1e6, consider
+    increasing dx']; validate_inputs checks Length/Width/dx ranges
+  severity: crash
+- id: dt_006
+  symptom: Water surface oscillates wildly. NaN values appear in stage/depth/velocity arrays. Model may
+    crash.
+  diagnosis: gamma parameter > 0.1 causes numerical instability in water routing; gamma = g * S0 * dx
+    / u0^2. When gamma > 0.1, the water routing weights become too sensitive to small elevation differences,
+    causing parcels to oscillate and producing unstable free surface estimates. This is the most common
+    source
+  remedy: 'Reduce gamma below 0.1 by: (1) reducing dx, (2) reducing S0, or (3) increasing u0; convert_parameters;
+    [''Print gamma: g * S0 * dx / u0^2'', ''If gamma > 0.1, try dx/2 first (doubles resolution but 4x
+    cells)'', ''Or reduce S0 if physically reasonable'']; validate_config checks gamma at startup; DeltaModel'
+  severity: crash
+- id: dt_007
+  symptom: Water surface is extremely noisy. Free surface shows checkerboard pattern.
+  diagnosis: 'Np_water too low for domain size — insufficient parcel coverage; With too few water parcels,
+    many cells receive no parcel visits during a water iteration. The free surface is only updated where
+    parcels visit, so gaps create a noisy, discontinuous surface. Rule of thumb: Np_water should be at
+    least e'
+  remedy: Increase Np_water. Default 2000 works for 100x200 grids. For larger grids, scale up.; generate_yaml_config;
+    ['If grid is larger than default (100x200), increase Np_water proportionally', 'Try 5000 for 200x400
+    grids, 10000 for 400x800']; Monitor sfc_visit array — cells with 0 visits are not being upd
+  severity: silent
+- id: dt_008
+  symptom: 'ValueError: dx must be positive and smaller than Length and Width parameters.'
+  diagnosis: 'dx is larger than Length or Width, or dx is zero/negative; The dx parameter must be positive
+    and smaller than both Length and Width. This commonly happens when dx is in a different unit than
+    Length/Width, or when the domain dimensions are accidentally very small.
+
+    ; [''model.__init__'', ''dx.setter'']'
+  remedy: 'Ensure dx < Length and dx < Width and dx > 0. All must be in meters.; generate_yaml_config;
+    [''Check units: Length, Width, and dx should all be in meters'', ''dx=50 with Length=5000 gives 100
+    cells — typical configuration'']; validate_config catches this before model init'
+  severity: crash
+- id: dt_009
+  symptom: 'ValueError: N0_meters must be a positive number. Or inlet is only 1-2 cells wide.'
+  diagnosis: N0_meters too small relative to dx, giving fewer than 3 inlet cells; The inlet channel must
+    be at least 3 cells wide (N0 = round(N0_meters/dx) >= 3). If N0_meters=100 and dx=50, N0=2 cells,
+    which is below minimum. The model clamps N0 to at least 3, but this may not match the intended physical
+    channe
+  remedy: 'Ensure N0_meters / dx >= 3. Either increase N0_meters or decrease dx.; generate_yaml_config;
+    [''Check: N0 = round(N0_meters / dx). Should be >= 5 for good resolution.'', ''N0_meters=250 with
+    dx=50 gives N0=5 — the default and usually adequate'']; validate_config checks N0_meters / dx'
+  severity: silent
+- id: dt_010
+  symptom: 'Warning: unused keys in YAML. Parameters have no effect on simulation.'
+  diagnosis: 'YAML key name is misspelled or is a Preprocessor-only keyword; pyDeltaRCM validates all
+    YAML keys against default.yml. Unknown keys are silently ignored with a warning. Common typos: ''length''
+    (should be ''Length''), ''width'' (should be ''Width''), ''seed'' vs ''random_seed''. Preprocessor
+    keywords (matrix, s'
+  remedy: 'Check YAML key names against pyDeltaRCM/default.yml for correct spelling and capitalization;
+    ; ["Keys are case-sensitive: ''Length'' not ''length''", ''For matrix/set/ensemble, use Preprocessor
+    class, not DeltaModel'']; Reference default.yml for all valid parameter names'
+  severity: silent
+- id: dt_011
+  symptom: 'TypeError: Input for <key> not of the right type in yaml configuration file.'
+  diagnosis: 'YAML value has wrong type (e.g., string where float expected); Each parameter has an expected
+    type defined in default.yml. For example, Length expects float or int, but a YAML entry like ''Length:
+    "5000"'' (with quotes) provides a string. Also, YAML may parse bare ''true''/''false'' as booleans,
+    and bare '
+  remedy: 'Remove quotes from numeric values. Use YAML-native types.; ; [''Numbers: Length: 5000 (no quotes)'',
+    ''Booleans: save_eta_grids: true (lowercase, no quotes)'', "Strings: out_dir: ''my_output'' (quotes
+    OK for strings)"]; YAML linting before running'
+  severity: crash
+- id: dt_012
+  symptom: Delta is all sand (sand_frac ≈ 1.0 everywhere) or all mud (sand_frac ≈ 0.0)
+  diagnosis: f_bedload set to 0 or 1, making all sediment one type; f_bedload controls the fraction of
+    input sediment that is sand (bedload). f_bedload=1.0 means 100% sand, 0.0 means 100% mud. Natural
+    deltas typically have f_bedload between 0.2 and 0.7. The sand fraction affects both the spatial pattern
+    (sand ne
+  remedy: 'Set f_bedload between 0.2 and 0.7 for realistic deltas. Default 0.5.; generate_yaml_config;
+    [''f_bedload=0.5 is the default and good for most cases'', ''Fine-grained systems (Mississippi): f_bedload
+    ≈ 0.2-0.3'', ''Coarse-grained systems (fan deltas): f_bedload ≈ 0.6-0.8'']; validate_inputs checks
+    f_bedloa'
+  severity: silent
+- id: dt_013
+  symptom: Delta grows extremely slowly. After 100+ timesteps, barely any land above sea level.
+  diagnosis: Sediment supply too low — C0_percent, u0, or h0 too small; Total sediment input per timestep
+    is dVs = 0.1 * N0^2 * h0 * dx^2. Total sediment discharge is Qs0 = Qw0 * C0 = u0 * h0 * N0 * dx *
+    (C0_percent/100). If these are very small, the delta grows slowly. Also, the timestep dt = dVs/Qs0,
+    so low Qs
+  remedy: 'Increase C0_percent (try 0.1-0.5) or increase u0/h0; generate_yaml_config; [''Check dVs and
+    Qs0 after model init'', ''A typical run needs 100-1000 timesteps for visible delta'', ''Increasing
+    C0_percent is the most direct way to speed up growth'']; Print dVs and dt after init to verify reasonable
+    sediment '
+  severity: silent
+- id: dt_014
+  symptom: Water only flows in a single narrow channel. No bifurcation or distributary formation.
+  diagnosis: theta_water or coeff_theta_sand too high — parcels are strongly attracted to deepest path;
+    The depth weighting exponent theta controls how strongly parcels are attracted to deeper cells. Higher
+    theta = more channelized flow. Default theta_water=1.0 with coeff_theta_sand=2.0 gives theta_sand=2.0.
+    Inc
+  remedy: 'Reduce theta_water toward 0.5 for more diffuse flow, or increase Np_water; generate_yaml_config;
+    [''Try theta_water: 0.5 for broader flow'', ''Also try increasing Np_water to 5000 for better coverage''];
+    Start with default values, which produce multi-channel deltas'
+  severity: silent
+- id: dt_015
+  symptom: NetCDF output file is empty (0 bytes) or has no data variables.
+  diagnosis: No save_*_grids flags enabled in configuration; pyDeltaRCM creates the NetCDF file but only
+    writes variables that have their corresponding save flag set to True. If all save_*_grids are False
+    (the default), the NetCDF file has only coordinate dimensions but no data. The model runs correctly
+    but prod
+  remedy: 'Enable at least one save flag: save_eta_grids: true; generate_yaml_config; ["Add ''save_eta_grids:
+    true'' to YAML config", ''For full analysis also enable save_depth_grids, save_velocity_grids''];
+    generate_yaml_config enables save_eta_grids by default'
+  severity: silent
+- id: dt_016
+  symptom: 'RuntimeError: Cannot update model, model already finalized!'
+  diagnosis: 'Calling delta.update() after delta.finalize(); Once finalize() is called, the NetCDF file
+    is closed and the model is marked as finalized. Any subsequent update() call raises RuntimeError.
+    This commonly happens in loops where finalize() is accidentally inside the loop body.
+
+    ; [''model.update'', ''model.'
+  remedy: 'Call finalize() only once, after all update() calls are complete; ; [''Move delta.finalize()
+    outside the for loop'', ''Use try/finally to ensure finalize is called even on error'']; Standard
+    pattern: for t in range(N): delta.update(); delta.finalize()'
+  severity: crash
+- id: dt_017
+  symptom: OSError or PermissionError when creating output directory or NetCDF file.
+  diagnosis: 'Output directory parent doesn''t exist, or permission denied, or disk full; pyDeltaRCM creates
+    out_dir if it doesn''t exist, but the parent directory must exist. Also, if clobber_netcdf=False (default)
+    and a previous pyDeltaRCM_output.nc exists, the new file creation may fail.
+
+    ; [''init_output_infrastr'
+  remedy: 'Ensure parent directory exists. Set clobber_netcdf: true to overwrite.; ; [''Create parent
+    directory: mkdir -p /path/to/parent/'', ''Or use clobber_netcdf: true in YAML'', ''Check disk space:
+    df -h'']; validate_config checks that parent directory exists'
+  severity: crash
+- id: dt_018
+  symptom: Preprocessor matrix/set/ensemble keywords ignored when using DeltaModel directly.
+  diagnosis: Advanced multi-job keywords passed to DeltaModel instead of Preprocessor; The matrix, set,
+    and ensemble YAML keywords are only supported by the Preprocessor class, not by DeltaModel directly.
+    Using DeltaModel with these keywords triggers a warning and the keywords are ignored — only a single
+    job run
+  remedy: 'Use Preprocessor class for multi-job configurations; ; ["pp = pyDeltaRCM.Preprocessor(''config.yml'');
+    pp.run_jobs()", ''Or from CLI: pyDeltaRCM --config config.yml'']; Use Preprocessor for any config
+    with matrix/set/ensemble keys'
+  severity: silent

@@ -1,0 +1,101 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
+package:
+  name: LPJ-GUESS
+  language: python
+  implementation:
+    id: lpj-guess-analytic
+    version: HydroCraft analytic reimplementation
+    provenance: Python; analytic reimplementation of LPJ-GUESS core flux processes (LUE GPP, Q10 Ra/Rh,
+      NEE), not the full LPJ-GUESS Fortran/C++ binary.
+  scientific_reference_version: LPJ-GUESS core flux physics (Smith et al. 2001/2014; Sitch et al. 2003;
+    Monteith 1972 LUE) — analytic reimplementation of GPP/Ra/Rh/NEE
+  binary:
+    path: KISSPATH_KI_ROOT/LPJ_GUESS/knowledge_infrastructure/tools/run_lpjguess.py
+    type: Python
+pipeline:
+  stages: []
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_lpjguess.py
+  - tools/convert_parameters_to_lpjguess.py
+  - tools/parse_output_lpjguess.py
+  - tools/run_lpjguess.py
+inputs:
+  forcing:
+  - name: SW_IN
+    unit: W/m2
+  - name: TA
+    unit: deg C
+  - name: VPD
+    unit: hPa
+  - name: P
+    unit: mm/day
+  parameters:
+  - name: LUE_max
+    unit: gC/MJ PAR
+  - name: T_opt
+    unit: deg C
+  - name: T_min
+    unit: deg C
+  - name: T_max
+    unit: deg C
+  - name: VPD_0
+    unit: hPa
+  - name: VPD_1
+    unit: hPa
+  - name: Ra_base
+    unit: fraction
+  - name: Ra_Q10
+    unit: dimensionless
+  - name: Ra_Tref
+    unit: deg C
+  - name: Rh_base
+    unit: umol/m2/s
+  - name: Rh_Q10
+    unit: dimensionless
+  - name: Rh_Tref
+    unit: deg C
+  - name: C_pool_scale
+    unit: dimensionless
+  - name: leaf_N
+    unit: gN/m2 leaf
+  - name: SLA
+    unit: m2/kgC
+  - name: Vcmax_base
+    unit: umol/m2/s
+  initial_conditions: []
+  boundary_conditions:
+  - name: vegmode
+    unit: categorical
+  - name: npatch
+    unit: count
+  - name: nyear_spinup
+    unit: years
+  - name: PFT selection
+    unit: categorical
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - GPP
+  - Ra
+  - Rh
+  - Reco
+  - NEE
+  - NPP
+  other: []
+validation:
+  tier: not_runnable
+  tier_justification: 'measured: NSE=0.902, KGE=0.908, R=0.975'
+  metrics:
+    best_nse: 0.9022
+    best_kge: 0.9081
+    best_r: 0.9746
+summary:
+  total_tools: 4
+  total_stage_docs: 0
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

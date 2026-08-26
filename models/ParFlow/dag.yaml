@@ -116,7 +116,7 @@ outputs:
   - var: "pressure_head"
     validation_rank: 1
     unit: "m of water"
-    description: "3D pressure-head field, the primary solved Richards state (per output timestep)."
+    description: "3D subsurface pressure-head field, the primary solved Richards state across vadose and saturated zones (per output timestep)."
     emitted_in: "<run>.out.press.*.pfb"
     observability:
       comparable_obs_shapes:
@@ -129,7 +129,7 @@ outputs:
   - var: "saturation"
     validation_rank: 2
     unit: "fraction 0-1"
-    description: "3D relative saturation field, derived from pressure head via the van Genuchten retention curve."
+    description: "3D subsurface relative saturation field, derived from pressure head via the van Genuchten retention curve."
     emitted_in: "<run>.out.satur.*.pfb"
     observability:
       comparable_obs_shapes:
@@ -520,3 +520,13 @@ safety:
       scope: "Solver mode"
       source: "ParFlow start.html section 2.1 (ParFlow Solvers); solver.c dispatcher"
       status: "adopted"
+
+medium_evidence:
+  - var: "pressure_head"
+    source: "dag.yaml"
+    quote: "3D variably-saturated subsurface flow (vadose + saturated zones in one Richards equation)"
+    note: "scope_in declares the Richards pressure-head state as subsurface."
+  - var: "saturation"
+    source: "dag.yaml"
+    quote: "3D variably-saturated subsurface flow (vadose + saturated zones in one Richards equation)"
+    note: "scope_in declares the van Genuchten saturation state as subsurface."

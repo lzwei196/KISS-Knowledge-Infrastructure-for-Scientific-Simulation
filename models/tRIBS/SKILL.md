@@ -1,14 +1,3 @@
----
-name: tribs
-description: >-
-  tRIBS 5.3.x. Covers Rainfall and snow interception by vegetation (Gray or Rutter
-  schemes); Infiltration and vertical unsaturated-zone soil-moisture redistribution;
-  Saturated-zone / groundwater water-table dynamics and topography-driven lateral
-  subsurface flow; Surface runoff generation by multiple mechanisms (infiltration-excess,
-  saturation-excess, perched…. Use when the task involves running, configuring,
-  calibrating or interpreting tRIBS.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,42 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (23 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_tribs_mesh.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_tribs_mesh.py --help` |
+| `tools/build_tribs_spatial_maps.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_tribs_spatial_maps.py --help` |
+| `tools/convert_met_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_met_forcing.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/parse_tribs_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_tribs_output.py --help` |
+| `tools/run_tribs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_tribs.py --help` |
+
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # tRIBS Knowledge Infrastructure
 
@@ -347,6 +372,47 @@ Voronoi-based spatial output at specified intervals (if OPTSPATIAL=1).
 
 ---
 
+## 7A. Output Description (sourced from dag.yaml)
+
+The dag is the model identity for observable outputs. If this section and
+`dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (the dag's rank-1 variable, used to judge this model):
+
+> `Discharge at outlet (Qstrm)` — Streamflow discharge at the basin outlet node(s) from kinematic-wave channel routing. (`m^3/s`)
+
+| Output variable (dag `var`) | Rank | Unit | Dag fact restated here |
+|-----------------------------|------|------|------------------------|
+| Discharge at outlet (Qstrm) | 1 | m^3/s | Streamflow discharge at the basin outlet node(s) from kinematic-wave channel routing. |
+| Channel stage (HLevel) | listed output | see output unit table | Channel stage (HLevel). |
+| Total evapotranspiration (EvpTtrs / EvapoTranspiration) | listed output | see output unit table | Total evapotranspiration (EvpTtrs / EvapoTranspiration). |
+| Depth to groundwater table (Nwt) | listed output | see output unit table | Depth to groundwater table (Nwt). |
+| Soil moisture (top 10 cm / root zone) | listed output | see output unit table | Soil moisture (top 10 cm / root zone). |
+| Snow water equivalent (SnWE; liqWEq/iceWEq) | listed output | see output unit table | Snow water equivalent (SnWE; liqWEq/iceWEq). |
+| Runoff-mechanism hydrograph separation (Hsrf, Sbsrf, Psrf, Satsrf) | listed output | see output unit table | Runoff-mechanism hydrograph separation (Hsrf, Sbsrf, Psrf, Satsrf). |
+| Mean areal precipitation and basin-averaged water-balance terms | listed output | see output unit table | Mean areal precipitation and basin-averaged water-balance terms. |
+
+---
+
+## 7B. Output Unit Table
+
+Units here restate the KI's output facts. For outputs where the extracted dag
+facts did not include a unit in this document, do not infer one from memory;
+read `dag.yaml` or the parsed output metadata before computing metrics.
+
+| Output variable | Unit stated by KI facts | Notes for post-processing |
+|-----------------|-------------------------|---------------------------|
+| Discharge at outlet (Qstrm) | m^3/s | Rank-1 output. Validate against observed outlet discharge using NSE and PBIAS convention bars. |
+| Channel stage (HLevel) | not restated in extracted facts | Validate only after confirming the unit from `dag.yaml` or output metadata. |
+| Total evapotranspiration (EvpTtrs / EvapoTranspiration) | not restated in extracted facts | Validate bias and RMSE only after confirming the output aggregation and unit. |
+| Depth to groundwater table (Nwt) | not restated in extracted facts | Confirm sign and unit before comparing to observations. |
+| Soil moisture (top 10 cm / root zone) | not restated in extracted facts | Confirm layer definition and unit before comparing to observations. |
+| Snow water equivalent (SnWE; liqWEq/iceWEq) | not restated in extracted facts | Confirm whether output is liquid, ice, or total SWE before comparing to observations. |
+| Runoff-mechanism hydrograph separation (Hsrf, Sbsrf, Psrf, Satsrf) | not restated in extracted facts | Confirm component definitions before summing or scoring. |
+| Mean areal precipitation and basin-averaged water-balance terms | not restated in extracted facts | Confirm accumulation period and unit before water-balance checks. |
+
+---
+
 ## 8. Tools Reference
 
 | Tool | Lines | Purpose |
@@ -433,6 +499,39 @@ cp template.in my_basin.in
 # 5. Parse output
 python parse_tribs_output.py --input output/ --output results/
 ```
+
+---
+
+## 11A. Validated Results (sourced from validation convention)
+
+This KI grades model skill against `docs/validation_convention.yaml`, not
+against intuition. The convention bars below are the sourced validation bars
+for dag variables that have extracted convention facts. Null convention bands
+are written as `no cited threshold`.
+
+### Headline validation target
+
+The rank-1 validation target is `Discharge at outlet (Qstrm)` in `m^3/s`.
+Its dag description is: Streamflow discharge at the basin outlet node(s) from
+kinematic-wave channel routing.
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation keys |
+|--------------|--------|-----------|-----------|------|--------------|---------------|
+| Discharge at outlet (Qstrm) | nse | maximize | >= 0.75 (moriasi2007, me2015) | >= 0.65 (moriasi2007, me2015) | >= 0.5 (moriasi2007, me2015) | moriasi2007, me2015 |
+| Discharge at outlet (Qstrm) | pbias | zero_centered | abs(PBIAS) <= 10.0 (moriasi2007, me2015) | abs(PBIAS) <= 15.0 (moriasi2007, me2015) | abs(PBIAS) <= 25.0 (moriasi2007, me2015) | moriasi2007, me2015 |
+
+### Other extracted convention bars
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation keys |
+|--------------|--------|-----------|-----------|------|--------------|---------------|
+| Channel stage (HLevel) | nse | maximize | >= 0.75 (moriasi2007, me2015) | >= 0.65 (moriasi2007, me2015) | >= 0.5 (moriasi2007, me2015) | moriasi2007, me2015 |
+| Channel stage (HLevel) | rmse | minimize | no cited threshold | no cited threshold | no cited threshold | none |
+| Total evapotranspiration (EvpTtrs / EvapoTranspiration) | bias | zero_centered | no cited threshold | no cited threshold | abs(BIAS) <= 10.0 (sivandran2013) | sivandran2013 |
+| Total evapotranspiration (EvpTtrs / EvapoTranspiration) | rmse | minimize | no cited threshold | no cited threshold | RMSE <= 50.0 (sivandran2013) | sivandran2013 |
+
+No achieved performance metrics or data replacement status values were included
+in the extracted KI facts for this edit. Do not invent them in `SKILL.md`; run
+the validation stage and then restate the generated results exactly.
 
 ---
 

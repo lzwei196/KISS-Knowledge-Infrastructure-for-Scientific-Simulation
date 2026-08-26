@@ -1,106 +1,127 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:58:34.520490'
-  domain: hydrology
   name: LISFLOOD
-  version: auto-generated
+  language: python
+  implementation:
+    id: hydrocraft-lisflood
+    version: lisflood-model v1.0.0 (hydrocraft-lisflood package)
+    provenance: Python; EC-JRC LISFLOOD on the PCRaster Environmental Modelling Framework with a Numba
+      JIT-compiled soil loop and channel routing.
+  scientific_reference_version: EC-JRC LISFLOOD (Van Der Knijff et al. 2010; Burek et al. 2013 Revised
+    User Manual, JRC EUR 26162 EN) — distributed rainfall-runoff core of EFAS/GloFAS
+  binary:
+    path: KISSPATH_HOME/miniconda3/envs/lisflood/bin/lisflood
+    type: work_dir
 pipeline:
-  stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  stages: []
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing.py
+  - tools/convert_soil_params.py
+  - tools/parse_output.py
+  - tools/run_lisflood.py
+inputs:
+  forcing:
+  - name: Precipitation (pr / P)
+    unit: mm/day
+  - name: Average air temperature (ta / T_avg)
+    unit: °C (or K when TemperatureInKelvin=1)
+  - name: Reference (potential) evapotranspiration (et0 / ET0)
+    unit: mm/day
+  - name: Potential open-water evaporation (e0 / EW0)
+    unit: mm/day
+  - name: Potential bare-soil evaporation (ES0)
+    unit: mm/day
+  parameters:
+  - name: Local Drainage Direction (Ldd)
+    unit: PCRaster flow-direction code 1-9 (5=pit/outlet)
+  - name: Channel geometry (ChanBottomWidth, ChanGrad, ChanLength, ChanManMaps, side slope, bankfull depth)
+    unit: m / m·m⁻¹ / m / s·m^(-1/3)
+  - name: Elevation and elevation standard deviation (Elevation, elvstd)
+    unit: m
+  - name: Saturated hydraulic conductivity per layer (MapKSat1/2/3 +Forest)
+    unit: mm/day
+  - name: Van Genuchten alpha per layer (MapGenuAlpha1/2/3 +Forest)
+    unit: 1/cm
+  - name: Van Genuchten pore-size index Lambda per layer (MapLambda1/2/3 +Forest)
+    unit: dimensionless (Lambda = N-1)
+  - name: Saturated and residual water content per layer (MapThetaSat / MapThetaRes 1/2/3 +Forest)
+    unit: m³/m³
+  - name: Soil layer depths (SoilDepth1/2/3)
+    unit: mm
+  - name: Land-use fraction maps (Forest / Sealed-impervious / Water / Irrigation / Other)
+    unit: 0-1 fraction
+  - name: Leaf Area Index (LAI) per land-use class
+    unit: m²/m² (monthly)
+  - name: Lake / reservoir property tables (TabLakeArea, TabTotStorage, outflow parameters)
+    unit: table
+  - name: UpperZoneTimeConstant
+    unit: days (range ~1-100)
+  - name: LowerZoneTimeConstant
+    unit: days (range ~10-5000)
+  - name: b_Xinanjiang
+    unit: dimensionless (range ~0.01-1.0)
+  - name: PowerPrefFlow
+    unit: dimensionless (range ~1.0-4.0)
+  - name: CalChanMan
+    unit: dimensionless multiplier (range ~0.1-10, default 1.0)
+  - name: SnowMeltCoef
+    unit: mm/°C/day (range ~1.0-10.0)
+  - name: GwPercValue
+    unit: mm/day (range ~0.1-10.0)
+  - name: GwLoss
+    unit: mm/day (range ~0.0-5.0, default 0)
+  - name: LZThreshold
+    unit: mm (range ~0-100)
+  - name: LakeMultiplier
+    unit: dimensionless (range ~0.1-10.0)
+  initial_conditions:
+  - name: Soil moisture per layer (ThetaInit1/2/3Value → theta1/2/3)
+    unit: m³/m³ (expected ~0.1-0.5)
+  - name: Upper-zone groundwater storage (UZInitValue → uz)
+    unit: mm (expected ~0-100)
+  - name: Lower-zone groundwater storage (LZInitValue → lz)
+    unit: mm (expected ~0-500)
+  - name: Snow cover / SWE per elevation zone (SnowCoverAInitValue +B,+C → snowcov)
+    unit: mm (expected ~0-2000)
+  - name: Channel storage and second (split-routing) channel storage
+    unit: m³
+  boundary_conditions:
+  - name: MaskMap (active domain mask)
+    unit: binary (1=active, 0=outside)
+  - name: Gauges / Outlets reporting points
+    unit: map
+  - name: Simulation time window (CalendarDayStart, StepStart, StepEnd, DtSec, DtSecChannel)
+    unit: calendar dates / step numbers / seconds
+  - name: Process-module switches (simulateLakes, simulateReservoirs, wateruse, SplitRouting, dynamicWave,
+      openwaterevapo)
+    unit: boolean
+  - name: Unit / IO control switches (TemperatureInKelvin, readNetcdfStack, writeNetcdfStack, writeNetcdf,
+      gridSizeUserDefined)
+    unit: boolean
+  - name: Initialisation / restart mode (InitLisflood)
+    unit: 0=warm start | 1=cold start (spin-up)
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - dis
+  - snowcov
+  - theta1/2/3
+  other:
+  - twb
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.881, KGE=0.935, R=0.940, 3 scorecard(s)'
+  metrics:
+    best_nse: 0.8809
+    best_kge: 0.9346
+    best_r: 0.9404
+summary:
+  total_tools: 4
+  total_stage_docs: 0
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

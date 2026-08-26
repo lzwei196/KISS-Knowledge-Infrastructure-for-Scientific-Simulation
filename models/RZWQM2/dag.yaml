@@ -375,7 +375,7 @@ outputs:
   - var: "no3_leaching"
     validation_rank: 5
     unit: "kg N/ha"
-    description: "Nitrate-N leached below the root zone and lost through tile drainage."
+    description: "Nitrate-N in subsurface soil-profile leachate below the root zone and in tile-drainage water."
     emitted_in: ".ana"
     observability:
       comparable_obs_shapes:
@@ -455,7 +455,7 @@ outputs:
   - var: "pesticide_loss"
     validation_rank: 9
     unit: "mass and concentration units (runoff and leachate)"
-    description: "Pesticide mass loss and concentration in runoff and leachate."
+    description: "Pesticide mass loss and concentration in surface runoff water and subsurface leachate."
     emitted_in: ".ana / chemistry output files"
     observability:
       comparable_obs_shapes:
@@ -653,3 +653,13 @@ safety:
       scope: "crop module coupling"
       source: "RZWQM2-DSSAT integration (Ma et al. 2012); dssatdrv crop-module driver in the compiled binary"
       status: "adopted"
+
+medium_evidence:
+  - var: "no3_leaching"
+    source: "dag.yaml"
+    quote: "Tile drainage and water-table fluctuation (pseudo 2-D lateral drainage)"
+    note: "scope_in declares the tile-drainage medium; the output is nitrate-N loss through root-zone leachate and tile-drainage water."
+  - var: "pesticide_loss"
+    source: "dag.yaml"
+    quote: "Pesticide equilibrium/Freundlich adsorption, degradation, dissociation (weak acids), runoff transfer and subsurface leaching."
+    note: "processes declare pesticide transfer in surface runoff and subsurface leaching, so the output description names runoff water and subsurface leachate."

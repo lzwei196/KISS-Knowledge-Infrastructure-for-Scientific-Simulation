@@ -1,0 +1,400 @@
+schema_version: 1
+model_id: PySWMM
+domain: hydrology
+generated_by: "Step-B validation convention agent (Codex GPT-5)"
+generated_at: 2026-08-14
+
+# Blocks are keyed by dag_variable, per the Step-B campaign instruction. Numeric bands are
+# cited only when a fetched full text supplied a threshold or an explicitly used study criterion.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  estrela2022:
+    doi: 10.3390/hydrology9050087
+    title: "Quality Assessment of Small Urban Catchments Stormwater Models: A New Approach"
+    venue: "Hydrology"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_hydrology9050087.txt
+  lee2012:
+    doi: 10.1007/s13762-012-0092-0
+    title: "Modelling runoff quantity and quality in tropical urban catchments using Storm Water Management Model"
+    venue: "International Journal of Environmental Science and Technology"
+    year: 2012
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13762-012-0092-0.txt
+  tem2013:
+    doi: 10.4314/wsa.v32i1.5240
+    title: "Stormwater quality calibration by SWMM: A case study in Northern Spain"
+    venue: "Water SA"
+    year: 2006
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.4314_wsa.v32i1.5240.txt
+  leutnant2021:
+    doi: 10.14796/jwmm.c463
+    title: "Field Evaluation of Discretized Model Setups for the Storm Water Management Model"
+    venue: "Journal of Water Management Modeling"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.14796_jwmm.c463.txt
+  farina2023:
+    doi: 10.1016/j.jhydrol.2023.129757
+    title: "A simplified approach for the hydrological simulation of urban drainage systems with SWMM"
+    venue: "Journal of Hydrology"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2023.129757.txt
+  rabori2023:
+    doi: 10.2166/wst.2023.277
+    title: "Urban flood numerical modeling and hydraulic performance of a drainage network"
+    venue: "Water Science and Technology"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_wst.2023.277.txt
+  rubinato2020:
+    doi: 10.1016/j.watres.2020.115669
+    title: "The potential of proxy water level measurements for calibrating urban pluvial flood models"
+    venue: "Water Research"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.watres.2020.115669.txt
+  wu2014:
+    doi: 10.1002/2013WR014710
+    title: "Real-time global flood estimation using satellite-based precipitation and a coupled land surface and routing model"
+    venue: "Water Resources Research"
+    year: 2014
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2013wr014710.txt
+
+validation:
+  - dag_variable: runoff_rate
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 watershed-scale flow PEC; Estrela 2022 notes urban drainage NSE is commonly 0.5-0.9."
+        cites: [moriasi2015, estrela2022]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 flow PBIAS tiers; Lee 2012 separately used average runoff-quantity RE within +/-10% and ARE <15% as good calibration."
+        cites: [moriasi2015, lee2012]
+    secondary_metrics:
+      - metric: nof
+        direction: minimize
+        status: supportive
+        ceiling_reason: "SWMM runoff-quantity validation has also used normalized objective function; Lee 2012 says values between 0.0 and 1.0 are acceptable when site-specific data are available."
+        cites: [lee2012]
+    validated_when: "NSE > 0.50 and |PBIAS| <= 15% for the subcatchment runoff hydrograph, with gauge/drainage-area support."
+    evidence_strength: strong
+    confidence: 0.80
+    notes: >-
+      Moriasi 2015 states flow simulations are satisfactory at daily/monthly/annual scale when NSE > 0.50 and
+      PBIAS <= +/-15%; Estrela 2022 reproduces the urban-drainage use of NSE > 0.50 satisfactory and reports
+      urban drainage calibration values commonly between 0.5 and 0.9. Lee 2012 validates SWMM runoff depth
+      and peak flow using RE, ARE, NOF, and NSC, with validation NSC values near 1 for runoff quantity.
+
+  - dag_variable: infiltration_loss
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a numeric validation threshold for directly observed SWMM infiltration-loss rate."
+        cites: []
+    secondary_metrics:
+      - metric: runoff_nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Infiltration parameters are normally constrained through runoff-depth and peak-flow response, not direct infiltration-loss observations."
+        cites: [lee2012]
+    validated_when: "UNRESOLVED - direct infiltration-loss validation needs site infiltration observations or a water-balance study; runoff hydrograph skill alone is only indirect support."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      The coverage check did not find an infiltration-loss-specific convention. Lee 2012 states infiltration loss
+      is estimated inside SWMM and identifies imperviousness, width, roughness, depression storage, and related
+      parameters through runoff depth and peak-flow sensitivity; it does not provide a direct infiltration-loss NSE band.
+
+  - dag_variable: node_invert_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred from hydrologic flow NSE tiers and supported by a sewer-depth validation study using NSE >0.50."
+        cites: [moriasi2015, rabori2023]
+    secondary_metrics:
+      - metric: rmse_percent
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Rabori 2023 used RMSE for observed sewer depths and reported validation RMSE of 7% as satisfactory, but this is a single-study criterion rather than a general depth tier."
+        cites: [rabori2023]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Rubinato 2020 calibrated pluvial flood models directly against water-level sensor RMSE, showing RMSE is the common absolute-error measure when depth sensors exist."
+        cites: [rubinato2020]
+    validated_when: "NSE > 0.50 against a co-located node water-depth/level sensor; RMSE should be reported but has no general fetched depth band."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: >-
+      Rabori 2023 says validation NSE >0.50, R2 about 0.63, RMSE 7%, and PBIAS 10% indicated good and
+      satisfactory fit for observed sewer depths. Moriasi 2015 supplies the transferable NSE flow PEC; depth
+      transfer lowers confidence.
+
+  - dag_variable: node_total_inflow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Hydrograph-flow convention transferred to node inflow when a node gauge represents total inflow."
+        cites: [moriasi2015, estrela2022]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 flow PBIAS tiers."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "SWMM/urban drainage papers co-report RMSE or normalized RMSE, but no general fetched absolute RMSE band exists across gauges and units."
+        cites: [estrela2022, rubinato2020]
+    validated_when: "NSE > 0.50 and |PBIAS| <= 15% for a co-located node inflow hydrograph."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      This uses the flow hydrograph convention because node_total_inflow is a flow-rate time series. Estrela 2022
+      emphasizes NSE, KGE, and error statistics for urban drainage time-series comparison and reproduces
+      Moriasi-style flow tiers.
+
+  - dag_variable: node_flooding
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 flow PBIAS; overflow-rate-specific tiers were not found."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Flooding overflow rate is intermittent; timing and event occurrence should be checked alongside volume bias."
+        cites: [estrela2022]
+    validated_when: "|PBIAS| <= 15% for overflow volume/rate where measured; also inspect event timing because the fetched literature does not provide an overflow-rate-specific tier."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The dag determining metric is PBIAS, which matches the magnitude/volume character of node overflow.
+      The band is a cautious transfer from flow PBIAS conventions; no fetched paper provided a SWMM node
+      flooding-rate validation threshold.
+
+  - dag_variable: node_flooding
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched urban node-flooding paper gave a numeric CSI pass threshold."
+        cites: []
+    secondary_metrics:
+      - metric: pod
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Flood-detection studies report POD/FAR/CSI contingency metrics, but the fetched flood paper reports skill values without a universal pass tier."
+        cites: [wu2014]
+      - metric: far
+        direction: minimize
+        status: supportive
+        ceiling_reason: "False alarms are part of the same contingency-table convention for event detection."
+        cites: [wu2014]
+    validated_when: "UNRESOLVED - report CSI/POD/FAR for flooded/not-flooded node events, but do not auto-pass on CSI without a fetched node-event threshold."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      Wu 2014 defines POD, FAR, and CSI for flood detection and reports higher CSI for longer events, but it
+      does not define satisfactory/good CSI tiers. The first OA flood-threshold candidate fetch failed and is
+      listed under deferred_paywalled.
+
+  - dag_variable: link_flow_rate
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Flow hydrograph convention for conduit/structure link gauges."
+        cites: [moriasi2015, estrela2022]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 flow PBIAS tiers."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Absolute RMSE depends on pipe size and flow units; use it as a diagnostic alongside NSE/PBIAS."
+        cites: [estrela2022]
+    validated_when: "NSE > 0.50 and |PBIAS| <= 15% for the link flow-rate hydrograph."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Link flow rate is judged as a flow hydrograph. Estrela 2022 states NSE, KGE, and error statistics are
+      commonly used to compare urban-drainage time series and reproduces Moriasi flow thresholds.
+
+  - dag_variable: link_flow_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred from flow NSE tiers and supported by urban drainage depth validation using NSE >0.50."
+        cites: [moriasi2015, rabori2023]
+    secondary_metrics:
+      - metric: rmse_percent
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Rabori 2023 used RMSE percent for depth validation and reported RMSE 7% during validation."
+        cites: [rabori2023]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Water-level sensor calibration commonly minimizes RMSE when direct depth sensors are available."
+        cites: [rubinato2020]
+    validated_when: "NSE > 0.50 against a co-located conduit/channel depth sensor; report RMSE in depth units or percent."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      This is weaker than flow-rate validation because fetched papers provide only a single urban drainage
+      depth criterion and general hydrology NSE transfer.
+
+  - dag_variable: total_outflow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Outlet hydrograph flow convention."
+        cites: [moriasi2015, estrela2022]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 flow PBIAS tiers; Temprano 2006 used 10% runoff-volume difference as a SWMM hydraulic calibration aim."
+        cites: [moriasi2015, tem2013]
+    secondary_metrics:
+      - metric: peak_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "SWMM event calibration often also checks peak flow and timing; Temprano 2006 set peak/minimal flow difference of 30% and base-time difference of ten minutes as study aims."
+        cites: [tem2013]
+    validated_when: "NSE > 0.50 and |PBIAS| <= 15% for the system/outfall discharge hydrograph."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Total outflow is the clearest match to watershed/urban outlet flow conventions. Temprano 2006 reports
+      SWMM hydraulic validation with only 4% volume difference and uses 10% runoff-volume difference as a
+      calibration aim, corroborating the magnitude-accuracy requirement.
+
+  - dag_variable: runoff_error
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The <5%/<1% continuity-error rule appears in the KI/DAG, but no fetched paper established it as a numeric validation convention."
+        cites: []
+    secondary_metrics:
+      - metric: continuity_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Leutnant 2021 reports SWMM continuity error as a mass-balance diagnostic and shows discretized layouts returning 0% continuity error."
+        cites: [leutnant2021]
+    validated_when: "UNRESOLVED - treat as an internal mass-balance diagnostic; do not auto-pass without a fetched continuity-error threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The DAG says accept <5% and ideally <1%, but the honesty rule does not allow that uncited KI rule to
+      become a numeric band. Leutnant 2021 supports reporting continuity error but not a general pass tier.
+
+  - dag_variable: flow_routing_error
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The <5%/<1% routing-continuity rule is documented locally but was not found in a fetched paper."
+        cites: []
+    secondary_metrics:
+      - metric: continuity_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Leutnant 2021 links high flow-continuity error to SWMM discretization choices and reports 0% continuity error for alternative layouts."
+        cites: [leutnant2021]
+    validated_when: "UNRESOLVED - treat as an internal routing mass-balance diagnostic; do not auto-pass without a fetched continuity-error threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Leutnant 2021 says the traditional layout disagreement was reflected in continuity error more than
+      +/-4.5%, while alternative spatial discretization returned 0%; this is evidence for the diagnostic but
+      not a general validation threshold.
+
+deferred_paywalled:
+  - ref: "A first collective validation of global fluvial flood models for major floods in Nigeria and Mozambique"
+    doi: 10.1088/1748-9326/aae014
+    needed_for: [node_flooding]
+  - ref: "Assessment of the SWMM model uncertainties within the GLUE framework for a high-resolution urban sewershed"
+    doi: 10.1002/hyp.9869
+    needed_for: [link_flow_rate, node_total_inflow, total_outflow, node_invert_depth]
+  - ref: "Sensitivity analysis of permeable pavement hydrological modelling in the Storm Water Management Model"
+    doi: 10.1016/j.jhydrol.2021.126525
+    needed_for: [infiltration_loss, runoff_rate]
+  - ref: "Automatic calibration of the U.S. EPA SWMM model for a large urban catchment"
+    doi: "10.1061/(asce)0733-9429(2008)134:4(466"
+    needed_for: [runoff_rate, link_flow_rate, total_outflow]

@@ -1,3 +1,13 @@
+# ========================================================================
+# Pywr Diagnostic Triplets
+# ========================================================================
+# 15 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+
+# Comments preserved from the previous file:
 # ============================================================================
 # Diagnostic Triplets — Pywr Knowledge Infrastructure
 # ============================================================================
@@ -16,477 +26,507 @@
 #   warning  — cosmetic or non-critical
 #   silent   — no error shown, but output is wrong
 # ============================================================================
-
-triplets:
-
   # --- dt_pywr_001: GLPK not found ---
-  - id: dt_pywr_001
-    stage: "s1_installation"
-    failure_domain: "environment"
-    symptom:
-      description: "Pywr raises an error during model creation or run about missing GLPK solver. Error may mention 'No solver found' or 'glpk' not available."
-      error_pattern: "No solver found|glpk.*not found|ImportError.*glpk|Could not find.*solver"
-      detection_method: "log_match"
-    diagnosis:
-      root_cause: "GLPK (GNU Linear Programming Kit) is not installed or not accessible. Pywr requires GLPK as its LP solver backend."
-      explanation: >
-        Pywr uses linear programming to optimally allocate water at each timestep.
-        The GLPK solver is the default and most common backend. Without it, Pywr
-        cannot solve the allocation problem. GLPK is a C library that must be installed
-        at the system level (not just pip install). On Ubuntu: apt-get install libglpk-dev.
-        On conda: conda install glpk.
-      affected_components:
-        - "Pywr solver"
-        - "All model runs"
-    remedy:
-      action: "Install GLPK system library."
-      tool_to_run: "verify_pywr_installation"
-      manual_steps:
-        - "Ubuntu/Debian: sudo apt-get install libglpk-dev glpk-utils"
-        - "conda: conda install -c conda-forge glpk"
-        - "macOS: brew install glpk"
-        - "Verify: python -c \"from pywr.model import Model; m = Model(); print('OK')\""
-      prevention: "Include GLPK in system requirements. Test with verify_pywr_installation before any model run."
-    severity: "fatal"
-    cross_references: []
-
   # --- dt_pywr_002: JSON schema error ---
-  - id: dt_pywr_002
-    stage: "s7_assembly"
-    failure_domain: "parameter_format"
-    symptom:
-      description: "Pywr raises KeyError, TypeError, or 'unknown node type' when loading model JSON. Model.load() fails during parsing."
-      error_pattern: "KeyError|unknown.*type|TypeError.*unexpected|Failed to load"
-      detection_method: "log_match"
-    diagnosis:
-      root_cause: "Model JSON has invalid structure: misspelled node type, missing required field, or wrong parameter format. Pywr node types are case-sensitive (e.g., 'storage' not 'Storage')."
-      explanation: >
-        Pywr JSON models have strict schema requirements. Node types must be lowercase
-        (input, output, link, storage, catchment). Parameter types are also specific
-        (monthlyprofile, constant, dataframe). Missing required fields like 'name' or
-        'type' cause immediate parse failure. The error message from Pywr is often
-        cryptic (generic KeyError).
-      affected_components:
-        - "Model JSON structure"
-        - "Node definitions"
-        - "Parameter definitions"
-    remedy:
-      action: "Fix JSON structure. Use assemble_pywr_model.py which generates correct schema."
-      tool_to_run: "assemble_pywr_model"
-      manual_steps:
-        - "Node types must be lowercase: input, output, link, storage, catchment"
-        - "Every node must have 'name' and 'type' fields"
-        - "Parameter types: constant, monthlyprofile, dataframe, controlcurve"
-        - "Use assemble_pywr_model.py --validate to check structure before loading"
-      prevention: "Always use assemble_pywr_model.py to generate model JSON. Never hand-edit without validation."
-    severity: "fatal"
-    cross_references: ["dt_pywr_007"]
-
   # --- dt_pywr_003: Edge references non-existent node ---
-  - id: dt_pywr_003
-    stage: "s7_assembly"
-    failure_domain: "parameter_format"
-    symptom:
-      description: "Pywr raises error about an edge connecting to a node that does not exist. Error mentions 'Node not found' or 'KeyError' with a node name."
-      error_pattern: "Node.*not found|KeyError.*node|no node named"
-      detection_method: "log_match"
-    diagnosis:
-      root_cause: "An edge in the 'edges' array references a node name that is not defined in the 'nodes' array. Typically a typo or inconsistent naming between node and edge definitions."
-      explanation: >
-        Pywr edges are defined as [source_name, target_name] where both names must
-        match existing node names exactly (case-sensitive). If a demand node was
-        removed but its edge was not, or if the node was renamed without updating
-        edges, this error occurs.
-      affected_components:
-        - "edges array"
-        - "nodes array"
-    remedy:
-      action: "Ensure all edge endpoints exist in the nodes array."
-      tool_to_run: "assemble_pywr_model"
-      manual_steps:
-        - "List all unique names in edges: set(name for edge in edges for name in edge)"
-        - "List all node names: set(n['name'] for n in nodes)"
-        - "Find difference: edge_names - node_names = orphan references"
-        - "Fix by adding missing nodes or correcting edge references"
-      prevention: "assemble_pywr_model.py validates edge-node consistency automatically."
-    severity: "fatal"
-    cross_references: ["dt_pywr_002"]
-
   # --- dt_pywr_004: Dataframe CSV path not found ---
-  - id: dt_pywr_004
-    stage: "s8_execution"
-    failure_domain: "path_resolution"
-    symptom:
-      description: "Pywr raises FileNotFoundError or 'No such file' when loading a dataframe parameter that references a CSV file via 'url' field."
-      error_pattern: "FileNotFoundError|No such file|cannot open.*csv"
-      detection_method: "log_match"
-    diagnosis:
-      root_cause: "The 'url' field in a dataframe parameter uses a relative path that is resolved relative to the model JSON file location, not the current working directory."
-      explanation: >
-        Pywr resolves dataframe 'url' paths relative to the JSON model file's directory.
-        If the model JSON is at /outputs/model.json and the url is 'inflow.csv', Pywr
-        looks for /outputs/inflow.csv. If the CSV is actually at /results/inflow.csv,
-        the load fails. Using absolute paths avoids this issue.
-      affected_components:
-        - "Dataframe parameters"
-        - "Inflow CSV"
-    remedy:
-      action: "Use absolute paths in dataframe url fields."
-      tool_to_run: "assemble_pywr_model"
-      manual_steps:
-        - "Convert all 'url' fields to absolute paths"
-        - "Or ensure CSV files are in the same directory as model.json"
-        - "Or use os.path.abspath() when generating model JSON"
-      prevention: "assemble_pywr_model.py always writes absolute paths for url fields."
-    severity: "fatal"
-    cross_references: []
-
   # --- dt_pywr_005: Inflow all zeros ---
-  - id: dt_pywr_005
-    stage: "s4_inflow"
-    failure_domain: "silent_error"
-    symptom:
-      description: "Pywr model runs but reservoir never fills. Storage stays at initial or decreases monotonically. Inflow CSV has all zeros or near-zero values."
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "Wrong upstream cells selected in convert_vic_to_inflow.py. Either (a) VIC flux files not found for the coordinates, (b) wrong coordinate format in filenames, or (c) all cells are downstream of the dam."
-      explanation: >
-        convert_vic_to_inflow.py searches for VIC flux files matching the pattern
-        prefix_LAT_LON.txt. If the latitude/longitude formatting (decimal places,
-        positive/negative) does not match the actual filenames, no files are found
-        and the cell is skipped. The tool reports cells_missing in the summary but
-        the model will still run with zero inflow, producing meaningless results.
-        Always check cells_found > 0 and cells_missing is small.
-      affected_components:
-        - "VIC flux file matching"
-        - "Upstream cell identification"
-    remedy:
-      action: "Check VIC flux filename format and upstream cell count."
-      tool_to_run: "convert_vic_to_inflow"
-      manual_steps:
-        - "ls VIC result directory to see actual filename format"
-        - "Check cells_found in tool output: should be >> 0"
-        - "If cells_missing == cells_total: filename format mismatch"
-        - "Try --flux_prefix to override auto-detected prefix"
-        - "Try --method all to include all basin cells"
-      prevention: "Always check cells_found > 0 and mean_inflow_m3s > 0 in tool output before proceeding."
-    severity: "silent"
-    cross_references: ["dt_pywr_015"]
-
   # --- dt_pywr_006: Storage oscillates wildly ---
-  - id: dt_pywr_006
-    stage: "s8_execution"
-    failure_domain: "silent_error"
-    symptom:
-      description: "Storage volume oscillates between min_volume and max_volume every few timesteps. Release is either 0 or maximum. Behavior looks unrealistic."
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "Control curve parameters are not properly connected to storage node costs. Without a ControlCurveParameter linking storage level to costs, the LP solver just fills and empties the reservoir without smooth regulation."
-      explanation: >
-        Pywr uses cost-based optimization. A storage node with constant cost=-500
-        will always prefer to fill. Without a control curve that changes the cost
-        based on storage level (negative below target, positive above target),
-        the reservoir either fills completely (high inflow) or empties completely
-        (demands exceed inflow) with no intermediate behavior. The control curve
-        creates a 'pull' toward the target level.
-      affected_components:
-        - "Storage node cost parameter"
-        - "ControlCurveParameter"
-    remedy:
-      action: "Implement ControlCurveParameter linking storage to release cost."
-      tool_to_run: "create_operating_rules"
-      manual_steps:
-        - "Define a ControlCurveParameter referencing the storage node"
-        - "Set above_curve_cost > 0 (prefer releasing when above target)"
-        - "Set below_curve_cost < 0 (prefer storing when below target)"
-        - "The monthly control curve from create_operating_rules provides targets"
-      prevention: "Always use operating rules with the storage node, not just a constant cost."
-    severity: "degraded"
-    cross_references: ["dt_pywr_002"]
-
   # --- dt_pywr_007: Parameter type not recognized ---
-  - id: dt_pywr_007
-    stage: "s7_assembly"
-    failure_domain: "parameter_format"
-    symptom:
-      description: "Pywr raises error about unknown parameter type during model load. Error mentions the parameter name and 'type' field."
-      error_pattern: "Unknown parameter type|No parameter class found|cannot create parameter"
-      detection_method: "log_match"
-    diagnosis:
-      root_cause: "Parameter 'type' field uses wrong case or spelling. Pywr parameter types are case-sensitive and specific: 'monthlyprofile' (not 'MonthlyProfile'), 'constant' (not 'Constant')."
-      explanation: >
-        Common Pywr parameter types:
-        - constant: single scalar value
-        - monthlyprofile: 12 monthly values
-        - dailyprofile: 366 daily values
-        - dataframe: timeseries from CSV
-        - controlcurve: varies cost based on storage level
-        - aggregated: combination of parameters
-        All must be lowercase in the 'type' field.
-      affected_components:
-        - "Parameter definitions"
-        - "Model JSON"
-    remedy:
-      action: "Fix parameter type to lowercase Pywr convention."
-      tool_to_run: ""
-      manual_steps:
-        - "Change 'MonthlyProfile' to 'monthlyprofile'"
-        - "Change 'Constant' to 'constant'"
-        - "Change 'DataFrame' to 'dataframe'"
-        - "Check Pywr docs for exact type strings"
-      prevention: "Use create_operating_rules.py and create_demand_nodes.py which output correct types."
-    severity: "fatal"
-    cross_references: ["dt_pywr_002"]
-
   # --- dt_pywr_008: Negative release values ---
-  - id: dt_pywr_008
-    stage: "s8_execution"
-    failure_domain: "silent_error"
-    symptom:
-      description: "Release timeseries contains negative values. This is physically impossible (water cannot flow upstream into a reservoir through the release works)."
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "Sign convention error in Pywr results extraction. Pywr itself cannot produce negative flows, but the recording or extraction code may negate values incorrectly."
-      explanation: >
-        Pywr's LP solver enforces non-negative flows on all links. If negative values
-        appear in the output CSV, it means the extraction code (run_pywr.py) is
-        interpreting the recorder data incorrectly. Check if the recorder is
-        attached to the correct node and that the data() call returns flow, not
-        the negative of flow.
-      affected_components:
-        - "Result extraction"
-        - "Recorder configuration"
-    remedy:
-      action: "Verify recorder setup and extraction logic."
-      tool_to_run: "run_pywr"
-      manual_steps:
-        - "Check that recorders are type 'numpyarraynode' (not 'numpyarraylink')"
-        - "Verify flow = recorder.data() returns positive values"
-        - "If negative: data might be costs, not flows — use correct recorder"
-      prevention: "run_pywr.py auto-detects flow recorders. If custom recorders, verify type."
-    severity: "silent"
-    cross_references: []
-
   # --- dt_pywr_009: InfeasibleError ---
-  - id: dt_pywr_009
-    stage: "s8_execution"
-    failure_domain: "runtime"
-    symptom:
-      description: "Pywr raises InfeasibleError during model.run(). The LP solver cannot find a feasible solution that satisfies all constraints at some timestep."
-      error_pattern: "InfeasibleError|infeasible|GLPK.*infeasible|no feasible solution"
-      detection_method: "log_match"
-    diagnosis:
-      root_cause: "Demands exceed available supply (inflow + storage) at some timestep, and there is no slack variable or spill path to absorb the deficit."
-      explanation: >
-        Pywr formulates water allocation as a LP at each timestep. If total demand
-        (sum of all Output node max_flow values) exceeds total supply (inflow +
-        storage release capacity) and there is no path for unmet demand, the LP
-        becomes infeasible. This commonly happens when:
-        (1) Environmental flow + irrigation + municipal > inflow during dry season
-        (2) Storage is at min_volume and cannot release more
-        (3) All paths from storage to downstream are capacity-constrained
-      affected_components:
-        - "Demand nodes (max_flow too high)"
-        - "Storage node (min_volume too high)"
-        - "Network topology (insufficient paths)"
-    remedy:
-      action: "Reduce demands or add slack/spill paths."
-      tool_to_run: "create_demand_nodes"
-      manual_steps:
-        - "Option 1: Reduce demand max_flow values (especially environmental flow)"
-        - "Option 2: Lower min_volume to allow deeper drawdown"
-        - "Option 3: Add a 'deficit' Output node with very high cost (penalty)"
-        - "Option 4: Check inflow data — if all zeros, fix upstream cell selection"
-        - "Verify: total_demand < mean_annual_inflow for feasibility"
-      prevention: "create_demand_nodes.py checks total demand < mean inflow. Always include a spill/overflow path."
-    severity: "fatal"
-    cross_references: ["dt_pywr_005"]
-
   # --- dt_pywr_010: Monthly profile has wrong length ---
-  - id: dt_pywr_010
-    stage: "s5_operating_rules"
-    failure_domain: "parameter_format"
-    symptom:
-      description: "Pywr raises error about 'values' array length mismatch for monthlyprofile parameter. Expected 12 values but got a different number."
-      error_pattern: "Expected 12|values.*length|monthlyprofile.*12"
-      detection_method: "log_match"
-    diagnosis:
-      root_cause: "The 'values' array in a monthlyprofile parameter does not have exactly 12 elements (one per month, Jan=index 0 through Dec=index 11)."
-      explanation: >
-        Pywr's monthlyprofile parameter requires exactly 12 values, one for each
-        calendar month. Index 0 = January, index 11 = December. Providing 11 or 13
-        values causes a parse error. A common mistake is using 0-indexed month numbers
-        in the creation logic and ending up with 11 values.
-      affected_components:
-        - "MonthlyProfileParameter"
-        - "Operating rules"
-    remedy:
-      action: "Ensure values array has exactly 12 elements."
-      tool_to_run: "create_operating_rules"
-      manual_steps:
-        - "Check: len(values) == 12"
-        - "Index mapping: values[0]=Jan, values[1]=Feb, ..., values[11]=Dec"
-        - "If generating from flood_months list, remember months are 1-indexed but array is 0-indexed"
-      prevention: "create_operating_rules.py always generates exactly 12 values."
-    severity: "fatal"
-    cross_references: ["dt_pywr_007"]
-
   # --- dt_pywr_011: CaMa injection produces negative runoff ---
-  - id: dt_pywr_011
-    stage: "s8_execution"
-    failure_domain: "silent_error"
-    symptom:
-      description: "After injecting Pywr releases into CaMa-Flood runoff NetCDF, some cells have negative runoff values. CaMa-Flood may produce NaN discharge or crash."
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "The injection replaces VIC runoff with Pywr release, but the unit conversion (m3/s to mm/day) is wrong, or the cell area used for conversion is incorrect."
-      explanation: >
-        inject_releases_to_cama.py converts Pywr release (m3/s) to CaMa runoff (mm/day)
-        using: Q_mm = Q_m3s * 86400 / cell_area_m2 * 1000. If cell_area_m2 is wrong
-        (e.g., using km2 instead of m2), the conversion is off by 1e6. The tool clamps
-        to max(0, value) but if the conversion itself is wrong, the magnitude will be
-        incorrect even if non-negative.
-      affected_components:
-        - "inject_releases_to_cama"
-        - "CaMa-Flood input"
-    remedy:
-      action: "Verify cell area and unit conversion."
-      tool_to_run: "inject_releases_to_cama"
-      manual_steps:
-        - "Check cell_area in output JSON: should be ~600-800 km2 for 0.25 deg at mid-latitudes"
-        - "Verify: regulated_mean_mm should be comparable to original_mean_mm"
-        - "If regulated_mean_mm >> original_mean_mm: cell area is too small (probably in km2 not m2)"
-        - "If regulated_mean_mm << original_mean_mm: release is too small or conversion factor wrong"
-      prevention: "inject_releases_to_cama.py computes cell area internally from grid coordinates."
-    severity: "silent"
-    cross_references: ["dt_pywr_014"]
-
   # --- dt_pywr_012: Recorder data() returns empty ---
-  - id: dt_pywr_012
-    stage: "s8_execution"
-    failure_domain: "runtime"
-    symptom:
-      description: "run_pywr.py produces empty CSV files. Storage or release timeseries have 0 rows. The model ran but no data was recorded."
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "Recorders are defined in the JSON but their data() method returns empty arrays because the recorder was not properly attached to a node, or the node name in the recorder does not match any model node."
-      explanation: >
-        Pywr recorders must reference valid node names via the 'node' field.
-        NumpyArrayNodeRecorder records the flow through a node; NumpyArrayStorageRecorder
-        records the volume of a storage node. If the 'node' field references a
-        non-existent name, the recorder is silently created but never populated.
-        After model.run(), recorder.data() returns an empty array.
-      affected_components:
-        - "Recorder definitions"
-        - "Node naming consistency"
-    remedy:
-      action: "Verify recorder node references match actual model nodes."
-      tool_to_run: "assemble_pywr_model"
-      manual_steps:
-        - "Check each recorder's 'node' field against the nodes array"
-        - "For storage: use 'numpyarraystoragerecorder', not 'numpyarraynode'"
-        - "Print model.recorders after loading to verify they are populated"
-      prevention: "assemble_pywr_model.py cross-validates recorder references."
-    severity: "degraded"
-    cross_references: ["dt_pywr_003"]
-
   # --- dt_pywr_013: Date range mismatch ---
-  - id: dt_pywr_013
-    stage: "s7_assembly"
-    failure_domain: "dependency_mismatch"
-    symptom:
-      description: "Pywr model runs but produces truncated results or errors about missing data at certain dates. The inflow CSV does not cover the full simulation period."
-      error_pattern: "index.*out of bounds|NaN.*flow|missing.*date"
-      detection_method: "log_match"
-    diagnosis:
-      root_cause: "The timestepper start/end dates in the model JSON do not match the date range in the inflow CSV. Pywr requests data for dates that are outside the CSV range."
-      explanation: >
-        Pywr's timestepper defines the simulation period. Dataframe parameters (inflow)
-        are indexed by date. If the timestepper requests a date not in the CSV, Pywr
-        may return NaN or raise an error, depending on the parameter configuration.
-        Common causes: (1) VIC output starts Jan 1 but model starts Dec 31 of prior year,
-        (2) end_year in VIC is different from end_date in model, (3) leap year handling
-        differences.
-      affected_components:
-        - "Timestepper dates"
-        - "Inflow CSV date range"
-    remedy:
-      action: "Align model dates with inflow CSV date range."
-      tool_to_run: "assemble_pywr_model"
-      manual_steps:
-        - "Check inflow CSV: head -1 and tail -1 to see date range"
-        - "Set --start_date to match or be after first CSV date"
-        - "Set --end_date to match or be before last CSV date"
-        - "Account for VIC spinup: if VIC runs 1980-1990, data starts 1980-01-01"
-      prevention: "assemble_pywr_model.py reads inflow CSV dates and warns if mismatch."
-    severity: "degraded"
-    cross_references: []
-
   # --- dt_pywr_014: MCM to m3 unit mismatch ---
-  - id: dt_pywr_014
-    stage: "s3_reservoir_properties"
-    failure_domain: "unit_conversion"
-    symptom:
-      description: "Reservoir fills instantly and spills every day, or never fills despite large inflow. Storage volume scale is wrong by factor of 1e6."
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "GRanD CAP_MCM is in million cubic meters (MCM). If used directly as max_volume in Pywr (which expects m3), the capacity is 1e6 too small. Example: Meishan 2275 MCM -> should be 2.275e9 m3, not 2275 m3."
-      explanation: >
-        MCM = million cubic meters = 1e6 m3. Pywr volumes are in m3. If build_reservoir_properties.py
-        forgets the * 1e6 conversion, a 2275 MCM reservoir becomes 2275 m3 (about the
-        size of a swimming pool). With typical river inflow of ~100 m3/s, this fills
-        in seconds and spills continuously.
-      affected_components:
-        - "Reservoir max_volume"
-        - "Reservoir min_volume"
-        - "Reservoir initial_volume"
-    remedy:
-      action: "Ensure max_volume = CAP_MCM * 1e6."
-      tool_to_run: "build_reservoir_properties"
-      manual_steps:
-        - "Verify: max_volume_m3 = capacity_mcm * 1e6"
-        - "Sanity check: max_volume_m3 for a major dam should be > 1e8 (100 MCM)"
-        - "If storage fills in 1 day: volume is 1e6 too small"
-        - "If storage never fills in 10 years: volume might be 1e6 too large (unlikely)"
-      prevention: "build_reservoir_properties.py always converts: max_volume_m3 = cap_mcm * 1e6."
-    severity: "silent"
-    cross_references: ["dt_pywr_011"]
-
   # --- dt_pywr_015: VIC mm/day to m3/s conversion missing ---
-  - id: dt_pywr_015
-    stage: "s4_inflow"
-    failure_domain: "unit_conversion"
-    symptom:
-      description: "Inflow values are unrealistically small (< 0.001 m3/s for a large basin) or unrealistically large (> 100,000 m3/s for a small basin). Model runs but results are wrong."
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "Unit conversion error when converting VIC runoff (mm/day) to inflow (m3/s). The correct formula is: Q_m3s = (runoff_mm + baseflow_mm) * cell_area_m2 / (1000 * 86400). Missing the /1000 (mm to m) gives values 1000x too high. Missing the /86400 (day to seconds) gives values 86400x too high."
-      explanation: >
-        VIC outputs runoff and baseflow in mm/day (depth per unit area per day).
-        Converting to volumetric flow rate requires:
-        1. Multiply by cell area (m2) to get m3/day equivalent: mm * m2 = 1e-3 * m * m2 = 1e-3 m3
-        2. Divide by 1000 to convert mm to m
-        3. Divide by 86400 to convert per-day to per-second
-        Full formula: Q_m3s = (R_mm + B_mm) * A_m2 / (1000 * 86400)
-        Omitting any factor produces inflow off by orders of magnitude.
-      affected_components:
-        - "convert_vic_to_inflow.py"
-        - "Cell area computation"
-    remedy:
-      action: "Verify unit conversion formula and cell area."
-      tool_to_run: "convert_vic_to_inflow"
-      manual_steps:
-        - "Check formula: Q = (R+B) * A / (1000 * 86400)"
-        - "Check cell area: at 0.25 deg, mid-latitudes, area ~ 600 km2 = 6e8 m2"
-        - "Sanity check: 1 mm/day over 600 km2 = 6e8 * 1e-3 / 86400 = 6.94 m3/s"
-        - "Compare mean inflow to literature values for the basin"
-      prevention: "convert_vic_to_inflow.py implements the correct formula. Verify mean_inflow_m3s against expected."
-    severity: "silent"
-    cross_references: ["dt_pywr_005"]
+
+- id: dt_pywr_001
+  stage: s1_installation
+  failure_domain: environment
+  symptom:
+    description: Pywr raises an error during model creation or run about missing GLPK solver. Error may
+      mention 'No solver found' or 'glpk' not available.
+    error_pattern: No solver found|glpk.*not found|ImportError.*glpk|Could not find.*solver
+    detection_method: log_match
+  diagnosis:
+    root_cause: GLPK (GNU Linear Programming Kit) is not installed or not accessible. Pywr requires GLPK
+      as its LP solver backend.
+    explanation: 'Pywr uses linear programming to optimally allocate water at each timestep. The GLPK
+      solver is the default and most common backend. Without it, Pywr cannot solve the allocation problem.
+      GLPK is a C library that must be installed at the system level (not just pip install). On Ubuntu:
+      apt-get install libglpk-dev. On conda: conda install glpk.
+
+      '
+    affected_components:
+    - Pywr solver
+    - All model runs
+  remedy:
+    action: Install GLPK system library.
+    tool_to_run: verify_pywr_installation
+    manual_steps:
+    - 'Ubuntu/Debian: sudo apt-get install libglpk-dev glpk-utils'
+    - 'conda: conda install -c conda-forge glpk'
+    - 'macOS: brew install glpk'
+    - 'Verify: python -c "from pywr.model import Model; m = Model(); print(''OK'')"'
+    prevention: Include GLPK in system requirements. Test with verify_pywr_installation before any model
+      run.
+  severity: fatal
+  cross_references: []
+- id: dt_pywr_002
+  stage: s7_assembly
+  failure_domain: parameter_format
+  symptom:
+    description: Pywr raises KeyError, TypeError, or 'unknown node type' when loading model JSON. Model.load()
+      fails during parsing.
+    error_pattern: KeyError|unknown.*type|TypeError.*unexpected|Failed to load
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'Model JSON has invalid structure: misspelled node type, missing required field, or wrong
+      parameter format. Pywr node types are case-sensitive (e.g., ''storage'' not ''Storage'').'
+    explanation: 'Pywr JSON models have strict schema requirements. Node types must be lowercase (input,
+      output, link, storage, catchment). Parameter types are also specific (monthlyprofile, constant,
+      dataframe). Missing required fields like ''name'' or ''type'' cause immediate parse failure. The
+      error message from Pywr is often cryptic (generic KeyError).
+
+      '
+    affected_components:
+    - Model JSON structure
+    - Node definitions
+    - Parameter definitions
+  remedy:
+    action: Fix JSON structure. Use assemble_pywr_model.py which generates correct schema.
+    tool_to_run: assemble_pywr_model
+    manual_steps:
+    - 'Node types must be lowercase: input, output, link, storage, catchment'
+    - Every node must have 'name' and 'type' fields
+    - 'Parameter types: constant, monthlyprofile, dataframe, controlcurve'
+    - Use assemble_pywr_model.py --validate to check structure before loading
+    prevention: Always use assemble_pywr_model.py to generate model JSON. Never hand-edit without validation.
+  severity: fatal
+  cross_references:
+  - dt_pywr_007
+- id: dt_pywr_003
+  stage: s7_assembly
+  failure_domain: parameter_format
+  symptom:
+    description: Pywr raises error about an edge connecting to a node that does not exist. Error mentions
+      'Node not found' or 'KeyError' with a node name.
+    error_pattern: Node.*not found|KeyError.*node|no node named
+    detection_method: log_match
+  diagnosis:
+    root_cause: An edge in the 'edges' array references a node name that is not defined in the 'nodes'
+      array. Typically a typo or inconsistent naming between node and edge definitions.
+    explanation: 'Pywr edges are defined as [source_name, target_name] where both names must match existing
+      node names exactly (case-sensitive). If a demand node was removed but its edge was not, or if the
+      node was renamed without updating edges, this error occurs.
+
+      '
+    affected_components:
+    - edges array
+    - nodes array
+  remedy:
+    action: Ensure all edge endpoints exist in the nodes array.
+    tool_to_run: assemble_pywr_model
+    manual_steps:
+    - 'List all unique names in edges: set(name for edge in edges for name in edge)'
+    - 'List all node names: set(n[''name''] for n in nodes)'
+    - 'Find difference: edge_names - node_names = orphan references'
+    - Fix by adding missing nodes or correcting edge references
+    prevention: assemble_pywr_model.py validates edge-node consistency automatically.
+  severity: fatal
+  cross_references:
+  - dt_pywr_002
+- id: dt_pywr_004
+  stage: s8_execution
+  failure_domain: path_resolution
+  symptom:
+    description: Pywr raises FileNotFoundError or 'No such file' when loading a dataframe parameter that
+      references a CSV file via 'url' field.
+    error_pattern: FileNotFoundError|No such file|cannot open.*csv
+    detection_method: log_match
+  diagnosis:
+    root_cause: The 'url' field in a dataframe parameter uses a relative path that is resolved relative
+      to the model JSON file location, not the current working directory.
+    explanation: 'Pywr resolves dataframe ''url'' paths relative to the JSON model file''s directory.
+      If the model JSON is at /outputs/model.json and the url is ''inflow.csv'', Pywr looks for /outputs/inflow.csv.
+      If the CSV is actually at /results/inflow.csv, the load fails. Using absolute paths avoids this
+      issue.
+
+      '
+    affected_components:
+    - Dataframe parameters
+    - Inflow CSV
+  remedy:
+    action: Use absolute paths in dataframe url fields.
+    tool_to_run: assemble_pywr_model
+    manual_steps:
+    - Convert all 'url' fields to absolute paths
+    - Or ensure CSV files are in the same directory as model.json
+    - Or use os.path.abspath() when generating model JSON
+    prevention: assemble_pywr_model.py always writes absolute paths for url fields.
+  severity: fatal
+  cross_references: []
+- id: dt_pywr_005
+  stage: s4_inflow
+  failure_domain: silent_error
+  symptom:
+    description: Pywr model runs but reservoir never fills. Storage stays at initial or decreases monotonically.
+      Inflow CSV has all zeros or near-zero values.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Wrong upstream cells selected in convert_vic_to_inflow.py. Either (a) VIC flux files not
+      found for the coordinates, (b) wrong coordinate format in filenames, or (c) all cells are downstream
+      of the dam.
+    explanation: 'convert_vic_to_inflow.py searches for VIC flux files matching the pattern prefix_LAT_LON.txt.
+      If the latitude/longitude formatting (decimal places, positive/negative) does not match the actual
+      filenames, no files are found and the cell is skipped. The tool reports cells_missing in the summary
+      but the model will still run with zero inflow, producing meaningless results. Always check cells_found
+      > 0 and cells_missing is small.
+
+      '
+    affected_components:
+    - VIC flux file matching
+    - Upstream cell identification
+  remedy:
+    action: Check VIC flux filename format and upstream cell count.
+    tool_to_run: convert_vic_to_inflow
+    manual_steps:
+    - ls VIC result directory to see actual filename format
+    - 'Check cells_found in tool output: should be >> 0'
+    - 'If cells_missing == cells_total: filename format mismatch'
+    - Try --flux_prefix to override auto-detected prefix
+    - Try --method all to include all basin cells
+    prevention: Always check cells_found > 0 and mean_inflow_m3s > 0 in tool output before proceeding.
+  severity: silent
+  cross_references:
+  - dt_pywr_015
+- id: dt_pywr_006
+  stage: s8_execution
+  failure_domain: silent_error
+  symptom:
+    description: Storage volume oscillates between min_volume and max_volume every few timesteps. Release
+      is either 0 or maximum. Behavior looks unrealistic.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Control curve parameters are not properly connected to storage node costs. Without a ControlCurveParameter
+      linking storage level to costs, the LP solver just fills and empties the reservoir without smooth
+      regulation.
+    explanation: 'Pywr uses cost-based optimization. A storage node with constant cost=-500 will always
+      prefer to fill. Without a control curve that changes the cost based on storage level (negative below
+      target, positive above target), the reservoir either fills completely (high inflow) or empties completely
+      (demands exceed inflow) with no intermediate behavior. The control curve creates a ''pull'' toward
+      the target level.
+
+      '
+    affected_components:
+    - Storage node cost parameter
+    - ControlCurveParameter
+  remedy:
+    action: Implement ControlCurveParameter linking storage to release cost.
+    tool_to_run: create_operating_rules
+    manual_steps:
+    - Define a ControlCurveParameter referencing the storage node
+    - Set above_curve_cost > 0 (prefer releasing when above target)
+    - Set below_curve_cost < 0 (prefer storing when below target)
+    - The monthly control curve from create_operating_rules provides targets
+    prevention: Always use operating rules with the storage node, not just a constant cost.
+  severity: degraded
+  cross_references:
+  - dt_pywr_002
+- id: dt_pywr_007
+  stage: s7_assembly
+  failure_domain: parameter_format
+  symptom:
+    description: Pywr raises error about unknown parameter type during model load. Error mentions the
+      parameter name and 'type' field.
+    error_pattern: Unknown parameter type|No parameter class found|cannot create parameter
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'Parameter ''type'' field uses wrong case or spelling. Pywr parameter types are case-sensitive
+      and specific: ''monthlyprofile'' (not ''MonthlyProfile''), ''constant'' (not ''Constant'').'
+    explanation: 'Common Pywr parameter types: - constant: single scalar value - monthlyprofile: 12 monthly
+      values - dailyprofile: 366 daily values - dataframe: timeseries from CSV - controlcurve: varies
+      cost based on storage level - aggregated: combination of parameters All must be lowercase in the
+      ''type'' field.
+
+      '
+    affected_components:
+    - Parameter definitions
+    - Model JSON
+  remedy:
+    action: Fix parameter type to lowercase Pywr convention.
+    tool_to_run: ''
+    manual_steps:
+    - Change 'MonthlyProfile' to 'monthlyprofile'
+    - Change 'Constant' to 'constant'
+    - Change 'DataFrame' to 'dataframe'
+    - Check Pywr docs for exact type strings
+    prevention: Use create_operating_rules.py and create_demand_nodes.py which output correct types.
+  severity: fatal
+  cross_references:
+  - dt_pywr_002
+- id: dt_pywr_008
+  stage: s8_execution
+  failure_domain: silent_error
+  symptom:
+    description: Release timeseries contains negative values. This is physically impossible (water cannot
+      flow upstream into a reservoir through the release works).
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Sign convention error in Pywr results extraction. Pywr itself cannot produce negative
+      flows, but the recording or extraction code may negate values incorrectly.
+    explanation: 'Pywr''s LP solver enforces non-negative flows on all links. If negative values appear
+      in the output CSV, it means the extraction code (run_pywr.py) is interpreting the recorder data
+      incorrectly. Check if the recorder is attached to the correct node and that the data() call returns
+      flow, not the negative of flow.
+
+      '
+    affected_components:
+    - Result extraction
+    - Recorder configuration
+  remedy:
+    action: Verify recorder setup and extraction logic.
+    tool_to_run: run_pywr
+    manual_steps:
+    - Check that recorders are type 'numpyarraynode' (not 'numpyarraylink')
+    - Verify flow = recorder.data() returns positive values
+    - 'If negative: data might be costs, not flows — use correct recorder'
+    prevention: run_pywr.py auto-detects flow recorders. If custom recorders, verify type.
+  severity: silent
+  cross_references: []
+- id: dt_pywr_009
+  stage: s8_execution
+  failure_domain: runtime
+  symptom:
+    description: Pywr raises InfeasibleError during model.run(). The LP solver cannot find a feasible
+      solution that satisfies all constraints at some timestep.
+    error_pattern: InfeasibleError|infeasible|GLPK.*infeasible|no feasible solution
+    detection_method: log_match
+  diagnosis:
+    root_cause: Demands exceed available supply (inflow + storage) at some timestep, and there is no slack
+      variable or spill path to absorb the deficit.
+    explanation: 'Pywr formulates water allocation as a LP at each timestep. If total demand (sum of all
+      Output node max_flow values) exceeds total supply (inflow + storage release capacity) and there
+      is no path for unmet demand, the LP becomes infeasible. This commonly happens when: (1) Environmental
+      flow + irrigation + municipal > inflow during dry season (2) Storage is at min_volume and cannot
+      release more (3) All paths from storage to downstream are capacity-constrained
+
+      '
+    affected_components:
+    - Demand nodes (max_flow too high)
+    - Storage node (min_volume too high)
+    - Network topology (insufficient paths)
+  remedy:
+    action: Reduce demands or add slack/spill paths.
+    tool_to_run: create_demand_nodes
+    manual_steps:
+    - 'Option 1: Reduce demand max_flow values (especially environmental flow)'
+    - 'Option 2: Lower min_volume to allow deeper drawdown'
+    - 'Option 3: Add a ''deficit'' Output node with very high cost (penalty)'
+    - 'Option 4: Check inflow data — if all zeros, fix upstream cell selection'
+    - 'Verify: total_demand < mean_annual_inflow for feasibility'
+    prevention: create_demand_nodes.py checks total demand < mean inflow. Always include a spill/overflow
+      path.
+  severity: fatal
+  cross_references:
+  - dt_pywr_005
+- id: dt_pywr_010
+  stage: s5_operating_rules
+  failure_domain: parameter_format
+  symptom:
+    description: Pywr raises error about 'values' array length mismatch for monthlyprofile parameter.
+      Expected 12 values but got a different number.
+    error_pattern: Expected 12|values.*length|monthlyprofile.*12
+    detection_method: log_match
+  diagnosis:
+    root_cause: The 'values' array in a monthlyprofile parameter does not have exactly 12 elements (one
+      per month, Jan=index 0 through Dec=index 11).
+    explanation: 'Pywr''s monthlyprofile parameter requires exactly 12 values, one for each calendar month.
+      Index 0 = January, index 11 = December. Providing 11 or 13 values causes a parse error. A common
+      mistake is using 0-indexed month numbers in the creation logic and ending up with 11 values.
+
+      '
+    affected_components:
+    - MonthlyProfileParameter
+    - Operating rules
+  remedy:
+    action: Ensure values array has exactly 12 elements.
+    tool_to_run: create_operating_rules
+    manual_steps:
+    - 'Check: len(values) == 12'
+    - 'Index mapping: values[0]=Jan, values[1]=Feb, ..., values[11]=Dec'
+    - If generating from flood_months list, remember months are 1-indexed but array is 0-indexed
+    prevention: create_operating_rules.py always generates exactly 12 values.
+  severity: fatal
+  cross_references:
+  - dt_pywr_007
+- id: dt_pywr_011
+  stage: s8_execution
+  failure_domain: silent_error
+  symptom:
+    description: After injecting Pywr releases into CaMa-Flood runoff NetCDF, some cells have negative
+      runoff values. CaMa-Flood may produce NaN discharge or crash.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: The injection replaces VIC runoff with Pywr release, but the unit conversion (m3/s to
+      mm/day) is wrong, or the cell area used for conversion is incorrect.
+    explanation: 'inject_releases_to_cama.py converts Pywr release (m3/s) to CaMa runoff (mm/day) using:
+      Q_mm = Q_m3s * 86400 / cell_area_m2 * 1000. If cell_area_m2 is wrong (e.g., using km2 instead of
+      m2), the conversion is off by 1e6. The tool clamps to max(0, value) but if the conversion itself
+      is wrong, the magnitude will be incorrect even if non-negative.
+
+      '
+    affected_components:
+    - inject_releases_to_cama
+    - CaMa-Flood input
+  remedy:
+    action: Verify cell area and unit conversion.
+    tool_to_run: inject_releases_to_cama
+    manual_steps:
+    - 'Check cell_area in output JSON: should be ~600-800 km2 for 0.25 deg at mid-latitudes'
+    - 'Verify: regulated_mean_mm should be comparable to original_mean_mm'
+    - 'If regulated_mean_mm >> original_mean_mm: cell area is too small (probably in km2 not m2)'
+    - 'If regulated_mean_mm << original_mean_mm: release is too small or conversion factor wrong'
+    prevention: inject_releases_to_cama.py computes cell area internally from grid coordinates.
+  severity: silent
+  cross_references:
+  - dt_pywr_014
+- id: dt_pywr_012
+  stage: s8_execution
+  failure_domain: runtime
+  symptom:
+    description: run_pywr.py produces empty CSV files. Storage or release timeseries have 0 rows. The
+      model ran but no data was recorded.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Recorders are defined in the JSON but their data() method returns empty arrays because
+      the recorder was not properly attached to a node, or the node name in the recorder does not match
+      any model node.
+    explanation: 'Pywr recorders must reference valid node names via the ''node'' field. NumpyArrayNodeRecorder
+      records the flow through a node; NumpyArrayStorageRecorder records the volume of a storage node.
+      If the ''node'' field references a non-existent name, the recorder is silently created but never
+      populated. After model.run(), recorder.data() returns an empty array.
+
+      '
+    affected_components:
+    - Recorder definitions
+    - Node naming consistency
+  remedy:
+    action: Verify recorder node references match actual model nodes.
+    tool_to_run: assemble_pywr_model
+    manual_steps:
+    - Check each recorder's 'node' field against the nodes array
+    - 'For storage: use ''numpyarraystoragerecorder'', not ''numpyarraynode'''
+    - Print model.recorders after loading to verify they are populated
+    prevention: assemble_pywr_model.py cross-validates recorder references.
+  severity: degraded
+  cross_references:
+  - dt_pywr_003
+- id: dt_pywr_013
+  stage: s7_assembly
+  failure_domain: dependency_mismatch
+  symptom:
+    description: Pywr model runs but produces truncated results or errors about missing data at certain
+      dates. The inflow CSV does not cover the full simulation period.
+    error_pattern: index.*out of bounds|NaN.*flow|missing.*date
+    detection_method: log_match
+  diagnosis:
+    root_cause: The timestepper start/end dates in the model JSON do not match the date range in the inflow
+      CSV. Pywr requests data for dates that are outside the CSV range.
+    explanation: 'Pywr''s timestepper defines the simulation period. Dataframe parameters (inflow) are
+      indexed by date. If the timestepper requests a date not in the CSV, Pywr may return NaN or raise
+      an error, depending on the parameter configuration. Common causes: (1) VIC output starts Jan 1 but
+      model starts Dec 31 of prior year, (2) end_year in VIC is different from end_date in model, (3)
+      leap year handling differences.
+
+      '
+    affected_components:
+    - Timestepper dates
+    - Inflow CSV date range
+  remedy:
+    action: Align model dates with inflow CSV date range.
+    tool_to_run: assemble_pywr_model
+    manual_steps:
+    - 'Check inflow CSV: head -1 and tail -1 to see date range'
+    - Set --start_date to match or be after first CSV date
+    - Set --end_date to match or be before last CSV date
+    - 'Account for VIC spinup: if VIC runs 1980-1990, data starts 1980-01-01'
+    prevention: assemble_pywr_model.py reads inflow CSV dates and warns if mismatch.
+  severity: degraded
+  cross_references: []
+- id: dt_pywr_014
+  stage: s3_reservoir_properties
+  failure_domain: unit_conversion
+  symptom:
+    description: Reservoir fills instantly and spills every day, or never fills despite large inflow.
+      Storage volume scale is wrong by factor of 1e6.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: 'GRanD CAP_MCM is in million cubic meters (MCM). If used directly as max_volume in Pywr
+      (which expects m3), the capacity is 1e6 too small. Example: Meishan 2275 MCM -> should be 2.275e9
+      m3, not 2275 m3.'
+    explanation: 'MCM = million cubic meters = 1e6 m3. Pywr volumes are in m3. If build_reservoir_properties.py
+      forgets the * 1e6 conversion, a 2275 MCM reservoir becomes 2275 m3 (about the size of a swimming
+      pool). With typical river inflow of ~100 m3/s, this fills in seconds and spills continuously.
+
+      '
+    affected_components:
+    - Reservoir max_volume
+    - Reservoir min_volume
+    - Reservoir initial_volume
+  remedy:
+    action: Ensure max_volume = CAP_MCM * 1e6.
+    tool_to_run: build_reservoir_properties
+    manual_steps:
+    - 'Verify: max_volume_m3 = capacity_mcm * 1e6'
+    - 'Sanity check: max_volume_m3 for a major dam should be > 1e8 (100 MCM)'
+    - 'If storage fills in 1 day: volume is 1e6 too small'
+    - 'If storage never fills in 10 years: volume might be 1e6 too large (unlikely)'
+    prevention: 'build_reservoir_properties.py always converts: max_volume_m3 = cap_mcm * 1e6.'
+  severity: silent
+  cross_references:
+  - dt_pywr_011
+- id: dt_pywr_015
+  stage: s4_inflow
+  failure_domain: unit_conversion
+  symptom:
+    description: Inflow values are unrealistically small (< 0.001 m3/s for a large basin) or unrealistically
+      large (> 100,000 m3/s for a small basin). Model runs but results are wrong.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: 'Unit conversion error when converting VIC runoff (mm/day) to inflow (m3/s). The correct
+      formula is: Q_m3s = (runoff_mm + baseflow_mm) * cell_area_m2 / (1000 * 86400). Missing the /1000
+      (mm to m) gives values 1000x too high. Missing the /86400 (day to seconds) gives values 86400x too
+      high.'
+    explanation: 'VIC outputs runoff and baseflow in mm/day (depth per unit area per day). Converting
+      to volumetric flow rate requires: 1. Multiply by cell area (m2) to get m3/day equivalent: mm * m2
+      = 1e-3 * m * m2 = 1e-3 m3 2. Divide by 1000 to convert mm to m 3. Divide by 86400 to convert per-day
+      to per-second Full formula: Q_m3s = (R_mm + B_mm) * A_m2 / (1000 * 86400) Omitting any factor produces
+      inflow off by orders of magnitude.
+
+      '
+    affected_components:
+    - convert_vic_to_inflow.py
+    - Cell area computation
+  remedy:
+    action: Verify unit conversion formula and cell area.
+    tool_to_run: convert_vic_to_inflow
+    manual_steps:
+    - 'Check formula: Q = (R+B) * A / (1000 * 86400)'
+    - 'Check cell area: at 0.25 deg, mid-latitudes, area ~ 600 km2 = 6e8 m2'
+    - 'Sanity check: 1 mm/day over 600 km2 = 6e8 * 1e-3 / 86400 = 6.94 m3/s'
+    - Compare mean inflow to literature values for the basin
+    prevention: convert_vic_to_inflow.py implements the correct formula. Verify mean_inflow_m3s against
+      expected.
+  severity: silent
+  cross_references:
+  - dt_pywr_005

@@ -1,0 +1,483 @@
+schema_version: 1
+model_id: WOFOST
+domain: crop
+generated_by: "step-b validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  soothar2021:
+    doi: 10.1186/s42269-021-00580-4
+    title: "Effect of different soil moisture regimes on plant growth and water use efficiency of Sunflower: experimental study and modeling"
+    venue: "Bulletin of the National Research Centre"
+    year: 2021
+    oa: gold
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1186_s42269-021-00580-4.txt"
+  khechba2021:
+    doi: 10.3390/agronomy11122480
+    title: "Performance Evaluation of the WOFOST Model for Estimating Evapotranspiration, Soil Water Content, Grain Yield and Total Above-Ground Biomass of Winter Wheat in Tensift Al Haouz (Morocco)"
+    venue: "Agronomy"
+    year: 2021
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_agronomy11122480.txt"
+  ceglar2019:
+    doi: 10.1016/j.agsy.2018.05.002
+    title: "Improving WOFOST model to simulate winter wheat phenology in Europe: Evaluation and effects on yield"
+    venue: "Agricultural Systems"
+    year: 2019
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agsy.2018.05.002.txt"
+  wu2019:
+    doi: 10.1016/j.eja.2018.10.008
+    title: "Evaluation of regional estimates of winter wheat yield by assimilating three remotely sensed reflectance datasets into the coupled WOFOST-PROSAIL model"
+    venue: "European Journal of Agronomy"
+    year: 2019
+    oa: green
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.eja.2018.10.008.txt"
+  lu2021:
+    doi: 10.1016/j.agwat.2021.106884
+    title: "Assimilation of soil moisture and canopy cover data improves maize simulation using an under-canopy soil-crop model (WOFOST)"
+    venue: "Agricultural Water Management"
+    year: 2021
+    oa: green
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agwat.2021.106884.txt"
+  palosuo2011:
+    doi: 10.1016/j.eja.2011.05.001
+    title: "Simulation of winter wheat yield and its variability in different climates of Europe"
+    venue: "European Journal of Agronomy"
+    year: 2011
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.eja.2011.05.001.txt"
+  akhter2014:
+    doi: 10.5027/jnrd.v4i0.01
+    title: "A new novel index for evaluating model performance"
+    venue: "Journal of Natural Resources and Development"
+    year: 2014
+    oa: gold
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5027_jnrd.v4i0.01.txt"
+
+validation:
+  - dag_variable: DVS
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "DVS is normally validated through observed phenological dates, not as a continuous observed state; no fetched paper gives a numeric NSE band for DVS."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Ceglar et al. validate phenology by simulated-versus-observed anthesis and maturity date WRMSE rather than continuous DVS NSE."
+        cites: [ceglar2019]
+    validated_when: "UNRESOLVED - validate DVS through DOA/DOM date errors unless a fetched DVS time-series convention is available."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Ceglar et al. define DVS as 0 emergence, 1 anthesis and 2 maturity, then validate anthesis and maturity dates; no DVS time-series threshold was found."
+
+  - dag_variable: DOA
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: days
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Anthesis timing is reported as WRMSE or date bias, but no fetched source gives a pass/fail day-bias threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Independent WOFOST phenology validation reports anthesis WRMSE values mainly below 12 days in better-supported European zones and larger errors in Mediterranean zones."
+        cites: [ceglar2019]
+    validated_when: "UNRESOLVED - compare simulated and observed anthesis dates, but do not auto-pass without a cited day-error threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Ceglar et al. report WRMSE for day of anthesis and note original MCYFS anthesis bias around 20 days; these are benchmark values, not a universal validation band."
+
+  - dag_variable: DOM
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: days
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Maturity timing is reported as WRMSE or date bias, but no fetched source gives a pass/fail day-bias threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Independent WOFOST phenology validation uses maturity-date WRMSE on held-out observations."
+        cites: [ceglar2019]
+    validated_when: "UNRESOLVED - compare simulated and observed maturity dates, but do not auto-pass without a cited day-error threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Ceglar et al. validate maturity dates alongside anthesis dates; no fetched paper provides a numeric acceptance band for DOM."
+
+  - dag_variable: LAI
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Crop-model NRMSE convention: <=10 extremely high/excellent precision, 10-20 high/good, 20-30 medium/fair; WOFOST LAI validation reports NRMSE by field."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG's NSE is useful for temporal pattern, but fetched WOFOST validation papers emphasize R2, RMSE and NRMSE for LAI."
+        cites: [khechba2021, akhter2014]
+    validated_when: "LAI point time series validated when NRMSE <= 30% against field or accepted LAI observations."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: "Khechba et al. state NRMSE expresses model accuracy and report WOFOST LAI validation NRMSE from medium to low accuracy; this supersedes NSE as the headline gate."
+
+  - dag_variable: LAI
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred crop-model NRMSE convention for gridded/satellite LAI time series."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Remote-sensing WOFOST applications commonly report R2/RMSE for spatial crop-yield and canopy-linked products; R2 is supportive because the cited threshold is NRMSE."
+        cites: [wu2019, lu2021]
+    validated_when: "Spatial LAI time series validated when NRMSE <= 30% against the satellite or field LAI product after scale matching."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "No spatial-LAI-specific pass band was fetched; the NRMSE tier is transferred from crop-model validation practice."
+
+  - dag_variable: LAIMAX
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred from crop-model LAI NRMSE classes; LAIMAX is a seasonal LAI summary."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Field validation discusses under- and over-estimation of maximum LAI through SLATB differences rather than a separate LAIMAX bias threshold."
+        cites: [khechba2021]
+    validated_when: "LAIMAX validated when seasonal maximum LAI NRMSE <= 30% against observed peak LAI."
+    evidence_strength: weak
+    confidence: 0.5
+    notes: "Khechba et al. link maximum LAI errors to SLATB variability; no separate LAIMAX convention was fetched."
+
+  - dag_variable: TAGP
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Crop-model NRMSE convention applied to above-ground biomass; Khechba et al. report TAGP validation NRMSE = 16%."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Temporal NSE is retained as supportive, but fetched WOFOST biomass validation uses R2, RMSE and NRMSE."
+        cites: [khechba2021, akhter2014]
+    validated_when: "TAGP time series validated when NRMSE <= 30% over sampled biomass observations."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: "Khechba et al. call WOFOST TAGP prediction high accuracy at NRMSE = 16%; Soothar et al. reproduce the 10/20/30% crop NRMSE classes."
+
+  - dag_variable: TAGP
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "End-of-season biomass uses the same crop NRMSE classes as sampled biomass."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Bias direction is informative for destructive biomass harvests, but no fetched source gives a separate TAGP PBIAS threshold."
+        cites: [khechba2021]
+    validated_when: "TAGP snapshot validated when NRMSE <= 30% against observed above-ground biomass."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: "The DAG's PBIAS is kept supportive; cited crop-model convention supplies the numeric NRMSE pass band."
+
+  - dag_variable: TWSO
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Crop yield nRMSE convention: excellent/high/good below 10/20/30%; WOFOST TWSO validation reports NRMSE = 19%."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Harvest-yield bias is informative but no fetched WOFOST/crop convention gives a separate PBIAS band for TWSO."
+        cites: [khechba2021]
+    validated_when: "TWSO field yield validated when nRMSE <= 30% against measured dry harvestable yield."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Khechba et al. report TWSO R2 = 42%, RMSE = 512 kg/ha and NRMSE = 19%; Soothar et al. reproduce Jamieson-style NRMSE classes."
+
+  - dag_variable: TWSO
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred crop-yield NRMSE convention for regional aggregate yield; compare detrended or management-consistent series."
+        cites: [soothar2021, palosuo2011]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Regional WOFOST studies report correlations with national recorded yields, but no fetched paper gives an r pass band."
+        cites: [ceglar2019]
+    validated_when: "Regional TWSO time series validated when aggregate yield nRMSE <= 30%, preferably on detrended residuals or comparable management assumptions."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Ceglar et al. report national yield correlations around 0.6 and warn phenology calibration alone is not sufficient to reproduce interannual variation in several regions."
+
+  - dag_variable: TWSO
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred crop-yield NRMSE convention for yield maps; spatial pattern should also be inspected with R2/correlation."
+        cites: [soothar2021, wu2019]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "WOFOST-PROSAIL regional yield maps report R2 and RMSE; no fetched source gives an R2 pass band."
+        cites: [wu2019]
+    validated_when: "Spatial TWSO snapshot validated when mapped yield nRMSE <= 30% against field/statistical yield and spatial R2/RMSE are reported."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Wu et al. report field-scale and county-scale WOFOST-PROSAIL yield RMSE/R2; the numeric pass band is the transferred crop-yield nRMSE tier."
+
+  - dag_variable: TWLV
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred crop biomass nRMSE convention; no fetched paper gives a leaf-biomass-specific threshold."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Leaf biomass is usually destructively sampled at intervals; NSE is pattern support, not the cited validation band."
+        cites: [akhter2014]
+    validated_when: "TWLV validated when leaf dry-matter nRMSE <= 30% against destructive sampling."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: "The band is transferred from above-ground biomass/yield validation; leaf-partition-specific WOFOST conventions were not found in cached papers."
+
+  - dag_variable: TWST
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred crop biomass nRMSE convention; no fetched paper gives a stem-biomass-specific threshold."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Stem biomass temporal pattern is supportive, but the fetched numeric convention is nRMSE for crop biomass."
+        cites: [akhter2014]
+    validated_when: "TWST validated when stem dry-matter nRMSE <= 30% against destructive sampling."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: "The band is transferred from TAGP/yield crop-model practice; no stem-specific WOFOST band was fetched."
+
+  - dag_variable: TWRT
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred crop biomass nRMSE convention; root biomass observations are scarce and no root-specific threshold was fetched."
+        cites: [soothar2021]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Root biomass is usually sparsely sampled; bias is informative but no fetched source gives a TWRT PBIAS band."
+        cites: []
+    validated_when: "TWRT validated only provisionally when root dry-matter nRMSE <= 30% against observed root biomass."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: "Low-confidence transfer from crop biomass convention; root biomass is the largest crop-organ gap in the fetched set."
+
+  - dag_variable: TRA
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred crop water-flux NRMSE convention; WOFOST validation paper reports ETa, not separated transpiration."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Daily transpiration is often inferred from ET partitioning; NSE is supportive because fetched WOFOST water-flux validation reports R2, RMSE and NRMSE for ETa."
+        cites: [khechba2021, akhter2014]
+    validated_when: "TRA validated provisionally when transpiration or partitioned ET nRMSE <= 30% against eddy-covariance/sap-flow-derived observations."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: "Khechba et al. report WOFOST ETa RMSE 0.7-0.8 mm and NRMSE >30%; no fetched paper gives a TRA-specific threshold."
+
+  - dag_variable: CTRAT
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred crop water-use NRMSE convention for seasonal cumulative transpiration; no fetched CTRAT-specific band."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Seasonal cumulative water-use bias is informative, but no fetched paper gives a CTRAT PBIAS threshold."
+        cites: [khechba2021]
+    validated_when: "CTRAT validated provisionally when cumulative transpiration or partitioned seasonal water use nRMSE <= 30%."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: "Khechba et al. provide ETa validation, not separated cumulative transpiration; this is a low-confidence transfer."
+
+  - dag_variable: SM
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Crop-model NRMSE convention applied to soil moisture; WOFOST SM validation reports NRMSE 11% and 19%."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG's correlation metric is useful for temporal shape, but fetched WOFOST soil-moisture validation uses R2, RMSE and NRMSE."
+        cites: [khechba2021]
+    validated_when: "SM point time series validated when root-zone or depth-matched soil moisture nRMSE <= 30%."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: "Khechba et al. report SM discrepancies 0.03 and 0.05 cm3/cm3 and NRMSE values indicating high accuracy."
+
+  - dag_variable: SM
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred crop-model NRMSE convention for gridded/root-zone soil moisture after depth matching."
+        cites: [soothar2021, khechba2021]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Remote-sensing crop assimilation papers report soil moisture retrieval R2/RMSE and yield improvements; correlation is supportive."
+        cites: [lu2021]
+    validated_when: "Spatial SM time series validated when depth-matched gridded soil moisture nRMSE <= 30%."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Lu et al. show soil moisture observations can improve crop simulations; the numeric pass band is the transferred crop-model nRMSE convention."
+
+  - dag_variable: RD
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric validation band for WOFOST rooting depth."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - compare to observed rooting-depth profiles when available; do not auto-pass without a fetched threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Cached WOFOST validation papers mention rooting depth mainly as an input/driver of soil moisture, not as a validated output with acceptance bands."
+
+  - dag_variable: WWLOW
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a validation threshold for total profile water WWLOW or an NSE band specific to this WOFOST state."
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Depth-matched soil moisture has an nRMSE convention, but WWLOW is a total-profile water store rather than the same observation."
+        cites: [soothar2021, khechba2021]
+    validated_when: "UNRESOLVED - use soil-moisture conventions only as context unless WWLOW is converted to an observed depth-integrated water store."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The fetched WOFOST soil-water evidence covers SM, not WWLOW; null NSE band prevents an unsupported gate."
+
+deferred_paywalled:
+  - ref: "WOFOST: a simulation model of crop production"
+    doi: 10.1111/j.1475-2743.1989.tb00755.x
+    needed_for: [DVS, RD, TWLV, TWST, TWRT, WWLOW]
+  - ref: "Water Stress is a Key Factor Influencing the Parameter Sensitivity of the WOFOST Model in Different Agro-Meteorological Conditions"
+    doi: 10.1007/s42106-021-00137-5
+    needed_for: [SM, TRA, CTRAT, RD]
+  - ref: "Sensitivity of WOFOST-based modelling solutions to crop parameters under climate change"
+    doi: 10.1016/j.ecolmodel.2017.11.003
+    needed_for: [LAI, TAGP, TWSO, TWLV, TWST, TWRT]

@@ -1,14 +1,3 @@
----
-name: icepack
-description: >-
-  icepack glacier-flow package (Shapero et al. 2021, GMD 14, 4593-4616,
-  doi:10.5194/gmd-14-4593-2021), version 1.x. Covers Ice momentum balance / velocity
-  diagnostic solve (SSA, SIA, hybrid); Ice thickness evolution via mass continuity
-  (prognostic); Glen's flow law viscosity and Weertman basal friction; Hydrostatic surface
-  elevation from thickness and bed. Use when the task involves running, configuring,
-  calibrating or interpreting icepack.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (24 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_thickness_to_icepack.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_thickness_to_icepack.py --help` |
+| `tools/convert_velocity_to_icepack.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_velocity_to_icepack.py --help` |
+| `tools/parse_icepack_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_icepack_output.py --help` |
+| `tools/run_icepack_simulation.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_icepack_simulation.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # icepack v1.1.0 — Knowledge Infrastructure
 
@@ -165,6 +188,52 @@ Stage 0 (config) → Stage 1 (data) → Stage 2 (mesh) → Stage 3 (interpolatio
 
 ---
 
+## Output Description
+
+**Source of truth**: `dag.yaml`. The dag is the model identity for outputs; if this
+section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `velocity` — Solved depth-averaged (or 3D) ice velocity field satisfying the momentum balance; typical 0-4000 m/yr for Antarctic ice streams. (`m/yr`)
+
+| Output variable (dag `var`) | Rank | Unit | Emitted in | Description |
+|-----------------------------|------|------|------------|-------------|
+| `velocity` | 1 | `m/yr` | `diagnostic_solve` return (`firedrake.Function`); time series exported to CSV by post-processing | Solved depth-averaged (or 3D) ice velocity field satisfying the momentum balance; typical 0-4000 m/yr for Antarctic ice streams. |
+| `thickness` | 2 | `m` | `prognostic_solve` return (`firedrake.Function`); time series exported to CSV | Ice thickness after a prognostic time step, evolved by mass continuity; must remain > 0. |
+| `surface` | 3 | `m` | `compute_surface` return (`firedrake.Function`) | Hydrostatic-consistent surface elevation recomputed from updated thickness and bed for grounded models. |
+| `optimized_control` | 4 | `varies (A in MPa^-3 yr^-1, or C in Weertman units)` | `icepack.statistics` `MaximumProbabilityEstimator` result | Best-fit ice fluidity or ice-bed basal-friction field inferred from observed ice velocity via the inverse problem. |
+| `simulated_velocity` | 5 | `m/yr` | `icepack.statistics` simulation at optimum | Model ice velocity at the inverse-problem optimum, for comparison against the observed ice velocity used in inversion. |
+
+Other dag outputs are `thickness`, `surface`, `optimized_control`, and
+`simulated_velocity`.
+
+---
+
+## Unit Table
+
+**Exact shapes live in `docs/format_spec.yaml`** (projected from `dag.yaml` +
+`diagnostics/triplets.yaml`). This table restates the model-facing units and the
+conversion traps that affect the pipeline.
+
+| Variable | Source or input unit | icepack / output unit | Conversion | Source |
+|----------|----------------------|-----------------------|------------|--------|
+| `velocity` | `m/s` for sources that provide SI velocity; MEaSUREs Antarctic data is typically already `m/yr` | `m/yr` | multiply by `3.15576e7` only when the source is `m/s`; do not double-convert data already in `m/yr` | `dag.yaml`, `docs/format_spec.yaml`, `diagnostics/triplets.yaml` `dt_001`, `dt_002` |
+| `simulated_velocity` | model simulation at inverse-problem optimum | `m/yr` | none after model execution | `dag.yaml` |
+| `thickness` | `m`; some datasets may store `km` | `m` | none for meters; multiply by `1000` if source is `km` | `dag.yaml`, `docs/format_spec.yaml`, `diagnostics/triplets.yaml` `dt_004` |
+| `surface` | recomputed from updated thickness and bed | `m` | none after `compute_surface` | `dag.yaml` |
+| `bed (b)` | dataset lookup | `m` | none when already meters | `docs/format_spec.yaml` |
+| `accumulation` | `m w.e./yr` if supplied as water equivalent | `m ice/yr` | multiply by `rho_w/rho_i ~= 1.09` | `dag.yaml`, `docs/format_spec.yaml` |
+| `temperature (T)` | `degC` in common source data | `K` | add `273.15` before `icepack.rate_factor(T)` | `docs/format_spec.yaml`, `diagnostics/triplets.yaml` `dt_003` |
+| `fluidity (A)` | derived from temperature or inferred | `MPa^-3 yr^-1` | use `icepack.rate_factor(T)`; do not hand-convert SI `Pa^-3 s^-1` values | `docs/format_spec.yaml`, `diagnostics/triplets.yaml` `dt_015` |
+| `friction (C)` | calibrated or inferred | `MPa yr^(1/m) m^(-1/m)` | none; must be non-negative | `docs/format_spec.yaml`, `diagnostics/triplets.yaml` `dt_005` |
+| `timestep (dt)` | user-provided float | `yr` | none | `docs/format_spec.yaml` |
+| `mesh_resolution (lcar)` | user-provided characteristic element length | `m` | none | `docs/format_spec.yaml` |
+| `glacier_outline` | GeoJSON FeatureCollection | GeoJSON | use projected mesh coordinates in meters; do not use lat/lon coordinates directly as mesh coordinates | `docs/format_spec.yaml`, `diagnostics/triplets.yaml` `dt_012` |
+| `optimized_control` | inferred field | `varies (A in MPa^-3 yr^-1, or C in Weertman units)` | interpret by the selected control variable | `dag.yaml` |
+
+---
+
 ## Unit Trap Table
 
 | Variable | Source format | icepack format | Conversion | Trap |
@@ -181,6 +250,37 @@ Stage 0 (config) → Stage 1 (data) → Stage 2 (mesh) → Stage 3 (interpolatio
 | Fluidity A | T-dependent | MPa^-3 yr^-1 | use rate_factor() | ~1–100 for T in [-30, 0]°C |
 | Strain rate | s^-1 | yr^-1 | × year | Regularized by strain_rate_min = 1e-5 |
 | Mesh coordinates | m (projected) | m | none | Must use projected CRS (not lat/lon) |
+
+---
+
+## Validated Results
+
+**Source of truth**: `docs/validation_convention.yaml`. These are the KI's
+validation bars, not achieved run metrics. A run is judged against these cited
+bands; null bands are recorded as `no cited threshold`.
+
+### Headline Validation Bar
+
+| DAG variable | Observation shape | Metric | Direction | Very good | Good | Satisfactory | Cites |
+|--------------|-------------------|--------|-----------|-----------|------|--------------|-------|
+| `velocity` | spatial snapshot | `rmse` | minimize | `<= 3.51 m/yr` (`polashenski2024`, `armstrong2016`) | `<= 5.66 m/yr` (`polashenski2024`, `armstrong2016`) | `<= 9.49 m/yr` (`polashenski2024`, `armstrong2016`) | `polashenski2024`, `armstrong2016` |
+
+`velocity` is validated when velocity-field `rmse` is `<= 9.49 m/yr`
+(`polashenski2024`, `armstrong2016`) against gridded surface-velocity
+observations, with spatial residuals inspected rather than auto-validating by
+`csi`.
+
+### Convention Bars
+
+| DAG variable | Metric | Direction | Very good | Good | Satisfactory | Cites |
+|--------------|--------|-----------|-----------|------|--------------|-------|
+| `velocity` | `rmse` | minimize | `<= 3.51 m/yr` (`polashenski2024`, `armstrong2016`) | `<= 5.66 m/yr` (`polashenski2024`, `armstrong2016`) | `<= 9.49 m/yr` (`polashenski2024`, `armstrong2016`) | `polashenski2024`, `armstrong2016` |
+| `velocity` | `rmse` | minimize | no cited threshold | no cited threshold | `<= 10.95 m/yr` (`armstrong2016`) | `armstrong2016` |
+| `velocity` | `nse` | maximize | no cited threshold | no cited threshold | no cited threshold | none |
+| `thickness` | `rmse` | minimize | no cited threshold | no cited threshold | no cited threshold | none |
+
+`optimized_control` is inferred rather than directly observed and is verified
+through the `simulated_velocity` misfit and documented regularization tradeoff.
 
 ---
 

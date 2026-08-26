@@ -1,133 +1,480 @@
-model:
-  name: "ADCIRC"
-  version: "56.2.1"
-  domain: "coastal_ocean"
-  description: "2D/3D finite element hydrodynamic model for time-dependent free surface circulation and transport"
-  binary_path: "KISSPATH_BINARIES/ADCIRC/source/repo/build/adcirc"
-  coordinate_system: "unstructured triangular finite element mesh"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: ADCIRC
+  language: fortran
+  implementation:
+    id: adcirc-v562
+    version: v56.2.1
+    provenance: Fortran 2008 finite-element coastal-circulation code (serial adcirc / parallel padcirc)
+      from the Luettich/Westerink ADCIRC distribution realizing the GWCE formulation; optional padcswan
+      SWAN coupling.
+  scientific_reference_version: ADCIRC v56.2.1 (Luettich/Westerink GWCE finite-element formulation)
 inputs:
   forcing:
-    - name: "wind_velocity"
-      unit: "m/s"
-      valid_range: [0, 100]
-      format: "OWI fort.22 (NWS=12)"
-    - name: "atmospheric_pressure"
-      unit: "m H2O"
-      valid_range: [9.5, 10.5]
-      format: "OWI fort.22 (NWS=12)"
-      note: "Convert from Pa: P_mH2O = P_Pa / 9806.65"
-    - name: "tidal_elevation"
-      unit: "m"
-      valid_range: [-5, 5]
-      format: "fort.19 (time-varying elevation BC)"
-    - name: "river_discharge"
-      unit: "m3/s"
-      valid_range: [0, 100000]
-      format: "fort.20 (normal flux BC)"
-
-  mesh:
-    - name: "fort.14"
-      description: "Unstructured triangular mesh: nodes (x, y, depth), elements, boundaries"
-      format: "ASCII"
-      required: true
-    - name: "fort.13"
-      description: "Nodal attributes (Manning's n, friction, directional roughness)"
-      format: "ASCII"
-      required: false
-
+  - name: Meteorological forcing (wind + atmospheric pressure)
+    unit: wind m/s; pressure mb (hPa) in OWI input, m H2O internally
+    category: forcing
+    source_kind: NWP / parametric (GFS/ERA5/HRRR/HWRF or Holland parametric track)
+    model_input_format: fort.22 control + fort.221 pressure (mb) + fort.222 wind u,v (m/s) for OWI NWS=12;
+      NWS selects format (8=Holland, 12=OWI, 13=OWI netCDF, 14=GRIB2)
+    notes: Required when NWS!=0. OWI header (iLat,iLong,DX,DY,SWLat,SWLon,DT) is rigid fixed-width; off-by-one
+      grid dims shift the field (dt_007). Internal pressure unit is m H2O = P_Pa/9806.65.
   parameters:
-    critical:
-      - name: "DTDP"
-        unit: "seconds"
-        valid_range: [0.5, 10]
-        description: "Timestep — must satisfy CFL: DTDP < dx_min / sqrt(g * h_max)"
-      - name: "TAU0"
-        valid_range: [-5, 0.1]
-        description: "GWCE weighting factor. Use -3 for automatic spatially-varying values"
-      - name: "G"
-        unit: "m/s2"
-        valid_range: [9.80, 9.82]
-        description: "Gravitational acceleration. Must be 9.81 for spherical coords (ICS=2)"
-      - name: "Manning_n"
-        unit: "s/m^(1/3)"
-        valid_range: [0.01, 0.20]
-        description: "Bottom friction coefficient — primary calibration parameter"
-      - name: "H0"
-        unit: "m"
-        valid_range: [0.01, 1.0]
-        description: "Wetting/drying threshold. Typical: 0.05 (storm surge), 0.01 (tidal)"
-      - name: "ESLM"
-        unit: "m2/s"
-        valid_range: [1, 50]
-        description: "Lateral viscosity/diffusion"
-      - name: "FFACTOR"
-        valid_range: [0.001, 0.01]
-        description: "Quadratic friction coefficient"
-
+  - name: Bathymetric depth DP
+    unit: m, POSITIVE below geoid (NEGATIVE above)
+    category: parameters
+    source_kind: DEM (GEBCO/ETOPO/local) via mesh generation
+    model_input_format: fort.14 node coordinate column 4
+    notes: Sign convention couples to all elevation outputs; flipping sign silently inverts bathymetry
+      (dt_001).
+  - name: Manning's n at sea floor
+    unit: s/m^(1/3) (typical 0.02-0.12)
+    category: parameters
+    source_kind: land-cover lookup (NLCD/GlobCover) by depth/class
+    model_input_format: fort.13 nodal attribute mannings_n_at_sea_floor
+    notes: Bottom-friction parameter; n outside ~0.01-0.20 causes div-by-zero (n=0) or blocked flow (dt_014).
+  - name: Mesh geometry and connectivity
+    unit: degrees (ICS=2) or meters (ICS=1)
+    category: parameters
+    source_kind: external mesh generator (SMS, OceanMesh2D)
+    model_input_format: fort.14 node coordinates + element connectivity + boundary node lists
+    notes: Boundary nodes must be ordered counter-clockwise (dt_018); mesh must be connected for the METIS-based
+      domain partitioning used by the parallel solver (dt_020). The partitioning itself is execution-layer
+      preprocessing (adcprep), not a physics step.
+  - name: GWCE/numerical/friction control parameters
+    unit: mixed (DTDP s; G m/s^2; TAU0 dimensionless; ESLM m^2/s)
+    category: parameters
+    source_kind: calibrated / model defaults
+    model_input_format: fort.15 (ICS, IM, G, DTDP, RNDAY, DRAMP, NOLIBF/CF, TAU0, ESLM, NOLIFA/H0/VELMIN,
+      output control)
+    notes: G must be 9.81 when ICS=2 (metric); G=32.174 (feet) is silently fatal (dt_002). DTDP must satisfy
+      CFL DTDP < dx_min/sqrt(g*h_max) (dt_006).
+  initial_conditions:
+  - name: Hot-start restart state
+    unit: Fortran unformatted binary
+    category: initial_conditions
+    source_kind: previous ADCIRC run
+    model_input_format: fort.67 / fort.68 (IHOT=67/68)
+    notes: Compiler/endianness/flag-specific; not portable across builds (dt_009). Optional — cold start
+      (IHOT=0) otherwise.
+  boundary_conditions:
+  - name: Tidal harmonic open-boundary forcing
+    unit: amplitude m; phase deg; period s
+    category: boundary_conditions
+    source_kind: tidal database (TPXO9/FES2014/OTPS)
+    model_input_format: fort.15 harmonic constituents (NBFR) + tidal potential (NTIP); periods in seconds
+      (dt_012)
+    notes: 30+ constituents; NTIP=1 tidal potential, NTIP=2 adds self-attraction/loading.
+  - name: Non-periodic elevation boundary condition
+    unit: time s vs elevation m
+    category: boundary_conditions
+    source_kind: user / external surge model
+    model_input_format: fort.19 at each open-boundary node
+  - name: Non-periodic normal-flux boundary condition (e.g. river discharge)
+    unit: time s vs normal flux m^2/s
+    category: boundary_conditions
+    source_kind: user / coupled river model (e.g. CaMa-Flood)
+    model_input_format: fort.20 at boundary nodes
+  - name: Self-attraction and earth-load tide forcing
+    unit: SAL amplitude / phase per node
+    category: boundary_conditions
+    source_kind: tidal-loading database
+    model_input_format: fort.24 (required when NTIP=2)
 outputs:
   primary:
-    - name: "water_elevation"
-      unit: "m"
-      valid_range: [-15, 15]
-      file: "fort.63"
-      description: "Surface elevation at all nodes"
-    - name: "velocity"
-      unit: "m/s"
-      valid_range: [0, 10]
-      file: "fort.64"
-      description: "Depth-averaged velocity (u,v) at all nodes"
-    - name: "max_elevation"
-      unit: "m"
-      valid_range: [-15, 15]
-      file: "maxele.63"
-      description: "Maximum water surface elevation"
-    - name: "max_velocity"
-      unit: "m/s"
-      valid_range: [0, 10]
-      file: "maxvel.63"
-      description: "Maximum velocity magnitude"
-    - name: "wind_velocity_output"
-      unit: "m/s"
-      valid_range: [0, 100]
-      file: "fort.73"
-      description: "Wind speed (u,v) at all nodes"
-    - name: "atmospheric_pressure_output"
-      unit: "m H2O"
-      valid_range: [9.5, 10.5]
-      file: "fort.74"
-      description: "Atmospheric pressure at all nodes"
-
-  station:
-    - name: "station_elevation"
-      unit: "m"
-      file: "fort.61"
-    - name: "station_velocity"
-      unit: "m/s"
-      file: "fort.62"
-
-  formats:
-    - "ASCII (NOUT* = 1)"
-    - "Sparse ASCII (NOUT* = 4)"
-    - "netCDF3/4 (NOUT* = 5)"
-    - "XDMF (for ParaView)"
-
+  - name: water_surface_elevation_stations
+    unit: m
+    description: Elevation time series at specified recording stations (rel. geoid).
+    validation_rank: 1
+    emitted_in: fort.61
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Dry periods carry the DRY_VALUE=-99999 sentinel; mask before comparison.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Peak storm-surge magnitude at a station; default Garratt drag cap can bias Cat3+ peaks 30-50%
+          low (dt_004).
+      detrending_options: []
+  - name: water_surface_elevation_all_nodes
+    unit: m
+    description: Elevation time series at all mesh nodes (rel. geoid). ASCII/binary per NOUTGE, also netCDF.
+    validation_rank: 2
+    emitted_in: fort.63
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Dry nodes carry DRY_VALUE=-99999; mask before comparison.
+      detrending_options: []
+  - name: depth_averaged_velocity_stations
+    unit: m/s
+    description: Depth-averaged water velocity (u,v) time series at recording stations.
+    validation_rank: 3
+    emitted_in: fort.62
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options: []
+  - name: depth_averaged_velocity_all_nodes
+    unit: m/s
+    description: Depth-averaged water velocity (u,v) time series at all nodes. Also netCDF.
+    validation_rank: 4
+    emitted_in: fort.64
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      detrending_options: []
+  - name: max_water_surface_elevation
+    unit: m
+    description: Maximum elevation per node over the simulation (storm-surge envelope).
+    validation_rank: 5
+    emitted_in: maxele.63
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - High-water-mark inundation envelope; dry nodes carry DRY_VALUE=-99999.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Peak surge at a gauge; sensitive to wind drag cap (dt_004) and Manning's n.
+      detrending_options: []
+  - name: max_velocity
+    unit: m/s
+    description: Maximum depth-averaged water velocity magnitude per node over the simulation.
+    validation_rank: 6
+    emitted_in: maxvel.63
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      detrending_options: []
+  - name: atmospheric_pressure_all_nodes
+    unit: m H2O
+    description: Atmospheric pressure across the domain (diagnostic forcing field echoed at all nodes).
+    validation_rank: 7
+    emitted_in: fort.73
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - fort.73 = atmospheric pressure per docs_reader (authoritative); ki_reader swaps fort.73/74 —
+          see safety.warnings. Internal unit m H2O.
+      detrending_options: []
+  - name: wind_velocity_all_nodes
+    unit: m/s
+    description: Atmospheric wind stress/velocity across the domain (diagnostic forcing field echoed at
+      all nodes).
+    validation_rank: 8
+    emitted_in: fort.74
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - fort.74 = wind stress/velocity per docs_reader (authoritative); ki_reader swaps fort.73/74 —
+          see safety.warnings.
+      detrending_options: []
+  - name: min_atmospheric_pressure
+    unit: m H2O
+    description: Minimum pressure per node over the simulation.
+    validation_rank: 9
+    emitted_in: minpr.63
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      detrending_options: []
+  - name: max_wind_velocity
+    unit: m/s
+    description: Maximum atmospheric wind speed per node over the simulation.
+    validation_rank: 10
+    emitted_in: maxwvel.63
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      detrending_options: []
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    description: "Depth sign convention: positive = below geoid. Invert DEM elevations."
-    severity: "silent"
-  - id: "dt_002"
-    description: "G must be 9.81 m/s2 with spherical coordinates (ICS=2)"
-    severity: "silent"
-  - id: "dt_003"
-    description: "Atmospheric pressure must be in meters of water, not Pa or mb"
-    severity: "silent"
-  - id: "dt_006"
-    description: "DTDP timestep must satisfy CFL condition or oscillations grow"
-    severity: "silent"
-  - id: "dt_007"
-    description: "OWI wind files require exact header format — off-by-one causes wrong wind locations"
-    severity: "silent"
-  - id: "dt_009"
-    description: "Hot start files are binary and not portable between compilers"
-    severity: "crash"
+- id: dt_001
+  symptom: Domain appears inverted — ocean areas are dry, land areas are flooded. Water surface elevation
+    is negative everywhere in the ocean.
+  diagnosis: Depth sign convention inverted — elevation used instead of depth; ADCIRC uses a depth convention
+    where positive values are BELOW the geoid and negative values are ABOVE. This is opposite to standard
+    elevation (positive up). When converting DEM data (where elevation is positive up), the values must
+    b
+  remedy: 'Negate all depth values: DP = -elevation; convert_bathymetry_to_fort14; [''Check DP values
+    in fort.14 — ocean nodes should have DP > 0'', ''If all DP < 0, multiply column 4 by -1'', ''Land
+    nodes above geoid should have DP < 0'']; validate_outputs() checks for positive ocean depths'
+  severity: silent
+- id: dt_002
+  symptom: Model runs but produces completely wrong water levels and velocities. Tidal amplitudes are
+    off by orders of magnitude.
+  diagnosis: Gravitational constant G=32.174 (feet) used with spherical coordinates ICS=2 (degrees); When
+    using spherical coordinates (ICS=2, lat/lon in degrees), ADCIRC internally converts to meters using
+    Earth's radius. The gravitational constant G must be 9.81 m/s² for this to be consistent. Using G=32.174
+    ft
+  remedy: Set G = 9.81 in fort.15 when ICS = 2; None; ['Open fort.15, find the G value', 'If ICS=2, G
+    must be 9.81', 'G=32.174 is only valid with ICS=1 (Cartesian, feet)']; run_adcirc.py preflight checks
+    G/ICS consistency
+  severity: silent
+- id: dt_003
+  symptom: Storm surge is 100x too large (>100m) or pressure gradient term dominates unrealistically.
+    Model may crash with NaN.
+  diagnosis: 'Atmospheric pressure supplied in Pa instead of mb (millibars/hPa); ADCIRC''s OWI format
+    (NWS=12) expects pressure in millibars (hPa). Standard atmospheric pressure is ~1013.25 mb. If pressure
+    is supplied in Pa (101325 Pa), the model interprets this as 101325 mb, creating an extreme pressure
+    gradient '
+  remedy: 'Divide Pa values by 100 to get mb: pressure_mb = pressure_Pa / 100; convert_forcing_to_adcirc;
+    [''Check max value in fort.221 — should be 950-1050 for mb'', ''If values are ~95000-105000, data
+    is in Pa — divide by 100'', ''If values are ~0.95-1.05, data is in atm — multiply by 1013.25'']; convert_forcing_'
+  severity: silent
+- id: dt_004
+  symptom: Peak storm surge is 30-50% lower than expected for a major hurricane. Wind stress appears capped.
+  diagnosis: Default wind drag coefficient is capped at Cd=0.003 for wind speeds >33.6 m/s; ADCIRC's default
+    Garratt (1977) drag law caps the drag coefficient at Cd=0.003, which corresponds to ~33.6 m/s wind
+    speed. For Category 3+ hurricanes (>50 m/s), this cap means increasing wind speed above 33.6 m/s does
+    NOT
+  remedy: 'Use alternative drag law or modify CDMAX for extreme wind studies; None; [''For research: consider
+    Powell (2003) drag reduction at high winds'', ''For operations: the default cap is conservative (safe
+    for forecasting)'', ''Check max wind speed in fort.222 — if >40 m/s, drag cap is active'']; Document
+    drag'
+  severity: silent
+- id: dt_010
+  symptom: Storm surge is approximately half of expected value. Wind forcing appears systematically weak.
+  diagnosis: Wind speed in knots instead of m/s; ADCIRC expects wind velocity in m/s for OWI format. If
+    wind data is in knots (1 knot = 0.5144 m/s), the wind stress is approximately (0.5144)² ≈ 0.26x of
+    correct value, producing ~50% lower surge. Similarly, wind in km/h (÷3.6) or mph (÷2.237) will be
+    over- estima
+  remedy: Multiply knots by 0.5144 to get m/s; convert_forcing_to_adcirc; ['Check max wind in fort.222
+    — Category 5 hurricane should show ~70-80 m/s', 'If max shows ~140-160, data is likely in knots',
+    'If max shows ~250-290, data is likely in km/h']; convert_forcing_to_adcirc auto-detects and converts
+    knots
+  severity: silent
+- id: dt_011
+  symptom: Mesh appears point-like or covers wrong area. Domain is tiny or in wrong location.
+  diagnosis: Coordinates in radians instead of degrees for spherical mode (ICS=2); ADCIRC with ICS=2 expects
+    coordinates in decimal degrees. If lat/lon are provided in radians (common in some GIS outputs), the
+    domain appears ~57x smaller (1 radian = 57.3 degrees). Latitude range 0-3.14 rad looks like 0-180°
+    to A
+  remedy: 'Convert radians to degrees: deg = rad × 180/π; None; [''Check coordinate ranges in fort.14
+    columns 2-3'', ''Longitude should be -180 to 180 or 0 to 360'', ''Latitude should be -90 to 90'',
+    ''If max latitude < 1.6, coordinates are likely in radians'']; convert_bathymetry_to_fort14 validates
+    coordinate ranges'
+  severity: silent
+- id: dt_012
+  symptom: Tidal signal has wrong frequency — period appears much too long or too short. Tidal constituents
+    are unrecognizable.
+  diagnosis: Tidal constituent period specified in hours instead of seconds in fort.15; ADCIRC expects
+    tidal forcing periods in SECONDS. M2 period is 44714.16 seconds (12.42 hours). If the period is entered
+    as 12.42 (hours), ADCIRC interprets this as 12.42 seconds — a frequency ~3600x too high. The model
+    runs bu
+  remedy: Multiply tidal periods by 3600 to convert hours to seconds; None; ['Check NBFR period values
+    in fort.15', 'M2 should be ~44714 s, S2 ~43200 s, K1 ~86164 s', "If values are 12.42, 12.0, 23.93
+    — they're in hours, multiply by 3600"]; Add period validation check before model execution
+  severity: silent
+- id: dt_015
+  symptom: Output time axis is wrong — simulation appears 86400x too long or too short. Plots show incorrect
+    time labels.
+  diagnosis: 'Confusion between days and seconds for time reference; ADCIRC output timestamps are in seconds
+    since cold start. STATIM and REFTIM in fort.15 are in DAYS. Output analysis tools that assume timestamps
+    are in days (or vice versa) will have a 86400x error in the time axis.
+
+    ; [''parse_adcirc_output'', ''fo'
+  remedy: 'Output time is always seconds. Convert to days: days = seconds / 86400; parse_adcirc_output;
+    [''Check first few time values in fort.63'', ''If TIME = 3600, this is 3600 seconds = 1 hour (not
+    3600 days)'', ''STATIM in fort.15 is days, but output TIME is seconds'']; parse_adcirc_output labels
+    time axis as s'
+  severity: silent
+- id: dt_005
+  symptom: Mass balance errors in water level. Spurious oscillations in shallow areas. Volume not conserved.
+  diagnosis: TAU0 (GWCE weighting factor) is too small, causing inadequate diffusion; The GWCE weighting
+    factor TAU0 controls the balance between the primitive continuity equation (mass-conserving) and the
+    GWCE (wave-equation form). Small TAU0 (<0.001) reduces artificial diffusion but can cause mass balance
+    erro
+  remedy: Set TAU0 = -3 for automatic spatially-varying GWCE weighting; None; ['If TAU0 > 0 and < 0.005,
+    increase to 0.01-0.03', 'Or set TAU0 = -3 for automatic (recommended)', 'TAU0 = -5 for element-area-based
+    weighting']; run_adcirc.py warns if TAU0 is very small
+  severity: degraded
+- id: dt_006
+  symptom: Growing oscillations in water level. Model may crash with NaN after many timesteps. Elevation
+    values grow exponentially.
+  diagnosis: 'Timestep DTDP violates CFL stability condition; The CFL condition requires DTDP < dx_min
+    / sqrt(g * h_max), where dx_min is the smallest element size and h_max is the maximum depth. For a
+    mesh with 100m elements and 50m depth: DTDP < 100/sqrt(9.81*50) = 4.5s. ADCIRC does NOT automatically
+    check or e'
+  remedy: 'Reduce DTDP to satisfy CFL: DTDP < dx_min / sqrt(g * h_max); None; [''Identify smallest element
+    size (from mesh generation tool)'', ''Identify maximum depth (from fort.14)'', ''Compute CFL limit
+    and set DTDP to 50-80% of limit'', ''For safety, start with DTDP = 1.0 s and increase gradually''];
+    run_adcirc.py'
+  severity: fatal
+- id: dt_007
+  symptom: Wind and pressure forcing appears shifted spatially. Storm track is displaced from expected
+    location. Asymmetric surge pattern is wrong.
+  diagnosis: OWI header grid dimensions (iLat, iLong) off by one or mismatched with data; The OWI format
+    header specifies grid dimensions (iLat, iLong), spacing (DX, DY), and SW corner (SWLat, SWLon). If
+    iLat or iLong is off by one, subsequent data rows are read with wrong spatial mapping. This shifts
+    the entire
+  remedy: Verify iLat × iLong matches the number of data values per snapshot; convert_forcing_to_adcirc;
+    ['Count data values between consecutive iLat headers', 'Should equal iLat × iLong', 'Verify SWLat/SWLon
+    matches the SW corner of your data grid']; convert_forcing_to_adcirc auto-computes grid dimensions
+    fr
+  severity: silent
+- id: dt_008
+  symptom: Inundation extent is smaller than expected. Flooding does not reach areas known to have flooded
+    in reality.
+  diagnosis: 'Wetting/drying threshold H0 is too large; H0 is the minimum water depth for a node to be
+    considered wet. If H0=1.0m, a node must have >1m of water above its elevation to be flagged as wet.
+    This excludes shallow inundation areas and significantly underestimates flooding extent. For storm
+    surge: H0=0.'
+  remedy: Reduce H0 to 0.01-0.05 m; None; ['Check H0 value in fort.15', 'If H0 > 0.5, it is likely too
+    large', 'Set H0 = 0.05 for storm surge, H0 = 0.01 for tidal', 'Too small H0 (<0.001) may cause wet/dry
+    chattering']; run_adcirc.py warns if H0 > 1.0
+  severity: degraded
+- id: dt_013
+  symptom: Bottom friction effect is orders of magnitude wrong. Linear friction values used where quadratic
+    expected.
+  diagnosis: Linear friction coefficient TAU (1/s) confused with quadratic CF (dimensionless); NOLIBF=0
+    uses linear friction with TAU in units of 1/second (typical 0.0001-0.001). NOLIBF=1 uses quadratic
+    friction with CF dimensionless (typical 0.001-0.01). Using a quadratic value (0.003) with linear formulation
+    g
+  remedy: 'Match friction coefficient to NOLIBF setting; None; [''If NOLIBF=0: TAU ~ 0.0001 - 0.001 (1/s)'',
+    ''If NOLIBF=1: CF ~ 0.001 - 0.01 (dimensionless)'', ''If NOLIBF=2: hybrid — check HBREAK, FTHETA,
+    FGAMMA'']; run_adcirc.py cross-checks NOLIBF with friction value'
+  severity: silent
+- id: dt_014
+  symptom: Velocities unrealistically high or low in specific areas. Tidal amplification wrong in certain
+    channels.
+  diagnosis: 'Manning''s n values outside physical range in fort.13; Manning''s n for ocean/coastal applications
+    typically ranges from 0.015 (smooth open ocean) to 0.15 (dense marsh). Values outside this range indicate
+    data errors. n=0 causes division by zero. n>0.3 effectively blocks all flow. Common error: using '
+  remedy: 'Verify Manning''s n is in range 0.01-0.20 for all nodes; convert_bathymetry_to_fort14; ["Check
+    min/max Manning''s n in fort.13", ''Deep ocean: 0.015-0.025'', ''Shelf: 0.020-0.035'', ''Coastal:
+    0.025-0.050'', ''Marsh: 0.060-0.120'']; convert_bathymetry_to_fort14 uses depth-based classification
+    table'
+  severity: degraded
+- id: dt_009
+  symptom: 'Model crashes at startup with Fortran I/O error reading hot start file. Error: ''End of record''
+    or ''Bad file descriptor''.'
+  diagnosis: Hot start file (fort.67/68) is binary incompatible with current compiler; ADCIRC hot start
+    files are Fortran unformatted (binary). They use compiler-specific record markers, byte ordering,
+    and data alignment. A fort.67 written by ifort WILL NOT work with gfortran (and vice versa). Even
+    different ver
+  remedy: Regenerate hot start files using the same compiler and flags; None; ['Run a cold start (IHOT=0)
+    to completion', 'Use the resulting fort.67/68 for hot start', 'Never share hot start files between
+    different compiler builds']; Document compiler version in run metadata
+  severity: fatal
+- id: dt_016
+  symptom: Velocity field develops NaN values after some timesteps. NaN appears first in shallow areas
+    or near boundaries.
+  diagnosis: 'Lateral viscosity ESLM is too large for the mesh resolution; The eddy viscosity coefficient
+    ESLM (m²/s) controls numerical diffusion in the momentum equation. If ESLM is too large relative to
+    element size, it introduces numerical instability. Rule of thumb: ESLM < 0.5 × dx_min² / DTDP. For
+    100m elem'
+  remedy: Reduce ESLM — typical range 1-50 m²/s; None; ['Start with ESLM = 10 m²/s', 'If oscillations
+    persist, increase gradually', 'If NaN appears, decrease ESLM']; run_adcirc.py checks ESLM against
+    mesh resolution
+  severity: fatal
+- id: dt_017
+  symptom: ADCIRC crashes immediately at startup with file not found error.
+  diagnosis: 'fort.14 or fort.15 not present in the working directory; ADCIRC reads input files from the
+    current working directory. It does NOT accept file paths as arguments. All fort.* files must be in
+    the directory where adcirc is executed. Common mistake: running adcirc from the build directory instead
+    of the'
+  remedy: Ensure all fort.* files are in the working directory; run_adcirc; ['cd to the directory containing
+    fort.14, fort.15', 'Run adcirc from that directory', 'Or use run_adcirc.py --work_dir to specify the
+    directory']; run_adcirc.py preflight checks for required files
+  severity: fatal
+- id: dt_018
+  symptom: Boundary conditions applied incorrectly — flow direction wrong at some boundaries. No error
+    message.
+  diagnosis: Boundary nodes not ordered counter-clockwise around the domain; ADCIRC requires boundary
+    nodes to be listed counter-clockwise (CCW) when viewed from above. Land boundaries should have the
+    domain interior on their left. If nodes are ordered clockwise, ADCIRC may apply boundary conditions
+    on the wrong
+  remedy: 'Reorder boundary nodes to counter-clockwise; None; [''Visualize boundary nodes and verify CCW
+    ordering'', ''Land boundaries: domain interior on left side'', ''Open boundaries: open ocean on right
+    side'']; Mesh generation tools (OceanMesh2D, SMS) handle this automatically'
+  severity: silent
+- id: dt_019
+  symptom: Parallel run hangs or segfaults during initialization. adcprep completes successfully but padcirc
+    fails.
+  diagnosis: MPI library version mismatch between adcprep and padcirc compilation; adcprep and padcirc
+    must be compiled with the same MPI implementation and version. Mixing OpenMPI-compiled adcprep with
+    MPICH-compiled padcirc (or different major versions) causes ABI incompatibilities that manifest as
+    segfaults o
+  remedy: 'Rebuild both adcprep and padcirc with the same MPI; None; [''Check MPI: mpirun --version'',
+    ''Rebuild: cmake -DCMAKE_Fortran_COMPILER=mpif90 ..'', ''Verify: ldd padcirc | grep mpi'']; Build
+    adcprep and padcirc together in same cmake build'
+  severity: fatal
+- id: dt_020
+  symptom: adcprep crashes during domain decomposition. Error mentions METIS or graph partitioning failure.
+  diagnosis: 'Mesh contains disconnected elements or isolated node groups; METIS graph partitioning requires
+    a connected mesh. If the mesh has disconnected islands, isolated elements, or unreferenced nodes,
+    METIS cannot create valid partitions. This often happens when combining multiple mesh regions or when
+    mesh '
+  remedy: Fix mesh connectivity — remove isolated elements/nodes; None; ['Check mesh in SMS or OceanMesh2D
+    for connectivity', 'Remove isolated nodes not referenced by any element', 'Ensure all elements share
+    at least one edge with another element']; Validate mesh connectivity before running adcprep
+  severity: fatal

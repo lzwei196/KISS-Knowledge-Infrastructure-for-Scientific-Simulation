@@ -1,13 +1,3 @@
----
-name: swat-plus
-description: >-
-  SWAT+ Rev 59.3. Covers Watershed-scale rainfall-runoff partitioning at HRU resolution;
-  Multilayer soil water dynamics with percolation, lateral flow, tile drainage, saturation
-  excess; Snow accumulation and temperature-index snowmelt; Potential and actual
-  evapotranspiration with vegetation/soil compensation. Use when the task involves
-  running, configuring, calibrating or interpreting SWAT_Plus.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -33,6 +23,77 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (40 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (9 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (61 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (23 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-24 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/s1/build_channel_topology.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1/build_channel_topology.py --help` |
+| `tools/s1/define_subbasins.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1/define_subbasins.py --help` |
+| `tools/s1/delineate_watershed.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1/delineate_watershed.py --help` |
+| `tools/s10/configure_fertilizer.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10/configure_fertilizer.py --help` |
+| `tools/s10/configure_nutrient_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10/configure_nutrient_output.py --help` |
+| `tools/s10/configure_point_sources.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10/configure_point_sources.py --help` |
+| `tools/s10/parse_nutrient_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10/parse_nutrient_output.py --help` |
+| `tools/s10/validate_water_quality.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10/validate_water_quality.py --help` |
+| `tools/s2/apply_hru_threshold.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2/apply_hru_threshold.py --help` |
+| `tools/s2/create_hru_overlay.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2/create_hru_overlay.py --help` |
+| `tools/s2/generate_hru_from_global.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2/generate_hru_from_global.py --help` |
+| `tools/s2/write_channel_geometry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2/write_channel_geometry.py --help` |
+| `tools/s3/generate_weather_stations.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/generate_weather_stations.py --help` |
+| `tools/s3/prepare_weather_files.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/prepare_weather_files.py --help` |
+| `tools/s3/validate_weather_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/validate_weather_data.py --help` |
+| `tools/s3/vic_forcing_to_swatplus.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/vic_forcing_to_swatplus.py --help` |
+| `tools/s4/build_soils_database.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/build_soils_database.py --help` |
+| `tools/s4/hwsd_to_swatplus_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/hwsd_to_swatplus_soil.py --help` |
+| `tools/s4/validate_soil_properties.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/validate_soil_properties.py --help` |
+| `tools/s5/build_management_schedules.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5/build_management_schedules.py --help` |
+| `tools/s5/configure_landuse.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5/configure_landuse.py --help` |
+| `tools/s6/apply_calibration.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6/apply_calibration.py --help` |
+| `tools/s6/calibrate_swatplus.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6/calibrate_swatplus.py --help` |
+| `tools/s6/generate_calibration_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6/generate_calibration_file.py --help` |
+| `tools/s6/sensitivity_swatplus.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6/sensitivity_swatplus.py --help` |
+| `tools/s7/adapt_swatplus_project.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7/adapt_swatplus_project.py --help` |
+| `tools/s7/configure_file_cio.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7/configure_file_cio.py --help` |
+| `tools/s7/configure_print_prt.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7/configure_print_prt.py --help` |
+| `tools/s7/configure_time_sim.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7/configure_time_sim.py --help` |
+| `tools/s7/validate_txtinout.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7/validate_txtinout.py --help` |
+| `tools/s8/compile_swatplus.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8/compile_swatplus.py --help` |
+| `tools/s8/run_swatplus.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8/run_swatplus.py --help` |
+| `tools/s8/run_swatplus_with_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8/run_swatplus_with_params.py --help` |
+| `tools/s9/check_mass_balance.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/check_mass_balance.py --help` |
+| `tools/s9/compare_swatplus_vic.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/compare_swatplus_vic.py --help` |
+| `tools/s9/compute_performance_metrics.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/compute_performance_metrics.py --help` |
+| `tools/s9/extract_discharge.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/extract_discharge.py --help` |
+| `tools/s9/parse_basin_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/parse_basin_output.py --help` |
+| `tools/s9/parse_channel_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/parse_channel_output.py --help` |
+
+*40 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -86,25 +147,95 @@ python tools/s1/delineate_watershed.py dem_clip.tif <lat> <lon> delin/ 25 0.01
 #   equals the published area. A coarse "station lat/lon" is usually a few km off, and
 #   snap_pour_points only ever moves DOWNSTREAM (toward higher accumulation).
 
+# S1b — REQUIRED for any multi-subbasin basin: build the real channel routing topology.
+#       Without channel_topology.json the deck falls back to one-hop "STAR" routing (every
+#       subbasin discharging straight to the outlet), which destroys hydrograph timing —
+#       this is the documented root cause of an NSE = -1.26 run on 2026-08-19, where the
+#       agent only found this tool by listing tools/s1/ after 5 model runs and 4 calibration
+#       rounds. Run it here, not after you see a bad NSE.
+#      Feed it the RASTER + the grids delineate_watershed.py already wrote — that is
+#      the tool's own documented preference and it matters: with only
+#      --subbasin_shp + --dem_path it re-breaches the DEM and every reach length
+#      falls back to the local-area relation (11/11 on the Rio San Pedro Mezquital).
+python tools/s1/build_channel_topology.py \
+    --subbasin_raster delin/subbasins.tif --dem_path dem_clip.tif \
+    --flow_dir delin/flow_direction.tif --flow_acc delin/flow_accumulation.tif \
+    --streams_shp delin/streams.shp \
+    --repair_spurious_outlets \
+    --output delin/channel_topology.json
+#   -> CHECK the printed validation block: single_terminal, acyclic, and
+#      outlet_area_matches_basin must ALL be true, and
+#      n_length_from_local_area_fallback should be 0.
+#   -> ALWAYS pass --repair_spurious_outlets on a DEM-clipped basin. Some subbasin
+#      outlet cells drain off the clip edge, the trace then yields >1 terminal
+#      channel, and the tool exits 2 ("must have exactly ONE"). If your runner
+#      treats that as "topology optional" you land straight back on STAR routing —
+#      which is what the flag exists to prevent. Every repair is logged as a
+#      WARNING, so read them: a repair on the MAIN stem means the DEM clip is wrong.
+#   -> subbasins.shp must already be MASKED to the watershed. wbt.subbasins() runs
+#      over the whole DEM; delineate_watershed.py masks it (fixed 2026-08-20). On
+#      an unmasked file you get a partition of the DEM box, not of the basin —
+#      639 polygons instead of 11 on the Rio San Pedro Mezquital.
+#   -> BUILDING IT IS NOT ENOUGH: it is only used if you PASS it to S2 below
+#      (--channel_topology). Building it and omitting the flag leaves you with STAR routing
+#      and no error message.
+
 # S2 — one call builds a complete runnable TxtInOut (HRUs + soils.sol + all aux files).
 #      esco / cn3_swf / perco are STRUCTURAL (hydrology.hyd) and can ONLY be set here.
+#      ⚠️ THEIR DEFAULTS (esco 0.15 / cn3_swf 0.0 / perco 0.75) ARE A HUMID-MONSOON
+#      PRESET, chosen for the Chinese Huai/Yangtze basins. perco=0.75 sends most
+#      percolation to the aquifer, which returns as delayed baseflow. In an ARID or
+#      SEMI-ARID basin that is the dominant error: at Rio San Pedro Mezquital
+#      (Mexico, P 609 mm/yr, PET 1430 mm/yr) the default deck put ET/P at only 55%
+#      and yielded 266 mm/yr (44% runoff coefficient) against a real ~95 mm/yr, i.e.
+#      2.7x the observed discharge, with 46% of outlet flow arriving as groundwater
+#      return two to three months after the rain. Landscape fluxes (basin_ls) were
+#      correctly timed — it is the routed channel hydrograph that lags.
+#      For a basin with PET/P > ~2, start from `--perco 0.30` and re-check ET/P
+#      against an independent ET product before trusting the water yield.
 python tools/s2/generate_hru_from_global.py --basin_shp delin/watershed.shp \
     --dem_path dem_clip.tif --output_dir TxtInOut --basin_name <name> \
-    --start_year 2003 --end_year 2023 --n_subbasins 8
+    --start_year 2003 --end_year 2023 --n_subbasins 8 \
+    --channel_topology delin/channel_topology.json   # from S1b — OMITTING THIS = STAR routing
 
 # S3 — weather. Pass S2's station names (the `wst` column, index 8, of rout_unit.con)
 #      or SWAT+ cannot bind objects to weather (dt_040).
 NAMES='["sta01","sta02","sta03","sta04","sta05","sta06"]'
 python tools/s3/prepare_weather_files.py cmfd $CMFD_3HR "$COORDS" \
     2003-01-01 2023-12-31 weather/ "$NAMES"
+#   OUTSIDE CHINA there is no CMFD. Use `nasa_power` — it is an ONLINE point API,
+#   so pass a PLACEHOLDER for the forcing-dir argument (it is ignored):
+#       python tools/s3/prepare_weather_files.py nasa_power - "$COORDS" \
+#           2008-01-01 2021-12-31 weather/ "$NAMES"
+#   ~2 s per station-year, all 5 SWAT+ variables, verified in Mexico 2026-08-20.
+#   MSWX (`mswx $MSWX_DIR`) is the higher-resolution global option but its annual
+#   files are gzip-chunked ONE GLOBAL SLAB PER TIMESTEP: every (variable, year)
+#   costs a full ~76 GB decompression (~5 min each, more on a loaded box), i.e.
+#   ~6 h for a 12-year 5-variable basin. Prefer NASA POWER unless you specifically
+#   need 0.1 deg precipitation. UNSET http_proxy/https_proxy first — POWER stalls
+#   through the local proxy.
 python tools/s3/validate_weather_data.py weather/          # 0 silent_errors required
 cp weather/* TxtInOut/
 python tools/s3/generate_weather_stations.py TxtInOut/pcp.cli "$COORDS" "$COORDS" TxtInOut
 
 # S7 — config. configure_print_prt edits print.prt IN PLACE; never regenerate it (dt_041).
 python tools/s7/configure_time_sim.py 2003-01-01 2023-12-31 TxtInOut 3
+
+# ⚠️ THE print.prt LINE BELOW CONFIGURES **HYDROLOGY ONLY**. It leaves nutrient/sediment output
+# OFF (basin_nb / basin_ls = n n n n). For ANY water-quality question (N, P, sediment, TN, TP),
+# you MUST also run the S10 branch below — otherwise the model runs fine and simply produces no
+# water-quality output at all, which is exactly how a WQ request silently ends up as a
+# discharge-only answer. See §Water Quality Simulation (N/P/Sediment) for the full workflow.
 python tools/s7/configure_print_prt.py '{"channel":{"daily":true},"basin_wb":{"yearly":true}}' TxtInOut 3
-python tools/s7/validate_txtinout.py TxtInOut   # flags unused file.cio slots as fatal; exits 0
+
+# S10 — WATER QUALITY BRANCH (run this BEFORE S8 whenever the question involves nutrients/sediment)
+# python tools/s10/configure_fertilizer.py --management_sch TxtInOut/management.sch \
+#     --crop wheat_maize --region huai_river
+# python tools/s10/configure_nutrient_output.py --print_prt TxtInOut/print.prt
+# (then after S8: tools/s10/parse_nutrient_output.py, tools/s10/validate_water_quality.py
+#  --variable {TN,TP,sediment} — acceptance bands are in docs/validation_convention.yaml)
+
+python tools/s7/validate_txtinout.py TxtInOut   # exits 1 on weather-WIRING fatals (null/single-station/missing refs, dt_053); other fatals warn, exit 0 (--strict fails on all; SWATPLUS_WGN_ONLY=1 opts out a deliberate generated-weather deck)
 
 # S8 / S9
 python tools/s8/run_swatplus.py $BIN TxtInOut
@@ -182,6 +313,15 @@ SWAT+ is the successor to SWAT2012 with key architectural differences:
 |-------|---------|-------------|---------|
 | S1 | `delineate_watershed` | `tools/s1/delineate_watershed.py` | DEM processing to subbasins + stream network |
 | S1 | `define_subbasins` | `tools/s1/define_subbasins.py` | Generate subbasin connectivity files |
+| S1 | `build_channel_topology` | `tools/s1/build_channel_topology.py` | REAL channel routing topology (channel_topology.json). Without it routing degrades to one-hop STAR — see the validated chain S1b |
+| S2 | `write_channel_geometry` | `tools/s2/write_channel_geometry.py` | Channel geometry into the deck |
+| S4 | `hwsd_to_swatplus_soil` | `tools/s4/hwsd_to_swatplus_soil.py` | HWSD → SWAT+ soils.sol |
+| S6 | `calibrate_swatplus` | `tools/s6/calibrate_swatplus.py` | AUTOMATED calibration (pySWATPlus + pymoo; --objective NSE --algorithm GA/DE/NSGA2). Use this instead of hand-editing calibration.cal |
+| S6 | `sensitivity_swatplus` | `tools/s6/sensitivity_swatplus.py` | Parameter sensitivity screening |
+| S6 | `calib_run` | `tools/calib_run.py` | Calibration driver |
+| S7 | `adapt_swatplus_project` | `tools/s7/adapt_swatplus_project.py` | Adapt an existing deck to a new basin/period (REUSE before rebuilding) |
+| S8 | `run_swatplus_with_params` | `tools/s8/run_swatplus_with_params.py` | Run with a parameter set (calibration inner loop) |
+| S9 | `compare_swatplus_vic` | `tools/s9/compare_swatplus_vic.py` | Cross-model comparison |
 | S2 | `create_hru_overlay` | `tools/s2/create_hru_overlay.py` | Overlay landuse/soil/slope to create HRUs |
 | S2 | `apply_hru_threshold` | `tools/s2/apply_hru_threshold.py` | Filter small HRUs below area thresholds |
 | S3 | `prepare_weather_files` | `tools/s3/prepare_weather_files.py` | Convert forcing data to SWAT+ .pcp/.tmp/.slr/.hmd/.wnd format |
@@ -211,6 +351,101 @@ SWAT+ is the successor to SWAT2012 with key architectural differences:
 
 ---
 
+## 6. Output Description
+
+**Source of truth:** `dag.yaml`. The dag is the model identity for outputs:
+every observable output's variable name, unit, description, validation rank and
+observability live there. If this section ever disagrees with `dag.yaml`, the dag
+wins and this section must be corrected.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `streamflow at channel outlet (flo_out)` - Daily channel discharge leaving each routed segment; primary calibration target for hydrology. (`m3/s (after conversion from ha-m/day)`)
+
+The KI judges hydrologic skill first against `streamflow at channel outlet (flo_out)`.
+Agents reading only this file should treat that variable as the primary calibration
+and validation target.
+
+| Output group from dag | Rank / role | Unit stated here | Description / notes |
+|---|---:|---|---|
+| `streamflow at channel outlet (flo_out)` | 1 | `m3/s (after conversion from ha-m/day)` | Daily channel discharge leaving each routed segment; primary calibration target for hydrology. |
+| `basin water balance components (precip, snofall, snomlt, surq_gen, latq, perc, et, qtile, wateryld, sw_final)` | dag output | See `dag.yaml` | Basin water-balance components. |
+| `HRU water balance (hru_wb: per-HRU surq, latq, perc, et, sw)` | dag output | See `dag.yaml` | Per-HRU water-balance outputs. |
+| `basin landscape nutrient losses (basin_ls: sedorgn, surqno3, sedmin)` | dag output | See `dag.yaml` | Landscape nutrient losses. |
+| `basin nutrient balance (basin_nb: fertn, denit, act_nit_n, plant uptake)` | dag output | See `dag.yaml` | Basin nutrient balance terms. |
+| `channel nutrient loads (orgn_out, no3_out, sedp_out, solp_out)` | dag output | See `dag.yaml` | Channel nutrient-load outputs. |
+| `sediment yield (HRU sedyld; channel sed_in/sed_out)` | dag output | See `dag.yaml` | HRU and channel sediment yield outputs. |
+| `crop yield (basin yield_yr / yield_aa, hru_pw)` | dag output | See `dag.yaml` | Crop-yield outputs. |
+| `aquifer state (storage, water-table depth, baseflow flo)` | dag output | See `dag.yaml` | Aquifer state and baseflow outputs. |
+| `snow water equivalent (hru%sno_mm; snofall, snomlt fluxes)` | dag output | See `dag.yaml` | Snowpack state and snowfall/snowmelt fluxes. |
+| `evapotranspiration (basin et, eplant, esoil, pet)` | dag output | See `dag.yaml` | Evapotranspiration components and potential ET. |
+
+---
+
+## 8. Unit Conversion Table
+
+**Source of truth:** `docs/format_spec.yaml`, `dag.yaml`, and the S3 weather tools.
+This table records the unit conversions an agent must preserve when preparing
+inputs or parsing outputs. Verify source data attributes before running a new
+basin, and use `docs/format_spec.yaml` as the exact I/O contract.
+
+| Variable | Source unit | Model / parsed unit | Conversion | Type |
+|---|---|---|---|---|
+| CMFD precipitation | `kg/m2/s` | `mm/day` | `x86400` for daily totals; for 3-hourly CMFD, `x10800` per step and sum 8 steps | multiplicative |
+| CMFD temperature | `K` | `degC` | `-273.15` | additive |
+| CMFD shortwave radiation | `W/m2` | `MJ/m2/day` | `x0.0864` | multiplicative |
+| MSWX precipitation | `mm/3hr` | `mm/day` | sum 8 steps; no `x10800` | aggregation |
+| MSWX temperature | `degC` | `degC` | none | identity |
+| SWAT+ outlet discharge `flo_out` | `ha-m/day` in SWAT+ text output | `m3/s` | after conversion from `ha-m/day` | unit conversion |
+| Specific humidity for SWAT+ weather | source forcing humidity variable | relative humidity | converted by `tools/s3/prepare_weather_files.py` | diagnostic-sensitive |
+
+Do not use the daily CMFD store (`Data_forcing_01dy_010deg`) for SWAT+ weather
+generation: it only carries daily mean temperature, leading to `Tmax == Tmin`.
+Use the 3-hourly CMFD store (`Data_forcing_03hr_010deg`) so Tmin/Tmax are derived
+from sub-daily observations.
+
+---
+
+## 11. Validated Results
+
+**Source of truth:** `docs/validation_convention.yaml` for pass/fail bars and
+`dag.yaml` for the output being judged. A metric value without the field's cited
+bar is not a verdict. The body validation campaign is pending unless a run's
+artifact and observation binding are supplied by the user or present in `outputs/`.
+
+### Validation Target
+
+| Property | Value |
+|---|---|
+| Rank-1 dag variable | `streamflow at channel outlet (flo_out)` |
+| Unit | `m3/s (after conversion from ha-m/day)` |
+| Description | Daily channel discharge leaving each routed segment; primary calibration target for hydrology. |
+| Primary use | Hydrology calibration and validation target |
+
+### Performance Bars - Convention, Cited
+
+| Dag variable | Metric | Direction | Bands from convention |
+|---|---|---|---|
+| `streamflow at channel outlet (flo_out)` | `nse` | maximize | satisfactory `>= 0.5` (`moriasi2007`, `moriasi2015`); good `>= 0.65` (`moriasi2007`, `moriasi2015`); very_good `>= 0.75` (`moriasi2007`, `moriasi2015`) |
+| `streamflow at channel outlet (flo_out)` | `pbias` | zero_centered | very_good `abs(PBIAS) <= 10` (`moriasi2007`, `moriasi2015`); good: no cited threshold; satisfactory `abs(PBIAS) <= 15` (`moriasi2007`, `moriasi2015`) |
+| `sediment yield (HRU sedyld; channel sed_in/sed_out)` | `pbias` | zero_centered | very_good `abs(PBIAS) <= 15` (`moriasi2007`, `moriasi2015`); good: no cited threshold; satisfactory `abs(PBIAS) <= 20` (`moriasi2007`, `moriasi2015`) |
+
+`docs/validation_convention.yaml` carries a duplicate identical PBIAS convention
+for `streamflow at channel outlet (flo_out)`: metric `pbias`, direction
+`zero_centered`, bands `very_good: 10` and `satisfactory: 15`, citations
+`moriasi2007` and `moriasi2015`. Treat it as the same convention bar, not a
+second independent threshold.
+
+### Current Body-Campaign Status
+
+| Component | Status | Notes |
+|---|---|---|
+| Rank-1 streamflow validation | pending | Judge against `streamflow at channel outlet (flo_out)` using `nse` and `pbias` bars above. |
+| Sediment-yield validation | pending | If validating sediment yield, use the cited `pbias` bands above. |
+| Water-quality concentration validation | domain-limited | Bare in-stream concentration series at gate-regulated sluices are not valid targets for this KI when `wq_cha=0`; compare loads or concentration paired with measured discharge. |
+
+---
+
 ## Water Quality Simulation (N/P/Sediment)
 
 SWAT+ simulates nutrient cycling (5 N pools, 6 P pools) and sediment yield (MUSLE)
@@ -219,7 +454,22 @@ limitations in Rev 59.3 (see Known Issues below).
 
 ### WQ Workflow
 
-1. Configure fertilizer: `python tools/s10/configure_fertilizer.py --management_sch TxtInOut/management.sch --crop wheat_maize --region huai_river`
+0. ⚠️ **The fertilizer step is a NO-OP unless you also repoint `landuse.lum`.**
+   `tools/s2/generate_hru_from_global.py` hard-codes `mgt = no_mgt` for EVERY land
+   use (see dt_v004), so a schedule written into `management.sch` is referenced by
+   no HRU: the run succeeds, prints `basin_ls`, and quietly reports the
+   *unfertilised* N export. Pass `--landuse_lum TxtInOut/landuse.lum` to
+   `configure_fertilizer.py` (added 2026-08-20) — it rewrites the `mgt` column of
+   the agricultural rows. Then RUN THE BINARY ONCE and check it did not die in
+   `mgt_operatn_`; if it did, restore `no_mgt` (dt_v004) and say so in the result.
+1. Configure fertilizer: `python tools/s10/configure_fertilizer.py --management_sch TxtInOut/management.sch --crop wheat_maize --region huai_river --landuse_lum TxtInOut/landuse.lum`
+   **Outside China** the four `--region` tables (huai_river / north_china /
+   northeast / south_china) are wrong in BOTH rate and calendar — a Chinese
+   winter-wheat October planting in a summer-rainfall basin fertilises the wrong
+   months. Use the data-driven path instead:
+   `--crop maize --region global --lat <basin_lat> --lon <basin_lon>`, which reads
+   rates from NPKGRIDS (`ki_tools_common.fertilizer`) and planting/harvest dates
+   from the GGCMI calendar (`ki_tools_common.crop_calendar`) at that point.
 2. Enable output: `python tools/s10/configure_nutrient_output.py --print_prt TxtInOut/print.prt`
 3. (Optional) Add point sources: `python tools/s10/configure_point_sources.py --sources_csv sources.csv --output_dir TxtInOut/`
 4. Run SWAT+: same binary, same command
@@ -235,15 +485,44 @@ concentrations to blow up during extreme flow events (>10x bankfull), producing 
 impossible values (e.g., 10⁹ mg/L NO₃).
 
 Instead, use these RELIABLE output files:
-- **basin_ls_day.txt**: `sedorgn`, `surqno3`, `sedmin` (kgN/ha/day) — HRU nutrient export
+- **basin_ls_day.txt**: landscape (edge-of-field) export — see the species table below
 - **basin_nb_yr.txt**: `fertn`, `denit`, `act_nit_n` (kgN/ha/yr) — basin N budget
 - **hru_nb_yr.txt**: Per-HRU nutrient cycling (most spatially detailed)
 - **channel_day.txt**: `flo_in`, `flo_out` only (flow routing is correct)
 
-To estimate outlet nutrient loads:
+**basin_ls_day.txt species and units** — from the SWAT+ source
+(`swatplus/src/src/output_landscape_module.f90`, type `output_nutcarb_gain_loss`).
+Do NOT read them off the file's unit row: rev59 prints `----` for `usle`, `sedmin`
+and `tileno3` instead of their real unit.
+
+| column | species | unit |
+|---|---|---|
+| `sedyld` | sediment yield | t/ha/day |
+| `sedorgn` | organic **N** in sediment | kg N/ha/day |
+| `sedorgp` | organic **P** in sediment | kg P/ha/day |
+| `surqno3` | NO3-**N** in surface runoff | kg N/ha/day |
+| `lat3no3` | NO3-**N** in lateral runoff | kg N/ha/day |
+| `surqsolp` | soluble **P** in surface runoff | kg P/ha/day |
+| `usle` | USLE erosion | t/ha/day |
+| `sedmin` | mineral **P** in sediment | kg **P**/ha/day |
+| `tileno3` | NO3-**N** in tile flow | kg N/ha/day |
+
+⚠️ **`sedmin` is PHOSPHORUS, not nitrogen** (corrected 2026-08-20). Until then this
+section and `parse_nutrient_output.py` both summed `sedmin` into TN — that adds a P flux
+to the N load *and* drops the two real N terms `lat3no3` and `tileno3`. At Wangjiaba the
+error was ~+40 % on TN. The correct landscape loads are:
+
 ```
-TN_load (kg/yr) = basin_area_ha × (sedorgn + surqno3 + sedmin) from basin_ls_day
+TN_load (kg) = basin_area_ha × (sedorgn + surqno3 + lat3no3 + tileno3)   # kg N/ha/day
+TP_load (kg) = basin_area_ha × (sedorgp + surqsolp + sedmin)             # kg P/ha/day
+sed_load (t) = basin_area_ha × sedyld
 ```
+
+`parse_nutrient_output.py --basin_ls` now writes `TN_kg`, `TP_kg` and `sed_out`
+(absolute basin loads) in addition to the per-hectare columns. It previously wrote only
+`TN_kgha`, while `validate_water_quality.py` reads `TN_kg`/`TP_kg`/`sed_out` — so step 5
+→ step 6 of the workflow above silently compared *nothing* and reported an empty result
+rather than an error. If you see a validation with `n_paired = 0`, check this first.
 
 ### Known Issues: Rev 59.3 Channel WQ
 

@@ -1,0 +1,410 @@
+schema_version: 1
+model_id: SHAW
+domain: atmosphere
+generated_by: "Codex Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+# Literature-grounded validation convention for SHAW outputs declared in dag.yaml.
+# Blocks are keyed by the model's own dag_variable names, as required by the Step-B task.
+# Bands are plain numbers interpreted by `direction`. Numeric bands are cited only to
+# fetched full texts. Several SHAW papers report achieved benchmark skill rather than
+# formal pass/fail tiers; those bands are marked as empirical benchmark envelopes and
+# confidence is kept below strong unless multiple fetched benchmarks support the same
+# convention.
+
+references:
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  shaw2012:
+    doi: 10.13031/2013.42250
+    title: "Simultaneous Heat and Water (SHAW) Model: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42250.txt
+  flerchinger1989:
+    doi: 10.13031/2013.31041
+    title: "Simultaneous Heat and Water Model of a Freezing Snow-Residue-Soil System II. Field Verification"
+    venue: "Transactions of the ASAE"
+    year: 1989
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.31041.txt
+  flerchinger1997:
+    doi: 10.1006/jare.1995.0167
+    title: "Modelling plant canopy effects on variability of soil temperature and water: model calibration and validation"
+    venue: "Journal of Arid Environments"
+    year: 1997
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1006_jare.1995.0167.txt
+  flerchinger1998:
+    doi: "10.1175/1520-0450(1998)037<0449:ssefar>2.0.co;2"
+    title: "Simulating Surface Energy Fluxes and Radiometric Surface Temperatures for Two Arid Vegetation Communities Using the SHAW Model"
+    venue: "Journal of Applied Meteorology"
+    year: 1998
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_1520-0450(1998)0370449_ssefar2.0.co;2.txt"
+  link2004:
+    doi: "10.1175/1525-7541(2004)005<0443:sowaef>2.0.co;2"
+    title: "Simulation of Water and Energy Fluxes in an Old-Growth Seasonal Temperate Rain Forest Using the Simultaneous Heat and Water (SHAW) Model"
+    venue: "Journal of Hydrometeorology"
+    year: 2004
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_1525-7541(2004)0050443_sowaef2.0.co;2.txt"
+  zhao2016:
+    doi: 10.3390/w8100424
+    title: "Modeling of Coupled Water and Heat Transfer in Freezing and Thawing Soils, Inner Mongolia"
+    venue: "Water"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w8100424.txt
+  li2015:
+    doi: 10.3390/w7052382
+    title: "Modeling of Soil Water and Salt Dynamics and Its Effects on Root Water Uptake"
+    venue: "Water"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w7052382.txt
+  wever2015:
+    doi: 10.5194/tc-9-2271-2015
+    title: "Verification of the multi-layer SNOWPACK model with different water transport schemes"
+    venue: "The Cryosphere"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-9-2271-2015.txt
+  mauder2020:
+    doi: 10.1007/s10546-020-00529-6
+    title: "Surface-Energy-Balance Closure over Land: A Review"
+    venue: "Boundary-Layer Meteorology"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10546-020-00529-6.txt
+
+validation:
+  - dag_variable: soil_temperature_profile
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.60, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Dag metric retained. Moriasi 2015 general NSE satisfactory floor is 0.50; SHAW temperature validation reported efficiency 0.93-0.99."
+        cites: [moriasi2015, flerchinger1997]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "SHAW field verification reported soil-temperature coefficients of determination from 0.80 to 0.97 in most cases."
+        cites: [flerchinger1989]
+    validated_when: "NSE >= 0.50 for the node-depth time series, with soil-temperature efficiency expected near the SHAW benchmark range when surface and lower-boundary heat forcing are correct."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Flerchinger and Pierson 1997 define coefficient of efficiency as the Nash-Sutcliffe form and
+      report validation-year soil-temperature efficiency 0.93-0.99. Flerchinger and Saxton 1989 state
+      simulated soil temperatures were in "very good agreement" and report R2 0.80-0.97 in most cases.
+      SHAW 2012 cautions that soil temperature is mainly constrained by surface and lower boundaries
+      and is not very sensitive to most soil parameters.
+
+  - dag_variable: total_water_content_profile
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.60, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Dag metric retained; Moriasi 2015 general NSE satisfactory floor is 0.50."
+        cites: [moriasi2015]
+      - metric: rmse
+        direction: minimize
+        unit: m3/m3
+        bands: {very_good: 0.02, good: 0.03, satisfactory: 0.04}
+        pass_band: satisfactory
+        band_note: "Empirical VWC benchmark envelope: SHAW validation RMSD near 0.010-0.042 m3/m3; HYDRUS validation soil-water RMSE 0.046 m3/m3."
+        cites: [shaw2012, li2015]
+    secondary_metrics:
+      - metric: mbe
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "SHAW calibration tables co-report mean bias error with RMSD; bias near zero is informative but not the sole validation criterion."
+        cites: [shaw2012]
+    validated_when: "NSE >= 0.50 AND total-water-content RMSE <= 0.04 m3/m3, after matching the model node/depth interval to the sensor support."
+    evidence_strength: strong
+    confidence: 0.70
+    notes: >-
+      SHAW 2012 states soil water content is often the targeted calibration output and reports validation
+      RMSD1 0.042, RMSD2 0.038, and RMSD3 approximately 0.010 m3/m3 for one calibrated case. It also
+      notes that optimizing water content alone can distort other processes; interpret the RMSE band with
+      matric potential, ET, and flux diagnostics where available.
+
+  - dag_variable: liquid_water_content_profile
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.60, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Dag metric retained; Moriasi 2015 general NSE satisfactory floor is 0.50."
+        cites: [moriasi2015]
+      - metric: rmse
+        direction: minimize
+        unit: m3/m3
+        bands: {very_good: 0.03, good: 0.05, satisfactory: 0.08}
+        pass_band: satisfactory
+        band_note: "Frozen-soil liquid-water benchmark: Zhao 2016 reports SWC RMSE 0.02-0.07 and 0.02-0.08 m3/m3 across two sites."
+        cites: [zhao2016]
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Zhao 2016 reports that the freezing module overestimated liquid water content during spring snowmelt; treat spring-melt bias as a known process diagnostic."
+        cites: [zhao2016]
+    validated_when: "NSE >= 0.50 AND liquid-water-content RMSE <= 0.08 m3/m3 for frozen-soil probe comparisons; use liquid-only output for liquid-only sensors."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The SHAW dag caveat is important: sensors measuring liquid water in frozen soil should not be
+      compared to total water content. Zhao 2016 is not SHAW, but it validates the same coupled
+      freezing/liquid-water profile physics and gives the clearest fetched numeric RMSE envelope.
+
+  - dag_variable: matric_potential_profile
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.60, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Transferred head-state convention: Moriasi 2015 Table 3 gives DRAINMOD daily water-table-depth NSE acceptable >0.40."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Flerchinger and Pierson 1997 validated soil water potential graphically and noted gypsum-block accuracy limits; no fetched numeric RMSE band was stated."
+        cites: [flerchinger1997]
+    validated_when: "NSE >= 0.40 for pressure-head/water-potential time series after unit conversion and censoring to the tensiometer or moisture-block operating range."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      Flerchinger and Pierson 1997 report that rapid changes in surface water potential and drying at
+      depth closely tracked observations, but they do not provide a numeric head-error threshold.
+      The NSE band is transferred from a fetched head-like DRAINMOD water-table convention, so confidence
+      remains limited.
+
+  - dag_variable: frost_thaw_snow_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.60, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Dag metric retained; general NSE floor transferred from Moriasi 2015 for continuous time series."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: frost_depth_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "SHAW field verification reports simulated frost depth within 2 or 3 cm of actual frost depth for most simulations."
+        cites: [flerchinger1989]
+      - metric: snow_height_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "SNOWPACK verification reports snow-height RMSE around 4 cm, useful for snow-depth context when SHAW snow observations are available."
+        cites: [wever2015]
+    validated_when: "NSE >= 0.50 for frost/thaw/snow-depth time series, with event-depth checks expected to be within a few centimeters for frost depth when snow and residue forcing are correct."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Flerchinger and Saxton 1989 report frost-depth agreement despite frost-tube lag and moisture-block
+      discretization. For snowpack components, Wever 2015 gives fetched snow-model context: snow height
+      RMSE <4.2 cm and SWE RMSE <40 mm water equivalent for height-driven cases. Match frost, thaw,
+      snow depth, or SWE observations to the corresponding SHAW sub-output before scoring.
+
+  - dag_variable: surface_energy_balance
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.60, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Model efficiency is the reported SHAW energy-flux statistic; Moriasi 2015 general NSE satisfactory floor is 0.50."
+        cites: [moriasi2015, flerchinger1998]
+      - metric: rmse
+        direction: minimize
+        unit: W/m2
+        bands: {very_good: 30, good: 45, satisfactory: 60}
+        pass_band: satisfactory
+        band_note: "Empirical SHAW hourly flux envelope: Rn/H/LE/G RMSD mostly 28-56 W/m2 across two sites."
+        cites: [flerchinger1998]
+    secondary_metrics:
+      - metric: energy_balance_closure
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Eddy-covariance energy-balance observations commonly have non-closure on the order of 10% to 20%, so flux-tower comparisons require closure convention documentation."
+        cites: [mauder2020]
+    validated_when: "NSE >= 0.50 AND flux RMSE <= 60 W/m2 for matched Rn, H, LE, or G time series, with tower energy-balance-closure treatment documented."
+    evidence_strength: strong
+    confidence: 0.70
+    notes: >-
+      Flerchinger 1998 reports model efficiency 0.98 for net radiation, 0.83-0.88 for sensible heat,
+      0.59-0.65 for latent heat, and 0.71-0.91 for ground heat flux; RMSD spans 28-56 W/m2 in Table 2.
+      The latent-heat benchmark is closest to the pass floor, and Mauder 2020 explains why EC flux
+      non-closure must be handled before treating bias as a model failure.
+
+  - dag_variable: water_balance_summary
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.60, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Transferred drainage/flux convention: Moriasi 2015 Table 3 gives DRAINMOD drainage-volume daily NSE acceptable >0.40."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Link 2004 reports SHAW mean daily ET differences of 9% less, 5% greater, and 5% less versus eddy covariance for three ensemble periods."
+        cites: [link2004]
+    validated_when: "NSE >= 0.40 for observable water-balance terms such as ET, runoff, or drainage; use PBIAS/closure as a supporting magnitude check."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The water_balance_summary output mixes directly observed terms and model-internal terms. Link 2004
+      validates ET/transpiration against eddy covariance and concludes SHAW effectively simulated
+      transpiration; lateral flow and deep percolation normally require lysimeter/drainage observations
+      or are only internal diagnostics.
+
+  - dag_variable: vertical_water_flux
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.60, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Closest fetched convention is DRAINMOD drainage volume: daily NSE acceptable >0.40, good >0.60, excellent >0.75."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "DRAINMOD drainage-volume normalized percent error acceptable <25%; useful only where SHAW vertical flux is compared to drainage/lysimeter data."
+        cites: [moriasi2015]
+    validated_when: "NSE >= 0.40 for lysimeter/drainage-equivalent vertical flux; internal node-to-node flux without observations should not be graded as validated."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      No fetched SHAW paper gives a direct numeric vertical-water-flux threshold. The band is transferred
+      from fetched drainage-volume criteria and should be used only when the SHAW flux maps to an observed
+      drainage, seepage, or lysimeter time series.
+
+  - dag_variable: snow_layer_temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE pass threshold for SHAW snow-layer temperature."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched snowpack literature reports qualitative/graphical snow-temperature agreement, but no numeric degC pass band was recovered."
+        cites: []
+    secondary_metrics:
+      - metric: cold_content_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Wever 2015 reports cold-content RMSE for snow temperature-state evaluation, but this is not a direct degC threshold for SHAW snow-layer temperature."
+        cites: [wever2015]
+    validated_when: "UNRESOLVED numerically: compare snow-layer temperatures graphically and with RMSE/cold-content diagnostics, but do not auto-validate without a fetched numeric threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Wever 2015 states modeled and measured snow temperatures had a satisfying agreement with average
+      discrepancies around 1 degC, but the fetched text does not provide a clear pass/fail band for SHAW's
+      per-layer snow temperature. Bands remain null per the no-fabrication rule.
+
+  - dag_variable: canopy_air_and_leaf_temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.60, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Dag metric retained; SHAW canopy-temperature model efficiencies range 0.80-0.93, above the Moriasi 2015 general 0.50 floor."
+        cites: [moriasi2015, flerchinger1998]
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 2.0, good: 3.0, satisfactory: 5.0}
+        pass_band: satisfactory
+        band_note: "Empirical SHAW canopy/radiometric temperature envelope: canopy leaf RMSD 1.8-2.3 degC; composite radiometric RMSD up to 4.6 degC."
+        cites: [flerchinger1998]
+    secondary_metrics:
+      - metric: mbe
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Flerchinger 1998 reports canopy leaf temperature bias up to 1.8 degC at the shrub-dominated site."
+        cites: [flerchinger1998]
+    validated_when: "NSE >= 0.50 AND canopy/leaf-temperature RMSE <= 5 degC for matched in-canopy thermocouple, leaf, or radiometric temperature observations."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: >-
+      Flerchinger 1998 Table 4 reports canopy leaf temperature ME 0.93 and 0.80, RMSD 1.8 and 2.3 degC,
+      and radiometric surface temperature RMSD 2.3 and 4.6 degC. Use the observation type that matches
+      the SHAW sub-output and canopy layer.
+
+  - dag_variable: solute_concentration_profile
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched SHAW solute paper gives a numeric NSE validation threshold for concentration profiles."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "A fetched HYDRUS soil-water/salt study reports ECsw validation RMSE 0.035 dS/m and R2 0.95, but this is a benchmark context, not a SHAW NSE pass band."
+        cites: [li2015]
+    validated_when: "UNRESOLVED numerically: require a fetched SHAW or comparable solute-transport benchmark before auto-validating concentration-profile NSE."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      SHAW 2012 documents solute transport capability but the cached SHAW validation papers do not provide
+      a solute concentration threshold. Li 2015 gives a fetched, comparable soil-solution salinity benchmark
+      for RMSE/R2, but not a SHAW-specific NSE convention, so the headline band is null.
+
+deferred_paywalled:
+  - {ref: "Recent cold-region SHAW or SHAW-derived freeze-thaw validation paper that may quantify frost/liquid-water skill", doi: 10.1016/j.coldregions.2023.104034, needed_for: [liquid_water_content_profile, frost_thaw_snow_depth]}
+  - {ref: "Simultaneous Heat and Water Model of a Freezing Snow-Residue-Soil System I. Theory and Development", doi: 10.13031/2013.31040, needed_for: [frost_thaw_snow_depth, snow_layer_temperature]}
+  - {ref: "Comparison of algorithms for incoming atmospheric long-wave radiation", doi: 10.1029/2008wr007394, needed_for: [surface_energy_balance, snow_layer_temperature]}
+  - {ref: "Dedicated SHAW solute transport validation with profile concentration NSE/RMSE thresholds", doi: unknown_not_fetched, needed_for: [solute_concentration_profile]}

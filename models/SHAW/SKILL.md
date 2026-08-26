@@ -1,14 +1,3 @@
----
-name: shaw
-description: >-
-  SHAW v3.03. Covers 1-D vertical coupled heat, water, and solute transfer through a
-  single plant canopy - snow -…; Soil freezing/thawing: ice content, frost/thaw depth,
-  freeze-thaw cycles with latent-heat coupling; Multi-layer snowpack: density/grain
-  metamorphism, albedo decay, liquid retention and snowmelt; Explicit crop-residue
-  heat/water/vapor transfer. Use when the task involves running, configuring, calibrating
-  or interpreting SHAW.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -33,6 +22,292 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (1 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (33 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `s1_site_setup/tools/create_site_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s1_site_setup/tools/create_site_file.py --help` |
+| `s2_weather_prep/tools/convert_forcing_to_shaw.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s2_weather_prep/tools/convert_forcing_to_shaw.py --help` |
+| `s3_plant_config/tools/create_plant_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s3_plant_config/tools/create_plant_file.py --help` |
+| `s4_initial_conditions/tools/set_initial_conditions.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s4_initial_conditions/tools/set_initial_conditions.py --help` |
+| `s5_snow_residue_config/tools/configure_residue.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s5_snow_residue_config/tools/configure_residue.py --help` |
+| `s5_snow_residue_config/tools/configure_snow_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s5_snow_residue_config/tools/configure_snow_params.py --help` |
+| `s6_execution/tools/parse_shaw_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s6_execution/tools/parse_shaw_output.py --help` |
+| `s6_execution/tools/plot_shaw_profiles.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s6_execution/tools/plot_shaw_profiles.py --help` |
+| `s6_execution/tools/run_shaw.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s6_execution/tools/run_shaw.py --help` |
+| `s6_execution/tools/shaw_frost_analysis.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s6_execution/tools/shaw_frost_analysis.py --help` |
+| `s6_execution/tools/validate_shaw_inputs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s6_execution/tools/validate_shaw_inputs.py --help` |
+| `s7_vic_coupling/tools/vic_to_shaw_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/s7_vic_coupling/tools/vic_to_shaw_soil.py --help` |
+| `tools/s1_site_setup/setup_shaw_from_template.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_site_setup/setup_shaw_from_template.py --help` |
+
+*13 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
+---
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | Simultaneous Heat and Water model |
+| Version | SHAW v3.03 |
+| Language | Fortran 77 |
+| License | Not stated in this SKILL; check the upstream SHAW distribution before redistribution |
+| Local binary | `KISSPATH_BINARIES/shaw/shaw303` |
+| Primary citation | Flerchinger, G.N. (2017). The Simultaneous Heat and Water (SHAW) Model: User's Manual Version 3.0.x. Technical Report NWRC 2017-01.2. |
+| Primary domain | Soil heat, water, snow, residue, canopy, and solute transfer |
+| Spatial mode | 1D field-scale soil-plant-snow-residue-atmosphere column |
+
+---
+
+## 2. What This Model Does
+
+SHAW simulates coupled heat, water, and solute transfer through a vertical soil-plant-snow-residue-atmosphere system. It is used here for detailed freeze-thaw, soil temperature, soil moisture, snowpack, canopy energy balance, and solute profile behavior that simplified land-surface frost schemes cannot resolve.
+
+---
+
+## 3. Input Requirements
+
+**Exact shapes live in `docs/format_spec.yaml`** (projected from dag + triplets; regenerate it after changing either source, never hand-edit it). This section explains the operational intent and common traps; the spec file is the contract.
+
+### 3.1 Meteorological Forcing
+
+| Variable | Unit SHAW expects when `IFLAGSI=1` | Source dataset handled by KI tools | Source unit noted in this SKILL | Conversion / handling |
+|----------|------------------------------------|------------------------------------|---------------------------------|-----------------------|
+| Air temperature | degC | CMFD / MSWX / NASA POWER | CMFD: K; MSWX: degC | CMFD subtracts 273.15; MSWX uses Celsius directly |
+| Dew-point / humidity | degC or relative humidity depending on weather mode | CMFD / MSWX / NASA POWER | Specific humidity may be present | Convert specific humidity to RH when preparing SHAW weather |
+| Wind speed | m/s | CMFD / MSWX / NASA POWER | m/s | Keep m/s and set `IFLAGSI=1` |
+| Precipitation | mm | CMFD / MSWX / NASA POWER | CMFD: kg/m2/s; MSWX: mm/3hr | CMFD is accumulated over the forcing step; MSWX 3-hour values are summed |
+| Solar radiation | W/m2 | CMFD / MSWX / NASA POWER | W/m2 or MJ/m2/day depending on source file | Keep W/m2; convert MJ/m2/day to W/m2 when encountered |
+| New snow density | g/cm3 | Weather input or auto-calculated | 0 may be used | `0` lets SHAW auto-calculate |
+
+### 3.2 Static Inputs
+
+| Input | Source / preparation path | Notes |
+|-------|---------------------------|-------|
+| Soil texture and hydraulics | `from ki_tools_common.soil_utils import lookup_hwsd` | Returns sand/silt/clay/OC/pH, texture class, and Saxton-Rawls hydraulic properties |
+| Soil node properties | `.sit` file, preferably from the SHAW template setup tool | Apply BPAR and QUARTZ pedotransfer corrections before running freeze-thaw cases |
+| DEM slope/aspect | Site setup stage | Used in `.sit` site characteristics |
+| Land cover / canopy | AVHRR land cover or DSSAT crop parameters | Drives canopy configuration when plant canopy is enabled |
+| Initial soil moisture and temperature | `.moi` and `.tem` files | Can be initialized from VIC output or climatology |
+
+### 3.3 Configuration Files
+
+| File | Format | Notes |
+|------|--------|-------|
+| `.inp` | Free-format SHAW input/output list | Master control file; paths must stay within the Fortran path limit |
+| `.sit` | Free-format SHAW site file | Site, canopy, snow, residue, solute, and soil layer parameters |
+| `.wea` | Free-format hourly or daily weather file | Column layout depends on `MTSTEP` |
+| `.moi` | Free-format initial moisture profile | Volumetric water content or matric potential |
+| `.tem` | Free-format initial temperature profile | `99999` means no measurement and lets SHAW interpolate |
+
+---
+
+## 4. Build Instructions
+
+The binary is already compiled at `KISSPATH_BINARIES/shaw/shaw303`.
+
+```bash
+cd KISSPATH_BINARIES/shaw
+bash compile.sh
+```
+
+The shipped compile script uses gfortran legacy compatibility flags and writes `Shaw303/shaw303`, with `KISSPATH_BINARIES/shaw/shaw303` as the runnable symlink. There is no `Code/` path to invent.
+
+Known build issue: gfortran 10+ requires legacy argument-mismatch compatibility, already handled by `compile.sh`.
+
+---
+
+## 5. Execution
+
+Always run `python preflight_check.py` in this KI directory before debugging a model run.
+
+```bash
+cd /path/to/input/files
+printf "Trial.303.inp\n\n" | KISSPATH_BINARIES/shaw/shaw303
+```
+
+SHAW reads the `.inp` file path from stdin and then waits for a final Enter. It may exit with a benign Fortran EOF backtrace after writing complete `.out` files; judge success by non-empty output files, not by return code alone.
+
+---
+
+## 6. Output Description
+
+**Source: `dag.yaml`.** The dag is the model identity for observable outputs. If this section and `dag.yaml` ever disagree, `dag.yaml` wins and this section is stale.
+
+**Headline output** (the dag's `validation_rank: 1` variable; this is the output SHAW is judged by):
+
+> `soil_temperature_profile` — Per-node soil temperature T(z,t); primary validation target. (`degC`)
+
+| Output variable (dag `var`) | Unit / sourced detail available here | Description / role |
+|-----------------------------|--------------------------------------|--------------------|
+| `soil_temperature_profile` | `degC` | Per-node soil temperature T(z,t); primary validation target. |
+| `total_water_content_profile` | See `dag.yaml` | Other dag output |
+| `liquid_water_content_profile` | See `dag.yaml` | Other dag output |
+| `matric_potential_profile` | See `dag.yaml` | Other dag output |
+| `frost_thaw_snow_depth` | See `dag.yaml` | Other dag output |
+| `surface_energy_balance` | See `dag.yaml` | Other dag output |
+| `water_balance_summary` | See `dag.yaml` | Other dag output |
+| `vertical_water_flux` | See `dag.yaml` | Other dag output |
+| `snow_layer_temperature` | See `dag.yaml` | Other dag output |
+| `canopy_air_and_leaf_temperature` | See `dag.yaml` | Other dag output |
+| `solute_concentration_profile` | See `dag.yaml` | Other dag output |
+
+Operational SHAW files that commonly carry these outputs are listed in the legacy "Output Files" section below. Use `dag.yaml` for validation-rank, observability, and canonical units.
+
+---
+
+## 7. Tool Inventory
+
+| Tool / stage | Purpose | Inputs | Outputs |
+|--------------|---------|--------|---------|
+| `preflight_check.py` | Verify binary, environment, and required data before debugging | KI directory | `PREFLIGHT_REPORT=` line and health checks |
+| `s2_weather_prep/tools/convert_forcing_to_shaw.py` | Convert CMFD/MSWX/NASA POWER forcing into SHAW weather format | Raw or extracted forcing | `.wea` weather files |
+| `s1_site_setup` | Generate `.sit` site file from soil, topography, and land-cover inputs | HWSD, DEM slope/aspect, land cover | `.sit` |
+| `s3_plant_config` | Configure plant canopy parameters | AVHRR land cover or DSSAT crop parameters | Plant canopy input settings |
+| `s4_initial_conditions` | Generate initial soil moisture and temperature profiles | VIC output or climatology | `.moi`, `.tem` |
+| `s5_snow_residue_config` | Configure snow and residue properties | Site/residue assumptions | Snow and residue input settings |
+| `s6_execution` | Run SHAW and parse output files | Complete SHAW input set | `.out` files and parsed products |
+| `s7_vic_coupling` | Convert VIC grid-cell parameters to SHAW and run per cell | VIC parameters and forcing | Enhanced freeze-thaw outputs |
+
+Shared utilities should be used instead of ad hoc extraction code:
+
+```python
+from ki_tools_common.load_forcing import load_daily_forcing
+from ki_tools_common.soil_utils import lookup_hwsd
+```
+
+---
+
+## 8. Unit Table / Unit Conversion Table
+
+This unit table documents the conversions and traps stated by the KI body. For exact I/O shapes, read `docs/format_spec.yaml`; for canonical output units, read `dag.yaml`.
+
+| Variable / field | Source unit stated here | SHAW/model unit | Conversion / rule | Type |
+|------------------|-------------------------|-----------------|-------------------|------|
+| CMFD precipitation | kg/m2/s | mm over weather step / daily total | Accumulate over the source timestep; for 3-hour CMFD, multiply by 10800 per step and sum 8 steps for daily | multiplicative accumulation |
+| MSWX precipitation | mm/3hr | mm daily total or step total | Sum 3-hour values; do not multiply by 10800 | accumulation |
+| Air temperature from CMFD | K | degC | subtract 273.15 | additive |
+| Air temperature from MSWX | degC | degC | no conversion | identity |
+| Shortwave radiation | W/m2 | W/m2 | no conversion when already W/m2 | identity |
+| Shortwave radiation from MJ/m2/day files | MJ/m2/day | W/m2 | multiply by 11.574 | multiplicative |
+| Wind speed | m/s | m/s when `IFLAGSI=1` | no conversion | identity |
+| Specific humidity | source-specific | relative humidity for SHAW weather preparation | convert specific humidity to RH | derived |
+| Pressure | Pa | kPa | divide by 1000 | multiplicative |
+| Precipitation in SHAW English mode | inches | mm when `IFLAGSI=1` | set `IFLAGSI=1` for SI forcing instead of feeding inches-mode data | mode selection |
+| Soil saturated hydraulic conductivity | cm/hr | cm/hr | always cm/hr regardless of `IFLAGSI` | fixed SHAW convention |
+| Soil depth | m | m | always meters | fixed SHAW convention |
+| Soil bulk density | kg/m3 | kg/m3 | write as numeric kg/m3, e.g. `1360.` | identity |
+| Soil initial water content | m3/m3 | m3/m3 | no conversion | identity |
+| Soil initial temperature | degC | degC | no conversion | identity |
+| Campbell `BCAP` | m | m | negative air-entry potential | sign-sensitive parameter |
+| `QUARTZ` | fraction 0-1 | fraction 0-1 | clamp from texture workflow; do not use impossible template values | bounded fraction |
+| `BPAR` | dimensionless | dimensionless | estimate from texture workflow; avoid `BPAR=30` freeze-thaw failure | parameter correction |
+| `soil_temperature_profile` | SHAW `TEMP.out` profile | degC | canonical dag unit is `degC` | output unit |
+
+### 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common trap | Impact if wrong |
+|----------|--------------------------|-------------|-----------------|
+| Soil temperature profile | Per-node T(z,t), `degC` | Comparing a different depth than the observation sensor | Inflated RMSE or false phase error |
+| Liquid water content profile | Liquid water, not total water | Comparing `MOIST.out` total water against sensors that detect liquid water only | Frozen-season moisture bias |
+| Daily weather | No hour column; uses `TMAX`, `TMIN`, `TDEW`, `WIND`, `PRECIP`, `SOLAR` | Feeding hourly columns with `MTSTEP=1` or daily columns with `MTSTEP=0` | Wrong dates, missing precipitation, bad energy forcing |
+| Solar radiation | Average daily W/m2 in daily mode | Leaving MJ/m2/day unconverted | Energy input too low |
+| Soil water retention parameters | Campbell, Brooks-Corey, or van Genuchten depending on `IWRC` | Treating the `.sit` soil-node columns as generic fixed-width fields | Bad hydraulic and freeze-thaw behavior |
+
+---
+
+## 9. Diagnostic Triplets (Top 5)
+
+Check `diagnostics/triplets.yaml` before debugging. The full corpus stays in YAML; this table only points to common SHAW-specific failures already named in this SKILL.
+
+| # | Error / id | Diagnosis | Remedy |
+|---|------------|-----------|--------|
+| 1 | `shaw_024`: stdin interaction | SHAW prompts for the `.inp` path and a final Enter | Pipe both lines: `printf "Trial.303.inp\n\n" | KISSPATH_BINARIES/shaw/shaw303` |
+| 2 | `shaw_018`: benign EOF backtrace | SHAW may return non-zero after reaching weather EOF while outputs are complete | Judge success by non-empty `.out` files |
+| 3 | `shaw_026`: `MTSTEP=0` with daily data | Daily data read as hourly data; precipitation can be zeroed | Set `MTSTEP=1` for daily weather |
+| 4 | `shaw_029`: solar radiation not converted | MJ/m2/day left as daily SHAW W/m2 | Multiply MJ/m2/day by 11.574 |
+| 5 | `shaw_031`: `.sit` generated from scratch | Multiple site-file format errors | Use the template-based SHAW setup workflow |
+
+---
+
+## 10. Coupling Interfaces
+
+| Upstream model / data source | Variable exchanged | Unit | Temporal resolution |
+|------------------------------|-------------------|------|---------------------|
+| CMFD / MSWX / NASA POWER | Weather forcing | SHAW `.wea` units | Hourly, daily, or custom interval depending on `MTSTEP` |
+| HWSD | Soil texture and hydraulic properties | SHAW `.sit` units | Static |
+| VIC | Soil moisture, temperature, and grid-cell parameters | Converted to SHAW `.moi`, `.tem`, and `.sit` conventions | Initialization and per-cell setup |
+
+| Downstream model / workflow | Variable exchanged | Unit | Temporal resolution |
+|-----------------------------|-------------------|------|---------------------|
+| VIC coupling workflow | Freeze-thaw timing, frost depth, ice/liquid water behavior | See `dag.yaml` and SHAW outputs | SHAW output timestep |
+| Validation workflow | `soil_temperature_profile`, water-content profiles, frost/snow diagnostics | See `dag.yaml` and observation files | Observation-dependent |
+
+---
+
+## 11. Validated Results
+
+### Headline Validation Target
+
+The dag's rank-1 output is `soil_temperature_profile`, unit `degC`, described as: "Per-node soil temperature T(z,t); primary validation target."
+
+### Performance Bars — from `docs/validation_convention.yaml`
+
+Every threshold below is the convention threshold and carries its citation key. Do not substitute remembered hydrology thresholds; the convention wins.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band |
+|--------------|--------|-----------|-------------------|-----------|----------------|
+| `soil_temperature_profile` | NSE | maximize | `>= 0.5` (`moriasi2015`, `flerchinger1997`) | `>= 0.6` (`moriasi2015`, `flerchinger1997`) | `>= 0.8` (`moriasi2015`, `flerchinger1997`) |
+| `total_water_content_profile` | NSE | maximize | `>= 0.5` (`moriasi2015`) | `>= 0.6` (`moriasi2015`) | `>= 0.8` (`moriasi2015`) |
+| `total_water_content_profile` | RMSE | minimize | `<= 0.04` (`shaw2012`, `li2015`) | `<= 0.03` (`shaw2012`, `li2015`) | `<= 0.02` (`shaw2012`, `li2015`) |
+| `liquid_water_content_profile` | NSE | maximize | `>= 0.5` (`moriasi2015`) | `>= 0.6` (`moriasi2015`) | `>= 0.8` (`moriasi2015`) |
+| `liquid_water_content_profile` | RMSE | minimize | `<= 0.08` (`zhao2016`) | `<= 0.05` (`zhao2016`) | `<= 0.03` (`zhao2016`) |
+
+No convention-sourced achieved NSE value for `soil_temperature_profile` is stated in the extracted facts above. The validation narratives below report site-specific RMSE, Bias, R2, frost/snow behavior, and water-balance checks; do not recast those as NSE verdicts unless the metric is computed against the convention.
+
+### Existing Validation Cases in This SKILL
+
+| Case | Location / domain | Period | Main reported checks |
+|------|-------------------|--------|----------------------|
+| JackPine Boreal Forest, OJP BERMS | Saskatchewan, Canada | 1999 | Soil temperature RMSE/Bias/R2 by depth; water balance |
+| Manitoba Station 544, Alexander Prairie | Manitoba, Canada | Nov 2019-Oct 2020 | Soil temperature RMSE/Bias/R2 by depth; frost/snow behavior; water balance |
+| NE China Black Soil Domain | 6 stations, 2021-2022 | 2021-2022 | Liquid water-content behavior, BPAR freeze-thaw correction, growing-season dry bias |
+
+---
+
+## 12. Parameter Selection by Region
+
+These are physically informed starting rules already stated by the KI, not calibration replacements.
+
+| Climate / region | Key parameters / setup | Rationale |
+|------------------|------------------------|-----------|
+| Freeze-thaw soils, including boreal/prairie/black-soil cases | Apply texture-based `BPAR`, `QUARTZ`, and `BCAP` corrections after template setup | Prevents the known `BPAR=30` failure where liquid water remains unrealistically high at subfreezing temperatures |
+| Sites using SI forcing | Set `IFLAGSI=1` | Keeps wind in m/s and precipitation in mm |
+| Daily station forcing | Set `MTSTEP=1` and use the daily weather columns | Daily weather has no hour column and uses TMAX/TMIN/TDEW |
+| Sensor validation in frozen soil | Compare liquid-water sensors to `liquid.out`, not total `moist.out` | Sensors detect liquid water only during frozen periods |
 
 ---
 

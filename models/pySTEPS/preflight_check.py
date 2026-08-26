@@ -1,120 +1,249 @@
 #!/usr/bin/env python3
 """
-Preflight check for pySTEPS — verifies environment before nowcasting.
+Preflight check for the pySTEPS Knowledge Infrastructure.
 
-Run this BEFORE attempting any model execution. It checks that all required
-packages and data paths are available.
-
-Usage:
-    python preflight_check.py
-
-Exit codes:
-    0 — all checks passed, safe to proceed
-    1 — one or more checks failed, fix before proceeding
+This script verifies the package interpreter, imports, KI entry point, and
+diagnostic files before model execution. It always ends with a
+PREFLIGHT_REPORT= JSON line for the KDT gate.
 """
 
+from __future__ import annotations
+
+import json
 import os
+import subprocess
 import sys
-import shutil
-
-PASS = 0
-FAIL = 0
-MODEL_NAME = "pySTEPS"
+from pathlib import Path
 
 
-def check_file(path, label, executable=False):
-    """Check that a file exists (and is executable if required)."""
-    global PASS, FAIL
-    if os.path.isfile(path):
-        if executable and not os.access(path, os.X_OK):
-            print(f"  WARN  {label}: exists but not executable: {path}")
-            print(f"         Fix: chmod +x {path}")
-            FAIL += 1
-        else:
-            print(f"  OK    {label}: {path}")
-            PASS += 1
-    else:
-        print(f"  FAIL  {label}: NOT FOUND at {path}")
-        FAIL += 1
+MODEL_ID = "pySTEPS"
+EXPECTED_PYSTEPS_VERSION = "1.20.0"
+KI_DIR = Path(__file__).resolve().parent
+PYTHON_ENV = Path("KISSPATH_PYTHON_ENV/bin/python")
+TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
+BINARY_PATH = KI_DIR / "tools" / "s3_nowcast" / "run_nowcast.py"
+DIAGNOSTIC_RUNNER = KI_DIR / "diagnostics" / "run_synthetic_advection.py"
+SITE_PACKAGES = Path("KISSPATH_PYTHON_ENV/lib/python3.12/site-packages")
 
 
-def check_dir(path, label):
-    """Check that a directory exists and is non-empty."""
-    global PASS, FAIL
-    if os.path.isdir(path):
-        n = len(os.listdir(path))
-        print(f"  OK    {label}: {path} ({n} items)")
-        PASS += 1
-    else:
-        print(f"  FAIL  {label}: directory NOT FOUND at {path}")
-        FAIL += 1
+checks: list[dict[str, object]] = []
 
 
-def check_import(module, label):
-    """Check that a Python package can be imported."""
-    global PASS, FAIL
-    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
-    if _penv not in sys.path:
-        sys.path.insert(0, _penv)
-    try:
-        __import__(module)
-        print(f"  OK    {label}: import {module} succeeded")
-        PASS += 1
-    except ImportError as e:
-        print(f"  FAIL  {label}: import {module} failed: {e}")
-        print(f"         Fix: pip install {module.split('.')[0]}")
-        FAIL += 1
+def recovery_fix(message: str) -> str:
+    return f"{message}; then check {TRIPLETS} for known recovery steps"
 
 
-def main():
-    global PASS, FAIL
-    print(f"{'=' * 60}")
-    print(f"  PREFLIGHT CHECK: {MODEL_NAME}")
-    print(f"{'=' * 60}")
-    print()
+def add_check(kind: str, subject: str, critical: bool, ok: bool, fix: str = "") -> None:
+    status = "pass" if ok else "fail"
+    checks.append(
+        {
+            "kind": kind,
+            "subject": subject,
+            "critical": bool(critical),
+            "status": status,
+            "fix": "" if ok else fix,
+        }
+    )
+    label = "OK" if ok else "FAIL"
+    print(f"  {label:<5} {kind}: {subject}")
+    if not ok and fix:
+        print(f"        Fix: {fix}")
 
-    # Core package
-    check_import("pysteps", "pySTEPS core")
 
-    # Key submodules exercised by the diagnostic runner
-    check_import("pysteps.motion", "pySTEPS motion estimation")
-    check_import("pysteps.nowcasts", "pySTEPS nowcasting methods")
-    check_import("pysteps.verification", "pySTEPS verification scores")
+def emit_report() -> None:
+    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": MODEL_ID, "checks": checks}))
+    has_critical_failure = any(
+        check["status"] == "fail" and check.get("critical") for check in checks
+    )
+    sys.exit(1 if has_critical_failure else 0)
 
-    # Runtime dependency
-    check_import("numpy", "NumPy")
 
-    # Diagnostic runner
-    ki_dir = os.path.dirname(os.path.abspath(__file__))
-    check_file(
-        os.path.join(ki_dir, "diagnostics", "run_synthetic_advection.py"),
-        "Synthetic advection diagnostic",
+def subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONNOUSERSITE"] = "1"
+    return env
+
+
+def check_file(path: Path, label: str, *, critical: bool = True) -> None:
+    add_check(
+        "data",
+        str(path),
+        critical,
+        path.is_file(),
+        recovery_fix(f"{label} is missing at {path}"),
     )
 
-    print()
 
-    # Diagnostics available?
-    triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")
-    if os.path.isfile(triplets):
-        print(f"  INFO  Diagnostic triplets available at: {triplets}")
-        print(f"         If the model fails, check triplets FIRST for known fixes.")
+def check_python_env() -> None:
+    ok = PYTHON_ENV.is_file() and os.access(PYTHON_ENV, os.X_OK)
+    add_check(
+        "run",
+        str(PYTHON_ENV.resolve() if PYTHON_ENV.exists() else PYTHON_ENV),
+        True,
+        ok,
+        recovery_fix(f"HydroCraft Python interpreter is missing or not executable at {PYTHON_ENV}"),
+    )
 
-    # Version info
+
+def check_import(module: str, label: str, *, critical: bool = True) -> None:
+    subject = f"{PYTHON_ENV} import {module}"
+    if not PYTHON_ENV.is_file():
+        add_check(
+            "import",
+            subject,
+            critical,
+            False,
+            recovery_fix(f"Cannot import {module}: interpreter is missing at {PYTHON_ENV}"),
+        )
+        return
+
+    code = (
+        "import importlib.util, json, sys; "
+        f"spec = importlib.util.find_spec({module!r}); "
+        "print(json.dumps({'origin': spec.origin if spec else None, "
+        "'executable': sys.executable})); "
+        "raise SystemExit(0 if spec else 1)"
+    )
+    proc = subprocess.run(
+        [str(PYTHON_ENV), "-c", code],
+        text=True,
+        capture_output=True,
+        timeout=20,
+        env=subprocess_env(),
+    )
+    ok = proc.returncode == 0
+    detail = ""
+    if ok:
+        try:
+            origin = json.loads(proc.stdout.strip() or "{}").get("origin")
+            detail = f" ({origin})" if origin else ""
+        except json.JSONDecodeError:
+            detail = ""
+    add_check(
+        "import",
+        subject + detail,
+        critical,
+        ok,
+        recovery_fix(
+            f"{label} import failed under {PYTHON_ENV}: {(proc.stderr or proc.stdout).strip()}"
+        ),
+    )
+
+
+def check_pysteps_version() -> None:
+    subject = f"{PYTHON_ENV} importlib.metadata version pysteps"
+    code = (
+        "import importlib.metadata as ilm; "
+        "print(ilm.version('pysteps'))"
+    )
+    proc = subprocess.run(
+        [str(PYTHON_ENV), "-c", code],
+        text=True,
+        capture_output=True,
+        timeout=20,
+        env=subprocess_env(),
+    )
+    version = proc.stdout.strip()
+    ok = proc.returncode == 0 and version == EXPECTED_PYSTEPS_VERSION
+    add_check(
+        "import",
+        f"{subject} == {EXPECTED_PYSTEPS_VERSION} (found {version or 'unavailable'})",
+        True,
+        ok,
+        recovery_fix(
+            f"Install pysteps {EXPECTED_PYSTEPS_VERSION} into {SITE_PACKAGES}; current result: "
+            f"{(proc.stderr or proc.stdout).strip() or 'no version'}"
+        ),
+    )
+
+
+def check_entrypoint() -> None:
+    realpath = BINARY_PATH.resolve()
+    exists = BINARY_PATH.is_file()
+    add_check(
+        "binary",
+        str(realpath),
+        True,
+        exists,
+        recovery_fix(f"Manifest entry point is missing at {BINARY_PATH}"),
+    )
+    if not exists or not PYTHON_ENV.is_file():
+        return
+
+    proc = subprocess.run(
+        [str(PYTHON_ENV), str(BINARY_PATH), "--help"],
+        text=True,
+        capture_output=True,
+        timeout=20,
+        env=subprocess_env(),
+    )
+    add_check(
+        "run",
+        f"{realpath} --help via {PYTHON_ENV}",
+        True,
+        proc.returncode == 0 and "Run pySTEPS precipitation nowcast" in proc.stdout,
+        recovery_fix(
+            "pySTEPS nowcast entry point did not start cleanly: "
+            f"{(proc.stderr or proc.stdout).strip()}"
+        ),
+    )
+
+
+def check_method_registry() -> None:
+    subject = f"{PYTHON_ENV} pysteps method registry"
+    code = """
+from pysteps import motion, nowcasts
+from pysteps.verification import det_cat_fct, fss
+motion.get_method("proesmans")
+nowcasts.get_method("extrapolation")
+print("registry-ok")
+"""
+    proc = subprocess.run(
+        [str(PYTHON_ENV), "-c", code],
+        text=True,
+        capture_output=True,
+        timeout=30,
+        env=subprocess_env(),
+    )
+    add_check(
+        "run",
+        subject,
+        True,
+        proc.returncode == 0 and "registry-ok" in proc.stdout,
+        recovery_fix(
+            "Required pySTEPS runtime methods are unavailable: "
+            f"{(proc.stderr or proc.stdout).strip()}"
+        ),
+    )
+
+
+def main() -> None:
+    print("=" * 60)
+    print(f"  PREFLIGHT CHECK: {MODEL_ID}")
+    print("=" * 60)
+
     try:
-        import importlib.metadata as ilm
-        ver = ilm.version("pysteps")
-        print(f"  INFO  pySTEPS version: {ver}")
-    except Exception:
-        pass
-
-    print()
-    print(f"  Results: {PASS} passed, {FAIL} failed")
-    if FAIL > 0:
-        print(f"  STATUS: PREFLIGHT FAILED — fix the issues above before running")
-        sys.exit(1)
-    else:
-        print(f"  STATUS: PREFLIGHT PASSED — safe to proceed with model execution")
-        sys.exit(0)
+        check_python_env()
+        check_import("numpy", "NumPy")
+        check_import("pysteps", "pySTEPS core")
+        check_import("pysteps.motion", "pySTEPS motion estimation")
+        check_import("pysteps.nowcasts", "pySTEPS nowcasting methods")
+        check_import("pysteps.verification", "pySTEPS verification scores")
+        check_pysteps_version()
+        check_entrypoint()
+        check_file(DIAGNOSTIC_RUNNER, "Synthetic advection diagnostic")
+        check_file(TRIPLETS, "Diagnostic triplets")
+        check_method_registry()
+    except Exception as exc:
+        add_check(
+            "run",
+            "preflight_check.py internal execution",
+            True,
+            False,
+            recovery_fix(f"Preflight crashed unexpectedly: {exc!r}"),
+        )
+    finally:
+        emit_report()
 
 
 if __name__ == "__main__":

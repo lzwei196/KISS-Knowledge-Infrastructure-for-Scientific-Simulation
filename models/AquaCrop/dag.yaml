@@ -598,7 +598,7 @@ outputs:
   - var: "FreshYield"
     validation_rank: 2
     unit: "t/ha"
-    description: "Fresh-weight yield = DryYield / (YldWC/100); reflects harvest moisture content."
+    description: "Crop fresh-weight yield = DryYield / (YldWC/100); reflects harvest moisture content."
     emitted_in: "final_stats DataFrame (column 'Fresh yield')"
     observability:
       comparable_obs_shapes:
@@ -760,7 +760,7 @@ outputs:
   - var: "z_root"
     validation_rank: 12
     unit: "m"
-    description: "Current effective rooting depth."
+    description: "Current effective crop rooting depth in the soil profile."
     emitted_in: "crop_growth DataFrame (column 'z_root')"
     observability:
       comparable_obs_shapes:
@@ -774,7 +774,7 @@ outputs:
   - var: "harvest_index"
     validation_rank: 13
     unit: "fraction"
-    description: "Reference harvest index build-up over the yield-formation window (no stress)."
+    description: "Reference crop harvest index build-up over the yield-formation window (no stress)."
     emitted_in: "crop_growth DataFrame (column 'harvest_index')"
     observability:
       comparable_obs_shapes:
@@ -1151,3 +1151,17 @@ safety:
       scope: "Pre-first-season simulation window"
       source: "aquacrop/timestep/run_single_timestep.py (Fallow_Crop substitution)"
       status: "adopted"
+
+medium_evidence:
+  - var: "FreshYield"
+    source: "docs/s9_output_analysis_skill.md"
+    quote: "Fresh yield (tonne/ha) | float | Fresh weight yield (adjusted for YldWC)"
+    note: "S9 final_stats identifies FreshYield as crop fresh-weight yield, not water or soil storage."
+  - var: "z_root"
+    source: "docs/s2_soil_profile_skill.md"
+    quote: "If soil is shallower than Zmax, the model restricts root growth."
+    note: "Soil-profile docs place z_root in the crop root and soil-profile medium."
+  - var: "harvest_index"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1071_cp15226.txt"
+    quote: "The reference harvest index (HIo) was set at 52%, default for pearl millet as a grain crop."
+    note: "The paper ties reference harvest index to the grain-crop yield medium."

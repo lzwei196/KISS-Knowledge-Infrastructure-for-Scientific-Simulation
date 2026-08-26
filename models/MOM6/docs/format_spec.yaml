@@ -1,150 +1,625 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "MOM6"
-  full_name: "Modular Ocean Model, version 6"
-  domain: "ocean"
-  developer: "NOAA-GFDL"
-  language: "Fortran 90/95 + C (FMS infrastructure)"
-  binary_path: "KISSPATH_BINARIES/MOM6/validation_run/MOM6"
-  build_system: "Autoconf + Make (with FMS dependency)"
-  parallelism: "MPI domain decomposition + optional OpenMP"
-  io_format: "NetCDF4 (via FMS I/O layer)"
-
+  name: MOM6
+  language: fortran
+  implementation:
+    id: mom6-gfdl
+    version: version 6 (dev/gfdl branch)
+    provenance: Fortran 90/95 with C FMS infrastructure; NOAA-GFDL open-development MOM6 dynamic core
+      wrapping the ALE primitive-equation solver.
+  scientific_reference_version: MOM6 (NOAA-GFDL primitive-equation ocean core; ALE generalized vertical
+    coordinate; OM4.0 lineage, Adcroft et al. 2019)
 inputs:
-  grid:
-    - name: "ocean_hgrid.nc"
-      description: "Supergrid defining horizontal coordinates"
-      location: "INPUT/"
-    - name: "topog.nc"
-      description: "Ocean bathymetry (depth variable, positive-down, meters)"
-      location: "INPUT/"
-    - name: "vcoord.nc"
-      description: "Vertical coordinate interfaces"
-      location: "INPUT/"
-
   forcing:
-    - name: "wind_stress"
-      unit: "Pa"
-      valid_range: [-2.0, 2.0]
-      description: "Surface wind stress (zonal and meridional)"
-    - name: "heat_flux"
-      unit: "W/m2"
-      valid_range: [-500.0, 500.0]
-      description: "Net surface heat flux (positive into ocean)"
-    - name: "freshwater_flux"
-      unit: "kg/m2/s"
-      valid_range: [-1.0e-3, 1.0e-3]
-      description: "Precipitation minus evaporation"
-    - name: "shortwave_radiation"
-      unit: "W/m2"
-      valid_range: [0.0, 500.0]
-      description: "Downwelling shortwave radiation"
-
-  initial_conditions:
-    - name: "temperature"
-      unit: "degC"
-      valid_range: [-2.0, 40.0]
-      description: "Initial potential/conservative temperature"
-    - name: "salinity"
-      unit: "PSU"
-      valid_range: [0.0, 42.0]
-      description: "Initial practical/absolute salinity"
-
+  - name: zonal wind stress (taux)
+    unit: Pa
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing field via FMS/NUOPC coupler or WIND_FILE
+    notes: + eastward; CGS dyn/cm^2 inputs must be scaled by 0.1
+  - name: meridional wind stress (tauy)
+    unit: Pa
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing field via FMS/NUOPC coupler or WIND_FILE
+    notes: + northward
+  - name: shortwave radiation (SW)
+    unit: W/m^2
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing via SHORTWAVE_FILE / coupler
+    notes: + into ocean (downward)
+  - name: longwave radiation (LW, net)
+    unit: W/m^2
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing via LONGWAVE_FILE / coupler
+    notes: model expects NET LW into ocean; downwelling-only inputs add ~350 W/m^2 spurious heating
+  - name: latent heat flux (laten)
+    unit: W/m^2
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing via FORCING_FILE / coupler
+    notes: + into ocean; sign-reversed inputs drive opposite SST trend
+  - name: sensible heat flux (sens)
+    unit: W/m^2
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing via FORCING_FILE / coupler
+    notes: + into ocean
+  - name: evaporation (evap)
+    unit: kg/m^2/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing via FORCING_FILE / coupler
+    notes: negative (water leaves ocean)
+  - name: precipitation (precip)
+    unit: kg/m^2/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing via PRECIP_FILE / coupler
+    notes: positive (enters ocean); mm/day inputs must be divided by 86400
+  - name: near-surface air temperature (t_air)
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing via coupler (bulk-formula BUOY_CONFIG)
+    notes: degC not Kelvin
+  - name: specific humidity (q_air)
+    unit: kg/kg
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing via coupler (bulk-formula)
+  - name: sea level pressure (slp)
+    unit: Pa
+    category: forcing
+    source_kind: forcing
+    model_input_format: surface forcing via coupler
   parameters:
-    critical:
-      - name: "DT"
-        unit: "seconds"
-        valid_range: [1.0, 86400.0]
-        description: "Baroclinic dynamics timestep"
-      - name: "DT_THERM"
-        unit: "seconds"
-        valid_range: [1.0, 86400.0]
-        description: "Thermodynamics timestep"
-      - name: "NK"
-        unit: "count"
-        valid_range: [1, 200]
-        description: "Number of vertical layers"
-      - name: "NIGLOBAL"
-        unit: "count"
-        valid_range: [1, 10000]
-        description: "Global grid points in x-direction"
-      - name: "NJGLOBAL"
-        unit: "count"
-        valid_range: [1, 10000]
-        description: "Global grid points in y-direction"
-      - name: "EQUATION_OF_STATE"
-        valid_range: ["WRIGHT", "TEOS10", "UNESCO", "LINEAR"]
-        description: "Equation of state for seawater density"
-      - name: "RHO_0"
-        unit: "kg/m3"
-        valid_range: [1000.0, 1100.0]
-        description: "Reference density for Boussinesq approximation"
-      - name: "KH"
-        unit: "m2/s"
-        valid_range: [0.0, 100000.0]
-        description: "Horizontal viscosity"
-      - name: "KD"
-        unit: "m2/s"
-        valid_range: [0.0, 1.0e-2]
-        description: "Background diapycnal diffusivity"
-      - name: "CDRAG"
-        unit: "nondim"
-        valid_range: [0.001, 0.01]
-        description: "Quadratic bottom drag coefficient"
-
-  config_files:
-    - name: "MOM_input"
-      description: "Primary parameter file"
-    - name: "MOM_override"
-      description: "Parameter overrides (takes precedence)"
-    - name: "input.nml"
-      description: "Fortran namelists (run length, I/O, FMS config)"
-    - name: "diag_table"
-      description: "Diagnostic output specification"
-
+  - name: horizontal supergrid geometry (ocean_hgrid)
+    unit: deg, m, m^2
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: ocean_hgrid.nc (x, y, dx, dy, area, angle_dx)
+  - name: ocean bottom depth / bathymetry
+    unit: m (positive down)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: topog.nc depth field (TOPO_FILE/TOPO_VARNAME); MINIMUM_DEPTH/MAXIMUM_DEPTH
+    notes: elevation (positive-up) inputs must be negated; depth>0 ocean, <=0 land
+  - name: vertical coordinate definition
+    unit: m
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: vcoord.nc interfaces/Layer; NK, COORD_CONFIG
+  - name: Boussinesq reference density (RHO_0)
+    unit: kg/m^3
+    category: parameters
+    source_kind: default
+    model_input_format: MOM_input get_param (hardcoded default 1035.0, not 1025/1000)
+    notes: sets H<->m conversion in Boussinesq mode
+  - name: gravitational acceleration (G_EARTH)
+    unit: m/s^2
+    category: parameters
+    source_kind: default
+    model_input_format: MOM_input get_param (hardcoded default 9.80, not 9.81)
+  - name: seawater heat capacity (C_P)
+    unit: J/kg/K
+    category: parameters
+    source_kind: default
+    model_input_format: MOM_input get_param (TEOS-10 exact default 3991.86795711963)
+  - name: minimum layer thickness floor (ANGSTROM)
+    unit: m
+    category: parameters
+    source_kind: default
+    model_input_format: MOM_input get_param (default 1.0e-10; clamps vanished layers in ALE remapping)
+  - name: lateral mixing coefficients (KH, SMAG_BI_CONST, THICKNESSDIFFUSE)
+    unit: m^2/s (Laplacian), nondim (Smagorinsky)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: MOM_input parameters
+  - name: vertical mixing coefficients (KD background, KV)
+    unit: m^2/s
+    category: parameters
+    source_kind: calibrated
+    model_input_format: MOM_input parameters
+  - name: bottom drag coefficient (CDRAG)
+    unit: nondim
+    category: parameters
+    source_kind: calibrated
+    model_input_format: MOM_input parameters (BOTTOMDRAGLAW)
+  initial_conditions:
+  - name: initial temperature (temp)
+    unit: degC
+    category: initial_conditions
+    source_kind: dataset_lookup
+    model_input_format: MOM_IC.nc / restart (TEMP_FILE, TEMP_VAR, TS_CONFIG)
+    notes: potential vs conservative must match EQUATION_OF_STATE
+  - name: initial salinity (salt)
+    unit: PSU or g/kg
+    category: initial_conditions
+    source_kind: dataset_lookup
+    model_input_format: MOM_IC.nc / restart (SALT_FILE, SALT_VAR)
+    notes: practical vs absolute must match EQUATION_OF_STATE
+  - name: initial layer thickness (h)
+    unit: m (Boussinesq) or kg/m^2 (non-Boussinesq)
+    category: initial_conditions
+    source_kind: dataset_lookup
+    model_input_format: MOM_IC.nc / restart
+    notes: must be in meters under default Boussinesq; sum of thicknesses equals bottom depth
+  - name: initial velocity (u, v)
+    unit: m/s
+    category: initial_conditions
+    source_kind: dataset_lookup
+    model_input_format: MOM_IC.nc / restart (VELOCITY_CONFIG)
+  - name: open boundary data (regional only)
+    unit: degC, PSU, m/s, m
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: OBC_*.nc temp/salt/u/v/ssh per segment
+    notes: required for regional domains; prescribed externally
+  boundary_conditions:
+  - name: equation-of-state selection (EQUATION_OF_STATE)
+    unit: switch
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: MOM_input (WRIGHT/TEOS10/UNESCO/LINEAR)
+    notes: dictates required T/S type; mismatch causes accumulating density bias
+  - name: vertical coordinate mode (REGRIDDING_COORDINATE_MODE)
+    unit: switch
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: MOM_input (ZSTAR/SIGMA/RHO/HYCOM)
+  - name: baroclinic timestep (DT)
+    unit: s
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: MOM_input (no default; fail_if_missing)
+    notes: must be seconds; CFL-limited by grid resolution
+  - name: thermodynamic timestep (DT_THERM)
+    unit: s
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: MOM_input (defaults to DT; typically 1-4x DT)
+  - name: barotropic timestep (DTBT)
+    unit: s
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: MOM_input (negative = auto-CFL)
+    notes: barotropic CFL requires DTBT < dx/sqrt(g*H_max)
+  - name: boundary-layer scheme selection (USE_KPP / energetic PBL)
+    unit: switch
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: MOM_input (BULKMIXEDLAYER, USE_KPP, ePBL options)
+  - name: MPI domain decomposition layout (LAYOUT / MASKTABLE)
+    unit: switch
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: MOM_input / input.nml
+    notes: global dims must be divisible by PE count or set LAYOUT explicitly
+  - name: domain periodicity (REENTRANT_X / REENTRANT_Y)
+    unit: switch
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: MOM_input
+  - name: 'open-boundary scheme (OBC_SEGMENT_* : FLATHER/ORLANSKI)'
+    unit: switch
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: MOM_input (regional domains; OBC_NUMBER_OF_SEGMENTS)
+  - name: diagnostic output configuration (diag_table)
+    unit: switch
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: diag_table (FMS diag_manager field/frequency selection)
 outputs:
   primary:
-    - name: "temp"
-      unit: "degC"
-      valid_range: [-2.0, 40.0]
-      description: "Potential/conservative temperature"
-    - name: "salt"
-      unit: "PSU"
-      valid_range: [0.0, 42.0]
-      description: "Practical/absolute salinity"
-    - name: "ssh"
-      unit: "m"
-      valid_range: [-10.0, 10.0]
-      description: "Sea surface height"
-    - name: "u"
-      unit: "m/s"
-      valid_range: [-5.0, 5.0]
-      description: "Zonal velocity"
-    - name: "v"
-      unit: "m/s"
-      valid_range: [-5.0, 5.0]
-      description: "Meridional velocity"
-    - name: "h"
-      unit: "m"
-      valid_range: [0.0, 8000.0]
-      description: "Layer thickness"
-  diagnostics:
-    - name: "KE"
-      unit: "m2/s2"
-      valid_range: [0.0, 10.0]
-      description: "Kinetic energy per unit mass"
-    - name: "MLD_003"
-      unit: "m"
-      valid_range: [0.0, 5000.0]
-      description: "Mixed layer depth (0.03 kg/m3 criterion)"
-    - name: "ocean.stats"
-      description: "Timestep-level energy, CFL, mass, T/S conservation"
-    - name: "ocean.stats.nc"
-      description: "NetCDF version of ocean.stats"
-
+  - name: SSH
+    unit: m
+    description: Sea surface height / dynamic free surface.
+    validation_rank: 1
+    emitted_in: diag_table NetCDF (e.g. ocean_month.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - satellite altimetry measures dynamic SSH anomaly; remove time-mean geoid/steric offset before
+          comparison
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - tide-gauge comparison needs datum alignment
+      detrending_options:
+      - linear_residual
+      - first_difference
+  - name: SST
+    unit: degC
+    description: Sea surface temperature (surface-layer temperature diagnostic).
+    validation_rank: 2
+    emitted_in: diag_table NetCDF (tos / ocean_month.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - bulk SST vs satellite skin SST differ by a cool-skin offset
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - mooring/buoy depth vs model surface layer
+      detrending_options:
+      - linear_residual
+      - none
+  - name: thetao
+    unit: degC
+    description: Three-dimensional ocean potential/conservative temperature.
+    validation_rank: 3
+    emitted_in: diag_table NetCDF (thetao)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - compare against gridded T climatology (e.g. WOA) on matching depth levels; potential vs conservative
+          temperature must be reconciled with the run's EOS
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - profile (Argo) vs model column interpolation
+      detrending_options:
+      - linear_residual
+  - name: SSS
+    unit: PSU
+    description: Sea surface salinity.
+    validation_rank: 4
+    emitted_in: diag_table NetCDF (sos / ocean_month.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - practical vs absolute salinity offset (~1.00472) must match the run's EOS
+      detrending_options:
+      - linear_residual
+  - name: MLD_003
+    unit: m
+    description: Ocean mixed-layer depth (0.03 kg/m^3 density criterion).
+    validation_rank: 5
+    emitted_in: diag_table NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - MLD definition (density threshold value) must match the obs product's criterion
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - seasonal-cycle phase is the primary skill target
+      detrending_options:
+      - none
+  - name: u
+    unit: m/s
+    description: Zonal velocity (surface and subsurface, e.g. equatorial undercurrent).
+    validation_rank: 6
+    emitted_in: diag_table NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - moored ADCP (e.g. TAO/TRITON) at fixed depth vs model layer interpolation
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - undercurrent core depth/strength sensitive to vertical mixing
+      detrending_options:
+      - none
+  - name: ocean_heat_content
+    unit: J/m^2
+    description: Column-integrated ocean heat content (derived from temperature and thickness).
+    validation_rank: 7
+    emitted_in: diag_table NetCDF / derived from thetao + h
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - basin/global OHC trends carry forcing-dataset and drift signals; compare detrended/decadal-mean
+          change rather than inter-annual r
+      detrending_options:
+      - linear_residual
+      - decadal_mean
+  secondary: []
 known_issues:
-  - id: "dt_002"
-    description: "TEOS10 EOS requires conservative temperature, not potential temperature — 0.2 degC bias accumulates over decades"
-  - id: "dt_005"
-    description: "Depth/topography must be positive-down (meters); negative values indicate land"
-  - id: "dt_008"
-    description: "Heat flux sign convention: positive INTO ocean; some reanalyses use positive OUT"
+- id: dt_001
+  symptom: 'Sea surface temperature rapidly exceeds 100 degC within first few timesteps. Energy in ocean.stats
+    grows exponentially. Model may crash with velocity truncation.
+
+    '
+  diagnosis: 'Air temperature in forcing file is in Kelvin (K) instead of degrees Celsius (degC). MOM6
+    expects degC for bulk formula computations. Values of ~290 K are interpreted as 290 degC, causing
+    extreme heating.
+
+    '
+  remedy: 'Convert temperature: T_degC = T_K - 273.15. In forcing_converter.py this is handled automatically
+    for ERA5/JRA55. Verify with: `ncdump -v t_air forcing.nc | head -20` — values should be in [-80, 60]
+    range.
+
+    '
+  severity: critical
+- id: dt_002
+  symptom: 'Multi-decadal simulation shows slow temperature drift of ~0.1-0.2 degC/decade. Short runs
+    (< 5 years) appear normal. Density structure gradually degrades.
+
+    '
+  diagnosis: 'Potential temperature used as initial condition when EQUATION_OF_STATE = "TEOS10" expects
+    conservative temperature. The difference is small (~0.04 degC at surface, ~0.2 degC at depth) but
+    accumulates. Conversely, using conservative temperature with Wright or UNESCO EOS also causes drift.
+
+    '
+  remedy: 'Match T/S type to EOS choice. For TEOS10: use gsw_CT_from_pt(SA, pt) from the GSW toolbox.
+    For Wright/UNESCO: use potential temperature directly. Add assertion in IC preparation: if EOS="TEOS10",
+    verify T_max < 33 degC (conservative temp is always less than potential temp at depth).
+
+    '
+  severity: high
+- id: dt_003
+  symptom: 'Salinity bias of ~0.17 PSU globally. Density calculation slightly off, affecting mixed layer
+    depth and overturning circulation strength.
+
+    '
+  diagnosis: 'Absolute salinity (g/kg, used by TEOS10) and practical salinity (PSU, used by Wright/UNESCO)
+    differ by a factor of ~1.00472. Using the wrong type introduces a systematic bias.
+
+    '
+  remedy: 'For TEOS10: convert S_A = gsw_SA_from_SP(SP, p, lon, lat). For Wright/UNESCO: use practical
+    salinity directly. Check: if S values > 36 in open ocean with TEOS10, they''re likely absolute salinity
+    (correct). If using Wright and seeing values > 36, may be absolute salinity (incorrect — convert to
+    pract'
+  severity: medium
+- id: dt_005
+  symptom: 'MOM6 crashes at initialization with "All points on processor are land" or runs with zero ocean
+    cells. No useful output produced.
+
+    '
+  diagnosis: 'Topography depth values have wrong sign convention. MOM6 expects positive-down (ocean =
+    positive values). GEBCO and ETOPO provide elevation (positive-up), where ocean is negative. Using
+    raw elevation means all ocean cells are masked.
+
+    '
+  remedy: 'Negate elevation: depth = -elevation. Then set land to 0.0 (or mask it). topography_converter.py
+    handles this automatically via the is_elevation flag. Verify: `ncdump -v depth topog.nc | tail` —
+    all ocean values should be > 0.
+
+    '
+  severity: critical
+- id: dt_007
+  symptom: 'Ocean currents are 10× weaker than expected. Kinetic energy in ocean.stats is very low. Mixed
+    layer depth is shallower than observations.
+
+    '
+  diagnosis: 'Wind stress provided in dyn/cm² (CGS) instead of Pa (SI). 1 dyn/cm² = 0.1 Pa. Some older
+    forcing datasets and textbook formulas use CGS units.
+
+    '
+  remedy: 'Multiply by 0.1: tau_Pa = tau_dyncm2 × 0.1. Always verify wind stress range: typical values
+    are 0-0.3 Pa, peak storms ~1-3 Pa. If values are 0-3 dyn/cm², they need conversion.
+
+    '
+  severity: medium
+- id: dt_008
+  symptom: 'Ocean loses heat when it should gain heat (or vice versa). SST has opposite seasonal cycle.
+    Global mean SST drifts steadily in wrong direction.
+
+    '
+  diagnosis: 'Heat flux sign convention is reversed. MOM6 expects positive = into ocean. Some atmospheric
+    models output positive = upward (out of ocean). Latent and sensible heat fluxes are most commonly
+    affected.
+
+    '
+  remedy: 'Negate the flux: Q_mom6 = -Q_source (if source convention is positive-up). Verify by checking
+    summer hemisphere SST trend over first few months.
+
+    '
+  severity: critical
+- id: dt_009
+  symptom: 'Extreme freshwater input. Salinity drops unrealistically (e.g., SSS < 20 PSU globally within
+    months). Sea level rises anomalously.
+
+    '
+  diagnosis: 'Precipitation in mm/day or mm/hr not converted to kg/m²/s. MOM6 expects kg/m²/s. 1 mm/day
+    of rain ≈ 1.157e-5 kg/m²/s. If 5 mm/day is passed directly as 5.0 kg/m²/s, the freshwater flux is
+    ~430,000× too large.
+
+    '
+  remedy: 'Convert: P_kgm2s = P_mmday / 86400. For mm/hr: P_kgm2s = P_mmhr / 3600. Verify range: global
+    mean precip ≈ 3e-5 kg/m²/s, max ≈ 1e-3 kg/m²/s.
+
+    '
+  severity: high
+- id: dt_010
+  symptom: 'Density computed incorrectly at depth. Deep water formation regions produce wrong water masses.
+    Pressure-dependent EOS effects are wrong by factor of 10000.
+
+    '
+  diagnosis: 'Pressure provided in dbar instead of Pa. MOM6 EOS routines expect pressure in Pa. 1 dbar
+    = 10000 Pa. At 4000 m depth, pressure ≈ 400 dbar = 4×10⁷ Pa.
+
+    '
+  remedy: 'Convert: P_Pa = P_dbar × 10000. Most EOS routines in MOM6 handle the conversion internally
+    via the US%Z_to_Pa scaling, but external IC preparation must use Pa.
+
+    '
+  severity: medium
+- id: dt_011
+  symptom: 'Freshwater balance is systematically wrong. Salinity increases steadily even with correct
+    precipitation. Net surface freshwater flux is positive (adding salt).
+
+    '
+  diagnosis: 'Evaporation sign convention error. MOM6 expects evaporation as negative (water leaving the
+    ocean). Some datasets provide evaporation as a positive quantity (mm/day or kg/m²/s). Additionally,
+    mm/day → kg/m²/s conversion may be missing.
+
+    '
+  remedy: 'evap_kgm2s = -abs(evap_mmday) / 86400. Always verify: evap must be ≤ 0 in the MOM6 forcing
+    file. Typical range: -1e-4 to 0 kg/m²/s.
+
+    '
+  severity: high
+- id: dt_014
+  symptom: 'MOM6 crashes immediately with CFL violation or negative thickness at first timestep. Energy
+    explodes in ocean.stats first entry.
+
+    '
+  diagnosis: 'Timestep DT specified in hours or minutes instead of seconds. MOM6 expects DT in seconds.
+    DT = 1 (intended as 1 hour = 3600 s) is extremely small and causes no harm, but DT = 3600 (intended
+    as 3600 hours) is far too large.
+
+    '
+  remedy: 'Ensure DT is in seconds. Typical values: DT = 300-1800 s for 1° global, DT = 60-300 s for 1/4°
+    global, DT = 10-60 s for 1/12° global.
+
+    '
+  severity: critical
+- id: dt_015
+  symptom: 'MOM6 runs but crashes after several timesteps with "Thickness has become negative" or velocity
+    truncation. Occurs only in specific regions.
+
+    '
+  diagnosis: 'Barotropic timestep DTBT is too large for the grid spacing. The barotropic CFL condition
+    requires DTBT < dx / sqrt(g × H_max). With fine grids or deep ocean, DTBT must be very small.
+
+    '
+  remedy: 'Set DTBT = -0.98 to let MOM6 auto-calculate from CFL. Or compute manually: DTBT = 0.9 × dx_min
+    / sqrt(9.81 × H_max). For 1° grid with H=6000m: DTBT ≈ 30s.
+
+    '
+  severity: high
+- id: dt_016
+  symptom: '"Domain decomposition error" at startup. MOM6 cannot distribute grid across MPI processes.
+    Error message mentions layout or mask_table.
+
+    '
+  diagnosis: 'Grid dimensions (NIGLOBAL, NJGLOBAL) are not evenly divisible by the number of MPI processes,
+    or the land-elimination mask_table excludes too many PEs.
+
+    '
+  remedy: 'Choose NIGLOBAL and NJGLOBAL with many factors (e.g., 360, 180). Set LAYOUT explicitly in MOM_input:
+    LAYOUT = Nx, Ny where Nx*Ny = nprocs and NIGLOBAL/Nx and NJGLOBAL/Ny are integers. Or use MASKTABLE
+    to skip land-only PEs.
+
+    '
+  severity: medium
+- id: dt_017
+  symptom: 'Equation of state produces subtly wrong density. Water mass properties are incorrect. Deep
+    circulation is too weak or too strong. Problem is only evident after comparing to observations.
+
+    '
+  diagnosis: 'EQUATION_OF_STATE parameter does not match the type of temperature and salinity in the initial
+    conditions and forcing. E.g., using TEOS10 EOS with potential temperature instead of conservative
+    temperature. The difference is small but physically important for density-driven flows.
+
+    '
+  remedy: 'Verify consistency: TEOS10 requires conservative temperature + absolute salinity. WRIGHT and
+    UNESCO require potential temperature + practical salinity. LINEAR works with any type. Document the
+    choice in MOM_input comments.
+
+    '
+  severity: high
+- id: dt_018
+  symptom: 'Diagnostic output file is unexpectedly small or contains all zeros for some variables. No
+    error messages in log files.
+
+    '
+  diagnosis: 'Variable name in diag_table does not match the registered diagnostic name. MOM6 silently
+    ignores unknown diagnostic names. The field is never written.
+
+    '
+  remedy: 'Check available_diags.000000 (written at startup) for exact diagnostic names. Common mistakes:
+    "sst" vs "SST", "temp" vs "Temp", "mld" vs "MLD_003". Use exact names from available_diags file.
+
+    '
+  severity: medium
+- id: dt_019
+  symptom: 'Model runs normally but SST has a persistent warm bias of 2-5 degC. Heat content increases
+    monotonically. Seasonal cycle amplitude is correct but mean is shifted.
+
+    '
+  diagnosis: 'Net longwave radiation is provided as downwelling LW only, not net LW. The upwelling component
+    (εσT⁴ ≈ 350-400 W/m²) is missing. This adds ~350 W/m² of extra heating to the ocean surface.
+
+    '
+  remedy: 'Compute net LW: LW_net = LW_down - ε × σ × SST⁴, where ε ≈ 0.97 and σ = 5.67e-8 W/m²/K⁴. Or
+    configure MOM6 to compute upwelling LW internally by using bulk formula forcing mode (BUOY_CONFIG
+    = "linear").
+
+    '
+  severity: high
+- id: dt_020
+  symptom: 'Vertical structure appears correct initially but layer thicknesses become unrealistically
+    thin or thick within the first day. ALE regridding oscillates.
+
+    '
+  diagnosis: 'Layer thickness h is in kg/m² (non-Boussinesq convention) but the model is configured for
+    Boussinesq mode (default), which expects h in meters. h_m = h_kgm2 / rho_0 where rho_0 ≈ 1035 kg/m³.
+
+    '
+  remedy: 'Check BOUSSINESQ parameter in MOM_input (default True). If True, ensure h in initial conditions
+    is in meters. Convert: h_m = h_kgm2 / RHO_0. Verify: sum of layer thicknesses should equal bottom
+    depth.
+
+    '
+  severity: medium

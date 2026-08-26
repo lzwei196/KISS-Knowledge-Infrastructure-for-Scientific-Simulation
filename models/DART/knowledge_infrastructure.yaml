@@ -1,106 +1,81 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:03:06.091578'
-  domain: data_assimilation
   name: DART
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: dart-manhattan
+    version: 11.24.x (Manhattan release)
+    provenance: Fortran 90+ with NetCDF I/O; DAReS / NSF NCAR; github.com/NCAR/DART. Model-agnostic assimilation
+      core coupled to a host model_mod.
+  scientific_reference_version: DART Manhattan release — ensemble data-assimilation framework (EAKF /
+    EnKF / QCEFF), Anderson/DAReS lineage
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DART/source/repo/models/lorenz_63/work/filter
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s1_preprocessing_and_build
+  - s2_observation_preparation
+  - s3_ensemble_initialization
+  - s4_assimilation_execution
+  - s5_diagnostics
+tools:
+  count: 4
+  files:
+  - tools/convert_obs_to_dart.py
+  - tools/generate_input_nml.py
+  - tools/parse_dart_output.py
+  - tools/run_dart.py
+inputs:
+  forcing:
+  - name: observation sequence (obs_seq)
+    unit: observation-type dependent (host-model units)
+  parameters:
+  - name: cutoff
+    unit: radians (threed_sphere) / host-distance units
+  - name: inflation parameters (inf_initial, inf_damping, inf_lower_bound, inf_upper_bound, inf_sd_*)
+    unit: dimensionless
+  - name: ens_size
+    unit: count
+  - name: perturbation_amplitude
+    unit: state units (Gaussian sigma)
+  - name: outlier_threshold / input_qc_threshold
+    unit: innovation-stddev multiple / QC value
+  initial_conditions:
+  - name: ensemble state files
+    unit: host-model state units
+  - name: inflation restart fields
+    unit: dimensionless inflation factor
+  boundary_conditions:
+  - name: model-advance mode (async)
+    unit: enum {0,2,4}
+  - name: filter algorithm (filter_kind / QCEFF table)
+    unit: enum / per-quantity table
+  - name: localization function (select_localization)
+    unit: enum
+  - name: stages_to_write
+    unit: list
+  - name: assimilate_these_obs_types / evaluate_these_obs_types
+    unit: list
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - analysis ensemble mean (posterior state)
+  - analysis ensemble spread (posterior sd)
+  - observation-space innovations and QC (obs_seq.final)
+  - binned observation-space diagnostics (bias, rmse, totalspread)
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.993, R=0.997, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.9934
+    best_r: 0.9967
+summary:
+  total_tools: 4
+  total_stage_docs: 5
+  total_diagnostic_triplets: 20
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

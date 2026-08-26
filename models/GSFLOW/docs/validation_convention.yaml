@@ -1,0 +1,426 @@
+schema_version: 1
+model_id: GSFLOW
+domain: hydrology
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  pygsflow2022:
+    doi: 10.3389/feart.2022.907533
+    title: "Rapid Model Development for GSFLOW With Python and pyGSFLOW"
+    venue: "Frontiers in Earth Science"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_feart.2022.907533.txt
+  grass2018:
+    doi: 10.5194/gmd-11-4755-2018
+    title: "GSFLOW-GRASS v1.0.0: GIS-enabled hydrologic modeling of coupled groundwater-surface-water systems"
+    venue: "Geoscientific Model Development"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-11-4755-2018.txt
+  christiansen2012:
+    doi: 10.3133/sir20125213
+    title: "Simulation of daily streamflows at gaged and ungaged locations within the Cedar River Basin using a PRMS model"
+    venue: "U.S. Geological Survey Scientific Investigations Report"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3133_sir20125213.txt
+  nhmprms2020:
+    doi: 10.3133/tm6b10
+    title: "Parameter estimation at the conterminous United States scale and streamflow routing"
+    venue: "U.S. Geological Survey Techniques and Methods"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3133_tm6b10.txt
+  prmsiv2015:
+    doi: 10.3133/tm6b7
+    title: "PRMS-IV, the Precipitation-Runoff Modeling System, Version 4"
+    venue: "U.S. Geological Survey Techniques and Methods"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3133_tm6b7.txt
+  bhanja2023:
+    doi: 10.1016/j.jhydrol.2023.129176
+    title: "Evaluation of distributed process-based hydrologic model performance using only a priori information"
+    venue: "Journal of Hydrology"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2023.129176.txt
+  liu2020:
+    doi: 10.1186/s12302-020-00395-6
+    title: "Quantifying the streamflow response to groundwater abstractions for irrigation or drinking water at catchment scale using SWAT and SWAT-MODFLOW"
+    venue: "Environmental Sciences Europe"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1186_s12302-020-00395-6.txt
+  tolley2019:
+    doi: 10.1029/2018WR024209
+    title: "Sensitivity Analysis and Calibration of an Integrated Hydrologic Model in an Irrigated Agricultural Basin With a Groundwater-Dependent Ecosystem"
+    venue: "Water Resources Research"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018wr024209.txt
+  thai2024:
+    doi: 10.3390/w16030419
+    title: "Assessment of Future Climate Change Impacts on Groundwater Recharge Using Hydrological Modeling"
+    venue: "Water"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w16030419.txt
+  sorensen2025:
+    doi: 10.1002/vzj2.70010
+    title: "The value of long-term in situ soil moisture and snowpack monitoring"
+    venue: "Vadose Zone Journal"
+    year: 2025
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_vzj2.70010.txt
+  thornton2021:
+    doi: 10.1029/2020WR029390
+    title: "Simulating Fully-Integrated Hydrological Dynamics in Complex Alpine Headwaters"
+    venue: "Water Resources Research"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2020wr029390.txt
+
+validation:
+  - dag_variable: basin_cfs
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow table: 'NSE > 0.80' very good and '0.50 < NSE <= 0.70' satisfactory; Moriasi 2007 similarly states satisfactory if NSE > 0.50."
+        cites: [moriasi2007, moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow table: 'PBIAS < +/-5' very good and '+/-10 <= PBIAS < +/-15' satisfactory."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 recommends RSR with NSE and PBIAS for watershed-model streamflow evaluation."
+        cites: [moriasi2007]
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Recent distributed hydrologic benchmarks often use KGE/mKGE; Bhanja 2023 reports mKGE > 0.65 as comparing well for streamflow."
+        cites: [bhanja2023]
+    validated_when: "Daily/monthly outlet streamflow is validated when NSE > 0.50 and |PBIAS| < 15% after unit conversion and spinup removal."
+    evidence_strength: strong
+    confidence: 0.90
+    notes: >-
+      This keeps the DAG determining metric, nse, as headline and adds the usual watershed magnitude check.
+      The field convention is explicit: Moriasi 2015 says flow simulations are satisfactory for NSE > 0.50
+      and PBIAS within +/-15%. pyGSFLOW reports calibrated Sagehen Creek daily NSE values of 0.72 and 0.74,
+      and Christiansen 2012 states a PRMS model met a greater-than-0.50 NSE criterion at most calibration
+      and validation sites.
+
+  - dag_variable: basin_cfs
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched GSFLOW/PRMS paper gave a numeric CSI event-detection pass band for daily outlet streamflow events."
+        cites: []
+    secondary_metrics:
+      - metric: timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Daily PRMS/GSFLOW hydrographs can be checked for event timing, but the fetched papers grade continuous hydrograph skill rather than CSI."
+        cites: [christiansen2012]
+    validated_when: "UNRESOLVED - score events with CSI if supplied, but do not auto-validate without a fetched numeric CSI convention."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      The capped OpenAlex check found flood-event CSI papers but no fetched GSFLOW-style outlet-event
+      threshold table. Keep this block low-confidence and non-loosening.
+
+  - dag_variable: basin_stflow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Same streamflow convention as basin_cfs; basin_stflow must first be converted from depth to discharge using basin area."
+        cites: [moriasi2007, moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 flow PBIAS satisfactory band is within +/-15%."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RSR is recommended with NSE and PBIAS for watershed streamflow evaluation."
+        cites: [moriasi2007]
+    validated_when: "Depth-normalized basin streamflow is validated after area conversion when NSE > 0.50 and |PBIAS| < 15%."
+    evidence_strength: strong
+    confidence: 0.88
+    notes: >-
+      The same watershed-flow thresholds apply because basin_stflow is the basin streamflow volume expressed
+      as depth. The conversion caveat is part of the DAG and must be resolved before scoring.
+
+  - dag_variable: basin_actet
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mkge
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "Bhanja 2023 says ATS evapotranspiration 'performs well (mKGE > 0.7)' and reports mKGE > 0.8 in five of seven catchments."
+        cites: [bhanja2023]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is nse, but the fetched ET benchmark uses mKGE against MODIS-derived ET rather than NSE."
+        cites: [bhanja2023]
+    validated_when: "Actual ET is validated against point or aggregated ET time series when mKGE >= 0.70; use NSE only as supportive unless a local ET NSE convention is fetched."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Literature supersedes the DAG nse choice for ET here. Bhanja 2023 explicitly grades 8-day ET skill
+      with mKGE against MODIS-derived ET. NHM-PRMS also calibrates actual ET against multi-product ranges
+      with error bounds rather than a universal NSE pass value.
+
+  - dag_variable: basin_actet
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: mkge
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "Bhanja 2023 spatially compares 8-day modeled ET to MODIS-derived ET and calls mKGE > 0.7 performing well."
+        cites: [bhanja2023]
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched ET paper gave a numeric CSI threshold for spatial ET pattern validation."
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "NHM-PRMS uses NRMSE against AET calibration ranges, but it does not publish a universal ET NRMSE pass band."
+        cites: [nhmprms2020]
+    validated_when: "Spatial ET time series are supported by mKGE >= 0.70; CSI remains unresolved and must not loosen the gate."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The DAG's csi metric is retained as an unresolved headline because the fetched literature uses gridded
+      ET agreement metrics and product ranges, not categorical spatial hits.
+
+  - dag_variable: basin_recharge
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS pass band for regional groundwater recharge, which is usually indirectly constrained."
+        cites: []
+    secondary_metrics:
+      - metric: range_inclusion
+        direction: maximize
+        status: supportive
+        ceiling_reason: "NHM-PRMS calibrates recharge using annual recharge ranges from multiple products as error bounds, not a universal percent-bias band."
+        cites: [nhmprms2020]
+      - metric: water_budget_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Integrated-model studies emphasize recharge as an inferred water-budget flux linked to ET, pumping, streamflow, and heads."
+        cites: [tolley2019, thai2024]
+    validated_when: "UNRESOLVED - compare recharge indirectly through heads, baseflow, and water-budget consistency unless a local recharge observation product supplies error bounds."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The DAG caveat is consistent with the literature: recharge is rarely directly observed. Hay 2020 derives
+      annual recharge calibration ranges from multiple products; Tolley 2019 and Thai 2024 validate recharge
+      dynamics primarily through heads/streamflow/water-budget behavior.
+
+  - dag_variable: "gw_head (MODFLOW .hds)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched groundwater-head convention gave a numeric r pass band for well hydrographs."
+        cites: []
+      - metric: mae
+        direction: minimize
+        unit: cm
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 reproduces DRAINMOD water-table-depth criteria: MAE <10 cm excellent, <15 cm good, <20 cm acceptable."
+        cites: [moriasi2015]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.60, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 reproduces DRAINMOD water-table-depth criteria: NSE >0.75 excellent, >0.60 good, >0.40 acceptable."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Tolley 2019 reports calibrated groundwater-head RMSE of 2.28 to 2.78 m and residual fractions, but not a pass/fail threshold."
+        cites: [tolley2019]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Tolley 2019 reports strong simulated-observed head correlation (R2 >= 0.98) as benchmark evidence."
+        cites: [tolley2019]
+    validated_when: "For head time series, require reported correlation plus MAE <= 20 cm or NSE > 0.40 where comparable water-table observations exist; the DAG r threshold itself remains uncited."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: >-
+      The numeric MAE/NSE bands are transferred from the fetched Moriasi 2015 table for daily water-table
+      depth. They are stricter than many regional MODFLOW head calibrations; use with attention to datum,
+      screen interval, and grid-cell representativeness.
+
+  - dag_variable: "gw_head (MODFLOW .hds)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched groundwater-head paper gave a CSI pass band for spatial head fields."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Spatial groundwater-head maps are usually judged by residual/error maps and summary RMSE rather than CSI."
+        cites: [liu2020, tolley2019]
+    validated_when: "UNRESOLVED - evaluate spatial head snapshots with residual maps/RMSE if available; do not auto-validate CSI without a fetched threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The DAG csi choice appears to be a generic spatial-pattern metric. Fetched groundwater papers report
+      head residual statistics and maps, not categorical CSI thresholds.
+
+  - dag_variable: basin_snow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched PRMS/GSFLOW SWE paper gave an NSE pass band for point SNOTEL SWE."
+        cites: []
+    secondary_metrics:
+      - metric: mkge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Bhanja 2023 reports ATS SWE 'performs reasonably well (mKGE = 0.94)' against one SNOTEL site, but this is a benchmark value, not a general threshold."
+        cites: [bhanja2023]
+      - metric: timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "SWE evaluation should consider snowmelt timing as well as magnitude; Bhanja 2023 reports good agreement in magnitude and snowmelt timing."
+        cites: [bhanja2023]
+    validated_when: "UNRESOLVED - compare basin_snow to SNOTEL/SWE with magnitude and melt timing, but do not auto-validate without a fetched numeric NSE threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The cached sources support SWE/SNOTEL as an important validation target, but not a numeric PRMS/GSFLOW
+      NSE pass convention. Point SNOTEL versus HRU-mean SWE remains a scale-sensitive comparison.
+
+  - dag_variable: basin_soil_moist
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE pass band for PRMS basin soil-moisture storage against point soil-moisture observations."
+        cites: []
+    secondary_metrics:
+      - metric: range_inclusion
+        direction: maximize
+        status: supportive
+        ceiling_reason: "NHM-PRMS calibrates soil moisture using monthly/annual ranges from multiple products as error bounds rather than a universal NSE band."
+        cites: [nhmprms2020]
+      - metric: correlation
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Sorensen 2025 reviews soil-moisture monitoring as valuable for hydrologic prediction and validation, but does not provide a PRMS storage threshold."
+        cites: [sorensen2025]
+    validated_when: "UNRESOLVED - use pattern/range comparison against in situ or gridded soil moisture; do not auto-validate on NSE without a fetched threshold."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      PRMS basin soil moisture is a storage depth, not directly volumetric water content. The field uses soil
+      moisture for calibration/evaluation, but the fetched sources support ranges and qualitative value, not a
+      universal numeric pass band.
+
+  - dag_variable: "overall water budget (IN/OUT, percent discrepancy)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched PRMS/GSFLOW/MODFLOW text gave a numeric percent-discrepancy pass band for this internal budget snapshot."
+        cites: []
+    secondary_metrics:
+      - metric: percent_discrepancy
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "PRMS-IV documents that the Water-Budget File reports errors in the overall water budget, but it does not define a numeric validation threshold."
+        cites: [prmsiv2015]
+      - metric: mass_balance_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Integrated model applications track mass-balance error, but the fetched set does not establish a GSFLOW-wide pass band."
+        cites: [tolley2019, thornton2021]
+    validated_when: "UNRESOLVED - require percent discrepancy near zero as an internal numerical diagnostic; no external-observation validation band is cited."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      This is an internal mass/water-budget diagnostic, not an observation-backed validation target. Keep it
+      separate from external validation and do not fabricate a numeric tolerance.
+
+deferred_paywalled: []

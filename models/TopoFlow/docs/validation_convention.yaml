@@ -1,0 +1,330 @@
+schema_version: 1
+model_id: TopoFlow
+domain: hydrology
+generated_by: "Step-B fleet agent (GPT-5 Codex) - validation-convention campaign"
+generated_at: 2026-08-14
+
+# Campaign convention: blocks are keyed by the model's own dag_variable, not an
+# invented canonical quantity. Numeric bands below are only used where a fetched
+# paper provides either a reproduced domain tier table or a benchmark convention.
+
+references:
+  shrestha2018:
+    doi: 10.2166/nh.2017.189
+    title: "Evaluation of the SWAT model performance for simulating river discharge in the Himalayan and lower plain basins"
+    venue: "Hydrology Research"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_nh.2017.189.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling & Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+  siqueira2018:
+    doi: 10.5194/hess-22-4815-2018
+    title: "Toward continental hydrologic-hydrodynamic modeling in South America"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-22-4815-2018.txt
+  wing2021:
+    doi: 10.5194/nhess-21-559-2021
+    title: "Simulating historical flood events at the continental scale: observational validation of a large-scale hydrodynamic model"
+    venue: "Nat. Hazards Earth Syst. Sci."
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_nhess-21-559-2021.txt
+  schramm2007:
+    doi: 10.1029/2006JG000326
+    title: "Application of TopoFlow, a spatially distributed hydrological model, to the Imnavait Creek watershed, Alaska"
+    venue: "Journal of Geophysical Research"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2006jg000326.txt
+  peckham2017:
+    doi: 10.1002/2016EA000237
+    title: "Reproducible, component-based modeling with TopoFlow, a spatial hydrologic modeling toolkit"
+    venue: "Earth and Space Science"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2016ea000237.txt
+  mizukami2019:
+    doi: 10.5194/hess-23-2601-2019
+    title: "On the choice of calibration metrics for high-flow estimation using hydrologic models"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-2601-2019.txt
+  ehret2011:
+    doi: 10.5194/hess-15-877-2011
+    title: "Series distance - an intuitive metric to quantify hydrograph similarity in terms of occurrence, amplitude and timing of hydrological events"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-15-877-2011.txt
+
+validation:
+  - dag_variable: outlet_discharge (Q_outlet)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Shrestha et al. reproduce the Moriasi et al. (2007) streamflow table: very good 0.75, good 0.65-0.75, acceptable 0.5-0.65."
+        cites: [shrestha2018]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Same reproduced table gives PBIAS ranges <+/-10, +/-10 to +/-15, and 15 to +/-25."
+        cites: [shrestha2018]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [shrestha2018, bennett2013]
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [mizukami2019]
+    validated_when: "Outlet hydrograph NSE >= 0.5 and |PBIAS| <= 25%; report RSR and high-flow/peak diagnostics where relevant."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      This keeps the dag determining_metric nse as headline and adds PBIAS because the fetched
+      discharge convention grades both hydrograph pattern and water balance. Schramm et al. report
+      TopoFlow measured and simulated discharges in good agreement and a weekly-average NSE of
+      0.64, but also a 7 d early snowmelt-discharge onset, so timing diagnostics should accompany
+      an otherwise passing outlet-discharge validation.
+
+  - dag_variable: peak_time_of_flow (T_peak)
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: day_bias
+        direction: zero_centered
+        unit: days
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric universal day-bias threshold for TopoFlow peak timing."
+        cites: []
+    secondary_metrics:
+      - metric: series_distance_timing
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [ehret2011]
+    validated_when: "UNRESOLVED - evaluate event timing explicitly, but do not auto-pass on day_bias without a site/event-specific tolerance."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Ehret and Zehe state that hydrograph evaluation often needs occurrence, amplitude, and timing
+      at event scale, and discuss Mean Absolute Peak Time Error, but do not provide a numeric pass
+      threshold. Schramm et al. document a TopoFlow snowmelt-discharge onset lead of 7 d; this is
+      benchmark context, not a validation band.
+
+  - dag_variable: peak_discharge (Q_peak)
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Transferred from the fetched streamflow PBIAS convention; Mizukami et al. support using peak-flow bias/APFB for high-flow magnitude."
+        cites: [shrestha2018, mizukami2019]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [mizukami2019]
+    validated_when: "|PBIAS| of peak discharge <= 25%, with APFB/peak-specific diagnostics preferred over NSE alone for high-flow magnitude."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      The dag determining_metric pbias is retained. Mizukami et al. show that NSE calibration can
+      underestimate annual peak flows and that APFB directly targets peak-flow behavior; the numeric
+      pass band is a conservative transfer from the fetched Moriasi-style streamflow PBIAS table.
+
+  - dag_variable: outlet_depth (d_outlet)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.6}
+        pass_band: satisfactory
+        band_note: "Siqueira et al. call water-level results satisfactory with NSE >= 0.6 in 60% of cases."
+        cites: [siqueira2018]
+      - metric: sigma_bias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Siqueira et al. describe amplitude performance as reasonable where -30% < sigma BIAS < 30%."
+        cites: [siqueira2018]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [siqueira2018]
+    validated_when: "Stage/depth anomaly NSE >= 0.6 and |sigma_bias| <= 30%; also report correlation against gauge or altimetry stage."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: >-
+      This is a transferred water-level convention for outlet depth, not a TopoFlow-specific stage
+      threshold. Siqueira et al. also cite r >= 0.8 in 80% of water-level cases as satisfactory
+      correlation, but the dag determining_metric nse remains headline.
+
+  - dag_variable: outlet_velocity (u_outlet)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric field convention for mean outlet velocity bias."
+        cites: []
+    secondary_metrics:
+      - metric: relative_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [bennett2013]
+    validated_when: "UNRESOLVED - compare to directly measured or hydraulically inferred velocity where available, but do not auto-pass without a cited velocity threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Bennett et al. define relative bias and related continuous metrics, but provide no hydrologic
+      velocity pass band. TopoFlow velocity is strongly tied to channel geometry and Manning
+      parameterization; the fetched set supports metric choice only, not a numeric gate.
+
+  - dag_variable: channel_discharge_grids (Q)
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper supports CSI as a numeric validation band for a distributed discharge field."
+        cites: []
+    secondary_metrics:
+      - metric: nse_at_gauge_cells
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [shrestha2018, bennett2013]
+    validated_when: "UNRESOLVED for true spatial discharge fields; validate extracted grid cells at interior gauges using point-time-series discharge conventions."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag lists CSI for a spatial time series, but the fetched literature validates gridded
+      discharge mainly by extracting gauge or virtual-station time series. Bennett et al. define CSI
+      for categorical event hits, not continuous discharge-field magnitude.
+
+  - dag_variable: channel_discharge_grids (Q)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Interior gauge-cell discharge uses the same fetched Moriasi-style streamflow NSE table."
+        cites: [shrestha2018]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Interior gauge-cell discharge uses the same fetched Moriasi-style streamflow PBIAS table."
+        cites: [shrestha2018]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [shrestha2018, bennett2013]
+      - metric: peak_flow_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [mizukami2019]
+    validated_when: "At each observed interior gauge cell, NSE >= 0.5 and |PBIAS| <= 25%; report peak-flow bias separately."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      This block applies when the gridded discharge output is sampled at a gauge pixel, as the dag
+      caveat allows. It should not be used to validate every grid cell without observations.
+
+  - dag_variable: depth_grids (d)
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.8, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "Wing et al. report typical reach-scale 2-D inundation CSIs of 0.7-0.8, with up to 0.9 for high-quality observations."
+        cites: [wing2021]
+    secondary_metrics:
+      - metric: pod
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [bennett2013]
+      - metric: far
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [bennett2013]
+    validated_when: "Flood/wet-dry extent CSI >= 0.7 against an observed inundation snapshot; interpret 0.8 as good and 0.9 as very good only with high-quality observations."
+    evidence_strength: moderate
+    confidence: 0.68
+    notes: >-
+      Bennett et al. define CSI as the fraction of observed cases correctly modeled, penalizing misses
+      and false alarms. Wing et al. warn that CSI can be insensitive to water-level errors; depth-grid
+      validation should therefore report water-surface/depth error where point high-water marks exist.
+
+  - dag_variable: infiltration_rate_grids (v0 / IN)
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI or spatial-field validation threshold for infiltration-rate grids."
+        cites: []
+    secondary_metrics:
+      - metric: outlet_hydrograph_response
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [peckham2017]
+    validated_when: "UNRESOLVED - use infiltration grids diagnostically and validate their effects through runoff/discharge response unless direct spatial infiltration observations are available."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Peckham et al. use Green-Ampt infiltration to interpret TopoFlow outlet hydrograph response and
+      show that insufficient precipitation sampling can force parameter adjustment away from observed
+      values. The fetched literature does not support an auto-validation band for spatial infiltration flux.
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 - Hydrologic and water quality models: Performance measures and evaluation criteria"
+    doi: 10.13031/trans.58.10715
+    needed_for: [outlet_discharge (Q_outlet), peak_discharge (Q_peak), channel_discharge_grids (Q)]
+  - ref: "Moriasi et al. 2007 - Model evaluation guidelines for systematic quantification of accuracy in watershed simulations"
+    doi: 10.13031/2013.23153
+    needed_for: [outlet_discharge (Q_outlet), peak_discharge (Q_peak), channel_discharge_grids (Q)]

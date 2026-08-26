@@ -1,14 +1,3 @@
----
-name: aquacrop
-description: >-
-  FAO AquaCrop 7.1 (Reference Manual lineage; Chapter 3 algorithmic spec). Covers Yield
-  response of herbaceous crops to water; Daily soil water balance of the root zone
-  (drainage, runoff, infiltration, capillary rise); Soil evaporation (FAO two-stage:
-  energy-limited then falling-rate); Crop transpiration with stress modulation (water,
-  aeration, temperature, CO2). Use when the task involves running, configuring,
-  calibrating or interpreting AquaCrop.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -37,6 +26,56 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (20 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (10 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (21 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (15 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/s10_water_productivity/compare_irrigation_scenarios.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_water_productivity/compare_irrigation_scenarios.py --help` |
+| `tools/s10_water_productivity/compute_water_productivity.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_water_productivity/compute_water_productivity.py --help` |
+| `tools/s1_crop_selection/select_crop.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_crop_selection/select_crop.py --help` |
+| `tools/s1_crop_selection/validate_crop_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_crop_selection/validate_crop_params.py --help` |
+| `tools/s2_soil_profile/create_soil_profile.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_soil_profile/create_soil_profile.py --help` |
+| `tools/s2_soil_profile/validate_soil_hydraulics.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_soil_profile/validate_soil_hydraulics.py --help` |
+| `tools/s3_weather_prep/compute_eto_penman_monteith.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_weather_prep/compute_eto_penman_monteith.py --help` |
+| `tools/s3_weather_prep/prepare_weather_df.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_weather_prep/prepare_weather_df.py --help` |
+| `tools/s3_weather_prep/validate_weather_df.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_weather_prep/validate_weather_df.py --help` |
+| `tools/s4_initial_conditions/create_initial_water_content.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_initial_conditions/create_initial_water_content.py --help` |
+| `tools/s5_irrigation/create_irrigation_management.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_irrigation/create_irrigation_management.py --help` |
+| `tools/s5_irrigation/optimize_deficit_irrigation.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_irrigation/optimize_deficit_irrigation.py --help` |
+| `tools/s6_field_management/apply_cama_flood.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_field_management/apply_cama_flood.py --help` |
+| `tools/s6_field_management/create_field_management.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_field_management/create_field_management.py --help` |
+| `tools/s7_model_assembly/assemble_model.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_model_assembly/assemble_model.py --help` |
+| `tools/s7_model_assembly/validate_model_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_model_assembly/validate_model_config.py --help` |
+| `tools/s8_execution/run_aquacrop.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_execution/run_aquacrop.py --help` |
+| `tools/s9_output_analysis/compare_sim_obs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_analysis/compare_sim_obs.py --help` |
+| `tools/s9_output_analysis/extract_results.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_analysis/extract_results.py --help` |
+| `tools/s9_output_analysis/validate_national_yield_series.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_analysis/validate_national_yield_series.py --help` |
+
+*20 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -207,6 +246,84 @@ maize. Do NOT carry the China WP=13.8 over to a US/EU site — it undershoots ~5
 
 **`get_water_storage()`** -- daily soil water per compartment:
 `time_step_counter`, `growing_season`, `dap`, `th1`, `th2`, ..., `thN`
+
+---
+
+## Output Description
+
+**Source:** `dag.yaml`. This section restates the dag for the reader; if this
+section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `DryYield` -- Final dry above-ground grain (or harvestable organ) yield per growing season. (`t/ha`)
+
+| Output variable (dag `var`) | Unit | Description / status |
+|-----------------------------|------|----------------------|
+| `DryYield` | `t/ha` | Final dry above-ground grain (or harvestable organ) yield per growing season. |
+| `FreshYield` | See `dag.yaml` | Other dag output. |
+| `biomass` | See `dag.yaml` | Other dag output. |
+| `canopy_cover` | See `dag.yaml` | Other dag output. |
+| `Tr` | See `dag.yaml` | Other dag output. |
+| `Es` | See `dag.yaml` | Other dag output. |
+| `ET_actual` | See `dag.yaml` | Other dag output. |
+| `Wr` | See `dag.yaml` | Other dag output. |
+| `th_per_compartment` | See `dag.yaml` | Other dag output. |
+| `Runoff` | See `dag.yaml` | Other dag output. |
+| `DeepPerc` | See `dag.yaml` | Other dag output. |
+| `z_root` | See `dag.yaml` | Other dag output. |
+| `harvest_index` | See `dag.yaml` | Other dag output. |
+| `harvest_index_adj` | See `dag.yaml` | Other dag output. |
+| `gdd_cum` | See `dag.yaml` | Other dag output. |
+
+The non-headline output names above are the other dag outputs currently exposed
+by this KI: `FreshYield`, `biomass`, `canopy_cover`, `Tr`, `Es`, `ET_actual`,
+`Wr`, `th_per_compartment`, `Runoff`, `DeepPerc`, `z_root`, `harvest_index`,
+`harvest_index_adj`, and `gdd_cum`.
+
+---
+
+## Unit Conversion Table
+
+This table documents the unit conversions stated by this SKILL's pipeline
+guidance. For complete machine-readable I/O shapes, read `docs/format_spec.yaml`;
+for output identity and units, read `dag.yaml`.
+
+| Variable | Source unit / representation | Model unit / representation | Factor | Type |
+|----------|------------------------------|-----------------------------|--------|------|
+| `MinTemp` | deg C from daily forcing | deg C | x1 | direct |
+| `MaxTemp` | deg C from daily forcing | deg C | x1 | direct |
+| `Precipitation` | mm/day from daily forcing | mm/day | x1 | direct |
+| `ReferenceET` | mm/day from FAO-56 Penman-Monteith ET0 tool | mm/day | x1 | direct |
+| Shortwave radiation for ET0 | W/m² (`srad_wm2`) | MJ/m²/day (`solar_rad`) | x0.0864 | multiplicative |
+| Wind speed for ET0 | m/s | m/s | x1 | direct |
+| `Date` | datetime-like daily dates | `pd.Timestamp` | not applicable | representation |
+| `DryYield` | AquaCrop output | `t/ha` | x1 | direct |
+
+---
+
+## Validated Results and Convention Bars
+
+### Performance Metrics -- judged against the field's bar, not intuition
+
+**Source:** `docs/validation_convention.yaml`. This section states the convention
+bars for the dag's rank-1 variable. The convention wins over remembered
+thresholds; a metric value without these pass-bands is not a verdict.
+
+The extracted convention contains three `pbias` entries and one `nrmse` entry
+for `DryYield`; they are restated here as convention entries rather than
+deduplicated.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Cites |
+|--------------|--------|-----------|-------------------|-----------|----------------|-------|
+| `DryYield` | `pbias` | `zero_centered` | 30 (`umair2017`, `sandhu2019`) | 20 (`umair2017`, `sandhu2019`) | 10 (`umair2017`, `sandhu2019`) | `umair2017`, `sandhu2019` |
+| `DryYield` | `pbias` | `zero_centered` | 30 (`umair2017`, `sandhu2019`) | 20 (`umair2017`, `sandhu2019`) | 10 (`umair2017`, `sandhu2019`) | `umair2017`, `sandhu2019` |
+| `DryYield` | `nrmse` | `minimize` | 30 (`umair2017`, `sandhu2019`) | 20 (`umair2017`, `sandhu2019`) | 10 (`umair2017`, `sandhu2019`) | `umair2017`, `sandhu2019` |
+| `DryYield` | `pbias` | `zero_centered` | 30 (`umair2017`, `sandhu2019`) | 20 (`umair2017`, `sandhu2019`) | 10 (`umair2017`, `sandhu2019`) | `umair2017`, `sandhu2019` |
+
+No achieved metric values are added here. When a validation run reports
+`DryYield`, compare it against these cited bars and report the metric direction
+with the value.
 
 ---
 

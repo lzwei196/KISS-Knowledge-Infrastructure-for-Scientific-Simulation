@@ -1,130 +1,149 @@
 schema_version: 1
 model_id: SWAN
 domain: ocean
-generated_by: "step-B convention agent (Claude Opus 4.8) — SWAN significant-wave-height validation convention"
+generated_by: step-B convention agent (Claude Opus 4.8) — SWAN significant-wave-height validation convention
 generated_at: 2026-07-07
-
-# Grounded in two SWAN-specific gold-OA benchmarks that report significant-wave-height (Hm0/SWH) skill:
-#   - Du et al. 2019 (Ocean Science) "Wave boundary layer model in SWAN revisited": SWAN Hm0 vs buoy at
-#     the RUNE site and 9 North Sea stations, reporting mean difference (bias), RMSE, and scatter index (SI)
-#     -> source of the point-time-series (buoy) bands.
-#   - Lei et al. 2023 (Front. Mar. Sci.) "A general method to determine the optimal whitecapping dissipation
-#     coefficient in the SWAN model": SWAN SWH vs SARAL altimeter over the South China Sea / Gulf of Mexico /
-#     Mediterranean, graded with the Willmott (1982) index of agreement (d) and regression Slope -> source of
-#     the altimeter/spatial-snapshot d-index band.
-#
-# HONESTY / SCOPE notes:
-#   * The obs_map binds only wave_height -> significant_wave_height_m (and water_level, which is a SWAN input,
-#     not a wave-skill headline and does not appear in the dag validation_rows). Wave PERIOD (RTP/Tp, Tm01,
-#     Tm02), DIRECTION (PDIR), spreading (DSPR) and the 1-D/2-D spectra E(f),E(f,theta) have NO obs binding in
-#     the obs_map, so no gradeable convention is emitted for them (see notes). The skeleton's auto-canon tags
-#     for several vars are wrong for a wave model (RTP tagged "nutrient", E(f,theta) tagged "soil_moisture");
-#     these are ignored — only wave_height (HSIGN/Hm0) is grounded.
-#   * The dag determining_metric is nse for every var. Wave-model literature reports bias / RMSE / scatter
-#     index / index-of-agreement (NOT NSE) as the headline Hm0 skill; NSE is retained only as an informative
-#     secondary metric and is superseded here (analogous to GLM-AED temperature).
-#   * Bands are plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md). RMSE/bias in metres
-#     are wave-climate dependent (North Sea storm scale); the scatter index (normalized RMSE) is the
-#     transferable headline.
-
 references:
   du2019:
     doi: 10.5194/os-15-361-2019
-    title: "Wave boundary layer model in SWAN revisited"
-    venue: "Ocean Science"
+    title: Wave boundary layer model in SWAN revisited
+    venue: Ocean Science
     year: 2019
     oa: gold
     resolves: https://os.copernicus.org/articles/15/361/2019/os-15-361-2019.pdf
   lei2023:
     doi: 10.3389/fmars.2023.1298727
-    title: "A general method to determine the optimal whitecapping dissipation coefficient in the SWAN model"
-    venue: "Frontiers in Marine Science"
+    title: A general method to determine the optimal whitecapping dissipation coefficient in the SWAN
+      model
+    venue: Frontiers in Marine Science
     year: 2023
     oa: gold
     resolves: https://www.frontiersin.org/articles/10.3389/fmars.2023.1298727/full
-
 validation:
-
-  # ===================== SIGNIFICANT WAVE HEIGHT / buoy time series (grounded) =====================
-  - canonical_quantity: wave_height
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: scatter_index
-        direction: minimize
-        unit: dimensionless
-        bands: {very_good: 0.10, good: 0.15, satisfactory: 0.20}
-        pass_band: satisfactory
-        band_note: "SI = RMSE / mean(obs). Du 2019 SWAN Hm0 vs 9 North Sea buoys: SI 0.10-0.20 (best source term WBLM 0.10-0.17); RUNE site SI 0.12 (WBLM) to 0.18 (KOMEN)."
-        cites: [du2019]
-      - metric: bias
-        direction: zero_centered
-        unit: m
-        bands: {good: 0.15, satisfactory: 0.35}
-        pass_band: satisfactory
-        band_note: "Du 2019 Hm0 mean difference -0.32 to +0.35 m across RUNE + 9 North Sea sites; absolute (wave-climate scaled), so treat as an envelope not a universal target."
-        cites: [du2019]
-    secondary_metrics:
-      - metric: rmse
-        direction: minimize
-        status: supportive
-        ceiling_reason: "Du 2019 North Sea SWAN Hm0 RMSE 0.36-0.72 m (RUNE 0.52 m). Absolute RMSE scales with the local wave climate, so the normalized scatter index is the transferable headline; RMSE is co-reported as supportive."
-        cites: [du2019]
-      - metric: nse
-        direction: maximize
-        status: supportive
-        ceiling_reason: "dag determining_metric. Wave-model evaluation reports bias / RMSE / scatter index as the headline Hm0 skill (Du 2019, Table 5-6); NSE is not the field convention for Hs and is superseded here (cf. GLM-AED temperature). Retained as informative only."
-        cites: [du2019]
-    validated_when: "SI <= 0.20 (Du 2019 SWAN North Sea Hm0 envelope 0.10-0.20) AND |bias| <= 0.35 m; NSE superseded by SI/RMSE/bias per wave-model convention."
-    evidence_strength: moderate
-    confidence: 0.6
-    notes: >-
-      Du 2019: "Considering the statistics of mean difference (bias), root mean square error (RMSE), and
-      scatter index (SI), WBLM generally gives better Hm0 than KOM and JANS for most of the sites." Reported
-      SWAN Hm0 skill vs buoys: SI 0.10-0.20, RMSE 0.36-0.72 m, bias -0.32..+0.35 m. One solid SWAN benchmark
-      => moderate. A second multi-site buoy benchmark (see deferred_paywalled: North Atlantic hindcast
-      comparison; global observation-based-source-term hindcast) would raise this to strong.
-
-  # ===================== SIGNIFICANT WAVE HEIGHT / altimeter spatial snapshot (grounded d-index) =====================
-  - canonical_quantity: wave_height
-    obs_shape: spatial_snapshot
-    headline_metrics:
-      - metric: d_index
-        direction: maximize
-        unit: dimensionless
-        bands: {good: 0.90}
-        pass_band: good
-        band_note: "Willmott (1982) index of agreement, 0-1. Lei 2023 SWAN vs SARAL altimeter SWH (SCS/GoM/MS, 2017-2021, ~68k matchups): optimal-Cds d-index ~0.90; seasons/years falling below 0.90 (e.g. spring, 2020) are called out as inferior simulation performance."
-        cites: [lei2023]
-      - metric: scatter_index
-        direction: minimize
-        unit: dimensionless
-        bands: {good: 0.15, satisfactory: 0.20}
-        pass_band: satisfactory
-        band_note: "SI band transferred from Du 2019 buoy Hm0 (0.10-0.20); altimeter-vs-SWAN Hs SI is typically comparable. Transferred => reduced confidence."
-        cites: [du2019]
-    secondary_metrics:
-      - metric: csi
-        direction: maximize
-        status: structurally_limited
-        ceiling_reason: "CSI (critical success index) is a categorical hit/miss score; significant wave height is a continuous altimeter field. CSI is only meaningful after thresholding Hs into exceedance classes and cannot reach a fixed 'good' value for continuous Hs. The field grades continuous altimeter/gridded Hs with index-of-agreement / RMSE / SI / bias (Lei 2023), not CSI; a low CSI here is a metric-class mismatch, not a model defect (never fix_ki on it)."
-        cites: [lei2023]
-      - metric: slope
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Regression Slope (Si = Slope * Oi); Lei 2023 uses it as a direction-of-error diagnostic. Slope < 1 => SWAN underestimates SWH (the typical optimal-Cds result), Slope > 1 => overestimation; the target is 1, so treat |Slope-1| small as good (not a simple maximize) — informative only."
-        cites: [lei2023]
-    validated_when: "d-index >= 0.90 (Lei 2023 SWAN-vs-SARAL SWH) AND SI <= 0.20 (transferred from Du 2019). CSI (dag determining_metric for spatial_snapshot) is a categorical score inapplicable to a continuous Hs field."
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      Lei 2023 grades SWAN SWH against SARAL along-track altimeter with the Willmott index of agreement (d) and
-      Slope; "the d index of the optimal Cds values for all three schemes is consistently around 0.90" while
-      sub-0.90 cases are flagged inferior. This is one solid SWAN-altimeter benchmark => moderate. The SI band
-      is transferred from the buoy block (Du 2019), hence confidence 0.5. A dedicated altimeter Hs RMSE/SI/bias
-      threshold table (e.g. the global observation-based hindcast, see deferred_paywalled) would strengthen it.
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: scatter_index
+    direction: minimize
+    unit: dimensionless
+    bands:
+      very_good: 0.1
+      good: 0.15
+      satisfactory: 0.2
+    pass_band: satisfactory
+    band_note: 'SI = RMSE / mean(obs). Du 2019 SWAN Hm0 vs 9 North Sea buoys: SI 0.10-0.20 (best source
+      term WBLM 0.10-0.17); RUNE site SI 0.12 (WBLM) to 0.18 (KOMEN).'
+    cites:
+    - du2019
+  - metric: bias
+    direction: zero_centered
+    unit: m
+    bands:
+      good: 0.15
+      satisfactory: 0.35
+    pass_band: satisfactory
+    band_note: Du 2019 Hm0 mean difference -0.32 to +0.35 m across RUNE + 9 North Sea sites; absolute
+      (wave-climate scaled), so treat as an envelope not a universal target.
+    cites:
+    - du2019
+  secondary_metrics:
+  - metric: rmse
+    direction: minimize
+    status: supportive
+    ceiling_reason: Du 2019 North Sea SWAN Hm0 RMSE 0.36-0.72 m (RUNE 0.52 m). Absolute RMSE scales with
+      the local wave climate, so the normalized scatter index is the transferable headline; RMSE is co-reported
+      as supportive.
+    cites:
+    - du2019
+  - metric: nse
+    direction: maximize
+    status: supportive
+    ceiling_reason: dag determining_metric. Wave-model evaluation reports bias / RMSE / scatter index
+      as the headline Hm0 skill (Du 2019, Table 5-6); NSE is not the field convention for Hs and is superseded
+      here (cf. GLM-AED temperature). Retained as informative only.
+    cites:
+    - du2019
+  validated_when: SI <= 0.20 (Du 2019 SWAN North Sea Hm0 envelope 0.10-0.20) AND |bias| <= 0.35 m; NSE
+    superseded by SI/RMSE/bias per wave-model convention.
+  evidence_strength: moderate
+  confidence: 0.6
+  notes: 'Du 2019: "Considering the statistics of mean difference (bias), root mean square error (RMSE),
+    and scatter index (SI), WBLM generally gives better Hm0 than KOM and JANS for most of the sites."
+    Reported SWAN Hm0 skill vs buoys: SI 0.10-0.20, RMSE 0.36-0.72 m, bias -0.32..+0.35 m. One solid SWAN
+    benchmark => moderate. A second multi-site buoy benchmark (see deferred_paywalled: North Atlantic
+    hindcast comparison; global observation-based-source-term hindcast) would raise this to strong.'
+  dag_variable: HSIGN
+- obs_shape: spatial_snapshot
+  headline_metrics:
+  - metric: d_index
+    direction: maximize
+    unit: dimensionless
+    bands:
+      good: 0.9
+    pass_band: good
+    band_note: 'Willmott (1982) index of agreement, 0-1. Lei 2023 SWAN vs SARAL altimeter SWH (SCS/GoM/MS,
+      2017-2021, ~68k matchups): optimal-Cds d-index ~0.90; seasons/years falling below 0.90 (e.g. spring,
+      2020) are called out as inferior simulation performance.'
+    cites:
+    - lei2023
+  - metric: scatter_index
+    direction: minimize
+    unit: dimensionless
+    bands:
+      good: 0.15
+      satisfactory: 0.2
+    pass_band: satisfactory
+    band_note: SI band transferred from Du 2019 buoy Hm0 (0.10-0.20); altimeter-vs-SWAN Hs SI is typically
+      comparable. Transferred => reduced confidence.
+    cites:
+    - du2019
+  secondary_metrics:
+  - metric: csi
+    direction: maximize
+    status: structurally_limited
+    ceiling_reason: CSI (critical success index) is a categorical hit/miss score; significant wave height
+      is a continuous altimeter field. CSI is only meaningful after thresholding Hs into exceedance classes
+      and cannot reach a fixed 'good' value for continuous Hs. The field grades continuous altimeter/gridded
+      Hs with index-of-agreement / RMSE / SI / bias (Lei 2023), not CSI; a low CSI here is a metric-class
+      mismatch, not a model defect (never fix_ki on it).
+    cites:
+    - lei2023
+  - metric: slope
+    direction: maximize
+    status: supportive
+    ceiling_reason: Regression Slope (Si = Slope * Oi); Lei 2023 uses it as a direction-of-error diagnostic.
+      Slope < 1 => SWAN underestimates SWH (the typical optimal-Cds result), Slope > 1 => overestimation;
+      the target is 1, so treat |Slope-1| small as good (not a simple maximize) — informative only.
+    cites:
+    - lei2023
+  validated_when: d-index >= 0.90 (Lei 2023 SWAN-vs-SARAL SWH) AND SI <= 0.20 (transferred from Du 2019).
+    CSI (dag determining_metric for spatial_snapshot) is a categorical score inapplicable to a continuous
+    Hs field.
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: Lei 2023 grades SWAN SWH against SARAL along-track altimeter with the Willmott index of agreement
+    (d) and Slope; "the d index of the optimal Cds values for all three schemes is consistently around
+    0.90" while sub-0.90 cases are flagged inferior. This is one solid SWAN-altimeter benchmark => moderate.
+    The SI band is transferred from the buoy block (Du 2019), hence confidence 0.5. A dedicated altimeter
+    Hs RMSE/SI/bias threshold table (e.g. the global observation-based hindcast, see deferred_paywalled)
+    would strengthen it.
+  dag_variable: HSIGN
 deferred_paywalled:
-  - {ref: "Ponce de Leon & Guedes Soares (2016) — Comparison and assessment of three wave hindcasts in the North Atlantic Ocean (multi-model Hs bias/RMSE/SI vs buoys); fetch_failed", doi: 10.1080/1755876x.2016.1200249, needed_for: [wave_height]}
-  - {ref: "Global Wave Hindcasts Using the Observation-Based Source Terms (JAMES 2021) — global Hs vs buoy/altimeter NRMSE/SI/bias; fetch_failed", doi: 10.1029/2021ms002493, needed_for: [wave_height]}
-  - {ref: "Analysis of the spatial and temporal sensitivities of key parameters in the SWAN model: Chan-hom typhoon waves (ECSS 2019) — closed", doi: 10.1016/j.ecss.2019.106489, needed_for: [wave_height]}
-  - {ref: "SWAN typhoon-wave evaluation (Applied Ocean Research 2021) — closed", doi: 10.1016/j.apor.2021.102752, needed_for: [wave_height]}
+- ref: Ponce de Leon & Guedes Soares (2016) — Comparison and assessment of three wave hindcasts in the
+    North Atlantic Ocean (multi-model Hs bias/RMSE/SI vs buoys); fetch_failed
+  doi: 10.1080/1755876x.2016.1200249
+  needed_for:
+  - wave_height
+- ref: Global Wave Hindcasts Using the Observation-Based Source Terms (JAMES 2021) — global Hs vs buoy/altimeter
+    NRMSE/SI/bias; fetch_failed
+  doi: 10.1029/2021ms002493
+  needed_for:
+  - wave_height
+- ref: 'Analysis of the spatial and temporal sensitivities of key parameters in the SWAN model: Chan-hom
+    typhoon waves (ECSS 2019) — closed'
+  doi: 10.1016/j.ecss.2019.106489
+  needed_for:
+  - wave_height
+- ref: SWAN typhoon-wave evaluation (Applied Ocean Research 2021) — closed
+  doi: 10.1016/j.apor.2021.102752
+  needed_for:
+  - wave_height

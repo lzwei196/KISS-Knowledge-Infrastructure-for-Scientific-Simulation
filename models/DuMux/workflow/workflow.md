@@ -127,7 +127,7 @@ Tolerance = 1e-12
 ### Stage 4: Build & Execute (`s4_build`)
 
 ```bash
-DUMUX_BIN=KISSPATH_BINARIES/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer
+DUMUX_BIN=KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer
 # The binary uses the MODIFIED problem_1p.hh (supports FlowDirection=0,2)
 # Source: auto_dissect/_work/DuMux/dumux/dumux/examples/1ptracer/problem_1p.hh
 

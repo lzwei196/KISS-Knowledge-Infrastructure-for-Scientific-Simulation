@@ -1,307 +1,101 @@
-# ============================================================================
-# TELEMAC-MASCARET Knowledge Infrastructure v1.0.0
-# ============================================================================
-# Integrated suite of solvers for free-surface flow, wave propagation,
-# and sediment transport (2D/3D finite-element/finite-volume)
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: "telemac-mascaret-ki"
-  version: "1.0.0"
-  description: "Knowledge infrastructure for TELEMAC-MASCARET hydrodynamic simulation"
-  target_model: "TELEMAC-MASCARET v9.1.0"
-  domain: "ocean"
-  authors:
-    - "Auto-dissect (Knowledge Dissection Toolkit)"
-  license: "GPL-3.0"
-
+  name: TELEMAC-MASCARET
+  language: fortran
+  implementation:
+    id: telemac-mascaret-v910
+    version: v9.1.0
+    provenance: Fortran 90 with BIEF/HERMES libraries; openTELEMAC consortium (EDF-R&D LNHE originated)
+      finite-element / finite-volume solver, telemac2d as the 2D hydrodynamics host module.
+  scientific_reference_version: TELEMAC-2D depth-averaged shallow-water (Saint-Venant) hydrodynamics;
+    openTELEMAC consortium release v9.1.0 (governing-equation theory per Hervouet 2007 / TELEMAC-2D User
+    Manual)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TELEMAC_MASCARET/source/repo/builds/main_gfortran_release/bin/telemac2d
+    type: ELF
 pipeline:
   stages:
-    - id: s0_config
-      name: "Configuration"
-      description: "Select module (telemac2d/3d/tomawac/etc.), define simulation scope and period"
-      order: 0
-      depends_on: []
-      skill_document: "docs/s1_domain_setup.md"
-      tools: []
-      milestones:
-        - id: m0_config_defined
-          description: "Module selected, domain extent defined, simulation period set"
-          verification: "Domain polygon and simulation parameters documented"
-
-    - id: s1_domain
-      name: "Domain Setup"
-      description: "Define geographic extent, coordinate reference system, and resolution targets"
-      order: 1
-      depends_on: [s0_config]
-      skill_document: "docs/s1_domain_setup.md"
-      tools: []
-      milestones:
-        - id: m1_domain_defined
-          description: "Domain boundary in metric CRS with resolution targets"
-          verification: "Coordinate ranges in meters (not degrees)"
-
-    - id: s2_mesh
-      name: "Mesh Generation"
-      description: "Create unstructured triangular mesh (.slf) and boundary conditions (.cli)"
-      order: 2
-      depends_on: [s1_domain]
-      skill_document: "docs/s2_mesh_generation.md"
-      tools: [convert_bathymetry]
-      milestones:
-        - id: m2_mesh_created
-          description: "Geometry .slf and boundary .cli files exist"
-          verification: "python parse_selafin.py geo.slf --info returns valid metadata"
-
-    - id: s3_forcing
-      name: "Forcing Preparation"
-      description: "Convert meteorological, tidal, and river forcing to TELEMAC format"
-      order: 3
-      depends_on: [s0_config]
-      skill_document: "docs/s3_forcing_preparation.md"
-      tools: [convert_forcing]
-      milestones:
-        - id: m3_forcing_ready
-          description: "Forcing files in correct units and format"
-          verification: "Forcing values in SI units (m/s, Pa, m^3/s)"
-
-    - id: s4_steering
-      name: "Steering File"
-      description: "Write .cas file with all simulation parameters and file references"
-      order: 4
-      depends_on: [s2_mesh, s3_forcing]
-      skill_document: "docs/s4_steering_file.md"
-      tools: []
-      milestones:
-        - id: m4_cas_valid
-          description: "Steering file references all required files with valid parameters"
-          verification: "python run_telemac.py --cas sim.cas --module telemac2d --dry-run"
-
-    - id: s5_run
-      name: "Execution"
-      description: "Run TELEMAC simulation (sequential or MPI parallel)"
-      order: 5
-      depends_on: [s4_steering]
-      skill_document: "docs/s5_execution.md"
-      tools: [run_telemac]
-      milestones:
-        - id: m5_run_complete
-          description: "Simulation completed successfully, results file produced"
-          verification: "Results .slf file exists and is non-empty"
-
-    - id: s6_output
-      name: "Output Parsing"
-      description: "Extract results from SELAFIN binary to CSV, compute metrics, visualize"
-      order: 6
-      depends_on: [s5_run]
-      skill_document: "docs/s6_output_analysis.md"
-      tools: [parse_selafin]
-      milestones:
-        - id: m6_results_extracted
-          description: "Time-series and/or spatial data extracted to CSV"
-          verification: "CSV file has expected columns and row count"
-
+  - s1_domain_setup
+  - s2_mesh_generation
+  - s3_forcing_preparation
+  - s4_steering_file
+  - s5_execution
+  - s6_output_analysis
 tools:
-  - id: convert_forcing
-    name: "Forcing Converter"
-    description: "Convert meteorological/tidal ASCII data to TELEMAC forcing format with unit conversions"
-    stage: "s3_forcing"
-    script_path: "tools/convert_forcing.py"
-    language: "python"
-    inputs:
-      - name: "input"
-        type: file
-        description: "Input CSV file with forcing data"
-        required: true
-      - name: "variables"
-        type: string
-        description: "Comma-separated variable names"
-        required: true
-      - name: "wind-unit"
-        type: string
-        description: "Input wind speed unit (ms or knots)"
-        required: false
-        example: "knots"
-      - name: "pressure-unit"
-        type: string
-        description: "Input pressure unit (Pa, hPa, mbar)"
-        required: false
-        example: "hPa"
-    outputs:
-      - name: "forcing file"
-        type: file
-        description: "TELEMAC-compatible forcing file"
-        path_pattern: "*.txt"
-    preconditions:
-      - "Input CSV exists with header row"
-      - "Variable names match CSV column names"
-    postconditions:
-      - "Output file exists and is non-empty"
-      - "Wind values in m/s (typically 0-30)"
-      - "Pressure values in Pa (typically 95000-105000)"
-
-  - id: convert_bathymetry
-    name: "Bathymetry Converter"
-    description: "Interpolate bathymetry data onto TELEMAC mesh nodes"
-    stage: "s2_mesh"
-    script_path: "tools/convert_bathymetry.py"
-    language: "python"
-    inputs:
-      - name: "mesh"
-        type: file
-        description: "Input SELAFIN mesh file (.slf)"
-        required: true
-      - name: "bathy"
-        type: file
-        description: "Bathymetry data file (XYZ, CSV, or GeoTIFF)"
-        required: true
-      - name: "negate"
-        type: string
-        description: "Negate Z values (depth -> elevation)"
-        required: false
-    outputs:
-      - name: "geometry file"
-        type: file
-        description: "SELAFIN file with interpolated bottom elevation"
-        path_pattern: "*.slf"
-    preconditions:
-      - "Mesh .slf file is valid SELAFIN format"
-      - "Bathymetry covers the mesh domain"
-    postconditions:
-      - "Bottom elevation range is physically reasonable"
-      - "No NaN values in interpolated bottom"
-
-  - id: run_telemac
-    name: "Execution Wrapper"
-    description: "Run TELEMAC simulation with environment setup and validation"
-    stage: "s5_run"
-    script_path: "tools/run_telemac.py"
-    language: "python"
-    inputs:
-      - name: "cas"
-        type: file
-        description: "Steering file (.cas)"
-        required: true
-      - name: "module"
-        type: string
-        description: "TELEMAC module name"
-        required: true
-        example: "telemac2d"
-      - name: "hometel"
-        type: directory
-        description: "TELEMAC installation root"
-        required: true
-      - name: "nproc"
-        type: number
-        description: "Number of MPI processes"
-        required: false
-        example: "4"
-    outputs:
-      - name: "results file"
-        type: file
-        description: "SELAFIN results file"
-        path_pattern: "r2d_*.slf"
-    preconditions:
-      - "TELEMAC is built and systel.cfg exists"
-      - "All files referenced in .cas exist"
-    postconditions:
-      - "Results file exists and is non-empty"
-      - "No STOP or NaN in simulation log"
-
-  - id: parse_selafin
-    name: "SELAFIN Output Parser"
-    description: "Parse TELEMAC SELAFIN binary results to CSV"
-    stage: "s6_output"
-    script_path: "tools/parse_selafin.py"
-    language: "python"
-    inputs:
-      - name: "input"
-        type: file
-        description: "Input SELAFIN (.slf) file"
-        required: true
-      - name: "variables"
-        type: string
-        description: "Comma-separated variable names to extract"
-        required: false
-      - name: "nodes"
-        type: string
-        description: "Comma-separated node IDs"
-        required: false
-    outputs:
-      - name: "csv file"
-        type: file
-        description: "Extracted data in CSV format"
-        path_pattern: "*.csv"
-    preconditions:
-      - "Input .slf is valid SELAFIN format"
-    postconditions:
-      - "CSV has correct number of columns and rows"
-      - "No NaN values unless expected"
-
-skill_documents:
-  - id: sd_s1
-    name: "Domain Setup"
-    stage: "s1_domain"
-    path: "docs/s1_domain_setup.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
-
-  - id: sd_s2
-    name: "Mesh Generation"
-    stage: "s2_mesh"
-    path: "docs/s2_mesh_generation.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
-
-  - id: sd_s3
-    name: "Forcing Preparation"
-    stage: "s3_forcing"
-    path: "docs/s3_forcing_preparation.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
-
-  - id: sd_s4
-    name: "Steering File Configuration"
-    stage: "s4_steering"
-    path: "docs/s4_steering_file.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
-
-  - id: sd_s5
-    name: "Execution"
-    stage: "s5_run"
-    path: "docs/s5_execution.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
-
-  - id: sd_s6
-    name: "Output Analysis"
-    stage: "s6_output"
-    path: "docs/s6_output_analysis.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
-
-diagnostic_triplets:
-  path: "diagnostics/triplets.yaml"
-  count: 18
-  failure_domains:
-    - unit_conversion
-    - parameter_format
-    - runtime
-
+  count: 4
+  files:
+  - tools/convert_bathymetry.py
+  - tools/convert_forcing.py
+  - tools/parse_selafin.py
+  - tools/run_telemac.py
+inputs:
+  forcing:
+  - name: Wind velocity (X, Y)
+    unit: m/s
+  - name: Atmospheric pressure
+    unit: Pa
+  - name: Rain / evaporation
+    unit: mm/s
+  - name: River discharge at liquid boundaries
+    unit: m^3/s
+  - name: Tidal elevation / constituents at open-sea boundaries
+    unit: m (amplitude), degrees (phase)
+  parameters:
+  - name: Bottom friction coefficient
+    unit: Manning n (s/m^(1/3)) or Strickler K (m^(1/3)/s) depending on law
+  - name: Velocity (turbulent) diffusivity
+    unit: m^2/s
+  - name: Coefficient of wind influence (drag)
+    unit: '-'
+  - name: Coriolis coefficient
+    unit: s^-1
+  - name: Gravity acceleration
+    unit: m/s^2
+  - name: Water density
+    unit: kg/m^3
+  - name: Bottom (bathymetry) elevation field
+    unit: m (positive upward from datum)
+  initial_conditions:
+  - name: Initial free-surface / depth state
+    unit: m
+  - name: Previous-computation restart state
+    unit: varies (h, u, v, T fields)
+  boundary_conditions:
+  - name: Boundary-condition type per edge node
+    unit: '-'
+  - name: Law of bottom friction (method switch)
+    unit: code
+  - name: Turbulence model (method switch)
+    unit: code
+  - name: Equation/solver scheme selector
+    unit: code
+  - name: Wetting/drying treatment
+    unit: switch
+  - name: Time-stepping control
+    unit: s / switch
+  - name: Implicitation coefficients
+    unit: '-'
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - H
+  - S
+  - U
+  - V
+  - M
+  - T
+  - section_discharge
+  other: []
 validation:
-  tier: "analytic"
-  tier_justification: "Validated against analytic bump test solution (subcritical steady flow over parabolic obstacle)"
-  benchmark: "1D bump test (subcritical flow, Q=1.5 m^2/s, h_downstream=0.8 m)"
+  tier: tested
+  tier_justification: 'measured: NSE=0.987'
   metrics:
-    test_case: "examples/telemac2d/bump"
-    analytic_solution: "examples/telemac2d/bump/analytic_sol.py"
-
+    best_nse: 0.987162
 summary:
   total_tools: 4
-  total_tool_lines: 850
-  total_skill_documents: 6
+  total_stage_docs: 6
   total_diagnostic_triplets: 18
-  failure_domains: [unit_conversion, parameter_format, runtime]
-  pipeline_stages: 7
-  pipeline_milestones: 7
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

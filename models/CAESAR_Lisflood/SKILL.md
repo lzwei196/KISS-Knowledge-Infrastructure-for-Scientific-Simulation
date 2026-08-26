@@ -1,13 +1,3 @@
----
-name: caesar-lisflood
-description: >-
-  CAESAR-Lisflood (Coulthard et al. 2013, ESPL 38:1897-1906) — LISFLOOD-FP inertial
-  shallow-water routing (Bates et al. 2010) coupled to the CAESAR…. Covers
-  Non-steady-state 2D hydrodynamic surface flow / inundation (LISFLOOD-FP inertial
-  shallow-water…; Spatially variable TOPMODEL rainfall-runoff generation. Use when the
-  task involves running, configuring, calibrating or interpreting CAESAR_Lisflood.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (21 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_dem_to_caesar.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_dem_to_caesar.py --help` |
+| `tools/convert_rainfall_to_caesar.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_rainfall_to_caesar.py --help` |
+| `tools/convert_soil_to_caesar.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_caesar.py --help` |
+| `tools/parse_caesar_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_caesar_output.py --help` |
+| `tools/run_caesar.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_caesar.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # HAIL-CAESAR (CAESAR-Lisflood) -- Knowledge Infrastructure
 
@@ -209,6 +233,30 @@ Written at intervals set by `raster_output_interval` (model minutes):
 
 ---
 
+## 6. Output Description (from `dag.yaml`)
+
+The dag is the output contract. If this section disagrees with `dag.yaml`, the dag wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `Actual discharge (Qw)` -- Instantaneous mean water discharge summed over the grid-edge outlet cell(s) (`m3/s`)
+
+| Output variable (dag `var`) | Rank | Emitted in | Unit | Description |
+|-----------------------------|------|------------|------|-------------|
+| `Actual discharge (Qw)` | 1 | `catchment.dat` column 2 | `m3/s` | Instantaneous mean water discharge summed over the grid-edge outlet cell(s) |
+| `Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)` | 2 | `catchment.dat` columns 5-14 | `m3 per save interval (interval total, NOT a rate)` | Sediment volume leaving the outlet per save interval, total and per grain fraction |
+| `Water depth raster` | 3 | `WaterDepths_NNNN.asc` | `m` | Per-cell flow depth from the shallow-water routing |
+| `Flow velocity raster` | 4 | `flowvel_NNNN.asc` | `m/s` | Per-cell depth-averaged flow speed from the shallow-water routing |
+| `Surface elevation raster` | 5 | `Elevations_NNNN.asc` | `m` | Current evolving surface DEM |
+| `Elevation difference raster` | 6 | `ElevationDiff_NNNN.asc` | `m` | Net sediment erosion/deposition thickness (elev - initial elev) |
+| `Surface grain size (D50) raster` | 7 | `Grainz_NNNN.asc` | `m` | Median surface-layer grain size per cell |
+
+**Validation implication**: an agent reading only this file should judge the model first by
+`Actual discharge (Qw)`, not by rasters or sediment outputs unless the task explicitly asks
+for those variables.
+
+---
+
 ## Key Parameters and Units
 
 ### Numerical Control
@@ -247,6 +295,31 @@ Written at intervals set by `raster_output_interval` (model minutes):
 |-----------|-------|---------|-------------|
 | `creep_rate` | m/yr | 0.0025 | Soil creep rate |
 | `slope_failure_thresh` | degrees | 45 | Critical angle for landslide |
+
+---
+
+## 8. Unit Conversion Table
+
+Use this table before preparing model inputs or comparing parsed outputs. Exact I/O shapes
+remain in `docs/format_spec.yaml`; this table records the unit conversions that repeatedly
+cause silent errors in this KI.
+
+| Variable | Source unit / representation | Model or comparison unit | Conversion | Type |
+|----------|------------------------------|--------------------------|------------|------|
+| Rainfall rate | `mm/day` | `mm/hr` | divide by `24` | multiplicative |
+| Rainfall rate | `m/s` | `mm/hr` | multiply by `3.6e6` | multiplicative |
+| Rainfall rate | `kg/m2/s` | `mm/hr` | multiply by `3600` | multiplicative |
+| Rainfall timestep | seconds | minutes | divide by `60` | multiplicative |
+| Rainfall timestep | hours | minutes | multiply by `60` | multiplicative |
+| DEM elevation | feet | metres | multiply by `0.3048` | multiplicative |
+| DEM elevation | centimetres | metres | divide by `100` | multiplicative |
+| DEM cellsize | degrees (WGS84) | metres | reproject to UTM/local CRS first | spatial transform |
+| TOPMODEL m | millimetres | metres | divide by `1000` | multiplicative |
+| Active layer thickness | centimetres | metres | divide by `100` | multiplicative |
+| Erosion limit | centimetres | metres | divide by `100` | multiplicative |
+| Time index in `catchment.dat` | interval count | minutes | multiply by `timeseries_save_interval` | multiplicative |
+| Sediment output | `m3 per save interval` | `m3/s` for flux comparison | divide by interval seconds (`timeseries_save_interval * 60`) | multiplicative |
+| Water discharge output | `m3/s` | `m3/s` | no conversion | none |
 
 ---
 
@@ -307,6 +380,45 @@ export OMP_NUM_THREADS=4    # Set to number of available cores
 | `convert_soil_to_caesar.py` | Convert HWSD/soil data to grain size fractions | HWSD soil type raster | Grain data text file |
 | `run_caesar.py` | Build and execute HAIL-CAESAR | Source dir, params file | Binary + model outputs |
 | `parse_caesar_output.py` | Extract timeseries and rasters to CSV/analysis format | Model output files | CSV with discharge/sediment, raster summaries |
+
+---
+
+## 11. Validated Results
+
+### Test Basin: Boscastle shipped example
+
+| Property | Value |
+|----------|-------|
+| Scenario | Boscastle 50m, 72hr flood simulation |
+| Status in this SKILL body | body campaign pending |
+| Headline judged variable | `Actual discharge (Qw)` |
+| Headline output description | Instantaneous mean water discharge summed over the grid-edge outlet cell(s) |
+| Headline output unit | `m3/s` |
+
+### Performance Metrics -- convention bars from `docs/validation_convention.yaml`
+
+A metric value without the field's pass-band is not a verdict. Use these bars exactly;
+do not replace them with remembered thresholds.
+
+| Dag variable | Metric | Direction | Bar (convention, cited) |
+|--------------|--------|-----------|--------------------------|
+| `Actual discharge (Qw)` | `nse` | maximize | satisfactory >= `0.5` (`hess2015`); good >= `0.65` (`hess2015`); very_good >= `0.75` (`hess2015`) |
+| `Actual discharge (Qw)` | `pbias` | zero_centered | very_good <= `10` (`hess2015`); good <= `15` (`hess2015`); satisfactory <= `25` (`hess2015`) |
+| `Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)` | `pbias` | zero_centered | very_good <= `15` (`hess2015`); good <= `30` (`hess2015`); satisfactory <= `55` (`hess2015`) |
+
+**Pending result note**: this SKILL body does not record achieved calibration,
+validation, or full-period metric values for the body campaign. Until those values
+exist, report the campaign as pending rather than inferring a pass/fail verdict.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline / shipped Boscastle rainfall example | Pending | Run `python preflight_check.py` before any model execution. |
+| Soil / grain size | Pipeline or default model grain fractions | Pending | Full morphodynamic runs require grain-size checks. |
+| DEM | Pipeline / shipped Boscastle DEM example | Pending | Outlet must touch the DEM edge. |
+| Initial conditions | Model defaults plus provided inputs | Pending | Do not substitute simplified formulas for model state. |
+| Observations for `Actual discharge (Qw)` | Gauge-compatible point time series or peak snapshot | Pending | Compare against the dag's rank-1 output first. |
 
 ---
 

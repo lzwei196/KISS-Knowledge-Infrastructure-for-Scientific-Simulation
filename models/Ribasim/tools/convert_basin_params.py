@@ -107,8 +107,12 @@ def validate_forcing_csv(df: pd.DataFrame) -> list[str]:
     if "time" not in df.columns:
         errors.append("Missing 'time' column in forcing CSV")
 
-    # Check for at least one forcing variable
-    forcing_vars = {"precipitation", "evaporation", "drainage", "infiltration"}
+    # Check for at least one forcing variable.
+    # Ribasim 2026.1.0-rc2 names the evaporation column `potential_evaporation`
+    # (core/src/schema.jl); `evaporation` is accepted here as an input alias and
+    # renamed on output.
+    forcing_vars = {"precipitation", "evaporation", "potential_evaporation",
+                    "drainage", "infiltration", "surface_runoff"}
     found = forcing_vars & set(df.columns)
     if not found:
         errors.append(f"No forcing variables found. Expected at least one of: {forcing_vars}")
@@ -172,13 +176,14 @@ def validate_converted_forcing(df: pd.DataFrame) -> list[str]:
                 f"passed as m/s (1e6x error)"
             )
 
-    if "evaporation" in df.columns:
-        max_evap = df["evaporation"].max()
-        if max_evap > 1e-5:
-            errors.append(
-                f"Evaporation max = {max_evap:.2e} m/s — likely wrong units! "
-                f"Expected < 1e-6 m/s (< 86.4 mm/day)"
-            )
+    for evap_col in ("evaporation", "potential_evaporation"):
+        if evap_col in df.columns:
+            max_evap = df[evap_col].max()
+            if max_evap > 1e-5:
+                errors.append(
+                    f"{evap_col} max = {max_evap:.2e} m/s — likely wrong units! "
+                    f"Expected < 1e-6 m/s (< 86.4 mm/day)"
+                )
 
     return errors
 
@@ -205,14 +210,22 @@ def convert_forcing(
         out["precipitation"] = out["precipitation"] * factor
         print(f"  Precipitation: {precip_units} → m/s (factor={factor:.2e})")
 
-    if "evaporation" in out.columns:
+    # Ribasim 2026.1.0-rc2 schema column is `potential_evaporation`; accept the
+    # legacy `evaporation` name on input and RENAME it on output so the written
+    # CSV matches the schema (a column named `evaporation` would be rejected or
+    # silently dropped by the model, leaving zero evaporation).
+    if "evaporation" in out.columns and "potential_evaporation" not in out.columns:
+        out = out.rename(columns={"evaporation": "potential_evaporation"})
+        print("  Renamed column: evaporation → potential_evaporation (schema name)")
+
+    if "potential_evaporation" in out.columns:
         factor = PRECIP_CONVERSIONS.get(evap_units.lower())
         if factor is None:
             raise ValueError(
                 f"Unknown evaporation unit: {evap_units}. "
                 f"Valid: {list(PRECIP_CONVERSIONS.keys())}"
             )
-        out["evaporation"] = out["evaporation"] * factor
+        out["potential_evaporation"] = out["potential_evaporation"] * factor
         print(f"  Evaporation: {evap_units} → m/s (factor={factor:.2e})")
 
     # Drainage and infiltration should be in m³/s already

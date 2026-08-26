@@ -69,22 +69,42 @@ def compute_r(obs, sim):
     return np.corrcoef(obs, sim)[0, 1]
 
 
-def compute_all_metrics(obs, sim):
-    """Compute all standard hydrologic metrics."""
+def compute_all_metrics(obs, sim, dates=None, label="parse_ef5_output"):
+    """Compute all standard hydrologic metrics.
+
+    Uses the shared, deterministic ``ki_tools_common.metrics.all_metrics``
+    (the KDT 5.1.2 module SKILL.md lists for this tool) so numbers match every
+    other KI; the local compute_* functions are only the import-failure
+    fallback. ``dates``/``label`` are passed through for evidence capture
+    (default label is NOT 'headline': a sweep of parse runs must not be
+    mistaken for the run's final scored series).
+    """
     mask = ~(np.isnan(obs) | np.isnan(sim))
     obs_clean = obs[mask]
     sim_clean = sim[mask]
+    dates_clean = [d for d, m in zip(dates, mask) if m] if dates is not None else None
 
     if len(obs_clean) < 5:
         return {"n_valid": len(obs_clean), "error": "Insufficient valid data pairs"}
 
+    try:
+        from ki_tools_common.metrics import all_metrics as _shared
+        m = _shared(obs_clean, sim_clean, dates=dates_clean, label=label)
+        nse_v, kge_v, pb_v, rmse_v, r_v = m["NSE"], m["KGE"], m["PBIAS"], m["RMSE"], m["r"]
+    except ImportError:
+        nse_v, kge_v, pb_v, rmse_v, r_v = (compute_nse(obs_clean, sim_clean),
+                                           compute_kge(obs_clean, sim_clean),
+                                           compute_pbias(obs_clean, sim_clean),
+                                           compute_rmse(obs_clean, sim_clean),
+                                           compute_r(obs_clean, sim_clean))
+
     return {
         "n_valid": int(len(obs_clean)),
-        "nse": round(compute_nse(obs_clean, sim_clean), 4),
-        "kge": round(compute_kge(obs_clean, sim_clean), 4),
-        "pbias": round(compute_pbias(obs_clean, sim_clean), 2),
-        "rmse": round(compute_rmse(obs_clean, sim_clean), 4),
-        "r": round(compute_r(obs_clean, sim_clean), 4),
+        "nse": round(float(nse_v), 4),
+        "kge": round(float(kge_v), 4),
+        "pbias": round(float(pb_v), 2),
+        "rmse": round(float(rmse_v), 4),
+        "r": round(float(r_v), 4),
         "obs_mean": round(float(np.mean(obs_clean)), 4),
         "sim_mean": round(float(np.mean(sim_clean)), 4),
         "obs_max": round(float(np.max(obs_clean)), 4),
@@ -323,7 +343,8 @@ def extract_grid_stats(grid_path):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def parse_output(sim_path, obs_path=None, output_dir=".", plot=True):
+def parse_output(sim_path, obs_path=None, output_dir=".", plot=True,
+                 start=None, end=None, label="parse_ef5_output"):
     """
     Parse EF5 output and compute metrics.
 
@@ -333,6 +354,9 @@ def parse_output(sim_path, obs_path=None, output_dir=".", plot=True):
     obs_path : str — Path to observed time series CSV (optional)
     output_dir : str — Directory for output files
     plot : bool — Generate comparison plot
+    start, end : datetime or None — keep only steps within [start, end]
+        (cal / val / post-warmup scoring windows; EF5 writes every step)
+    label : str — evidence label handed to ki_tools_common.metrics
     """
     if not validate_inputs(sim_path, obs_path):
         return None
@@ -342,6 +366,10 @@ def parse_output(sim_path, obs_path=None, output_dir=".", plot=True):
     # Read simulated data
     sim_data = read_ef5_timeseries(sim_path)
     print(f"Read {len(sim_data)} simulated timesteps from {sim_path}")
+    if start is not None or end is not None:
+        sim_data = [(d, v) for d, v in sim_data
+                    if (start is None or d >= start) and (end is None or d <= end)]
+        print(f"Period filter [{start}, {end}]: {len(sim_data)} simulated timesteps kept")
 
     if not sim_data:
         print("[ERROR] No data found in simulated file", file=sys.stderr)
@@ -356,8 +384,8 @@ def parse_output(sim_path, obs_path=None, output_dir=".", plot=True):
         times, obs_vals, sim_vals = align_timeseries(sim_data, obs_data)
         print(f"Aligned: {len(times)} matched timesteps")
 
-        # Compute metrics
-        metrics = compute_all_metrics(obs_vals, sim_vals)
+        # Compute metrics (shared ki_tools_common tool; dates carried for evidence)
+        metrics = compute_all_metrics(obs_vals, sim_vals, dates=times, label=label)
         print("\n--- Performance Metrics ---")
         for k, v in metrics.items():
             print(f"  {k}: {v}")
@@ -393,9 +421,26 @@ def main():
     parser.add_argument("--output-dir", default=".", help="Output directory")
     parser.add_argument("--no-plot", action="store_true", help="Skip plotting")
     parser.add_argument("--grid-dir", help="Directory with gridded outputs to summarize")
+    parser.add_argument("--start", help="Score only steps >= this date (YYYY-MM-DD[ HH:MM]); "
+                                        "e.g. the first post-warmup day or the val-period start")
+    parser.add_argument("--end", help="Score only steps <= this date (YYYY-MM-DD[ HH:MM])")
+    parser.add_argument("--label", default="parse_ef5_output",
+                        help="Evidence label passed to ki_tools_common.metrics.all_metrics "
+                             "(use 'cal'/'val'/'headline' for the final scored windows)")
     args = parser.parse_args()
 
-    metrics = parse_output(args.sim, args.obs, args.output_dir, not args.no_plot)
+    def _dt(s):
+        if not s:
+            return None
+        for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y%m%d%H%M", "%Y%m%d"):
+            try:
+                return datetime.strptime(s, fmt)
+            except ValueError:
+                continue
+        parser.error(f"unparseable date: {s}")
+
+    metrics = parse_output(args.sim, args.obs, args.output_dir, not args.no_plot,
+                           start=_dt(args.start), end=_dt(args.end), label=args.label)
 
     if args.grid_dir:
         grids = list_gridded_outputs(args.grid_dir)

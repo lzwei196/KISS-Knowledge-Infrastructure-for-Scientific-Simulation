@@ -1,200 +1,490 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: GEOPHIRES-X
-  version: 3.11.25
-  domain: geophysics
-  developer: NREL (National Renewable Energy Laboratory)
-  license: MIT
-  binary_path: KISSPATH_PYTHON_ENV/bin/python
-  entry_point: geophires_x.GEOPHIRESv3
-  description: 'Geothermal techno-economic simulator combining reservoir models, wellbore
-    models, surface plant models, and economic models to estimate LCOE/LCOH for geothermal
-    energy projects.
+  name: GEOPHIRES
+  language: Python
+  implementation:
+    id: geophires-x
+    version: 3.11.25
+    provenance: Python; NREL GEOPHIRES-X (geophires_x package), object-oriented v3 lineage; repo NREL/python-geophires-x.
+  scientific_reference_version: GEOPHIRES-X (object-oriented v3 lineage)
+inputs:
+  forcing_note: 'GEOPHIRES is a site techno-economic model, not a weather/time-series-forced model. No
+    external time-varying driver is consumed each timestep; the time-evolving production temperature is
+    a COMPUTED state (thermal drawdown), not an input forcing. (HydroCraft CMFD/MSWX/NASA POWER scaffolding
+    referenced in the KI is wrapper plumbing, not a GEOPHIRES input.)
 
     '
-inputs:
-  format: comma-separated text file (.txt)
-  format_rules:
-  - 'One parameter per line: Name, Value, ---Optional comment'
-  - 'Lines starting with # are comments'
-  - Unknown parameters silently ignored
-  - Parameters can appear in any order
-  - Units are implicit per parameter
-  forcing:
+  forcing: []
+  parameters:
+  - name: Geothermal Gradient (Gradient 1..N, up to 4 segments)
+    unit: degC/km
+    category: reservoir
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line 'Gradient 1, <value>'
+    notes: Stored internally as degC/m (CurrentUnits DEGREESCPERM) though PreferredUnits is degC/km; default
+      0.05 degC/m = 50 degC/km.
   - name: Reservoir Depth
     unit: km
-    valid_range:
-    - 0.5
-    - 10.0
-    description: Depth to geothermal reservoir
-  - name: Gradient 1
-    unit: degC/km
-    valid_range:
-    - 20
-    - 100
-    description: Geothermal temperature gradient
+    category: reservoir
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Default 3.0 km; Min 0.1, Max 15. Drives bottom-hole temperature and well drilling cost.
+  - name: Maximum Temperature
+    unit: degC
+    category: reservoir
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Default 400 degC; silently caps bottom-hole temperature (depth capped so Trock <= Tmax).
+  - name: Surface Temperature
+    unit: degC
+    category: reservoir
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Default 15 degC; baseline for bottom-hole T = Tsurf + gradient*depth.
+  - name: Reservoir Heat Capacity
+    unit: J/kg/K
+    category: reservoir
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Sets thermal inertia / drawdown rate; typical 700-1200.
+  - name: Reservoir Density
+    unit: kg/m3
+    category: reservoir
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Typical 2000-3500.
+  - name: Reservoir Thermal Conductivity
+    unit: W/m/K
+    category: reservoir
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Typical 1.0-5.0.
+  - name: Drawdown Parameter
+    unit: fraction/year
+    category: reservoir
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Used only by Reservoir Model 4 (Percentage Thermal Drawdown); silently ignored otherwise.
+  - name: Fracture geometry (Number of Fractures / Shape / Height / Width)
+    unit: -, m
+    category: reservoir
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Used only by Reservoir Models 1 (Multiple Parallel Fractures) and 3 (Single Fracture); silently
+      ignored otherwise.
+  - name: Reservoir Porosity
+    unit: '-'
+    category: reservoir
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Used by Model 2 (1-D Linear Heat Sweep).
+  - name: Production / Injection Well Diameter
+    unit: inch
+    category: wellbore
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Standard sizes ~5-12 in; drives pressure-drop calculation.
+  - name: Circulation Pump Efficiency
+    unit: fraction
+    category: wellbore
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Typical 0.6-0.9.
+  - name: Utilization Factor
+    unit: fraction
+    category: surface_plant
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Typical 0.8-0.95.
+  - name: Discount Rate
+    unit: fraction
+    category: economics
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Standard economic model; default 0.07; typical 0.03-0.15. Express as fraction not percent.
+  - name: Fixed Charge Rate
+    unit: fraction
+    category: economics
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: FCR economic model; typical 0.01-0.20.
+  - name: BICYCLE financial parameters (bond fraction, inflated bond/equity interest, inflation rate,
+      combined income tax rate)
+    unit: fraction
+    category: economics
+    source_kind: user_specified
+    model_input_format: comma-separated .txt lines
+    notes: Used only by BICYCLE economic model (3).
+  - name: Cost overrides (drilling, surface plant CAPEX, O&M)
+    unit: MUSD
+    category: economics
+    source_kind: user_specified
+    model_input_format: comma-separated .txt line
+    notes: Optional overrides of internally correlated costs.
+  initial_conditions_note: 'GEOPHIRES derives its start-state reservoir/bottom-hole temperature at runtime
+    from Surface Temperature + Gradient*Depth (capped by Maximum Temperature); there is no user-supplied
+    prognostic start-state field. Reservoir heat content and thermal drawdown are initialized internally.
+
+    '
+  initial_conditions: []
+  boundary_conditions:
+  - name: Reservoir Model
+    unit: enum 0-8
+    category: model_selector
+    source_kind: user_choice
+    model_input_format: comma-separated .txt line
+    notes: Selects Cylindrical/MPF(Gringarten)/1-D Linear Heat Sweep/Single Fracture(m/A)/TDP Percentage(default
+      4=GETEM)/User-Provided/TOUGH2/SUTRA/SBT.
+  - name: End-Use Option
+    unit: enum (1 Electricity, 2 Direct-Use Heat, 31-52 Cogeneration)
+    category: model_selector
+    source_kind: user_choice
+    model_input_format: comma-separated .txt line
+    notes: Must be compatible with Power Plant Type or yields zero/negative power.
+  - name: Power Plant Type
+    unit: enum 1-9
+    category: model_selector
+    source_kind: user_choice
+    model_input_format: comma-separated .txt line
+    notes: Subcritical/Supercritical ORC, Single/Double Flash, Absorption Chiller, Heat Pump, District
+      Heating, SUTRA, Industrial Heat (9, default before parameter read).
+  - name: Economic Model
+    unit: enum 1-5 (FCR, Standard, BICYCLE, CLGS, SAM PPA)
+    category: model_selector
+    source_kind: user_choice
+    model_input_format: comma-separated .txt line
+    notes: Default 2 (Standard Levelized Cost).
+  - name: Number of Production Wells / Number of Injection Wells
+    unit: '-'
+    category: design_choice
+    source_kind: user_choice
+    model_input_format: comma-separated .txt line
+    notes: Typical 1-20 production wells.
   - name: Production Flow Rate per Well
     unit: kg/s
-    valid_range:
-    - 20
-    - 150
-    description: Mass flow rate per production well
+    category: design_choice
+    source_kind: user_choice
+    model_input_format: comma-separated .txt line
+    notes: Typical 20-150; design lever strongly setting energy output per well.
   - name: Injection Temperature
     unit: degC
-    valid_range:
-    - 40
-    - 90
-    description: Temperature of reinjected fluid
-  parameters:
-    critical:
-    - name: Reservoir Model
-      valid_range:
-      - 0
-      - 8
-      description: Reservoir model type (0=Cylindrical, 1=MPF, 2=LHS, 3=SF, 4=PTD
-        default, 5=User, 6=TOUGH2, 7=SUTRA, 8=SBT)
-    - name: End-Use Option
-      valid_range:
-      - 1
-      - 2
-      description: 1=Electricity, 2=Direct-Use Heat
-    - name: Power Plant Type
-      valid_range:
-      - 1
-      - 9
-      description: Surface plant type (1=SubORC, 2=SupORC, 3=SingleFlash, 4=DoubleFlash,
-        5=AbsChiller, 6=HeatPump, 7=DistrictHeat, 8=SUTRA, 9=IndustrialHeat)
-    - name: Economic Model
-      valid_range:
-      - 1
-      - 5
-      description: Economic model (1=FCR, 2=Standard, 3=BICYCLE, 4=CLGS, 5=SAM)
-    - name: Number of Production Wells
-      valid_range:
-      - 1
-      - 20
-      description: Count of production wells
-    - name: Number of Injection Wells
-      valid_range:
-      - 1
-      - 20
-      description: Count of injection wells
-    - name: Production Well Diameter
-      unit: inches
-      valid_range:
-      - 5
-      - 12
-      description: Production well casing inner diameter
-    - name: Injection Well Diameter
-      unit: inches
-      valid_range:
-      - 5
-      - 12
-      description: Injection well casing inner diameter
-    - name: Plant Lifetime
-      unit: yr
-      valid_range:
-      - 20
-      - 50
-      description: Project lifetime for economic calculation
-    - name: Fixed Charge Rate
-      unit: fraction
-      valid_range:
-      - 0.01
-      - 0.2
-      description: FCR for economic model 1
-    - name: Maximum Temperature
-      unit: degC
-      valid_range:
-      - 200
-      - 600
-      description: Cap on calculated bottom-hole temperature
-    - name: Reservoir Heat Capacity
-      unit: J/kg/K
-      valid_range:
-      - 500
-      - 2000
-      description: Rock heat capacity
-    - name: Reservoir Density
-      unit: kg/m3
-      valid_range:
-      - 2000
-      - 3500
-      description: Rock density
-    - name: Reservoir Thermal Conductivity
-      unit: W/m/K
-      valid_range:
-      - 1.0
-      - 5.0
-      description: Rock thermal conductivity
+    category: design_choice
+    source_kind: user_choice
+    model_input_format: comma-separated .txt line
+    notes: Constant reservoir inlet temperature; typical 40-90. Sets usable deltaT.
+  - name: Plant Lifetime
+    unit: years
+    category: design_choice
+    source_kind: user_choice
+    model_input_format: comma-separated .txt line
+    notes: Default 30; valid 10-100. Sets simulation horizon and amortization.
+  - name: Time steps per year / Construction Years
+    unit: integer / years
+    category: control
+    source_kind: user_choice
+    model_input_format: comma-separated .txt line
+    notes: Default time discretization ~4 steps/yr too coarse for seasonal effects; raise to 12-8760.
+  - name: User-provided temperature-vs-time / external simulator files
+    unit: file
+    category: external_file
+    source_kind: external_file
+    model_input_format: referenced file path
+    notes: Model 5 needs temperature-vs-time file; Model 6 TOUGH2 output; Model 7 SUTRA config.
 outputs:
-  formats:
-  - type: text report
-    extension: .out
-    description: Human-readable formatted report
-  - type: JSON export
-    extension: .json
-    description: Machine-readable structured data
   primary:
-  - name: Average Net Electricity Production
-    unit: MW
-    valid_range:
-    - 0.1
-    - 500
-    description: Average net power output (electricity mode)
-  - name: Electricity breakeven price (LCOE)
+  - name: LCOE
     unit: cents/kWh
-    valid_range:
-    - 3
-    - 50
-    description: Levelized cost of electricity
-  - name: Average Direct-Use Heat Production
-    unit: MW
-    valid_range:
-    - 0.1
-    - 500
-    description: Average heat output (direct-use mode)
-  - name: Direct-Use heat breakeven price (LCOH)
-    unit: USD/MMBTU
-    valid_range:
-    - 3
-    - 30
-    description: Levelized cost of heat
-  - name: Project NPV
+    description: Levelized cost of electricity (electricity breakeven price) over the plant lifetime.
+    validation_rank: 2
+    emitted_in: HDR.out / HDR.json — Summary of Results
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compare against reported plant/study LCOE for matched resource grade and financing assumptions;
+          sensitive to discount rate and drilling-cost basis.
+      detrending_options: []
+  - name: LCOH
+    unit: $/MMBTU
+    description: Levelized cost of heat (direct-use breakeven price).
+    validation_rank: 3
+    emitted_in: HDR.out / HDR.json — Summary of Results
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Direct-use LCOH comparison complicated by application-specific surface-infrastructure costs
+          not fully captured by GEOPHIRES.
+      detrending_options: []
+  - name: Average Net Power
+    unit: MW (MWe or MWth)
+    description: Average surface-plant net electricity or direct-use heat production over the lifetime.
+    validation_rank: 4
+    emitted_in: HDR.out — Summary of Results
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Net of parasitic pumping; check end-use/plant-type compatibility (mismatch yields zero/negative
+          power).
+      detrending_options: []
+  - name: geofluid_production_temperature
+    unit: degC
+    description: Year-by-year subsurface produced-geofluid temperature profile reflecting thermal drawdown.
+    validation_rank: 1
+    emitted_in: HDR.out — Production Profile table
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Drawdown trajectory governed by selected reservoir model; compare against measured production-temperature
+          decline at a matched site.
+      detrending_options: []
+  - name: total_capex
     unit: MUSD
-    valid_range:
-    - -500
-    - 500
-    description: Net present value
-  - name: Project IRR
-    unit: '%'
-    valid_range:
-    - -20
-    - 50
-    description: Internal rate of return
-  - name: subsurface_resistivity
-    canonical_id: subsurface_resistivity
-    unit: ohm.m
-  - name: hydraulic_conductivity
-    canonical_id: hydraulic_conductivity
-    unit: m/s
-  - name: porosity
-    canonical_id: porosity
-    unit: fraction
-  sections:
-  - Summary of Results
-  - Economic Parameters
-  - Engineering Parameters
-  - Resource Characteristics
-  - Reservoir Parameters
-  - Reservoir Simulation Results
-  - Capital Costs
-  - O&M Costs
-  - Production Profile (year-by-year)
-  - Energy Profile (annual kWh/GWh)
-  - Revenue & Cashflow
+    description: Total capital cost (drilling + surface plant + exploration + stimulation + gathering).
+    validation_rank: 5
+    emitted_in: HDR.out — Capital Costs
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Dominated by drilling-cost correlation and well count/depth.
+      detrending_options: []
+  - name: annual_energy_production
+    unit: GWh/year
+    description: Average annual surface-plant electricity (or direct-use heat) generation profile.
+    validation_rank: 6
+    emitted_in: HDR.out — Energy Profile table
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Declines with reservoir thermal drawdown; depends on utilization and capacity factor.
+      detrending_options: []
+  secondary: []
 known_issues:
-- Parameters with typos or wrong capitalization are silently ignored
-- Depth in meters instead of km produces extreme results without error
-- Gradient in degC/m instead of degC/km gives near-zero temperature
-- Financial rates as percentages instead of fractions inflate LCOE 100x
-- SBT/SUTRA models can take minutes to hours for complex configurations
+- id: dt_001
+  symptom: Bottom-hole temperature is unrealistically high (>1000°C) or costs are astronomical
+  diagnosis: 'Reservoir Depth specified in meters instead of kilometers; GEOPHIRES expects depth in km.
+    Providing 3000 (meters) instead of 3.0 (km) causes bottom-hole temperature = 3000 × gradient, producing
+    extreme values. The model may still run but all results are meaningless.
+
+    ; [''Reservoir'', ''Economics'']'
+  remedy: 'Convert depth from meters to km: depth_km = depth_m / 1000; convert_reservoir_params.py; ["Check
+    ''Reservoir Depth'' value in input file", ''If value > 15, it is likely in meters'', ''Divide by 1000
+    to convert to km'']; Always use convert_reservoir_params.py which auto-detects source units'
+  severity: silent
+- id: dt_002
+  symptom: Bottom-hole temperature is near surface temperature; system produces negligible power
+  diagnosis: 'Temperature gradient specified in degC/m instead of degC/km; GEOPHIRES expects gradient
+    in degC/km. Providing 0.05 (degC/m) instead of 50 (degC/km) means 3 km depth yields only 0.15°C temperature,
+    producing near-zero power.
+
+    ; [''Reservoir'']'
+  remedy: 'Convert gradient: gradient_degC_per_km = gradient_degC_per_m × 1000; convert_reservoir_params.py;
+    ["Check ''Gradient 1'' value in input file", ''If value < 1, it is likely in degC/m'', ''Multiply
+    by 1000 to convert to degC/km'']; Use convert_reservoir_params.py with explicit source units'
+  severity: silent
+- id: dt_003
+  symptom: Flow rate produces unrealistic power output; pumping costs dominate
+  diagnosis: 'Flow rate in m3/s or L/s instead of kg/s; GEOPHIRES expects ''Production Flow Rate per Well''
+    in kg/s. 1 m3/s of water ≈ 958 kg/s, so providing m3/s values directly gives extreme results. Similarly,
+    L/s values are ~1000× too low as kg/s.
+
+    ; [''WellBores'', ''SurfacePlant'', ''Economics'']'
+  remedy: 'Convert: kg/s = m3/s × density (≈958 for hot water); kg/s = L/s × density/1000; convert_reservoir_params.py;
+    ["Check ''Production Flow Rate per Well'' value", ''Typical range: 20-150 kg/s for a single well'',
+    ''Apply density correction for the fluid temperature'']; Specify source units in config and use c'
+  severity: silent
+- id: dt_004
+  symptom: Well diameter produces extreme pressure drop calculations
+  diagnosis: 'Well diameter in cm or m instead of inches; GEOPHIRES expects well diameter in inches. Providing
+    17.8 (cm) instead of 7 (inches) gives a larger-than-real well, reducing pressure drop. Providing 0.178
+    (m) gives a tiny well with extreme pressure drop.
+
+    ; [''WellBores'']'
+  remedy: 'Convert: inches = cm / 2.54; inches = m × 39.37; convert_reservoir_params.py; ["Check ''Production
+    Well Diameter'' and ''Injection Well Diameter''", ''Standard sizes: 5, 7, 8.5, 9.625 inches'', ''Convert
+    from cm or m if needed'']; Verify diameter against common well casing sizes'
+  severity: silent
+- id: dt_005
+  symptom: LCOE is 100× higher than expected (e.g., $5/kWh instead of $0.05/kWh)
+  diagnosis: 'Fixed Charge Rate or Discount Rate given as percentage instead of fraction; GEOPHIRES expects
+    financial rates as fractions (e.g., 0.05 for 5%). Providing 5 instead of 0.05 makes the model calculate
+    LCOE with a 500% charge rate, producing impossibly high costs.
+
+    ; [''Economics'']'
+  remedy: 'Convert: fraction = percentage / 100; convert_site_economics.py; [''Check all rate parameters:
+    Fixed Charge Rate, Discount Rate, etc.'', ''Values should be 0.01-0.20, not 1-20'', ''Divide by 100
+    if they appear to be percentages'']; Use convert_site_economics.py which auto-detects percentages'
+  severity: silent
+- id: dt_006
+  symptom: Thermal drawdown is too fast or too slow for the reservoir
+  diagnosis: 'Reservoir Heat Capacity in kJ/kg/K instead of J/kg/K; GEOPHIRES expects heat capacity in
+    J/kg/K (e.g., 1000). Providing kJ/kg/K (e.g., 1.0) gives 1000× less thermal inertia, causing unrealistically
+    fast drawdown.
+
+    ; [''Reservoir'']'
+  remedy: 'Convert: J/kg/K = kJ/kg/K × 1000; convert_reservoir_params.py; ["Check ''Reservoir Heat Capacity''
+    value", ''Should be 500-2000 J/kg/K for most rocks'', ''If < 10, likely in kJ/kg/K'']; Validate range
+    in conversion tool'
+  severity: silent
+- id: dt_007
+  symptom: GEOPHIRES crashes or produces no output
+  diagnosis: 'Input file path not found or geophires_x not installed; GEOPHIRES needs both the input file
+    to be accessible and the geophires_x package to be installed in the Python environment being used.
+
+    ; [''GEOPHIRESv3'']'
+  remedy: 'Verify file path and installation; run_geophires.py (preflight mode); [''Check input file path
+    exists'', "Run: python -c ''import geophires_x''", ''If missing, install: pip install -e <source>''];
+    Use run_geophires.py which performs preflight checks'
+  severity: fatal
+- id: dt_008
+  symptom: Results use default values for parameters that were intended to be customized
+  diagnosis: 'Parameter name misspelled or has wrong capitalization; GEOPHIRES silently ignores unknown
+    parameter names. A typo like ''Resevoir Depth'' (missing ''r'') or ''reservoir depth'' (wrong case)
+    causes the parameter to be skipped and the default value used.
+
+    ; [''All'']'
+  remedy: Verify parameter names match GEOPHIRES exactly; ['Compare input parameter names to GEOPHIRES
+    parameter reference', 'Check capitalization (case-sensitive)', 'Review output file to confirm parameters
+    were applied']; Use generate_input_file.py which uses canonical parameter names
+  severity: silent
+- id: dt_009
+  symptom: End-use is Direct Heat but output shows electricity plant calculations
+  diagnosis: 'Incompatible End-Use Option and Power Plant Type combination; Setting End-Use Option=2 (Direct
+    Heat) with Power Plant Type=2 (Supercritical ORC) creates a contradictory configuration. GEOPHIRES
+    may use defaults or produce nonsensical results.
+
+    ; [''SurfacePlant'', ''Economics'']'
+  remedy: 'Match plant type to end-use; [''Electricity: Plant Type 1-4'', ''Direct-Use Heat: Plant Type
+    7, 9'', ''Cogeneration: Check specific combination'']; Use convert_site_economics.py which validates
+    compatibility'
+  severity: silent
+- id: dt_010
+  symptom: Reservoir model ignores specified fracture parameters
+  diagnosis: 'Fracture parameters specified but Reservoir Model doesn''t use them; Only Reservoir Model
+    1 (Multiple Parallel Fractures) and Model 3 (Single Fracture) use fracture parameters. Setting fracture
+    parameters with Model 4 (Percentage Drawdown) has no effect—they are silently ignored.
+
+    ; [''Reservoir'']'
+  remedy: Use Reservoir Model 1 or 3 if fracture modeling is needed; ["Check 'Reservoir Model' setting",
+    'Models 1, 3 use fracture parameters', 'Models 0, 2, 4-8 ignore fracture parameters']; Use generate_input_file.py
+    which warns about unused parameters
+  severity: silent
+- id: dt_011
+  symptom: Simulation hangs or times out
+  diagnosis: 'SBT or SUTRA model with large parameter space; SBT (Model 8) and SUTRA (Model 7) models
+    involve more complex calculations that can take minutes to hours. Extremely fine time stepping or
+    large fracture counts can also cause long runtimes.
+
+    ; [''Reservoir'']'
+  remedy: 'Increase timeout or simplify model; [''Increase timeout: --timeout 600 or higher'', ''Reduce
+    time steps per year'', ''Use simpler reservoir model for initial screening'']; Start with Model 4
+    for quick screening'
+  severity: fatal
+- id: dt_012
+  symptom: 'Error: could not read temperature profile from file'
+  diagnosis: 'Reservoir Model 5 (User-Provided) but data file not found; Model 5 requires an external
+    temperature-vs-time data file. The file path must be correct relative to the input file directory.
+
+    ; [''Reservoir'']'
+  remedy: Provide correct path to temperature data file; ["Check 'Reservoir Temperature Data File' parameter",
+    'Ensure file exists at specified path', 'Use absolute path or path relative to input file']; Use run_geophires.py
+    preflight which checks external file existence
+  severity: fatal
+- id: dt_013
+  symptom: Injection temperature close to production temperature; near-zero power
+  diagnosis: 'Injection temperature set too high relative to production temperature; If injection temperature
+    (e.g., 140°C) is close to production temperature (e.g., 165°C), the available temperature drop for
+    power generation is minimal. The model produces correct but practically useless results.
+
+    ; [''SurfacePlant'
+  remedy: 'Lower injection temperature or use direct-use end-use; [''For electricity: injection temp should
+    be 40-80°C'', ''For direct-use: injection temp can be higher but must allow useful ΔT'', ''Rule of
+    thumb: ΔT > 50°C for electricity, > 20°C for heat'']; Validate T_inject < T_production - 50°C for
+    electricity'
+  severity: silent
+- id: dt_014
+  symptom: Maximum temperature capping silently limits power output
+  diagnosis: 'Maximum Temperature parameter capping bottom-hole temperature; If Reservoir Depth × Gradient
+    + Surface Temperature exceeds ''Maximum Temperature'' (default 400°C), the bottom-hole temperature
+    is capped. This is by design but can be surprising if you don''t check. Example: 8 km × 50°C/km =
+    400°C + 15°C '
+  remedy: 'Increase Maximum Temperature if the geology supports it; [''Calculate expected T: depth × gradient
+    + surface_temp'', ''If > 400°C, set Maximum Temperature accordingly'', ''Valid range: up to 600°C
+    for superhot rock'']; Always set Maximum Temperature explicitly for deep/hot systems'
+  severity: silent
+- id: dt_015
+  symptom: Output file exists but parse returns empty production profile
+  diagnosis: 'GEOPHIRES version change altered output format headers; Different GEOPHIRES versions may
+    use slightly different section headers or table formats. The parser looks for specific strings like
+    ''HEAT AND/OR ELECTRICITY EXTRACTION AND GENERATION PROFILE'' which may vary between versions.
+
+    ; [''Output parser'''
+  remedy: Update parse_geophires_output.py header patterns; ['Open the .out file and find the production
+    profile section', 'Check the exact section header text', "Update the parser's header search patterns"];
+    Also parse the HDR.json file as a more stable format
+  severity: silent
+- id: dt_016
+  symptom: Drawdown Parameter has no effect on results
+  diagnosis: 'Reservoir Model is not 4 (Percentage Thermal Drawdown); The ''Drawdown Parameter'' only
+    applies to Reservoir Model 4 (Percentage Thermal Drawdown). Setting it with other models has no effect.
+    Similarly, fracture parameters have no effect with Model 4.
+
+    ; [''Reservoir'']'
+  remedy: 'Use Reservoir Model 4 if you want percentage drawdown, or remove parameter; [''Verify Reservoir
+    Model matches intended behavior'', ''Model 4: uses Drawdown Parameter'', ''Models 1-3: use physics-based
+    drawdown'', ''Model 5: uses user-provided temperature data'']; Use generate_input_file.py which warns
+    about'
+  severity: silent
+- id: dt_017
+  symptom: Input file lines without commas are silently ignored
+  diagnosis: 'Missing comma separator between parameter name and value; GEOPHIRES expects comma-separated
+    values. A line like ''Reservoir Depth 3.0'' (space instead of comma) is silently skipped. The model
+    uses the default value instead.
+
+    ; [''Input parser'']'
+  remedy: 'Add comma between parameter name and value; ["Check each line has format: ''Name,Value,''",
+    ''Ensure no tabs or other separators are used instead of commas'', ''Review GEOPHIRES output for expected
+    values'']; Use generate_input_file.py which produces correctly formatted lines'
+  severity: degraded
+- id: dt_018
+  symptom: Multi-segment gradient produces unexpected temperature profile
+  diagnosis: Segment thicknesses don't sum to total depth, or Number of Segments mismatch; When using
+    multiple gradient segments, the sum of segment thicknesses must equal the reservoir depth. GEOPHIRES
+    distributes remaining depth to the last segment if thicknesses don't sum correctly. Also, 'Number
+    of Segments'
+  remedy: Verify segment thicknesses sum to total depth; ['Set Number of Segments = N', 'Provide Gradient
+    1..N and Thickness 1..N', 'Ensure sum(Thickness 1..N) ≈ Reservoir Depth', 'Set Gradient 2..4 = 0 for
+    unused segments']; Use convert_reservoir_params.py which validates segment consistency
+  severity: silent

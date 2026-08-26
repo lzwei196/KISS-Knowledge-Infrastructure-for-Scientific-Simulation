@@ -1,225 +1,584 @@
-model:
-  name: "LPJmL"
-  version: "6.0.0"
-  domain: "crop / dynamic global vegetation model (DGVM)"
-  binary_path: "KISSPATH_BINARIES/LPJmL/source/repo/bin/lpjml"
-  language: "C (with optional MPI parallelization)"
-  developer: "PIK (Potsdam Institute for Climate Impact Research)"
-  resolution: "0.5 degree global grid (~55 km)"
-  timestep: "daily (internal), monthly/annual (output)"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: LPJmL
+  language: c
+  implementation:
+    id: lpjml-600
+    version: 6.0.0
+    provenance: C (optional MPI parallelization); PIK (Potsdam Institute for Climate Impact Research)
+      LPJmL source from github.com/PIK-LPJmL/LPJmL.
+  scientific_reference_version: LPJmL 6.0.0 (LPJmL4 lineage; Schaphoff et al. 2018 GMD model description,
+    von Bloh et al. 2018 GMD nitrogen cycle)
 inputs:
   forcing:
-    - name: "temp"
-      unit: "deg C"
-      valid_range: [-60.0, 60.0]
-      description: "Mean daily temperature"
-    - name: "prec"
-      unit: "mm/day"
-      valid_range: [0.0, 500.0]
-      description: "Daily precipitation"
-    - name: "swdown"
-      unit: "W/m2"
-      valid_range: [0.0, 500.0]
-      description: "Shortwave downward radiation"
-    - name: "lwnet"
-      unit: "W/m2"
-      valid_range: [-200.0, 200.0]
-      description: "Net longwave radiation"
-    - name: "tmin"
-      unit: "deg C"
-      valid_range: [-60.0, 50.0]
-      description: "Daily minimum temperature"
-    - name: "tmax"
-      unit: "deg C"
-      valid_range: [-50.0, 60.0]
-      description: "Daily maximum temperature"
-    - name: "humid"
-      unit: "kg/kg"
-      valid_range: [0.0, 0.04]
-      description: "Specific humidity"
-    - name: "wind"
-      unit: "m/s"
-      valid_range: [0.0, 50.0]
-      description: "Wind speed"
-    - name: "co2"
-      unit: "ppm"
-      valid_range: [250.0, 1000.0]
-      description: "Annual atmospheric CO2 concentration"
-
-  static:
-    - name: "soil"
-      unit: "code (1-13)"
-      valid_range: [1, 13]
-      description: "Soil texture class (13-class USDA-based scheme)"
-    - name: "coord"
-      unit: "degrees"
-      description: "Grid cell coordinates (lon, lat)"
-    - name: "countrycode"
-      unit: "code"
-      description: "Country code per grid cell"
-    - name: "elevation"
-      unit: "m"
-      valid_range: [-500.0, 9000.0]
-      description: "Surface elevation"
-    - name: "drainage"
-      unit: "index"
-      description: "River routing drainage direction"
-    - name: "lakes"
-      unit: "fraction"
-      valid_range: [0.0, 1.0]
-      description: "Lake fraction per cell"
-
-  landuse:
-    - name: "landuse"
-      unit: "fraction"
-      valid_range: [0.0, 1.0]
-      description: "CFT fractions (64 bands: 16 CFTs x 2 water x 2 irrigation)"
-    - name: "fertilizer_nr"
-      unit: "gN/m2/yr"
-      valid_range: [0.0, 50.0]
-      description: "N fertilizer application rate per CFT"
-    - name: "manure_nr"
-      unit: "gN/m2/yr"
-      valid_range: [0.0, 30.0]
-      description: "Manure N application rate per CFT"
-    - name: "sdate"
-      unit: "DOY"
-      valid_range: [1, 365]
-      description: "Prescribed sowing dates per CFT"
-    - name: "crop_phu"
-      unit: "deg C days"
-      valid_range: [500.0, 5000.0]
-      description: "Phenological heat units per CFT"
-
+  - name: temp (mean daily air temperature)
+    unit: deg C
+    category: forcing
+    source_kind: forcing
+    model_input_format: CLM binary (clm_id 1) or NetCDF
+  - name: prec (precipitation)
+    unit: mm/day (daily) or mm/month (monthly)
+    category: forcing
+    source_kind: forcing
+    model_input_format: CLM binary (clm_id 2)
+    notes: Frequency must match nstep (365 daily vs 12 monthly); mismatch silently multiplies water input.
+  - name: swdown (shortwave downward radiation)
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: CLM binary (clm_id 3)
+  - name: lwnet (net longwave radiation)
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: CLM binary (clm_id 4)
+  - name: tmin (daily minimum temperature)
+    unit: deg C
+    category: forcing
+    source_kind: forcing
+    model_input_format: CLM binary (clm_id 9)
+  - name: tmax (daily maximum temperature)
+    unit: deg C
+    category: forcing
+    source_kind: forcing
+    model_input_format: CLM binary (clm_id 10)
+  - name: tamp (diurnal temperature range)
+    unit: deg C
+    category: forcing
+    source_kind: forcing
+    model_input_format: CLM binary (clm_id 11)
+    notes: Used with CRU-style forcing.
+  - name: wetdays (wet-day frequency)
+    unit: days/month
+    category: forcing
+    source_kind: forcing
+    model_input_format: CLM binary (clm_id 12)
+    notes: Drives stochastic daily precipitation distribution for monthly forcing.
+  - name: humid (specific humidity)
+    unit: kg/kg
+    category: forcing
+    source_kind: forcing
+    model_input_format: CLM binary (clm_id 14)
+  - name: wind (wind speed)
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: CLM binary (clm_id 15)
+  - name: co2 (atmospheric CO2 concentration)
+    unit: ppm
+    category: forcing
+    source_kind: forcing
+    model_input_format: annual time series text/CLM (clm_id 5)
+    notes: Time-varying atmospheric driver of CO2 fertilization; file must span spinup-cycling years plus
+      the transient period or getco2() aborts.
   parameters:
-    critical:
-      - name: "equilsoil"
-        valid_range: [0, 1]
-        description: "Soil carbon equilibration flag (spinup mode)"
-      - name: "landuse"
-        valid_range: ["no", "yes", "const", "all_crops"]
-        description: "Land use mode"
-      - name: "irrigation"
-        valid_range: ["no", "lim", "pot", "all"]
-        description: "Irrigation mode"
-      - name: "with_nitrogen"
-        valid_range: ["lim", "unlim"]
-        description: "Nitrogen limitation mode"
-      - name: "fire"
-        valid_range: ["no_fire", "fire", "spitfire"]
-        description: "Fire module selection"
-      - name: "sowing_date_option"
-        valid_range: ["no_fixed_sdate", "fixed_sdate", "prescribed_sdate"]
-        description: "Sowing date handling"
-
+  - name: soil texture class
+    unit: code (1-13 USDA scheme)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: CLM binary (clm_id 41)
+    notes: 13-class USDA texture scheme, each mapping to Ks, w_pwp, w_fc, w_sat; code 0 = no-data and
+      the cell is skipped. A 14-ID variant adds a 'clay (light)' class; 13-class is canonical for this
+      input.
+  - name: soil pH
+    unit: pH
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: CLM binary (clm_id 46)
+  - name: PFT / CFT coefficients
+    unit: various
+    category: parameters
+    source_kind: calibrated
+    model_input_format: par/*.cjson parameter includes
+    notes: Photosynthesis (alpha_a, lambda), allometry (k_allom), phenology, mortality (k_mort1), LAI
+      (laimax), turnover coefficients for 9 natural PFTs and 16 crop functional types (rainfed + irrigated).
+  - name: grid coordinates
+    unit: degrees
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: CLM binary (clm_id 43)
+  - name: land fraction per cell
+    unit: fraction
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: CLM binary (clm_id 44)
+  - name: country code
+    unit: code
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: CLM binary (clm_id 45)
+  - name: surface elevation
+    unit: m
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: CLM binary (clm_id 39)
+  - name: river drainage direction
+    unit: index
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: CLM binary (clm_id 37)
+    notes: Drainage network required when river routing is enabled.
+  - name: lake fraction
+    unit: fraction
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: CLM binary (clm_id 36)
+  - name: reservoir information
+    unit: capacity / year
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: CLM binary (clm_id 40)
+  initial_conditions:
+  - name: restart state (soil C/N, vegetation, soil moisture, thermal, river storage, phenology)
+    unit: binary pools
+    category: initial_conditions
+    source_kind: derived
+    model_input_format: binary restart file (*.lpj)
+    notes: Spinup writes the restart (~year 1700); the transient run reads it. Inspect with bin/lpjprint.
+      Required for land-use transient runs.
+  boundary_conditions:
+  - name: landuse (CFT area fractions)
+    unit: fraction
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: 'CLM binary (clm_id 6, 64 bands: 16 rainfed + 16 irrigated + irrigation systems)'
+  - name: N fertilizer application rate
+    unit: gN/m2/yr
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: CLM binary (clm_id 18)
+  - name: manure N application rate
+    unit: gN/m2/yr
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: CLM binary (clm_id 19)
+  - name: prescribed sowing dates
+    unit: DOY
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: CLM binary (clm_id 25)
+  - name: crop phenological heat units (PHU)
+    unit: deg C days
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: CLM binary (clm_id 26)
+  - name: tillage practice
+    unit: binary
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: CLM binary (clm_id 7)
+  - name: residue left on field
+    unit: fraction
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: CLM binary (clm_id 8)
+  - name: 'nitrogen-limitation switch (with_nitrogen: no / lim / unlim)'
+    unit: option
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: lpjml_config.cjson
+  - name: irrigation mode (no / lim / pot / all)
+    unit: option
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: lpjml_config.cjson
+  - name: fire module selector (no_fire / fire Glob-FIRM / spitfire)
+    unit: option
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: lpjml_config.cjson
+  - name: river routing and reservoir switch
+    unit: option
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: lpjml_config.cjson
+  - name: spinup / restart control (equilsoil, FROM_RESTART)
+    unit: option
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: lpjml_config.cjson / preprocessor macro
+    notes: equilsoil=true only during spinup; must be false in the transient run.
 outputs:
   primary:
-    - name: "harvestc"
-      unit: "gC/m2/yr"
-      valid_range: [0.0, 2000.0]
-      description: "Total harvested carbon (divide by 0.45 * 0.01 for t DM/ha)"
-    - name: "pft_harvestc"
-      unit: "gC/m2/yr"
-      valid_range: [0.0, 2000.0]
-      description: "CFT-specific harvested carbon"
-    - name: "npp"
-      unit: "gC/m2/month"
-      valid_range: [-50.0, 500.0]
-      description: "Net primary production"
-    - name: "gpp"
-      unit: "gC/m2/month"
-      valid_range: [0.0, 1000.0]
-      description: "Gross primary production"
-    - name: "runoff"
-      unit: "mm/month"
-      valid_range: [0.0, 1000.0]
-      description: "Total runoff"
-    - name: "discharge"
-      unit: "hm3/day"
-      valid_range: [0.0, 100000.0]
-      description: "River discharge"
-    - name: "transp"
-      unit: "mm/month"
-      valid_range: [0.0, 300.0]
-      description: "Transpiration"
-    - name: "evap"
-      unit: "mm/month"
-      valid_range: [0.0, 300.0]
-      description: "Evaporation"
-    - name: "vegc"
-      unit: "gC/m2"
-      valid_range: [0.0, 30000.0]
-      description: "Vegetation carbon stock"
-    - name: "soilc"
-      unit: "gC/m2"
-      valid_range: [0.0, 50000.0]
-      description: "Soil organic carbon stock"
-  crop_specific:
-    - name: "sdate"
-      unit: "DOY"
-      valid_range: [1, 365]
-      description: "Actual sowing date"
-    - name: "hdate"
-      unit: "DOY"
-      valid_range: [1, 365]
-      description: "Actual harvest date"
-    - name: "growing_period"
-      unit: "days"
-      valid_range: [30, 365]
-      description: "Growing season length"
-    - name: "cftfrac"
-      unit: "fraction"
-      valid_range: [0.0, 1.0]
-      description: "Crop functional type area fraction"
-    - name: "irrig"
-      unit: "mm/month"
-      valid_range: [0.0, 500.0]
-      description: "Irrigation water applied"
-
-file_format:
-  name: "CLM (Climate data for LPJmL)"
-  header_version: 3
-  fields:
-    - "Header ID (char[7])"
-    - "Version (int)"
-    - "Order (int)"
-    - "Firstyear (int)"
-    - "Nyear (int)"
-    - "Firstcell (int)"
-    - "Ncell (int)"
-    - "Nbands (int)"
-    - "Cellsize_lon (float, typically 0.5)"
-    - "Cellsize_lat (float, typically 0.5)"
-    - "Datatype (int: 0=byte, 1=short, 2=int, 3=float, 4=double)"
-    - "Scalar (float)"
-    - "Nstep (int: 12=monthly, 365=daily)"
-
-unit_conversion_traps:
-  - from: "K"
-    to: "deg C"
-    formula: "T_C = T_K - 273.15"
-    variable: "temperature"
-  - from: "kg/m2/s"
-    to: "mm/day"
-    formula: "P * 86400"
-    variable: "precipitation"
-  - from: "J/m2/day"
-    to: "W/m2"
-    formula: "SW / 86400"
-    variable: "shortwave radiation"
-  - from: "gC/m2"
-    to: "t DM/ha"
-    formula: "/ 0.45 * 0.01"
-    variable: "harvest carbon to yield"
-  - from: "kg N/ha"
-    to: "gN/m2"
-    formula: "/ 10.0"
-    variable: "fertilizer"
-
+  - name: pft_harvestc
+    unit: gC/m2/yr
+    description: Crop-functional-type harvested carbon (excludes residuals); 32 bands = 16 rainfed + 16
+      irrigated CFTs. Convert to dry-matter yield via /0.45*0.01 (t DM/ha).
+    validation_rank: 4
+    emitted_in: pft_harvestc.bin (output registry, annual)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/regional yield aggregates carry a technology trend a weather-driven process model cannot
+          reproduce; compare detrended trends, not inter-annual r.
+        - Convert harvested carbon to t DM/ha (/0.45*0.01) and use pft_harvestc (residual-excluded), not
+          harvestc.
+        - Map LPJmL CFTs to reported crops via the landusemap band ordering.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Gridded yield products are growing-season climatologies; align CFT mapping and irrigation status.
+      detrending_options:
+      - decadal_mean
+      - linear_residual
+      - first_difference
+  - name: npp
+    unit: gC/m2/month
+    description: Vegetation carbon-cycle net primary production.
+    validation_rank: 2
+    emitted_in: npp.bin (output registry, monthly)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against upscaled/remote-sensing NPP climatologies.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Eddy-flux-derived NPP carries partitioning uncertainty.
+      detrending_options:
+      - none
+  - name: gpp
+    unit: gC/m2/month
+    description: Vegetation carbon-cycle gross primary production.
+    validation_rank: 3
+    emitted_in: gpp.bin (output registry, monthly)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against upscaled/remote-sensing GPP climatologies.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Flux-tower GPP is a partitioning product, not a direct observation.
+      detrending_options:
+      - none
+  - name: discharge
+    unit: hm3/day
+    description: River discharge at the cell, produced by lateral routing through the drainage network.
+    validation_rank: 1
+    emitted_in: discharge.bin (output registry, monthly aggregation)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Requires river routing enabled and a correct drainage network; gauge cell must align with the
+          routed channel.
+        - Reservoir operations alter the regulated regime.
+      detrending_options:
+      - none
+  - name: runoff
+    unit: mm/month
+    description: Total runoff (surface + lateral + seepage) generated per cell.
+    validation_rank: 5
+    emitted_in: runoff.bin (output registry, monthly)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Local runoff is best evaluated as basin aggregate via discharge; per-cell runoff products are
+          model-derived.
+      detrending_options:
+      - none
+  - name: transp
+    unit: mm/month
+    description: Plant transpiration component of evapotranspiration.
+    validation_rank: 6
+    emitted_in: transp.bin (output registry, monthly)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Evapotranspiration observation products report total ET, not transpiration alone; sum transp+evap+interc
+          for comparison.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance latent heat is total ET, not transpiration alone.
+      detrending_options:
+      - none
+  - name: vegc
+    unit: gC/m2
+    description: Vegetation carbon stock.
+    validation_rank: 7
+    emitted_in: vegc.bin (output registry, annual)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against biomass-carbon maps; above-ground vs total-biomass definitions must be matched.
+      detrending_options:
+      - none
+  - name: soilc
+    unit: gC/m2
+    description: Soil organic carbon stock (equilibrated during spinup).
+    validation_rank: 8
+    emitted_in: soilc.bin (output registry, annual)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Strongly dependent on spinup equilibration; un-equilibrated soil C is invalid.
+        - Match the integration depth of the soil-carbon observation product.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "Wheat yield underestimation: PBIAS=-58.5% for China national average (sim=2183 vs obs=5267 kg/ha)"
-  - "Rice yield overestimation: PBIAS=+20.3% for China (sim=8239 vs obs=6850 kg/ha)"
-  - "Maize yield underestimation: PBIAS=-39.9% for China (sim=3584 vs obs=5965 kg/ha)"
-  - "Requires ~4000yr spinup for equilibrium soil carbon — computationally expensive"
-  - "Two-step simulation (spinup + transient) required — cannot run directly from cold start"
+- id: dt_001
+  symptom: All temperatures unrealistically high (~300 degC). Photosynthesis inactive, no vegetation growth.
+  diagnosis: 'Temperature input in Kelvin instead of degrees Celsius; LPJmL expects temperature in degrees
+    Celsius. If Kelvin values are provided (e.g., 293 K = 20 degC), the model interprets 293 as 293 degC,
+    causing all vegetation processes to fail silently — no error is raised.
+
+    ; [''convert_climate_to_clm'', ''tem'
+  remedy: Subtract 273.15 from temperature values; convert_climate_to_clm; ['Check mean temperature in
+    CLM file with printclm — should be -20 to +30 degC', 'If mean temp > 200, values are in Kelvin — subtract
+    273.15']; validate_outputs() checks for unrealistic temperature ranges
+  severity: silent
+- id: dt_002
+  symptom: Extreme drought everywhere. NPP near zero. No crop growth. All vegetation dies.
+  diagnosis: 'Precipitation in kg/m2/s instead of mm/day — values 86400x too small; ISIMIP/GSWP3 often
+    provide precipitation as kg/m2/s (= mm/s). LPJmL expects mm/day. A value of 0.00001 kg/m2/s (0.86
+    mm/day) appears as 0.00001 mm/day to LPJmL, producing zero effective rainfall.
+
+    ; [''convert_climate_to_clm'', ''prec'
+  remedy: Multiply precipitation by 86400 to convert kg/m2/s to mm/day; convert_climate_to_clm; ['Check
+    max precipitation — daily values should range 0-200 mm/day', 'If max prec < 0.01, values are likely
+    in kg/m2/s — multiply by 86400']; validate_outputs() flags max precip < 1.0 mm/day
+  severity: silent
+- id: dt_003
+  symptom: Massive flooding, runoff 30x too high, water balance errors (ERROR005).
+  diagnosis: 'Precipitation in mm/month provided to daily timestep configuration; If monthly precipitation
+    totals (e.g., 150 mm/month) are provided but LPJmL expects daily values, each day receives the full
+    monthly total. The model receives 30x too much water, causing flooding and water balance errors.
+
+    ; [''conver'
+  remedy: Divide monthly totals by number of days in each month, or set nstep=12; convert_climate_to_clm;
+    ['Check if precip values > 50 and nstep=365 — likely monthly values in daily config', 'Either convert
+    to daily or change nstep to 12 in CLM header']; Cross-check nstep in CLM header with actual data frequ
+  severity: error
+- id: dt_004
+  symptom: GPP unrealistically high (>5000 gC/m2/month). Vegetation carbon explodes.
+  diagnosis: 'Shortwave radiation in J/m2/day instead of W/m2 — values 86400x too large; LPJmL expects
+    shortwave downward radiation in W/m2. Some datasets provide energy flux as J/m2/day. Since W = J/s,
+    dividing by 86400 converts J/m2/day to W/m2. Without this conversion, radiation is 86400x too high.
+
+    ; [''convert'
+  remedy: Divide shortwave radiation by 86400; convert_climate_to_clm; ['Check max shortwave radiation
+    — should be 0-450 W/m2', 'If max SW > 1000, values likely in J/m2/day — divide by 86400']; validate_outputs()
+    checks for SW > 500 W/m2
+  severity: silent
+- id: dt_005
+  symptom: Crop yields appear 100x too high or too low compared to FAO statistics.
+  diagnosis: 'Confusing gC/m2 output with t/ha yield — missing biomass2c and area conversion; LPJmL outputs
+    harvested carbon in gC/m2/yr. To convert to standard yield units (t DM/ha): divide by 0.45 (carbon
+    fraction = biomass2c) and multiply by 0.01 (g/m2 to t/ha). Missing either conversion gives wrong yield
+    valu'
+  remedy: 'Apply conversion: yield_tha = harvestc_gCm2 / 0.45 * 0.01; parse_lpjml_output; ["Expected wheat
+    yield: 2-8 t/ha, in gC/m2 that''s 90-360 gC/m2", "Expected maize yield: 3-12 t/ha, in gC/m2 that''s
+    135-540 gC/m2"]; Use --convert_yield flag in parse_lpjml_output.py'
+  severity: silent
+- id: dt_006
+  symptom: All cells classified as sand (type 12). Extremely fast drainage, low water retention.
+  diagnosis: 'Soil fractions in 0-1 range instead of 0-100 percentage; LPJmL soil classification expects
+    sand/silt/clay as percentages (0-100). If fractions (0-1) are provided without conversion, all values
+    appear near zero, and the classification algorithm defaults to sand (highest sand class).
+
+    ; [''convert_soil_'
+  remedy: Multiply soil fractions by 100 to convert to percentages; convert_soil_to_lpjml; ['Check if
+    max sand value < 1.0 — fractions need multiplication by 100']; convert_soil_to_lpjml.py auto-detects
+    0-1 range
+  severity: silent
+- id: dt_007
+  symptom: 'ERROR001: Error reading configuration. LPJmL refuses to start.'
+  diagnosis: 'JSON syntax error or missing include file in lpjml_config.cjson; The configuration file
+    uses JSON with C preprocessor directives (#include, #ifdef). Syntax errors, missing comma, or missing
+    included files cause parse failures. The preprocessor runs first, so macro errors also trigger this.
+
+    ; [''lpjml'
+  remedy: 'Run lpjcheck to identify syntax errors, fix JSON and try again; None; [''Run: bin/lpjcheck
+    lpjml_config.cjson'', ''Check for missing commas, brackets, or include files'', ''Verify par/ directory
+    contains all required .cjson files'']; Always validate with lpjcheck before running lpjml'
+  severity: error
+- id: dt_008
+  symptom: No crop output despite land use enabled. Only natural vegetation simulated.
+  diagnosis: 'Missing -DFROM_RESTART flag for transient run with land use; LPJmL uses the FROM_RESTART
+    preprocessor macro to enable land use sections in the config file. Without it, landuse is set to "no"
+    and equilsoil to true, running a natural vegetation spinup regardless of output settings.
+
+    ; [''lpjml_config.cj'
+  remedy: 'Add -DFROM_RESTART to the lpjml command line; run_lpjml; [''Run: ./bin/lpjml -DFROM_RESTART
+    lpjml_config.cjson'', ''Verify a restart file exists from the spinup'']; run_lpjml.py sets FROM_RESTART
+    automatically in transient mode'
+  severity: silent
+- id: dt_009
+  symptom: 'ERROR002: Error initializing input data. Cannot read climate files.'
+  diagnosis: 'Input file paths in config don''t match actual file locations; LPJmL constructs input paths
+    by combining inpath + filename from config. If LPJINPATH is not set or points to wrong directory,
+    files are not found. Relative paths in config are relative to the current working directory.
+
+    ; [''input.cjson'', '
+  remedy: 'Set LPJINPATH environment variable or fix paths in input.cjson; None; [''Run: bin/lpjfiles
+    lpjml_config.cjson to list all expected paths'', ''Verify each file exists at the listed path'', ''Set:
+    export LPJINPATH=/path/to/input/data'']; run_lpjml.py validates file existence in preflight'
+  severity: error
+- id: dt_010
+  symptom: 'ERROR003: Error initializing grid. Grid file cannot be read.'
+  diagnosis: 'Grid file missing, wrong format, or CLM header mismatch; The grid file (grid.bin) contains
+    lon/lat coordinates for all cells. If the grid doesn''t match the climate/soil input grid, or uses
+    wrong datatype (short vs float), initialization fails.
+
+    ; [''grid.bin'', ''coord_input'']'
+  remedy: 'Verify grid file exists and matches input data resolution; None; [''Check grid file: bin/printclm
+    input/grid.bin'', ''Verify ncell matches climate file grid'', "Check grid_type setting in config:
+    ''short'', ''float'', or ''double''"]; Cross-check grid dimensions with all input files'
+  severity: error
+- id: dt_011
+  symptom: 'ERROR015: Invalid year in getco2(). Simulation crashes at specific year.'
+  diagnosis: 'CO2 file doesn''t cover simulation period; The CO2 concentration file (annual text values)
+    must span from the first spinup year through lastyear. If firstyear or spinup start year is before
+    the CO2 file range, ERROR015 is raised.
+
+    ; [''co2_input'']'
+  remedy: 'Extend CO2 file to cover full simulation period including spinup; None; [''Check CO2 file range:
+    head/tail input/co2.txt'', ''Spinup uses nspinyear cycling — ensure CO2 file covers those years'',
+    ''For pre-industrial, add constant ~280 ppm entries for early years'']; Validate CO2 year range against
+    config'
+  severity: error
+- id: dt_012
+  symptom: 'ERROR004: Invalid carbon balance. Model terminates during simulation.'
+  diagnosis: 'Carbon inputs/outputs don''t balance within tolerance (0.5 gC/m2); LPJmL checks carbon balance
+    every time step when compiled with CHECK_BALANCE. Violations indicate a bug or extreme input values
+    causing numerical instability. Common causes: extreme precipitation causing rapid litter decay, or
+    corrupt'
+  remedy: Check input data for outliers; compile without CHECK_BALANCE for testing; None; ['Identify the
+    year/cell where error occurs from stdout', 'Check climate inputs for that cell — look for extreme
+    values', 'Try -DNO_FAIL_BALANCE to continue past errors (diagnostic only)']; Validate all input data
+    ranges
+  severity: error
+- id: dt_013
+  symptom: 'ERROR005: Invalid water balance. Negative soil moisture or runoff.'
+  diagnosis: Water inputs exceed physical capacity — typically wrong precipitation units; Water balance
+    errors almost always trace back to precipitation unit mismatches. Too much rain overwhelms soil capacity,
+    producing negative values in intermediate calculations. Less commonly caused by extreme irrigation
+    dema
+  remedy: 'Check precipitation units and values — most common cause; convert_climate_to_clm; [''Verify
+    precipitation is in mm/day (daily) or mm/month (monthly)'', ''Check max values: daily < 200, monthly
+    < 3000 mm'', ''If river_routing=true, check drainage file matches grid'']; Always validate precipitation
+    ranges i'
+  severity: error
+- id: dt_014
+  symptom: Binary output file reads as garbage values. All data looks random.
+  diagnosis: 'Wrong datatype or byte order when reading raw binary output; LPJmL raw output files have
+    no header by default (unless CLM format). The reader must know the correct datatype (float32 for most
+    outputs), number of cells, bands, and timesteps. Wrong assumptions produce garbage.
+
+    ; [''parse_lpjml_output'', '
+  remedy: 'Use JSON metafile for correct metadata, or specify dimensions explicitly; parse_lpjml_output;
+    [''Check output JSON metafile: cat output/mnpp.bin.json'', ''Verify datatype, ncell, nbands, nstep
+    from metafile'', ''Try reading as float32 with correct dimensions'']; Enable output_metafile=true
+    in config for a'
+  severity: silent
+- id: dt_015
+  symptom: Yield output is zero for all crops despite land use being active.
+  diagnosis: Reading wrong bands from PFT output — band order follows landusemap; PFT-specific outputs
+    like pft_harvestc have 32 bands (16 rainfed + 16 irrigated). The band order follows the landusemap
+    in the config file. If the wrong band index is extracted, it may correspond to a CFT with zero area
+    in that cel
+  remedy: Check landusemap in config for correct band ordering; parse_lpjml_output; ['Band 0 = temperate
+    cereals (rainfed)', 'Band 1 = rice (rainfed)', 'Band 2 = maize (rainfed)', 'Bands 16-31 = irrigated
+    variants of above', 'Check cftfrac output to see which CFTs have area > 0']; Use CFT_NAMES mapping
+    in par
+  severity: silent
+- id: dt_016
+  symptom: Compilation fails with 'netcdf.h not found' or 'json-c/json.h not found'.
+  diagnosis: 'Missing development libraries for NetCDF, JSON-C, or UDUNITS; LPJmL requires libnetcdf-dev,
+    libjson-c-dev, and libudunits2-dev for compilation. Without these, the C compiler cannot find the
+    required header files.
+
+    ; [''build_system'']'
+  remedy: Install required development packages; None; ['sudo apt-get install libnetcdf-dev libudunits2-dev
+    libjson-c-dev', 'Run ./configure.sh again', 'Run make clean && make']; Check dependencies before build
+  severity: error
+- id: dt_017
+  symptom: Fertilizer has no effect on crop yields. Yields same with and without fertilizer.
+  diagnosis: 'Fertilizer input in kg N/ha instead of gN/m2 — values 10x too small; LPJmL expects fertilizer
+    application rates in gN/m2/yr. Common datasets provide values in kg N/ha/yr. Since 1 kg/ha = 0.1 g/m2,
+    using kg/ha values directly gives 10x less fertilizer than intended, reducing its effect.
+
+    ; [''fertilize'
+  remedy: 'Divide fertilizer values by 10 to convert kgN/ha to gN/m2; None; [''Expected range: 0-30 gN/m2
+    (= 0-300 kgN/ha)'', ''If max fert > 50 gN/m2, values may be in kgN/ha'']; Check units in input file
+    metadata'
+  severity: silent
+- id: dt_018
+  symptom: Spinup takes extremely long, soil carbon never equilibrates.
+  diagnosis: equilsoil=true with insufficient nequilsoil calls or wrong interval; The soil equilibration
+    procedure (equilsoil) analytically solves for equilibrium soil carbon. If nequilsoil (number of calls)
+    is too low or equisoil_interval is too short, the soil doesn't reach equilibrium and the spinup continues
+  remedy: 'Increase nequilsoil to 20+ and equisoil_interval to 60+ years; None; [''Check lpjparam.cjson:
+    nequilsoil (default 20), equisoil_interval (default 60)'', ''Monitor globalflux during spinup — soil
+    carbon should stabilize'', ''If still slow, increase nspinup from 4000 to 5000'']; Use default parameters
+    unles'
+  severity: silent

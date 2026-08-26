@@ -1,386 +1,448 @@
-# ============================================================================
-# Diagnostic Triplets -- CaMa-Flood v4.20 River Routing (HydroCraft KDT v5.0)
-# ============================================================================
-# Structured symptom-to-remedy lookup tables for the CaMa-Flood routing
-# workflow. Covers VIC-to-CaMa conversion, basin map preparation
-# (regionalization, inpmat, channel parameters), CaMa-Flood execution,
-# and output parsing.
-#
-# Triplet IDs: dt_cama_001 through dt_cama_011
-# Severity levels: fatal (model stops), silent (wrong results, no error),
-#                  degraded (model runs but accuracy suffers)
-# ============================================================================
+- id: dt_001
+  name: "Relative namelist paths trigger STOP 10"
+  severity: fatal
+  stage: s3_execution
+  failure_domain: configuration
+  symptom: "CaMa-Flood exits immediately with STOP 10 or a file-open failure before producing o_outflwYYYY.nc."
+  diagnosis: "The run namelist was built with relative paths for CDIMINFO, CNEXTXY, CGRAREA, CELEVTN, CNXTDST, CRIVLEN, CFLDHGT, CRIVWTH, CRIVHGT, CRIVMAN, CINPMAT, or CROFCDF. tools/run_cama.py warns on relative ../../ paths because the generated run script changes directory to RDIR before MAIN_cmf opens files."
+  remedy: "Regenerate the script with tools/configure_simulation.py or edit the generated gosh/run_{basin}_1d_nc.sh so every map, diminfo, inpmat, and runoff NetCDF path is absolute under KISSPATH_BINARIES/cmf_v420_pkg or the selected forcing directory."
+  detection: "python tools/run_cama.py --script /path/to/run_basin_1d_nc.sh --dry_run"
+  cross_references:
+    - "SKILL.md Critical Domain Knowledge 1"
+    - "tools/run_cama.py preflight_check"
+- id: dt_002
+  name: "CaMa binary missing or not executable"
+  severity: fatal
+  stage: s0_preflight
+  failure_domain: dependency
+  symptom: "preflight_check.py reports CaMa-Flood binary not found, not executable, loader failure, or binary startup failure."
+  diagnosis: "This KI is bound to the real Fortran executable at KISSPATH_BINARIES/cmf_v420_pkg/src/MAIN_cmf. SKILL.md forbids substituting a Python routing approximation, and preflight_check.py treats the binary and startup probe as critical."
+  remedy: "Restore or rebuild KISSPATH_BINARIES/cmf_v420_pkg/src/MAIN_cmf, make it executable with chmod +x, then rerun python preflight_check.py before any setup or calibration run."
+  detection: "python preflight_check.py"
+  cross_references:
+    - "SKILL.md Mandatory Execution Policy"
+    - "preflight_check.py check_binary_start"
+- id: dt_003
+  name: "Runoff variable not named Runoff"
+  severity: fatal
+  stage: s1_prepare_runoff
+  failure_domain: configuration
+  symptom: "MAIN_cmf cannot read the forcing variable or the run stops after opening CROFCDF, even though the NetCDF file exists."
+  diagnosis: "CaMa-Flood is configured with CVNROF = 'Runoff'. docs/format_spec.yaml and SKILL.md require the forcing variable to be capitalized exactly as Runoff, while generic source files often use runoff, rof, total_runoff, or Q."
+  remedy: "Create CaMa-ready yearly files with tools/prepare_runoff_input.py so the NetCDF contains variable Runoff with dimensions time, lat, lon, or rerun the generic converter with --netcdf_var set to the source variable and inspect the output."
+  detection: "python -c 'import xarray as xr; ds=xr.open_dataset(\"/path/to/basin_runoff_1d_YYYY.nc\"); print(list(ds.data_vars), ds.Runoff.dims if \"Runoff\" in ds else \"missing\")'"
+  cross_references:
+    - "SKILL.md Input Runoff Requirements"
+    - "tools/prepare_runoff_input.py _write_runoff_nc"
+- id: dt_004
+  name: "Runoff pre-converted to m3/s"
+  severity: silent
+  stage: s1_prepare_runoff
+  failure_domain: unit_conversion
+  symptom: "The run completes but o_outflwYYYY.nc contains implausibly huge discharge, commonly above 1000000 m3/s for a basin that should be far smaller."
+  diagnosis: "CaMa-Flood expects gridded runoff in mm/day and converts it internally to volumetric flow using catchment area from ctmare.bin. Feeding m3/s into Runoff applies the area conversion again and inflates discharge by orders of magnitude."
+  remedy: "Regenerate the forcing with tools/prepare_runoff_input.py and keep Runoff.units as mm/day. Do not convert VIC OUT_RUNOFF plus OUT_BASEFLOW to m3/s before CaMa. Recheck the maximum Runoff value before rerunning MAIN_cmf."
+  detection: "python tools/run_cama.py --script /path/to/run_basin_1d_nc.sh --timeout 3600"
+  cross_references:
+    - "SKILL.md CRITICAL Unit Mismatches"
+    - "tools/run_cama.py verify_outputs"
+- id: dt_005
+  name: "Generic runoff left in m/s"
+  severity: silent
+  stage: s1_prepare_runoff
+  failure_domain: unit_conversion
+  symptom: "The run completes but discharge is near zero and the input NetCDF Runoff maximum is below 0.01 while the source file is a flux rate."
+  diagnosis: "tools/prepare_runoff_input.py --source netcdf multiplies the selected variable by --scale_factor only. A source runoff rate in m/s must be converted to mm/day with 86400*1000 before CaMa reads it as Runoff."
+  remedy: "Rerun the generic converter with --scale_factor 86400000 for m/s input, verify Runoff.units is mm/day and values are in a plausible daily depth range, then rerun tools/configure_simulation.py only if the grid extent changed."
+  detection: "python -c 'import xarray as xr; ds=xr.open_dataset(\"/path/to/basin_runoff_1d_YYYY.nc\"); print(ds.Runoff.attrs, float(ds.Runoff.max()))'"
+  cross_references:
+    - "tools/prepare_runoff_input.py convert_netcdf"
+    - "dag.yaml inputs forcing lateral surface runoff"
+- id: dt_006
+  name: "Sub-daily depths not aggregated to daily"
+  severity: silent
+  stage: s1_prepare_runoff
+  failure_domain: unit_conversion
+  symptom: "The hydrograph volume is biased low or high by a fixed factor such as 24, while timing and spatial pattern still look reasonable."
+  diagnosis: "SKILL.md sets IFRQ_INP = 24 and requires daily Runoff in mm/day. The VIC path in tools/prepare_runoff_input.py assumes daily OUT_RUNOFF plus OUT_BASEFLOW rows for each date, while only the wflow path contains explicit sub-daily resampling logic."
+  remedy: "Aggregate sub-daily source runoff to daily depth before calling the VIC or generic converter, or use the wflow converter path when the wflow output has sub-daily time coordinates so the tool resamples with a daily sum."
+  detection: "python -c 'import xarray as xr; ds=xr.open_dataset(\"/path/to/source.nc\"); print(len(ds.time), ds.time[:3].values)'"
+  cross_references:
+    - "SKILL.md Input Runoff Requirements"
+    - "tools/prepare_runoff_input.py convert_wflow"
+- id: dt_007
+  name: "Latitude order mismatch"
+  severity: silent
+  stage: s2_configuration
+  failure_domain: grid_coupling
+  symptom: "CaMa-Flood runs to completion but outflw is near zero or spatially displaced despite nonzero Runoff in the input NetCDF."
+  diagnosis: "The input matrix generated by configure_simulation.py uses OLAT = 'NtoS'. If the Runoff NetCDF latitude coordinate is ascending south-to-north, generate_inpmat maps CaMa cells to the wrong source cells."
+  remedy: "Regenerate the forcing with tools/prepare_runoff_input.py, which writes descending latitudes, or regenerate inpmat with the correct OLAT for the actual source grid. Confirm the first lat value is larger than the last before running MAIN_cmf."
+  detection: "python -c 'import xarray as xr; ds=xr.open_dataset(\"/path/to/basin_runoff_1d_YYYY.nc\"); print(float(ds.lat.values[0]), float(ds.lat.values[-1]))'"
+  cross_references:
+    - "SKILL.md Latitude Order"
+    - "tools/prepare_runoff_input.py _write_runoff_nc"
+- id: dt_008
+  name: "Inpmat uses CaMa domain instead of source grid"
+  severity: silent
+  stage: s2_configuration
+  failure_domain: grid_coupling
+  symptom: "The model finishes but discharge is near zero over most river cells even though the runoff NetCDF has realistic nonzero daily values."
+  diagnosis: "generate_inpmat needs WESTIN, EASTIN, NORTHIN, and SOUTHIN from the source runoff grid, not from the buffered CaMa regional domain. configure_simulation.py separates read_grid_nc source extents from compute_domain map extents for this reason."
+  remedy: "Rerun tools/configure_simulation.py with --grid_nc pointing to the VIC basin_grid.nc, or pass --west --east --south --north as source grid cell-edge coordinates. Rebuild diminfo_{basin}_025deg.txt and inpmat_{basin}_025deg.bin."
+  detection: "sed -n '1,11p' KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min/diminfo_{basin}_025deg.txt"
+  cross_references:
+    - "SKILL.md Map Preparation Step 2"
+    - "tools/configure_simulation.py read_grid_nc"
+- id: dt_009
+  name: "Padded zero runoff grid"
+  severity: degraded
+  stage: s1_prepare_runoff
+  failure_domain: grid_coupling
+  symptom: "Total discharge is too low and many mapped runoff cells are exactly zero around the basin edge even during wet periods."
+  diagnosis: "The runoff conversion created a rectangular grid larger than the actual VIC or source model domain. If those padded zeros are included in the source grid described by diminfo and inpmat, CaMa receives zero lateral runoff for cells that should map to active source cells."
+  remedy: "Regenerate the Runoff NetCDF from actual source coordinates only. For VIC, use tools/prepare_runoff_input.py so coordinates come from the flux filenames. Then rebuild the input matrix against that exact grid."
+  detection: "python -c 'import xarray as xr, numpy as np; a=xr.open_dataset(\"/path/to/basin_runoff_1d_YYYY.nc\").Runoff; print(float((a==0).mean()))'"
+  cross_references:
+    - "tools/prepare_runoff_input.py convert_vic"
+    - "SKILL.md Data KI Adapters"
+- id: dt_010
+  name: "wflow routed Q used as lateral runoff"
+  severity: silent
+  stage: s1_prepare_runoff
+  failure_domain: unit_conversion
+  symptom: "Hydrographs are inflated or double-routed after using wflow output, while the NetCDF appears structurally valid."
+  diagnosis: "tools/prepare_runoff_input.py documents that wflow_sbm should supply lateral subsurface flow plus overland flow or total_runoff, not the already routed Q variable. Routed discharge is not a lateral runoff depth and should not be fed to CaMa as Runoff."
+  remedy: "Rerun the wflow conversion using total_runoff, or sum lateral subsurface and overland flow variables. Do not select routed Q as --netcdf_var for generic conversion unless it has first been converted back to a gridded lateral runoff depth, which is normally not appropriate."
+  detection: "python -c 'import xarray as xr; ds=xr.open_dataset(\"/path/to/wflow/output.nc\"); print(list(ds.data_vars))'"
+  cross_references:
+    - "tools/prepare_runoff_input.py convert_wflow"
+    - "SKILL.md Data KI Adapters"
+- id: dt_cama_012
+  name: "regional outclm.bin is a raw COPY of the global file (channel geometry collapses to floor)"
+  severity: fatal
+  stage: s2_configuration
+  failure_domain: data_shape
+  symptom: "The run completes, but rivhgt.bin is uniformly 1.0 m and/or rivwth.bin uniformly 2.0 m across the whole basin; flood extent is over-predicted and calibration needs an implausible PMANRIV (e.g. 0.30 vs the natural 0.03) to match observed discharge."
+  diagnosis: "calc_outclm correctly runs on the GLOBAL grid, but its output is a global-sized array (e.g. 1440x720). calc_rivwth reads outclm.bin from the REGIONAL directory with fixed-recl direct access sized nx*ny of the REGIONAL domain, so a raw copy hands it an arbitrary byte slice of the global file. Width and depth then fall back to their WMIN/HMIN floors. set_gwdlr later overwrites WIDTH from GWD-LR satellite data, which MASKS the symptom, but nothing repairs DEPTH - and rivhgt.bin is what the run consumes via CRIVHGT. Measured 2026-08-19: 40 of 43 regional maps on this server had depth pinned at the 1.0 m floor."
+  remedy: "CLIP the global array to the regional window using the two diminfo files, and write it in FORTRAN order: calc_rivwth declares rivout(nx,ny) with index = ix + iy*nx, while numpy's tofile() always writes C order - a C-order write puts correct values on the WRONG cells (verified: spearman(rivwth, uparea) fell to 0.008 and the basin outlet kept the 2.0 m floor width). tools/configure_simulation.py now does this via _clip_global_outclm()."
+  detection: "python3 -c \"import numpy as np;from scipy.stats import spearmanr;d='<map_dir>/';nx,ny=<nx>,<ny>;u=np.fromfile(d+'uparea.bin',dtype='float32').reshape((nx,ny),order='F');h=np.fromfile(d+'rivhgt.bin',dtype='float32').reshape((nx,ny),order='F');m=(u>0)&(h>0);print('depth max',h[m].max(),'rho',spearmanr(h[m],u[m]).statistic)\"  # depth max <= 1.0 or rho <= 0.3 means broken geometry"
+  cross_references:
+    - "dt_011 (calc_outclm must run from glb_15min)"
+    - "tools/configure_simulation.py _clip_global_outclm"
+    - "SKILL.md section 7 (PMANRIV calibration - re-check any PMANRIV calibrated on floor-value geometry)"
 
-triplets:
-
-  # --------------------------------------------------------------------------
-  # RUNTIME ERRORS
-  # --------------------------------------------------------------------------
-
-  - id: dt_cama_001
-    stage: "cama_run"
-    failure_domain: "path_resolution"
-    symptom:
-      description: "CaMa-Flood exits immediately with 'STOP 10' error"
-      error_pattern: "STOP 10"
-      detection_method: "log_match"
-    diagnosis:
-      root_cause: "The CaMa-Flood namelist uses relative paths (../../map/...) for map files that cannot be resolved from the run directory"
-      explanation: >
-        CaMa-Flood's Fortran namelist reader resolves file paths relative to the
-        current working directory at runtime. When the run script sets RDIR to an
-        output directory and does 'cd ${RDIR}', relative paths like
-        '../../map/bengbu_15min/nextxy.bin' may no longer resolve correctly,
-        depending on the depth of RDIR. The STOP 10 error is CaMa-Flood's generic
-        file-open failure code -- it is triggered when any map binary (nextxy.bin,
-        ctmare.bin, etc.) or the runoff input NetCDF cannot be opened. The
-        solution is to use absolute paths for ALL file references in the namelist.
-      affected_components:
-        - "gosh/run_{basin}_1d_nc.sh (namelist &NMAP, &NFORCE sections)"
-        - "CaMa-Flood MAIN_cmf (file open routines)"
-    remedy:
-      action: "Replace all relative paths in the CaMa namelist with absolute paths"
-      tool_to_run: ""
-      manual_steps:
-        - "Open the run script: gosh/run_{basin}_1d_nc.sh"
-        - "Replace every '../../map/' with 'KISSPATH_BINARIES/cmf_v420_pkg/map/'"
-        - "Replace every relative CROFCDF path with the full absolute path to the runoff NC file"
-        - "Ensure CDIMINFO also uses an absolute path"
-        - "Re-run the script"
-      prevention: "Always use absolute paths in CaMa-Flood namelists. The configure_simulation.py tool generates absolute paths by default."
-    severity: "fatal"
-    cross_references: []
-
-  # --------------------------------------------------------------------------
-  # SILENT DATA ERRORS (model runs, wrong results)
-  # --------------------------------------------------------------------------
-
-  - id: dt_cama_002
-    stage: "cama_map_inpmat"
-    failure_domain: "silent_error"
-    symptom:
-      description: "CaMa-Flood runs without error but outflw values are near-zero everywhere despite VIC producing reasonable runoff"
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "The inpmat generation script uses the CaMa domain extent instead of the VIC grid extent for WESTIN/EASTIN/NORTHIN/SOUTHIN parameters"
-      explanation: >
-        The generate_inpmat tool creates a mapping matrix from VIC grid cells to
-        CaMa-Flood river network cells. Its WESTIN/EASTIN/NORTHIN/SOUTHIN parameters
-        must describe the VIC runoff NetCDF grid extent, NOT the CaMa domain extent.
-        When the CaMa domain (which includes a buffer around the basin) is used
-        instead, the mapping matrix expects runoff data over a larger area than the
-        VIC grid actually covers. Most CaMa cells map to non-existent VIC cells
-        outside the basin, receiving zero flux.
-      affected_components:
-        - "s02-generate_inpmat.sh (WESTIN, EASTIN, NORTHIN, SOUTHIN parameters)"
-        - "map/{basin}_15min/inpmat_{basin}_025deg.bin"
-    remedy:
-      action: "Regenerate inpmat using the VIC grid extent from basin_grid.nc, not the CaMa domain extent"
-      tool_to_run: ""
-      manual_steps:
-        - "Read VIC grid extent from basin_grid.nc: python -c \"import xarray as xr; ds=xr.open_dataset('outputs/{basin}/vic_temp/grid/basin_grid.nc'); print(f'W={ds.lon.min().item()}, E={ds.lon.max().item()}, S={ds.lat.min().item()}, N={ds.lat.max().item()}')\""
-        - "Update s02-generate_inpmat.sh: set WESTIN/EASTIN/NORTHIN/SOUTHIN to VIC grid extent (cell edges, not centres)"
-        - "Re-run: cd map/{basin}_15min && ./src_param/s02-generate_inpmat.sh"
-        - "Verify: inpmat file size should correspond to VIC grid dimensions"
-      prevention: "Use configure_simulation.py which reads VIC grid extent automatically."
-    severity: "silent"
-    cross_references: ["dt_cama_007"]
-
-  - id: dt_cama_003
-    stage: "cama_map_channel_params"
-    failure_domain: "silent_error"
-    symptom:
-      description: "CaMa-Flood runs but river channel widths are unrealistically wide or narrow, causing wrong water depths and discharge timing"
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "calc_rivwth was run using the global diminfo file instead of the regional diminfo file"
-      explanation: >
-        The calc_rivwth tool reads the diminfo file to determine grid dimensions
-        (nrows, ncols) and allocates arrays accordingly. If the global diminfo
-        (1440x720 for glb_15min) is used instead of the regional diminfo,
-        calc_rivwth produces a rivwth.bin sized for the global grid that is
-        misinterpreted when loaded by the regional CaMa run. Channel widths
-        become wrong for every cell.
-      affected_components:
-        - "s01-channel_params.sh (DIMINFO variable)"
-        - "map/{basin}_15min/rivwth.bin, rivhgt.bin, rivwth_gwdlr.bin"
-    remedy:
-      action: "Re-run calc_rivwth with the regional diminfo file"
-      tool_to_run: ""
-      manual_steps:
-        - "cd map/{basin}_15min"
-        - "Verify regional diminfo exists: cat diminfo_{basin}_025deg.txt"
-        - "Run: ./src_param/calc_rivwth bin ./diminfo_{basin}_025deg.txt 0.1 0.50 0.00 1.0 2.50 0.60 0.00 5.0"
-        - "cp rivwth.bin rivwth_gwdlr.bin"
-        - "Verify rivwth.bin file size = nrows * ncols * 4 bytes"
-      prevention: "Always use the regional diminfo. configure_simulation.py handles this correctly."
-    severity: "silent"
-    cross_references: ["dt_cama_008"]
-
-  - id: dt_cama_004
-    stage: "cama_map_channel_params"
-    failure_domain: "dependency_mismatch"
-    symptom:
-      description: "calc_outclm crashes or produces zero-filled outclm.bin"
-      error_pattern: ""
-      detection_method: "exit_code"
-    diagnosis:
-      root_cause: "calc_outclm must run from glb_15min/ because it needs the full global river network, but was run from the regional directory"
-      explanation: >
-        calc_outclm computes annual mean discharge by accumulating global
-        climatological runoff through the river network. This requires the FULL
-        global river network topology (nextxy.bin from glb_15min/) and the global
-        inpmat. When run from the regional basin directory, it reads the regional
-        nextxy.bin (which has truncated flow paths) and produces incorrect
-        accumulation.
-      affected_components:
-        - "glb_15min/src_param/calc_outclm"
-        - "map/{basin}_15min/outclm.bin"
-    remedy:
-      action: "Run calc_outclm from glb_15min/, then copy outclm.bin to the regional directory"
-      tool_to_run: ""
-      manual_steps:
-        - "cd KISSPATH_BINARIES/cmf_v420_pkg/map/glb_15min"
-        - "Run: ./src_param/calc_outclm bin inpmat ./diminfo_test-1deg.txt KISSPATH_BINARIES/cmf_v420_pkg/map/data/ELSE_GPCC_coastmod_dayclm-1981-2010.one"
-        - "cp outclm.bin ../{basin}_15min/"
-        - "Then run calc_rivwth from the REGIONAL dir with REGIONAL diminfo"
-      prevention: "configure_simulation.py runs calc_outclm from glb_15min automatically."
-    severity: "fatal"
-    cross_references: ["dt_cama_003", "dt_cama_008"]
-
-  - id: dt_cama_005
-    stage: "cama_map_setup"
-    failure_domain: "silent_error"
-    symptom:
-      description: "CaMa-Flood produces discharge at completely wrong locations -- river network does not match the basin"
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "CaMa map files from a previous basin were reused instead of regenerating for the new basin"
-      explanation: >
-        Each basin requires its own set of CaMa-Flood map files because the
-        river network topology, catchment areas, and grid dimensions differ.
-        If the namelist points to a previous basin's map directory, CaMa-Flood
-        runs without error but routes through the wrong river network. Output
-        looks plausible but is physically meaningless.
-      affected_components:
-        - "gosh/run_{basin}_1d_nc.sh (all &NMAP paths)"
-        - "map/{basin}_15min/ (entire directory)"
-    remedy:
-      action: "Regenerate all CaMa map files for the new basin"
-      tool_to_run: "tools/configure_simulation.py"
-      manual_steps:
-        - "Create new map dir: mkdir map/{new_basin}_15min"
-        - "Run configure_simulation.py with correct basin bounds"
-        - "Update run script namelist to point to the new map directory"
-      prevention: "NEVER reuse map files between basins. Always run configure_simulation.py for each new basin."
-    severity: "silent"
-    cross_references: []
-
-  - id: dt_cama_006
-    stage: "cama_vic_conversion"
-    failure_domain: "silent_error"
-    symptom:
-      description: "CaMa receives runoff but many cells show zero flux -- NetCDF grid is padded with zeros around actual VIC data"
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "Runoff conversion script created a padded rectangular grid larger than the actual VIC domain"
-      explanation: >
-        When converting VIC output to CaMa-Flood NetCDF, the script must create
-        a grid that exactly matches the VIC extent. If it pads to the CaMa domain
-        bounds, cells outside the VIC basin contain zero runoff. The inpmat maps
-        these zero-filled cells to CaMa river cells, diluting total runoff by
-        30-70% depending on padding amount.
-      affected_components:
-        - "tools/prepare_runoff_input.py or vic_post/process_vic_for_cama.py"
-        - "outputs/{basin}/cama_input/{basin}_runoff_1d_YYYY.nc"
-    remedy:
-      action: "Regenerate NetCDF using only the actual VIC grid extent"
-      tool_to_run: "tools/prepare_runoff_input.py"
-      manual_steps:
-        - "Check NC grid: python -c \"import xarray as xr; print(xr.open_dataset('path/to/nc'))\""
-        - "Compare against VIC grid from basin_grid.nc"
-        - "Re-run prepare_runoff_input.py with correct --source vic"
-      prevention: "Use prepare_runoff_input.py which reads VIC file coordinates automatically."
-    severity: "degraded"
-    cross_references: ["dt_cama_002"]
-
-  - id: dt_cama_007
-    stage: "cama_run"
-    failure_domain: "silent_error"
-    symptom:
-      description: "CaMa-Flood runs to completion but outflw values are all near-zero despite non-zero runoff in input NetCDF"
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "The inpmat latitude ordering (OLAT) does not match the runoff NetCDF latitude ordering"
-      explanation: >
-        The inpmat maps each CaMa cell to VIC runoff grid cells. This depends on
-        the lat/lon ordering (NtoS vs StoN) of the runoff NetCDF. If OLAT was set
-        to 'NtoS' but the NC has ascending latitude (south-to-north), every CaMa
-        cell maps to the wrong VIC cell. When mismatched cells fall outside the
-        basin, the result is near-zero discharge everywhere.
-      affected_components:
-        - "map/{basin}_15min/inpmat_{basin}_025deg.bin"
-        - "s02-generate_inpmat.sh (OLAT parameter)"
-    remedy:
-      action: "Verify lat ordering in runoff NC matches OLAT, regenerate inpmat if mismatched"
-      tool_to_run: ""
-      manual_steps:
-        - "Check NC lat: python -c \"import xarray as xr; ds=xr.open_dataset('path/nc'); print(ds.lat.values[:3], ds.lat.values[-3:])\""
-        - "Descending (N-to-S) -> OLAT='NtoS'"
-        - "Ascending (S-to-N) -> OLAT='StoN'"
-        - "Regenerate inpmat with correct OLAT"
-      prevention: "prepare_runoff_input.py always outputs North-to-South. configure_simulation.py uses OLAT='NtoS' by default."
-    severity: "silent"
-    cross_references: ["dt_cama_002"]
-
-  - id: dt_cama_008
-    stage: "cama_map_channel_params"
-    failure_domain: "runtime"
-    symptom:
-      description: "setup_cama_basin.py completes but channel widths/depths are wrong -- the automated step 3 uses glb_diminfo for calc_rivwth"
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "Known bug in setup_cama_basin.py: passes glb_15min/diminfo to calc_rivwth instead of regional diminfo"
-      explanation: >
-        setup_cama_basin.py correctly runs calc_outclm from glb_15min/ but then
-        runs calc_rivwth using the same global diminfo (1440x720) instead of
-        the regional diminfo. This produces oversized rivwth.bin files that
-        are misinterpreted by the regional CaMa run.
-      affected_components:
-        - "skills/cama-flood-run/setup_cama_basin.py (step 3)"
-        - "map/{basin}_15min/rivwth.bin, rivhgt.bin, rivwth_gwdlr.bin"
-    remedy:
-      action: "After setup_cama_basin.py, manually re-run calc_rivwth with regional diminfo"
-      tool_to_run: ""
-      manual_steps:
-        - "cd map/{basin}_15min"
-        - "ls diminfo*.txt (find the regional diminfo)"
-        - "./src_param/calc_rivwth bin ./diminfo_{basin}_025deg.txt 0.1 0.50 0.00 1.0 2.50 0.60 0.00 5.0"
-        - "cp rivwth.bin rivwth_gwdlr.bin"
-        - "python3 -c \"import numpy as np; d=np.fromfile('rivwth.bin',dtype='float32'); d[:]=0.03; d.tofile('rivman.bin')\""
-      prevention: "Use configure_simulation.py (new KDT v5.0 tool) which handles this correctly. Verify rivwth.bin size = nrows*ncols*4."
-    severity: "degraded"
-    cross_references: ["dt_cama_003", "dt_cama_004"]
-
-  # --------------------------------------------------------------------------
-  # UNIT AND FORMAT ERRORS (new in KDT v5.0)
-  # --------------------------------------------------------------------------
-
-  - id: dt_cama_009
-    stage: "cama_vic_conversion"
-    failure_domain: "unit_mismatch"
-    symptom:
-      description: "CaMa-Flood produces discharge values that are orders of magnitude too high (e.g., millions of m3/s for a small basin)"
-      error_pattern: ""
-      detection_method: "value_comparison"
-    diagnosis:
-      root_cause: "Runoff input was pre-converted to m3/s before feeding to CaMa-Flood, but CaMa expects mm/day and converts internally"
-      explanation: >
-        CaMa-Flood reads gridded runoff in mm/day and converts it to volumetric
-        flux (m3/s) internally by multiplying by the catchment area (ctmare.bin)
-        and dividing by the time step. If the input is already in m3/s, the
-        catchment area multiplication effectively applies a second conversion,
-        inflating discharge by a factor proportional to the cell area
-        (typically ~1e8 for a 0.25-degree cell). This produces absurdly high
-        discharge values. The fix is to keep the input in mm/day.
-
-        Conversely, if VIC output is in mm/step and the step is sub-daily,
-        the values must be accumulated to mm/day before writing the NetCDF.
-      affected_components:
-        - "tools/prepare_runoff_input.py (unit handling)"
-        - "outputs/{basin}/cama_input/{basin}_runoff_1d_YYYY.nc"
-    remedy:
-      action: "Verify runoff input units are mm/day. Check the Runoff variable's 'units' attribute."
-      tool_to_run: "tools/prepare_runoff_input.py"
-      manual_steps:
-        - "python -c \"import xarray as xr; ds=xr.open_dataset('path/to/nc'); print(ds['Runoff'].attrs); print('max:', ds['Runoff'].max().values)\""
-        - "Expected: units='mm/day', max values typically 1-200 mm/day for most basins"
-        - "If values are > 1000, likely already in m3/s or mm/step -- re-convert"
-        - "If values are < 0.01, may be in m/s -- multiply by 86400*1000"
-      prevention: "prepare_runoff_input.py always outputs mm/day. Verify with a quick max-value check before running CaMa."
-    severity: "silent"
-    cross_references: []
-
-  - id: dt_cama_010
-    stage: "cama_map_inpmat"
-    failure_domain: "format_error"
-    symptom:
-      description: "CaMa-Flood crashes immediately with a Fortran read error when parsing diminfo file"
-      error_pattern: "At line .* of file"
-      detection_method: "log_match"
-    diagnosis:
-      root_cause: "The diminfo text file has incorrect formatting -- values not in expected column positions or wrong number of lines"
-      explanation: >
-        CaMa-Flood reads diminfo as a fixed-format Fortran text file. It expects
-        exactly 11 lines with specific content:
-          Line 1: nXX (CaMa grid columns, integer)
-          Line 2: nYY (CaMa grid rows, integer)
-          Line 3: floodplain layers (integer, typically 10)
-          Line 4: input nXX (VIC grid columns, integer)
-          Line 5: input nYY (VIC grid rows, integer)
-          Line 6: input num (interpolation parameter, integer)
-          Line 7: inpmat filename (string)
-          Line 8: west edge (float)
-          Line 9: east edge (float)
-          Line 10: north edge (float)
-          Line 11: south edge (float)
-
-        Common formatting issues: extra whitespace, wrong integer/float format,
-        missing lines, BOM characters from Windows editors, or values on wrong
-        lines (e.g., north and south swapped).
-      affected_components:
-        - "map/{basin}_15min/diminfo_{basin}_025deg.txt"
-        - "CaMa-Flood MAIN_cmf (diminfo reader)"
-    remedy:
-      action: "Inspect and fix the diminfo file format"
-      tool_to_run: ""
-      manual_steps:
-        - "cat -A map/{basin}_15min/diminfo_{basin}_025deg.txt  (shows hidden chars)"
-        - "Verify: exactly 11 lines, no BOM, no trailing whitespace"
-        - "Lines 1-6 must be integers (right-justified in the Fortran format)"
-        - "Lines 8-11 must be floats"
-        - "Line 10 is NORTH edge, Line 11 is SOUTH edge (not swapped)"
-        - "Regenerate with configure_simulation.py if in doubt"
-      prevention: "Use configure_simulation.py to generate diminfo. Never hand-edit."
-    severity: "fatal"
-    cross_references: []
-
-  - id: dt_cama_011
-    stage: "cama_map_setup"
-    failure_domain: "missing_data"
-    symptom:
-      description: "CaMa-Flood downscaling fails because the 1min/ high-resolution directory is missing in the regional map"
-      error_pattern: "1min/location.txt"
-      detection_method: "file_check"
-    diagnosis:
-      root_cause: "The regionalization script did not include the combine_hires step, so no high-resolution sub-grid data was generated"
-      explanation: >
-        CaMa-Flood downscaling (CaMa -> SFINCS coupling) requires 1min
-        resolution floodplain topography data stored in map/{basin}_15min/1min/.
-        This directory is generated during regionalization (Step 1) by the
-        combine_hires tool, which reads the global 1min data and extracts the
-        regional subset. If s01-regional_map.sh does not include the
-        combine_hires loop (for 1min, 30sec, 15sec, 3sec), the 1min/ directory
-        is never created. The CaMa routing itself works fine without it, but
-        downstream downscaling to SFINCS will fail.
-      affected_components:
-        - "map/{basin}_15min/1min/"
-        - "s01-regional_map.sh (combine_hires section)"
-        - "skills/cama-downscale/"
-    remedy:
-      action: "Re-run the combine_hires step from the regionalization script"
-      tool_to_run: ""
-      manual_steps:
-        - "cd map/{basin}_15min/src_region"
-        - "Ensure region_info.txt is correct"
-        - "Run: mkdir -p ../1min && ./combine_hires 1min"
-        - "Verify: ls ../1min/ should contain catmxy.bin, fldhgt.bin, etc."
-      prevention: "configure_simulation.py includes combine_hires in the regionalization step."
-    severity: "fatal"
-    cross_references: []
+- id: dt_011
+  name: "calc_outclm run outside glb_15min"
+  severity: fatal
+  stage: s2_configuration
+  failure_domain: dependency
+  symptom: "Channel-parameter setup fails, calc_outclm produces no outclm.bin, or outclm.bin is zero-filled before calc_rivwth."
+  diagnosis: "calc_outclm must run from KISSPATH_BINARIES/cmf_v420_pkg/map/glb_15min because it accumulates GPCC climatological runoff through the full global river network. Running it inside map/{basin}_15min truncates upstream pathways."
+  remedy: "Use tools/configure_simulation.py step3_channel_params, which runs ./src_param/calc_outclm from glb_15min using ELSE_GPCC_coastmod_dayclm-1981-2010.one, then CLIPS outclm.bin to the regional domain (NOT a raw copy - see dt_cama_012)."
+  detection: "test -s KISSPATH_BINARIES/cmf_v420_pkg/map/glb_15min/outclm.bin && echo outclm_present"
+  cross_references:
+    - "SKILL.md Critical Domain Knowledge 2"
+    - "tools/configure_simulation.py step3_channel_params"
+- id: dt_012
+  name: "calc_rivwth used global diminfo"
+  severity: silent
+  stage: s2_configuration
+  failure_domain: grid_coupling
+  symptom: "The simulation runs but river widths, bank heights, depths, or flood timing are physically wrong; rivwth.bin size does not match the regional grid."
+  diagnosis: "calc_rivwth reads diminfo to allocate its output arrays. If glb_15min diminfo is used instead of map/{basin}_15min/diminfo_{basin}_025deg.txt, the regional run later interprets a global-sized binary as a regional map."
+  remedy: "Rerun calc_rivwth from the regional map directory with the regional diminfo file, copy rivwth.bin to rivwth_gwdlr.bin, recreate rivman.bin if needed, and verify rivwth.bin size equals nXX*nYY*4 bytes."
+  detection: "python -c 'import os; p=\"KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min\"; lines=open(p+\"/diminfo_{basin}_025deg.txt\").read().splitlines(); print(os.path.getsize(p+\"/rivwth.bin\"), int(lines[0].split()[0])*int(lines[1].split()[0])*4)'"
+  cross_references:
+    - "SKILL.md Critical Domain Knowledge 3"
+    - "tools/configure_simulation.py step3_channel_params"
+- id: dt_013
+  name: "Regional map reused for a different basin"
+  severity: silent
+  stage: s2_configuration
+  failure_domain: configuration
+  symptom: "Outputs look plausible but discharge peaks at the wrong locations or the river network does not align with the requested basin."
+  diagnosis: "CaMa map files encode basin-specific nextxy, ctmare, elevtn, nxtdst, rivlen, fldhgt, rivwth_gwdlr, rivhgt, rivman, diminfo, and inpmat. Reusing map/{old_basin}_15min in a new run routes water through the wrong river network without necessarily crashing."
+  remedy: "Run tools/configure_simulation.py for the new basin name and source grid, let it create map/{new_basin}_15min, and ensure the generated script MAPDIR and all NMAP paths point to that directory."
+  detection: "grep -n 'MAPDIR\\|CNEXTXY\\|CINPMAT' KISSPATH_BINARIES/cmf_v420_pkg/gosh/run_{basin}_1d_nc.sh"
+  cross_references:
+    - "SKILL.md Map Preparation Three Mandatory Steps"
+    - "tools/configure_simulation.py step4_generate_run_script"
+- id: dt_014
+  name: "Malformed diminfo file"
+  severity: fatal
+  stage: s2_configuration
+  failure_domain: configuration
+  symptom: "MAIN_cmf or generate_inpmat stops with a Fortran read error while parsing diminfo_{basin}_025deg.txt."
+  diagnosis: "CaMa expects diminfo_{basin}_025deg.txt in the fixed 11-line structure produced by generate_inpmat. Hand edits, missing lines, swapped north and south edges, or hidden characters can make the Fortran reader fail or silently describe the wrong grid."
+  remedy: "Regenerate diminfo and inpmat with tools/configure_simulation.py instead of hand-editing. If auditing manually, verify 11 lines, integer grid sizes on lines 1-6, inpmat filename on line 7, and west, east, north, south source grid edges on lines 8-11."
+  detection: "python -c 'p=\"KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min/diminfo_{basin}_025deg.txt\"; lines=open(p, \"rb\").read().splitlines(); print(len(lines), lines[:2], lines[7:11])'"
+  cross_references:
+    - "SKILL.md Map Preparation Step 2"
+    - "tools/configure_simulation.py step2_generate_inpmat"
+- id: dt_015
+  name: "Missing regional high-resolution subgrid"
+  severity: fatal
+  stage: s2_configuration
+  failure_domain: dependency
+  symptom: "Downscaling or CaMa-to-SFINCS coupling fails with a missing 1min/location.txt or missing files under map/{basin}_15min/1min."
+  diagnosis: "CaMa routing can run on the 15-minute regional map, but downstream downscaling needs the high-resolution subgrid produced by the combine_hires loop in tools/configure_simulation.py step1_regionalize."
+  remedy: "Rerun the regionalization step without --skip_step1, or run combine_hires from map/{basin}_15min/src_region after confirming region_info.txt is correct. Verify map/{basin}_15min/1min contains the expected high-resolution files."
+  detection: "test -f KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min/1min/location.txt && echo highres_present"
+  cross_references:
+    - "tools/configure_simulation.py step1_regionalize"
+    - "SKILL.md Step 1 Regionalization"
+- id: dt_016
+  name: "Cold-start year used for scoring"
+  severity: silent
+  stage: s4_postprocess
+  failure_domain: initial_conditions
+  symptom: "Validation metrics are poor mainly in the first simulated year, then improve after storage has spun up."
+  diagnosis: "dag.yaml, docs/format_spec.yaml, and SKILL.md state that river and floodplain storage are prognostic states and empty initial storage makes first-year results unreliable. configure_simulation.py writes restart logic with nspinup, and calibration.yaml excludes 1968-1969 for the Jinghong case."
+  remedy: "Run one or two spin-up iterations with tools/configure_simulation.py --nspinup 2 or exclude the first simulated year from parse_cama_output.py and validation scoring. Confirm restartYYYY010100.nc files are present before scoring later years."
+  detection: "ls KISSPATH_BINARIES/cmf_v420_pkg/out/*/restart*.nc 2>/dev/null | head"
+  cross_references:
+    - "SKILL.md Spin-Up for Stable Initial Conditions"
+    - "docs/validation_convention.yaml"
+- id: dt_017
+  name: "Gauge snapped to wrong CaMa cell"
+  severity: silent
+  stage: s4_postprocess
+  failure_domain: validation
+  symptom: "Extracted point discharge has wrong magnitude or phase even though basin-wide spatial output looks reasonable."
+  diagnosis: "tools/parse_cama_output.py uses nearest latitude and longitude only and warns when the nearest grid cell is more than 30 km away. The calibration runner uses drainage-area matching for Jinghong because dag.yaml caveats note that gauge allocation to the correct unit-catchment is critical."
+  remedy: "For formal discharge validation, allocate the gauge to the CaMa cell whose upstream area best matches the published gauge drainage area within a local search window, or use tools/calib_run.py behavior as the reference for the Jinghong target."
+  detection: "python tools/parse_cama_output.py --output_dir /path/to/out --variable outflw --lat LAT --lon LON --start_year YYYY --end_year YYYY"
+  cross_references:
+    - "tools/parse_cama_output.py find_nearest_cell"
+    - "tools/calib_run.py nearest_area_cell"
+- id: dt_018
+  name: "PMANRIV changed only in namelist during calibration"
+  severity: silent
+  stage: s_calibration
+  failure_domain: configuration
+  symptom: "Changing PMANRIV in input_cmf.nam produces little or no change in main-channel discharge during calibration."
+  diagnosis: "calibration.yaml and tools/calib_run.py document that the v4.20 main-channel routing consumes D2RIVMAN read from rivman.bin, while PMANRIV is kept only for parity. Editing only the namelist does not inject river Manning into the binary map actually used by the solver."
+  remedy: "Inject river Manning by rewriting rivman.bin on valid cells, or run tools/calib_run.py with KDT_CALIB_PARAMS so the candidate map is built, rivman.bin is rewritten, and the read-back check verifies the applied value."
+  detection: "python tools/calib_run.py --workdir /tmp/cama_calib_probe --out /tmp/cama_metrics.json"
+  cross_references:
+    - "calibration.yaml parameters manning_river"
+    - "tools/calib_run.py build_candidate_map"
+- id: dt_019
+  name: "Calibration redirected away from Jinghong"
+  severity: fatal
+  stage: s_calibration
+  failure_domain: validation
+  symptom: "tools/calib_run.py exits with a message refusing KDT_CAMA_OBS, KDT_CAMA_LAT, KDT_CAMA_LON, KDT_CAMA_AREA_KM2, KDT_CAMA_MAPDIR, or related environment overrides."
+  diagnosis: "The KI calibration case is hard-pinned to SITE:jinghong, station 90243100, with fixed map, forcing, observation path, gauge coordinates, and drainage area. Redirecting those environment variables would score a different model case while declaring the Jinghong case."
+  remedy: "Unset the forbidden KDT_CAMA_* environment variables and pass only KDT_CALIB_PARAMS plus optional KDT_CALIB_SPLIT. To calibrate a different site, create a new pinned case instead of overriding this runner."
+  detection: "env | grep '^KDT_CAMA_'"
+  cross_references:
+    - "tools/calib_run.py _FORBIDDEN_ENV"
+    - "calibration.yaml runner"
+- id: dt_020
+  name: "Wrong output variable selected for validation"
+  severity: silent
+  stage: s4_postprocess
+  failure_domain: validation
+  symptom: "Discharge validation fails or compares against missing data because rivout, rivdph, flddph, or sfcelv was used where observed streamflow Q is expected."
+  diagnosis: "docs/format_spec.yaml ranks outflw as the primary discharge validation variable in m3/s. rivout is only the in-channel component, rivdph and flddph are depths in m, and sfcelv is water-surface elevation with datum caveats."
+  remedy: "Use tools/parse_cama_output.py --variable outflw for streamflow gauges and compare with observed Q in m3/s. Use sfcelv only for stage or altimetry validation and account for the DEM datum caveat in docs/validation_convention.yaml."
+  detection: "python tools/parse_cama_output.py --output_dir /path/to/out --variable outflw --lat LAT --lon LON --start_year YYYY --end_year YYYY --obs_csv /path/to/obs.csv"
+  cross_references:
+    - "docs/format_spec.yaml outputs primary outflw"
+    - "docs/validation_convention.yaml"
+- id: dt_021
+  name: "DROFUNIT inconsistent with Runoff units"
+  severity: silent
+  stage: s_calibration
+  failure_domain: unit_conversion
+  symptom: "Calibration candidates run to completion but runoff_scale changes produce discharge shifts of about 86400000x or almost no hydrologic response."
+  diagnosis: "tools/calib_run.py injects runoff scaling through the Fortran namelist field DROFUNIT, using DROFUNIT_BASE = 86400.0 * 1000.0 because the CaMa forcing reader converts Runoff from mm/day to m3/m2/s by dividing by DROFUNIT. Manually setting DROFUNIT to 1.0 for CaMa-ready Runoff in mm/day bypasses that unit conversion."
+  remedy: "Let tools/calib_run.py write the calibration run script from KDT_CALIB_PARAMS, or set DROFUNIT to 86400000 divided by the intended runoff_scale when Runoff.units is mm/day. Inspect the generated input_cmf.nam and confirm the written DROFUNIT before scoring."
+  detection: "grep -n 'DROFUNIT\\|CVNROF\\|CROFCDF' /path/to/workdir/out/input_cmf.nam"
+  cross_references:
+    - "tools/calib_run.py DROFUNIT_BASE"
+    - "dag.yaml lateral surface runoff forcing"
+- id: dt_cama_001
+  name: "Absolute paths required in CaMa namelist"
+  severity: fatal
+  stage: s3_execution
+  failure_domain: configuration
+  symptom: "CaMa-Flood exits immediately with STOP 10 or a file-open failure before producing o_outflwYYYY.nc."
+  diagnosis: "The generated run script changes into RDIR before MAIN_cmf opens the Fortran namelist, so relative map, diminfo, inpmat, or forcing paths are resolved from the output directory. SKILL.md lists CDIMINFO, CNEXTXY, CGRAREA, CELEVTN, CNXTDST, CRIVLEN, CFLDHGT, CRIVWTH, CRIVHGT, CRIVMAN, CINPMAT, and CROFCDF as absolute-path requirements, and tools/run_cama.py flags ../../ namelist paths as dt_cama_001."
+  remedy: "Regenerate the script with tools/configure_simulation.py, which writes absolute paths under KISSPATH_BINARIES/cmf_v420_pkg and the selected runoff directory, or edit gosh/run_{basin}_1d_nc.sh so every namelist file path is absolute before rerunning tools/run_cama.py."
+  detection: "python tools/run_cama.py --script KISSPATH_BINARIES/cmf_v420_pkg/gosh/run_{basin}_1d_nc.sh --dry_run"
+  cross_references:
+    - "SKILL.md Critical Domain Knowledge 1"
+    - "tools/run_cama.py preflight_check"
+- id: dt_cama_002
+  name: "Input matrix built from CaMa domain"
+  severity: silent
+  stage: s2_configuration
+  failure_domain: grid_coupling
+  symptom: "CaMa-Flood runs without error but outflw is near zero over most cells despite realistic nonzero Runoff in the yearly NetCDF input."
+  diagnosis: "generate_inpmat needs WESTIN, EASTIN, NORTHIN, and SOUTHIN from the source runoff grid, not from the buffered CaMa regional map domain. tools/configure_simulation.py intentionally separates read_grid_nc source-grid extents from compute_domain map extents before calling step2_generate_inpmat."
+  remedy: "Rerun tools/configure_simulation.py with --grid_nc pointing to the source basin_grid.nc, or pass --west --east --south --north as source grid cell-edge coordinates. Rebuild diminfo_{basin}_025deg.txt and inpmat_{basin}_025deg.bin, then rerun the CaMa script."
+  detection: "sed -n '1,11p' KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min/diminfo_{basin}_025deg.txt"
+  cross_references:
+    - "SKILL.md Critical Domain Knowledge 4"
+    - "tools/configure_simulation.py step2_generate_inpmat"
+- id: dt_cama_003
+  name: "calc_rivwth used nonregional diminfo"
+  severity: silent
+  stage: s2_configuration
+  failure_domain: grid_coupling
+  symptom: "CaMa-Flood completes, but river channel widths or bank heights are physically wrong and flood timing or water depth is implausible."
+  diagnosis: "calc_rivwth allocates binary output from the diminfo file it is given. If it is run with glb_15min diminfo instead of map/{basin}_15min/diminfo_{basin}_025deg.txt, the regional run can later interpret a global-sized or wrong-shaped rivwth.bin and rivhgt.bin as regional channel geometry."
+  remedy: "Run calc_rivwth from the regional map directory with the regional diminfo file, copy rivwth.bin to rivwth_gwdlr.bin, recreate rivman.bin, and verify the binary size equals nXX*nYY*4 bytes for the regional grid."
+  detection: "python -c 'import os; p=\"KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min\"; lines=open(p+\"/diminfo_{basin}_025deg.txt\").read().splitlines(); print(os.path.getsize(p+\"/rivwth.bin\"), int(lines[0].split()[0])*int(lines[1].split()[0])*4)'"
+  cross_references:
+    - "SKILL.md Critical Domain Knowledge 3"
+    - "tools/configure_simulation.py step3_channel_params"
+- id: dt_cama_004
+  name: "calc_outclm run outside global map"
+  severity: fatal
+  stage: s2_configuration
+  failure_domain: dependency
+  symptom: "Channel-parameter setup fails, calc_outclm produces no outclm.bin, or the copied outclm.bin is zero-filled."
+  diagnosis: "calc_outclm must run from KISSPATH_BINARIES/cmf_v420_pkg/map/glb_15min because it routes the GPCC climatological runoff through the full global river network. Running it from a regional map truncates upstream pathways and corrupts the climatological discharge used by calc_rivwth."
+  remedy: "Use tools/configure_simulation.py step3_channel_params so ./src_param/calc_outclm runs in glb_15min against ELSE_GPCC_coastmod_dayclm-1981-2010.one, then copies outclm.bin into the regional map before calc_rivwth."
+  detection: "test -s KISSPATH_BINARIES/cmf_v420_pkg/map/glb_15min/outclm.bin && echo outclm_present"
+  cross_references:
+    - "SKILL.md Critical Domain Knowledge 2"
+    - "tools/configure_simulation.py step3_channel_params"
+- id: dt_cama_005
+  name: "Regional map reused across basins"
+  severity: silent
+  stage: s2_configuration
+  failure_domain: configuration
+  symptom: "The simulation produces plausible-looking output, but discharge peaks at the wrong locations or the river network does not align with the requested basin."
+  diagnosis: "CaMa map directories contain basin-specific nextxy.bin, ctmare.bin, elevtn.bin, nxtdst.bin, rivlen.bin, fldhgt.bin, rivwth_gwdlr.bin, rivhgt.bin, rivman.bin, diminfo, and inpmat files. Pointing a new run script at map/{old_basin}_15min routes water through the old basin topology without necessarily crashing."
+  remedy: "Run tools/configure_simulation.py for the new basin name and source grid so it creates map/{new_basin}_15min, then confirm MAPDIR and all NMAP paths in gosh/run_{basin}_1d_nc.sh point to that new directory."
+  detection: "grep -n 'MAPDIR\\|CNEXTXY\\|CINPMAT' KISSPATH_BINARIES/cmf_v420_pkg/gosh/run_{basin}_1d_nc.sh"
+  cross_references:
+    - "SKILL.md Map Preparation Three Mandatory Steps"
+    - "tools/configure_simulation.py step4_generate_run_script"
+- id: dt_cama_006
+  name: "Runoff NetCDF padded with zeros"
+  severity: degraded
+  stage: s1_prepare_runoff
+  failure_domain: grid_coupling
+  symptom: "CaMa receives a structurally valid Runoff file, but many mapped cells have exactly zero lateral runoff and basin discharge is too low."
+  diagnosis: "The forcing grid was padded to a rectangle larger than the actual source model grid, so zero-valued cells around the source domain are included in diminfo and inpmat. tools/prepare_runoff_input.py convert_vic avoids this by deriving coordinates from the VIC flux filenames and writing only those lat/lon values."
+  remedy: "Regenerate the CaMa-ready Runoff NetCDF from actual source coordinates only, verify the zero-cell fraction, then rebuild the input matrix against that exact grid with tools/configure_simulation.py."
+  detection: "python -c 'import xarray as xr; a=xr.open_dataset(\"/path/to/{basin}_runoff_1d_YYYY.nc\").Runoff; print(float((a==0).mean()))'"
+  cross_references:
+    - "tools/prepare_runoff_input.py convert_vic"
+    - "SKILL.md Data KI Adapters"
+- id: dt_cama_007
+  name: "Runoff latitude order mismatch"
+  severity: silent
+  stage: s2_configuration
+  failure_domain: grid_coupling
+  symptom: "CaMa-Flood runs to completion but outflw is near zero or spatially displaced even though the input NetCDF contains nonzero Runoff."
+  diagnosis: "tools/configure_simulation.py writes OLAT = 'NtoS' for generate_inpmat, and SKILL.md requires runoff latitude to be North-to-South. If the NetCDF latitude coordinate is ascending south-to-north, the input matrix maps CaMa cells to the wrong source cells."
+  remedy: "Regenerate forcing with tools/prepare_runoff_input.py, which flips or writes descending latitudes, or rebuild inpmat with OLAT matching the actual source-grid order. Confirm the first latitude is greater than the last before execution."
+  detection: "python -c 'import xarray as xr; ds=xr.open_dataset(\"/path/to/{basin}_runoff_1d_YYYY.nc\"); print(float(ds.lat.values[0]), float(ds.lat.values[-1]))'"
+  cross_references:
+    - "SKILL.md Critical Domain Knowledge 5"
+    - "tools/prepare_runoff_input.py _write_runoff_nc"
+- id: dt_cama_008
+  name: "Automated channel-width step uses global diminfo"
+  severity: degraded
+  stage: s2_configuration
+  failure_domain: grid_coupling
+  symptom: "A setup run completes, but rivwth.bin size does not match the regional grid and resulting widths or depths are wrong."
+  diagnosis: "SKILL.md records a known setup_cama_basin.py failure mode where calc_rivwth is run with glb_15min diminfo after calc_outclm, rather than with the regional diminfo. The current KI tool avoids this in tools/configure_simulation.py step3_channel_params by checking map/{basin}_15min/diminfo_{basin}_025deg.txt before running calc_rivwth."
+  remedy: "Prefer tools/configure_simulation.py for Step 3. If an older setup script was used, manually rerun ./src_param/calc_rivwth from map/{basin}_15min with ./diminfo_{basin}_025deg.txt, copy rivwth.bin to rivwth_gwdlr.bin, and verify file sizes."
+  detection: "python -c 'import os; p=\"KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min\"; lines=open(p+\"/diminfo_{basin}_025deg.txt\").read().splitlines(); print(os.path.getsize(p+\"/rivwth.bin\"), int(lines[0].split()[0])*int(lines[1].split()[0])*4)'"
+  cross_references:
+    - "SKILL.md Error Handling"
+    - "tools/configure_simulation.py step3_channel_params"
+- id: dt_cama_009
+  name: "Runoff pre-converted from mm/day to m3/s"
+  severity: silent
+  stage: s1_prepare_runoff
+  failure_domain: unit_conversion
+  symptom: "CaMa-Flood completes but o_outflwYYYY.nc contains discharge that is orders of magnitude too high, such as millions of m3/s for a basin where that is physically impossible."
+  diagnosis: "CaMa-Flood expects gridded Runoff in mm/day and converts it internally to volumetric flow using ctmare.bin and the forcing-unit conversion. Pre-converting VIC OUT_RUNOFF plus OUT_BASEFLOW, wflow runoff, or generic runoff to m3/s applies the area conversion twice."
+  remedy: "Regenerate yearly forcing with tools/prepare_runoff_input.py and keep Runoff.units as mm/day. For generic NetCDF input, use --scale_factor only to convert the source values into mm/day, not m3/s, then rerun tools/run_cama.py."
+  detection: "python -c 'import xarray as xr; ds=xr.open_dataset(\"/path/to/{basin}_runoff_1d_YYYY.nc\"); print(ds.Runoff.attrs, float(ds.Runoff.max()))'"
+  cross_references:
+    - "SKILL.md CRITICAL Unit Mismatches"
+    - "tools/prepare_runoff_input.py"
+- id: dt_cama_010
+  name: "Diminfo file malformed"
+  severity: fatal
+  stage: s2_configuration
+  failure_domain: configuration
+  symptom: "MAIN_cmf or generate_inpmat stops with a Fortran read error while parsing diminfo_{basin}_025deg.txt."
+  diagnosis: "CaMa expects the fixed 11-line diminfo structure produced by generate_inpmat. Hand edits, missing lines, hidden characters, or swapped north and south source-grid edges can make the Fortran reader fail or silently describe the wrong grid."
+  remedy: "Regenerate diminfo and inpmat with tools/configure_simulation.py. If auditing manually, verify 11 lines, integer grid sizes on lines 1-6, the inpmat filename on line 7, and west, east, north, and south source-grid edges on lines 8-11."
+  detection: "python -c 'p=\"KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min/diminfo_{basin}_025deg.txt\"; lines=open(p, \"rb\").read().splitlines(); print(len(lines), lines[:2], lines[7:11])'"
+  cross_references:
+    - "SKILL.md Error Handling"
+    - "tools/configure_simulation.py step2_generate_inpmat"
+- id: dt_cama_011
+  name: "Regional high-resolution subgrid missing"
+  severity: fatal
+  stage: s2_configuration
+  failure_domain: dependency
+  symptom: "Downscaling or CaMa-to-SFINCS coupling fails because map/{basin}_15min/1min/location.txt or other 1min files are missing."
+  diagnosis: "The 15-minute CaMa routing files can exist without the high-resolution subgrid, but downstream downscaling needs the 1min data produced by the combine_hires loop in tools/configure_simulation.py step1_regionalize."
+  remedy: "Rerun regionalization without --skip_step1, or run combine_hires from map/{basin}_15min/src_region after confirming region_info.txt is correct. Verify map/{basin}_15min/1min/location.txt exists before invoking downscaling or SFINCS coupling."
+  detection: "test -f KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min/1min/location.txt && echo highres_present"
+  cross_references:
+    - "SKILL.md Error Handling"
+    - "tools/configure_simulation.py step1_regionalize"
+- id: dt_cama_013
+  name: "Channel geometry arrays do not match regional diminfo"
+  severity: degraded
+  stage: s2_configuration
+  failure_domain: grid_coupling
+  symptom: "Stage 2 creates channel-geometry files, but rivwth.bin, rivwth_gwdlr.bin, or rivhgt.bin has a byte size inconsistent with diminfo_{basin}_025deg.txt, leading to implausible flood timing, water depth, or discharge attenuation."
+  diagnosis: "tools/configure_simulation.py step3_channel_params must run ./src_param/calc_rivwth from map/{basin}_15min with the regional diminfo file after CLIPPING outclm.bin from glb_15min to the regional window (never copying it - dt_cama_012). If a global or stale diminfo is used, the Fortran setup tool writes arrays for the wrong grid shape while the generated run script later reads them as regional NMAP inputs."
+  remedy: "Regenerate Stage 2 with tools/configure_simulation.py, or manually rerun ./src_param/calc_rivwth from the regional map directory using ./diminfo_{basin}_025deg.txt (with a CLIPPED regional outclm.bin, dt_cama_012), then copy rivwth.bin to rivwth_gwdlr.bin and verify each single-layer float32 geometry file is nXX*nYY*4 bytes."
+  detection: "python -c 'import os; p=\"KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min\"; lines=open(p+\"/diminfo_{basin}_025deg.txt\").read().splitlines(); nx=int(lines[0].split()[0]); ny=int(lines[1].split()[0]); print(os.path.getsize(p+\"/rivwth.bin\"), os.path.getsize(p+\"/rivhgt.bin\"), nx*ny*4)'"
+  cross_references:
+    - "docs/s2_configure_basin.md"
+    - "tools/configure_simulation.py step3_channel_params"
+- id: dt_cama_014
+  name: "xarray's default NetCDF engine cannot open ANY NetCDF4 file in python_env"
+  severity: fatal
+  stage: s1_prepare_runoff
+  failure_domain: dependency
+  symptom: "A KI tool that reads NetCDF (tools/prepare_runoff_input.py --source netcdf/wflow, tools/parse_cama_output.py, tools/configure_simulation.py --grid_nc) dies with OSError: [Errno -101] NetCDF: HDF error: '<path>' -- on a file that ncdump reads fine, including CaMa's own shipped forcing and CaMa's own o_*.nc output."
+  diagnosis: "In KISSPATH_PYTHON_ENV (netCDF4 1.7.4 / HDF5 1.14.6 / libnetcdf 4.9.3 / xarray 2025.11.0) xarray's DEFAULT 'netcdf4' backend fails to open every NETCDF4/HDF5 file, while netCDF4.Dataset(path) opens the same file successfully and engine='h5netcdf' works. The file is NOT corrupt and this is NOT an HDF5 file-locking problem (HDF5_USE_FILE_LOCKING=FALSE does not help) -- it is the xarray netcdf4 backend. Before 2026-08-20 preflight_check.py only ran `import xarray`, so it reported all-green while stages 1 and 4 were unrunnable."
+  remedy: "Open NetCDF through the tools' open_nc() helper, which tries the default engine then falls back to h5netcdf, netcdf4 and scipy in turn (tools/parse_cama_output.py open_nc, tools/prepare_runoff_input.py open_nc). Any NEW code in this KI must use it too. preflight_check.py check_netcdf_read now OPENS a probe file and prints which engines work, so a recurrence fails at stage 0."
+  detection: "KISSPATH_PYTHON_ENV/bin/python -c \"import xarray as xr; p='KISSPATH_BINARIES/cmf_v420_pkg/inp/test_15min_nc/e2o_ecmwf_wrr2_glob15_day_Runoff_2000.nc'; [print(e, (lambda: (xr.open_dataset(p, engine=e).close(), 'OK'))() if True else '') for e in (None,'h5netcdf')]\""
+  cross_references:
+    - "preflight_check.py check_netcdf_read"
+    - "tools/parse_cama_output.py open_nc"
+    - "tools/prepare_runoff_input.py open_nc"
+- id: dt_cama_015
+  name: "Flood-extent CSI destroyed by permanent water and by skipping downscaling"
+  severity: silent
+  stage: s4_postprocess
+  failure_domain: grid_coupling
+  symptom: "CSI against a satellite flood-extent product (GFD v1.4, gfd_v1_4_global) is implausibly low (< 0.1) with a huge false-alarm count concentrated along river channels and lakes, or POD is near 1.0 with FAR near 1.0."
+  diagnosis: "Two independent causes. (1) PERMANENT WATER: GFD's band 1 'flooded' EXCLUDES JRC permanent water, while etc/downscale_flddph/src/downscale_flddph_trib deliberately forces every pixel flagged in <res>.rivwth.bin up to flood(ix,iy)=max(0.1, flood) -- so the entire river network and every lake scores as a false alarm. (2) RESOLUTION: docs/validation_convention.yaml (fldfrc / spatial_snapshot) states fldfrc is a SUB-GRID fraction that must be downscaled to the native high-resolution grid BEFORE wet/dry thresholding; comparing the raw 15-min fraction against a 250 m mask compares two different quantities."
+  remedy: "Downscale first with tools/downscale/run_downscale.sh (needs --output_format binary), then threshold the downscaled depth STRICTLY ABOVE 0.1 m, and drop pixels/cells that GFD marks as permanent water (tools/gfd_flood_obs.py excludes them by default). Also drop cells whose GFD valid-pixel fraction is low -- GFD is NaN outside the observed event footprint and MODIS cannot see through cloud (bands clear_views / clear_perc). Reduce the model over the SAME window with max, because GFD band 1 is a composite maximum extent, not a single day."
+  detection: "KISSPATH_PYTHON_ENV/bin/python KISSPATH_KI_ROOT/CaMa_Flood/knowledge_infrastructure/tools/gfd_flood_obs.py --event_id {id} --west W --east E --south S --north N --resolution 0.0166666666666667 --out_nc /tmp/gfd.nc"
+  cross_references:
+    - "docs/validation_convention.yaml fldfrc spatial_snapshot"
+    - "tools/gfd_flood_obs.py"
+    - "tools/downscale/run_downscale.sh"
+- id: dt_cama_016
+  name: "tools/downscale/*.sh were macOS symlinks with a dead workspace root"
+  severity: fatal
+  stage: s4_postprocess
+  failure_domain: configuration
+  symptom: "Downscaling silently does nothing, or exits with 'Map目录不存在' / 'no such file or directory' naming a /Volumes/... path that does not exist on this Linux server."
+  diagnosis: "tools/downscale/{main_downscale.sh,run_downscale.sh,visualize_flddph.sh} were symlinks into KISSPATH_ROOT/Hydrocraft/skills/cama-downscale/, whose scripts hard-code BASE=/Volumes/Expansion2t/hydro-model-workspace (a macOS laptop) and an output-directory pattern out/{basin}_{year}_bin that tools/configure_simulation.py never produces (it writes out/{basin}_{start}_{end}_cama). run_cama.py already treats a /Volumes/ path in a run script as a fatal legacy bug for exactly this reason."
+  remedy: "Use tools/downscale/run_downscale.sh, which is now a REAL file in this KI taking explicit --map_dir/--out_dir/--syear/--smon/--eyear/--emon [--res --west --east --south --north --dest --jobs] and wrapping the official etc/downscale_flddph/src/downscale_flddph_trib. main_downscale.sh and visualize_flddph.sh are still the macOS symlinks -- do not invoke them."
+  detection: "ls -l KISSPATH_KI_ROOT/CaMa_Flood/knowledge_infrastructure/tools/downscale/ && grep -l '/Volumes/' KISSPATH_KI_ROOT/CaMa_Flood/knowledge_infrastructure/tools/downscale/* 2>/dev/null"
+  cross_references:
+    - "tools/downscale/run_downscale.sh"
+    - "tools/run_cama.py preflight_check"

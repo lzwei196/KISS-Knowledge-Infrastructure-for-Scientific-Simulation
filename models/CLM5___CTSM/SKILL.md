@@ -1,14 +1,3 @@
----
-name: clm5-ctsm
-description: >-
-  CLM5/CTSM (CTSM 5.4 framework; CLM4.5/CLM5.0/CLM6.0 selectable physics). Covers
-  Terrestrial biogeophysics: surface radiation, surface energy balance, canopy and ground
-  turbulent…; Soil and snow thermal dynamics (25 soil layers to ~8.5 m; up to 12 snow
-  layers); Soil and snow hydrology: infiltration, soil moisture, surface/subsurface
-  runoff, drainage. Use when the task involves running, configuring, calibrating or
-  interpreting CLM5___CTSM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,42 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (17 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_clm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_clm.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/make_site_dataset.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/make_site_dataset.py --help` |
+| `tools/parse_clm_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_clm_output.py --help` |
+| `tools/run_clm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_clm.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # CLM5 / CTSM Knowledge Infrastructure
 
@@ -285,6 +310,46 @@ followed by a normal-mode "exit spinup" run.
 
 ---
 
+## 6a. Output Description (sourced from `dag.yaml`)
+
+The dag is the authoritative source for what this KI predicts. If this section
+ever disagrees with `dag.yaml`, the dag wins and this body section must be
+updated.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `GPP` - Gross primary production (canopy photosynthetic carbon uptake) (`gC/m2/s`)
+
+| Output variable (dag `var`) | Validation rank | Unit | Description |
+|---|---:|---|---|
+| GPP | 1 | gC/m2/s | Gross primary production (canopy photosynthetic carbon uptake) |
+
+Other dag outputs are: `NPP`, `NEE`, `EFLX_LH_TOT`, `FSH`, `QRUNOFF`,
+`QDRAI`, `H2OSOI`, `TSOI`, `TOTSOMC`, `TOTVEGC`, `SNOW_DEPTH`, and `FSNO`.
+
+### Output Unit Table
+
+This table restates the KI's own output-unit body content for the dag outputs.
+The rank-1 row uses the dag's unit and description exactly.
+
+| Output variable | Unit | Notes |
+|---|---|---|
+| GPP | gC/m2/s | Gross primary production (canopy photosynthetic carbon uptake) |
+| NPP | gC/m2/s | Net Primary Production |
+| NEE | gC/m2/s | Net Ecosystem Exchange |
+| EFLX_LH_TOT | W/m2 | Total Latent Heat Flux |
+| FSH | W/m2 | Sensible Heat Flux |
+| QRUNOFF | mm/s | Total Runoff |
+| QDRAI | not restated in existing body | Listed by dag as an output |
+| H2OSOI | mm3/mm3 | Soil Moisture by Layer |
+| TSOI | K | Soil Temperature by Layer |
+| TOTSOMC | gC/m2 | Total Soil Organic Carbon |
+| TOTVEGC | gC/m2 | Total Vegetation Carbon |
+| SNOW_DEPTH | m | Snow Depth |
+| FSNO | fraction | Fraction of Ground Covered by Snow |
+
+---
+
 ## 7. Validation
 
 ### Test Configuration
@@ -328,6 +393,37 @@ followed by a normal-mode "exit spinup" run.
 2. Single-point simulations are most practical for initial validation
 3. Forcing data quality is the primary determinant of simulation quality
 4. Soil carbon equilibrium requires > 200 years of spinup in BGC mode
+
+---
+
+## 8a. Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`; this section is the
+reader-facing unit table for conversions described by this body and the stage
+recipe. Verify source attributes before running or scoring.
+
+| Variable | Source unit (verified/expected) | CLM5 required or scoring unit | Conversion |
+|---|---|---|---|
+| Precipitation | mm/day | kg/m2/s (= mm/s) | / 86400 |
+| Precipitation | mm/hr | kg/m2/s (= mm/s) | / 3600 |
+| FLUXNET precipitation | mm/step | kg/m2/s | convert by timestep length |
+| Temperature | deg C | K | + 273.15 |
+| Temperature | K | K | None; verify > 200 |
+| Specific humidity | kg/kg | kg/kg | None; verify 0-0.04 |
+| Relative humidity | % (0-100) | kg/kg for standard DATM; RH percent for CLM1PT stream fields | Convert via Tetens, except CLM1PT stream files use RH (%) per dt_018 |
+| VPD | source VPD field | RH percent for CLM1PT stream fields | Convert VPD to RH in percent |
+| Wind speed | m/s at 10m | m/s at reference height | Log-profile correction |
+| Shortwave radiation | W/m2 | W/m2 | None; verify >= 0 |
+| Longwave radiation | W/m2 downward | W/m2 downward | None; verify 50-600 |
+| Pressure | Pa | Pa | None; verify 50000-110000 |
+| CO2 concentration | ppmv | ppmv | None; verify 200-1000 |
+| Soil sand/clay | % (0-100) | % (0-100) | None; verify sum <= 100 |
+| Soil organic matter | g/kg | kg/m3 | * bulk_density / 1000 |
+| Soil depth | cm | m | / 100 |
+| Leaf area index | m2/m2 | m2/m2 | None; verify 0-15 |
+| Albedo | fraction (0-1) | fraction (0-1) | None |
+| Elevation | m | m | None |
+| FPSN for FLUXNET scoring | umol m-2 s-1 | GPP gC m-2 d-1 | * 1.03775 |
 
 ---
 
@@ -594,6 +690,34 @@ makes a long run resumable after any interruption.
 paired against `GPP_NT_VUT_REF` from `FULLSET_DD.csv` (already gC m-2 d-1).
 Discard the first 2 years as soil-moisture/temperature spin-up (SP mode needs no
 carbon spin-up, so dt_009 does not apply).
+
+---
+
+## 11a. Validated Results
+
+### Recorded validated recipe
+
+The body records an end-to-end single-point FLUXNET tower run executed
+2026-08-09 at FLUXNET2015 `US-MMS` (Morgan Monroe State Forest, 39.3232 N,
+86.4131 W, DBF, 1999-2014 hourly). The recipe uses KI tools for site datasets,
+FLUXNET meteorology conversion, CIME case configuration, one-year-at-a-time
+execution, and output parsing/scoring.
+
+### Performance Metrics - judged against `docs/validation_convention.yaml`
+
+The convention file is the authority for metric direction, pass bands, and
+citation keys. Do not replace null or missing bands with remembered thresholds.
+
+| Dag variable | Metric | Direction | Convention bar with citations |
+|---|---|---|---|
+| QRUNOFF | nse | maximize | satisfactory >= 0.5 (`moriasi2007`, `cheng2023`); good >= 0.65 (`moriasi2007`, `cheng2023`); very_good >= 0.75 (`moriasi2007`, `cheng2023`) |
+| QRUNOFF | pbias | zero_centered | satisfactory abs(PBIAS) <= 25 (`moriasi2007`); good abs(PBIAS) <= 15 (`moriasi2007`); very_good abs(PBIAS) <= 10 (`moriasi2007`) |
+| GPP | nse | maximize | satisfactory: no cited threshold; citation keys: none recorded |
+
+The convention repeats the same `QRUNOFF` NSE and PBIAS bars; treat the duplicate
+entries as the same bar, not as separate standards. No achieved metric value is
+recorded in the supplied convention facts here, so this section states the bar
+and the validated recipe rather than inventing a score.
 
 ---
 

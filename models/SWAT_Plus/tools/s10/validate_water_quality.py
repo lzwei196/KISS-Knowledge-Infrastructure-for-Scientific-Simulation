@@ -83,6 +83,13 @@ def parse_args():
         choices=["monthly", "annual"],
         help="Aggregation timestep for comparison (default: monthly)"
     )
+    parser.add_argument(
+        "--obs_is_daily_rate", action="store_true",
+        help="Each obs row is an INSTANTANEOUS or DAILY load (a grab sample), not a "
+             "period total. The period value is then mean(samples) x days-in-period "
+             "instead of a raw sum, which otherwise makes the observed load scale "
+             "with sampling effort. See aggregate_obs_data()."
+    )
     return parser.parse_args()
 
 
@@ -153,8 +160,27 @@ def aggregate_sim_data(records, timestep):
     return dict(agg)
 
 
-def aggregate_obs_data(records, timestep):
-    """Aggregate observed data. Handles both daily and pre-aggregated formats."""
+def aggregate_obs_data(records, timestep, obs_is_daily_rate=False):
+    """Aggregate observed data. Handles both daily and pre-aggregated formats.
+
+    ⚠️ SAMPLING-EFFORT TRAP (documented 2026-08-20).
+    The default behaviour is a RAW SUM of every observed value inside the period,
+    which is only correct when the obs rows are already period totals or a complete
+    daily series. Water-quality observations are almost never that: they are grab
+    samples, so a "monthly observed load" built this way is
+    ``n_samples x (instantaneous daily load)`` and therefore scales with SAMPLING
+    EFFORT, while the simulated side genuinely sums 28-31 daily values. The two
+    sides then sit on different time bases and the resulting PBIAS/NSE are not
+    interpretable. On the Rio San Pedro Mezquital (13 stations, ~10 grab samples a
+    month) this understated the observed monthly load by roughly 3x.
+
+    Pass ``obs_is_daily_rate=True`` (CLI: --obs_is_daily_rate) when each obs row is
+    an INSTANTANEOUS or DAILY load: the period value is then the MEAN of the samples
+    scaled by the number of days in the period, which is the standard grab-sample
+    averaging estimator.
+    """
+    import calendar as _cal
+
     agg = defaultdict(lambda: defaultdict(float))
     counts = defaultdict(lambda: defaultdict(int))
 
@@ -200,6 +226,28 @@ def aggregate_obs_data(records, timestep):
                     except (ValueError, TypeError):
                         pass
                     break
+
+    if obs_is_daily_rate:
+        for key in agg:
+            if len(key) == 2:
+                yr, mo = key
+                ndays = _cal.monthrange(yr, mo)[1]
+            else:
+                yr = key[0]
+                ndays = 366 if _cal.isleap(yr) else 365
+            for target in list(agg[key]):
+                n = counts[key][target]
+                if n > 0:
+                    agg[key][target] = agg[key][target] / n * ndays
+    else:
+        multi = sum(1 for k in counts for t in counts[k] if counts[k][t] > 1)
+        if multi:
+            logger.warning(
+                "%d period(s) contain MORE THAN ONE observation row and were "
+                "RAW-SUMMED. If those rows are grab samples (instantaneous or "
+                "daily loads) the aggregate scales with sampling effort, not with "
+                "the period, and the comparison against the summed simulated "
+                "period is meaningless. Re-run with --obs_is_daily_rate.", multi)
 
     return dict(agg)
 
@@ -271,7 +319,8 @@ def process(args):
     obs_records = read_csv_data(args.obs_csv)
 
     sim_agg = aggregate_sim_data(sim_records, args.timestep)
-    obs_agg = aggregate_obs_data(obs_records, args.timestep)
+    obs_agg = aggregate_obs_data(obs_records, args.timestep,
+                                 obs_is_daily_rate=args.obs_is_daily_rate)
 
     # Find common time keys
     common_keys = sorted(set(sim_agg.keys()) & set(obs_agg.keys()))
@@ -342,6 +391,10 @@ def process(args):
         "notes": [
             "PBIAS > 0 means model underestimates (obs > sim)",
             "PBIAS < 0 means model overestimates (sim > obs)",
+            "SIGN WARNING: this tool follows Moriasi et al. (2007), 100*sum(obs-sim)"
+            "/sum(obs). ki_tools_common.metrics.all_metrics uses the OPPOSITE sign "
+            "(there, PBIAS > 0 means the model OVER-predicts). Do not compare the "
+            "two PBIAS values without flipping one of them.",
             "For N: PBIAS < +/-25% is Satisfactory (Moriasi et al., 2007)",
             "For P: PBIAS < +/-40% is Satisfactory (higher tolerance)",
             "For sediment: PBIAS < +/-30% is Satisfactory",

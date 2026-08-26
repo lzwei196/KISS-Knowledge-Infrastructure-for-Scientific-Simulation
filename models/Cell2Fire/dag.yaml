@@ -327,7 +327,7 @@ outputs:
   - var: "burn probability"
     validation_rank: 2
     unit: "0.0-1.0"
-    description: "Fraction of Monte Carlo simulations in which each cell burned; derived by averaging final grids."
+    description: "Fraction of Monte Carlo simulations in which each landscape grid cell burned; derived by averaging final grids."
     emitted_in: "burn_probability.csv / .asc (post-processing of FinalGrid ensemble)"
     observability:
       comparable_obs_shapes:
@@ -612,3 +612,9 @@ safety:
       scope: "implementation vs reference-paper scope"
       source: "C2F-W source (FuelModelSpain/Kitral/Portugal, Spotting modules) and KI SKILL.md fire_behavior_models table"
       status: "tentative"
+
+medium_evidence:
+  - var: "burn probability"
+    source: "SKILL.md"
+    quote: "The landscape is a 2D grid of cells."
+    note: "Cell2Fire burn probability is a per-cell field on the landscape grid."

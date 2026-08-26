@@ -60,8 +60,16 @@ def validate_inputs():
     errors = []
     if FORCING_SOURCE not in ["cmfd", "mswx", "csv", "nasa_power"]:
         errors.append(f"Invalid forcing source: {FORCING_SOURCE}")
-    if not FORCING_DIR or not Path(FORCING_DIR).exists():
-        errors.append(f"Forcing directory not found: {FORCING_DIR}")
+    # nasa_power is an ONLINE point API — it has no forcing directory at all, and
+    # process() already passes forcing_dir=None for it. Demanding an existing dir
+    # here made `nasa_power` unusable from the CLI even though it is listed as a
+    # valid source (and is the curated primary point_api forcing for basins outside
+    # the CMFD/MSWX stores). Fixed 2026-08-20.
+    if FORCING_SOURCE != "nasa_power":
+        if not FORCING_DIR or not Path(FORCING_DIR).exists():
+            errors.append(f"Forcing directory not found: {FORCING_DIR}")
+    elif FORCING_DIR and FORCING_DIR not in ("-", "null", "none", "nasa_power"):
+        logger.info(f"source=nasa_power: ignoring FORCING_DIR argument '{FORCING_DIR}'")
     if not STATION_COORDS:
         errors.append("No station coordinates provided")
     if not START_DATE or not END_DATE:
@@ -154,7 +162,14 @@ def process():
                            f"— check the terrain lookup before trusting PET/snowmelt")
 
         fc = forcings[idx]
-        fdates = fc["dates"]
+        # The loaders do NOT agree on a date type: CMFD/MSWX return
+        # datetime.datetime, NASA POWER returns numpy.datetime64. The `.year` /
+        # `.timetuple()` below only work on the former, so source=nasa_power
+        # died with "'numpy.datetime64' object has no attribute 'year'" and had
+        # in fact never been exercised through this tool. Normalise once here
+        # instead of trusting the loader (fixed 2026-08-20).
+        import pandas as _pd
+        fdates = [_pd.Timestamp(d).to_pydatetime() for d in fc["dates"]]
         precip = np.asarray(fc["precip_mm"], dtype=float)
         tmax = np.asarray(fc["temp_max_c"], dtype=float)
         tmin = np.asarray(fc["temp_min_c"], dtype=float)

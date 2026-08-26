@@ -1,106 +1,137 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:58:41.029479'
-  domain: hydrology
   name: RHESSys
-  version: auto-generated
+  language: c
+  implementation:
+    id: rhessys-7.4
+    version: 7.4 (binary rhessys7.4)
+    provenance: C implementation of RHESSys 7.4 shipped from github.com/RHESSys/RHESSys; couples TOPMODEL-concept
+      hydrology with Biome-BGC ecophysiology.
+  scientific_reference_version: RHESSys 7.4 (Tague & Band 2004 Earth Interactions object-oriented C/water/N
+    cycling framework)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/RHESSys/source/repo/rhessys/rhessys7.4
+    type: work_dir
 pipeline:
-  stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  stages: []
+tools:
+  count: 7
+  files:
+  - tools/convert_forcing.py
+  - tools/convert_soil_params.py
+  - tools/gen_rain_duration.py
+  - tools/init_carbon_pools.py
+  - tools/parse_output.py
+  - tools/run_rhessys.py
+  - tools/split_kdown.py
+inputs:
+  forcing:
+  - name: rain (precipitation, rain+snow)
+    unit: m/day
+  - name: tmax (daily maximum temperature)
+    unit: degC
+  - name: tmin (daily minimum temperature)
+    unit: degC
+  - name: relative_humidity
+    unit: fraction (0-1)
+  - name: wind
+    unit: m/s
+  - name: Kdown_direct
+    unit: W/m^2 (direct-beam shortwave)
+  - name: Kdown_diffuse
+    unit: W/m^2 (diffuse shortwave)
+  - name: daytime_rain_duration
+    unit: hours (internally x3600 to seconds)
+  - name: CO2 / N deposition (NO3, NH4) / atmospheric transmissivity / cloud fraction
+    unit: varies (ppm; kgN/m^2; fraction)
+  parameters:
+  - name: Ksat_0 (surface saturated hydraulic conductivity)
+    unit: m/day
+  - name: m (transmissivity decay parameter)
+    unit: m
+  - name: porosity_0
+    unit: m^3/m^3
+  - name: porosity_decay
+    unit: 1/m
+  - name: pore_size_index (Brooks-Corey)
+    unit: dimensionless
+  - name: psi_air_entry (air-entry pressure)
+    unit: m head
+  - name: soil_depth
+    unit: m
+  - name: epc.max_lai
+    unit: m^2/m^2
+  - name: epc.proj_sla (specific leaf area)
+    unit: m^2/kgC
+  - name: epc.leaf_turnover
+    unit: 1/day
+  - name: epc.livewood_turnover
+    unit: 1/day
+  - name: epc.height_to_stem_coef
+    unit: m/(kgC/m^2)
+  - name: epc.allocation_flag
+    unit: integer 1-3
+  - name: epc.veg_type
+    unit: integer (1=tree,2=grass)
+  - name: sat_to_gw_coeff (gw1, saturation-to-groundwater fraction)
+    unit: fraction 0-0.5
+  - name: gw_loss_coeff (gw2, groundwater recession)
+    unit: fraction 0-0.5
+  - name: lapse_rate / atm_trans_lapse_rate / dewpoint_lapse_rate
+    unit: C/m (temperature); dimensionless
+  - name: impervious_fraction / irrigation / fertilizer_NO3 / fertilizer_NH4
+    unit: 0-1; m/day; kgN/m^2/yr
+  initial_conditions:
+  - name: sat_deficit / unsat_storage / rz_storage / detention_store
+    unit: m
+  - name: snowpack.water_equivalent_depth
+    unit: m
+  - name: initial soil/litter/canopy C and N pools (soil_cs.*, litter_cs.*, cs.leafc, cs.frootc, leafn,
+      frootn)
+    unit: kgC/m^2 or kgN/m^2
+  - name: cs.leafc_transfer / cs.leafc_store (leaf expansion budgets)
+    unit: kgC/m^2
+  boundary_conditions:
+  - name: worldfile (.world)
+    unit: n/a
+  - name: worldfile header (.hdr)
+    unit: n/a
+  - name: flow table (.flow)
+    unit: gamma fraction; edge length m
+  - name: TEC file (temporal event control)
+    unit: n/a
+  - name: base station file
+    unit: n/a
+  - name: run mode flags (-r explicit routing, -g C/N cycling, -gw groundwater, -b basin output, -p patch
+      output, -DLIU_NETCDF_READER compile-time NetCDF)
+    unit: n/a
+  - name: sensitivity multipliers (-s m_mult Ksat_mult, -sv vertical, -svalt pore_size/psi_air_entry)
+    unit: dimensionless scalars
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - streamflow
+  - evaporation
+  - transpiration (sat + unsat zone)
+  - snowpack.water_equivalent_depth
+  - lai (proj_lai / effective_lai)
+  - cs.net_psn (net photosynthesis / NPP proxy)
+  - streamflow_NO3 / streamflow_DON
+  - soil_cs.totalc / litter_cs.totalc
+  - sat_deficit / unsat_storage / rz_storage / theta (soil moisture)
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: NSE=0.766, KGE=0.754, R=0.881, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.7656
+    best_kge: 0.7542
+    best_r: 0.8812
+summary:
+  total_tools: 7
+  total_stage_docs: 0
+  total_diagnostic_triplets: 24
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

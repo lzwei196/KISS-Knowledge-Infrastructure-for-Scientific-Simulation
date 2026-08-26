@@ -1,237 +1,199 @@
+# ========================================================================
+# EPANET Diagnostic Triplets
+# ========================================================================
+# 18 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+
+# Comments preserved from the previous file:
 # EPANET 2.2 Diagnostic Triplets
 # symptom → diagnosis → remedy
 # Each entry targets a specific failure mode encountered in EPANET modeling
 
-triplets:
+- id: T01
+  symptom: 'Error 110: Cannot solve network hydraulic equations'
+  diagnosis: 'The network is either disconnected (isolated subnetworks), has no fixed-grade node (reservoir
+    or tank), or has zero-diameter pipes creating singularities in the hydraulic matrix.
 
-  - id: T01
-    symptom: "Error 110: Cannot solve network hydraulic equations"
-    diagnosis: >
-      The network is either disconnected (isolated subnetworks), has no
-      fixed-grade node (reservoir or tank), or has zero-diameter pipes
-      creating singularities in the hydraulic matrix.
-    remedy: >
-      1. Check network connectivity — every node must be reachable from at
-         least one reservoir or tank.
-      2. Ensure at least one reservoir or tank with known head exists.
-      3. Search for zero-diameter pipes and fix or remove them.
-      4. Try increasing TRIALS to 500 and setting UNBALANCED CONTINUE 50.
+    '
+  remedy: "1. Check network connectivity — every node must be reachable from at\n   least one reservoir\
+    \ or tank.\n2. Ensure at least one reservoir or tank with known head exists. 3. Search for zero-diameter\
+    \ pipes and fix or remove them. 4. Try increasing TRIALS to 500 and setting UNBALANCED CONTINUE 50.\n"
+- id: T02
+  symptom: Negative pressures at multiple junctions in DDA mode
+  diagnosis: 'Demand-Driven Analysis (DDA) forces full demand delivery regardless of available pressure.
+    When supply capacity is insufficient for the specified demands, the solver produces physically impossible
+    negative pressures.
 
-  - id: T02
-    symptom: "Negative pressures at multiple junctions in DDA mode"
-    diagnosis: >
-      Demand-Driven Analysis (DDA) forces full demand delivery regardless
-      of available pressure. When supply capacity is insufficient for the
-      specified demands, the solver produces physically impossible negative
-      pressures.
-    remedy: >
-      1. Switch to Pressure Driven Analysis (PDA) in [OPTIONS]:
-         DEMAND MODEL PDA
-         MINIMUM PRESSURE 0
-         REQUIRED PRESSURE 25
-      2. Or reduce demands to match system capacity.
-      3. Or increase supply (raise reservoir heads, add pumps, enlarge pipes).
+    '
+  remedy: "1. Switch to Pressure Driven Analysis (PDA) in [OPTIONS]:\n   DEMAND MODEL PDA\n   MINIMUM\
+    \ PRESSURE 0\n   REQUIRED PRESSURE 25\n2. Or reduce demands to match system capacity. 3. Or increase\
+    \ supply (raise reservoir heads, add pumps, enlarge pipes).\n"
+- id: T03
+  symptom: Pipe diameters appear unrealistically small — all pipes < 1 inch
+  diagnosis: 'Unit mismatch: pipe diameters were entered in millimeters but the model uses US Customary
+    units (expects inches). A 300 mm pipe becomes 300 inches if not converted, or a 12 mm pipe when 12
+    inches was intended.
 
-  - id: T03
-    symptom: "Pipe diameters appear unrealistically small — all pipes < 1 inch"
-    diagnosis: >
-      Unit mismatch: pipe diameters were entered in millimeters but the model
-      uses US Customary units (expects inches). A 300 mm pipe becomes 300 inches
-      if not converted, or a 12 mm pipe when 12 inches was intended.
-    remedy: >
-      1. Verify flow units in [OPTIONS] — CFS/GPM/MGD/IMGD/AFD require inches.
-      2. Convert: diameter_inches = diameter_mm / 25.4
-      3. Use convert_network_params.py --source-units SI --target-units US
+    '
+  remedy: '1. Verify flow units in [OPTIONS] — CFS/GPM/MGD/IMGD/AFD require inches. 2. Convert: diameter_inches
+    = diameter_mm / 25.4 3. Use convert_network_params.py --source-units SI --target-units US
 
-  - id: T04
-    symptom: "Pressures are 3.28× too high or too low across the entire network"
-    diagnosis: >
-      Elevation values were entered in the wrong length unit — feet instead of
-      meters or vice versa. Since head = elevation + pressure/γ, a systematic
-      elevation error shifts all pressures by the same factor.
-    remedy: >
-      1. Check flow units: LPS/LPM/MLD/CMH/CMD → elevations must be in meters.
-         CFS/GPM/MGD/IMGD/AFD → elevations must be in feet.
-      2. Convert: elevation_m = elevation_ft × 0.3048 (or ÷ 3.28084).
-      3. Update ALL elevations consistently (junctions, reservoirs, tanks).
+    '
+- id: T04
+  symptom: Pressures are 3.28× too high or too low across the entire network
+  diagnosis: 'Elevation values were entered in the wrong length unit — feet instead of meters or vice
+    versa. Since head = elevation + pressure/γ, a systematic elevation error shifts all pressures by the
+    same factor.
 
-  - id: T05
-    symptom: "Hazen-Williams headloss is unrealistically high or near zero"
-    diagnosis: >
-      Roughness coefficient was entered as Darcy-Weisbach roughness height
-      (e.g., 0.001-0.1 mm) instead of Hazen-Williams C-factor (e.g., 100-150),
-      or vice versa. These are completely different scales and meanings.
-    remedy: >
-      1. Verify [OPTIONS] Headloss matches roughness values:
-         H-W: C-factor 50-160 (higher = smoother). Typical: new PVC=150, old CI=100.
-         D-W: roughness height in mm (SI) or 10^-3 ft (US). Typical: 0.001-5 mm.
-         C-M: Manning's n 0.005-0.030.
-      2. A roughness of 100 with D-W → impossibly rough pipe.
-         A roughness of 0.01 with H-W → impossibly smooth pipe.
+    '
+  remedy: "1. Check flow units: LPS/LPM/MLD/CMH/CMD → elevations must be in meters.\n   CFS/GPM/MGD/IMGD/AFD\
+    \ → elevations must be in feet.\n2. Convert: elevation_m = elevation_ft × 0.3048 (or ÷ 3.28084). 3.\
+    \ Update ALL elevations consistently (junctions, reservoirs, tanks).\n"
+- id: T05
+  symptom: Hazen-Williams headloss is unrealistically high or near zero
+  diagnosis: 'Roughness coefficient was entered as Darcy-Weisbach roughness height (e.g., 0.001-0.1 mm)
+    instead of Hazen-Williams C-factor (e.g., 100-150), or vice versa. These are completely different
+    scales and meanings.
 
-  - id: T06
-    symptom: "Tank overflows or empties immediately at simulation start"
-    diagnosis: >
-      Tank initial level is set outside the min/max level range, or tank
-      diameter is in the wrong units (e.g., 70 mm instead of 70 ft),
-      making the tank volume effectively zero.
-    remedy: >
-      1. Verify: min_level < init_level < max_level.
-      2. Tank diameter uses feet (US) or meters (SI) — NOT inches or mm.
-      3. Check that bottom elevation + max_level gives a reasonable water
-         surface elevation relative to the rest of the network.
+    '
+  remedy: "1. Verify [OPTIONS] Headloss matches roughness values:\n   H-W: C-factor 50-160 (higher = smoother).\
+    \ Typical: new PVC=150, old CI=100.\n   D-W: roughness height in mm (SI) or 10^-3 ft (US). Typical:\
+    \ 0.001-5 mm.\n   C-M: Manning's n 0.005-0.030.\n2. A roughness of 100 with D-W → impossibly rough\
+    \ pipe.\n   A roughness of 0.01 with H-W → impossibly smooth pipe.\n"
+- id: T06
+  symptom: Tank overflows or empties immediately at simulation start
+  diagnosis: 'Tank initial level is set outside the min/max level range, or tank diameter is in the wrong
+    units (e.g., 70 mm instead of 70 ft), making the tank volume effectively zero.
 
-  - id: T07
-    symptom: "Pump cannot deliver flow — status shows XHEAD or XFLOW"
-    diagnosis: >
-      XHEAD means the pump cannot provide enough head to overcome the
-      system head requirement. XFLOW means flow exceeds the pump's
-      maximum rated flow. The pump curve may be incorrectly specified
-      or the system operating point is outside the pump's range.
-    remedy: >
-      1. Check pump curve: HEAD curve should show decreasing head with
-         increasing flow. At least one point is required.
-      2. Verify pump curve units match flow units in [OPTIONS].
-      3. If using POWER keyword, check that power is in HP (US) or kW (SI).
-      4. Consider adding more pumps in parallel or using a higher-capacity pump.
+    '
+  remedy: "1. Verify: min_level < init_level < max_level. 2. Tank diameter uses feet (US) or meters (SI)\
+    \ — NOT inches or mm. 3. Check that bottom elevation + max_level gives a reasonable water\n   surface\
+    \ elevation relative to the rest of the network.\n"
+- id: T07
+  symptom: Pump cannot deliver flow — status shows XHEAD or XFLOW
+  diagnosis: 'XHEAD means the pump cannot provide enough head to overcome the system head requirement.
+    XFLOW means flow exceeds the pump''s maximum rated flow. The pump curve may be incorrectly specified
+    or the system operating point is outside the pump''s range.
 
-  - id: T08
-    symptom: "Water quality (chlorine) remains at zero throughout simulation"
-    diagnosis: >
-      Either quality analysis is not enabled, initial quality is zero
-      everywhere, or no quality source is defined to inject chemical
-      into the network.
-    remedy: >
-      1. Enable quality: [OPTIONS] Quality Chlorine mg/L
-      2. Set initial quality: [QUALITY] section with values > 0 at source nodes.
-      3. Define source: [SOURCES] section with CONCEN, SETPOINT, or FLOWPACED type.
-      4. Ensure quality timestep is set in [TIMES] (default 5 min is usually fine).
+    '
+  remedy: "1. Check pump curve: HEAD curve should show decreasing head with\n   increasing flow. At least\
+    \ one point is required.\n2. Verify pump curve units match flow units in [OPTIONS]. 3. If using POWER\
+    \ keyword, check that power is in HP (US) or kW (SI). 4. Consider adding more pumps in parallel or\
+    \ using a higher-capacity pump.\n"
+- id: T08
+  symptom: Water quality (chlorine) remains at zero throughout simulation
+  diagnosis: 'Either quality analysis is not enabled, initial quality is zero everywhere, or no quality
+    source is defined to inject chemical into the network.
 
-  - id: T09
-    symptom: "Chlorine grows instead of decaying during simulation"
-    diagnosis: >
-      Bulk reaction coefficient has the wrong sign. In EPANET, negative
-      coefficients produce decay and positive coefficients produce growth.
-    remedy: >
-      1. For chlorine decay, use NEGATIVE bulk coefficient:
-         [REACTIONS] Global Bulk -0.5  (decays at 0.5/day)
-      2. Positive values are only for growth reactions (e.g., DBP formation).
-      3. Check wall reaction coefficient sign as well.
+    '
+  remedy: '1. Enable quality: [OPTIONS] Quality Chlorine mg/L 2. Set initial quality: [QUALITY] section
+    with values > 0 at source nodes. 3. Define source: [SOURCES] section with CONCEN, SETPOINT, or FLOWPACED
+    type. 4. Ensure quality timestep is set in [TIMES] (default 5 min is usually fine).
 
-  - id: T10
-    symptom: "Simulation runs but report file shows no node/link results"
-    diagnosis: >
-      The [REPORT] section does not specify which nodes and links to include.
-      By default, EPANET does not report any results unless explicitly told to.
-    remedy: >
-      1. Add to [REPORT] section:
-         Nodes All
-         Links All
-      2. Or specify individual node/link IDs:
-         Nodes J1 J2 J3
-         Links P1 P2 P3
-      3. Ensure REPORT Timestep is set in [TIMES] section.
+    '
+- id: T09
+  symptom: Chlorine grows instead of decaying during simulation
+  diagnosis: 'Bulk reaction coefficient has the wrong sign. In EPANET, negative coefficients produce decay
+    and positive coefficients produce growth.
 
-  - id: T11
-    symptom: "Pattern demand stays constant — pattern multipliers have no effect"
-    diagnosis: >
-      Pattern timestep mismatch. The pattern may have 4 multipliers for a
-      24-hour cycle, but Pattern Timestep is set to 1 hour (expecting 24
-      multipliers), so only the first multiplier is used. Or the pattern
-      ID referenced in [JUNCTIONS] doesn't exist in [PATTERNS].
-    remedy: >
-      1. Verify Pattern Timestep in [TIMES] = Duration / number_of_multipliers.
-         4 multipliers for 24h → Pattern Timestep 6:00
-         24 multipliers for 24h → Pattern Timestep 1:00
-      2. Verify pattern IDs match between [JUNCTIONS]/[DEMANDS] and [PATTERNS].
-      3. Check default pattern in [OPTIONS] Pattern keyword.
+    '
+  remedy: "1. For chlorine decay, use NEGATIVE bulk coefficient:\n   [REACTIONS] Global Bulk -0.5  (decays\
+    \ at 0.5/day)\n2. Positive values are only for growth reactions (e.g., DBP formation). 3. Check wall\
+    \ reaction coefficient sign as well.\n"
+- id: T10
+  symptom: Simulation runs but report file shows no node/link results
+  diagnosis: 'The [REPORT] section does not specify which nodes and links to include. By default, EPANET
+    does not report any results unless explicitly told to.
 
-  - id: T12
-    symptom: "Wall reaction rate is 3.28× too fast or slow"
-    diagnosis: >
-      First-order wall reaction coefficient units depend on the unit system:
-      ft/day for US Customary, m/day for SI Metric. Using the wrong unit
-      causes wall decay to be systematically off by the ft/m conversion factor.
-    remedy: >
-      1. US units (CFS/GPM/MGD): wall coefficient in ft/day.
-      2. SI units (LPS/LPM/MLD): wall coefficient in m/day.
-      3. Convert: coeff_m_per_day = coeff_ft_per_day × 0.3048.
+    '
+  remedy: "1. Add to [REPORT] section:\n   Nodes All\n   Links All\n2. Or specify individual node/link\
+    \ IDs:\n   Nodes J1 J2 J3\n   Links P1 P2 P3\n3. Ensure REPORT Timestep is set in [TIMES] section.\n"
+- id: T11
+  symptom: Pattern demand stays constant — pattern multipliers have no effect
+  diagnosis: 'Pattern timestep mismatch. The pattern may have 4 multipliers for a 24-hour cycle, but Pattern
+    Timestep is set to 1 hour (expecting 24 multipliers), so only the first multiplier is used. Or the
+    pattern ID referenced in [JUNCTIONS] doesn''t exist in [PATTERNS].
 
-  - id: T13
-    symptom: "Binary output file (.out) cannot be parsed — struct.error or garbled values"
-    diagnosis: >
-      The binary output file uses a specific format with 4-byte aligned
-      records. Common parsing errors include: wrong byte offset (skipping
-      prolog incorrectly), wrong endianness, or reading from a truncated file.
-    remedy: >
-      1. Verify file starts with magic number 516114521 (4-byte int).
-      2. Verify file ends with magic number 516114521 (last 4 bytes).
-      3. Use the parse_epanet_output.py tool which handles the format correctly.
-      4. Check prolog size: 852 + 20*Nnodes + 36*Nlinks + 8*Ntanks bytes.
-      5. If file is truncated, simulation may have crashed — check report file.
+    '
+  remedy: "1. Verify Pattern Timestep in [TIMES] = Duration / number_of_multipliers.\n   4 multipliers\
+    \ for 24h → Pattern Timestep 6:00\n   24 multipliers for 24h → Pattern Timestep 1:00\n2. Verify pattern\
+    \ IDs match between [JUNCTIONS]/[DEMANDS] and [PATTERNS]. 3. Check default pattern in [OPTIONS] Pattern\
+    \ keyword.\n"
+- id: T12
+  symptom: Wall reaction rate is 3.28× too fast or slow
+  diagnosis: 'First-order wall reaction coefficient units depend on the unit system: ft/day for US Customary,
+    m/day for SI Metric. Using the wrong unit causes wall decay to be systematically off by the ft/m conversion
+    factor.
 
-  - id: T14
-    symptom: "CONCEN source on internal junction has no visible effect on downstream quality"
-    diagnosis: >
-      CONCEN source type only sets the concentration of external inflow
-      entering a node. If the node has no external inflow (demand = 0 or
-      demand is withdrawal), the CONCEN source has no effect.
-    remedy: >
-      1. Use SETPOINT source type to force a concentration at the node:
-         [SOURCES] NodeID SETPOINT 2.0
-      2. Or use FLOWPACED to add to the passing concentration:
-         [SOURCES] NodeID FLOWPACED 0.5
-      3. CONCEN is appropriate for reservoirs and nodes with negative demand
-         (external inflow).
+    '
+  remedy: '1. US units (CFS/GPM/MGD): wall coefficient in ft/day. 2. SI units (LPS/LPM/MLD): wall coefficient
+    in m/day. 3. Convert: coeff_m_per_day = coeff_ft_per_day × 0.3048.
 
-  - id: T15
-    symptom: "Convergence oscillation — pump toggles open/closed every timestep"
-    diagnosis: >
-      Simple controls have no hysteresis, causing the pump to turn on when
-      tank drops below level X, which raises the level above X, which turns
-      the pump off, which drops the level below X again — oscillating every
-      timestep.
-    remedy: >
-      1. Add hysteresis to controls:
-         LINK PUMP1 OPEN  IF NODE TANK1 BELOW 5
-         LINK PUMP1 CLOSED IF NODE TANK1 ABOVE 20
-         (NOT: BELOW 5 and ABOVE 6 — too close)
-      2. Or use [RULES] with combined conditions.
-      3. Increase CHECKFREQ in [OPTIONS] to check less often.
-      4. Increase DAMPLIMIT to add solution damping.
+    '
+- id: T13
+  symptom: Binary output file (.out) cannot be parsed — struct.error or garbled values
+  diagnosis: 'The binary output file uses a specific format with 4-byte aligned records. Common parsing
+    errors include: wrong byte offset (skipping prolog incorrectly), wrong endianness, or reading from
+    a truncated file.
 
-  - id: T16
-    symptom: "Demand in LPS but model expects GPM — demands are 15.85× too large"
-    diagnosis: >
-      Flow unit mismatch between source data (SI, liters per second) and
-      EPANET model (US, gallons per minute). 1 LPS = 15.8503 GPM.
-    remedy: >
-      1. Convert demands: demand_GPM = demand_LPS × 15.8503
-      2. Or change [OPTIONS] Units to LPS (but then ALL units must be SI).
-      3. Use convert_demands_to_inp.py with --input-units SI --units GPM.
+    '
+  remedy: '1. Verify file starts with magic number 516114521 (4-byte int). 2. Verify file ends with magic
+    number 516114521 (last 4 bytes). 3. Use the parse_epanet_output.py tool which handles the format correctly.
+    4. Check prolog size: 852 + 20*Nnodes + 36*Nlinks + 8*Ntanks bytes. 5. If file is truncated, simulation
+    may have crashed — check report file.
 
-  - id: T17
-    symptom: "shared libraries error: libepanet2.so not found"
-    diagnosis: >
-      The runepanet executable dynamically links against libepanet2.so.
-      The shared library is in the build/src/solver/ directory but the
-      system linker doesn't know where to find it.
-    remedy: >
-      1. Set LD_LIBRARY_PATH:
-         export LD_LIBRARY_PATH=/path/to/build/src/solver:$LD_LIBRARY_PATH
-      2. Or copy libepanet2.so to a system library path (/usr/local/lib).
-      3. Or rebuild with -DBUILD_SHARED_LIBS=OFF for static linking.
+    '
+- id: T14
+  symptom: CONCEN source on internal junction has no visible effect on downstream quality
+  diagnosis: 'CONCEN source type only sets the concentration of external inflow entering a node. If the
+    node has no external inflow (demand = 0 or demand is withdrawal), the CONCEN source has no effect.
 
-  - id: T18
-    symptom: "Water age exceeds simulation duration at some nodes"
-    diagnosis: >
-      This is physically possible and not a bug. Water age is cumulative
-      and represents the time since water entered the network from a source.
-      Dead-end nodes or nodes far from sources can accumulate water older
-      than the current simulation period if initial water in the system
-      was already old.
-    remedy: >
-      1. This is expected behavior. Water age starts from 0 at reservoirs.
-      2. For existing systems, set initial water age in [QUALITY] section.
-      3. Run a longer warm-up period before the analysis period of interest.
-      4. Check for dead-end pipes with very low flow — these accumulate age.
+    '
+  remedy: "1. Use SETPOINT source type to force a concentration at the node:\n   [SOURCES] NodeID SETPOINT\
+    \ 2.0\n2. Or use FLOWPACED to add to the passing concentration:\n   [SOURCES] NodeID FLOWPACED 0.5\n\
+    3. CONCEN is appropriate for reservoirs and nodes with negative demand\n   (external inflow).\n"
+- id: T15
+  symptom: Convergence oscillation — pump toggles open/closed every timestep
+  diagnosis: 'Simple controls have no hysteresis, causing the pump to turn on when tank drops below level
+    X, which raises the level above X, which turns the pump off, which drops the level below X again —
+    oscillating every timestep.
+
+    '
+  remedy: "1. Add hysteresis to controls:\n   LINK PUMP1 OPEN  IF NODE TANK1 BELOW 5\n   LINK PUMP1 CLOSED\
+    \ IF NODE TANK1 ABOVE 20\n   (NOT: BELOW 5 and ABOVE 6 — too close)\n2. Or use [RULES] with combined\
+    \ conditions. 3. Increase CHECKFREQ in [OPTIONS] to check less often. 4. Increase DAMPLIMIT to add\
+    \ solution damping.\n"
+- id: T16
+  symptom: Demand in LPS but model expects GPM — demands are 15.85× too large
+  diagnosis: 'Flow unit mismatch between source data (SI, liters per second) and EPANET model (US, gallons
+    per minute). 1 LPS = 15.8503 GPM.
+
+    '
+  remedy: '1. Convert demands: demand_GPM = demand_LPS × 15.8503 2. Or change [OPTIONS] Units to LPS (but
+    then ALL units must be SI). 3. Use convert_demands_to_inp.py with --input-units SI --units GPM.
+
+    '
+- id: T17
+  symptom: 'shared libraries error: libepanet2.so not found'
+  diagnosis: 'The runepanet executable dynamically links against libepanet2.so. The shared library is
+    in the build/src/solver/ directory but the system linker doesn''t know where to find it.
+
+    '
+  remedy: "1. Set LD_LIBRARY_PATH:\n   export LD_LIBRARY_PATH=/path/to/build/src/solver:$LD_LIBRARY_PATH\n\
+    2. Or copy libepanet2.so to a system library path (/usr/local/lib). 3. Or rebuild with -DBUILD_SHARED_LIBS=OFF\
+    \ for static linking.\n"
+- id: T18
+  symptom: Water age exceeds simulation duration at some nodes
+  diagnosis: 'This is physically possible and not a bug. Water age is cumulative and represents the time
+    since water entered the network from a source. Dead-end nodes or nodes far from sources can accumulate
+    water older than the current simulation period if initial water in the system was already old.
+
+    '
+  remedy: '1. This is expected behavior. Water age starts from 0 at reservoirs. 2. For existing systems,
+    set initial water age in [QUALITY] section. 3. Run a longer warm-up period before the analysis period
+    of interest. 4. Check for dead-end pipes with very low flow — these accumulate age.
+
+    '

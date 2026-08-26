@@ -1,0 +1,251 @@
+schema_version: 1
+model_id: HydroTrend
+domain: hydrology
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  me2015:
+    doi: 10.5194/hess-19-4127-2015
+    title: "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity for a small, mixed land use watershed"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-4127-2015.txt
+  hydrotrend1998:
+    doi: 10.1016/s0098-3004(97)00083-6
+    title: "HydroTrend: A climate-driven hydrologic-transport model for predicting discharge and sediment load to lakes or oceans"
+    venue: "Computers & Geosciences"
+    year: 1998
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_s0098-3004(97)00083-6.txt
+  hydrotrend2008:
+    doi: 10.1016/j.cageo.2008.02.008
+    title: "HydroTrend v.3.0: A climate-driven hydrological transport model that simulates discharge and sediment load leaving a river system"
+    venue: "Computers & Geosciences"
+    year: 2008
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.cageo.2008.02.008.txt
+  syvitski2007_bqart:
+    doi: 10.1086/509246
+    title: "Geology, Geography, and Humans Battle for Dominance over the Delivery of Fluvial Sediment to the Coastal Ocean"
+    venue: "Journal of Geology"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1086_509246.txt
+  gleason2014:
+    doi: 10.1073/pnas.1317606111
+    title: "Toward global mapping of river discharge using satellite images and at-many-stations hydraulic geometry"
+    venue: "Proceedings of the National Academy of Sciences"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1073_pnas.1317606111.txt
+  singh2003:
+    doi: 10.1029/2003wr002484
+    title: "Downstream hydraulic geometry relations: 1. Theoretical development"
+    venue: "Water Resources Research"
+    year: 2003
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2003wr002484.txt
+
+validation:
+  - dag_variable: Q
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final watershed criteria: flow daily-monthly-annual NSE satisfactory above 0.50; Moriasi 2007 also used NSE > 0.50 as satisfactory."
+        cites: [moriasi2007, moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5, good: 10, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 tightened flow PBIAS to <= +/-15% for daily, monthly, or annual watershed-scale flow."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "HydroTrend 1998 reports Eel River discharge r2 = 0.61 for about 20 years using point rainfall, and r2 = 0.99 for the 1000-year modeled versus 80-year observed flood-frequency curve."
+        cites: [hydrotrend1998]
+    validated_when: "Daily outlet discharge is validated when NSE >= 0.50 and |PBIAS| <= 15% against an outlet gauge, with hydrographs/frequency curves inspected for event behavior."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      The dag determining metric, nse, is retained. Moriasi 2015 recommends NSE, R2, RMSE/RSR, PBIAS, and graphical measures; it states flow is satisfactory for daily, monthly, or annual R2 > 0.60, NSE > 0.50, and PBIAS <= +/-15%. HydroTrend 1998 says the Eel River "general trends of the discharge curve are well represented" and the discharge-frequency relation had r2 = 0.99.
+
+  - dag_variable: Q
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5, good: 10, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Use the Moriasi 2015 flow magnitude convention for daily-monthly-annual watershed-scale flow; apply to annual/decadal outlet means rather than exact stochastic daily realization."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "For multi-decadal or paleo uses, HydroTrend generates synthetic daily water and sediment series from stochastic climate/weather routines; exact-date or exact-year temporal correlation is not the validation target, while aggregate magnitude and frequency behavior are."
+        cites: [hydrotrend1998, hydrotrend2008]
+    validated_when: "Annual, decadal, or scenario outlet discharge aggregates are validated when |PBIAS| <= 15%; temporal correlation is secondary for stochastic long-run realizations."
+    evidence_strength: moderate
+    confidence: 0.68
+    notes: >-
+      Moriasi 2015 explicitly covers daily, monthly, and annual flow PBIAS. HydroTrend 2008 describes daily synthetic water discharge and sediment load generated for 10^1-10^5 years, so aggregate comparison is more defensible than exact-date matching for stochastic runs.
+
+  - dag_variable: Qs
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.45}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final watershed criteria give monthly sediment NSE satisfactory above 0.45; transferred cautiously to time-series suspended sediment load."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 20}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final watershed criteria give sediment PBIAS <= +/-20% for daily, monthly, or annual output."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "HydroTrend daily suspended load uses empirical rating and stochastic variability; HydroTrend 1998 reports low-flow spread from different rating coefficients and notes measured sediment variability from hysteresis and seasonal/interannual load changes."
+        cites: [hydrotrend1998, hydrotrend2008]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "BQART benchmark performance for long-term sediment load is high: 93%-96% explained variance and 3%-7% bias across global river datasets, but this is not a daily time-series NSE threshold."
+        cites: [syvitski2007_bqart]
+    validated_when: "Suspended sediment time series are validated when NSE >= 0.45 and |PBIAS| <= 20%, with caution that HydroTrend daily Qs should also be checked as a load-discharge/rating relation."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: >-
+      The dag determining metric, nse, is retained, but the cited NSE band is a watershed sediment convention rather than a HydroTrend-specific daily-load target. HydroTrend 1998 says it replicated sediment concentrations well in rating-coefficient terms but lacked some observed variability caused by hysteresis.
+
+  - dag_variable: Qs
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 20}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final watershed criteria: sediment PBIAS <= +/-20% for daily, monthly, or annual output."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Syvitski and Milliman's BQART test captured 93%-96% of sediment-load variance with 3%-7% bias, documenting expected long-term load skill but not defining an independent pass threshold."
+        cites: [syvitski2007_bqart]
+    validated_when: "Long-term mean or aggregated suspended sediment flux is validated when |PBIAS| <= 20%; BQART-style variance/bias benchmarks support interpreting multi-year means."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      This is the most defensible Qs comparison for HydroTrend. HydroTrend 2008 states its sediment approach predicts flux "within the uncertainties associated with global observations"; BQART testing reports 3%-7% bias and 93%-96% variance explained, while Moriasi 2015 supplies the actual pass/fail PBIAS convention.
+
+  - dag_variable: Qb
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric validation band for HydroTrend bedload flux; the capped OpenAlex coverage check found no HydroTrend bedload benchmark threshold."
+        cites: []
+    secondary_metrics:
+      - metric: formula_basis
+        direction: maximize
+        status: supportive
+        ceiling_reason: "HydroTrend computes daily bedload from a modified Bagnold formulation using discharge, velocity, slope, sediment density, critical velocity, and user bedload efficiency; the fetched HydroTrend papers demonstrate model mechanism, not a numeric validation criterion."
+        cites: [hydrotrend1998, hydrotrend2008]
+    validated_when: "UNRESOLVED - compare long-term bedload order and sign against site observations, but do not auto-validate until a fetched bedload-specific numeric convention is available."
+    evidence_strength: weak
+    confidence: 0.32
+    notes: >-
+      The dag determining metric is pbias, but all bands are null because neither cached HydroTrend/Bagnold evidence nor capped OpenAlex search yielded a fetched peer-reviewed pass/fail band for bedload. This block must not loosen the gate.
+
+  - dag_variable: Cs
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Me 2015 reproduces Moriasi 2007 criteria for Q, suspended sediment, TP, and TN: NSE satisfactory 0.5-0.65, good 0.65-0.75, very good 0.75-1."
+        cites: [me2015, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 15, good: 30, satisfactory: 55}
+        pass_band: satisfactory
+        band_note: "Me 2015 reproduces Moriasi 2007 suspended-sediment PBIAS tiers: <15 very good, 15-30 good, 30-55 satisfactory."
+        cites: [me2015, moriasi2007]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "HydroTrend suspended sediment concentration is derived from empirical suspended-load ratings divided by discharge; HydroTrend 1998 documents missing observed variability from hysteresis and seasonal/interannual sediment-load changes."
+        cites: [hydrotrend1998]
+    validated_when: "Suspended sediment concentration is validated when NSE >= 0.50 and |PBIAS| <= 55%, preferably against concentration observations grouped by flow regime or event/rating behavior."
+    evidence_strength: moderate
+    confidence: 0.64
+    notes: >-
+      Me 2015 explicitly used the Moriasi 2007 table for suspended sediment concentration (SS), giving a directly fetched reproduced convention. Moriasi 2015 later tightened general sediment PBIAS to 20%, so this concentration-specific block has lower confidence than Q and aggregated Qs.
+
+  - dag_variable: velocity_width_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for HydroTrend's combined velocity-width-depth diagnostic output."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "HydroTrend VWD is a diagnostic hydraulic-geometry power-law output driven by supplied coefficients. Singh 2003 shows hydraulic-geometry coefficients and exponents vary by location, flow range, sediment influx, and boundary conditions, so a generic time-series NSE ceiling is a coefficient/data limitation."
+        cites: [hydrotrend2008, singh2003]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Gleason and Smith 2014 validate hydraulic-geometry relationships with high r2 for AMHG depth, width, and velocity relations and report 20%-30% discharge RMSE from width-only satellite estimates; this supports diagnostic use but is not a HydroTrend VWD pass band."
+        cites: [gleason2014]
+    validated_when: "UNRESOLVED - use site-specific velocity, width, and depth observations or calibrated hydraulic-geometry coefficients; no fetched numeric NSE band is available for the combined diagnostic."
+    evidence_strength: weak
+    confidence: 0.34
+    notes: >-
+      The dag determining metric is nse, retained with null bands. HydroTrend 2008 says the VWD file reports simulated discharge velocity, width, and depth at the river mouth; Singh 2003 states hydraulic-geometry parameters are not fixed and vary continuously with constraints.
+
+deferred_paywalled: []

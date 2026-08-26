@@ -1,412 +1,463 @@
 schema_version: 1
 model_id: CaMa_Flood
 domain: hydrology
-generated_by: "self-improve session (Claude Opus 4.8, 1M) — validation-convention step-B, general schema"
+generated_by: self-improve session (Claude Opus 4.8, 1M) — validation-convention step-B, general schema
 generated_at: 2026-07-09
-
-# Grounded ONLY in locally-fetched OA full texts (no new fetches needed — cache complete).
-# HEADLINE conventions by quantity:
-#   discharge / water_level / depth  -> NSE + PBIAS tiers from Moriasi 2007 (Table 4) and the
-#     tightened Moriasi 2015 watershed criteria (NSE>0.50, PBIAS<=15% satisfactory). These are the
-#     domain streamflow conventions; CaMa-Flood benchmarks (Siqueira 2018 continental S. America
-#     "NSE>0.6 in 55% of stations"; Revel 2023 Amazon WSE/discharge DA) confirm the same NSE frame.
-#   flood_extent (fldfrc/fldare) -> CSI, with the field convention ">0.7 good, <0.5 poor" quoted
-#     verbatim from Bernhofen 2018, the collective validation of global fluvial flood models that
-#     explicitly scored CaMa-Flood among the highest-CSI models (CSI 0.73 Lokoja). Hoch 2021 and the
-#     LISFLOOD-FP SAR calibration study (2016) corroborate CSI as THE flood-extent skill measure.
-#   velocity, storage (TWS/GRACE) -> NO cited numeric threshold in the fetched set -> null bands,
-#     confidence<=0.4 (diagnostic / anomaly-only; never used to loosen the gate).
-# Bands are plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
-
 references:
   moriasi2007:
     doi: 10.13031/2013.23153
-    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
-    venue: "Trans. ASABE"
+    title: Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations
+    venue: Trans. ASABE
     year: 2007
     oa: manual
     resolves: null
   moriasi2015:
     doi: 10.13031/trans.58.10715
-    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
-    venue: "Trans. ASABE"
+    title: 'Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria'
+    venue: Trans. ASABE
     year: 2015
     oa: manual
     resolves: null
   bennett2013:
     doi: 10.1016/j.envsoft.2012.09.011
-    title: "Characterising performance of environmental models"
-    venue: "Environmental Modelling & Software"
+    title: Characterising performance of environmental models
+    venue: Environmental Modelling & Software
     year: 2013
     oa: manual
     resolves: null
   bernhofen2018:
     doi: 10.1088/1748-9326/aae014
-    title: "A first collective validation of global fluvial flood models for major floods in Nigeria and Mozambique"
-    venue: "Environ. Res. Lett."
+    title: A first collective validation of global fluvial flood models for major floods in Nigeria and
+      Mozambique
+    venue: Environ. Res. Lett.
     year: 2018
     oa: gold
     resolves: https://iopscience.iop.org/article/10.1088/1748-9326/aae014
   hoch2021:
     doi: 10.1088/1748-9326/ac188d
-    title: "Evaluation of river flood extent simulated with multiple global hydrological models and climate forcings"
-    venue: "Environ. Res. Lett."
+    title: Evaluation of river flood extent simulated with multiple global hydrological models and climate
+      forcings
+    venue: Environ. Res. Lett.
     year: 2021
     oa: gold
     resolves: https://iopscience.iop.org/article/10.1088/1748-9326/ac188d
   lisfloodfp2016:
     doi: 10.5194/hess-20-4983-2016
-    title: "Calibration of channel depth and friction parameters in the LISFLOOD-FP hydraulic model using medium-resolution SAR data and identifiability techniques"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Calibration of channel depth and friction parameters in the LISFLOOD-FP hydraulic model using
+      medium-resolution SAR data and identifiability techniques
+    venue: Hydrol. Earth Syst. Sci.
     year: 2016
     oa: gold
     resolves: https://hess.copernicus.org/articles/20/4983/2016/
   siqueira2018:
     doi: 10.5194/hess-22-4815-2018
-    title: "Toward continental hydrologic-hydrodynamic modeling in South America"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Toward continental hydrologic-hydrodynamic modeling in South America
+    venue: Hydrol. Earth Syst. Sci.
     year: 2018
     oa: gold
     resolves: https://hess.copernicus.org/articles/22/4815/2018/
   revel2023:
     doi: 10.5194/hess-27-647-2023
-    title: "Assimilation of transformed water surface elevation to improve river discharge estimation in a continental-scale river"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Assimilation of transformed water surface elevation to improve river discharge estimation in
+      a continental-scale river
+    venue: Hydrol. Earth Syst. Sci.
     year: 2023
     oa: gold
     resolves: https://hess.copernicus.org/articles/27/647/2023/
   towner2019:
     doi: 10.5194/hess-23-3057-2019
-    title: "Assessing the performance of global hydrological models for capturing peak river flows in the Amazon basin"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Assessing the performance of global hydrological models for capturing peak river flows in the
+      Amazon basin
+    venue: Hydrol. Earth Syst. Sci.
     year: 2019
     oa: gold
     resolves: https://hess.copernicus.org/articles/23/3057/2019/
   altimap2024:
     doi: 10.5194/essd-16-75-2024
-    title: "AltiMaP: altimetry mapping procedure for hydrography data"
-    venue: "Earth Syst. Sci. Data"
+    title: 'AltiMaP: altimetry mapping procedure for hydrography data'
+    venue: Earth Syst. Sci. Data
     year: 2024
     oa: gold
     resolves: https://essd.copernicus.org/articles/16/75/2024/
   tws2017:
     doi: 10.1002/2017gl074684
-    title: "Rivers and Floodplains as Key Components of Global Terrestrial Water Storage Variability"
-    venue: "Geophys. Res. Lett."
+    title: Rivers and Floodplains as Key Components of Global Terrestrial Water Storage Variability
+    venue: Geophys. Res. Lett.
     year: 2017
     oa: manual
     resolves: null
   yamazaki2011:
     doi: 10.1029/2010wr009726
-    title: "A physically based description of floodplain inundation dynamics in a global river routing model"
-    venue: "Water Resour. Res."
+    title: A physically based description of floodplain inundation dynamics in a global river routing
+      model
+    venue: Water Resour. Res.
     year: 2011
     oa: manual
     resolves: null
-
 validation:
-
-  # ============ DISCHARGE / point_time_series (well grounded — domain convention + CaMa benchmarks) ============
-  - canonical_quantity: discharge
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        cites: [moriasi2007, moriasi2015]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, good: 15, satisfactory: 25}
-        pass_band: satisfactory
-        band_note: "Moriasi 2007 streamflow tiers (<10 very good / <15 good / <25 satisfactory); Moriasi 2015 tightens the watershed-scale satisfactory bound to PBIAS<=+-15%."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics:
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Towner 2019 evaluates CaMa-Flood-routed discharge in the Amazon with KGE; KGE is co-reported but the absolute-skill convention here is the Moriasi NSE/PBIAS frame."
-        cites: [towner2019]
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Correlation co-reported in multi-station discharge benchmarks (Siqueira 2018)."
-        cites: [siqueira2018]
-    validated_when: "NSE >= 0.50 (Moriasi 2007 'satisfactory if NSE > 0.50'; CaMa continental S. America NSE>0.6 at 55% of stations, Siqueira 2018) AND |PBIAS| <= 25% (Moriasi 2007 streamflow; 2015 tightens to 15%)"
-    evidence_strength: strong
-    confidence: 0.85
-    notes: >-
-      Moriasi 2007 Table 4 (monthly): 'Satisfactory 0.50 < NSE < 0.65 ... PBIAS < +-25 for streamflow';
-      Moriasi 2015: 'satisfactory for flow ... NSE > 0.50, and PBIAS <= +-15% for watershed-scale models'.
-      dag determining_metric (nse) retained as headline. Discharge is CaMa-Flood's PRIMARY validation
-      variable (total main-channel outflw; rivout shares this convention). CaMa-specific context:
-      Siqueira 2018 obtained NSE > 0.6 at 55% of continental S. American stations; note that global
-      hydrological models routed through CaMa-Flood tend to OVERESTIMATE discharge variability in some
-      basins (ad52b0 / overestimation literature) — PBIAS is therefore a required headline, not optional.
-      Exclude the spin-up year (empty initial storage) and verify gauge unit-catchment allocation before grading.
-
-  # ============ DISCHARGE / point_snapshot (transferred magnitude convention) ============
-  - canonical_quantity: discharge
-    obs_shape: point_snapshot
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, good: 15, satisfactory: 25}
-        pass_band: satisfactory
-        band_note: "Single-instant peak/stage magnitude; PBIAS tiers transferred from Moriasi 2007 streamflow envelope."
-        cites: [moriasi2007]
-    secondary_metrics: []
-    validated_when: "|PBIAS| <= 25% (Moriasi 2007 streamflow magnitude tier)"
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      Single-instant peak / flood-stage comparison is sensitive to channel-parameter uncertainty at the
-      gauge cell; no snapshot-specific threshold in the fetched set, so the magnitude band is transferred
-      from Moriasi 2007's continuous-streamflow PBIAS tiers, hence reduced confidence.
-
-  # ============ WATER_LEVEL / point_time_series (WSE vs altimetry/gauge — NSE frame) ============
-  - canonical_quantity: water_level
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        cites: [moriasi2007, revel2023]
-    secondary_metrics:
-      - metric: rmse
-        direction: minimize
-        status: structurally_limited
-        ceiling_reason: >-
-          Absolute water-surface-elevation error carries the DEM bed-elevation datum bias: CaMa-Flood WSE
-          is bed elevation + diagnosed depth, so RMSE against satellite altimetry is bounded by hydrography/DEM
-          datum uncertainty rather than routing skill (Revel 2023 report 'modeled and observed WSE distributions
-          differed considerably' and correct WSE via a distribution transform; AltiMaP 2024 documents the
-          altimetry-to-hydrography mapping/datum procedure). Grade WSE on temporal NSE/amplitude, not absolute RMSE.
-        cites: [revel2023, altimap2024]
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: "WSE amplitude/correlation co-reported vs altimetry virtual stations (Revel 2023; Siqueira 2018)."
-        cites: [revel2023, siqueira2018]
-    validated_when: "NSE >= 0.50 on water-surface elevation / stage (Moriasi 2007 frame; Revel 2023 Amazon WSE NSE>0.6, Siqueira 2018 water levels NSE>0.6 at 55% of stations); absolute datum judged by amplitude, not RMSE"
-    evidence_strength: strong
-    confidence: 0.75
-    notes: >-
-      sfcelv (bed elevation + river depth) is comparable to gauge stage and satellite altimetry. Revel 2023:
-      WSE assimilation retained virtual stations with 'NSE > 0.6' and improved discharge (median NSE 0.50);
-      Siqueira 2018: 'satisfactory representation of discharge and water levels ... NSE > 0.6 in 55%'. Uses the
-      same Moriasi NSE tiers as discharge; RMSE is a data/datum ceiling (structurally_limited), not fix_ki.
-
-  # ============ WATER_LEVEL / spatial_time_series (along-river altimetry profile) ============
-  - canonical_quantity: water_level
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "Along-river water-surface profile vs altimetry virtual stations judged on temporal/amplitude NSE per station (Moriasi frame). SUPERSEDES the dag determining_metric (csi): CSI is a categorical wet/dry extent measure and does not apply to a continuous WSE profile; the field uses RMSE/NSE/correlation of WSE vs altimetry (Revel 2023, AltiMaP 2024)."
-        cites: [moriasi2007, revel2023]
-    secondary_metrics:
-      - metric: rmse
-        direction: minimize
-        status: structurally_limited
-        ceiling_reason: "Absolute along-river WSE profile bias is bounded by DEM/hydrography datum, not routing skill (AltiMaP 2024; Revel 2023)."
-        cites: [altimap2024, revel2023]
-    validated_when: "Per-virtual-station WSE NSE >= 0.50 along the river profile (Moriasi frame; Revel 2023)"
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      dag assigned csi to this shape, but CSI is a flood-extent categorical metric that is not meaningful for a
-      continuous water-surface profile; superseded to the WSE NSE convention with a note per the schema. Grounded
-      in the same altimetry-evaluation literature as the point_time_series water_level block.
-
-  # ============ DEPTH / point_time_series (river channel depth, diagnosed from storage) ============
-  - canonical_quantity: depth
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "River-depth time series graded on the Moriasi NSE hydrologic-time-series tiers (no depth-specific tier in the fetched set)."
-        cites: [moriasi2007]
-    secondary_metrics:
-      - metric: rmse
-        direction: minimize
-        status: structurally_limited
-        ceiling_reason: >-
-          rivdph is diagnosed from channel storage via channel-geometry power laws, so absolute depth RMSE
-          carries channel-depth/friction parameter uncertainty (calibrated, not observed): the LISFLOOD-FP SAR
-          study shows channel depth is only identifiable to within ~0.9 m (16%) even under SAR calibration
-          (lisfloodfp2016), bounding absolute-depth accuracy independent of routing skill.
-        cites: [lisfloodfp2016]
-    validated_when: "NSE >= 0.50 on channel-depth time series (Moriasi frame); absolute depth carries channel-geometry parameter ceiling"
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      Depth NSE reuses the Moriasi hydrologic-time-series tiers (transferred, hence moderate confidence). The
-      channel-depth parameter is calibrated (identifiable only to ~0.9 m per lisfloodfp2016), so absolute depth
-      RMSE is a data/parameter ceiling, not a KI defect.
-
-  # ============ FLOOD_EXTENT / spatial_snapshot (fldfrc — CSI; CaMa-Flood explicitly benchmarked) ============
-  - canonical_quantity: flood_extent
-    obs_shape: spatial_snapshot
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.7, good: 0.6, satisfactory: 0.5}
-        pass_band: satisfactory
-        band_note: "Bernhofen 2018: CSI '>0.7 considered good and <0.5 poor'; global flood-model CSI ranges 0.3-0.9. pass_band satisfactory=0.5 = the 'poor' floor."
-        cites: [bernhofen2018, hoch2021, lisfloodfp2016]
-    secondary_metrics:
-      - metric: bias
-        direction: zero_centered
-        status: supportive
-        ceiling_reason: "Bernhofen 2018 co-reports flood-area Bias with CSI (over/under-prediction of inundated area); Hoch 2021 likewise pairs CSI with Bias."
-        cites: [bernhofen2018, hoch2021]
-      - metric: pod
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Hit rate / probability of detection co-reported with CSI in the collective flood-model validation (Bernhofen 2018)."
-        cites: [bernhofen2018]
-    validated_when: "CSI >= 0.5 vs satellite-derived flood extent (Bernhofen 2018 'poor' floor; >0.7 = good). CaMa-Flood scored among the highest-CSI global flood models (CSI 0.73 at Lokoja)."
-    evidence_strength: strong
-    confidence: 0.8
-    notes: >-
-      Bernhofen 2018 (collective validation of global fluvial flood models, Nigeria & Mozambique) is THE
-      flood-extent convention and explicitly evaluates CaMa-Flood: 'CSI scores ... range from 0.3 to 0.9 ...
-      with >0.7 considered good and <0.5 poor'; the individual-model CSI across three regions ranges 0.45-0.7;
-      CaMa-Flood had one of the highest CSI scores (0.73 Lokoja, 0.53 Chemba). Hoch 2021 and lisfloodfp2016
-      corroborate CSI ('does not [reward correct rejections]') as the flood-extent skill measure. fldfrc is a
-      SUB-GRID fraction; downscale to native/fine resolution before wet/dry thresholding, and the hit/false-alarm
-      split depends on the chosen fraction threshold (caveat). flddph (floodplain depth) shares this convention
-      but has no obs binding in this KI, so no separate block is emitted.
-
-  # ============ FLOOD_EXTENT / spatial_time_series (fldfrc time-varying extent — CSI) ============
-  - canonical_quantity: flood_extent
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.7, good: 0.6, satisfactory: 0.5}
-        pass_band: satisfactory
-        band_note: "Same Bernhofen 2018 CSI convention (>0.7 good, <0.5 poor) applied to time-varying inundation-fraction maps."
-        cites: [bernhofen2018, hoch2021]
-    secondary_metrics:
-      - metric: bias
-        direction: zero_centered
-        status: supportive
-        ceiling_reason: "Inundated-area over/under-prediction co-reported with CSI (Bernhofen 2018; Hoch 2021)."
-        cites: [bernhofen2018]
-    validated_when: "CSI >= 0.5 against high-resolution inundation observations after downscaling (Bernhofen 2018)"
-    evidence_strength: moderate
-    confidence: 0.6
-    notes: >-
-      Time-varying flooded-fraction maps vs satellite inundation; same CSI convention as the snapshot block,
-      but the temporal/downscaling matching adds uncertainty (sub-grid fraction requires downscaling to the
-      fine grid), hence moderate confidence.
-
-  # ============ FLOOD_EXTENT / regional_aggregate_time_series (fldare — basin flooded-area series) ============
-  - canonical_quantity: flood_extent
-    obs_shape: regional_aggregate_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "Basin-aggregated inundated-area time series vs remote-sensing flood-area products, graded on the Moriasi NSE tiers (no area-specific tier in the fetched set)."
-        cites: [moriasi2007]
-    secondary_metrics:
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Seasonal flooded-area amplitude/phase vs remote sensing co-reported as correlation; the physically-based inundation scheme reproduces flooded-area dynamics (Yamazaki 2011)."
-        cites: [yamazaki2011]
-    validated_when: "NSE >= 0.50 on basin-aggregated flooded-area time series (Moriasi frame, transferred)"
-    evidence_strength: moderate
-    confidence: 0.45
-    notes: >-
-      fldare aggregated to basin scale and compared to remote-sensing flood-area products. NSE tiers transferred
-      from Moriasi (no flooded-area-specific numeric tier in the fetched set), so confidence is capped; Yamazaki
-      2011 supports the physically-based flooded-area dynamics qualitatively but gives no numeric skill band.
-
-  # ============ VELOCITY / point_time_series (rivvel — diagnostic, no cited threshold) ============
-  - canonical_quantity: velocity
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited numeric velocity validation threshold in the fetched set; in-situ velocity gauging is sparse."
-        cites: []
-    secondary_metrics:
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: "River velocity from the local-inertial equation is rarely directly observed; it is mainly a diagnostic of routing behaviour, not a gradeable target (dag caveat)."
-        cites: []
-    validated_when: "UNRESOLVED — no cited velocity threshold; diagnostic of the local-inertial routing, treat as data-gap"
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      rivvel (local-inertial flow velocity) is rarely directly observed (sparse in-situ gauging) and none of the
-      fetched papers report a velocity skill threshold. Band null per the no-fabrication rule; MUST NOT be used to
-      loosen the gate. Kept only as a routing-behaviour diagnostic.
-
-  # ============ STORAGE / regional_aggregate_time_series (rivsto vs GRACE TWS anomaly — no numeric tier) ============
-  - canonical_quantity: storage
-    obs_shape: regional_aggregate_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited numeric TWS/GRACE skill threshold in the fetched set; comparison is anomaly-only after basin aggregation."
-        cites: []
-      - metric: r
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "GRACE-anomaly correlation reported qualitatively ('improves simulated TWS') but with no numeric tier."
-        cites: []
-    secondary_metrics:
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: >-
-          River+floodplain surface-water storage is a component of GRACE-class terrestrial water storage and is
-          only comparable as a basin-aggregated ANOMALY, not absolute storage: tws2017 shows surface-water storage
-          is ~22-27% of TWS variability in the Amazon and that accounting for it 'improves simulated TWS' vs GRACE,
-          but reports no numeric skill band.
-        cites: [tws2017]
-    validated_when: "UNRESOLVED — TWS/GRACE comparison is anomaly-only with no cited numeric threshold; contextualize, never auto-validate"
-    evidence_strength: weak
-    confidence: 0.35
-    notes: >-
-      rivsto (channel water storage) is comparable to GRACE-class TWS anomalies only after basin aggregation and
-      as an anomaly (obs_map binds it to tws_anomaly / lwe_thickness). tws2017 documents the mechanism (SWS is a
-      key TWS component; accounting for it improves GRACE agreement) but gives no numeric r/NSE tier, so bands are
-      null and confidence <=0.4.
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - moriasi2007
+    - moriasi2015
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      good: 15
+      satisfactory: 25
+    pass_band: satisfactory
+    band_note: Moriasi 2007 streamflow tiers (<10 very good / <15 good / <25 satisfactory); Moriasi 2015
+      tightens the watershed-scale satisfactory bound to PBIAS<=+-15%.
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics:
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: Towner 2019 evaluates CaMa-Flood-routed discharge in the Amazon with KGE; KGE is co-reported
+      but the absolute-skill convention here is the Moriasi NSE/PBIAS frame.
+    cites:
+    - towner2019
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: Correlation co-reported in multi-station discharge benchmarks (Siqueira 2018).
+    cites:
+    - siqueira2018
+  validated_when: NSE >= 0.50 (Moriasi 2007 'satisfactory if NSE > 0.50'; CaMa continental S. America
+    NSE>0.6 at 55% of stations, Siqueira 2018) AND |PBIAS| <= 25% (Moriasi 2007 streamflow; 2015 tightens
+    to 15%)
+  evidence_strength: strong
+  confidence: 0.85
+  notes: 'Moriasi 2007 Table 4 (monthly): ''Satisfactory 0.50 < NSE < 0.65 ... PBIAS < +-25 for streamflow'';
+    Moriasi 2015: ''satisfactory for flow ... NSE > 0.50, and PBIAS <= +-15% for watershed-scale models''.
+    dag determining_metric (nse) retained as headline. Discharge is CaMa-Flood''s PRIMARY validation variable
+    (total main-channel outflw; rivout shares this convention). CaMa-specific context: Siqueira 2018 obtained
+    NSE > 0.6 at 55% of continental S. American stations; note that global hydrological models routed
+    through CaMa-Flood tend to OVERESTIMATE discharge variability in some basins (ad52b0 / overestimation
+    literature) — PBIAS is therefore a required headline, not optional. Exclude the spin-up year (empty
+    initial storage) and verify gauge unit-catchment allocation before grading.'
+  dag_variable: outflw
+- obs_shape: point_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      good: 15
+      satisfactory: 25
+    pass_band: satisfactory
+    band_note: Single-instant peak/stage magnitude; PBIAS tiers transferred from Moriasi 2007 streamflow
+      envelope.
+    cites:
+    - moriasi2007
+  secondary_metrics: []
+  validated_when: '|PBIAS| <= 25% (Moriasi 2007 streamflow magnitude tier)'
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: Single-instant peak / flood-stage comparison is sensitive to channel-parameter uncertainty at
+    the gauge cell; no snapshot-specific threshold in the fetched set, so the magnitude band is transferred
+    from Moriasi 2007's continuous-streamflow PBIAS tiers, hence reduced confidence.
+  dag_variable: outflw
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - moriasi2007
+    - revel2023
+  secondary_metrics:
+  - metric: rmse
+    direction: minimize
+    status: structurally_limited
+    ceiling_reason: 'Absolute water-surface-elevation error carries the DEM bed-elevation datum bias:
+      CaMa-Flood WSE is bed elevation + diagnosed depth, so RMSE against satellite altimetry is bounded
+      by hydrography/DEM datum uncertainty rather than routing skill (Revel 2023 report ''modeled and
+      observed WSE distributions differed considerably'' and correct WSE via a distribution transform;
+      AltiMaP 2024 documents the altimetry-to-hydrography mapping/datum procedure). Grade WSE on temporal
+      NSE/amplitude, not absolute RMSE.'
+    cites:
+    - revel2023
+    - altimap2024
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: WSE amplitude/correlation co-reported vs altimetry virtual stations (Revel 2023; Siqueira
+      2018).
+    cites:
+    - revel2023
+    - siqueira2018
+  validated_when: NSE >= 0.50 on water-surface elevation / stage (Moriasi 2007 frame; Revel 2023 Amazon
+    WSE NSE>0.6, Siqueira 2018 water levels NSE>0.6 at 55% of stations); absolute datum judged by amplitude,
+    not RMSE
+  evidence_strength: strong
+  confidence: 0.75
+  notes: 'sfcelv (bed elevation + river depth) is comparable to gauge stage and satellite altimetry. Revel
+    2023: WSE assimilation retained virtual stations with ''NSE > 0.6'' and improved discharge (median
+    NSE 0.50); Siqueira 2018: ''satisfactory representation of discharge and water levels ... NSE > 0.6
+    in 55%''. Uses the same Moriasi NSE tiers as discharge; RMSE is a data/datum ceiling (structurally_limited),
+    not fix_ki.'
+  dag_variable: sfcelv
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: 'Along-river water-surface profile vs altimetry virtual stations judged on temporal/amplitude
+      NSE per station (Moriasi frame). SUPERSEDES the dag determining_metric (csi): CSI is a categorical
+      wet/dry extent measure and does not apply to a continuous WSE profile; the field uses RMSE/NSE/correlation
+      of WSE vs altimetry (Revel 2023, AltiMaP 2024).'
+    cites:
+    - moriasi2007
+    - revel2023
+  secondary_metrics:
+  - metric: rmse
+    direction: minimize
+    status: structurally_limited
+    ceiling_reason: Absolute along-river WSE profile bias is bounded by DEM/hydrography datum, not routing
+      skill (AltiMaP 2024; Revel 2023).
+    cites:
+    - altimap2024
+    - revel2023
+  validated_when: Per-virtual-station WSE NSE >= 0.50 along the river profile (Moriasi frame; Revel 2023)
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: dag assigned csi to this shape, but CSI is a flood-extent categorical metric that is not meaningful
+    for a continuous water-surface profile; superseded to the WSE NSE convention with a note per the schema.
+    Grounded in the same altimetry-evaluation literature as the point_time_series water_level block.
+  dag_variable: sfcelv
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: River-depth time series graded on the Moriasi NSE hydrologic-time-series tiers (no depth-specific
+      tier in the fetched set).
+    cites:
+    - moriasi2007
+  secondary_metrics:
+  - metric: rmse
+    direction: minimize
+    status: structurally_limited
+    ceiling_reason: 'rivdph is diagnosed from channel storage via channel-geometry power laws, so absolute
+      depth RMSE carries channel-depth/friction parameter uncertainty (calibrated, not observed): the
+      LISFLOOD-FP SAR study shows channel depth is only identifiable to within ~0.9 m (16%) even under
+      SAR calibration (lisfloodfp2016), bounding absolute-depth accuracy independent of routing skill.'
+    cites:
+    - lisfloodfp2016
+  validated_when: NSE >= 0.50 on channel-depth time series (Moriasi frame); absolute depth carries channel-geometry
+    parameter ceiling
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: Depth NSE reuses the Moriasi hydrologic-time-series tiers (transferred, hence moderate confidence).
+    The channel-depth parameter is calibrated (identifiable only to ~0.9 m per lisfloodfp2016), so absolute
+    depth RMSE is a data/parameter ceiling, not a KI defect.
+  dag_variable: rivdph
+- obs_shape: spatial_snapshot
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.7
+      good: 0.6
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: 'Bernhofen 2018: CSI ''>0.7 considered good and <0.5 poor''; global flood-model CSI ranges
+      0.3-0.9. pass_band satisfactory=0.5 = the ''poor'' floor.'
+    cites:
+    - bernhofen2018
+    - hoch2021
+    - lisfloodfp2016
+  secondary_metrics:
+  - metric: bias
+    direction: zero_centered
+    status: supportive
+    ceiling_reason: Bernhofen 2018 co-reports flood-area Bias with CSI (over/under-prediction of inundated
+      area); Hoch 2021 likewise pairs CSI with Bias.
+    cites:
+    - bernhofen2018
+    - hoch2021
+  - metric: pod
+    direction: maximize
+    status: supportive
+    ceiling_reason: Hit rate / probability of detection co-reported with CSI in the collective flood-model
+      validation (Bernhofen 2018).
+    cites:
+    - bernhofen2018
+  validated_when: CSI >= 0.5 vs satellite-derived flood extent (Bernhofen 2018 'poor' floor; >0.7 = good).
+    CaMa-Flood scored among the highest-CSI global flood models (CSI 0.73 at Lokoja).
+  evidence_strength: strong
+  confidence: 0.8
+  notes: 'Bernhofen 2018 (collective validation of global fluvial flood models, Nigeria & Mozambique)
+    is THE flood-extent convention and explicitly evaluates CaMa-Flood: ''CSI scores ... range from 0.3
+    to 0.9 ... with >0.7 considered good and <0.5 poor''; the individual-model CSI across three regions
+    ranges 0.45-0.7; CaMa-Flood had one of the highest CSI scores (0.73 Lokoja, 0.53 Chemba). Hoch 2021
+    and lisfloodfp2016 corroborate CSI (''does not [reward correct rejections]'') as the flood-extent
+    skill measure. fldfrc is a SUB-GRID fraction; downscale to native/fine resolution before wet/dry thresholding,
+    and the hit/false-alarm split depends on the chosen fraction threshold (caveat). flddph (floodplain
+    depth) shares this convention but has no obs binding in this KI, so no separate block is emitted.'
+  dag_variable: fldfrc
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.7
+      good: 0.6
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: Same Bernhofen 2018 CSI convention (>0.7 good, <0.5 poor) applied to time-varying inundation-fraction
+      maps.
+    cites:
+    - bernhofen2018
+    - hoch2021
+  secondary_metrics:
+  - metric: bias
+    direction: zero_centered
+    status: supportive
+    ceiling_reason: Inundated-area over/under-prediction co-reported with CSI (Bernhofen 2018; Hoch 2021).
+    cites:
+    - bernhofen2018
+  validated_when: CSI >= 0.5 against high-resolution inundation observations after downscaling (Bernhofen
+    2018)
+  evidence_strength: moderate
+  confidence: 0.6
+  notes: Time-varying flooded-fraction maps vs satellite inundation; same CSI convention as the snapshot
+    block, but the temporal/downscaling matching adds uncertainty (sub-grid fraction requires downscaling
+    to the fine grid), hence moderate confidence.
+  dag_variable: fldfrc
+- obs_shape: regional_aggregate_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: Basin-aggregated inundated-area time series vs remote-sensing flood-area products, graded
+      on the Moriasi NSE tiers (no area-specific tier in the fetched set).
+    cites:
+    - moriasi2007
+  secondary_metrics:
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: Seasonal flooded-area amplitude/phase vs remote sensing co-reported as correlation;
+      the physically-based inundation scheme reproduces flooded-area dynamics (Yamazaki 2011).
+    cites:
+    - yamazaki2011
+  validated_when: NSE >= 0.50 on basin-aggregated flooded-area time series (Moriasi frame, transferred)
+  evidence_strength: moderate
+  confidence: 0.45
+  notes: fldare aggregated to basin scale and compared to remote-sensing flood-area products. NSE tiers
+    transferred from Moriasi (no flooded-area-specific numeric tier in the fetched set), so confidence
+    is capped; Yamazaki 2011 supports the physically-based flooded-area dynamics qualitatively but gives
+    no numeric skill band.
+  dag_variable: fldare
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited numeric velocity validation threshold in the fetched set; in-situ velocity gauging
+      is sparse.
+    cites: []
+  secondary_metrics:
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: River velocity from the local-inertial equation is rarely directly observed; it is
+      mainly a diagnostic of routing behaviour, not a gradeable target (dag caveat).
+    cites: []
+  validated_when: UNRESOLVED — no cited velocity threshold; diagnostic of the local-inertial routing,
+    treat as data-gap
+  evidence_strength: weak
+  confidence: 0.3
+  notes: rivvel (local-inertial flow velocity) is rarely directly observed (sparse in-situ gauging) and
+    none of the fetched papers report a velocity skill threshold. Band null per the no-fabrication rule;
+    MUST NOT be used to loosen the gate. Kept only as a routing-behaviour diagnostic.
+  dag_variable: rivvel
+- obs_shape: regional_aggregate_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited numeric TWS/GRACE skill threshold in the fetched set; comparison is anomaly-only
+      after basin aggregation.
+    cites: []
+  - metric: r
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: GRACE-anomaly correlation reported qualitatively ('improves simulated TWS') but with no
+      numeric tier.
+    cites: []
+  secondary_metrics:
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: 'River+floodplain surface-water storage is a component of GRACE-class terrestrial
+      water storage and is only comparable as a basin-aggregated ANOMALY, not absolute storage: tws2017
+      shows surface-water storage is ~22-27% of TWS variability in the Amazon and that accounting for
+      it ''improves simulated TWS'' vs GRACE, but reports no numeric skill band.'
+    cites:
+    - tws2017
+  validated_when: UNRESOLVED — TWS/GRACE comparison is anomaly-only with no cited numeric threshold; contextualize,
+    never auto-validate
+  evidence_strength: weak
+  confidence: 0.35
+  notes: rivsto (channel water storage) is comparable to GRACE-class TWS anomalies only after basin aggregation
+    and as an anomaly (obs_map binds it to tws_anomaly / lwe_thickness). tws2017 documents the mechanism
+    (SWS is a key TWS component; accounting for it improves GRACE agreement) but gives no numeric r/NSE
+    tier, so bands are null and confidence <=0.4.
+  dag_variable: rivsto
 deferred_paywalled:
-  - ref: "The uncertainty of flood frequency analyses in hydrodynamic model simulations (Nat. Hazards Earth Syst. Sci., fetch_failed)"
-    doi: 10.5194/nhess-21-1071-2021
-    needed_for: [flood_extent, depth]
-  - ref: "A high-accuracy map of global terrain elevations (MERIT DEM; Geophys. Res. Lett., fetch_failed) — would quantify the DEM/datum ceiling on absolute WSE and depth"
-    doi: 10.1002/2017gl072874
-    needed_for: [water_level, depth]
+- ref: The uncertainty of flood frequency analyses in hydrodynamic model simulations (Nat. Hazards Earth
+    Syst. Sci., fetch_failed)
+  doi: 10.5194/nhess-21-1071-2021
+  needed_for:
+  - flood_extent
+  - depth
+- ref: A high-accuracy map of global terrain elevations (MERIT DEM; Geophys. Res. Lett., fetch_failed)
+    — would quantify the DEM/datum ceiling on absolute WSE and depth
+  doi: 10.1002/2017gl072874
+  needed_for:
+  - water_level
+  - depth

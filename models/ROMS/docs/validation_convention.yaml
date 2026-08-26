@@ -1,0 +1,341 @@
+schema_version: 1
+model_id: ROMS
+domain: ocean
+generated_by: "Step-B validation convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+references:
+  haidvogel2008:
+    doi: 10.1016/j.jcp.2007.06.016
+    title: "Ocean forecasting in terrain-following coordinates: Formulation and skill assessment of the Regional Ocean Modeling System"
+    venue: "Journal of Computational Physics"
+    year: 2008
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jcp.2007.06.016.txt
+  warner2005:
+    doi: 10.1029/2004JC002691
+    title: "Numerical modeling of an estuary: A comprehensive skill assessment"
+    venue: "Journal of Geophysical Research"
+    year: 2005
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2004jc002691.txt
+  kerry2016:
+    doi: 10.5194/gmd-9-3779-2016
+    title: "Development and evaluation of a high-resolution reanalysis of the East Australian Current region using the Regional Ocean Modelling System (ROMS)"
+    venue: "Geoscientific Model Development"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-9-3779-2016.txt
+  nolan2020:
+    doi: 10.3390/jmse8090673
+    title: "A Regional Operational Model for the North East Atlantic: Model Configuration and Validation"
+    venue: "Journal of Marine Science and Engineering"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_jmse8090673.txt
+  yan2017:
+    doi: 10.5194/nhess-17-17-2017
+    title: "Data assimilation of Argo profiles in a northwestern Pacific model"
+    venue: "Natural Hazards and Earth System Sciences"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_nhess-17-17-2017.txt
+  marmain2014:
+    doi: 10.5194/npg-21-659-2014
+    title: "Assimilation of HF radar surface currents to optimize forcing in the northwestern Mediterranean Sea"
+    venue: "Nonlinear Processes in Geophysics"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_npg-21-659-2014.txt
+  kumar2015:
+    doi: 10.1175/JPO-D-14-0151.1
+    title: "Midshelf to Surfzone Coupled ROMS-SWAN Model Data Comparison of Waves, Currents, and Temperature"
+    venue: "Journal of Physical Oceanography"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jpo-d-14-0151.1.txt
+  rohrs2023:
+    doi: 10.3389/fmars.2023.1177337
+    title: "Forecast uncertainty and ensemble spread in surface currents from a regional ocean model"
+    venue: "Frontiers in Marine Science"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_fmars.2023.1177337.txt
+
+validation:
+  - dag_variable: zeta
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: skill_index
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.95, good: 0.92, satisfactory: 0.85}
+        pass_band: satisfactory
+        band_note: "ROMS estuary validation uses Willmott-style predictive skill; Table 1 reports sea level 0.85-0.95 and depth-averaged velocity 0.92."
+        cites: [haidvogel2008, warner2005]
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.076, good: 0.15, satisfactory: 0.17}
+        pass_band: satisfactory
+        band_note: "Kerry reports SSH mean rms residual 7.6 cm; NEA_ROMS tide-gauge RMSE is around 0.15 m with station values up to 0.17 m."
+        cites: [kerry2016, nolan2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is NSE, but fetched ROMS water-level evaluations report Willmott-style skill, harmonic tide skill, and RMSE instead."
+        cites: [haidvogel2008, nolan2020]
+    validated_when: "Skill index >= 0.85 and sea-level RMSE <= 0.17 m against tide-gauge SSH, after separating tidal and residual signals when appropriate."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Haidvogel/Warner: "Perfect agreement ... will yield a skill of one" and sea-level skill is
+      0.85-0.95. Nolan: tide-gauge SSH RMSE is "around 0.15 m"; Kerry: SSH/SST have mean rms
+      residuals of "7.6 cm and 0.4 C." This supersedes raw NSE for zeta point time series.
+
+  - dag_variable: zeta
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.04, good: 0.076, satisfactory: 0.076}
+        pass_band: satisfactory
+        band_note: "Basin-scale ROMS SSH RMS difference is below 4 cm in many regions; EAC reanalysis SSH mean rms residual is 7.6 cm."
+        cites: [haidvogel2008, kerry2016]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.8}
+        pass_band: satisfactory
+        band_note: "ROMS North Pacific SSH comparisons report positive correlations higher than 0.8 in well-represented regions."
+        cites: [haidvogel2008]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is CSI, but fetched SSH anomaly evaluations use continuous-field RMSE and correlation, not categorical overlap."
+        cites: [haidvogel2008, kerry2016]
+    validated_when: "Altimetric SSH anomaly spatial fields validate when RMSE <= 0.076 m and spatial/temporal correlation >= 0.8 after applying a consistent mean-sea-surface reference."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Haidvogel says the North Pacific comparison uses "root-mean-square (RMS) and correlation
+      coefficient" and reports RMS below 4 cm in many areas; Kerry provides the regional ROMS
+      7.6 cm SSH residual. CSI is retained only as a DAG-context metric.
+
+  - dag_variable: temp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: null, good: 0.8, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "NEA_ROMS reports ARGO temperature maximum RMSE 1 C and CTD maximum RMSE 0.8 C; Kerry reports 0.8-0.9 C subsurface profile residual maxima."
+        cites: [nolan2020, kerry2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is NSE, but fetched ROMS temperature-profile validations use RMSE, residual reduction, and correlation/Taylor diagnostics."
+        cites: [nolan2020, kerry2016, haidvogel2008]
+    validated_when: "Temperature profile or fixed-depth time series RMSE <= 1.0 degC after vertical interpolation from ROMS S-levels to observation depths."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Nolan: "maximum RMSE ... Argo floats temperature was 1 C" and CTD temperature RMSE was
+      0.8 C. Kerry reports subsurface temperature residual maxima of 0.8-0.9 C.
+
+  - dag_variable: temp
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 0.4, good: 0.5, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Regional ROMS SST validation reports mean rms residual 0.4 C and NEA_ROMS satellite SST RMSE around 0.5 C for most of the simulation."
+        cites: [kerry2016, nolan2020]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.97, good: null, satisfactory: 0.85}
+        pass_band: satisfactory
+        band_note: "NEA_ROMS satellite SST correlation ranges from a minimum 0.85 to more than 0.97."
+        cites: [nolan2020]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is CSI, but fetched SST spatial-time validation uses continuous RMSE and correlation."
+        cites: [nolan2020, kerry2016]
+    validated_when: "Satellite SST spatial-time comparisons validate when RMSE <= 0.5 degC and correlation >= 0.85 using nighttime/surface-level matching."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Nolan rejects daytime model SST for satellite comparison and reports RMSE "around 0.5 C"
+      for most of the period; Kerry reports SST mean rms residual 0.4 C.
+
+  - dag_variable: temp
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: bias
+        direction: zero_centered
+        unit: degC
+        bands: {very_good: null, good: 0.8, satisfactory: 0.9}
+        pass_band: satisfactory
+        band_note: "Single CTD-profile comparison in NEA_ROMS reports almost-zero temperature bias for most locations, with one profile at 0.9 C."
+        cites: [nolan2020]
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 0.5, good: 0.8, satisfactory: 0.8}
+        pass_band: satisfactory
+        band_note: "NEA_ROMS CTD temperature-profile maximum RMSE was 0.8 C."
+        cites: [nolan2020]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG determining metric is PBIAS, but fetched temperature-cast validation reports absolute bias and RMSE in degC, not percent bias."
+        cites: [nolan2020]
+    validated_when: "Single-cast temperature validates when absolute bias <= 0.9 degC and RMSE <= 0.8 degC, with sampling-time caveats recorded outside the numeric gate."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      This is a transferred single-study convention from CTD/ARGO profile validation; no fetched
+      paper gives a percent-bias threshold for temperature snapshots.
+
+  - dag_variable: salt
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: PSU
+        bands: {very_good: 0.06, good: 0.15, satisfactory: 0.17}
+        pass_band: satisfactory
+        band_note: "Yan reports an assimilation-system minimum near 0.06 psu; NEA_ROMS reports Argo salinity RMSE about 0.15 and CTD salinity RMSE 0.17."
+        cites: [yan2017, nolan2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is NSE, but fetched salinity-profile validations use RMSE/bias and water-mass T-S agreement."
+        cites: [nolan2020, yan2017]
+    validated_when: "Salinity profile or point time series validates when RMSE <= 0.17 PSU after vertical interpolation and freshwater/open-boundary consistency checks."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Nolan reports "maximum RMSE for the salinity was about 0.15" for Argo and 0.17 for CTD;
+      Yan reports salinity RMSE decreased to 0.071 psu and minimum reachable about 0.06.
+
+  - dag_variable: u
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.07, good: 0.12, satisfactory: 0.25}
+        pass_band: satisfactory
+        band_note: "Current validations report cross-shore RMSE 0.04-0.07 m/s, alongshore 0.12 m/s, and regional analysis radial-current RMSD 0.1-0.25 m/s."
+        cites: [kumar2015, kerry2016]
+      - metric: complex_correlation
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: null, satisfactory: 0.8}
+        pass_band: satisfactory
+        band_note: "EAC ROMS velocity observations match with complex correlations between 0.8 and 1 in the upper 500 m."
+        cites: [kerry2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is NSE, but fetched current-meter, ADCP, and HF-radar validations use component RMSE, complex correlation, and spectra."
+        cites: [kumar2015, kerry2016, rohrs2023]
+    validated_when: "Rotated eastward velocity validates when component RMSE <= 0.25 m/s and complex correlation >= 0.8 against current-meter/ADCP/HF-radar observations."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Kumar reports alongshore current RMSE 0.12 m/s and cross-shore 0.04-0.07 m/s; Kerry
+      reports analysis current RMSD 0.1-0.25 m/s and complex correlations 0.8-1.
+
+  - dag_variable: v
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.07, good: 0.12, satisfactory: 0.25}
+        pass_band: satisfactory
+        band_note: "Current validations report cross-shore RMSE 0.04-0.07 m/s, alongshore 0.12 m/s, and regional analysis radial-current RMSD 0.1-0.25 m/s."
+        cites: [kumar2015, kerry2016]
+      - metric: complex_correlation
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: null, satisfactory: 0.8}
+        pass_band: satisfactory
+        band_note: "EAC ROMS velocity observations match with complex correlations between 0.8 and 1 in the upper 500 m."
+        cites: [kerry2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is NSE, but fetched velocity validations use component RMSE, complex correlation, and spectra."
+        cites: [kumar2015, kerry2016, rohrs2023]
+    validated_when: "Rotated northward velocity validates when component RMSE <= 0.25 m/s and complex correlation >= 0.8 against current-meter/ADCP/HF-radar observations."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Same convention as u because ROMS grid-aligned u/v are first rotated to geographic
+      eastward/northward components before validation.
+
+  - dag_variable: ubar, vbar
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: skill_index
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.92, good: 0.91, satisfactory: 0.85}
+        pass_band: satisfactory
+        band_note: "ROMS estuary validation reports skill greater than 0.85 for barotropic quantities, depth-averaged velocity skill 0.92, and barotropic transport 0.91."
+        cites: [haidvogel2008, warner2005]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is NSE, but fetched barotropic-current validation uses Willmott-style predictive skill."
+        cites: [haidvogel2008, warner2005]
+    validated_when: "Depth-integrated/barotropic velocity validates when predictive skill index >= 0.85 against depth-averaged currents, transports, or tidal-current ellipses."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      Haidvogel reports "skill greater than 0.85 in predicting barotropic quantities"; Warner's
+      full estuary benchmark table gives depth-averaged velocity 0.92 and barotropic transport 0.91.
+
+  - dag_variable: rho
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: kg/m3
+        bands: {very_good: 0.1, good: 0.2, satisfactory: 0.23}
+        pass_band: satisfactory
+        band_note: "EAC ROMS density validation reports potential-density RMSD below 0.1 kg/m3 deeper than 500 m, under 0.2 kg/m3 for independent CTD casts, and a 0.23 kg/m3 upper-100-m peak."
+        cites: [kerry2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is NSE, but fetched density validation evaluates residual reduction and potential-density RMSE against Argo/CTD-derived density."
+        cites: [kerry2016]
+    validated_when: "Density anomaly validates when RMSE <= 0.23 kg/m3 against density derived from observed temperature/salinity with a consistent equation of state."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Kerry reports density RMSD "peaks in the upper 100 m at 0.23 kg m-3" and independent
+      CTD density residuals under 0.2 kg/m3. This is one solid ROMS benchmark, not a broad
+      multi-paper convention.
+
+deferred_paywalled: []

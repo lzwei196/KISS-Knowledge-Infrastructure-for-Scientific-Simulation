@@ -131,7 +131,7 @@ outputs:
   - var: "particle_travel_time"
     validation_rank: 1
     unit: "s"
-    description: "Per-particle advective travel time from inlet to outlet through the resolved DFN flow field"
+    description: "Per-particle advective solute travel time from inlet to outlet through the resolved subsurface fractured-rock DFN flow field"
     emitted_in: "partime / partime.dat"
     observability:
       comparable_obs_shapes:
@@ -144,7 +144,7 @@ outputs:
   - var: "breakthrough_curve"
     validation_rank: 2
     unit: "cumulative arrival fraction vs s"
-    description: "Cumulative particle-arrival CDF; characteristic early arrivals plus power-law late-time tailing"
+    description: "Cumulative subsurface fractured-rock DFN solute particle-arrival CDF; characteristic early arrivals plus power-law late-time tailing"
     emitted_in: "derived in s5 post-processing from partime"
     observability:
       comparable_obs_shapes:
@@ -162,7 +162,7 @@ outputs:
   - var: "travel_time_statistics"
     validation_rank: 3
     unit: "s"
-    description: "Median, mean, std, CV, percentiles (p5/p50/p95), and tailing ratio of the travel-time distribution"
+    description: "Median, mean, std, CV, percentiles (p5/p50/p95), and tailing ratio of the subsurface fractured-rock DFN solute travel-time distribution"
     emitted_in: "derived in s5 post-processing"
     observability:
       comparable_obs_shapes:
@@ -175,7 +175,7 @@ outputs:
   - var: "effective_permeability"
     validation_rank: 4
     unit: "m^2"
-    description: "Upscaled network permeability k_eff = Q*mu*L/(A*dP)"
+    description: "Upscaled subsurface fractured-rock DFN network permeability k_eff = Q*mu*L/(A*dP)"
     emitted_in: "derived in s5 post-processing"
     observability:
       comparable_obs_shapes:
@@ -201,7 +201,7 @@ outputs:
   - var: "fracture_network_geometry"
     validation_rank: 6
     unit: "radii/coords m"
-    description: "Accepted fracture radii, unit normals, centroids, and intersection segments defining the generated network"
+    description: "Accepted fracture radii, unit normals, centroids, and intersection segments defining the generated subsurface fractured-rock DFN"
     emitted_in: "radii_Final.dat / normal_vectors.dat / translations.dat / intersection_list.dat / connectivity.dat"
     observability:
       comparable_obs_shapes:
@@ -417,3 +417,25 @@ safety:
       scope: "transport process semantics"
       source: "dfnWorks dfnTrans documentation (dfnworks.lanl.gov/dfntrans.html)"
       status: "adopted"
+
+medium_evidence:
+  - var: "particle_travel_time"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous simulation of subsurface flow and transport through discrete fracture networks (DFNs) using dfnWorks."
+    note: "The root KI declares the model medium and domain; the output description now ties particle travel time to solute transport through the subsurface fractured-rock DFN."
+  - var: "breakthrough_curve"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous simulation of subsurface flow and transport through discrete fracture networks (DFNs) using dfnWorks."
+    note: "The root KI declares the model medium and domain; the output description now ties breakthrough to solute particles in the subsurface fractured-rock DFN."
+  - var: "travel_time_statistics"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous simulation of subsurface flow and transport through discrete fracture networks (DFNs) using dfnWorks."
+    note: "The root KI declares the model medium and domain; the output description now ties travel-time statistics to the subsurface fractured-rock DFN solute travel-time distribution."
+  - var: "effective_permeability"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous simulation of subsurface flow and transport through discrete fracture networks (DFNs) using dfnWorks."
+    note: "The root KI declares the model medium and domain; the output description now ties effective permeability to the upscaled subsurface fractured-rock DFN network."
+  - var: "fracture_network_geometry"
+    source: "SKILL.md"
+    quote: "dfnWorks operates on fractured rock (discrete fractures in 3D space), not porous media continuum."
+    note: "The root KI declares the model medium; the output description now identifies the generated geometry as a subsurface fractured-rock DFN."

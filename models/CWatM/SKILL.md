@@ -1,14 +1,3 @@
----
-name: cwatm
-description: >-
-  CWatM v1.04. Covers Terrestrial water cycle simulated daily: precipitation/snow
-  partitioning, evapotranspiration, soil…; Water availability, demand and water stress
-  across river basins; Human water use and abstraction (irrigation, industry, domestic,
-  livestock) including return flows; Water-infrastructure effects: reservoirs, lakes,
-  groundwater pumping, irrigation. Use when the task involves running, configuring,
-  calibrating or interpreting CWatM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,43 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (28 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_cwatm_ancillary.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_cwatm_ancillary.py --help` |
+| `tools/build_cwatm_static.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_cwatm_static.py --help` |
+| `tools/build_cwatm_waterbodies.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_cwatm_waterbodies.py --help` |
+| `tools/convert_forcing_to_cwatm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_cwatm.py --help` |
+| `tools/convert_soil_to_cwatm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_cwatm.py --help` |
+| `tools/parse_cwatm_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_cwatm_output.py --help` |
+| `tools/run_cwatm_wrapper.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_cwatm_wrapper.py --help` |
+
+*7 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # CWatM v1.5 (Community Water Model) — Knowledge Infrastructure
 
@@ -243,7 +269,26 @@ Each land cover type has specific parameters for: root depth, interception capac
 
 ---
 
-## Output Format
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. This section restates the DAG output block for quick reading; if this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `discharge` — Channel/river flow - the primary reported and calibrated variable. (`m3/s`)
+
+| Output variable (dag `var`) | Rank | Unit | Emitted in | DAG description |
+|-----------------------------|------|------|------------|-----------------|
+| `discharge` | 1 | `m3/s` | NetCDF map / TSS time series at the configured aggregation suffix | Channel/river flow - the primary reported and calibrated variable. |
+| `tws` | 2 | `m` | NetCDF map | Total water storage anomaly (groundwater + soil + surface water + snow). |
+| `totalET` | 3 | `m` | NetCDF map at requested aggregation | Total actual evapotranspiration — water flux from land surface and vegetation to the atmosphere. |
+| `SnowCover` | 4 | `m SWE` | NetCDF map | Snow water equivalent (state, reportable). |
+| `storGroundwater` | 5 | `m` | NetCDF map | Linear-reservoir groundwater storage (state). |
+| `baseflow` | 6 | `m` | NetCDF map at requested aggregation | Groundwater contribution to streamflow. |
+| `sum_gwRecharge` | 7 | `m` | NetCDF map at requested aggregation | Groundwater recharge flux. |
+| `unmetDemand` | 8 | `m` | NetCDF map / TSS | Unsatisfied water demand (water-stress indicator). |
+
+### Output Format
 
 ### Time Series Output (at gauge locations)
 
@@ -287,7 +332,34 @@ Variable metadata is defined in `cwatm/metaNetcdf.xml` with CF-compliant attribu
 
 ---
 
-## Unit Trap Table
+## 8. Unit Conversion Table
+
+Exact input/output shapes live in `docs/format_spec.yaml`; this table captures the conversions the CWatM KI repeatedly guards because mismatches are silent.
+
+| Quantity | Source unit / case | Model unit | Factor or transform | Type |
+|----------|--------------------|------------|---------------------|------|
+| Precipitation forcing | `kg m⁻² s⁻¹` | `m/day` | `precipitation_coversion = 86.4` | multiplicative |
+| Precipitation forcing | `m/day` | `m/day` | `precipitation_coversion = 1.0` | identity |
+| Precipitation forcing | `mm/day` | `m/day` | `precipitation_coversion = 0.001` | multiplicative |
+| Precipitation forcing | `mm/hr` | `m/day` | `precipitation_coversion = 0.024` | multiplicative |
+| Average temperature, Tmin, Tmax | `K` with `TemperatureInKelvin = True` | `K` | none | identity |
+| Average temperature, Tmin, Tmax | `°C` with `TemperatureInKelvin = False` | `K` internally | `+273.15` | additive |
+| Shortwave radiation | `W/m²` | `MJ/m²/day` path for ET | `×86400×1e-6` | multiplicative |
+| Longwave radiation | `W/m²` | `W/m²` | none | identity |
+| Surface pressure | `hPa` | `Pa` | `×100` | multiplicative |
+| Surface pressure | `kPa` | `Pa` | `×1000` | multiplicative |
+| Wind speed | `km/hr` | `m/s` | `÷3.6` | multiplicative |
+| KSat from HWSD | `cm/day` | `cm/day` | none | identity |
+| KSat from SoilGrids | `mm/hr` | `cm/day` | `×2.4` | multiplicative |
+| KSat from source in `m/s` | `m/s` | `cm/day` | `×8640000` | multiplicative |
+| van Genuchten alpha | `1/m` | `1/cm` | `÷100` | multiplicative |
+| Elevation | `km` | `m` | `×1000` | multiplicative |
+| Elevation | `ft` | `m` | `×0.3048` | multiplicative |
+| Channel gradient | `%` | dimensionless | `÷100` | multiplicative |
+| Channel gradient | `‰` | dimensionless | `÷1000` | multiplicative |
+| Cell area | `km²` | `m²` | `×1e6` | multiplicative |
+
+### Unit Trap Table
 
 | Quantity | Expected Unit | Common Wrong Unit | Factor | Symptom |
 |----------|--------------|-------------------|--------|---------|
@@ -302,6 +374,20 @@ Variable metadata is defined in `cwatm/metaNetcdf.xml` with CF-compliant attribu
 | Elevation | m | km or ft | ×1000 or ×0.3048 | Lapse rate, snow wrong |
 | Channel gradient | dimensionless | % or ‰ | ÷100 or ÷1000 | Routing velocity wrong |
 | Cell area | m² | km² | ×1e6 | Water balance wrong |
+
+---
+
+## 9. Diagnostic Triplets (Top 5)
+
+Check `diagnostics/triplets.yaml` before debugging any failure. These are the highest-priority silent unit-conversion triplets in that file; do not duplicate the full YAML here.
+
+| # | Triplet id | Error / symptom | Diagnosis | Remedy |
+|---|------------|-----------------|-----------|--------|
+| 1 | `dt_001` | Extreme flooding or discharge 100-1000× too high | `precipitation_coversion` factor does not match precipitation input units | Match `precipitation_coversion` to the actual forcing NetCDF units |
+| 2 | `dt_002` | Zero or near-zero discharge despite precipitation | Precipitation is too low because the scale or conversion factor is wrong | Check internal precipitation output; daily precipitation should be 0-0.1 m/day |
+| 3 | `dt_003` | Snow never melts, or all precipitation is snow/rain regardless of season | `TemperatureInKelvin` flag does not match input data units | Check temperature values and set `TemperatureInKelvin` correctly |
+| 4 | `dt_004` | Water drains instantly or soil stays waterlogged | KSat units are wrong; CWatM expects `cm/day` | Convert KSat before use: HWSD is already `cm/day`; SoilGrids needs `×2.4`; `m/s` needs `×8640000` |
+| 5 | `dt_005` | Soil retention curve, field capacity, or wilting point is unrealistic | van Genuchten alpha is in `1/m` instead of `1/cm` | Divide source alpha by `100` when converting from `1/m` to `1/cm` |
 
 ---
 
@@ -479,7 +565,7 @@ The kinematic wave solver uses Newton-Raphson iteration (max 10 iterations, epsi
 
 ---
 
-## Coupling Points
+## 10. Coupling Interfaces
 
 | Direction | Partner Model | Interface |
 |-----------|--------------|-----------|
@@ -488,6 +574,45 @@ The kinematic wave solver uses Newton-Raphson iteration (max 10 iterations, epsi
 | Glacier coupling | OGGM | Glacier melt as additional input |
 | Downstream | MESSAGE-GLOBIOM | Water availability constraints |
 | Water quality | Internal module | Integrated water quality tracking |
+
+---
+
+## 11. Validated Results
+
+**Source of truth**: `docs/validation_convention.yaml`. This section states the field bars used to judge model skill; do not infer achieved scores from these thresholds. Run metrics must come from actual CWatM outputs after `python preflight_check.py` and a real model execution.
+
+### Headline Output
+
+| Property | Value |
+|----------|-------|
+| DAG rank-1 variable | `discharge` |
+| Unit | `m3/s` |
+| Description | Channel/river flow - the primary reported and calibrated variable. |
+| Other DAG outputs | `tws`, `totalET`, `SnowCover`, `storGroundwater`, `baseflow`, `sum_gwRecharge`, `unmetDemand` |
+
+### Performance Metrics — judged against the field's bar, not intuition
+
+| DAG variable | Metric | Direction | Band | Convention threshold | Citation keys |
+|--------------|--------|-----------|------|----------------------|---------------|
+| `discharge` | `nse` | maximize | `satisfactory` | `>= 0.5` | `arnold2012`, `panarctic2020`, `bouregreg2011` |
+| `discharge` | `nse` | maximize | `good` | `>= 0.7` | `arnold2012`, `panarctic2020`, `bouregreg2011` |
+| `discharge` | `nse` | maximize | `very_good` | `>= 0.75` | `arnold2012`, `panarctic2020`, `bouregreg2011` |
+| `discharge` | `pbias` | zero_centered | `satisfactory` | `<= 25` toward zero | `panarctic2020`, `bouregreg2011` |
+| `discharge` | `pbias` | zero_centered | `good` | `<= 15` toward zero | `panarctic2020`, `bouregreg2011` |
+| `discharge` | `pbias` | zero_centered | `very_good` | `<= 10` toward zero | `panarctic2020`, `bouregreg2011` |
+| `tws` | `r` | maximize | `satisfactory` | no cited threshold | none in convention |
+
+The convention contains `discharge` PBIAS bars for both point time-series and regional aggregate time-series validation; both use `very_good: 10`, `good: 15`, and `satisfactory: 25` with citation keys `panarctic2020` and `bouregreg2011`.
+
+| Metric | Calibration | Validation | Full Period | Bar (convention, cited) |
+|--------|-------------|------------|-------------|-------------------------|
+| `nse` for `discharge` | not stated in this KI body | not stated in this KI body | not stated in this KI body | `satisfactory >= 0.5`, `good >= 0.7`, `very_good >= 0.75` (`arnold2012`, `panarctic2020`, `bouregreg2011`) |
+| `pbias` for `discharge` | not stated in this KI body | not stated in this KI body | not stated in this KI body | zero-centered: `satisfactory <= 25`, `good <= 15`, `very_good <= 10` (`panarctic2020`, `bouregreg2011`) |
+| `r` for `tws` | not stated in this KI body | not stated in this KI body | not stated in this KI body | `satisfactory`: no cited threshold; citation keys: none in convention |
+
+### Data Replacement Tracking
+
+No per-case replacement-status table is stated in `docs/validation_convention.yaml` or in the extracted validated-results facts. For a run, record replacement status in the run artifact after preparing forcing, soil, static domain, observed discharge, and model outputs from the KI tools named above.
 
 ---
 

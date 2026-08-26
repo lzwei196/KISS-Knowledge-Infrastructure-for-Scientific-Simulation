@@ -1,14 +1,3 @@
----
-name: mizuroute
-description: >-
-  mizuRoute river-network routing framework. Covers Reach-based (vector) river-network
-  routing of external runoff to streamflow; Hillslope/basin lateral delay (runoff depth to
-  volume to reach inflow via gamma unit hydrograph); River-channel routing reach-by-reach
-  in upstream-to-downstream topological order; Discharge at every river segment, not only
-  at gauge points. Use when the task involves running, configuring, calibrating or
-  interpreting mizuRoute.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -33,6 +22,43 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (19 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (14 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/s1_network/build_network_topology.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_network/build_network_topology.py --help` |
+| `tools/s2_remap/create_remap_weights.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_remap/create_remap_weights.py --help` |
+| `tools/s3_runoff/convert_vic_runoff.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_runoff/convert_vic_runoff.py --help` |
+| `tools/s4_control/generate_control_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_control/generate_control_file.py --help` |
+| `tools/s5_execution/run_mizuroute.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_execution/run_mizuroute.py --help` |
+| `tools/s6_postprocess/compare_routing_methods.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_postprocess/compare_routing_methods.py --help` |
+| `tools/s6_postprocess/extract_discharge.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_postprocess/extract_discharge.py --help` |
+
+*7 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -203,6 +229,57 @@ s0 ─────────────────────────�
 
 ---
 
+## 6. Output Description
+
+**Source**: `dag.yaml`. This section restates the dag's observable outputs for an agent that is reading only `SKILL.md`. If this section ever disagrees with `dag.yaml`, the dag wins.
+
+**Headline output**: the dag's rank-1 variable, which is the one this model is judged by.
+
+> `routed_discharge` - Streamflow at each river segment for each active routing method (IRFroutedRunoff, KWTroutedRunoff, KWroutedRunoff, MCroutedRunoff, DWroutedRunoff); REACH_Q. (`m3/s`)
+
+| Output variable (dag `var`) | Validation rank | Unit | Output description / extracted dag fact |
+|---|---:|---|---|
+| `routed_discharge` | 1 | `m3/s` | Streamflow at each river segment for each active routing method (IRFroutedRunoff, KWTroutedRunoff, KWroutedRunoff, MCroutedRunoff, DWroutedRunoff); REACH_Q. |
+| `basRunoff` | not stated in extracted facts | not stated in extracted facts | Other dag output. |
+| `REACH_VOL` | not stated in extracted facts | not stated in extracted facts | Other dag output. |
+| `lake_outflow_storage` | not stated in extracted facts | not stated in extracted facts | Other dag output. |
+
+The full other-output list from the dag facts is: `basRunoff`, `REACH_VOL`, `lake_outflow_storage`.
+
+---
+
+## 8. Unit Conversion Table
+
+This table records the unit conversions and output units that matter for running and evaluating the mizuRoute KI. Exact I/O shapes live in `docs/format_spec.yaml`; the dag remains authoritative for output variables.
+
+### Input Conversions
+
+| Variable | Source unit | Model unit | Factor | Type |
+|---|---|---|---:|---|
+| VIC daily `RUNOFF` | `mm/day` | `mm/s` | divide by `86400` | rate conversion |
+| VIC daily `BASEFLOW` | `mm/day` | `mm/s` | divide by `86400` | rate conversion |
+| VIC 3-hourly `RUNOFF` | `mm/3hr` | `mm/s` | divide by `10800` | rate conversion |
+| VIC 3-hourly `BASEFLOW` | `mm/3hr` | `mm/s` | divide by `10800` | rate conversion |
+
+### Output Units
+
+| Output variable | Unit | Source |
+|---|---|---|
+| `routed_discharge` | `m3/s` | `dag.yaml` extracted fact |
+| `basRunoff` | not stated in extracted facts | `dag.yaml` extracted other-output list |
+| `REACH_VOL` | not stated in extracted facts | `dag.yaml` extracted other-output list |
+| `lake_outflow_storage` | not stated in extracted facts | `dag.yaml` extracted other-output list |
+
+### Sign Conventions and Output Unit Checks
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|---|---|---|---|
+| `routed_discharge` | Absolute streamflow in `m3/s` at each river segment for each active routing method. | Runoff depth or timestep accumulation. | Magnitude and validation metrics are invalid. |
+| `RUNOFF` / `BASEFLOW` inputs | mizuRoute-ready runoff rate in `mm/s`. | VIC depth per timestep (`mm/day` or `mm/3hr`). | Discharge is scaled by `86400` or `10800`. |
+| `basRunoff` | Dag output; unit not stated in extracted facts. | Treating it as a validation discharge target. | Mass-conservation checks can be misread as outlet-flow skill. |
+
+---
+
 ## Critical Domain Knowledge
 
 These non-obvious facts cause **silent failures** if violated. Each has a corresponding diagnostic triplet.
@@ -348,6 +425,22 @@ python $TOOLS/s6_postprocess/extract_discharge.py \
 | Network topology | HydroCraft (DEM + D8) | Validated | 224 segments, 7 outlets |
 | Routing params | Default (velo=1.0, diff=800) | Applied | No calibration |
 | Output writing | PIO serial stubs | **Fixed** | pio_setframe was no-op (dt_m019) |
+
+### Performance Metrics - Field Convention Bars
+
+**Source**: `docs/validation_convention.yaml`. A run is judged against these cited convention bars, not against intuition. For zero-centered PBIAS, smaller absolute bias is better. The duplicate `routed_discharge` PBIAS convention record is preserved as an extracted KI fact.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Citation key |
+|---|---|---|---|---|---|---|
+| `routed_discharge` | `nse` | maximize | `0.5` | `0.7` | `0.8` | `moriasi2007`, `moriasi2015` |
+| `routed_discharge` | `pbias` | zero_centered | `15.0` | `10.0` | `5.0` | `moriasi2015` |
+| `routed_discharge` | `pbias` | zero_centered | `15.0` | `10.0` | `5.0` | `moriasi2015` |
+| `basRunoff` | `nse` | maximize | `0.5` | `0.7` | `0.8` | `moriasi2015` |
+| `basRunoff` | `pbias` | zero_centered | `15.0` | `10.0` | `5.0` | `moriasi2015` |
+
+The headline metric bars for `routed_discharge` are: NSE satisfactory `0.5` (`moriasi2007`, `moriasi2015`), good `0.7` (`moriasi2007`, `moriasi2015`), very good `0.8` (`moriasi2007`, `moriasi2015`); PBIAS zero-centered satisfactory `15.0` (`moriasi2015`), good `10.0` (`moriasi2015`), very good `5.0` (`moriasi2015`).
+
+The existing Bengbu result table below reports run-specific sanity checks and comparisons. The convention bars above are the cited thresholds for formal scoring.
 
 **Results (after MPI stub fix)**:
 

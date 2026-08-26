@@ -1,0 +1,283 @@
+schema_version: 1
+model_id: PorePy
+domain: groundwater
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  das2019:
+    doi: 10.1007/s13201-019-1013-x
+    title: "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India"
+    venue: "Applied Water Science"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13201-019-1013-x.txt
+  porepy2020:
+    doi: 10.1007/s10596-020-10002-5
+    title: "PorePy: an open-source software for simulation of multiphysics processes in fractured porous media"
+    venue: "Computational Geosciences"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10596-020-10002-5.txt
+  flemisch2017:
+    doi: 10.1016/j.advwatres.2017.10.036
+    title: "Benchmarks for single-phase flow in fractured porous media"
+    venue: "Advances in Water Resources"
+    year: 2017
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.advwatres.2017.10.036.txt
+  berre2020:
+    doi: 10.1016/j.advwatres.2020.103759
+    title: "Verification benchmarks for single-phase flow in three-dimensional fractured porous media"
+    venue: "Advances in Water Resources"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.advwatres.2020.103759.txt
+  cacace2017:
+    doi: 10.5194/se-8-921-2017
+    title: "Flexible parallel implicit modelling of coupled thermal-hydraulic-mechanical processes in fractured rocks"
+    venue: "Solid Earth"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_se-8-921-2017.txt
+  nordbotten2014:
+    doi: 10.1002/2013wr015179
+    title: "Finite volume hydromechanical simulation in porous media"
+    venue: "Water Resources Research"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2013wr015179.txt
+  berge2020:
+    doi: 10.1002/nme.6238
+    title: "Finite volume discretization for poroelastic media with fractures modeled by contact mechanics"
+    venue: "International Journal for Numerical Methods in Engineering"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_nme.6238.txt
+  stefansson2021:
+    doi: 10.1016/j.cma.2021.114122
+    title: "A fully coupled numerical model of thermo-hydro-mechanical processes and fracture contact mechanics in porous media"
+    venue: "Computer Methods in Applied Mechanics and Engineering"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.cma.2021.114122.txt
+  mollaali2023:
+    doi: 10.1016/j.ijrmms.2023.105530
+    title: "Comparative verification of hydro-mechanical fracture behavior: Task G of the international research project DECOVALEX-2023"
+    venue: "International Journal of Rock Mechanics and Mining Sciences"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.ijrmms.2023.105530.txt
+
+validation:
+  - dag_variable: pressure
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.75, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred from open-access hydrologic time-series model evaluation: Das 2019 reproduces that monthly calibration is satisfactory if NSE > 0.50 and cites good simulation for NSE greater than 0.75."
+        cites: [das2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Magnitude bias is a useful hydraulic-head/pressure diagnostic after reference-datum conversion; Das 2019 quotes PBIAS +/- 25% for streamflow, but this is not a PorePy pressure-specific pass gate."
+        cites: [das2019]
+      - metric: relative_l2_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "PorePy validation is mainly by benchmarks; the PorePy paper says it presents validation by benchmarks, and fractured-flow benchmarks report approximation errors relative to reference solutions."
+        cites: [porepy2020, flemisch2017, berre2020]
+    validated_when: "For pressure/head-like time series, NSE >= 0.5 under consistent datum and density conversion; check PBIAS and benchmark-relative errors as supportive diagnostics."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "No fetched PorePy field paper gives a pressure-specific NSE threshold. This block keeps the dag determining_metric and transfers an open-access hydrologic convention; field practice for PorePy itself is mostly benchmark/reference-solution verification."
+
+  - dag_variable: pressure
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched fractured-porous-media pressure benchmark defines a CSI threshold for continuous pressure fields."
+        cites: []
+    secondary_metrics:
+      - metric: relative_l2_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "The fetched flow benchmark convention is comparison of pressure and fracture quantities to reference solutions, not CSI pass/fail grading."
+        cites: [flemisch2017, berre2020]
+    validated_when: "UNRESOLVED - use reference-solution spatial error and visual/line-sample agreement; no cited CSI band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Flemisch 2017 says benchmark outputs include approximation errors in matrix and fractures with respect to a reference solution. The dag CSI metric has no fetched numeric threshold."
+
+  - dag_variable: displacement
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched poromechanics or fractured-rock benchmark gives an NSE tier for displacement time series."
+        cites: []
+    secondary_metrics:
+      - metric: relative_l2_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hydromechanical finite-volume papers validate displacement by convergence or analytical/reference comparison rather than NSE."
+        cites: [nordbotten2014, berge2020, stefansson2021]
+    validated_when: "UNRESOLVED - displacement time series should agree with borehole/surface deformation at matching support, but no cited NSE band was fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Berge 2020 reports convergence rates do not deteriorate when contact tractions are coupled to the finite-volume scheme; Stefansson 2021 reports expected first-order convergence except local traction-regime transitions. These are verification results, not a field NSE rule."
+
+  - dag_variable: displacement
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched source defines a PBIAS threshold for displacement snapshots in fractured poromechanics."
+        cites: []
+    secondary_metrics:
+      - metric: relative_l2_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "PorePy-related mechanics validation is by analytical/reference solutions and convergence studies, not a PBIAS tier."
+        cites: [porepy2020, nordbotten2014, berge2020, stefansson2021]
+    validated_when: "UNRESOLVED - compare displacement components in the same reference frame; no cited PBIAS band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The PorePy paper includes poroelasticity and fracture-deformation benchmarks. That supports comparison practice but not a numeric PBIAS convention."
+
+  - dag_variable: temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched THM fractured-rock paper reports a temperature NSE validation tier."
+        cites: []
+    secondary_metrics:
+      - metric: relative_l2_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched THM papers validate temperature by comparison with analytical/reference solutions and convergence, not NSE thresholds."
+        cites: [cacace2017, stefansson2021]
+    validated_when: "UNRESOLVED - use analytical/reference heat-transport benchmark agreement or field RMSE if a site-specific thermal benchmark is fetched; no cited NSE band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Cacace 2017 compares fracture heat-transport temperature evolution with analytical solutions; Stefansson 2021 verifies a PorePy THM implementation through convergence. Neither gives a field NSE pass band."
+
+  - dag_variable: darcy_flux
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.75, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred from hydrologic flow time-series evaluation: Das 2019 quotes satisfactory monthly calibration if NSE > 0.50 and good simulation above 0.75."
+        cites: [das2019]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Das 2019 reproduces the streamflow criterion PBIAS +/- 25%; use only when Darcy/interface flux is aggregated to the same sign and support as observed flow."
+        cites: [das2019]
+    secondary_metrics:
+      - metric: relative_l2_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fractured-flow benchmark papers judge flux/pressure solutions against fine-grid reference solutions and approximation errors."
+        cites: [flemisch2017, berre2020]
+    validated_when: "NSE >= 0.5 and |PBIAS| <= 25% for comparable flow-rate time series; otherwise defer to reference-solution error because PorePy flux validation is benchmark-based."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "This is a transferred hydrologic convention, not a PorePy-specific field flux threshold. Keep both time-pattern and magnitude diagnostics because the dag lists temporal and magnitude metric families."
+
+  - dag_variable: stress
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched geomechanics benchmark defines a PBIAS threshold for stress snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: relative_l2_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched hydromechanics papers use convergence, analytical stress solutions, and benchmark agreement rather than stress PBIAS bands."
+        cites: [nordbotten2014, cacace2017]
+    validated_when: "UNRESOLVED - compare effective or total stress consistently against analytical/reference or measured stress; no cited PBIAS band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Cacace 2017 states an oedometer benchmark stress solution and reports perfect agreement with analytical results, but it does not provide a field PBIAS acceptance tier."
+
+  - dag_variable: fracture_aperture
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper defines a PBIAS validation band for fracture aperture snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: relative_l2_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Aperture is judged in fetched work through displacement-jump/contact benchmark behavior, convergence, and crack-opening comparisons, not a universal PBIAS threshold."
+        cites: [berge2020, stefansson2021, mollaali2023]
+    validated_when: "UNRESOLVED - compare aperture to inferred transmissivity or benchmark crack-opening/displacement-jump reference; no cited PBIAS band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "DECOVALEX 2023 reports models can reproduce maximum crack opening but have difficulties near crack tips. This supports aperture benchmark checks but not a numeric field threshold."
+
+  - dag_variable: contact_traction
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched contact-mechanics/fractured-rock paper defines a PBIAS validation threshold for contact traction."
+        cites: []
+    secondary_metrics:
+      - metric: relative_l2_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Contact traction is validated by contact-mechanics benchmark convergence and reference solutions rather than field PBIAS tiers."
+        cites: [berge2020, stefansson2021, mollaali2023]
+    validated_when: "UNRESOLVED - validate against analytical/contact benchmark traction fields or lab-informed stress state; no cited PBIAS band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Berge 2020 treats traction as the Lagrange multiplier on fracture faces and reports convergence behavior; Stefansson 2021 notes a local traction convergence exception at contact-regime transitions. These are supportive verification conventions only."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2007 model evaluation guidelines"
+    doi: 10.13031/2013.23153
+    needed_for: [pressure, darcy_flux]
+  - ref: "Moriasi et al. 2015 hydrologic and water quality model performance measures"
+    doi: 10.13031/trans.58.10715
+    needed_for: [pressure, darcy_flux]
+  - ref: "Groundwater level normalized-RMSE threshold paper from OpenAlex search; local fetch failed"
+    doi: 10.3390/su12104023
+    needed_for: [pressure]

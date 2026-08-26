@@ -1,77 +1,89 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:59:50.819694'
-  domain: groundwater
   name: DuMux
-  version: auto-generated
+  language: c++
+  implementation:
+    id: dumux-3.10
+    version: '3.10'
+    provenance: C++ (header-only DUNE module); DuMux project (github.com/dumux/dumux) wrapping DUNE core
+      numerics. Executables are user/example problems compiled against the headers.
+  scientific_reference_version: DuMux 3.10 (DUNE-based finite-volume porous-media flow/transport library;
+    Koch et al. 2021, DuMux 3)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/dumux_real_run/example_1ptracer
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_grid_domain_setup
+  - s2_forcing_recharge
+  - s3_soil_parameters
+  - s4_build_execution
+  - s5_output_parsing
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_dumux.py
+  - tools/convert_soil_to_dumux.py
+  - tools/parse_dumux_output.py
+  - tools/run_dumux.py
+inputs:
+  forcing:
+  - name: Recharge / top boundary flux
+    unit: kg/(m2*s)
+  parameters:
+  - name: Intrinsic permeability K
+    unit: m2
+  - name: Porosity phi
+    unit: '-'
+  - name: van Genuchten alpha (capillary pressure scale)
+    unit: 1/Pa
+  - name: van Genuchten n (pore-geometry index)
+    unit: '-'
+  - name: Residual water saturation Swr
+    unit: '-'
+  - name: Dispersivity
+    unit: m
+  - name: Molecular diffusion coefficient
+    unit: m2/s
+  - name: Newton convergence/control parameters (MaxRelativeShift, TargetSteps, MaxSteps, MaxTimeStepDivisions)
+    unit: '-'
+  initial_conditions:
+  - name: Initial primary-variable solution
+    unit: model-dependent (Pa for pressure, - for saturation)
+  boundary_conditions:
+  - name: Dirichlet boundary (fixed pressure / head)
+    unit: Pa (absolute)
+  - name: Boundary-type assignment (Dirichlet vs Neumann per segment)
+    unit: '-'
+  - name: Source / sink terms (e.g. pumping wells)
+    unit: kg/(m3*s)
+  - name: Gravity switch (Problem.EnableGravity)
+    unit: '-'
+  - name: Grid domain definition (extent, cells, refinement, grid file)
+    unit: m / count
+  - name: Time-loop control (TEnd, DtInitial, MaxTimeStepSize)
+    unit: s
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - pressure
+  - velocity
+  - saturation
+  - tracer concentration / mass fraction
+  - baseflow (derived flux)
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: NSE=1.000, KGE=0.997, R=1.000, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.999978
+    best_kge: 0.996549
+    best_r: 0.999997
+summary:
+  total_tools: 4
+  total_stage_docs: 5
+  total_diagnostic_triplets: 22
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

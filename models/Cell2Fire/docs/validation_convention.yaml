@@ -1,0 +1,316 @@
+schema_version: 1
+model_id: Cell2Fire
+domain: hazard
+generated_by: "Step-B fleet agent (Codex GPT-5)"
+generated_at: 2026-08-14
+
+references:
+  cell2fire2025:
+    doi: 10.1038/s41598-025-05706-6
+    title: "Fire spread simulations using Cell2Fire on synthetic and real landscapes"
+    venue: "Scientific Reports"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-025-05706-6.txt
+  pais2021:
+    doi: 10.3389/ffgc.2021.692706
+    title: "Cell2Fire: A Cell-Based Forest Fire Growth Model to Support Strategic Landscape Management Planning"
+    venue: "Frontiers in Forests and Global Change"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_ffgc.2021.692706.txt
+  price2022:
+    doi: 10.1186/s42408-022-00147-2
+    title: "Modeling of fire spread in sagebrush steppe using FARSITE: an approach to improve input data and calibration"
+    venue: "Fire Ecology"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1186_s42408-022-00147-2.txt
+  giannaros2020:
+    doi: 10.3390/atmos11111264
+    title: "Performance Evaluation of an Operational Rapid Response Fire Spread Forecasting System"
+    venue: "Atmosphere"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_atmos11111264.txt
+  perello2024:
+    doi: 10.1186/s42408-023-00239-7
+    title: "Cellular automata-based simulators for the design of prescribed fire plans: the case study of Liguria, Italy"
+    venue: "Fire Ecology"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1186_s42408-023-00239-7.txt
+  benali2023:
+    doi: 10.5194/essd-15-3791-2023
+    title: "The Portuguese Large Wildfire Spread database (PT-FireSprd)"
+    venue: "Earth System Science Data"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_essd-15-3791-2023.txt
+  moran2025:
+    doi: 10.1038/s41598-025-07968-6
+    title: "Benchmarking performance of annual burn probability modeling against subsequent wildfire activity"
+    venue: "Scientific Reports"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-025-07968-6.txt
+  carlson2025:
+    doi: 10.1071/WF23196
+    title: "Evaluating a simulation-based wildfire burn probability map for the conterminous US"
+    venue: "International Journal of Wildland Fire"
+    year: 2025
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1071_wf23196.txt
+  cardil2019:
+    doi: 10.1016/j.ecolmodel.2019.01.017
+    title: "Adjusting the rate of spread of fire simulations in real-time"
+    venue: "Ecological Modelling"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.ecolmodel.2019.01.017.txt
+  gale2025:
+    doi: 10.1016/j.envsoft.2025.106436
+    title: "Evaluating Australian forest fire rate of spread models using VIIRS satellite observations"
+    venue: "Environmental Modelling & Software"
+    year: 2025
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2025.106436.txt
+  klock2023:
+    doi: 10.3390/fire6090360
+    title: "It's about Time: A Method for Estimating Wildfire Arrival and Weather Conditions at Field-Sampled Locations"
+    venue: "Fire"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_fire6090360.txt
+  gonzalez2023:
+    doi: 10.3389/ffgc.2023.1071484
+    title: "A fire spread simulator to support tactical management decisions for Mediterranean landscapes"
+    venue: "Frontiers in Forests and Global Change"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_ffgc.2023.1071484.txt
+  zhou2024:
+    doi: 10.3390/fire7040141
+    title: "Comparing Accuracy of Wildfire Spread Prediction Models under Different Data Deficiency Conditions"
+    venue: "Fire"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_fire7040141.txt
+
+validation:
+  - dag_variable: "FinalGrid (burned/unburned)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.6667, good: 0.4286, satisfactory: 0.25}
+        pass_band: satisfactory
+        band_note: >-
+          CSI/Jaccard bands are algebraic conversions from the fetched wildfire-spread Sorensen/Dice
+          convention: SC=0.40 moderate -> CSI=0.25; SC=0.60 substantial -> CSI=0.4286; SC=0.80 near-perfect
+          -> CSI=0.6667. Giannaros 2020 says KC and SC above 0.40 indicate "at least moderate agreement".
+        cites: [giannaros2020]
+    secondary_metrics:
+      - metric: f1_score
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Cell2Fire 2025 reports real Dogrib burn-scar F1 increasing from 0.74 to 0.83 after BBO tuning; F1 is equivalent to the Sorensen/Dice coefficient for a binary burned/unburned raster."
+        cites: [cell2fire2025]
+      - metric: kappa
+        direction: maximize
+        status: supportive
+        ceiling_reason: "FARSITE perimeter-evaluation papers commonly report Sorensen's coefficient and Cohen's kappa; Price 2022 calls SC=0.70/K=0.68 much greater agreement and SC=0.80/K=0.79 high agreement."
+        cites: [price2022]
+    validated_when: "Binary final burn scar overlaps the observed final perimeter at CSI >= 0.25 (moderate Sorensen/Dice agreement equivalent), with F1/Sorensen and Kappa used as corroborating perimeter-skill metrics."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Field convention is categorical burned-area agreement against an observed fire perimeter/scar, not a
+      continuous-field score. Cell2Fire 2025 directly benchmarks this output against the 2001 Dogrib real burn
+      scar and reports F1-score improvement from 0.74 to 0.83 after ROS/eccentricity BBO tuning; Pais 2021
+      validated earlier Cell2Fire against Prometheus with average 91.82% accuracy and 87.91% structural
+      similarity over 22 h, while warning Prometheus need not match historical perimeters because suppression
+      and data approximations matter.
+
+  - dag_variable: "burn probability"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: top_quintile_burn_capture_percent
+        direction: maximize
+        unit: percent
+        bands: {very_good: 80.0, good: 68.0, satisfactory: 56.7}
+        pass_band: satisfactory
+        band_note: >-
+          Moran 2025 establishes a burn-probability benchmark: "57-80% of area burned in the top ~20% of
+          mapped BP area." This supersedes raw CSI for continuous probability maps unless the map is thresholded.
+        cites: [moran2025]
+      - metric: logarithmic_skill_score
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "A positive LSS means the BP map outperforms the reference model; Moran 2025 reports LSS from -0.072 to 0.389 and interprets positive scores as outperformance."
+        cites: [moran2025]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is only appropriate after choosing a burn-probability threshold; Perello 2024 thresholded probability maps at 75% before computing Sorensen, sensitivity, and specificity."
+        cites: [perello2024]
+    validated_when: "For probabilistic burn maps, observed subsequent burned area is concentrated in the high-probability class: >=56.7% of burned area in the top 20% mapped BP area and LSS >= 0 versus the stated reference model."
+    evidence_strength: moderate
+    confidence: 0.72
+    notes: >-
+      Burn probability is an ensemble probability field, so Moran 2025 and Carlson 2025 evaluate ranking and
+      probabilistic skill rather than a single scar overlap. Moran 2025 calls 56.7-79.8% burned-area capture in
+      the top 20% mapped area a "general performance benchmark"; Carlson 2025 reports an average of about 71%
+      of burned area in Med-High or High BP classes but cautions about underprediction in rapidly shifting
+      regimes. If a Cell2Fire probability map is thresholded to burned/unburned, use the FinalGrid CSI convention
+      as a secondary categorical check, not as the primary probability validation.
+
+  - dag_variable: "fire propagation messages"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.6667, good: 0.4286, satisfactory: 0.25}
+        pass_band: satisfactory
+        band_note: >-
+          Time-indexed fire-arrival/isochrone rasters can be reduced to categorical burned-by-time maps.
+          The CSI bands are converted from Giannaros 2020 SC/KC thresholds, where SC/KC above 0.40 indicates
+          at least moderate agreement.
+        cites: [giannaros2020]
+    secondary_metrics:
+      - metric: arrival_time_mae_hours
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Cardil 2019 minimized arrival-time error at observed control points and reports adjusted average errors of 0.24 h, 0.064 h, and 0.16 h, but no universal pass/fail threshold."
+        cites: [cardil2019]
+      - metric: arrival_time_bias_hours
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Klock 2023 shows fire-arrival timestamps are limited by IR perimeter timing and active-fire sensor resolution; NIROPS IR perimeters are treated as close to ground truth when no more precise data exist."
+        cites: [klock2023]
+    validated_when: "For fire-arrival/propagation rasters, categorical burned-by-time agreement meets CSI >= 0.25; arrival-time MAE/bias should be reported but has no fetched universal numeric threshold."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The model's propagation messages are not normally observed as messages; the field compares derived
+      arrival-time or isochrone maps with observed progression perimeters/control points. Cardil 2019 explicitly
+      optimized ROS adjustment factors to minimize arrival-time error, and Klock 2023 notes that most fire-arrival
+      validation relies on IR perimeters or active-fire products with strong timing limits.
+
+  - dag_variable: "rate of spread (ROS)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 35.0}
+        pass_band: satisfactory
+        band_note: "Gale 2025 evaluates ROS predictions with the percent within +/-35% of observed values, described as a reasonable ROS standard; use |PBIAS| <= 35% as the point-comparison gate."
+        cites: [gale2025]
+    secondary_metrics:
+      - metric: mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Gale 2025 reports MAE/RMSE/MBE for inferred VIIRS ROS observations, but the transferable numeric convention is the +/-35% agreement interval rather than an absolute m/h error."
+        cites: [gale2025, benali2023]
+      - metric: arrival_time_mae_hours
+        direction: minimize
+        status: supportive
+        ceiling_reason: "ROS in growth simulators is often validated indirectly through arrival-time control points and final perimeters; Cardil 2019 reduced control-point time errors after ROS adjustment."
+        cites: [cardil2019]
+    validated_when: "Observed or inferred head-fire ROS point comparisons have |PBIAS| <= 35%; report MAE/RMSE and whether observations come from high-confidence fire progression data."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      Direct ROS observations are rare. Benali 2023 documents reconstruction of 1197 ROS/FGR estimates from
+      multi-source fire progressions and quality flags; Gale 2025 uses VIIRS-inferred ROS to evaluate operational
+      ROS models and states that predictions within +/-35% of observations are a reasonable standard.
+
+  - dag_variable: "fireline intensity"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a transferable numeric PBIAS/RMSE threshold for point fireline-intensity validation."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Cell2Fire_SB/Gonzalez 2023 computes fireline intensity from flame length through Byram intensity, but validates tactical spread mainly with final perimeter/scar adjustment, not observed intensity thresholds."
+        cites: [gonzalez2023, pais2021]
+    validated_when: "UNRESOLVED - compare against field/UAS/reference fire-behavior estimates and report PBIAS/RMSE, but no fetched numeric pass band exists."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Fireline intensity is a derived fire-behavior output. The fetched Cell2Fire/Cell2Fire_SB papers define and
+      use it for planning, but their validation convention is perimeter/arrival agreement. Do not auto-validate
+      fireline intensity until a fetched evaluation paper reports observed-intensity error thresholds.
+
+  - dag_variable: "flame length"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a transferable numeric PBIAS/RMSE threshold for point flame-length validation."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Gonzalez 2023 calibrates flame-length relationships from BehavePlus-derived functions and relates flame length to fireline intensity, but does not provide observed flame-length validation bands."
+        cites: [gonzalez2023]
+    validated_when: "UNRESOLVED - compare against observed or reference flame-length estimates and report PBIAS/RMSE, but no fetched numeric pass band exists."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Flame length is commonly modeled from fuel, wind, moisture, and fire-behavior equations; direct field
+      observations suitable for point validation are not available in the fetched Cell2Fire set. Keep the DAG
+      PBIAS metric but leave its band null.
+
+  - dag_variable: "crown fire state / crown fraction burned"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.6667, good: 0.4286, satisfactory: 0.25}
+        pass_band: satisfactory
+        band_note: >-
+          Transferred binary-map convention: Giannaros 2020 uses SC/KC >0.40 for at least moderate burned-area
+          agreement; CSI=0.25 is the equivalent Jaccard/CSI value for SC=0.40. No crown-specific fetched threshold
+          was found, so confidence is reduced.
+        cites: [giannaros2020]
+    secondary_metrics:
+      - metric: kappa
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Crown-fire classification depends on canopy base height, canopy bulk density, foliar moisture, and crown-spread rules; Gonzalez 2023 says more fires with isochrones and crown-fire timing are needed to improve rules."
+        cites: [gonzalez2023, zhou2024]
+    validated_when: "Observed crown-vs-surface binary classification meets CSI >= 0.25, interpreted cautiously as a transferred binary spatial-agreement convention."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      This is a transferred spatial-classification gate, not a crown-fire-specific benchmark. Gonzalez 2023
+      implements Van Wagner/Rothermel/Alexander crown-fire rules and calibrates crown propagation against five
+      historical perimeters, but does not report a crown-state classification threshold. Zhou 2024 confirms canopy
+      variables control crown initiation and that common IoU-style metrics can fail in some wildfire-spread cases.
+
+deferred_paywalled:
+  - ref: "Deriving Fire Behavior Metrics from UAS Imagery"
+    doi: 10.3390/fire2020036
+    needed_for: [fireline intensity, flame length]
+  - ref: "Alexander and Cruz 2006 - Evaluating a model for predicting active crown fire rate of spread using wildfire observations"
+    doi: 10.1139/x06-174
+    needed_for: ["crown fire state / crown fraction burned"]

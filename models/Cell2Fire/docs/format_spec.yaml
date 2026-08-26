@@ -1,171 +1,491 @@
-model:
-  name: "Cell2Fire W (C2F-W)"
-  domain: "wildfire spread simulation"
-  version: "v0.0.0 (fire2a/C2F-W)"
-  binary_path: "KISSPATH_BINARIES/Cell2Fire/source/repo/Cell2Fire/Cell2Fire"
-  fire_models:
-    - "S: Scott & Burgan (40 US NFDRS fuel models)"
-    - "C: Canadian FBP (16 fuel types)"
-    - "K: Kitral (Chilean)"
-    - "P: Portugal (experimental)"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: Cell2Fire
+  language: c++
+  implementation:
+    id: hydrocraft-cell2fire-w
+    version: hydrocraft-cell2fire-wildfire v1.0.0
+    provenance: C++ with OpenMP; fire2a C2F-W fork (github.com/fire2a/C2F-W) of the Pais/Carrasco/Weintraub
+      Cell2Fire object-oriented core.
+  scientific_reference_version: Cell2Fire W (C2F-W) — unified Scott&Burgan / Canadian FBP / Kitral cellular
+    fire-spread simulator; FBP lineage per Pais et al. 2021 (Front. For. Glob. Change 4:692706) and arXiv:1905.09317
 inputs:
   forcing:
-    - name: "WS"
-      description: "Wind speed at 10m height"
-      unit: "km/h"
-      valid_range: [0, 200]
-      trap: "CRITICAL - most global datasets provide m/s; multiply by 3.6"
-    - name: "WD"
-      description: "Wind direction (meteorological convention, direction wind comes FROM)"
-      unit: "degrees"
-      valid_range: [0, 360]
-      trap: "HIGH - math convention (TO) requires (value + 180) % 360"
-    - name: "FireScenario"
-      description: "Fire weather severity index (S&B model)"
-      unit: "integer"
-      valid_range: [1, 3]
-    - name: "FFMC"
-      description: "Fine Fuel Moisture Code (FBP model)"
-      unit: "dimensionless"
-      valid_range: [0, 101]
-    - name: "DMC"
-      description: "Duff Moisture Code (FBP model)"
-      unit: "dimensionless"
-      valid_range: [0, 500]
-    - name: "DC"
-      description: "Drought Code (FBP model)"
-      unit: "dimensionless"
-      valid_range: [0, 1000]
-    - name: "ISI"
-      description: "Initial Spread Index (FBP model)"
-      unit: "dimensionless"
-      valid_range: [0, 100]
-    - name: "BUI"
-      description: "Buildup Index (FBP model)"
-      unit: "dimensionless"
-      valid_range: [0, 300]
-    - name: "FWI"
-      description: "Fire Weather Index (FBP model)"
-      unit: "dimensionless"
-      valid_range: [0, 150]
-    - name: "TMP"
-      description: "Air temperature (FBP model)"
-      unit: "degC"
-      valid_range: [-40, 50]
-    - name: "RH"
-      description: "Relative humidity (FBP model)"
-      unit: "percent"
-      valid_range: [0, 100]
-      trap: "CRITICAL - fraction (0-1) vs percent (0-100)"
-    - name: "APCP"
-      description: "Accumulated precipitation (FBP model)"
-      unit: "mm"
-      valid_range: [0, 200]
-
-  landscape:
-    - name: "fuels"
-      description: "Fuel type grid (integer codes)"
-      format: "ASC or TIF raster"
-      required: true
-    - name: "elevation"
-      description: "Elevation grid"
-      unit: "meters ASL"
-      format: "ASC or TIF raster"
-      required: true
-    - name: "slope"
-      description: "Slope grid"
-      unit: "degrees (0-90)"
-      format: "ASC or TIF raster"
-      required: false
-    - name: "saz"
-      description: "Slope aspect grid (compass, north=0)"
-      unit: "degrees (0-360)"
-      format: "ASC or TIF raster"
-      required: false
-    - name: "cbh"
-      description: "Crown base height"
-      unit: "meters"
-      format: "ASC or TIF raster"
-      required: false
-    - name: "cbd"
-      description: "Crown bulk density"
-      unit: "kg/m3"
-      format: "ASC or TIF raster"
-      required: false
-
+  - name: wind speed (WS)
+    unit: km/h (at 10 m)
+    category: weather
+    source_kind: forcing
+    model_input_format: Weather.csv hourly row (WS column)
+    notes: ROS scales approximately linearly with wind speed; wind also sets ellipse eccentricity. Expected
+      in km/h; m/s input is ~3.6x too low.
+  - name: wind direction (WD)
+    unit: degrees (meteorological, FROM; north=0)
+    category: weather
+    source_kind: forcing
+    model_input_format: Weather.csv hourly row (WD column)
+    notes: Sets spread direction (head of the ellipse). FROM convention; math (TO) convention reverses
+      spread by 180 degrees.
+  - name: air temperature (TMP)
+    unit: deg C
+    category: weather
+    source_kind: forcing
+    model_input_format: Weather.csv hourly row (TMP column)
+    notes: FBP (--sim C) only; feeds fine-fuel moisture. Kelvin input produces nonsensical FBP indices.
+  - name: relative humidity (RH)
+    unit: '% (0-100)'
+    category: weather
+    source_kind: forcing
+    model_input_format: Weather.csv hourly row (RH column)
+    notes: FBP only; fraction (0-1) input drives FFMC/ISI to extreme values.
+  - name: precipitation (APCP)
+    unit: mm
+    category: weather
+    source_kind: forcing
+    model_input_format: Weather.csv hourly row (APCP column)
+    notes: FBP only; affects moisture codes.
+  - name: Canadian FWI System indices (FFMC, DMC, DC, ISI, BUI, FWI)
+    unit: dimensionless (FFMC 0-101; others CFFDRS scale)
+    category: weather
+    source_kind: forcing
+    model_input_format: Weather.csv hourly rows (FFMC/DMC/DC/ISI/BUI/FWI columns)
+    notes: FBP (--sim C) only. Cell2Fire does NOT compute these; they must be derived externally via CFFDRS
+      equations and supplied per weather row. Missing indices crash or silently default.
   parameters:
-    critical:
-      - name: "--sim"
-        valid_range: ["S", "C", "K", "P"]
-        description: "Fire behavior model selection"
-      - name: "--nsims"
-        valid_range: [1, 10000]
-        description: "Number of Monte Carlo simulations"
-      - name: "--fmc"
-        valid_range: [0, 300]
-        description: "Foliar moisture content (%) for S&B"
-      - name: "--scenario"
-        valid_range: [1, 3]
-        description: "S&B fire weather severity (1=low, 2=moderate, 3=extreme)"
-      - name: "--Fire-Period-Length"
-        valid_range: [0.1, 60]
-        description: "Fire time step in minutes"
-      - name: "--Weather-Period-Length"
-        valid_range: [1, 1440]
-        description: "Minutes per weather observation period"
-      - name: "--ROS-Threshold"
-        valid_range: [0.0, 10.0]
-        description: "Minimum ROS to propagate fire (m/min)"
-      - name: "--seed"
-        valid_range: [0, 2147483647]
-        description: "Random seed for reproducibility"
-      - name: "--cros"
-        description: "Enable crown fire spread (flag)"
-      - name: "--nthreads"
-        valid_range: [1, 128]
-        description: "OpenMP threads for parallel simulations"
-
+  - name: per-cell fuel type
+    unit: integer fuel code
+    category: fuel
+    source_kind: dataset_lookup
+    model_input_format: fuels.asc/.tif raster of integer codes
+    notes: Selects fire-behavior parameters via a lookup table. S&B codes 0,91-99 (non-burnable) and 101-204;
+      FBP codes 1-20. Codes 0 and 91-99 act as non-burnable firebreaks.
+  - name: fuel lookup table
+    unit: table
+    category: fuel
+    source_kind: dataset_lookup
+    model_input_format: spain_lookup_table.csv (S/K/P) or fbp_lookup_table.csv (C)
+    notes: Maps integer fuel codes to descriptive fuel type / behavior parameters.
+  - name: per-fueltype FBP coefficients (p1,p2,p3,q,bui0,cfl,cbh,fmc)
+    unit: mixed
+    category: fuel
+    source_kind: default
+    model_input_format: hardcoded in FuelModelFBP setup_const (coefs[18])
+    notes: The 18-fueltype FBP coefficient table is baked into the binary, NOT read from input files.
+      Spain/Kitral/Portugal models similarly carry built-in coefficient initializers selected by --scenario.
+  - name: slope
+    unit: degrees (0-90)
+    category: topography
+    source_kind: dataset_lookup
+    model_input_format: slope.asc/.tif (optional; can be derived from elevation)
+    notes: Enters a polynomial slope-on-spread correction. Percent-rise input is ~2x too large.
+  - name: slope aspect (saz)
+    unit: degrees (0-360, compass, north=0)
+    category: topography
+    source_kind: dataset_lookup
+    model_input_format: saz.asc/.tif (optional)
+    notes: Sets upslope direction for the directional slope effect.
+  - name: elevation
+    unit: m ASL
+    category: topography
+    source_kind: dataset_lookup
+    model_input_format: elevation.asc/.tif (optional)
+    notes: Used for slope derivation and (in FBP) foliar moisture content. Feet input exaggerates derived
+      slope ~3.28x.
+  - name: crown base height (cbh)
+    unit: m
+    category: canopy
+    source_kind: dataset_lookup
+    model_input_format: cbh.asc/.tif (required when crown fire enabled)
+    notes: Crown-fire initiation. Optional unless --cros set with S&B.
+  - name: crown bulk density (cbd)
+    unit: kg/m3
+    category: canopy
+    source_kind: dataset_lookup
+    model_input_format: cbd.asc/.tif (required when crown fire enabled)
+    notes: Active crown spread threshold. lb/ft3 input is ~16x too low.
+  - name: crown closure fraction (ccf) / foliar canopy cover (fcc)
+    unit: percent (0-100)
+    category: canopy
+    source_kind: dataset_lookup
+    model_input_format: ccf.asc/.tif, fcc.asc/.tif (optional)
+    notes: Canopy descriptors for crown fire.
+  - name: curing percentage (cur)
+    unit: percent
+    category: fuel
+    source_kind: dataset_lookup
+    model_input_format: cur.asc/.tif (FBP grass curing only)
+    notes: Grass-fuel curing multiplier in FBP.
+  - name: ROS adjustment / ellipse factors (HFactor/FFactor/BFactor/EFactor, ROS10Factor, CBDFactor/CCFFactor)
+    unit: dimensionless multipliers
+    category: ros_tuning
+    source_kind: calibrated
+    model_input_format: CLI flags; defaults HFactor/FFactor/BFactor/EFactor=1.0, ROS10Factor=3.34, CBDFactor/CCFFactor=0.0
+    notes: Head/flank/back/eccentricity ROS multipliers (the calibration levers of Carrasco et al. 2019).
+      Default 1.0 = untuned. ROS10Factor=3.34 is a Spain/Kitral ROS-at-10min magic scaling constant.
+  initial_conditions:
+  - name: ignition point(s)
+    unit: cell id(s)
+    category: ignition
+    source_kind: user_provided
+    model_input_format: Ignitions.csv (1-based, row-major from top-left) or random sampling
+    notes: Fixed cells or sampled per simulation; can be weighted by probabilityMap. Ignition on a non-burnable
+      cell yields zero burned cells.
+  - name: initial cell states
+    unit: categorical
+    category: state
+    source_kind: derived
+    model_input_format: derived from fuels grid (Available / Non-Fuel from non-burnable codes)
+    notes: All burnable cells start Available; non-burnable codes start Non-Fuel.
+  boundary_conditions:
+  - name: ignition probability map
+    unit: probability per cell
+    category: ignition_probability
+    source_kind: user_provided
+    model_input_format: probabilityMap.asc (optional)
+    notes: Spatial distribution from which random ignition cells are sampled.
+  - name: fire-behavior model selector (--sim {S,C,K,P})
+    unit: enum
+    category: control
+    source_kind: user_provided
+    model_input_format: CLI flag
+    notes: Selects Scott&Burgan / Canadian FBP / Kitral / Portugal. Must match the fuel-code scheme; mixing
+      FBP codes with the S&B model gives wrong behavior.
+  - name: ensemble / stochastic controls (--nsims, --seed, --weather {rows,random}, ROS-CV)
+    unit: count / integer / enum
+    category: control
+    source_kind: user_provided
+    model_input_format: CLI flags / instance config
+    notes: Number of Monte Carlo simulations, RNG seed, deterministic vs randomized weather selection,
+      and the ROS coefficient-of-variation perturbation level driving probabilistic scars.
+  - name: time-stepping controls (--Weather-Period-Length, --Fire-Period-Length, --max-fire-periods)
+    unit: minutes / count
+    category: control
+    source_kind: user_provided
+    model_input_format: CLI flags; defaults 60 min, 1.0 min, -1 (weather-bound)
+    notes: Fire-Period-Length silently clamped to Weather-Period-Length if larger; too-large fire period
+      skips cells (checkerboard scars).
+  - name: spread / crown thresholds and switches (--ROS-Threshold, --cros, --fmc, --scenario)
+    unit: m/min / flag / percent / enum
+    category: control
+    source_kind: user_provided
+    model_input_format: CLI flags; defaults ROS-Threshold=0.1 m/min, fmc=100%, scenario=3, CROSThreshold=0.5
+    notes: ROS-Threshold is the per-cell ignition floor. --cros enables crown fire. --fmc is S&B foliar
+      moisture; low values inflate crown fire. --scenario (1-3) sets S&B fire-weather severity and can
+      shift burned area ~10x.
 outputs:
   primary:
-    - name: "FinalGrid"
-      description: "Final burned/unburned state per cell (0=available, 1=burned)"
-      format: "CSV grid (ncols x nrows)"
-      unit: "binary"
-      valid_range: [0, 1]
-    - name: "Messages"
-      description: "Fire spread messages (sender, receiver, time, ROS)"
-      format: "CSV (i, j, time, ros)"
-      unit: "cell_id, cell_id, fire_period, m/min"
-    - name: "RateOfSpread"
-      description: "Rate of spread per cell"
-      format: "ASC raster"
-      unit: "m/min"
-      valid_range: [0, 200]
-    - name: "SurfaceIntensity"
-      description: "Fireline intensity per cell"
-      format: "ASC raster"
-      unit: "kW/m"
-      valid_range: [0, 100000]
-    - name: "SurfaceFlameLength"
-      description: "Flame length per cell"
-      format: "ASC raster"
-      unit: "m"
-      valid_range: [0, 50]
-    - name: "ForestGrid"
-      description: "Grid snapshots at each fire period (with --grids)"
-      format: "CSV grid"
-      unit: "binary"
-  derived:
-    - name: "BurnProbability"
-      description: "Fraction of simulations in which each cell burned"
-      unit: "fraction"
-      valid_range: [0, 1]
-
+  - name: FinalGrid (burned/unburned)
+    unit: 0=unburned, 1=burned
+    description: Final per-cell burn state grid (fire scar) for one simulation.
+    validation_rank: 1
+    emitted_in: Grids/Grids{sim}/FinalGrid.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Compare against an observed final fire perimeter/scar rasterized to the model grid; a single
+          deterministic run depends strongly on ignition point and ROS adjustment factors.
+        - Cell-level agreement is a categorical burned/unburned classification (F1/CSI), not a continuous
+          field.
+      detrending_options:
+      - none
+  - name: burn probability
+    unit: 0.0-1.0
+    description: Fraction of Monte Carlo simulations in which each landscape grid cell burned; derived
+      by averaging final grids.
+    validation_rank: 2
+    emitted_in: burn_probability.csv / .asc (post-processing of FinalGrid ensemble)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Meaningful only for an ensemble (nsims >> 1); compares the spatial probability field, not a
+          single scar.
+        - Observed counterpart is typically a multi-fire burn-frequency map over the same domain.
+      detrending_options:
+      - none
+  - name: fire propagation messages
+    unit: (sender_cell, receiver_cell, fire_period, ROS)
+    description: Cell-to-cell fire propagation records; the spread network / arrival-time graph.
+    validation_rank: 3
+    emitted_in: Messages/MessagesFile{sim}.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - timing_accuracy
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Derived per-cell arrival time can be compared to observed fire-arrival-time/isochrone maps;
+          arrival-time error is the canonical calibration target for the ROS adjustment factors.
+      detrending_options:
+      - none
+  - name: rate of spread (ROS)
+    unit: m/min
+    description: Per-cell rate of spread emitted by the active fire-behavior model.
+    validation_rank: 4
+    emitted_in: RateOfSpread/ROSFile{sim}.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Direct ROS observations are rare; usually validated indirectly via fire-front arrival time rather
+          than as a standalone field.
+      detrending_options:
+      - none
+  - name: fireline intensity
+    unit: kW/m (Byram intensity)
+    description: Per-cell surface (and, with --cros, crown) fireline intensity.
+    validation_rank: 5
+    emitted_in: Intensity/IntensityFile{sim}.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Field intensity observations are scarce; commonly compared against fire-behavior-model reference
+          values rather than measurements.
+      detrending_options:
+      - none
+  - name: flame length
+    unit: m
+    description: Per-cell flame length (surface and crown).
+    validation_rank: 6
+    emitted_in: FlameLength/FLFile{sim}.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Validated against reference fire-behavior estimates; direct measurements rare.
+      detrending_options:
+      - none
+  - name: crown fire state / crown fraction burned
+    unit: 0/1 ; fraction
+    description: Per-cell crown-fire activation and crown fraction burned (--cros).
+    validation_rank: 7
+    emitted_in: CrownFire/CrownFile{sim}.csv ; CrownFractionBurn/CFBFile{sim}.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Compared against observed crown-fire vs surface-fire classification where available; strongly
+          sensitive to --fmc and crown inputs.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "Output folder must exist AND be empty before each run"
-  - "All rasters must share identical ncols, nrows, cellsize, and corner coordinates"
-  - "Fire-Period-Length is silently clamped to Weather-Period-Length if larger"
-  - "Cell IDs in Ignitions.csv are 1-based, row-major from top-left"
-  - "Wind speed unit trap: expects km/h, most datasets provide m/s"
-  - "Wind direction convention: meteorological (FROM), not math (TO)"
+- id: dt_001
+  symptom: Fire barely spreads. Burned area is tiny compared to expectations. ROS values near zero.
+  diagnosis: Wind speed in m/s instead of km/h — 3.6× too low; Cell2Fire expects wind speed in km/h for
+    all fire models. Global meteorological datasets (ERA5, GFS, station data) typically provide wind speed
+    in m/s. Rate of spread scales approximately linearly with wind speed, so m/s input produces fires
+    that spr
+  remedy: Multiply wind speed by 3.6 in convert_weather_to_c2f.py; convert_weather_to_c2f; ['Check max
+    WS in Weather.csv — typical fire weather is 20-80 km/h', 'If max WS < 15, values are likely in m/s
+    — multiply by 3.6']; auto_detect_and_convert() checks if max WS < 60 and converts
+  severity: silent
+- id: dt_002
+  symptom: Fire spreads in completely wrong direction. Burned area shape is mirrored or rotated 180°.
+  diagnosis: Wind direction in math convention (blowing TO) instead of meteorological (blowing FROM);
+    Cell2Fire uses meteorological convention where WD indicates the direction the wind is COMING FROM
+    (e.g., 270° = wind from the west, fire spreads east). If the input uses mathematical convention (direction
+    wind i
+  remedy: Apply (WD + 180) % 360 in convert_weather_to_c2f.py; convert_weather_to_c2f; ['Compare fire
+    spread direction to expected wind-driven direction', 'If fire spreads upwind, WD convention is likely
+    inverted']; Use --wd-conversion math_to_met flag
+  severity: silent
+- id: dt_003
+  symptom: FBP model produces extreme fire behavior even in mild weather. FFMC and ISI values explode.
+  diagnosis: Relative humidity as fraction (0-1) instead of percentage (0-100); Cell2Fire FBP model expects
+    relative humidity as percentage (0-100). If RH is provided as a fraction (e.g., 0.65 instead of 65%),
+    the model interprets the air as essentially 0% humidity. This causes FFMC to approach maximum (101),
+    pr
+  remedy: Multiply RH by 100 if values are in 0-1 range; convert_weather_to_c2f; ['Check max RH in Weather.csv
+    — should be 30-100 for most conditions', 'If max RH < 1.0, values are fraction — multiply by 100'];
+    auto_detect_and_convert() checks if max RH <= 1.0 and converts
+  severity: silent
+- id: dt_004
+  symptom: FBP temperature-dependent calculations produce nonsensical results. Negative FFMC or extreme
+    values.
+  diagnosis: 'Temperature in Kelvin instead of Celsius; Cell2Fire FBP model expects temperature in °C.
+    ERA5 and some reanalysis products provide temperature in Kelvin. A value of 293K (20°C) interpreted
+    as 293°C would produce physically impossible fire behavior indices.
+
+    ; [''convert_weather_to_c2f'', ''Weather.csv'']'
+  remedy: Subtract 273.15 from temperature values; convert_weather_to_c2f; ['Check TMP in Weather.csv
+    — should be -40 to +50°C', 'If TMP > 100, values are likely in Kelvin — subtract 273.15']; auto_detect_and_convert()
+    checks if max TMP > 100 and converts
+  severity: silent
+- id: dt_005
+  symptom: Slope factor wildly exaggerated. Fire accelerates unrealistically uphill.
+  diagnosis: 'Slope in percent rise instead of degrees; Cell2Fire expects slope in degrees (0-90°). Some
+    GIS tools output slope as percent rise (e.g., 100% = 45°). A 30% slope (16.7°) interpreted as 30°
+    would produce a slope factor roughly 2× too large, causing unrealistic uphill fire spread.
+
+    ; [''slope.asc'', ''con'
+  remedy: 'Convert percent to degrees: degrees = atan(pct/100) × 180/π; convert_fuel_params; [''Check
+    slope values — max should be < 90°'', ''If max slope > 90, values are likely in percent'']; Verify
+    slope raster range before running'
+  severity: silent
+- id: dt_006
+  symptom: Elevation-dependent slope calculation produces wrong values. Slope effect on fire spread incorrect.
+  diagnosis: 'Elevation in feet instead of meters; Cell2Fire expects elevation in meters. If elevation
+    is in feet, the slope calculation (rise/run) will be 3.28× too large, producing exaggerated slope
+    effects on fire spread.
+
+    ; [''elevation.asc'']'
+  remedy: Multiply elevation values by 0.3048; ['Check elevation range — should match known terrain heights
+    in meters', 'If values seem ~3× too high, likely in feet']; Compare DEM values to known heights in
+    the region
+  severity: silent
+- id: dt_007
+  symptom: Segmentation fault immediately after starting simulation. Core dump.
+  diagnosis: 'Raster dimension mismatch — fuels, elevation, slope have different ncols/nrows; Cell2Fire
+    reads raster dimensions from the fuels file and assumes all other rasters have identical dimensions.
+    If elevation or slope has different ncols/nrows, array access goes out of bounds causing a segfault.
+
+    ; [''all '
+  remedy: 'Ensure all ASC files have identical ncols, nrows, cellsize, and corner coordinates; [''Compare
+    headers of all .asc files: head -6 *.asc'', ''Resample mismatched rasters to match fuels.asc'']; validate_instance_folder()
+    checks raster alignment'
+  severity: crash
+- id: dt_008
+  symptom: Fire never starts. All simulations show zero burned cells. No messages generated.
+  diagnosis: All ignition attempts land on non-burnable cells (fuel code 0 or 91-99); Cell2Fire randomly
+    selects ignition cells unless --ignitions is specified. If the landscape has large non-burnable areas
+    (water, urban, agriculture) coded as 0 or 91-99, random ignition may consistently land on these cells.
+    Alt
+  remedy: 'Check fuel type at ignition locations. Use --ignitions with a known burnable cell.; [''Create
+    Ignitions.csv with Year,Ncell pointing to a known burnable cell'', ''Verify cell numbering: cell 1
+    = top-left corner, row-major order'']; Verify ignition cells are burnable before running'
+  severity: silent
+- id: dt_009
+  symptom: Only one simulation runs despite --nsims > 1. No parallelism observed.
+  diagnosis: 'Binary compiled without OpenMP support or --nthreads not set; Cell2Fire uses OpenMP for
+    parallel simulation. If compiled without -fopenmp (e.g., on macOS with Apple Clang), simulations run
+    sequentially. The --nthreads flag must also be set > 1 to enable parallelism.
+
+    ; [''makefile'', ''compilation'']'
+  remedy: 'Recompile with g++ and -fopenmp. Set --nthreads N.; [''Check compilation: make info'', ''Ensure
+    g++ (not clang) is used'', ''Add --nthreads 4 (or more) to CLI'']; Use the official Makefile which
+    includes -fopenmp'
+  severity: performance
+- id: dt_010
+  symptom: Cell2Fire crashes with 'Could not open directory' message.
+  diagnosis: Weather file path incorrect or Weathers/ directory missing when using --weather random; When
+    --weather random is specified, Cell2Fire looks for Weather*.csv files in the Weathers/ subdirectory
+    of the instance folder. If this directory doesn't exist or contains no Weather*.csv files, the simulator
+    fa
+  remedy: 'Create Weathers/ directory with Weather1.csv, Weather2.csv, etc.; [''Use --weather rows (default)
+    for single weather file'', ''Or create: instance/Weathers/Weather1.csv'']; validate_instance_folder()
+    checks weather file existence'
+  severity: crash
+- id: dt_011
+  symptom: Burned area is 10× larger/smaller than expected for the same landscape and weather.
+  diagnosis: 'Wrong --scenario value for Scott & Burgan model; The --scenario flag (1, 2, or 3) controls
+    fire weather severity thresholds in the S&B model. Scenario 1 (low) uses high fuel moisture, resulting
+    in slow spread. Scenario 3 (extreme) uses low moisture, resulting in aggressive spread. The default
+    is 3. '
+  remedy: 'Match --scenario to actual fire weather conditions; [''Scenario 1: Mild conditions, high moisture'',
+    ''Scenario 2: Moderate conditions'', ''Scenario 3: Extreme conditions, low moisture'']; Document scenario
+    choice with fire weather data justification'
+  severity: silent
+- id: dt_012
+  symptom: Extensive crown fire even in light fuel types. Fire intensity unrealistically high.
+  diagnosis: --fmc (foliar moisture content) set too low; The --fmc parameter controls foliar moisture
+    content as a percentage (default 100%). Lower values make crown fire initiation much easier. Setting
+    --fmc 30 instead of the intended 130 produces extreme crown fire behavior. The valid range is roughly
+    80-120%
+  remedy: 'Set --fmc to appropriate value (typically 80-120% for live foliage); [''Review FMC value in
+    the CLI command'', ''Summer foliage: 80-100%, spring: 100-130%'']; validate FMC range before running'
+  severity: silent
+- id: dt_013
+  symptom: Fire stops after a few periods despite available fuel and weather data. Premature termination.
+  diagnosis: '--max-fire-periods set too low or weather file too short; Cell2Fire stops fire simulation
+    when max-fire-periods is reached or when weather data runs out (whichever comes first). If the weather
+    file has only 5 hours but the fire needs 24 hours to reach expected size, the simulation terminates
+    early.
+
+    '
+  remedy: Extend weather file or increase --max-fire-periods; ['Check number of rows in Weather.csv vs.
+    expected fire duration', 'Set --max-fire-periods -1 for unlimited (limited by weather data)']; Ensure
+    weather covers entire expected fire duration
+  severity: silent
+- id: dt_014
+  symptom: Burn probability map shows checkerboard pattern or unrealistic fire shapes.
+  diagnosis: Fire-Period-Length too large relative to cell size, or ROS-Threshold too high; If the fire
+    time step (Fire-Period-Length) is too large, fire may skip cells, creating discontinuous burn patterns.
+    Similarly, if ROS-Threshold is set too high, fire spread to cells with moderate ROS is suppressed,
+    creati
+  remedy: Reduce Fire-Period-Length (default 1.0 min is usually fine) and ROS-Threshold; ['Try --Fire-Period-Length
+    0.5 for finer time resolution', 'Check --ROS-Threshold (default 0.1 m/min is appropriate)']; Use default
+    values unless there is a specific reason to change
+  severity: silent
+- id: dt_015
+  symptom: Ignition cell IDs in Ignitions.csv don't match expected locations on the map.
+  diagnosis: Cell numbering confusion — 1-based vs 0-based, or column-major vs row-major; Cell2Fire uses
+    1-based cell numbering in row-major order (left-to-right, top-to-bottom). Cell 1 is the top-left corner.
+    Cell ncols+1 is the first cell of the second row. Using 0-based numbering or column-major ordering
+    plac
+  remedy: 'Use 1-based, row-major cell IDs: cell = (row * ncols) + col + 1; [''For cell at row r, col
+    c: cell_id = r * ncols + c + 1'', ''Row 0, Col 0 = Cell 1. Row 0, Col 1 = Cell 2.'']; Verify ignition
+    location in output grid'
+  severity: silent
+- id: dt_016
+  symptom: 'Compilation fails with ''fatal error: boost/random.hpp: No such file or directory'''
+  diagnosis: 'Boost random library headers not installed; Cell2Fire requires the Boost.Random library
+    for random number generation. On Debian/Ubuntu, this is provided by libboost-random-dev. On macOS,
+    install via Homebrew: brew install boost.
+
+    ; [''compilation'', ''makefile'']'
+  remedy: 'Install boost: apt install libboost-random-dev (Linux) or brew install boost (macOS); [''sudo
+    apt install libboost-random-dev'', ''Re-run: make clean && make'']; Check dependencies before compilation'
+  severity: crash
+- id: dt_017
+  symptom: 'Compilation fails with ''fatal error: tiffio.h: No such file or directory'''
+  diagnosis: 'libtiff development headers not installed; Cell2Fire uses libtiff for reading GeoTIFF rasters.
+    The development headers are required for compilation. Without them, only ASC format rasters can be
+    used (but the code won''t compile at all without the headers).
+
+    ; [''compilation'', ''makefile'']'
+  remedy: 'Install libtiff: apt install libtiff-dev (Linux) or brew install libtiff (macOS); [''sudo apt
+    install libtiff-dev'', ''Re-run: make clean && make'']; Check dependencies before compilation'
+  severity: crash
+- id: dt_018
+  symptom: Output folder has results/ directory inside results/ (nested). Some files in wrong location.
+  diagnosis: 'Output folder path has trailing slash inconsistency or path not absolute; Cell2Fire appends
+    a path separator to the output folder if not present. If the provided path already has a trailing
+    slash plus internal path manipulation, output files may end up in unexpected nested directories.
+
+    ; [''--output-'
+  remedy: 'Use absolute paths without trailing slashes for --output-folder; [''Use: --output-folder /path/to/results
+    (no trailing /)'', ''Verify output location after first simulation'']; Always use clean, absolute
+    paths'
+  severity: minor

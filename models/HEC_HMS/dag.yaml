@@ -292,7 +292,7 @@ outputs:
   - var: "runoff_depth"
     validation_rank: 2
     unit: "mm"
-    description: "Direct-runoff (excess-rainfall) depth per timestep from SCS-CN."
+    description: "Direct-runoff water depth (excess-rainfall) per timestep from SCS-CN in the subbasin runoff path."
     emitted_in: "simulation output time series (parse_hms_output)"
     observability:
       comparable_obs_shapes:
@@ -309,7 +309,7 @@ outputs:
   - var: "loss"
     validation_rank: 3
     unit: "mm"
-    description: "Loss / infiltration per timestep (loss = P - Q)."
+    description: "Soil-water infiltration/retention loss per timestep (loss = P - Q)."
     emitted_in: "simulation output time series (parse_hms_output)"
     observability:
       comparable_obs_shapes:
@@ -397,3 +397,13 @@ safety:
       scope: "SCS-CN loss parameterization"
       source: "HEC-HMS SCS Curve Number method documentation; Woodward et al. 2003"
       status: "tentative"
+
+medium_evidence:
+  - var: "runoff_depth"
+    source: "dag.yaml"
+    quote: "Sums the direct-runoff hydrograph and baseflow into total subbasin outflow and converts runoff depth (mm) to discharge (m^3/s) using basin area."
+    note: "DAG ties runoff depth to the direct-runoff water-balance path over the basin/subbasin."
+  - var: "loss"
+    source: "dag.yaml"
+    quote: "Updates accumulated retention / soil-moisture state."
+    note: "DAG ties loss/infiltration to retained soil moisture."

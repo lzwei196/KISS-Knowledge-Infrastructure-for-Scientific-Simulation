@@ -1,0 +1,340 @@
+schema_version: 1
+model_id: dfnWorks
+domain: groundwater
+generated_by: "Step-B fleet agent (Codex) — validation-convention synthesis"
+generated_at: 2026-08-14
+
+# dfnWorks validation literature is dominated by verification, code-comparison,
+# stochastic-ensemble, and process-sensitivity papers. Most papers report behavior
+# or benchmark spread, not transferable pass/fail thresholds for NSE, PBIAS, CSI,
+# or Spearman. Numeric bands below are therefore used only where a fetched paper
+# states an explicit benchmark criterion or target; otherwise bands stay null.
+
+references:
+  hyman2015_dfnworks:
+    doi: 10.1016/j.cageo.2015.08.001
+    title: "dfnWorks: A discrete fracture network framework for modeling subsurface flow and transport"
+    venue: "Computers & Geosciences"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.cageo.2015.08.001.txt
+  hyman2015_injection:
+    doi: 10.1002/2015WR017151
+    title: "Influence of injection mode on transport properties in kilometer-scale three-dimensional discrete fracture networks"
+    venue: "Water Resources Research"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2015wr017151.txt
+  hokr2016_benchmark:
+    doi: 10.1007/s12665-016-6061-z
+    title: "Real-case benchmark for flow and tracer transport in the fractured rock"
+    venue: "Environmental Earth Sciences"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s12665-016-6061-z.txt
+  hyman2018_graphs:
+    doi: 10.1103/physreve.97.033304
+    title: "Modeling flow and transport in fracture networks using graphs"
+    venue: "Physical Review E"
+    year: 2018
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1103_physreve.97.033304.txt
+  hyman2018_uncertainty:
+    doi: 10.1038/s41598-018-30117-1
+    title: "Quantifying Topological Uncertainty in Fractured Systems using Graph Theory and Machine Learning"
+    venue: "Scientific Reports"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-018-30117-1.txt
+  lang2014_tensor:
+    doi: 10.1002/2014JB011027
+    title: "Permeability tensor of three-dimensional fractured porous rock and a comparison to trace map predictions"
+    venue: "Journal of Geophysical Research: Solid Earth"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2014jb011027.txt
+  hyman2020_channeling:
+    doi: 10.1029/2020WR027986
+    title: "Flow Channeling in Fracture Networks: Characterizing the Effect of Density on Preferential Flow Path Formation"
+    venue: "Water Resources Research"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2020wr027986.txt
+  sweeney2023_upscaling:
+    doi: 10.48550/arxiv.2302.10994
+    title: "Impact of artificial topological changes on flow and transport through fractured media"
+    venue: "arXiv"
+    year: 2023
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.48550_arxiv.2302.10994.txt
+  murph2024_stochastic:
+    doi: 10.1029/2023JH000113
+    title: "Sensitivity Analysis in the Presence of Intrinsic Stochasticity for Discrete Fracture Network Simulations"
+    venue: "Journal of Geophysical Research: Machine Learning and Computation"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2023jh000113.txt
+  tong2024_tracer:
+    doi: 10.3390/w16081101
+    title: "Verification of Particle Tracking and In Situ Tracer Experiment for the Gravel and Fractured Rock"
+    venue: "Water"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w16081101.txt
+  rong2024_rev:
+    doi: 10.3390/w16172435
+    title: "REV and Three-Dimensional Permeability Tensor of Fractured Rock Masses with Heterogeneous Fractures"
+    venue: "Water"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w16172435.txt
+
+validation:
+  - dag_variable: particle_travel_time
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched dfnWorks/fractured-rock tracer paper gives an NSE pass threshold for per-particle travel-time series."
+        cites: []
+    secondary_metrics:
+      - metric: ensemble_quantile_coverage
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DFN travel-time QoIs should be judged against ensemble uncertainty because stochastic seeds produce aleatoric uncertainty; Murph 2024 explicitly separates input uncertainty from realization uncertainty."
+        cites: [murph2024_stochastic]
+      - metric: injection_mode_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hyman 2015 reports that resident and flux-weighted injections resemble one another only after a burn-in region, so travel-time validation must match the physical injection/sampling mode."
+        cites: [hyman2015_injection]
+    validated_when: "UNRESOLVED — compare tracer-test travel-time series with the DAG metric, but do not auto-validate on NSE until a fetched paper supplies a numeric travel-time NSE convention."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The fetched literature validates particle tracking mainly by BTC/arrival behavior and ensemble uncertainty,
+      not NSE. Hyman 2015 notes a "lack of field-scale information" for validation and uses dfnWorks as a virtual
+      laboratory. Murph 2024 states breakthrough-time QoIs suffer epistemic and aleatoric uncertainty, supporting
+      ensemble rather than single-realization grading.
+
+  - dag_variable: breakthrough_curve
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched fractured-rock BTC paper gives an NSE threshold; fetched studies compare curve shape, early arrival, peak timing, and tailing."
+        cites: []
+    secondary_metrics:
+      - metric: first_arrival_abs_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Tong 2024 reports earliest-arrival errors against an in situ tracer test, with the best conceptual case differing by 0.013 h, but this is a single-site benchmark result rather than a field-wide threshold."
+        cites: [tong2024_tracer]
+      - metric: mtt_factor_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hokr 2016 reports benchmark mean ages generally within a factor of two and treats the spread as representative structural uncertainty for fractured-rock transit-time distributions."
+        cites: [hokr2016_benchmark]
+    validated_when: "UNRESOLVED — BTC validation should examine early arrival, peak timing, tail shape, and mean transit time; no fetched paper supports a reusable NSE pass band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Hokr 2016 defines a real-case fractured-rock benchmark using tunnel discharge and isotopic tracers and says
+      code behavior was mostly consistent, but it does not provide NSE tiers. Tong 2024 compares simulated and
+      observed BTC timing/concentration; the result supports which conceptual model is plausible, not a generic
+      validation gate.
+
+  - dag_variable: breakthrough_curve
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DFN or fractured-rock tracer paper gives a CSI threshold for first-arrival/breakthrough event detection."
+        cites: []
+    secondary_metrics:
+      - metric: first_breakthrough_timing
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Graph and tracer papers treat first breakthrough as a timing diagnostic; Hyman 2018 reports shortest-path first breakthrough within 2% of the full network in one graph-reduction test."
+        cites: [hyman2018_uncertainty]
+    validated_when: "UNRESOLVED — first-arrival event hits may be informative, but CSI has no fetched numeric convention for DFN breakthrough events."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The fetched event-style evidence is benchmark-specific. It supports using first-arrival timing as a diagnostic
+      but does not justify a categorical CSI pass band.
+
+  - dag_variable: travel_time_statistics
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: spearman
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a Spearman threshold for median/percentile DFN travel-time statistics."
+        cites: []
+      - metric: mtt_factor_error
+        direction: minimize
+        unit: dimensionless
+        bands: {satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "Single real-case benchmark context: Hokr 2016 says mean ages were generally within a factor of two; use only as weak contextual target, not a universal tier."
+        cites: [hokr2016_benchmark]
+    secondary_metrics:
+      - metric: ensemble_quantile_coverage
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Murph 2024 identifies quantiles of particle travel-time distributions as stochastic DFN QoIs requiring uncertainty-aware ensemble treatment."
+        cites: [murph2024_stochastic]
+    validated_when: "Spearman ranking remains unresolved; as weak context, mean transit-time summaries should be within about a factor of two of tracer-derived reference estimates."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      This block keeps the DAG Spearman metric but adds the only fetched numeric travel-time-statistic benchmark
+      language found. Hokr 2016: mean ages were "generally within a factor of two" in a complex real-case fractured
+      rock benchmark. Because this is not a formal tier table, confidence is capped.
+
+  - dag_variable: effective_permeability
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched dfnWorks/DFN paper gives a PBIAS pass threshold for block-scale effective permeability."
+        cites: []
+    secondary_metrics:
+      - metric: permeability_tensor_method
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Lang 2014 emphasizes computing the full 3-D equivalent permeability tensor and reports that 2-D cut-plane estimates can underestimate permeability by up to three orders of magnitude."
+        cites: [lang2014_tensor]
+      - metric: rev_cv
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Rong 2024 uses CV = 0.2 to identify REV size for permeability, but that applies to ensemble/REV assessment rather than direct point-snapshot PBIAS."
+        cites: [rong2024_rev]
+    validated_when: "UNRESOLVED — compare effective permeability against packer/pumping or benchmark block estimates, but no fetched paper supplies a numeric PBIAS band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Fetched permeability papers focus on tensor estimation, dimensional bias, and REV existence. They support
+      tensor/REV-aware checks, not a transferable PBIAS gate for a single effective-permeability snapshot.
+
+  - dag_variable: flow_channeling_metric
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a PBIAS threshold for a directly observed flow-channeling density or top-flow-fraction metric."
+        cites: []
+    secondary_metrics:
+      - metric: dQ_over_P32
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hyman 2020 defines dQ/P32 as the active or flowing surface-area fraction and shows standard transport observables can infer channelization, but does not set a validation threshold."
+        cites: [hyman2020_channeling]
+      - metric: transport_observable_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hyman 2020 links channeling to early arrival and power-law tails, so tracer/BTC observables are the practical field proxy when direct flow-channel measurements are absent."
+        cites: [hyman2020_channeling]
+    validated_when: "UNRESOLVED — channeling metrics are diagnostic and may be inferred from transport observables, but no fetched numeric validation band exists."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Hyman 2020 calls flow channelization commonly observed and introduces dQ/P32 and particle-based indicators.
+      The paper supports the metric definition, not a pass/fail band against observations.
+
+  - dag_variable: fracture_network_geometry
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - metric: spearman
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DFN geometry paper gives a Spearman threshold for aggregate P32, size-distribution, or orientation-density agreement."
+        cites: []
+    secondary_metrics:
+      - metric: topology_ensemble_uncertainty
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hyman 2018 states DFN topology is inherently uncertain because networks are statistically modeled; aggregate and ensemble comparisons are therefore more defensible than individual-fracture matching."
+        cites: [hyman2018_uncertainty]
+      - metric: p32_consistency
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Hyman 2020 uses P32 as fracture intensity and analyzes flow/channeling against network density, supporting P32 as a structural diagnostic but not a numeric validation threshold."
+        cites: [hyman2020_channeling]
+    validated_when: "UNRESOLVED — validate generated geometry only through aggregate/ensemble statistics; no fetched paper provides a numeric Spearman pass band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The literature supports stochastic aggregate geometry checks: P32, fracture-size distributions, orientation
+      distributions, connectivity/topology, and ensemble uncertainty. It does not support matching individual
+      fracture coordinates or a numeric Spearman threshold.
+
+  - dag_variable: upscaled_continuum_properties
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for spatial ECPM/UDFM property fields."
+        cites: []
+      - metric: rev_cv
+        direction: minimize
+        unit: dimensionless
+        bands: {satisfactory: 0.2}
+        pass_band: satisfactory
+        band_note: "Rong 2024 uses CV = 0.2 as the criterion for calculating permeability REV size; transferred here to the upscaled tensor/continuum-property check."
+        cites: [rong2024_rev]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Spatial CSI can be misleading when upscaling creates artificial topology: Sweeney 2023 states that matching the global topology of the upscaled mesh to the fracture network is essential, and false connections make effective-permeability estimates unphysical."
+        cites: [sweeney2023_upscaling]
+      - metric: permeability_ellipsoid_rms
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Rong 2024 uses fitted permeability ellipsoids and RMS to judge whether an equivalent permeability tensor is appropriate; heterogeneous apertures may lack an acceptable equivalent approximation over the studied scale."
+        cites: [rong2024_rev]
+    validated_when: "CSI has no cited band; as a transferred REV convention, the upscaled permeability tensor should be evaluated only where permeability CV <= 0.2 and topology is preserved."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Rong 2024 provides the clearest fetched numeric convention for equivalent continuum behavior: CV = 0.2 for
+      REV size, plus qualitative ellipsoid/RMS checks. Sweeney 2023 adds that global topology preservation is
+      essential before interpreting upscaled effective permeability or transport fields.
+
+deferred_paywalled:
+  - ref: "A numerical method for simulating fluid flow through 3-D fracture networks"
+    doi: 10.1016/j.jngse.2016.06.072
+    needed_for: [effective_permeability, upscaled_continuum_properties]
+  - ref: "Connectivity, permeability, and channeling in randomly distributed and kinematically defined discrete fracture network models"
+    doi: 10.1002/2016WR018973
+    needed_for: [flow_channeling_metric, effective_permeability, fracture_network_geometry]
+  - ref: "Influence of fracture scale heterogeneity on the flow properties of three-dimensional discrete fracture networks (DFN)"
+    doi: 10.1029/2012JB009461
+    needed_for: [effective_permeability, fracture_network_geometry]
+  - ref: "Modeling fracture flow with a stochastic discrete fracture network: calibration and validation 1/2"
+    doi: unknown_not_fetched
+    needed_for: [breakthrough_curve, particle_travel_time, fracture_network_geometry]

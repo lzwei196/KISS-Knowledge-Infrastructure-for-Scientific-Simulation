@@ -1,176 +1,186 @@
 schema_version: 1
 model_id: SFINCS
 domain: hazard
-generated_by: "self-improve session (Claude Opus 4.8, 1M) — validation-convention Step-B, in-cache literature"
+generated_by: self-improve session (Claude Opus 4.8, 1M) — validation-convention Step-B, in-cache literature
 generated_at: 2026-07-09
-
-# Grounded ONLY in locally-cached OA full texts. Two gradeable blocks (the only quantities with an
-# obs binding in the dag / obs_map): flood_extent (spatial_snapshot, CSI) and water_level
-# (point_time_series at his-points). SFINCS depth (hmax) and instantaneous/surface-elevation vars
-# (zsmax, zs) carry NO obs binding in the dag, so no gradeable block is emitted for them; the
-# high-water-mark depth convention is noted inside the flood_extent / water_level blocks instead.
-#
-# Headline metrics for water_level follow the field's ABSOLUTE-performance convention for coastal/
-# fluvial gauge series — RMSE + peak-magnitude bias (fmars2022, garcia2022, wing2021) — rather than
-# the dag determining_metric NSE, which the compound-flood literature co-reports but which is inflated
-# by the dominant tidal/diurnal signal at coastal gauges; NSE is retained as a supportive secondary
-# (this supersession is stated in notes, mirroring the GLM-AED temperature case). Flood-extent CSI
-# tiers come from two multi-site flood-model benchmarks (wing2018 collective validation; wing2021
-# continental validation). Bands are plain numbers read via `direction` (see the schema doc).
-
 references:
   sfincs_river2025:
     doi: 10.5194/egusphere-2025-4387
-    title: "Validation of the Open-Source Hydrodynamic Model SFINCS on Historical River Floods"
-    venue: "EGUsphere (preprint, Geosci. Model Dev. discussion)"
+    title: Validation of the Open-Source Hydrodynamic Model SFINCS on Historical River Floods
+    venue: EGUsphere (preprint, Geosci. Model Dev. discussion)
     year: 2025
     oa: gold
     resolves: https://doi.org/10.5194/egusphere-2025-4387
   wing2018:
     doi: 10.1088/1748-9326/aae014
-    title: "A first collective validation of global fluvial flood models for major floods in Nigeria and Mozambique"
-    venue: "Environmental Research Letters"
+    title: A first collective validation of global fluvial flood models for major floods in Nigeria and
+      Mozambique
+    venue: Environmental Research Letters
     year: 2018
     oa: manual
     resolves: https://doi.org/10.1088/1748-9326/aae014
   wing2021:
     doi: 10.5194/nhess-21-559-2021
-    title: "Simulating historical flood events at the continental scale: observational validation of a large-scale hydrodynamic model"
-    venue: "Nat. Hazards Earth Syst. Sci."
+    title: 'Simulating historical flood events at the continental scale: observational validation of a
+      large-scale hydrodynamic model'
+    venue: Nat. Hazards Earth Syst. Sci.
     year: 2021
     oa: gold
     resolves: https://doi.org/10.5194/nhess-21-559-2021
   garcia2022:
     doi: 10.1029/2022wr033144
-    title: "Compound Coastal, Fluvial, and Pluvial Flooding During Historical Hurricane Events"
-    venue: "Water Resources Research"
+    title: Compound Coastal, Fluvial, and Pluvial Flooding During Historical Hurricane Events
+    venue: Water Resources Research
     year: 2022
     oa: manual
     resolves: https://doi.org/10.1029/2022wr033144
   muis2022:
     doi: 10.3389/fmars.2022.1091844
-    title: "Towards a pan-European coastal flood awareness system: Skill of extreme sea-level forecasts"
-    venue: "Frontiers in Marine Science"
+    title: 'Towards a pan-European coastal flood awareness system: Skill of extreme sea-level forecasts'
+    venue: Frontiers in Marine Science
     year: 2022
     oa: gold
     resolves: https://doi.org/10.3389/fmars.2022.1091844
   bennett2013:
     doi: 10.1016/j.envsoft.2012.09.011
-    title: "Characterising performance of environmental models"
-    venue: "Environmental Modelling & Software"
+    title: Characterising performance of environmental models
+    venue: Environmental Modelling & Software
     year: 2013
     oa: manual
     resolves: https://doi.org/10.1016/j.envsoft.2012.09.011
   feature2019:
     doi: 10.1155/2019/9816098
-    title: "Are Feature Agreement Statistics Alone Sufficient to Validate Modelled Flood Extent Quality?"
-    venue: "Advances in Meteorology"
+    title: Are Feature Agreement Statistics Alone Sufficient to Validate Modelled Flood Extent Quality?
+    venue: Advances in Meteorology
     year: 2019
     oa: manual
     resolves: https://doi.org/10.1155/2019/9816098
-
 validation:
-
-  # ===================== FLOOD EXTENT / spatial snapshot (CSI — headline; well grounded) =====================
-  - canonical_quantity: flood_extent
-    obs_shape: spatial_snapshot
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
-        pass_band: satisfactory
-        band_note: >-
-          wing2018: CSI "range from 0.3 to 0.9 ... with >0.7 considered good and <0.5 poor";
-          wing2021: "Typical reach-scale 2D inundation models generally obtain CSIs of 0.7-0.8 when
-          calibrated to air- or space-borne imagery ... CSIs of up to 0.9 can be obtained". satisfactory
-          floor 0.5 = wing2018 poor/acceptable boundary; good 0.7; very_good 0.8 (reach-scale calibrated).
-        cites: [wing2018, wing2021]
-    secondary_metrics:
-      - metric: csi
-        direction: maximize
-        status: structurally_limited
-        ceiling_reason: >-
-          At continental/global scale with coarse forcing SFINCS attains a lower CSI ceiling set by
-          DEM and forcing RESOLUTION, not by the solver: sfincs_river2025 reports a global mean CSI of
-          0.42 for large basins (>1000 km2) and 0.29 for small basins (<50 km2), and shows CSI rising
-          from 0.37 to 0.57 with higher-resolution elevation input and from 0.39 to 0.67 with improved
-          hydrological forcing. So a sub-0.5 CSI in a coarse global/uncalibrated setup is a data/scale
-          ceiling (acquire higher-res DEM/forcing), NOT a model defect; the 0.5-0.8 headline band applies
-          to reach-scale / calibrated applications.
-        cites: [sfincs_river2025]
-      - metric: hit_rate
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Hit rate (POD) and false-alarm ratio (FAR) are co-reported with CSI as the standard flood/no-flood contingency metrics (sfincs_river2025 uses HR, FAR, CSI, error-bias E); wing2018 reports HR up to 0.96. CSI is the balanced headline; HR/FAR contextualise over- vs under-prediction."
-        cites: [sfincs_river2025, wing2018]
-    validated_when: "CSI >= 0.5 against the observed/benchmark inundation mask (wing2018 >0.5 = not-poor; pass_band satisfactory). CSI >= 0.7 = good, >= 0.8 = very_good. A coarse-forcing/global run below 0.5 is a DEM/forcing-resolution ceiling (structurally_limited), not fix_ki."
-    evidence_strength: strong
-    confidence: 0.8
-    notes: >-
-      Two multi-site flood-model benchmarks anchor the tiers (wing2018 collective GFM validation across
-      Nigeria/Mozambique, CSI 0.45-0.7; wing2021 continental US, mean CSI 0.87 vs interpolated HWMs,
-      CSIs 0.8-0.9). SFINCS-specific evidence (sfincs_river2025) shows the same convention but a coarse-
-      global ceiling near 0.4 that lifts with DEM/forcing resolution. CSI is threshold-sensitive: the
-      wet/dry classification depends on the chosen depth cut-off (sfincs_river2025 used a 0.05 m minimum
-      depth) and on datum/grid alignment with the observed mask. feature2019 cautions that agreement
-      statistics alone can be insensitive to real errors, so CSI should be read alongside HR/FAR and the
-      depth threshold documented. High-water-mark depth check (no separate obs-bound block in the dag):
-      garcia2022 reports 84% of HWMs within +/-0.2 m of modeled water depth.
-
-  # ===================== WATER LEVEL / point time series at his-points (RMSE+bias headline) =====================
-  - canonical_quantity: water_level
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: rmse
-        direction: minimize
-        unit: m
-        bands: {very_good: 0.1, good: 0.2, satisfactory: 0.4}
-        pass_band: satisfactory
-        band_note: >-
-          garcia2022 gauge water levels: "R2 = 0.91, RMSE = 0.10 m, NSE = 0.78" and event-average
-          "RMSE = 0.15 m, NSE = 0.93" (good agreement); muis2022 coastal WL "regional-average cRMSE
-          below 0.2m"; wing2021 water-surface elevations "calibrated to <0.4 m deviation from
-          observations". very_good 0.1 m, good 0.2 m, satisfactory 0.4 m.
-        cites: [garcia2022, muis2022, wing2021]
-      - metric: bias
-        direction: zero_centered
-        unit: percent
-        bands: {good: 10, satisfactory: 18}
-        pass_band: satisfactory
-        band_note: >-
-          muis2022: "general underprediction of peak magnitudes of 10% for water levels and 18%" (surge);
-          peak-magnitude error envelope used as the bias band (good 10%, satisfactory 18%).
-        cites: [muis2022]
-    secondary_metrics:
-      - metric: nse
-        direction: maximize
-        status: supportive
-        ceiling_reason: >-
-          NSE is the dag determining_metric and is co-reported by the compound-flood literature
-          (garcia2022 gauge NSE 0.78-0.93, "performs well"), but for coastal/estuarine water level the
-          field grades on absolute error (RMSE) + peak bias, because the dominant tidal/diurnal signal
-          inflates NSE; hence NSE is retained as supportive, not headline. bennett2013 notes NSE=0 means
-          "no better than simply using the mean" and negative NSE is worse. No fetched paper states an
-          NSE tier table (Moriasi tiers are paywalled), so no numeric NSE band is set.
-        cites: [garcia2022, bennett2013]
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: "muis2022 coastal WL correlations 'above 0.9 values across regions'; garcia2022 R2 = 0.91-0.97. Correlation is co-reported for phase/timing skill."
-        cites: [muis2022, garcia2022]
-    validated_when: "RMSE <= 0.4 m at in-domain stage/depth gauges (wing2021 calibration deviation; garcia2022/muis2022 achieved 0.09-0.2 m) AND peak-magnitude |bias| <= 18% (muis2022 envelope). NSE/r supportive only."
-    evidence_strength: strong
-    confidence: 0.7
-    notes: >-
-      Grounded in two compound-flood gauge benchmarks (garcia2022 Galveston-Bay hurricanes; muis2022
-      pan-European coastal sea level) plus a continental fluvial validation (wing2021). Headline
-      SUPERSEDES the dag determining_metric (nse) with RMSE + peak bias, the field's absolute-performance
-      metrics for coastal/fluvial water level; NSE kept as supportive secondary. Requires a shared
-      vertical datum between modeled zs and the gauge; peak-timing (t_zsmax) admits a lag/DOY bias that
-      RMSE alone does not capture (co-check r / timing). High-water-mark peak depth: garcia2022 found 84%
-      of HWMs within +/-0.2 m and NSE 0.81 vs HWMs.
-
+- obs_shape: spatial_snapshot
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.8
+      good: 0.7
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: 'wing2018: CSI "range from 0.3 to 0.9 ... with >0.7 considered good and <0.5 poor"; wing2021:
+      "Typical reach-scale 2D inundation models generally obtain CSIs of 0.7-0.8 when calibrated to air-
+      or space-borne imagery ... CSIs of up to 0.9 can be obtained". satisfactory floor 0.5 = wing2018
+      poor/acceptable boundary; good 0.7; very_good 0.8 (reach-scale calibrated).'
+    cites:
+    - wing2018
+    - wing2021
+  secondary_metrics:
+  - metric: csi
+    direction: maximize
+    status: structurally_limited
+    ceiling_reason: 'At continental/global scale with coarse forcing SFINCS attains a lower CSI ceiling
+      set by DEM and forcing RESOLUTION, not by the solver: sfincs_river2025 reports a global mean CSI
+      of 0.42 for large basins (>1000 km2) and 0.29 for small basins (<50 km2), and shows CSI rising from
+      0.37 to 0.57 with higher-resolution elevation input and from 0.39 to 0.67 with improved hydrological
+      forcing. So a sub-0.5 CSI in a coarse global/uncalibrated setup is a data/scale ceiling (acquire
+      higher-res DEM/forcing), NOT a model defect; the 0.5-0.8 headline band applies to reach-scale /
+      calibrated applications.'
+    cites:
+    - sfincs_river2025
+  - metric: hit_rate
+    direction: maximize
+    status: supportive
+    ceiling_reason: Hit rate (POD) and false-alarm ratio (FAR) are co-reported with CSI as the standard
+      flood/no-flood contingency metrics (sfincs_river2025 uses HR, FAR, CSI, error-bias E); wing2018
+      reports HR up to 0.96. CSI is the balanced headline; HR/FAR contextualise over- vs under-prediction.
+    cites:
+    - sfincs_river2025
+    - wing2018
+  validated_when: CSI >= 0.5 against the observed/benchmark inundation mask (wing2018 >0.5 = not-poor;
+    pass_band satisfactory). CSI >= 0.7 = good, >= 0.8 = very_good. A coarse-forcing/global run below
+    0.5 is a DEM/forcing-resolution ceiling (structurally_limited), not fix_ki.
+  evidence_strength: strong
+  confidence: 0.8
+  notes: 'Two multi-site flood-model benchmarks anchor the tiers (wing2018 collective GFM validation across
+    Nigeria/Mozambique, CSI 0.45-0.7; wing2021 continental US, mean CSI 0.87 vs interpolated HWMs, CSIs
+    0.8-0.9). SFINCS-specific evidence (sfincs_river2025) shows the same convention but a coarse- global
+    ceiling near 0.4 that lifts with DEM/forcing resolution. CSI is threshold-sensitive: the wet/dry classification
+    depends on the chosen depth cut-off (sfincs_river2025 used a 0.05 m minimum depth) and on datum/grid
+    alignment with the observed mask. feature2019 cautions that agreement statistics alone can be insensitive
+    to real errors, so CSI should be read alongside HR/FAR and the depth threshold documented. High-water-mark
+    depth check (no separate obs-bound block in the dag): garcia2022 reports 84% of HWMs within +/-0.2
+    m of modeled water depth.'
+  dag_variable: flood extent (derived from hmax > threshold)
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: rmse
+    direction: minimize
+    unit: m
+    bands:
+      very_good: 0.1
+      good: 0.2
+      satisfactory: 0.4
+    pass_band: satisfactory
+    band_note: 'garcia2022 gauge water levels: "R2 = 0.91, RMSE = 0.10 m, NSE = 0.78" and event-average
+      "RMSE = 0.15 m, NSE = 0.93" (good agreement); muis2022 coastal WL "regional-average cRMSE below
+      0.2m"; wing2021 water-surface elevations "calibrated to <0.4 m deviation from observations". very_good
+      0.1 m, good 0.2 m, satisfactory 0.4 m.'
+    cites:
+    - garcia2022
+    - muis2022
+    - wing2021
+  - metric: bias
+    direction: zero_centered
+    unit: percent
+    bands:
+      good: 10
+      satisfactory: 18
+    pass_band: satisfactory
+    band_note: 'muis2022: "general underprediction of peak magnitudes of 10% for water levels and 18%"
+      (surge); peak-magnitude error envelope used as the bias band (good 10%, satisfactory 18%).'
+    cites:
+    - muis2022
+  secondary_metrics:
+  - metric: nse
+    direction: maximize
+    status: supportive
+    ceiling_reason: NSE is the dag determining_metric and is co-reported by the compound-flood literature
+      (garcia2022 gauge NSE 0.78-0.93, "performs well"), but for coastal/estuarine water level the field
+      grades on absolute error (RMSE) + peak bias, because the dominant tidal/diurnal signal inflates
+      NSE; hence NSE is retained as supportive, not headline. bennett2013 notes NSE=0 means "no better
+      than simply using the mean" and negative NSE is worse. No fetched paper states an NSE tier table
+      (Moriasi tiers are paywalled), so no numeric NSE band is set.
+    cites:
+    - garcia2022
+    - bennett2013
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: muis2022 coastal WL correlations 'above 0.9 values across regions'; garcia2022 R2
+      = 0.91-0.97. Correlation is co-reported for phase/timing skill.
+    cites:
+    - muis2022
+    - garcia2022
+  validated_when: RMSE <= 0.4 m at in-domain stage/depth gauges (wing2021 calibration deviation; garcia2022/muis2022
+    achieved 0.09-0.2 m) AND peak-magnitude |bias| <= 18% (muis2022 envelope). NSE/r supportive only.
+  evidence_strength: strong
+  confidence: 0.7
+  notes: 'Grounded in two compound-flood gauge benchmarks (garcia2022 Galveston-Bay hurricanes; muis2022
+    pan-European coastal sea level) plus a continental fluvial validation (wing2021). Headline SUPERSEDES
+    the dag determining_metric (nse) with RMSE + peak bias, the field''s absolute-performance metrics
+    for coastal/fluvial water level; NSE kept as supportive secondary. Requires a shared vertical datum
+    between modeled zs and the gauge; peak-timing (t_zsmax) admits a lag/DOY bias that RMSE alone does
+    not capture (co-check r / timing). High-water-mark peak depth: garcia2022 found 84% of HWMs within
+    +/-0.2 m and NSE 0.81 vs HWMs.'
+  dag_variable: point_zs / point_h
 deferred_paywalled:
-  - {ref: "Vousdoukas et al. 2016 / Moriasi et al. 2007 & 2015 — original NSE/PBIAS/RSR performance-rating tier tables (would set a cited NSE band for water_level); primary tables are closed-access and not in-cache", doi: 10.13031/trans.58.10715, needed_for: [water_level]}
-  - {ref: "Bermudez/Sanders et al. — flood map boundary sensitivity to DEM resolution and roughness in relation to model performance (cited SFINCS-family CSI-vs-DEM study; fetch_failed)", doi: 10.1080/19475705.2019.1604573, needed_for: [flood_extent]}
+- ref: Vousdoukas et al. 2016 / Moriasi et al. 2007 & 2015 — original NSE/PBIAS/RSR performance-rating
+    tier tables (would set a cited NSE band for water_level); primary tables are closed-access and not
+    in-cache
+  doi: 10.13031/trans.58.10715
+  needed_for:
+  - water_level
+- ref: Bermudez/Sanders et al. — flood map boundary sensitivity to DEM resolution and roughness in relation
+    to model performance (cited SFINCS-family CSI-vs-DEM study; fetch_failed)
+  doi: 10.1080/19475705.2019.1604573
+  needed_for:
+  - flood_extent

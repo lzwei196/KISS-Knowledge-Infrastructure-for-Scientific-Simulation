@@ -1,414 +1,487 @@
+# ========================================================================
+# mizuRoute Diagnostic Triplets
+# ========================================================================
+# 19 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+# Derived metadata dropped in the conversion (recomputable from the entries
+# below; recorded here for provenance):
+#   summary:
+#     total_triplets: 19
+#     by_severity:
+#       fatal: 7
+#       silent: 7
+#       degraded: 3
+#       warning: 1
+#     by_domain:
+#       compilation: 1
+#       path_resolution: 2
+#       unit_conversion: 2
+#       parameter_format: 4
+#       dependency_mismatch: 3
+#       runtime: 2
+#       silent_error: 4
+#     silent_error_percentage: 39
+# Comments preserved from the previous file:
 # mizuRoute Diagnostic Triplets
 # 18 triplets covering 7 failure domains
 # Package: hydrocraft-mizuroute v1.0.0
-
-triplets:
-
-  - id: dt_m001
-    severity: fatal
-    failure_domain: compilation
-    pipeline_stage: build
-    symptom:
-      description: "Compilation fails with 'undefined reference to nf90_*' or 'cannot find -lnetcdff'"
-      error_pattern: "undefined reference to `__netcdf_"
-      detection_method: exit_code
-    diagnosis:
-      root_cause: "NetCDF-Fortran library path not set correctly in Makefile"
-      explanation: "gfortran cannot find libnetcdff.so. The NCDF_PATH or library path does not point to the correct NetCDF-Fortran installation."
-      affected_components: [Makefile, libnetcdff]
-    remedy:
-      action: "Set correct NCDF_PATH in Makefile. On Ubuntu: NCDF_PATH=/usr, LIBNETCDF=-L/usr/lib/x86_64-linux-gnu -lnetcdff -lnetcdf"
-      tool_to_run: null
-      manual_steps:
-        - "Run: dpkg -l libnetcdf-dev libnetcdff-dev"
-        - "Find library: find /usr -name 'libnetcdff*'"
-        - "Update Makefile.serial LIBNETCDF path"
-      prevention: "Use nf-config --flibs to auto-detect library flags"
-    cross_references: ["WRF-Hydro dt_006"]
-
-  - id: dt_m002
-    severity: fatal
-    failure_domain: path_resolution
-    pipeline_stage: s5_execution
-    symptom:
-      description: "mizuRoute crashes at startup: 'Cannot open file' or garbled filename"
-      error_pattern: "Cannot open file|Error opening|OPEN failure"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "File path in control file is wrong or too long for Fortran CHARACTER variable"
-      explanation: "mizuRoute uses Fortran CHARACTER variables with fixed width. Paths exceeding the CHARACTER width (typically 120-256 chars) are silently truncated."
-      affected_components: [control_file, read_control.f90]
-    remedy:
-      action: "Use absolute paths shorter than 120 characters. Create symlinks if needed."
-      tool_to_run: null
-      manual_steps:
-        - "Check all paths in control file are < 120 chars"
-        - "If too long, create symlinks: ln -s /long/path/to/dir /short/path"
-        - "Update control file to use short path"
-      prevention: "generate_control_file.py warns when paths > 120 chars"
-    cross_references: ["Lohmann routing dt_017", "cm_008"]
-
-  - id: dt_m003
-    severity: silent
-    failure_domain: unit_conversion
-    pipeline_stage: s3_runoff
-    symptom:
-      description: "Discharge is systematically 8x, 24x, or 86400x too high or too low"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "VIC runoff not converted from mm/timestep to mm/s"
-      explanation: "VIC reports RUNOFF and BASEFLOW in mm per model timestep (daily=mm/day, 3-hourly=mm/3hr). mizuRoute expects mm/s (rate). Missing the division by timestep_seconds causes discharge to be off by the exact timestep ratio."
-      affected_components: [convert_vic_runoff.py, units_qsim]
-    remedy:
-      action: "Verify runoff input units: open NetCDF, check max value. Daily runoff of 10 mm/day = 10/86400 = 0.000116 mm/s. If values are >0.01, units are probably wrong."
-      tool_to_run: "convert_vic_runoff.py"
-      manual_steps:
-        - "ncdump -v RUNOFF runoff.nc | head -20"
-        - "Check max value: should be < 0.01 mm/s for most basins"
-        - "If max > 1.0 mm/s, unit conversion was skipped"
-      prevention: "convert_vic_runoff.py validates max(RUNOFF) < 1.0 mm/s"
-    cross_references: ["cm_004", "CaMa-Flood precipitation unit fix"]
-
-  - id: dt_m004
-    severity: fatal
-    failure_domain: parameter_format
-    pipeline_stage: s4_control
-    symptom:
-      description: "mizuRoute crashes: 'Variable <name> not found in file'"
-      error_pattern: "not found in file|variable not found"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Variable name in control file does not match the actual variable name in the NetCDF file"
-      explanation: "Different network data sources use different variable names (e.g., 'COMID' vs 'seg_id' for reach IDs, 'Length' vs 'seg_length'). The control file vname_* entries must match exactly."
-      affected_components: [control_file, network_topology.nc]
-    remedy:
-      action: "Open the network NetCDF and check actual variable names: ncdump -h network_topology.nc"
-      tool_to_run: "generate_control_file.py"
-      manual_steps:
-        - "ncdump -h network_topology.nc | grep -E 'int|float|double'"
-        - "Compare with vname_* entries in control file"
-        - "Update mismatched names"
-      prevention: "generate_control_file.py auto-reads variable names from network NetCDF"
-
-  - id: dt_m005
-    severity: silent
-    failure_domain: dependency_mismatch
-    pipeline_stage: s2_remap
-    symptom:
-      description: "Discharge is near zero even though runoff input looks correct"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "CRS mismatch between VIC grid and HRU polygons causes zero overlap areas"
-      explanation: "If the VIC grid is in WGS84 (EPSG:4326) but HRU polygons are in a projected CRS (e.g., UTM), the spatial intersection finds no overlaps and all remapping weights are zero. Runoff never reaches the river network."
-      affected_components: [create_remap_weights.py, hru_polygons]
-    remedy:
-      action: "Ensure both VIC grid and HRU polygons are in the same CRS (WGS84 EPSG:4326)"
-      tool_to_run: "create_remap_weights.py"
-      manual_steps:
-        - "Check VIC grid CRS: python -c \"import netCDF4; print(netCDF4.Dataset('grid.nc').variables['lat'].units)\""
-        - "Check HRU CRS: python -c \"import geopandas; print(geopandas.read_file('hrus.shp').crs)\""
-        - "Reproject if different: gdf.to_crs(epsg=4326)"
-      prevention: "create_remap_weights.py auto-reprojects to EPSG:4326"
-
-  - id: dt_m006
-    severity: fatal
-    failure_domain: parameter_format
-    pipeline_stage: s1_network
-    symptom:
-      description: "mizuRoute hangs or crashes: 'tosegment references non-existent segment'"
-      error_pattern: "topology|infinite loop|segment not found"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Broken network topology with dangling downstream references"
-      explanation: "A reach's tosegment ID points to a segment that doesn't exist in the network. This can happen when DEM extraction clips reaches at the basin boundary. Creates infinite loops or crashes in the routing."
-      affected_components: [build_network_topology.py, network_topology.nc]
-    remedy:
-      action: "Validate topology: every tosegment must be either 0 (outlet) or an existing seg_id"
-      tool_to_run: "build_network_topology.py"
-      manual_steps:
-        - "Read seg_id and tosegment from NetCDF"
-        - "Check: set(tosegment) - {0} must be subset of set(seg_id)"
-        - "Fix dangling references: set tosegment=0 for orphaned reaches"
-      prevention: "build_network_topology.py validates topology before writing"
-
-  - id: dt_m007
-    severity: degraded
-    failure_domain: parameter_format
-    pipeline_stage: s1_network
-    symptom:
-      description: "Unrealistic peak discharge (too sharp or too attenuated)"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Reach slope is 0 or near-zero (flat DEM artifact)"
-      explanation: "Flat reaches in DEM-derived networks get slope=0, which causes infinite wave speed (instantaneous routing) or division by zero. Manning's equation n*Q relationship breaks down."
-      affected_components: [build_network_topology.py, seg_slope]
-    remedy:
-      action: "Apply minimum slope floor: max(computed_slope, 0.0001) m/m"
-      tool_to_run: "build_network_topology.py --min_slope 0.0001"
-      manual_steps:
-        - "Check: ncdump -v seg_slope network_topology.nc"
-        - "If any values <= 0: edit network_topology.nc and set minimum"
-      prevention: "build_network_topology.py applies min_slope automatically"
-
-  - id: dt_m008
-    severity: silent
-    failure_domain: silent_error
-    pipeline_stage: s3_runoff
-    symptom:
-      description: "Hydrograph peaks are delayed or advanced by one timestep"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Temporal offset between VIC end-of-timestep and mizuRoute start-of-timestep conventions"
-      explanation: "VIC reports accumulated runoff at the END of each timestep, while mizuRoute may interpret it as the START. This shifts the entire hydrograph by one timestep."
-      affected_components: [convert_vic_runoff.py, time coordinate]
-    remedy:
-      action: "Verify time coordinate alignment. If shifted, offset by half timestep."
-      manual_steps:
-        - "Compare first time value in runoff NC with VIC flux file header"
-        - "If VIC daily output starts at midnight, time should be 0.0 (day 1)"
-        - "mizuRoute uses start-of-timestep; VIC uses end-of-timestep"
-      prevention: "convert_vic_runoff.py documents the convention in the time variable attributes"
-
-  - id: dt_m009
-    severity: fatal
-    failure_domain: runtime
-    pipeline_stage: s5_execution
-    symptom:
-      description: "mizuRoute crashes with 'CFL violation' or 'dt too large'"
-      error_pattern: "CFL|Courant|dt too large|unstable"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Routing timestep too large for the spatial resolution and routing method"
-      explanation: "KWE and DW methods require dt < dx/c (Courant condition). Short, steep reaches with high flow velocity need very small dt. IRF and KWT are unconditionally stable."
-      affected_components: [control_file, dt, route_opt]
-    remedy:
-      action: "Reduce dt (e.g., from 3600 to 900 seconds) or switch to IRF/KWT which are unconditionally stable"
-      manual_steps:
-        - "Reduce <dt> in control file (try 900, 300, 60)"
-        - "Or change <route_opt> to 0 (IRF) or 1 (KWT)"
-        - "DW is most sensitive; KWE is moderately sensitive"
-      prevention: "run_mizuroute.py detects CFL errors and suggests fixes"
-
-  - id: dt_m010
-    severity: silent
-    failure_domain: dependency_mismatch
-    pipeline_stage: s2_remap
-    symptom:
-      description: "Some river reaches get zero flow even in wet season"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "VIC grid doesn't fully cover all HRUs — edge HRUs get no runoff"
-      explanation: "At coarse VIC resolution (0.25 deg), some small HRUs at basin edges may not overlap with any VIC grid cell. These HRUs contribute zero runoff to their stream segments."
-      affected_components: [create_remap_weights.py, grid resolution]
-    remedy:
-      action: "Check remap weights: every HRU should have weight sum > 0. Use finer VIC resolution (0.1 deg) for better coverage."
-      tool_to_run: "create_remap_weights.py"
-      manual_steps:
-        - "Read weight file, sum weights per HRU"
-        - "Any HRU with sum=0 has no VIC coverage"
-        - "Increase VIC resolution or assign nearest-neighbor"
-      prevention: "create_remap_weights.py warns about uncovered HRUs"
-
-  - id: dt_m011
-    severity: degraded
-    failure_domain: parameter_format
-    pipeline_stage: s1_network
-    symptom:
-      description: "Lake outflow missing — discharge downstream of lake is zero or wrong"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Lake segments not properly flagged in network topology"
-      explanation: "If is_lake_sim=True but the network doesn't have proper lake flags (is_lake, lake_area, lake_max_storage), lake routing silently fails and discharge below the lake is wrong."
-      affected_components: [network_topology.nc, lake variables]
-    remedy:
-      action: "Either disable lake routing (is_lake_sim=False) or add lake attributes"
-      manual_steps:
-        - "ncdump -h network_topology.nc | grep lake"
-        - "If no lake variables, set is_lake_sim=False"
-        - "Or add lake attributes using add_lakes_to_network.py"
-      prevention: "run_mizuroute.py checks for lake variables when is_lake_sim=True"
-
-  - id: dt_m012
-    severity: fatal
-    failure_domain: runtime
-    pipeline_stage: s5_execution
-    symptom:
-      description: "MPI_ABORT or crash with serial stubs when network has disconnected components"
-      error_pattern: "MPI_ABORT|domain_decomposition|disconnected"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Network has multiple disconnected components (multiple basins in one network)"
-      explanation: "Domain decomposition fails when the river network is not a single connected tree. Can happen when DEM extraction creates multiple disjoint stream networks."
-      affected_components: [domain_decomposition.f90, network_topology.nc]
-    remedy:
-      action: "Ensure network is a single tree by removing disconnected components"
-      manual_steps:
-        - "Identify connected components in the network (graph traversal from outlets)"
-        - "Keep only the largest component"
-        - "Rebuild network_topology.nc with cleaned topology"
-      prevention: "build_network_topology.py validates single-component topology"
-
-  - id: dt_m013
-    severity: silent
-    failure_domain: unit_conversion
-    pipeline_stage: s3_runoff
-    symptom:
-      description: "Runoff seasonality appears inverted or offset by months"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Time zone or calendar mismatch between VIC output and mizuRoute expectations"
-      explanation: "If VIC uses UTC but the basin is at UTC+8, and the time coordinate doesn't specify timezone, mizuRoute interprets all times literally. Daily totals can shift by one day."
-      affected_components: [convert_vic_runoff.py, time coordinate, calendar attribute]
-    remedy:
-      action: "Ensure time coordinate has correct 'calendar' attribute and reference date"
-      manual_steps:
-        - "Check: ncdump -h runoff.nc | grep calendar"
-        - "Should be 'standard' or 'gregorian'"
-        - "Reference date should match VIC output start"
-      prevention: "convert_vic_runoff.py sets calendar='standard' and documents reference"
-
-  - id: dt_m014
-    severity: warning
-    failure_domain: parameter_format
-    pipeline_stage: s4_control
-    symptom:
-      description: "Slight timing shift in hydrograph relative to Lohmann routing"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "doesBasinRoute=1 applies an additional hillslope IRF that Lohmann routing already includes in its unit hydrograph"
-      explanation: "mizuRoute's basin IRF delays runoff before reach routing. If comparing with Lohmann (which has its own unit hydrograph delay), this double-counts the hillslope delay."
-      affected_components: [control_file, doesBasinRoute]
-    remedy:
-      action: "When comparing with Lohmann: set doesBasinRoute=0 to avoid double hillslope delay"
-      manual_steps:
-        - "Edit control file: <doesBasinRoute> 0"
-      prevention: "generate_control_file.py defaults to doesBasinRoute=0"
-
-  - id: dt_m015
-    severity: silent
-    failure_domain: silent_error
-    pipeline_stage: s1_network
-    symptom:
-      description: "Routed discharge at outlet is much lower than expected (some flow escapes)"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Multiple outlets in the network — water exits through secondary outlets"
-      explanation: "The DEM-derived network may have multiple reaches with tosegment=0 if the basin boundary intersects multiple stream channels. mizuRoute routes water to all outlets independently."
-      affected_components: [build_network_topology.py, network_topology.nc]
-    remedy:
-      action: "Verify single outlet. If multiple, set secondary outlet tosegments to connect to the main outlet."
-      tool_to_run: "build_network_topology.py"
-      manual_steps:
-        - "Count outlets: tosegment==0 should have exactly 1 entry (or link them)"
-        - "If >1, identify main outlet (largest upstream area)"
-        - "Connect secondary outlets to main outlet"
-      prevention: "build_network_topology.py warns about multiple outlets"
-
-  - id: dt_m016
-    severity: degraded
-    failure_domain: dependency_mismatch
-    pipeline_stage: s6_postprocess
-    symptom:
-      description: "Discharge systematically lower than Lohmann/CaMa-Flood for same basin"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Channel losses (evaporation, deep percolation) modeled in mizuRoute but not in Lohmann"
-      explanation: "mizuRoute's KWE, MC, DW methods can include channel transmission losses that simple unit hydrograph methods (Lohmann, IRF) ignore. In arid basins, this causes significant flow reduction."
-      affected_components: [routing_method, channel_parameters]
-    remedy:
-      action: "Expected behavior for semi-arid basins. For comparison, use IRF method which is closest to Lohmann."
-      manual_steps:
-        - "Compare IRF vs Lohmann (should be very similar)"
-        - "Compare KWE/MC/DW vs CaMa-Flood (both model channel processes)"
-      prevention: "Document in comparison report which methods include losses"
-
-  - id: dt_m017
-    severity: fatal
-    failure_domain: path_resolution
-    pipeline_stage: s5_execution
-    symptom:
-      description: "Fortran CHARACTER variable truncation causes wrong file to be read or file-not-found"
-      error_pattern: "Cannot open|file not found"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "File paths exceed 120-256 characters, silently truncated by Fortran"
-      explanation: "Fortran CHARACTER variables have fixed widths. mizuRoute uses CHARACTER(256) for most paths, but deeply nested HydroCraft output paths can exceed this. The truncated path references a non-existent file."
-      affected_components: [control_file, public_var.f90]
-    remedy:
-      action: "Use symlinks to shorten paths below 120 characters"
-      manual_steps:
-        - "ln -s /very/long/path/to/outputs/basin_long_name /short/link"
-        - "Update control file paths to use /short/link"
-      prevention: "generate_control_file.py warns when paths > 120 chars"
-    cross_references: ["cm_008", "Lohmann routing path limit"]
-
-  - id: dt_m018
-    severity: silent
-    failure_domain: silent_error
-    pipeline_stage: s1_network
-    symptom:
-      description: "Channel widths unrealistic (too narrow for large rivers, too wide for headwaters)"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Power-law width estimation W = a*A^b uses coefficients for wrong climate/region"
-      explanation: "Default Leopold-Maddock coefficients (a=2.7, b=0.35) are calibrated for temperate rivers. Arid regions have much narrower channels for the same drainage area. Tropical regions are wider."
-      affected_components: [build_network_topology.py, seg_width]
-    remedy:
-      action: "Check estimated widths against literature values. Adjust a,b coefficients for the region."
-      manual_steps:
-        - "For arid basins: a=1.5, b=0.30"
-        - "For tropical: a=3.5, b=0.40"
-        - "Verify: largest river width should be reasonable (e.g., 50-500m)"
-      prevention: "build_network_topology.py logs min/max widths for review"
-
-  - id: dt_m019
-    severity: silent
-    failure_domain: runtime
-    pipeline_stage: s5_execution
-    symptom:
-      description: "pio_setframe was a no-op — only 1 of 365 daily values written per year (99.7% fill values)"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Serial PIO stub ignored frame index, always overwrote timestep 0"
-      explanation: "The serial PIO stub (pio.f90) did not track the current frame index. Every call to pio_setframe was silently ignored, so pio_write_darray always wrote to frame 0. The resulting NetCDF output appeared to have 365 timesteps but 364 were fill values. This bug only manifests with serial stubs — MPI-enabled PIO handles frames correctly."
-      affected_components: [pio.f90, serial_stubs, output_netcdf]
-    remedy:
-      action: "Added current_frame module variable to pio.f90, used in pio_write_darray start parameter"
-      tool_to_run: null
-      manual_steps:
-        - "Add 'integer, save :: current_frame = 1' to pio module variables"
-        - "In pio_setframe: set current_frame = frame"
-        - "In pio_write_darray: use start=[current_frame] instead of start=[1]"
-      prevention: "Verify output NetCDF has non-fill values for all timesteps after first run"
-    cross_references: ["Bengbu validation 2026-03-22"]
-    verified: "2026-03-22"
-
 # Summary
-summary:
-  total_triplets: 19
-  by_severity:
-    fatal: 7
-    silent: 7
-    degraded: 3
-    warning: 1
-  by_domain:
-    compilation: 1
-    path_resolution: 2
-    unit_conversion: 2
-    parameter_format: 4
-    dependency_mismatch: 3
-    runtime: 2
-    silent_error: 4
-  silent_error_percentage: 39
+# Field names normalised to the controlled vocabulary 2026-08-12
+# (see ki_vocabulary.py). Values unchanged; only keys were renamed.
+
+- id: dt_m001
+  severity: fatal
+  failure_domain: compilation
+  stage: build
+  symptom:
+    description: Compilation fails with 'undefined reference to nf90_*' or 'cannot find -lnetcdff'
+    error_pattern: undefined reference to `__netcdf_
+    detection_method: exit_code
+  diagnosis:
+    root_cause: NetCDF-Fortran library path not set correctly in Makefile
+    explanation: gfortran cannot find libnetcdff.so. The NCDF_PATH or library path does not point to the
+      correct NetCDF-Fortran installation.
+    affected_components:
+    - Makefile
+    - libnetcdff
+  remedy:
+    action: 'Set correct NCDF_PATH in Makefile. On Ubuntu: NCDF_PATH=/usr, LIBNETCDF=-L/usr/lib/x86_64-linux-gnu
+      -lnetcdff -lnetcdf'
+    tool_to_run: null
+    manual_steps:
+    - 'Run: dpkg -l libnetcdf-dev libnetcdff-dev'
+    - 'Find library: find /usr -name ''libnetcdff*'''
+    - Update Makefile.serial LIBNETCDF path
+    prevention: Use nf-config --flibs to auto-detect library flags
+  cross_references:
+  - WRF-Hydro dt_006
+- id: dt_m002
+  severity: fatal
+  failure_domain: path_resolution
+  stage: s5_execution
+  symptom:
+    description: 'mizuRoute crashes at startup: ''Cannot open file'' or garbled filename'
+    error_pattern: Cannot open file|Error opening|OPEN failure
+    detection_method: log_match
+  diagnosis:
+    root_cause: File path in control file is wrong or too long for Fortran CHARACTER variable
+    explanation: mizuRoute uses Fortran CHARACTER variables with fixed width. Paths exceeding the CHARACTER
+      width (typically 120-256 chars) are silently truncated.
+    affected_components:
+    - control_file
+    - read_control.f90
+  remedy:
+    action: Use absolute paths shorter than 120 characters. Create symlinks if needed.
+    tool_to_run: null
+    manual_steps:
+    - Check all paths in control file are < 120 chars
+    - 'If too long, create symlinks: ln -s /long/path/to/dir /short/path'
+    - Update control file to use short path
+    prevention: generate_control_file.py warns when paths > 120 chars
+  cross_references:
+  - Lohmann routing dt_017
+  - cm_008
+- id: dt_m003
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s3_runoff
+  symptom:
+    description: Discharge is systematically 8x, 24x, or 86400x too high or too low
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: VIC runoff not converted from mm/timestep to mm/s
+    explanation: VIC reports RUNOFF and BASEFLOW in mm per model timestep (daily=mm/day, 3-hourly=mm/3hr).
+      mizuRoute expects mm/s (rate). Missing the division by timestep_seconds causes discharge to be off
+      by the exact timestep ratio.
+    affected_components:
+    - convert_vic_runoff.py
+    - units_qsim
+  remedy:
+    action: 'Verify runoff input units: open NetCDF, check max value. Daily runoff of 10 mm/day = 10/86400
+      = 0.000116 mm/s. If values are >0.01, units are probably wrong.'
+    tool_to_run: convert_vic_runoff.py
+    manual_steps:
+    - ncdump -v RUNOFF runoff.nc | head -20
+    - 'Check max value: should be < 0.01 mm/s for most basins'
+    - If max > 1.0 mm/s, unit conversion was skipped
+    prevention: convert_vic_runoff.py validates max(RUNOFF) < 1.0 mm/s
+  cross_references:
+  - cm_004
+  - CaMa-Flood precipitation unit fix
+- id: dt_m004
+  severity: fatal
+  failure_domain: parameter_format
+  stage: s4_control
+  symptom:
+    description: 'mizuRoute crashes: ''Variable <name> not found in file'''
+    error_pattern: not found in file|variable not found
+    detection_method: log_match
+  diagnosis:
+    root_cause: Variable name in control file does not match the actual variable name in the NetCDF file
+    explanation: Different network data sources use different variable names (e.g., 'COMID' vs 'seg_id'
+      for reach IDs, 'Length' vs 'seg_length'). The control file vname_* entries must match exactly.
+    affected_components:
+    - control_file
+    - network_topology.nc
+  remedy:
+    action: 'Open the network NetCDF and check actual variable names: ncdump -h network_topology.nc'
+    tool_to_run: generate_control_file.py
+    manual_steps:
+    - ncdump -h network_topology.nc | grep -E 'int|float|double'
+    - Compare with vname_* entries in control file
+    - Update mismatched names
+    prevention: generate_control_file.py auto-reads variable names from network NetCDF
+- id: dt_m005
+  severity: silent
+  failure_domain: dependency_mismatch
+  stage: s2_remap
+  symptom:
+    description: Discharge is near zero even though runoff input looks correct
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: CRS mismatch between VIC grid and HRU polygons causes zero overlap areas
+    explanation: If the VIC grid is in WGS84 (EPSG:4326) but HRU polygons are in a projected CRS (e.g.,
+      UTM), the spatial intersection finds no overlaps and all remapping weights are zero. Runoff never
+      reaches the river network.
+    affected_components:
+    - create_remap_weights.py
+    - hru_polygons
+  remedy:
+    action: Ensure both VIC grid and HRU polygons are in the same CRS (WGS84 EPSG:4326)
+    tool_to_run: create_remap_weights.py
+    manual_steps:
+    - 'Check VIC grid CRS: python -c "import netCDF4; print(netCDF4.Dataset(''grid.nc'').variables[''lat''].units)"'
+    - 'Check HRU CRS: python -c "import geopandas; print(geopandas.read_file(''hrus.shp'').crs)"'
+    - 'Reproject if different: gdf.to_crs(epsg=4326)'
+    prevention: create_remap_weights.py auto-reprojects to EPSG:4326
+- id: dt_m006
+  severity: fatal
+  failure_domain: parameter_format
+  stage: s1_network
+  symptom:
+    description: 'mizuRoute hangs or crashes: ''tosegment references non-existent segment'''
+    error_pattern: topology|infinite loop|segment not found
+    detection_method: log_match
+  diagnosis:
+    root_cause: Broken network topology with dangling downstream references
+    explanation: A reach's tosegment ID points to a segment that doesn't exist in the network. This can
+      happen when DEM extraction clips reaches at the basin boundary. Creates infinite loops or crashes
+      in the routing.
+    affected_components:
+    - build_network_topology.py
+    - network_topology.nc
+  remedy:
+    action: 'Validate topology: every tosegment must be either 0 (outlet) or an existing seg_id'
+    tool_to_run: build_network_topology.py
+    manual_steps:
+    - Read seg_id and tosegment from NetCDF
+    - 'Check: set(tosegment) - {0} must be subset of set(seg_id)'
+    - 'Fix dangling references: set tosegment=0 for orphaned reaches'
+    prevention: build_network_topology.py validates topology before writing
+- id: dt_m007
+  severity: degraded
+  failure_domain: parameter_format
+  stage: s1_network
+  symptom:
+    description: Unrealistic peak discharge (too sharp or too attenuated)
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Reach slope is 0 or near-zero (flat DEM artifact)
+    explanation: Flat reaches in DEM-derived networks get slope=0, which causes infinite wave speed (instantaneous
+      routing) or division by zero. Manning's equation n*Q relationship breaks down.
+    affected_components:
+    - build_network_topology.py
+    - seg_slope
+  remedy:
+    action: 'Apply minimum slope floor: max(computed_slope, 0.0001) m/m'
+    tool_to_run: build_network_topology.py --min_slope 0.0001
+    manual_steps:
+    - 'Check: ncdump -v seg_slope network_topology.nc'
+    - 'If any values <= 0: edit network_topology.nc and set minimum'
+    prevention: build_network_topology.py applies min_slope automatically
+- id: dt_m008
+  severity: silent
+  failure_domain: silent_error
+  stage: s3_runoff
+  symptom:
+    description: Hydrograph peaks are delayed or advanced by one timestep
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Temporal offset between VIC end-of-timestep and mizuRoute start-of-timestep conventions
+    explanation: VIC reports accumulated runoff at the END of each timestep, while mizuRoute may interpret
+      it as the START. This shifts the entire hydrograph by one timestep.
+    affected_components:
+    - convert_vic_runoff.py
+    - time coordinate
+  remedy:
+    action: Verify time coordinate alignment. If shifted, offset by half timestep.
+    manual_steps:
+    - Compare first time value in runoff NC with VIC flux file header
+    - If VIC daily output starts at midnight, time should be 0.0 (day 1)
+    - mizuRoute uses start-of-timestep; VIC uses end-of-timestep
+    prevention: convert_vic_runoff.py documents the convention in the time variable attributes
+- id: dt_m009
+  severity: fatal
+  failure_domain: runtime
+  stage: s5_execution
+  symptom:
+    description: mizuRoute crashes with 'CFL violation' or 'dt too large'
+    error_pattern: CFL|Courant|dt too large|unstable
+    detection_method: log_match
+  diagnosis:
+    root_cause: Routing timestep too large for the spatial resolution and routing method
+    explanation: KWE and DW methods require dt < dx/c (Courant condition). Short, steep reaches with high
+      flow velocity need very small dt. IRF and KWT are unconditionally stable.
+    affected_components:
+    - control_file
+    - dt
+    - route_opt
+  remedy:
+    action: Reduce dt (e.g., from 3600 to 900 seconds) or switch to IRF/KWT which are unconditionally
+      stable
+    manual_steps:
+    - Reduce <dt> in control file (try 900, 300, 60)
+    - Or change <route_opt> to 0 (IRF) or 1 (KWT)
+    - DW is most sensitive; KWE is moderately sensitive
+    prevention: run_mizuroute.py detects CFL errors and suggests fixes
+- id: dt_m010
+  severity: silent
+  failure_domain: dependency_mismatch
+  stage: s2_remap
+  symptom:
+    description: Some river reaches get zero flow even in wet season
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: VIC grid doesn't fully cover all HRUs — edge HRUs get no runoff
+    explanation: At coarse VIC resolution (0.25 deg), some small HRUs at basin edges may not overlap with
+      any VIC grid cell. These HRUs contribute zero runoff to their stream segments.
+    affected_components:
+    - create_remap_weights.py
+    - grid resolution
+  remedy:
+    action: 'Check remap weights: every HRU should have weight sum > 0. Use finer VIC resolution (0.1
+      deg) for better coverage.'
+    tool_to_run: create_remap_weights.py
+    manual_steps:
+    - Read weight file, sum weights per HRU
+    - Any HRU with sum=0 has no VIC coverage
+    - Increase VIC resolution or assign nearest-neighbor
+    prevention: create_remap_weights.py warns about uncovered HRUs
+- id: dt_m011
+  severity: degraded
+  failure_domain: parameter_format
+  stage: s1_network
+  symptom:
+    description: Lake outflow missing — discharge downstream of lake is zero or wrong
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Lake segments not properly flagged in network topology
+    explanation: If is_lake_sim=True but the network doesn't have proper lake flags (is_lake, lake_area,
+      lake_max_storage), lake routing silently fails and discharge below the lake is wrong.
+    affected_components:
+    - network_topology.nc
+    - lake variables
+  remedy:
+    action: Either disable lake routing (is_lake_sim=False) or add lake attributes
+    manual_steps:
+    - ncdump -h network_topology.nc | grep lake
+    - If no lake variables, set is_lake_sim=False
+    - Or add lake attributes using add_lakes_to_network.py
+    prevention: run_mizuroute.py checks for lake variables when is_lake_sim=True
+- id: dt_m012
+  severity: fatal
+  failure_domain: runtime
+  stage: s5_execution
+  symptom:
+    description: MPI_ABORT or crash with serial stubs when network has disconnected components
+    error_pattern: MPI_ABORT|domain_decomposition|disconnected
+    detection_method: log_match
+  diagnosis:
+    root_cause: Network has multiple disconnected components (multiple basins in one network)
+    explanation: Domain decomposition fails when the river network is not a single connected tree. Can
+      happen when DEM extraction creates multiple disjoint stream networks.
+    affected_components:
+    - domain_decomposition.f90
+    - network_topology.nc
+  remedy:
+    action: Ensure network is a single tree by removing disconnected components
+    manual_steps:
+    - Identify connected components in the network (graph traversal from outlets)
+    - Keep only the largest component
+    - Rebuild network_topology.nc with cleaned topology
+    prevention: build_network_topology.py validates single-component topology
+- id: dt_m013
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s3_runoff
+  symptom:
+    description: Runoff seasonality appears inverted or offset by months
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Time zone or calendar mismatch between VIC output and mizuRoute expectations
+    explanation: If VIC uses UTC but the basin is at UTC+8, and the time coordinate doesn't specify timezone,
+      mizuRoute interprets all times literally. Daily totals can shift by one day.
+    affected_components:
+    - convert_vic_runoff.py
+    - time coordinate
+    - calendar attribute
+  remedy:
+    action: Ensure time coordinate has correct 'calendar' attribute and reference date
+    manual_steps:
+    - 'Check: ncdump -h runoff.nc | grep calendar'
+    - Should be 'standard' or 'gregorian'
+    - Reference date should match VIC output start
+    prevention: convert_vic_runoff.py sets calendar='standard' and documents reference
+- id: dt_m014
+  severity: warning
+  failure_domain: parameter_format
+  stage: s4_control
+  symptom:
+    description: Slight timing shift in hydrograph relative to Lohmann routing
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: doesBasinRoute=1 applies an additional hillslope IRF that Lohmann routing already includes
+      in its unit hydrograph
+    explanation: mizuRoute's basin IRF delays runoff before reach routing. If comparing with Lohmann (which
+      has its own unit hydrograph delay), this double-counts the hillslope delay.
+    affected_components:
+    - control_file
+    - doesBasinRoute
+  remedy:
+    action: 'When comparing with Lohmann: set doesBasinRoute=0 to avoid double hillslope delay'
+    manual_steps:
+    - 'Edit control file: <doesBasinRoute> 0'
+    prevention: generate_control_file.py defaults to doesBasinRoute=0
+- id: dt_m015
+  severity: silent
+  failure_domain: silent_error
+  stage: s1_network
+  symptom:
+    description: Routed discharge at outlet is much lower than expected (some flow escapes)
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Multiple outlets in the network — water exits through secondary outlets
+    explanation: The DEM-derived network may have multiple reaches with tosegment=0 if the basin boundary
+      intersects multiple stream channels. mizuRoute routes water to all outlets independently.
+    affected_components:
+    - build_network_topology.py
+    - network_topology.nc
+  remedy:
+    action: Verify single outlet. If multiple, set secondary outlet tosegments to connect to the main
+      outlet.
+    tool_to_run: build_network_topology.py
+    manual_steps:
+    - 'Count outlets: tosegment==0 should have exactly 1 entry (or link them)'
+    - If >1, identify main outlet (largest upstream area)
+    - Connect secondary outlets to main outlet
+    prevention: build_network_topology.py warns about multiple outlets
+- id: dt_m016
+  severity: degraded
+  failure_domain: dependency_mismatch
+  stage: s6_postprocess
+  symptom:
+    description: Discharge systematically lower than Lohmann/CaMa-Flood for same basin
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Channel losses (evaporation, deep percolation) modeled in mizuRoute but not in Lohmann
+    explanation: mizuRoute's KWE, MC, DW methods can include channel transmission losses that simple unit
+      hydrograph methods (Lohmann, IRF) ignore. In arid basins, this causes significant flow reduction.
+    affected_components:
+    - routing_method
+    - channel_parameters
+  remedy:
+    action: Expected behavior for semi-arid basins. For comparison, use IRF method which is closest to
+      Lohmann.
+    manual_steps:
+    - Compare IRF vs Lohmann (should be very similar)
+    - Compare KWE/MC/DW vs CaMa-Flood (both model channel processes)
+    prevention: Document in comparison report which methods include losses
+- id: dt_m017
+  severity: fatal
+  failure_domain: path_resolution
+  stage: s5_execution
+  symptom:
+    description: Fortran CHARACTER variable truncation causes wrong file to be read or file-not-found
+    error_pattern: Cannot open|file not found
+    detection_method: log_match
+  diagnosis:
+    root_cause: File paths exceed 120-256 characters, silently truncated by Fortran
+    explanation: Fortran CHARACTER variables have fixed widths. mizuRoute uses CHARACTER(256) for most
+      paths, but deeply nested HydroCraft output paths can exceed this. The truncated path references
+      a non-existent file.
+    affected_components:
+    - control_file
+    - public_var.f90
+  remedy:
+    action: Use symlinks to shorten paths below 120 characters
+    manual_steps:
+    - ln -s /very/long/path/to/outputs/basin_long_name /short/link
+    - Update control file paths to use /short/link
+    prevention: generate_control_file.py warns when paths > 120 chars
+  cross_references:
+  - cm_008
+  - Lohmann routing path limit
+- id: dt_m018
+  severity: silent
+  failure_domain: silent_error
+  stage: s1_network
+  symptom:
+    description: Channel widths unrealistic (too narrow for large rivers, too wide for headwaters)
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Power-law width estimation W = a*A^b uses coefficients for wrong climate/region
+    explanation: Default Leopold-Maddock coefficients (a=2.7, b=0.35) are calibrated for temperate rivers.
+      Arid regions have much narrower channels for the same drainage area. Tropical regions are wider.
+    affected_components:
+    - build_network_topology.py
+    - seg_width
+  remedy:
+    action: Check estimated widths against literature values. Adjust a,b coefficients for the region.
+    manual_steps:
+    - 'For arid basins: a=1.5, b=0.30'
+    - 'For tropical: a=3.5, b=0.40'
+    - 'Verify: largest river width should be reasonable (e.g., 50-500m)'
+    prevention: build_network_topology.py logs min/max widths for review
+- id: dt_m019
+  severity: silent
+  failure_domain: runtime
+  stage: s5_execution
+  symptom:
+    description: pio_setframe was a no-op — only 1 of 365 daily values written per year (99.7% fill values)
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Serial PIO stub ignored frame index, always overwrote timestep 0
+    explanation: The serial PIO stub (pio.f90) did not track the current frame index. Every call to pio_setframe
+      was silently ignored, so pio_write_darray always wrote to frame 0. The resulting NetCDF output appeared
+      to have 365 timesteps but 364 were fill values. This bug only manifests with serial stubs — MPI-enabled
+      PIO handles frames correctly.
+    affected_components:
+    - pio.f90
+    - serial_stubs
+    - output_netcdf
+  remedy:
+    action: Added current_frame module variable to pio.f90, used in pio_write_darray start parameter
+    tool_to_run: null
+    manual_steps:
+    - 'Add ''integer, save :: current_frame = 1'' to pio module variables'
+    - 'In pio_setframe: set current_frame = frame'
+    - 'In pio_write_darray: use start=[current_frame] instead of start=[1]'
+    prevention: Verify output NetCDF has non-fill values for all timesteps after first run
+  cross_references:
+  - Bengbu validation 2026-03-22
+  verified: '2026-03-22'

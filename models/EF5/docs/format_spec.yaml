@@ -1,213 +1,619 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: EF5
-  version: 1.2.3
-  full_name: Ensemble Framework For Flash Flood Forecasting
-  domain: flood
-  binary_path: KISSPATH_BINARIES/EF5/source/repo/bin/ef5
-  invocation: ef5 [control.txt]
-  language: C++
-  authors: HyDROSLab, University of Oklahoma
-  ki_version: 1.1.0
-  kdt_version: 5.1.2
+  language: fortran
+  implementation:
+    id: hype-5-35-0
+    version: 5.35.0
+    provenance: Fortran 90; SMHI HYPE 5.35.0 source (HYSS infrastructure + MODELMODULE.model core), text-file
+      I/O, optional NetCDF.
+  scientific_reference_version: HYPE 5.35.0 (SMHI HYdrological Predictions for the Environment; Lindstrom
+    et al. 2010 process basis)
 inputs:
-  config:
-  - name: control.txt
-    format: INI-style plain text
-    description: Single configuration file with all model settings
-    required: true
-  basic_grids:
-  - name: DEM
-    format: ASC/TIF
-    unit: meters
-    description: Digital Elevation Model
-    required: true
-  - name: DDM
-    format: ASC/TIF
-    unit: ESRI or TauDEM direction codes
-    description: Drainage Direction Map
-    required: true
-  - name: FAM
-    format: ASC/TIF
-    unit: cell count
-    description: Flow Accumulation Map
-    required: true
   forcing:
-  - name: Precipitation
-    unit: mm/hr (rate)
-    format: ASC/BIF/TIF/TRMMRT/TRMMV7/MRMS
-    valid_range:
-    - 0
-    - 300
-    description: Gridded precipitation rate
-    required: true
-  - name: PET
-    unit: mm/hr (rate)
-    format: ASC/BIF/TIF
-    valid_range:
-    - 0
-    - 20
-    description: Potential evapotranspiration rate
-    required: true
-  - name: Temperature
+  - name: precipitation (prec)
+    unit: mm/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: Pobs.txt — tab-separated, header DATE + subbasin/pobsid columns, in forcingdir
+    notes: Mandatory for every timestep over the full bdate-edate range; no missing (-9999) or negative
+      values; no interpolation/fill for gaps. Header must be line 1 (no !! comment lines) or data silently
+      misparse.
+  - name: air temperature (temp)
     unit: degC
-    format: ASC/BIF/TIF
-    valid_range:
-    - -60
-    - 60
-    description: Air temperature (required for Snow-17)
-    required: false
+    category: forcing
+    source_kind: forcing
+    model_input_format: Tobs.txt — tab-separated, per subbasin/tobsid, in forcingdir
+    notes: Mandatory every timestep; assumed to represent the subbasin mean elevation unless elevation-corrected.
+  - name: daily min / max air temperature (tmin/tmax)
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: TMINobs.txt / TMAXobs.txt
+    notes: Required by PET models 3-5 (Hargreaves-Samani, Priestley-Taylor, Penman-Monteith).
+  - name: shortwave radiation
+    unit: MJ/m^2/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: SWobs.txt
+    notes: Required by PET models 3-5.
+  - name: relative humidity
+    unit: fraction
+    category: forcing
+    source_kind: forcing
+    model_input_format: RHobs.txt
+    notes: Required by PET model 5 (FAO Penman-Monteith) only.
+  - name: wind speed
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: Uobs.txt (UWobs/VWobs components)
+    notes: Required by PET model 5 only.
   parameters:
-    critical:
-    - name: WM
-      model: CREST
-      unit: mm
-      valid_range:
-      - 20
-      - 1000
-      description: Maximum soil water capacity
-    - name: B
-      model: CREST
-      unit: dimensionless
-      valid_range:
-      - 0.01
-      - 3.0
-      description: Variable infiltration curve exponent
-    - name: IM
-      model: CREST
-      unit: percent (0-100)
-      valid_range:
-      - 0
-      - 100
-      description: Impervious area fraction
-    - name: FC
-      model: CREST
-      unit: mm/hr
-      valid_range:
-      - 0.1
-      - 500
-      description: Saturated hydraulic conductivity (Ksat)
-    - name: KE
-      model: CREST
-      unit: dimensionless
-      valid_range:
-      - 0.01
-      - 2.0
-      description: Evaporation coefficient
-    - name: IWU
-      model: CREST
-      unit: percent of WM (0-100)
-      valid_range:
-      - 0
-      - 100
-      description: Initial soil water content
-    routing:
-    - name: ALPHA
-      model: KW
-      valid_range:
-      - 0.1
-      - 20
-      description: Q=alpha*A^beta power law coefficient
-    - name: BETA
-      model: KW
-      valid_range:
-      - 0.3
-      - 1.5
-      description: Q=alpha*A^beta power law exponent
-    - name: TH
-      model: KW/LR
-      unit: grid cells
-      valid_range:
-      - 1
-      - 10000
-      description: Channel initiation threshold
-    - name: COEM
-      model: LR
-      valid_range:
-      - 10
-      - 5000
-      description: Overland flow reservoir coefficient
-    - name: LEAKI
-      model: KW/LR
-      valid_range:
-      - 0.0
-      - 1.0
-      description: Interflow leakage rate
+  - name: lp (PET reduction limit)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt general parameter
+    notes: Default 0.8; limits actual ET reduction relative to soil moisture.
+  - name: cevp (PET coefficient)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt land-use-dependent
+    notes: Highly sensitive control on potential evapotranspiration.
+  - name: cevpam / cevpph (PET seasonal amplitude / phase)
+    unit: '- / days'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt general parameters
+  - name: ttmp (snow threshold temperature)
+    unit: degC
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt land-use-dependent
+  - name: cmlt (degree-day snowmelt factor)
+    unit: mm/degC/day
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt land-use-dependent
+  - name: wcwp / wcfc / wcep (wilting point / field capacity / effective porosity)
+    unit: fraction
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt soil-type-dependent (optionally per layer wcwp1-3 etc.)
+    notes: Must satisfy wcwp < wcfc < wcep and wcwp+wcfc+wcep < 1; ordering violation gives no percolation.
+  - name: rrcs1 / rrcs2 / rrcs3 (upper / lower / deep recession coefficients)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt (rrcs1/rrcs2 soil-type; rrcs3 general)
+  - name: srrcs (surface runoff recession coefficient)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt land-use-dependent
+  - name: rivvel / damp (river velocity / attenuation)
+    unit: m/s / -
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt general parameters
+  - name: lake rating-curve and depth parameters (gratk, gratefk, gldepi, gldepol)
+    unit: '- / m'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt lake-region parameters
+  - name: nutrient process parameters (denitrlu, denitwr, denitwl, minerfn, sedon, sedpp, soilcoh, soilerod)
+    unit: various (1/day, kg/m2/day, kPa)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: par.txt (genpar/landpar/soilpar) — required when NPC enabled
+    notes: Process-rate / transport coefficients for the N/P/sediment cycle. If 'substance N P' is enabled
+      but these are absent from par.txt, nutrient processes are silently disabled. (Initial-pool *0 parameters
+      humusn0/fastn0/humusp0/fastp0 are listed under initial_conditions.)
+  - name: SLC class definitions (landuse, soil, crop, vegtype, special, tiledepth, streamdepth, numlayers,
+      soildepth)
+    unit: '-'
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: GeoClass.txt — numlayers 1-3 with matching soildepth columns; special=2 marks
+      water/lake class
+  - name: subbasin physiography (AREA, RIVLEN, latitude, elevation, slope, lake_depth, SLC_n fractions,
+      parreg/wqparreg/lakeregion)
+    unit: m^2, m, deg, m, %, fraction
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: GeoData.txt — time-invariant subbasin descriptors; SLC fractions per subbasin
+      must sum to 1.0
+    notes: AREA in m^2 (discharge scales linearly with area); slope_mean mandatory for nutrient modelling.
+  initial_conditions:
+  - name: initial soil water
+    unit: mm
+    category: initial_condition
+    source_kind: default
+    model_input_format: set to wp+fc (optionally saturation wp+fc+ep); or restored from state_save file
+    notes: Hydrology needs ~1-2 yr warmup (bdate before cdate) for stable water states.
+  - name: initial lake stage
+    unit: m
+    category: initial_condition
+    source_kind: default
+    model_input_format: outlet/local lake water depth set at threshold (gldepi/illdepth)
+  - name: 'initial nutrient pools (humus/fast N and P: humusn0, fastn0, humusp0, fastp0)'
+    unit: kg/km2
+    category: initial_condition
+    source_kind: default
+    model_input_format: par.txt initial-pool parameters (humusn0, fastn0, humusp0, fastp0; genpar/landpar)
+    notes: Initialization of the prognostic soil N/P pools; pools need ~3-5 yr warmup to stabilize seasonal
+      pattern.
+  boundary_conditions:
+  - name: simulation period (bdate / cdate / edate) and output/model options
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: info.txt — all directory paths must end in trailing '/'
+    notes: Selects petmodel and snowmeltmodel options, substances ('substance N P'), output variables
+      and criteria.
+  - name: PET method selector (petmodel 0-5)
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: info.txt modeloption petmodel
+    notes: 0-2 use temperature only; 3-5 add radiation/min-max temp; 5 adds humidity and wind.
+  - name: snowmelt method selector (snowmeltmodel)
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: info.txt modeloption snowmeltmodel
+  - name: MAINDOWN routing topology
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: GeoData.txt MAINDOWN column; outlet = MAINDOWN 0
+    notes: Must be acyclic with a terminating outlet; cycles cause an infinite routing loop.
+  - name: forcing-station mapping
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: ForcKey.txt (SUBID -> forcing station), in forcingdir
+  - name: lake / dam regulation configuration
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: LakeData.txt / DamData.txt (rating curves, regvol, production flows, minflow,
+      seasonal inflows)
+    notes: Required if any SLC has special=2, else a zero-volume lake traps all water.
+  - name: upstream inflow, atmospheric deposition, point/non-point sources, aquifer exchange
+    unit: various
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: internal MAINDOWN inflow; AtmdepData.txt, PointSourceData.txt, NonPointSourceData.txt,
+      AquiferData.txt
+  - name: crop fertilizer / management data
+    unit: '-'
+    category: boundary_condition
+    source_kind: dataset_lookup
+    model_input_format: CropData.txt — crop/fertilizer management decisions (sowing, fertilizer timing/rates);
+      required when NPC enabled
+    notes: Management input (fertilizer/crop decisions), not a calibrated physical coefficient.
+  - name: observed discharge (for calibration)
+    unit: m^3/s
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Qobs.txt (gauged subbasins); optpar.txt for calibration ranges/tasks
 outputs:
   primary:
-  - name: Streamflow
-    unit: m^3/s (cms)
-    format: CSV time series / gridded ASC
-    valid_range:
-    - 0
-    - 1000000
-    description: Simulated discharge at gauge points
-  - name: Soil Moisture
-    unit: percent of WM
-    format: CSV time series / gridded ASC
-    valid_range:
-    - 0
-    - 100
-    description: Soil water content relative to capacity
-  - name: flood_depth
-    canonical_id: flood_depth
-    unit: m
-  - name: water_surface_elevation
-    canonical_id: water_surface_elevation
-    unit: m
-  - name: inundation_extent
-    canonical_id: inundation_extent
-    unit: km2
-  secondary:
-  - name: Snow Water Equivalent
+  - name: cout
+    unit: m^3/s
+    description: Simulated outflow (discharge) from the outlet lake / subbasin
+    validation_rank: 1
+    emitted_in: timeCOUT.txt / basinoutput
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare at gauged subbasin outlets; ensure simulated and observed drainage areas match (discharge
+          scales linearly with AREA).
+        - Allow warmup (bdate..cdate) before scoring; daily timestep cannot resolve sub-daily peaks.
+        - Lumped (1-subbasin) setups of large basins lack routing attenuation and over-predict peaks.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Multi-subbasin discharge fields compared only where gauges exist per subbasin.
+      detrending_options:
+      - none
+  - name: snow
     unit: mm
-    format: gridded ASC
-    valid_range:
-    - 0
-    - 5000
-  - name: Return Period
-    unit: years
-    format: gridded ASC
-    valid_range:
-    - 0
-    - 1000
-  - name: Inundation Depth
-    unit: meters
-    format: gridded ASC
-    valid_range:
-    - 0
-    - 50
-  time_series_format:
-    header: Time,Discharge(m^3 s^-1),Observed(m^3 s^-1),Precip(mm h^-1),PET(mm h^-1),SM(%),Fast
-      Flow(mm*1000),Slow Flow(mm*1000)
-    file_pattern: ts.<gauge_name>.<model>.csv
-    time_format: YYYY-MM-DD HH:MM
-    delimiter: ','
-water_balance_models:
-- key: CREST
-  description: Variable infiltration curve, dual-layer excess storage
-- key: SAC
-  description: NWS Sacramento model, 5 soil zones
-- key: HYMOD
-  description: Parsimonious conceptual model
-- key: HP
-  description: Fully impervious (100% runoff)
-routing_models:
-- key: LR
-  description: Dual reservoir (overland + interflow)
-- key: KW
-  description: Kinematic wave Q=alpha*A^beta
+    description: Snow water equivalent, subbasin land-area average
+    validation_rank: 2
+    emitted_in: timeSNOW.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - SWE point obs (e.g. SNOTEL-type) vs subbasin average differ in support scale.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Snow-cover/SWE maps compared at a single instant; subbasin aggregation smooths spatial detail.
+      detrending_options:
+      - none
+  - name: evap
+    unit: mm/day
+    description: Actual evapotranspiration from land/soil water balance
+    validation_rank: 3
+    emitted_in: timeEVAP.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - ET is a conceptual demand-side flux (no energy-balance closure); compare against flux-tower
+          or remote-sensing ET with that caveat.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: soim
+    unit: mm
+    description: Computed soil moisture (root-zone / profile storage)
+    validation_rank: 4
+    emitted_in: basinoutput (soim)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Conceptual storage in mm vs volumetric/satellite soil-moisture obs require rescaling/anomaly
+          comparison.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - ranking_quality
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+      - first_difference
+  - name: gwat
+    unit: m
+    description: Groundwater level (negative below surface)
+    validation_rank: 5
+    emitted_in: basinoutput (gwat)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Conceptual groundwater level; compare anomalies rather than absolute datum against well observations.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: wcom
+    unit: m
+    description: Water level of outlet lake at end of timestep (user reference system via w0ref)
+    validation_rank: 6
+    emitted_in: basinoutput (wcom)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Regulated-lake constant-area-with-depth assumption can bias amplitude (mitigated via wamp).
+      detrending_options:
+      - none
+  - name: c1TN
+    unit: ug/L
+    description: Modelled total nitrogen concentration in main-river outflow water
+    validation_rank: 7
+    emitted_in: timeC1TN.txt (NPC enabled)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Concentration (ug/L) is not areal load (kgN/ha/yr); do not compare against load obs without
+          conversion.
+        - Lumped (1-subbasin) setups yield unrealistic dissolved N concentrations; use 3+ subbasins.
+        - Needs ~3-5 yr nutrient warmup.
+      detrending_options:
+      - none
+  - name: c1TP
+    unit: ug/L
+    description: Modelled total phosphorus concentration in main-river outflow water
+    validation_rank: 8
+    emitted_in: timeC1TP.txt (NPC enabled)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Concentration vs areal-load mismatch as for TN; nutrient warmup required.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- Binary requires libproj.so.25 which may not be available on all systems
-- "Time unit 'm' means months, not minutes \u2014 use 'u' for minutes"
-- PET in mm/month with UNIT=mm/h silently overestimates evaporation 720x
-- DDM encoding (ESRI vs TauDEM) mismatch silently routes water wrong direction
-- "EF5 does not auto-create output directories \u2014 mkdir -p required"
-- "EF5 v1.2.3 -p flag (DEM-from-scratch processor) is in argument parser but not
-  implemented in ProcessDEM(); silently exits with no output. Use tools/prepare_basic_grids.py instead."
-- "Externally-prepared DDM/FAM (e.g. via wflow pcraster ldd_create) often have unfilled
-  sinks and disconnected routing topology; symptom is 'Walked N out of M nodes' with N << M
-  and zero discharge. Remedy: regenerate via tools/prepare_basic_grids.py."
-- "CrestParamSet grid overrides (wm_grid, fc_grid, b_grid, im_grid) MUST be GeoTIFF
-  format \u2014 Simulator.cpp:2250 hardcodes ReadFloatTifGrid() regardless of basic-grid
-  format. Mixing ASC basic grids with ASC param grids fails with 'Failed to load water
-  balance parameter grid'. Convert param grids to TIF first."
+- id: dt_001
+  symptom: Extreme flooding everywhere. Simulated streamflow 3x–1000x too high.
+  diagnosis: Precipitation rate units mismatch — UNIT=mm/h but data is mm/3h or mm/day; EF5 interprets
+    forcing values according to UNIT= in the PrecipForcing block. If files contain mm/3hr accumulations
+    but UNIT=mm/h, EF5 treats each value as an hourly rate, effectively tripling the input precipitation.
+    For mm/d
+  remedy: 'Set UNIT= to match actual file contents, or pre-convert to mm/h; convert_forcing_to_ef5; [''Check
+    a sample forcing file: max precip rate should be < 100 mm/hr'', ''Verify UNIT= in control.txt matches
+    source data documentation'', ''For CMFD: UNIT=mm/h (native mm/hr). For TRMM V7: UNIT=mm/3h'']; validate_ou'
+  severity: silent
+- id: dt_002
+  symptom: Very dry simulation. Near-zero streamflow despite rainy season.
+  diagnosis: 'PET units wrong — mm/month treated as mm/hr (720x too high) causing extreme evaporation;
+    If PET data is in mm/month but UNIT=mm/h in PETForcing block, EF5 reads monthly totals as hourly rates.
+    A typical 150 mm/month PET becomes 150 mm/hr, which exceeds any precipitation, so all water evaporates.
+
+    ; ['
+  remedy: 'Set UNIT=mm/m for monthly PET data, or pre-convert to mm/hr rate; convert_forcing_to_ef5; [''Check
+    PET values: if max > 20 mm/hr, units are likely monthly or daily'', ''For monthly PET: use UNIT=mm/m
+    and FREQ=m'', ''For daily PET: use UNIT=mm/d and FREQ=d'']; Cross-check PET against reference climatology '
+  severity: silent
+- id: dt_003
+  symptom: TIMESTEP=5m runs incredibly slowly or produces wrong results. 5 minutes expected but 5 months
+    used.
+  diagnosis: 'EF5 time unit ''m'' means months, not minutes. Minutes = ''u''; EF5 uses non-standard time
+    unit codes: y=year, m=month, d=day, h=hour, u=minute, s=second. TIMESTEP=5m means 5 MONTHS, not 5
+    minutes. This is a common trap for users accustomed to standard time notation.
+
+    ; [''Task'', ''TIMESTEP'', ''FREQ'']'
+  remedy: 'Use ''u'' for minutes: TIMESTEP=5u, FREQ=5u; ["Replace all ''m'' time units intended as minutes
+    with ''u''", ''TIMESTEP=5u = 5 minutes, TIMESTEP=1h = 1 hour'', ''Verify FREQ in forcing sections
+    also uses correct time codes'']; run_ef5.py preflight check warns when TIMESTEP ends with ''m'''
+  severity: silent
+- id: dt_004
+  symptom: Snow-17 never produces melt. Snow accumulates indefinitely.
+  diagnosis: Temperature in Kelvin instead of Celsius. EF5 expects degC.; Snow-17 uses temperature relative
+    to a melt base temperature (MBASE, typically ~0°C). If temperature is input in Kelvin (~273+), the
+    model sees extreme positive temperatures but the internal melt calculation still works on the assumption
+    o
+  remedy: 'Convert temperature to Celsius: T_C = T_K - 273.15; [''Check temperature values: should be
+    -40 to +50°C for most regions'', ''If min temp > 200, data is likely in Kelvin'', ''Use UNIT=C for
+    temperature-based PET (auto-converts)'']; Check temperature range in forcing data before running'
+  severity: silent
+- id: dt_005
+  symptom: CREST IM parameter has no effect, or model acts as 100% impervious.
+  diagnosis: IM grid in 0-1 range multiplied by scalar that's also small, or IM > 100; CREST IM (impervious
+    area) is specified as 0-100 (percentage) in the config. If no grid is provided, the scalar is divided
+    by 100 internally. If a grid IS provided, the scalar acts as a multiplier on grid values. Grid in
+    0-1 r
+  remedy: 'Ensure IM grid is in 0-100 range with scalar=1.0, or 0-1 range with scalar=100; [''Check IM
+    grid values: gdalinfo -stats im.tif'', ''If max ~1.0: grid is fractional, set IM scalar to convert
+    to %'', ''If max ~100: grid is percentage, keep IM=1.0 or small'']; convert_params_to_ef5 outputs
+    IM in 0-100 range'
+  severity: silent
+- id: dt_006
+  symptom: EF5 prints startup banner then exits immediately with no error.
+  diagnosis: 'Missing [Execute] section or TASK= line in control file; EF5 requires an [Execute] section
+    listing which tasks to run. Without it, the program parses the config, finds nothing to execute, and
+    exits cleanly with no error message.
+
+    ; [''ExecuteConfigSection'', ''ExecutionController'']'
+  remedy: 'Add [Execute] section with TASK= referencing the task block name; [''Add to control.txt: [Execute]\\nTASK=RunFF'',
+    ''Verify task name matches a defined [Task NAME] block'']; run_ef5.py preflight checks for [Execute]
+    section'
+  severity: obvious
+- id: dt_007
+  symptom: Water flows in wrong direction. Downstream areas receive no runoff.
+  diagnosis: 'DDM direction encoding mismatch — ESRIDDM=true but DDM uses TauDEM codes (or vice versa);
+    ESRI uses power-of-2 encoding (1,2,4,8,16,32,64,128) while TauDEM uses sequential (1-8). If ESRIDDM
+    is set incorrectly, flow direction codes are misinterpreted and water routes to wrong neighboring
+    cells.
+
+    ; [''B'
+  remedy: 'Toggle ESRIDDM=true/false to match DDM source; ["Check DDM values: if max is 128, it''s ESRI
+    format (ESRIDDM=true)", "If max is 8, it''s TauDEM format (ESRIDDM=false)", ''Common values: ESRI={1,2,4,8,16,32,64,128},
+    TauDEM={1,2,3,4,5,6,7,8}'']; Validate DDM values match expected encoding before running'
+  severity: silent
+- id: dt_008
+  symptom: Gauge output is empty or gauge not found in domain.
+  diagnosis: 'Gauge LAT/LON swapped, or coordinates outside DEM extent; EF5 Gauge blocks specify LON (longitude)
+    and LAT (latitude) separately. If coordinates are swapped (LON gets latitude value), the gauge projects
+    to a location outside the DEM domain. EF5 may silently skip the gauge.
+
+    ; [''GaugeConfigSection'', '''
+  remedy: 'Verify LON is longitude (-180 to 180) and LAT is latitude (-90 to 90); [''Check: LON should
+    be the E-W coordinate (e.g., -97 for Oklahoma, 117 for China)'', ''Check: LAT should be the N-S coordinate
+    (e.g., 35 for Oklahoma, 33 for China)'', ''Verify coordinates are within DEM bounding box'']; run_ef5.py
+    pr'
+  severity: obvious
+- id: dt_009
+  symptom: EF5 cannot find precipitation files. All precipitation reads as zero.
+  diagnosis: 'NAME pattern in PrecipForcing doesn''t match actual filenames; The NAME field uses date
+    placeholders (YYYY, MM, DD, HH, UU, SS) that EF5 expands for each timestep. If the pattern doesn''t
+    match file naming convention, files are not found and precipitation defaults to zero.
+
+    ; [''PrecipForcing'', ''PrecipR'
+  remedy: 'Match NAME pattern exactly to filenames in LOC directory; [''List actual files: ls /data/precip/
+    | head'', ''Set NAME= to match with date placeholders'', "Example: files named ''rain_2009060112.tif''
+    → NAME=rain_YYYYMMDDHH.tif"]; run_ef5.py preflight checks that at least one file matches the NAME
+    pattern'
+  severity: obvious
+- id: dt_010
+  symptom: Gauge snaps to wrong cell. Reported contributing area doesn't match expected.
+  diagnosis: 'SELFFAM mismatch — FAM includes/excludes current cell but config says opposite; SELFFAM=true
+    means the lowest FAM value is 1 (cell counts itself). SELFFAM=false means the lowest is 0. If this
+    is set wrong, EF5''s area-matching algorithm for gauge snapping may be off by one cell, placing the
+    gauge on '
+  remedy: 'Check minimum FAM value: if min=1, use SELFFAM=true; if min=0, use SELFFAM=false; [''gdalinfo
+    -stats FAM.tif | grep Min'', ''If Min=1.0: SELFFAM=true'', ''If Min=0.0: SELFFAM=false'']; Verify
+    basin area at gauge matches BASINAREA within 10%'
+  severity: silent
+- id: dt_011
+  symptom: Routing produces wrong distances and travel times. Velocities unrealistic.
+  diagnosis: 'DEM elevation in feet instead of meters; EF5 computes slopes from DEM values assuming meters.
+    If the DEM is in feet, slopes are 3.28x too steep, which affects kinematic wave routing speeds and
+    travel times through the watershed.
+
+    ; [''BasicGrids'', ''KinematicRoute'']'
+  remedy: 'Convert DEM to meters: DEM_m = DEM_ft × 0.3048; [''Check DEM values: typical US elevation 0-4000m;
+    if values reach 14000+, likely feet'', "gdal_calc.py -A DEM.tif --outfile=DEM_m.tif --calc=''A*0.3048''"];
+    Validate DEM range against known elevation for the region'
+  severity: silent
+- id: dt_012
+  symptom: Flat hydrograph with no response to rainfall events.
+  diagnosis: WM (max soil water capacity) too high — all precipitation infiltrates; CREST WM controls
+    how much water the soil column can hold. If WM is very high (>1000mm), the variable infiltration curve
+    allows nearly all precipitation to infiltrate, producing no surface runoff. Combined with low FC (Ksat),
+    int
+  remedy: 'Reduce WM scalar or check WM grid values; [''Typical WM: 50-500mm for most soils'', ''Check:
+    gdalinfo -stats wm.tif — mean should be 100-300mm'', ''If using scalar multiplier on grid, try reducing
+    to 0.5'']; validate_param_grid checks WM range in convert_params_to_ef5'
+  severity: silent
+- id: dt_013
+  symptom: Excessive flashy response. Every rain event produces immediate large peak.
+  diagnosis: WM too low, or IM too high — soil saturates instantly, everything becomes overland flow;
+    Very low WM (<20mm) means the soil column fills up almost immediately. High IM (>30%) means a large
+    fraction of rainfall bypasses infiltration entirely. Both produce excessive direct runoff with minimal
+    baseflow
+  remedy: Increase WM, reduce IM, or increase FC to allow more infiltration; ['Increase WM scalar to 2.0-5.0
+    if using grid, or set WM=200-400 if uniform', 'Reduce IM to <10% for rural basins', 'Increase FC to
+    allow subsurface flow']; Start calibration with physically reasonable prior parameters
+  severity: silent
+- id: dt_014
+  symptom: Kinematic wave routing produces zero or NaN streamflow.
+  diagnosis: 'ALPHA or BETA routing parameter is zero or negative; KW routing uses Q = alpha * A^beta.
+    If alpha=0, all discharge is zero. If beta is negative, the power function can produce NaN for certain
+    cross-sectional areas. Both ALPHA and BETA must be positive.
+
+    ; [''KinematicRoute'', ''RouteInt'']'
+  remedy: 'Set ALPHA > 0 (typical 1-10) and BETA > 0 (typical 0.5-1.0); [''Check KWParamSet: ALPHA should
+    be 1-10, BETA should be 0.5-1.0'', "For Manning''s: alpha ≈ 1/n * R^(2/3) * S^(1/2) / A^(beta-1)"];
+    Validate routing parameters are physically plausible before running'
+  severity: obvious
+- id: dt_015
+  symptom: All grid cells treated as channel cells, or no channel cells at all.
+  diagnosis: 'TH (channel threshold) too low or too high; TH defines how many upstream cells are needed
+    for a cell to be classified as a channel. TH=1 means every cell is a channel (no hillslope routing).
+    TH=10000 on a small basin means no cells are channels.
+
+    ; [''KinematicRoute'', ''InitializeParameters'']'
+  remedy: 'Set TH based on basin size: typically 5-100 cells; [''TH=5-10 for small basins (<100 km²)'',
+    ''TH=50-100 for medium basins (100-10000 km²)'', ''TH=100+ for continental scale'']; Check FAM histogram
+    to set reasonable TH'
+  severity: silent
+- id: dt_016
+  symptom: EF5 crashes with segmentation fault during simulation.
+  diagnosis: 'Grid dimension mismatch between DEM, DDM, FAM, or forcing grids; If DEM has 500×300 cells
+    but DDM has 501×300, array index calculations in the routing code can go out of bounds, causing a
+    segfault. Similarly, if forcing grids have different extent than basic grids, spatial lookup can fail.
+
+    ; [''Basic'
+  remedy: 'Ensure all grids have identical dimensions and extent; [''Compare: gdalinfo DEM.tif DDM.tif
+    FAM.tif — Size must match'', ''Check: xllcorner, yllcorner, cellsize must be identical'', ''Re-derive
+    DDM and FAM from the same DEM'']; Preflight check in run_ef5.py validates grid dimensions'
+  severity: obvious
+- id: dt_017
+  symptom: EF5 runs but output directory is empty. No time series written.
+  diagnosis: 'OUTPUT path in Task section doesn''t exist or has wrong permissions; EF5 does not create
+    the output directory automatically. If the specified OUTPUT path doesn''t exist, output files silently
+    fail to write.
+
+    ; [''TaskConfigSection'', ''Simulator'']'
+  remedy: 'Create the output directory before running: mkdir -p /path/to/output/; [''Check OUTPUT= path
+    in [Task] section'', ''mkdir -p that directory'', ''Verify write permissions'']; run_ef5.py preflight
+    creates output directory if needed'
+  severity: obvious
+- id: dt_018
+  symptom: Calibration runs extremely slowly, never converges.
+  diagnosis: 'Preload forcings not cached — re-reading grids every iteration; DREAM calibration runs thousands
+    of iterations. Without PRELOAD_FILE, EF5 re-reads all forcing grids from disk each iteration. With
+    preloading, forcings are cached to a binary file on first iteration.
+
+    ; [''Simulator'', ''PreloadForcings'']'
+  remedy: 'Set PRELOAD_FILE in Task section for calibration runs; [''Add to [Task]: PRELOAD_FILE=/path/to/output/califorcings.bin'',
+    "EF5 creates the file on first run if it doesn''t exist", ''Subsequent iterations read from binary
+    cache (much faster)'']; Always set PRELOAD_FILE for CALI_DREAM and CALI_ARS tasks'
+  severity: performance
+- id: dt_019
+  symptom: NSE looks good but PBIAS > 50%. Timing correct but volume very wrong.
+  diagnosis: Observed data in different units (cfs vs cms) or different datum; EF5 outputs streamflow
+    in m³/s (cms). USGS gauge data is typically in cubic feet per second (cfs). 1 cfs = 0.0283168 cms.
+    If observed data is in cfs but compared directly to cms output, there is a 35x magnitude difference
+    that NSE par
+  remedy: 'Convert observed data: Q_cms = Q_cfs × 0.0283168; [''Check observed data units from gauge metadata'',
+    ''If USGS: likely cfs — multiply by 0.0283168'', ''If GRDC: already cms'']; Always verify observed
+    data units before computing metrics'
+  severity: silent
+- id: dt_020
+  symptom: Node Soil Moisture warnings at startup. 'SM greater than WM' messages.
+  diagnosis: IWU (initial water %) is too high, or WM grid has very low values; Initial soil moisture
+    is computed as IWU * WM / 100. If IWU=80 and WM at a cell is 50mm, initial SM = 40mm which is fine.
+    But if IWU=100 and WM varies spatially, some cells may have SM > WM due to floating point or grid
+    value interac
+  remedy: 'Reduce IWU to 50 or lower for initial runs; increase WM minimum; [''Set IWU=50 for a moderate
+    initialization'', ''Check WM grid minimum: gdalinfo -stats wm.tif'', ''If WM minimum < 10, increase
+    WM scalar'']; Use state files from a spin-up run instead of IWU for warm starts'
+  severity: warning
+- id: dt_030_daily_forcing_name_hhuu_silent_zeros
+  symptom: 'EF5 log spams "YYYY-MM-DD HH:MM Missing precip file(.../forcing_YYYYMMDDHHUU.asc)... Assuming
+    zeros." for EVERY timestep, yet the run completes and writes a ts.*.csv. Output looks plausible (near-zero/tiny
+    Q) but is physically meaningless because ALL precip loaded as zero. Happens when control NAME '
+  diagnosis: 'EF5 DatedName::ProcessName (src/DatedName.cpp) only substitutes date tokens up to the forcing
+    resolution: the loop runs `for i=0; i<=resolution` over [YYYY,MM,DD,HH,UU,SS]. With FREQ=d (resolution=DAYS=2)
+    it substitutes only YYYY/MM/DD and leaves the literal characters "HHUU" in the filename, so EF5'
+  remedy: 'For daily forcing (FREQ=d) set NAME=forcing_YYYYMMDD0000.asc in ALL of [PrecipForcing]/[PETForcing]/[TempForcing]
+    (literal 0000, NOT HHUU). The SKILL.md "Complete example" NAME=precip_YYYYMMDDHH.tif is for FREQ=1h
+    only. General rule: the NAME pattern must contain date tokens ONLY down to the FREQ re'
+- id: dt_029_spatial_flood_extent_out_of_contract
+  symptom: Obs is per-event flood EXTENT (e.g. Global Flood Database GeoTIFFs), variable=flood_inundation_extent,
+    obs_shape=spatial_snapshot; metrics come back null/uncomputable and the gate returns REJECT_WRONG_MODEL
+    with _dag_lookup_failed=true.
+  diagnosis: 'EF5 KI ships only a temporal point-streamflow scorer (parse_ef5_output.py: NSE/KGE/PBIAS/r/RMSE)
+    and NO spatial CSI/POD/FAR scorer, GFD reader, or SimpleInundation/VCInundation wrapper. Compounded
+    by the dag.yaml being HYPE''s, so the obs-shape gate cannot resolve an EF5 output contract.'
+  remedy: SKIP spatial flood-extent obs (out of contract, no retry). Valid metric families for spatial_snapshot
+    extent are spatial_pattern_match / event_detection (CSI/POD/FAR), which this KI cannot deliver. Building
+    the inundation+CSI pipeline is requires_human_engineering; fixing the HYPE-dag is requires_da

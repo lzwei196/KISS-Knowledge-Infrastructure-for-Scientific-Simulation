@@ -304,7 +304,7 @@ outputs:
   - var: lith_block
     validation_rank: 1
     unit: "categorical / dimensionless (lithology id)"
-    description: "Discretized 3D volumetric lithology block — formation id per grid cell."
+    description: "Discretized 3D volumetric subsurface lithology block — formation id per grid cell."
     emitted_in: "Solutions.raw_arrays.lith_block"
     observability:
       comparable_obs_shapes:
@@ -343,7 +343,7 @@ outputs:
   - var: uncertainty_distribution
     validation_rank: 4
     unit: "dimensionless (Shannon information entropy / probability)"
-    description: "Per-cell probability / information-entropy fields from stochastic (ensemble) modeling — quantifies geometry/topology uncertainty."
+    description: "Per-cell subsurface probability / information-entropy fields from stochastic (ensemble) geological modeling — quantifies geometry/topology uncertainty."
     emitted_in: "ensemble of Solutions (PyTorch backend stochastic runs)"
     observability:
       comparable_obs_shapes:
@@ -356,7 +356,7 @@ outputs:
   - var: geophysics_forward
     validation_rank: 5
     unit: "mGal (gravity) / nT (total magnetic intensity)"
-    description: "Forward-modeled gravity and TMI response from the 3D lithology block (optional, CENTERED grid)."
+    description: "Forward-modeled gravity and TMI response from the subsurface 3D lithology block (optional, CENTERED grid)."
     emitted_in: "Solutions.fw_gravity / Solutions.fw_magnetic"
     observability:
       comparable_obs_shapes:
@@ -374,7 +374,7 @@ outputs:
   - var: topology
     validation_rank: 6
     unit: "categorical (adjacency graph)"
-    description: "Adjacency/topology graph (edges + counts) between geologic regions."
+    description: "Adjacency/topology graph (edges + counts) between subsurface geologic regions."
     emitted_in: "Solutions topology_edges / topology_count (gempy_plugins)"
     observability:
       comparable_obs_shapes:
@@ -518,3 +518,21 @@ safety:
       scope: "state semantics"
       source: "gempy_engine ExportedFields / Solutions / WeightCache structure"
       status: adopted
+
+medium_evidence:
+  - var: lith_block
+    source: dag.yaml
+    quote: "Construction of complex 3D structural geological models from interface points + orientation data"
+    note: "scope_in declares GemPy outputs as 3D structural geological model products"
+  - var: uncertainty_distribution
+    source: dag.yaml
+    quote: "Stochastic / probabilistic modeling of parameter and model (geometry/topology) uncertainty"
+    note: "scope_in declares uncertainty as model geometry/topology uncertainty in the geological model"
+  - var: geophysics_forward
+    source: dag.yaml
+    quote: "Forward gravity / magnetic response from the 3D geology (optional)"
+    note: "scope_in declares geophysical outputs as responses from 3D geology"
+  - var: topology
+    source: dag.yaml
+    quote: "Cross-section / geological-map generation and topology analysis"
+    note: "scope_in declares topology as geological-map/geologic model analysis"

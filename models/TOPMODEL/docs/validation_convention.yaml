@@ -1,0 +1,350 @@
+schema_version: 1
+model_id: TOPMODEL
+domain: hydrology
+generated_by: "Step-B validation convention agent (Codex GPT-5)"
+generated_at: 2026-08-14
+
+references:
+  kouchi2017:
+    doi: 10.3390/w9060384
+    title: "Sensitivity of Calibrated Parameters and Water Resource Estimates on Different Objective Functions and Optimization Algorithms"
+    venue: "Water"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w9060384.txt
+  das2020:
+    doi: 10.1007/s13201-019-1013-x
+    title: "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India"
+    venue: "Applied Water Science"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13201-019-1013-x.txt
+  lane2019:
+    doi: 10.5194/hess-23-4011-2019
+    title: "Benchmarking the predictive capability of hydrological models for river flow and flood peak predictions across over 1000 catchments in Great Britain"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-4011-2019.txt
+  lees2021:
+    doi: 10.5194/hess-25-5517-2021
+    title: "Benchmarking data-driven rainfall-runoff models in Great Britain: a comparison of long short-term memory (LSTM)-based models with four lumped conceptual models"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-25-5517-2021.txt
+  ostrowski2018:
+    doi: 10.1007/s11600-018-0121-6
+    title: "Applicability of TOPMODEL in the mountainous catchments in the upper Nysa Klodzka river basin (SW Poland)"
+    venue: "Acta Geophysica"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s11600-018-0121-6.txt
+  westerberg2011:
+    doi: 10.5194/hess-15-2205-2011
+    title: "Calibration of hydrological models using flow-duration curves"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-15-2205-2011.txt
+  beven2021:
+    doi: 10.5194/hess-25-527-2021
+    title: "A history of TOPMODEL"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-25-527-2021.txt
+  blazkova2002:
+    doi: 10.1029/2001wr000912
+    title: "Testing the distributed water table predictions of TOPMODEL (allowing for uncertainty in model calibration): The death of TOPMODEL?"
+    venue: "Water Resources Research"
+    year: 2002
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2001wr000912.txt
+  shaman2002:
+    doi: 10.1029/2001wr000636
+    title: "Representation of subsurface storm flow and a more responsive water table in a TOPMODEL-based hydrology model"
+    venue: "Water Resources Research"
+    year: 2002
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2001wr000636.txt
+  thiemig2015:
+    doi: 10.5194/hess-19-3365-2015
+    title: "A pan-African medium-range ensemble flood forecast system"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-3365-2015.txt
+  kobierska2015:
+    doi: 10.5194/hess-19-3681-2015
+    title: "Linking baseflow separation and groundwater storage dynamics in an alpine basin (Dammagletscher, Switzerland)"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-3681-2015.txt
+  schneider2007:
+    doi: 10.5194/adgeo-11-37-2007
+    title: "Evaluation of evapotranspiration methods for model validation in a semi-arid watershed in northern China"
+    venue: "Advances in Geosciences"
+    year: 2007
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_adgeo-11-37-2007.txt
+  samain2012:
+    doi: 10.5194/hess-16-2095-2012
+    title: "Consistency between hydrological model, large aperture scintillometer and remote sensing based evapotranspiration estimates for a heterogeneous catchment"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-16-2095-2012.txt
+  ducharne2009:
+    doi: 10.5194/hess-13-2399-2009
+    title: "Reducing scale dependence in TOPMODEL using a dimensionless topographic index"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2009
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-13-2399-2009.txt
+
+validation:
+  - dag_variable: "Q (simulated discharge)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Monthly hydrology convention reproduced as '0.5 <NSE' satisfactory; primary source is Moriasi et al. 2007, cited through fetched OA papers."
+        cites: [kouchi2017, das2020]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Streamflow PBIAS convention reproduced as within +/-25% satisfactory; primary source is Moriasi et al. 2007, cited through fetched OA papers."
+        cites: [kouchi2017, das2020]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "KGE is commonly reported for rainfall-runoff benchmarking; no TOPMODEL-specific KGE pass gate is required here."
+        cites: [lane2019, thiemig2015]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RMSE is reported in TOPMODEL applications, but its threshold is catchment-unit dependent."
+        cites: [ostrowski2018]
+    validated_when: "NSE >= 0.5 and |PBIAS| <= 25% for same-unit outlet discharge; stronger calibration normally targets NSE above 0.65 and |PBIAS| <= 15%."
+    evidence_strength: strong
+    confidence: 0.86
+    notes: >-
+      This keeps the dag determining_metric nse and adds PBIAS as the magnitude check. The fetched convention table gives
+      very good/good/satisfactory tiers for monthly flow, while TOPMODEL benchmarks show the metric is field-standard:
+      Lane 2019 reports that TOPMODEL exceeded NSE 0.5 for 87% of Great Britain catchments, and Lees 2021 reports
+      TOPMODEL median NSE 0.76 on 518 validation stations.
+
+  - dag_variable: "Q (simulated discharge)"
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred flood-event convention: Thiemig 2015 describes CSI generally above 50%; stored here as 0.5 on a 0-1 scale."
+        cites: [thiemig2015]
+    secondary_metrics:
+      - metric: pod
+        direction: maximize
+        status: supportive
+        ceiling_reason: "POD supports event validation but depends on event archive completeness and threshold choice."
+        cites: [thiemig2015]
+      - metric: far
+        direction: minimize
+        status: supportive
+        ceiling_reason: "FAR supports event validation but should not alone decide TOPMODEL hydrograph validity."
+        cites: [thiemig2015]
+    validated_when: "CSI >= 0.5 for threshold-defined flood events, with POD and FAR inspected for missed-event and false-alarm behavior."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      This is a hydrologic event-detection convention, not a TOPMODEL-specific flood-event table. Thiemig 2015 evaluates
+      threshold-exceedance flood events with POD, FAR and CSI, reports POD 69%, FAR 29%, CSI 54%, and states CSI was
+      generally above 50%. Use only when the observed event definition and discharge threshold are fixed beforehand.
+
+  - dag_variable: "qb (baseflow)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a baseflow-specific NSE threshold; baseflow is usually inferred by separation or tracers, not directly observed."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Kobierska 2015 validates baseflow/storage dynamics using discharge, electrical conductivity, and groundwater levels, but does not state a universal RMSE band."
+        cites: [kobierska2015]
+      - metric: recession_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "TOPMODEL baseflow recession is process-informative; Westerberg 2011 shows low-flow/baseflow behavior depends on discharge uncertainty and calibration criterion."
+        cites: [westerberg2011]
+    validated_when: "UNRESOLVED - compare inferred baseflow to a documented separation/tracer product, but do not auto-validate without a cited baseflow-specific numeric band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag determining_metric nse is retained, but its band is null. The hydrology flow thresholds above are not silently
+      transferred to qb because qb is not total outlet discharge and direct baseflow observations are rare.
+
+  - dag_variable: "sbar (mean saturation deficit)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched TOPMODEL water-table/saturation-deficit paper gives an NSE threshold for sbar or mapped water-table depth."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          sbar is a catchment-mean storage deficit that must be mapped through the topographic-index/local-storage
+          assumption before comparison to point piezometers. Blazkova 2002 shows local water-table prediction needs
+          local transmissivity or effective contributing-area adjustments, so point NSE can be capped by local heterogeneity
+          rather than by a wrong catchment water balance.
+        cites: [blazkova2002, beven2021]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Use water-table-depth RMSE only when an explicit deficit-to-depth storage coefficient is documented."
+        cites: [blazkova2002]
+    validated_when: "UNRESOLVED - water-table or saturation-deficit comparisons must use site-specific uncertainty/acceptability limits; no universal sbar NSE pass band was found."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Blazkova 2002 reports many local water-table levels within 90% likelihood-weighted prediction bounds but emphasizes
+      approximate distributed predictions. This supports a data/scale ceiling for point piezometer comparisons, not a numeric gate.
+
+  - dag_variable: "contrib_area (saturated contributing-area fraction)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for TOPMODEL saturated-area fraction or mapped saturated snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          TOPMODEL groups locations by topographic-index similarity; mapped saturated areas are approximate and can require
+          local transmissivity or effective upslope contributing-area adjustment before spatial comparison.
+        cites: [blazkova2002, ducharne2009, beven2021]
+      - metric: area_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "When only saturated fraction is observable, compare total saturated-area fraction separately from exact mapped location."
+        cites: [beven2021]
+    validated_when: "UNRESOLVED - use spatial saturated-area observations as a constraining diagnostic, but do not auto-validate on CSI without a fetched saturated-area threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The dag calls for CSI, but the fetched TOPMODEL papers discuss mapped saturation and water-table checks without a
+      numeric CSI convention. The related Q categorical-event CSI threshold is not transferred to this internal spatial state.
+
+  - dag_variable: "contrib_area (saturated contributing-area fraction)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for at-a-point saturated/unsaturated contributing-area flags."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For binary saturated/unsaturated flags, event scores such as CSI are more interpretable than NSE, but no TOPMODEL point-flag threshold was fetched."
+        cites: [thiemig2015, blazkova2002]
+    validated_when: "UNRESOLVED - point saturated-state time series should be treated as binary-event evidence unless a local threshold convention is supplied."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The dag determining_metric nse is retained with a null band. A binary wet/dry flag can inform diagnosis, but the field
+      convention in the fetched set does not support an automatic NSE pass criterion for this internal state.
+
+  - dag_variable: "ea (actual evapotranspiration)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for TOPMODEL actual ET at a point."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Schneider 2007 reports daily ET NSE/RMSE values for ET methods, but does not state a universal ET validation threshold."
+        cites: [schneider2007]
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Samain 2012 reports strong agreement among catchment-scale ET estimates but presents benchmark values rather than pass bands."
+        cites: [samain2012]
+    validated_when: "UNRESOLVED - compare daily AET to flux/scintillometer/remote-sensing ET products, but do not auto-validate without a cited ET-specific band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      TOPMODEL computes ea as a simple PET-demand/root-zone-deficit reduction; it does not close the surface energy balance.
+      Schneider 2007 reports ET method NSE and RMSE, while Samain 2012 reports RMSE/R agreement among ET estimates; neither
+      gives a TOPMODEL AET pass threshold.
+
+  - dag_variable: "ea (actual evapotranspiration)"
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a PBIAS threshold for regional aggregate TOPMODEL actual ET."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Remote-sensing and scintillometer ET comparisons report RMSE and correlation, but the band is dataset- and flux-unit-specific."
+        cites: [samain2012]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "NSE can summarize ET time-series agreement, but no fetched aggregate ET NSE convention was found."
+        cites: [schneider2007]
+    validated_when: "UNRESOLVED - regional AET aggregate validation requires dataset-specific uncertainty limits; PBIAS has no fetched numeric band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag determining_metric pbias is retained with a null band. Aggregate ET products carry retrieval and closure
+      biases, so a hydrology streamflow PBIAS convention is not transferred.
+
+deferred_paywalled:
+  - ref: "Bennett et al. 2013 - Characterising performance of environmental models"
+    doi: 10.1016/j.envsoft.2012.09.011
+    needed_for: ["qb (baseflow)", "ea (actual evapotranspiration)", "contrib_area (saturated contributing-area fraction)"]
+  - ref: "Testing the ability of a semidistributed hydrological model to simulate contributing area"
+    doi: 10.1002/2016wr018760
+    needed_for: ["contrib_area (saturated contributing-area fraction)"]

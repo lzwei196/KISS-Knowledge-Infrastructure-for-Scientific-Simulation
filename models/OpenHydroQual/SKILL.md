@@ -1,13 +1,3 @@
----
-name: openhydroqual
-description: >-
-  OpenHydroQual 2.0.4. Covers Water flow, storage, and head in interconnected control
-  volumes (ponds, aquifer cells…; Solute / water-quality constituent transport (advection
-  + diffusion) across a block-link network; Biogeochemical reactions (Monod /
-  Arrhenius-corrected kinetics; nutrient cycling; ASM-style…. Use when the task involves
-  running, configuring, calibrating or interpreting OpenHydroQual.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (12 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_ohq.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_ohq.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # OpenHydroQual Knowledge Infrastructure
 
@@ -217,7 +241,28 @@ Observation output goes to `observedoutput.txt` for model-data comparison.
 
 ---
 
-## 6. Unit Trap Table
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag defines the observable outputs,
+their units, descriptions, and validation rank. If this section ever disagrees
+with `dag.yaml`, the dag wins.
+
+**Headline output**: `constituent_concentration` is the dag's
+`validation_rank: 1` variable, and is the variable this KI is judged by.
+
+> `constituent_concentration` -- Per-block/per-link water-quality species
+> concentration over time (e.g., O2, DOM, NH3, NOx). (`g/m^3 (= mg/L)`)
+
+| Output variable (dag `var`) | Validation role | Unit | Description |
+|-----------------------------|-----------------|------|-------------|
+| `constituent_concentration` | rank 1 / headline | `g/m^3 (= mg/L)` | Per-block/per-link water-quality species concentration over time (e.g., O2, DOM, NH3, NOx). |
+| `flow` | other dag output | see `dag.yaml` | see `dag.yaml` |
+| `head_storage` | other dag output | see `dag.yaml` | see `dag.yaml` |
+| `evapotranspiration` | other dag output | see `dag.yaml` | see `dag.yaml` |
+
+---
+
+## 7. Unit Table and Unit Traps
 
 **CRITICAL**: OHQ uses internally consistent units. Mismatch causes silent errors.
 
@@ -241,9 +286,9 @@ Observation output goes to `observedoutput.txt` for model-data comparison.
 
 ---
 
-## 7. Key Variables Reference
+## 8. Key Variables Reference
 
-### 7.1 Solver Settings
+### 8.1 Solver Settings
 
 | Parameter                              | Default  | Description                         |
 |----------------------------------------|----------|-------------------------------------|
@@ -257,7 +302,7 @@ Observation output goes to `observedoutput.txt` for model-data comparison.
 | maximum_number_of_matrix_inversions    | 200000   | Max NR iterations total             |
 | n_threads                              | 8        | OpenMP thread count                 |
 
-### 7.2 Block Types
+### 8.2 Block Types
 
 | Type                          | Key Properties                                    |
 |-------------------------------|---------------------------------------------------|
@@ -268,7 +313,7 @@ Observation output goes to `observedoutput.txt` for model-data comparison.
 | Darcy                         | hydraulic_conductivity, area, length               |
 | Storage                       | bottom_area, head                                  |
 
-### 7.3 Link Types
+### 8.3 Link Types
 
 | Type                        | Key Properties                              |
 |-----------------------------|---------------------------------------------|
@@ -279,7 +324,7 @@ Observation output goes to `observedoutput.txt` for model-data comparison.
 | pipe                        | diameter, ManningCoeff, length              |
 | Darcy_link                  | hydraulic_conductivity, area, length        |
 
-### 7.4 Reaction Parameters (ASM1-style)
+### 8.4 Reaction Parameters (ASM1-style)
 
 | Parameter | Description                           | Typical Value | Unit     |
 |-----------|---------------------------------------|---------------|----------|
@@ -298,7 +343,7 @@ Observation output goes to `observedoutput.txt` for model-data comparison.
 
 ---
 
-## 8. Critical Domain Knowledge
+## 9. Critical Domain Knowledge
 
 ### 8.1 Template Path Resolution (dt_001)
 The OHQLibTest binary resolves template paths relative to its own location
@@ -346,7 +391,7 @@ as starting point.
 
 ---
 
-## 9. Tool Reference
+## 10. Tool Reference
 
 | Tool                  | Lines | Stage | Purpose                                     |
 |-----------------------|-------|-------|---------------------------------------------|
@@ -357,7 +402,7 @@ as starting point.
 
 ---
 
-## 10. Calibration Parameters (Priority Order)
+### 10.1 Calibration Parameters (Priority Order)
 
 | Parameter              | Range       | Sensitivity | Controls                  |
 |------------------------|-------------|-------------|---------------------------|
@@ -373,7 +418,49 @@ as starting point.
 
 ---
 
-## 11. Quick Start
+## 11. Validated Results
+
+### Test Case: Wet Pond (6-cell reactive transport)
+
+| Property | Value |
+|----------|-------|
+| Domain | Constructed wetland with 6 pond cells + 6 sediment cells |
+| Constituents | DOM, O2, NH3, NOx |
+| Processes | Aerobic decomposition, nitrification, denitrification |
+| Forcing | Evapotranspiration (Penman), atmospheric O2 exchange |
+| Duration | 100 days, dt=0.001 day initial |
+
+### Performance Metrics -- convention bars
+
+**Source of truth**: `docs/validation_convention.yaml`. These are the cited
+field bars for judging model skill. A band held as null in the convention must
+be written as "no cited threshold"; do not substitute remembered thresholds.
+
+| Dag variable | Metric | Direction | Satisfactory | Good | Very good | Citation keys |
+|--------------|--------|-----------|--------------|------|-----------|---------------|
+| `flow` | `nse` | maximize | `>= 0.5` | `>= 0.7` | `>= 0.8` | `moriasi2015`, `moriasi2007` |
+| `flow` | `pbias` | zero_centered | `<= 15.0` absolute bias | `<= 10.0` absolute bias | `<= 5.0` absolute bias | `moriasi2015` |
+| `constituent_concentration` | `nse` | maximize | `>= 0.35` | `>= 0.5` | `>= 0.65` | `moriasi2015` |
+| `constituent_concentration` | `pbias` | zero_centered | `<= 30.0` absolute bias | `<= 20.0` absolute bias | `<= 15.0` absolute bias | `moriasi2015` |
+
+For the headline variable `constituent_concentration`, the convention bar is:
+NSE satisfactory `>= 0.35`, good `>= 0.5`, very good `>= 0.65`
+(`moriasi2015`); PBIAS satisfactory `<= 30.0` absolute bias, good `<= 20.0`
+absolute bias, very good `<= 15.0` absolute bias (`moriasi2015`).
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending | Use `tools/convert_forcing.py`; verify units before execution. |
+| Hydraulics / parameters | Pipeline | Pending | Use `tools/convert_parameters.py`; preserve OHQ per-day units. |
+| Template configuration | Model resources | Pending | Verify template path resolution before execution. |
+| Observations | WQP / user-provided observations | Pending | Bind observations to dag variables before scoring. |
+| Initial conditions | `.ohq` script | Pending | Include explicit unit brackets. |
+
+---
+
+## 12. Quick Start
 
 ```bash
 # 1. Build the library and test binary
@@ -404,7 +491,7 @@ python3 ki/tools/parse_output.py \
 
 ---
 
-## 12. Diagnostic Triplets Summary
+## 13. Diagnostic Triplets Summary
 
 | ID     | Severity | Domain           | Summary                                    |
 |--------|----------|------------------|--------------------------------------------|
@@ -426,7 +513,7 @@ python3 ki/tools/parse_output.py \
 
 ---
 
-## 13. File Structure
+## 14. File Structure
 
 ```
 ki/
@@ -448,7 +535,7 @@ ki/
 
 ---
 
-## 14. Coupling Points
+## 15. Coupling Points
 
 | Source System | Target        | Variable        | Format       |
 |---------------|---------------|-----------------|--------------|
@@ -460,7 +547,7 @@ ki/
 
 ---
 
-## 15. Validation Summary
+## 16. Validation Summary
 
 ### Test Case: Wet Pond (6-cell reactive transport)
 

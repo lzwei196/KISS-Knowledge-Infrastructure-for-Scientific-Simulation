@@ -1,167 +1,516 @@
-model:
-  name: "ELMFIRE"
-  full_name: "Eulerian Level Set Model of FIRE Spread"
-  version: "2025.1002"
-  domain: "wildfire"
-  subdomain: "fire spread simulation"
-  binary_path: "KISSPATH_BINARIES/ELMFIRE/source/repo/build/linux/bin/elmfire_block"
-  binary_type: "ELF 64-bit, MPI-parallel Fortran"
-  source_repo: "github.com/lautenberger/elmfire"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: ELMFIRE
+  language: fortran
+  implementation:
+    id: elmfire-2025.1002
+    version: '2025.1002'
+    provenance: Fortran (F2008/MPI); ELMFIRE simulator from github.com/lautenberger/elmfire, with companion
+      elmfire_post ensemble aggregator.
+  scientific_reference_version: ELMFIRE 2025.1002 (Eulerian level-set fire-spread formulation, Lautenberger
+    2013)
 inputs:
   forcing:
-    - name: "ws"
-      description: "Wind speed at 20 ft above vegetation"
-      unit: "mph"
-      valid_range: [0, 100]
-      common_trap: "Source data often in m/s at 10m; multiply by 2.237 for m/s->mph, 1.15 for 10m->20ft"
-    - name: "wd"
-      description: "Wind direction, meteorological convention (direction FROM)"
-      unit: "degrees"
-      valid_range: [0, 360]
-      common_trap: "Add 180 if source uses 'blowing to' convention"
-    - name: "m1"
-      description: "1-hour dead fuel moisture"
-      unit: "percent"
-      valid_range: [1, 40]
-      common_trap: "Must be percent (e.g. 5.0), not fraction (0.05)"
-    - name: "m10"
-      description: "10-hour dead fuel moisture"
-      unit: "percent"
-      valid_range: [2, 40]
-    - name: "m100"
-      description: "100-hour dead fuel moisture"
-      unit: "percent"
-      valid_range: [3, 40]
-    - name: "mlh"
-      description: "Live herbaceous fuel moisture"
-      unit: "percent"
-      valid_range: [30, 250]
-    - name: "mlw"
-      description: "Live woody fuel moisture"
-      unit: "percent"
-      valid_range: [30, 200]
-
-  landscape:
-    - name: "fbfm40"
-      description: "Fuel model code (FBFM40)"
-      unit: "categorical"
-      valid_range: [0, 303]
-    - name: "slp"
-      description: "Slope"
-      unit: "degrees"
-      valid_range: [0, 90]
-    - name: "asp"
-      description: "Aspect (0=North, 90=East)"
-      unit: "degrees"
-      valid_range: [0, 360]
-    - name: "dem"
-      description: "Elevation"
-      unit: "meters"
-      valid_range: [-500, 9000]
-    - name: "cc"
-      description: "Canopy cover"
-      unit: "percent"
-      valid_range: [0, 100]
-    - name: "cbh"
-      description: "Canopy base height (stored as 10x meters when CBH_TIMES_10=.TRUE.)"
-      unit: "meters x10"
-      valid_range: [0, 500]
-    - name: "cbd"
-      description: "Canopy bulk density (stored as 100x kg/m3 when CBD_TIMES_100=.TRUE.)"
-      unit: "kg/m3 x100"
-      valid_range: [0, 100]
-    - name: "ch"
-      description: "Canopy height (stored as 10x meters when CH_TIMES_10=.TRUE.)"
-      unit: "meters x10"
-      valid_range: [0, 1000]
-    - name: "adj"
-      description: "Spread rate adjustment factor"
-      unit: "dimensionless"
-      valid_range: [0, 10]
-    - name: "phi"
-      description: "Level set initial field (1.0 = unburned)"
-      unit: "dimensionless"
-      valid_range: [-1, 1]
-
-  raster_format:
-    type: "GeoTIFF or ENVI BIL"
-    nodata: -9999
-    crs: "UTM (must match A_SRS in namelist)"
-
+  - name: wind speed (20-ft)
+    unit: mph
+    category: weather
+    source_kind: forcing
+    model_input_format: GeoTIFF/ENVI-BIL raster (WS), single- or multi-band at DT_METEOROLOGY
+    notes: 20-ft-above-vegetation wind; model expects mph not m/s and 20-ft not 10-m height (silent under-spread
+      if unconverted)
+  - name: wind direction
+    unit: degrees (meteorological FROM)
+    category: weather
+    source_kind: forcing
+    model_input_format: GeoTIFF/ENVI-BIL raster (WD)
+    notes: compass bearing the wind blows FROM (0=N); math 'TO' convention mirrors the fire
+  - name: 1-hr dead fuel moisture
+    unit: percent
+    category: weather
+    source_kind: forcing
+    model_input_format: GeoTIFF/ENVI-BIL raster (M1)
+    notes: stored internally as fraction; percent expected when DEAD_MC_IN_PERCENT=.TRUE.
+  - name: 10-hr dead fuel moisture
+    unit: percent
+    category: weather
+    source_kind: forcing
+    model_input_format: GeoTIFF/ENVI-BIL raster (M10)
+  - name: 100-hr dead fuel moisture
+    unit: percent
+    category: weather
+    source_kind: forcing
+    model_input_format: GeoTIFF/ENVI-BIL raster (M100)
+  - name: weather update interval (DT_METEOROLOGY)
+    unit: seconds
+    category: control
+    source_kind: user_provided
+    model_input_format: namelist scalar
+    notes: interval between weather bands; intermediate times linearly interpolated
   parameters:
-    critical:
-      - name: "SIMULATION_TSTOP"
-        unit: "seconds"
-        valid_range: [60, 604800]
-        description: "Total simulation duration"
-      - name: "DTDUMP"
-        unit: "seconds"
-        valid_range: [60, 86400]
-        description: "Output interval"
-      - name: "COMPUTATIONAL_DOMAIN_CELLSIZE"
-        unit: "meters"
-        valid_range: [10, 1000]
-        description: "Grid cell size"
-      - name: "TARGET_CFL"
-        unit: "dimensionless"
-        valid_range: [0.2, 0.8]
-        description: "CFL stability number for adaptive time stepping"
-      - name: "SIMULATION_DT"
-        unit: "seconds"
-        valid_range: [1, 600]
-        description: "Initial time step (adaptive)"
-      - name: "SIMULATION_DTMAX"
-        unit: "seconds"
-        valid_range: [30, 3600]
-        description: "Maximum allowed time step"
-      - name: "DT_METEOROLOGY"
-        unit: "seconds"
-        valid_range: [60, 86400]
-        description: "Weather update interval"
-
+  - name: elevation (DEM)
+    unit: m
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: Float32 GeoTIFF (DEM), NODATA -9999
+  - name: slope
+    unit: degrees (0-90)
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: GeoTIFF (SLP)
+    notes: degrees, NOT percent rise; percent rise inflates the Rothermel slope factor
+  - name: aspect
+    unit: degrees (0=N,90=E)
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: GeoTIFF (ASP)
+  - name: fuel model (FBFM40)
+    unit: FBFM40 code (0-303)
+    category: fuel
+    source_kind: dataset_lookup
+    model_input_format: Int16 GeoTIFF (FBFM); 0=nonburnable, 1-13 Anderson NFFL, 101-204 Scott & Burgan
+    notes: indexes precomputed Rothermel coefficient table; codes >303 remap to nonburnable, <0 to 99
+      silently
+  - name: canopy cover
+    unit: percent (0-100)
+    category: canopy
+    source_kind: dataset_lookup
+    model_input_format: Int16 GeoTIFF (CC); percent when CC_IN_PERCENT=.TRUE.
+  - name: canopy height
+    unit: m (x10 integer when CH_TIMES_10)
+    category: canopy
+    source_kind: dataset_lookup
+    model_input_format: Int16 GeoTIFF (CH)
+  - name: canopy base height
+    unit: m (x10 integer when CBH_TIMES_10)
+    category: canopy
+    source_kind: dataset_lookup
+    model_input_format: Int16 GeoTIFF (CBH)
+    notes: drives Van Wagner critical fireline intensity; floored at 0.1 m internally
+  - name: canopy bulk density
+    unit: kg/m3 (x100 integer when CBD_TIMES_100)
+    category: canopy
+    source_kind: dataset_lookup
+    model_input_format: Int16 GeoTIFF (CBD)
+    notes: drives Cruz/Van Wagner active-crown threshold
+  - name: live herbaceous moisture
+    unit: percent (30-300)
+    category: fuel
+    source_kind: user_provided
+    model_input_format: namelist scalar LH_MOISTURE_CONTENT
+  - name: live woody moisture
+    unit: percent (60-200)
+    category: fuel
+    source_kind: user_provided
+    model_input_format: namelist scalar LW_MOISTURE_CONTENT
+  - name: foliar moisture content
+    unit: percent
+    category: fuel
+    source_kind: user_provided
+    model_input_format: namelist scalar FOLIAR_MOISTURE_CONTENT
+    notes: enters Van Wagner critical fireline intensity for crown initiation
+  - name: spread-rate adjustment factor
+    unit: dimensionless (default 1.0)
+    category: calibration
+    source_kind: calibrated
+    model_input_format: Float32 GeoTIFF (ADJ)
+    notes: per-cell multiplier on no-wind ROS; the primary calibration handle; overwritten in-place by
+      per-pyrome lookup when USE_PYROMES
+  - name: L/W maximum ellipse ratio
+    unit: dimensionless (default 8)
+    category: numeric
+    source_kind: default
+    model_input_format: namelist scalar
+    notes: caps Richards elliptical length-to-width ratio
+  initial_conditions:
+  - name: initial level-set field (phi0)
+    unit: dimensionless
+    category: state
+    source_kind: user_provided
+    model_input_format: Float32 GeoTIFF (PHI); 1.0 = unburned
+    notes: optional; defines pre-burned/seed region of the front
+  boundary_conditions:
+  - name: computational domain & CRS
+    unit: UTM meters
+    category: domain
+    source_kind: user_provided
+    model_input_format: namelist A_SRS (EPSG), COMPUTATIONAL_DOMAIN_CELLSIZE / XLLCORNER / YLLCORNER
+    notes: all rasters must share this UTM zone and cell size and fully cover the domain
+  - name: time control
+    unit: seconds
+    category: time
+    source_kind: user_provided
+    model_input_format: namelist SIMULATION_TSTART/TSTOP, SIMULATION_DT (base, default 5 s), SIMULATION_DTMAX
+      (default 600 s), TARGET_CFL (0.2-0.8)
+  - name: ignition specification
+    unit: UTM meters / seconds
+    category: ignition
+    source_kind: user_provided
+    model_input_format: namelist X_IGN/Y_IGN/T_IGN, or IGNITIONS_CSV_FILENAME, or RANDOM_IGNITIONS
+    notes: ignition must fall inside the domain on a burnable fuel pixel
+  - name: crown fire options
+    unit: mixed
+    category: switch
+    source_kind: user_provided
+    model_input_format: namelist CROWN_FIRE_MODEL, CRITICAL_CANOPY_COVER (default 0.39)
+    notes: selects whether/how crown fire is modeled
+  - name: Monte Carlo ensemble control
+    unit: mixed
+    category: switch
+    source_kind: user_provided
+    model_input_format: namelist NUM_ENSEMBLE_MEMBERS, SEED, RASTER_TO_PERTURB/PDF_TYPE/limits, SPATIAL/TEMPORAL_PERTURBATION
+    notes: defines the perturbation ensemble for burn-probability mode
+  - name: diurnal adjustment
+    unit: mixed
+    category: switch
+    source_kind: user_provided
+    model_input_format: namelist USE_DIURNAL_ADJUSTMENT_FACTOR, OVERNIGHT_ADJUSTMENT_FACTOR, LATITUDE,
+      LONGITUDE
+    notes: optional nighttime ROS reduction via sunrise/sunset
+  - name: spotting control
+    unit: boolean
+    category: switch
+    source_kind: user_provided
+    model_input_format: namelist ENABLE_SPOTTING, USE_UMD_SPOTTING_MODEL
+    notes: ember-transport submodule may also require a spotting-enabled build
 outputs:
   primary:
-    - name: "time_of_arrival"
-      description: "Fire arrival time at each pixel"
-      unit: "seconds"
-      valid_range: [0, 604800]
-      format: "GeoTIFF (Float32)"
-    - name: "spread_rate"
-      description: "Rate of spread"
-      unit: "ft/min"
-      valid_range: [0, 500]
-      format: "GeoTIFF (Float32)"
-    - name: "flin"
-      description: "Fireline intensity"
-      unit: "kW/m"
-      valid_range: [0, 100000]
-      format: "GeoTIFF (Float32)"
-    - name: "flame_length"
-      description: "Flame length"
-      unit: "feet"
-      valid_range: [0, 200]
-      format: "GeoTIFF (Float32)"
-    - name: "crown_fire"
-      description: "Crown fire flag"
-      unit: "binary"
-      valid_range: [0, 1]
-      format: "GeoTIFF (Int16)"
-    - name: "fire_size_stats"
-      description: "Cumulative area and perimeter time series"
-      unit: "acres, hectares, feet, meters"
-      format: "CSV"
-  postprocessing:
-    - name: "burn_probability"
-      description: "Fraction of ensemble members that burned each pixel"
-      unit: "fraction"
-      valid_range: [0, 1]
-      format: "GeoTIFF (Float32)"
-
+  - name: time_of_arrival
+    unit: s
+    description: Time the fire front reaches each cell, measured from ignition; -1 where unburned. Contoured
+      to isochrones/perimeters.
+    validation_rank: 2
+    emitted_in: time_of_arrival_*.tif/.bil
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - 'Final burned footprint (phi-arrived cells) vs observed final perimeter is the standard comparison:
+          Sorensen/Dice, Jaccard, commission/omission errors, area ratio.'
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Per-cell burned/unburned classification vs an observed fire scar.
+      detrending_options:
+      - none
+  - name: spread_rate
+    unit: ft/min
+    description: Rate of fire-front spread (head-fire rate at the cell).
+    validation_rank: 3
+    emitted_in: spread_rate_*.tif/.bil
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - magnitude_accuracy
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Native ft/min; literature often m/s or chains/hr — convert before comparison. Expected grass
+          50-300, brush 20-100, timber 5-50 ft/min.
+      detrending_options:
+      - none
+  - name: fireline_intensity
+    unit: kW/m
+    description: Byram fireline intensity along the front.
+    validation_rank: 4
+    emitted_in: flin_*.tif/.bil
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - kW/m (Byram); crown initiation ~2000-4000 kW/m. Some literature uses BTU/ft/s (x0.289).
+      detrending_options:
+      - none
+  - name: flame_length
+    unit: feet
+    description: Byram flame length at the front (raster emitted in feet; head-fire diagnostic computed
+      in meters internally).
+    validation_rank: 5
+    emitted_in: flame_length_*.tif/.bil
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Feet (US/NWCG suppression thresholds); convert x0.3048 for metric.
+      detrending_options:
+      - none
+  - name: crown_fire
+    unit: class (0/1/2)
+    description: Crown fire occurrence/class (none/passive/active) per cell.
+    validation_rank: 6
+    emitted_in: crown_fire_*.tif
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Compare against mapped crown-fire / severity classes; threshold-driven and sensitive to canopy-raster
+          units.
+      detrending_options:
+      - none
+  - name: fire_size
+    unit: acres (and hectares)
+    description: Cumulative burned area (and perimeter) time series per case.
+    validation_rank: 1
+    emitted_in: fire_size_stats_*.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Burned-area growth curve vs observed perimeter-growth timeline; final-size scalar match via
+          area ratio.
+      detrending_options:
+      - none
+  - name: burn_probability
+    unit: fraction (0-1)
+    description: Fraction of Monte Carlo ensemble members in which surface/crown wildland fire burned
+      each landscape raster cell.
+    validation_rank: 7
+    emitted_in: burn_probability.tif
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - ranking_quality
+        determining_metric: csi
+        caveats:
+        - Probabilistic field; compare spatial pattern against observed multi-fire burn frequency or a
+          single scar (calibration/reliability framing, not a hard hit/miss).
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "All unit conversions are silent — wrong units produce plausible but incorrect results with no error"
-  - "Wind speed must be mph at 20ft, not m/s at 10m (most common source of error)"
-  - "Fuel moisture must be percent, not fraction"
-  - "Canopy variables have integer multiplier flags (CBH_TIMES_10, CBD_TIMES_100, CH_TIMES_10)"
-  - "Domain coordinates must be UTM meters, not lat/lon"
-  - "Binary requires MPI (mpirun) even for single-process runs"
+- id: dt_001
+  symptom: Fire does not spread or spreads extremely slowly despite high winds in source data
+  diagnosis: Wind speed in m/s instead of mph — approximately 2.2x too low; ELMFIRE expects wind speed
+    in miles per hour (mph) at 20 feet above vegetation. Many weather datasets (ERA5, HRRR, station data)
+    provide wind in m/s at 10 m height. Using m/s directly gives ~2.2x too low wind speed, and 10 m vs
+    20 ft add
+  remedy: 'Convert m/s to mph (×2.237) and adjust 10m to 20ft height (×1.15 log profile); convert_weather_to_elmfire;
+    [''Check max wind speed in ws.tif — typical fires have 10-30 mph'', ''If max ws < 15 in gusty conditions,
+    values are likely m/s — multiply by 2.237'', ''If WS_AT_10M = .TRUE., ELMFIRE auto-converts '
+  severity: silent
+- id: dt_002
+  symptom: Fire spreads in the opposite direction from observed wind
+  diagnosis: 'Wind direction uses mathematical convention (TO) instead of meteorological (FROM); ELMFIRE
+    uses meteorological convention where wind direction is the compass bearing FROM which the wind blows
+    (0=N means wind blows from north to south). If the source data uses mathematical convention (direction
+    wind '
+  remedy: Add 180 degrees (mod 360) if source uses 'blowing to' convention; convert_weather_to_elmfire;
+    ['Check wind direction convention in source data documentation', 'Compare first few values against
+    a known weather station or reanalysis', 'If fire ellipse points wrong way, add 180 to all WD values'];
+    Docu
+  severity: silent
+- id: dt_003
+  symptom: No fire spread at all — fire extinguishes immediately after ignition
+  diagnosis: Dead fuel moisture as fraction (0.03) instead of percent (3.0); ELMFIRE expects fuel moisture
+    as percent when DEAD_MC_IN_PERCENT = .TRUE. (default). A value of 0.03 is interpreted as 0.03% moisture
+    — impossibly dry — but the Rothermel model still calculates near-zero spread because the moisture
+    is b
+  remedy: Multiply moisture values by 100 if they are in 0-1 fraction range; convert_weather_to_elmfire;
+    ['Check max M1 value in m1.tif — typical values are 2-25%', 'If max M1 < 1.0, values are fractions
+    — multiply by 100']; validate_outputs() checks M1 range and warns if < 1.0
+  severity: silent
+- id: dt_004
+  symptom: Crown fire everywhere even in light fuels — unrealistic fire behavior
+  diagnosis: Live fuel moisture as fraction (0.60) instead of percent (60.0); ELMFIRE expects live fuel
+    moisture in percent. If MLH=0.60 is interpreted as 0.60% (essentially zero moisture), every pixel
+    with canopy will crown because the foliar moisture content threshold is easily exceeded. Real live
+    herbaceous m
+  remedy: Set LH_MOISTURE_CONTENT and LW_MOISTURE_CONTENT to percent values (30-300); convert_weather_to_elmfire;
+    ['Check LH_MOISTURE_CONTENT in namelist — should be 30-300', 'If < 1.0, values are fractions — multiply
+    by 100']; Validate live moisture is in 10-500 range
+  severity: silent
+- id: dt_005
+  symptom: Extreme spread rates on steep terrain — fire moves unrealistically fast uphill
+  diagnosis: Slope in percent rise instead of degrees; ELMFIRE expects slope in degrees (0-90). A 45%
+    slope = ~24 degrees. If 45 is provided and interpreted as 45 degrees (100% rise), the tangent-squared
+    slope factor in Rothermel becomes enormous. A 100% slope value interpreted as 100 degrees is invalid
+    and caus
+  remedy: 'Convert percent slope to degrees: degrees = atan(percent/100) × 180/π; convert_landscape_to_elmfire;
+    [''Check max slope value — should be 0-60 degrees for most terrain'', ''If max slope > 60, values
+    may be in percent — convert to degrees'']; validate_landscape() checks slope range'
+  severity: silent
+- id: dt_006
+  symptom: Canopy bulk density values nonsensical — crown fire thresholds completely wrong
+  diagnosis: CBD not multiplied by 100 for integer storage when CBD_TIMES_100 = .TRUE.; ELMFIRE can store
+    canopy bulk density as integers (CBD × 100) to save space. If CBD_TIMES_100 = .TRUE. but values are
+    not pre-multiplied (e.g., 0.15 kg/m³ stored as 0.15 instead of 15), crown fire calculations use 0.0015
+    kg/m
+  remedy: Multiply CBD by 100 before writing raster, or set CBD_TIMES_100 = .FALSE.; convert_landscape_to_elmfire;
+    ['Check if CBD_TIMES_100 = .TRUE. in namelist', 'If yes, ensure raster values are 0-99 (representing
+    0-0.99 kg/m³)', 'If raw kg/m³ values, either multiply by 100 or set flag to .FALSE.']; Check C
+  severity: silent
+- id: dt_007
+  symptom: Crown fire never initiates even in dense forest with high winds
+  diagnosis: Canopy base height not multiplied by 10 when CBH_TIMES_10 = .TRUE.; ELMFIRE stores CBH as
+    integers (CBH × 10 meters). If CBH_TIMES_10 = .TRUE. but values are in raw meters (e.g., 3.0 instead
+    of 30), ELMFIRE reads 3.0 as 0.3 m CBH. Counter-intuitively, lower CBH makes crown fire EASIER to
+    initiate, s
+  remedy: 'Multiply CBH by 10 when CBH_TIMES_10 = .TRUE., or set flag to .FALSE.; convert_landscape_to_elmfire;
+    [''Check CBH_TIMES_10 flag in namelist'', ''Verify raster values: if max CBH = 3-30, these are raw
+    meters — multiply by 10'', ''Expected range when ×10: 0-300 (representing 0-30 m)'']; Cross-check
+    CBH agai'
+  severity: silent
+- id: dt_008
+  symptom: Fire ignites but domain is tiny or enormous — incorrect spatial scale
+  diagnosis: Rasters in lat/lon (EPSG:4326) but domain expects UTM meters; ELMFIRE operates in projected
+    coordinates (UTM meters). If rasters are in geographic coordinates (degrees), a 0.01 degree cell is
+    interpreted as 0.01 meters, creating a microscopic domain. Conversely, UTM coordinates used with degree-base
+  remedy: Reproject all rasters to the correct UTM zone using gdalwarp; convert_landscape_to_elmfire;
+    ['Run gdalinfo on any input raster — check the CRS', 'Determine correct UTM zone for the fire location',
+    'gdalwarp -t_srs EPSG:326XX input.tif output.tif', 'Update A_SRS in namelist to match']; validate_lands
+  severity: error
+- id: dt_009
+  symptom: Fire ignites at wrong location or outside domain
+  diagnosis: 'Ignition coordinates (X_IGN, Y_IGN) not in same CRS as domain; X_IGN and Y_IGN must be in
+    the same projected coordinate system as the computational domain (UTM meters). If lat/lon coordinates
+    are provided (e.g., X_IGN = -120.5), these are interpreted as UTM meters and will be completely wrong.
+
+    ; [''n'
+  remedy: Convert ignition lat/lon to UTM easting/northing using pyproj or gdaltransform; convert_weather_to_elmfire;
+    ["echo '-120.5 38.5' | gdaltransform -s_srs EPSG:4326 -t_srs EPSG:32610", 'Use the output UTM easting/northing
+    for X_IGN/Y_IGN']; Always convert coordinates before writing namelist
+  severity: error
+- id: dt_010
+  symptom: Simulation produces no output files
+  diagnosis: 'OUTPUTS_DIRECTORY path does not exist or is not writable; ELMFIRE does not create the output
+    directory automatically. If the path specified in OUTPUTS_DIRECTORY does not exist, the model may
+    run but silently fail to write any outputs.
+
+    ; [''namelist OUTPUTS block'', ''OUTPUTS_DIRECTORY'']'
+  remedy: 'Create the output directory before running: mkdir -p ./outputs; run_elmfire; [''Check OUTPUTS_DIRECTORY
+    path in namelist'', ''mkdir -p <path>'', ''Verify write permissions'']; run_elmfire.py creates directory
+    in preflight checks'
+  severity: error
+- id: dt_011
+  symptom: Model crashes with file not found for fuel/topo rasters
+  diagnosis: Raster filenames in namelist don't match actual files (extension mismatch); ELMFIRE namelist
+    specifies raster names WITHOUT extension. It first tries .tif, then .bil. If files have different
+    extensions or are in a subdirectory, the model cannot find them. The FUELS_AND_TOPOGRAPHY_DIRECTORY
+    must also
+  remedy: Verify all raster files exist in FUELS_AND_TOPOGRAPHY_DIRECTORY with correct names; run_elmfire;
+    ['ls ./inputs/ — check that asp.tif, slp.tif, etc. exist', 'Ensure filenames in namelist match (case-sensitive,
+    no extension)']; run_elmfire.py validates file existence in preflight
+  severity: error
+- id: dt_012
+  symptom: Fire ignites on non-burnable pixel and nothing happens
+  diagnosis: 'Ignition point falls on non-burnable fuel model (water, urban, barren); Fuel model codes
+    91 (urban), 92 (snow/ice), 93 (agriculture), 98 (water), 99 (barren) are non-burnable. If the ignition
+    point lands on one of these pixels, ELMFIRE ignites but the fire cannot spread.
+
+    ; [''namelist SIMULATOR block'
+  remedy: Check fuel model at ignition location; move ignition to burnable pixel; run_elmfire; ['Use gdallocationinfo
+    fbfm40.tif X_IGN Y_IGN to check fuel code', 'If 91/92/93/98/99, move ignition to nearest burnable
+    pixel', 'Or set ALLOW_NONBURNABLE_PIXEL_IGNITION = .FALSE. and ELMFIRE auto-adjusts']; validat
+  severity: warning
+- id: dt_013
+  symptom: MPI error or segmentation fault during execution
+  diagnosis: Raster dimensions inconsistent — different extents or resolutions across inputs; All input
+    rasters must have identical spatial extent and resolution. If one raster (e.g., wind speed) has different
+    dimensions than the fuel model raster, array indexing goes out of bounds causing a segfault. This
+    commo
+  remedy: Resample all rasters to identical extent and resolution using gdalwarp; convert_landscape_to_elmfire;
+    ['Run gdalinfo on each raster — compare Size, Origin, Pixel Size', 'Use gdalwarp -tr CELLSIZE CELLSIZE
+    -te XMIN YMIN XMAX YMAX to harmonize']; validate_landscape() ensures all rasters match
+  severity: crash
+- id: dt_014
+  symptom: Simulation hangs or takes extremely long
+  diagnosis: CFL condition forces extremely small time steps due to high wind or steep slope; ELMFIRE
+    uses adaptive time stepping controlled by TARGET_CFL. With very high wind speeds (>50 mph) or steep
+    slopes combined with fine resolution (<10 m), the CFL condition may require sub-second time steps,
+    making the s
+  remedy: Increase COMPUTATIONAL_DOMAIN_CELLSIZE, reduce wind speed, or increase TARGET_CFL (max ~0.8);
+    run_elmfire; ['Check SIMULATION_DT in namelist — if < 1.0 second, CFL is limiting', 'Try TARGET_CFL
+    = 0.8 (less conservative)', 'Or increase cell size from 30 m to 60-90 m']; Monitor time step in diagnostic
+  severity: warning
+- id: dt_015
+  symptom: elmfire binary not found
+  diagnosis: 'ELMFIRE binary not in PATH or not compiled; The ELMFIRE binary (elmfire_2025.1002) must
+    be either in PATH or referenced by full path. When using Docker, it''s in /elmfire/build/linux/bin/.
+    When compiled locally, it''s in build/linux/bin/.
+
+    ; [''ELMFIRE_INSTALL_DIR'', ''PATH'']'
+  remedy: 'Add ELMFIRE bin directory to PATH or use full path to binary; run_elmfire; [''export PATH=$ELMFIRE_BASE_DIR/build/linux/bin:$PATH'',
+    ''Or use: /full/path/to/elmfire_2025.1002 ./inputs/elmfire.data'']; run_elmfire.py resolves binary
+    path automatically'
+  severity: error
+- id: dt_016
+  symptom: Spread rate values seem extremely high when compared to literature
+  diagnosis: 'Spread rate is in ft/min — must convert to m/s or chains/hr for comparison; ELMFIRE outputs
+    spread rate in feet per minute (ft/min), following US fire behavior convention. Literature values
+    are often in m/s (metric) or chains/hr (US forestry). Conversion: 1 ft/min = 0.00508 m/s = 0.3636
+    chains/hr. A'
+  remedy: 'Convert ft/min to desired units before comparison; parse_elmfire_output; [''ft/min → m/s: multiply
+    by 0.00508'', ''ft/min → chains/hr: multiply by 0.3636'', ''ft/min → km/hr: multiply by 0.01829''];
+    parse_elmfire_output includes unit conversion options'
+  severity: silent
+- id: dt_017
+  symptom: Flame length values don't match suppression difficulty thresholds
+  diagnosis: 'Flame length output is in feet — NWCG thresholds also in feet but metric users need conversion;
+    ELMFIRE outputs flame length in feet. NWCG fire suppression difficulty: <4 ft: hand crews effective,
+    4-8 ft: equipment needed, 8-11 ft: serious difficulty, >11 ft: extreme — crowning/spotting likely.
+    If c'
+  remedy: 'Keep in feet for NWCG comparisons; convert ×0.3048 for metric; parse_elmfire_output; [''ft
+    → m: multiply by 0.3048'']; parse_elmfire_output labels units in CSV headers'
+  severity: silent
+- id: dt_018
+  symptom: Fireline intensity much higher than expected from literature
+  diagnosis: 'ELMFIRE outputs FLIN in kW/m — compare to correct thresholds; Fireline intensity (FLIN)
+    in ELMFIRE is in kW/m (Byram''s fireline intensity). Crown fire initiation typically requires FLIN
+    > 2000-3000 kW/m. Values > 10000 kW/m indicate extreme fire behavior. Some literature reports in BTU/ft/s:
+    1 kW/m '
+  remedy: 'Verify units match when comparing to literature values; parse_elmfire_output; [''kW/m → BTU/ft/s:
+    multiply by 0.289'', ''Cross-reference with crown fire type: < 2000 surface, 2000-4000 passive, >
+    4000 active'']; parse_elmfire_output annotates fire type thresholds'
+  severity: silent
+- id: dt_019
+  symptom: NODATA gaps in output — fire stops at certain boundaries
+  diagnosis: 'Input raster has NODATA (-9999) pixels within domain; ELMFIRE treats -9999 pixels as non-burnable
+    barriers. If the fuel model raster has NODATA gaps (common at tile boundaries in LANDFIRE), fire cannot
+    cross these pixels. This creates artificial fire breaks.
+
+    ; [''convert_landscape_to_elmfire'', ''all r'
+  remedy: 'Fill NODATA gaps using gdal_fillnodata.py or merge overlapping tiles; convert_landscape_to_elmfire;
+    [''gdalinfo fbfm40.tif — check for NODATA pixels'', ''gdal_fillnodata.py fbfm40.tif fbfm40_filled.tif'',
+    ''Or merge tiles: gdal_merge.py -o merged.tif tile1.tif tile2.tif'']; validate_landscape() warns abou'
+  severity: warning
+- id: dt_020
+  symptom: GDAL errors during output conversion to GeoTIFF
+  diagnosis: CONVERT_TO_GEOTIFF = .TRUE. but GDAL not in PATH or SCRATCH not writable; When CONVERT_TO_GEOTIFF
+    is enabled, ELMFIRE calls gdal_translate to convert BIL outputs to GeoTIFF. If PATH_TO_GDAL is wrong
+    or the SCRATCH directory doesn't exist, this conversion fails. The simulation itself may have complet
+  remedy: Set PATH_TO_GDAL correctly and ensure SCRATCH directory exists; run_elmfire; ['which gdal_translate
+    — verify GDAL location', "Set PATH_TO_GDAL = '/usr/bin' (or correct path)", 'mkdir -p ./scratch',
+    'Or set CONVERT_TO_GEOTIFF = .FALSE. and convert manually after']; run_elmfire.py checks GDAL availabi
+  severity: error

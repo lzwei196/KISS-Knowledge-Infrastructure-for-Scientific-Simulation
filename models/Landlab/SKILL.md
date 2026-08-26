@@ -1,13 +1,3 @@
----
-name: landlab
-description: >-
-  Landlab 2.x component-based Earth-surface-dynamics framework. Covers Landscape evolution
-  at catchment-to-landscape scale (slope-area, concavity, steepness, relief…; Flow routing
-  and drainage accumulation (D8, D-infinity, MFD, priority-flood); Detachment-limited
-  fluvial erosion (stream power E = K A^m S^n). Use when the task involves running,
-  configuring, calibrating or interpreting Landlab.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,44 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (8 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (22 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_dem_to_grid.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_dem_to_grid.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/dissect_atchafalaya_ssc_q_surrogate.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/dissect_atchafalaya_ssc_q_surrogate.py --help` |
+| `tools/dissect_loess_plateau_sediment_yield.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/dissect_loess_plateau_sediment_yield.py --help` |
+| `tools/dissect_loess_plateau_slope_area.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/dissect_loess_plateau_slope_area.py --help` |
+| `tools/dissect_space_ssc_q_rating.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/dissect_space_ssc_q_rating.py --help` |
+| `tools/parse_landlab_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_landlab_output.py --help` |
+| `tools/run_landlab.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_landlab.py --help` |
+
+*8 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # Landlab v2.10 — Earth Surface Dynamics Modeling Toolkit
 
@@ -170,6 +198,83 @@ model.initialize("config.yaml")
 model.update()
 model.finalize()
 ```
+
+---
+
+## 6. Output Description
+
+Source of truth: `dag.yaml`. The DAG wins over this body if they ever disagree.
+
+**Headline output** (`validation_rank: 1`):
+
+> `sediment_yield` — Annual catchment sediment yield via detachment-limited stream power (E = K_sp A^m S^n converted by bulk density). (`t/km^2/yr`)
+
+| Output variable (dag `var`) | Rank | Unit | Emitted in | Description |
+|-----------------------------|------|------|------------|-------------|
+| `sediment_yield` | 1 | `t/km^2/yr` | derived metric (detachment-limited stream-power export) | Annual catchment sediment yield via detachment-limited stream power (E = K_sp A^m S^n converted by bulk density). |
+| `sediment__outflux (SPACE Qs)` | 2 | `m^3/s (or kg/s)` | Landlab grid field at_node (SPACE / ErosionDeposition) | Sediment flux out of a node; the Qs in the SPACE Qs-Q rating relationship. |
+| `surface_water__discharge (steady-state)` | 3 | `m^3/s` | Landlab grid field at_node (FlowAccumulator) | Steady-state discharge Q = drainage_area * runoff_rate from FlowAccumulator; NOT a hydrograph time series. |
+| `topographic__elevation` | 4 | `m` | Landlab grid field at_node; written to ESRI ASCII (.asc) / NetCDF (.nc) | Final land-surface elevation of the evolved landscape (node field). |
+| `concavity (theta)` | 5 | `dimensionless` | derived metric from slope-area regression on the grid | Land-surface/channel-topography slope-area concavity index theta = -d(logS)/d(logA); at steady state expected to approach m_sp/n_sp. |
+| `steepness (ks)` | 6 | `dimensionless (channel steepness index)` | derived metric from slope-area regression | Channel steepness index from the slope-area regression. |
+| `relief` | 7 | `m` | derived metric over core nodes | Max-minus-min elevation over core nodes; landscape relief at steady state. |
+| `soil__depth` | 8 | `m` | Landlab grid field at_node | Regolith/soil thickness above bedrock (node field). |
+
+The other DAG outputs are: `topographic__elevation`, `concavity (theta)`, `steepness (ks)`, `relief`, `sediment__outflux (SPACE Qs)`, `soil__depth`, and `surface_water__discharge (steady-state)`.
+
+---
+
+## 8. Unit Table
+
+Source of truth: `dag.yaml` and `docs/format_spec.yaml`. Landlab is unit-agnostic, so the tools and user scripts must keep the unit system consistent.
+
+| Variable / quantity | Source unit handled by this KI | Model or DAG unit | Conversion / invariant | Where checked or used |
+|---------------------|--------------------------------|-------------------|------------------------|-----------------------|
+| `sediment_yield` | derived from detachment-limited stream-power export | `t/km^2/yr` | E = K_sp A^m S^n converted by bulk density | DAG rank-1 output; `tools/dissect_loess_plateau_sediment_yield.py` |
+| `topographic__elevation` | DEM elevation in meters; feet are a known trap | `m` | feet to meters: multiply by 0.3048 | `convert_dem_to_grid.py`; dt_007 |
+| `xy_spacing` / grid geometry | projected metric spacing required | `m` | reproject geographic degrees to a metric CRS before loading | `convert_dem_to_grid.py`; dt_004 |
+| `water__unit_flux_in` | rainfall / runoff from forcing data | `m/s` | mm/hr to m/s: divide by 3,600,000; mm/day to m/s: divide by 86,400,000; m/yr to m/s: divide by 31,557,600 | `FlowAccumulator`; dt_001 |
+| `surface_water__discharge (steady-state)` | derived steady-state accumulated runoff | `m^3/s` | Q = drainage_area * runoff_rate | `FlowAccumulator`; DAG rank-3 output |
+| `soil__depth` | HWSD-style soil depth commonly in cm | `m` | cm to m: divide by 100 | `convert_soil_params.py`; dt_006 |
+| `K_sp` | literature or calibrated stream-power erodibility | `length^(1-2*m_sp) / time` | units depend on `m_sp` and `n_sp`; at `m_sp=0.5`, `n_sp=1.0`, K has units `1/yr` when dt is in years | `StreamPowerEroder`; dt_003 |
+| `linear_diffusivity` | literature or calibrated diffusivity | `m^2/yr` when dt is in years | m^2/s to m^2/yr: multiply by 3.156e7 | `LinearDiffuser`; dt_002 |
+| `dt` | user-chosen timestep | `yr` for landscape evolution, `s` for overland flow | dt must share the time unit of K, diffusivity, uplift, and other rates | `run_landlab.py`; dt_005 |
+| `uplift_rate` | scalar or field forcing | `m/yr` | applied as `z[core_nodes] += uplift_rate * dt` when dt is in years | user execution loop |
+| `sediment__outflux (SPACE Qs)` | SPACE / ErosionDeposition node flux | `m^3/s (or kg/s)` | compare Qs directly against Q; do not fit SSC = Qs/Q when testing SPACE Qs-Q | DAG rank-2 output; dt_020 |
+| `rainfall__daily_depth` | SoilMoisture rainfall can arrive in m or m/s | `mm` at cell | m to mm: multiply by 1000; m/s to mm/day: multiply by 86,400,000 | SoilMoisture; dt_008 |
+
+---
+
+## 11. Validated Results
+
+Source of truth for validation bars: `docs/validation_convention.yaml`. Null convention bands are written as `no cited threshold`; no uncited threshold is substituted.
+
+### Performance Metrics -- judged against the field's bar
+
+| DAG variable | Headline metric | Direction | Convention bar, cited | KI result currently documented |
+|--------------|-----------------|-----------|------------------------|-------------------------------|
+| `sediment_yield` | `pbias` | zero_centered | very good: `|PBIAS| <= 10` (moriasi2015); good: `|PBIAS| <= 15` (moriasi2015); satisfactory: `|PBIAS| <= 20` (moriasi2015) | Loess Plateau sediment-yield run reports `8390.6 t/km^2/yr` against `2,000-10,000 t/km^2/yr`; the body does not state a PBIAS value. |
+| `topographic__elevation` | `csi` | maximize | very good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold; cites: `[]` | Whipple & Tucker steady-state run reports slope-area `r^2 = 0.9978`, relief `810.2 m`, and wall time `2.2 s`; no CSI value is stated. |
+| `concavity (theta)` | `pbias` | zero_centered | very good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold; cites: `[]` | SPACE steady-state run reports theta `0.464`; Loess Plateau slope-area run reports theta `0.1631`; Whipple & Tucker run reports theta `0.488` against expected `0.500`. |
+| `steepness (ks)` | `pbias` | zero_centered | very good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold; cites: `[]` | The DAG exposes `steepness (ks)` as a derived slope-area metric; this body does not state a validated ks value. |
+
+### Documented validation cases
+
+| Case | Configuration source | Reported result |
+|------|----------------------|-----------------|
+| SPACE Binary -- Atchafalaya Qs-Q + Concavity (2026-04-29) | `tools/dissect_atchafalaya_ssc_q_surrogate.py`; outputs under `outputs/landlab_atchafalaya_ssc_q/` | `b_sim = 0.897`, log-log `r = 0.978`, theta `0.464`, obs `r = 0.809`; all listed as PASS in this body. |
+| Loess Plateau Real-DEM Slope-Area (2026-04-29) | `tools/dissect_loess_plateau_slope_area.py` | theta `0.1631`, binned `R^2 = 0.8659`, channel nodes `12,315`; all listed as PASS in this body. |
+| Loess Plateau Sediment Yield + Particulate-P Export (2026-04-29) | `tools/dissect_loess_plateau_sediment_yield.py`; outputs under `outputs/landlab_loess_sediment/` | sediment yield `8390.6 t/km^2/yr`; particulate-P export `134.25 kg/ha/yr`; both listed as PASS in this body. |
+| Whipple & Tucker (1999) Steady-State Test (2026-03-25) | Python Landlab component run described below | slope-area `r^2 = 0.9978`, theta `0.488`, relief `810.2 m`, wall time `2.2 s`; listed as PASS where thresholds are stated in this body. |
+
+### Data replacement tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | CMFD/MSWX/NASA POWER via `ki_tools_common.load_forcing.load_daily_forcing` where meteorological forcing is needed | Available | Landscape-evolution sediment-yield runs commonly use uniform runoff_rate, not a daily hydrograph. |
+| Soil | HWSD or other soil data via `convert_soil_params.py` | Available | Convert depth from cm to m before Landlab fields. |
+| DEM / topography | SRTM/ASTER/LiDAR through `convert_dem_to_grid.py` | Validated in Loess Plateau cases | DEM must be projected in meters and NoData must be closed. |
+| Initial conditions | Landlab grid fields (`topographic__elevation`, `soil__depth`, `bedrock__elevation`) | Available | Field locations and units must match component expectations. |
 
 ---
 

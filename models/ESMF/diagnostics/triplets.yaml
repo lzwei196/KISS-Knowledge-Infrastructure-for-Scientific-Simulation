@@ -1,380 +1,396 @@
+# ========================================================================
+# ESMF Diagnostic Triplets
+# ========================================================================
+# 20 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+# Comments preserved from the previous file:
 # ESMF Diagnostic Triplets
 # Symptom → Diagnosis → Remedy for common ESMF failures
 # Severity: silent (wrong results, no error), degraded (partial failure), fatal (crash)
-
-triplets:
-
   # --- Unit Conversion Traps ---
-
-  - id: dt_001
-    domain: unit_conversion
-    stage: s1_domain
-    severity: silent
-    symptom: >
-      Regridded fields are wildly wrong (e.g., temperature 57x too high or
-      spatial patterns completely distorted) but no error is reported.
-    diagnosis: >
-      Grid coordinates are in RADIANS instead of DEGREES. ESMF spherical
-      coordinate grids expect degrees (0-360 or -180 to 180). Radians
-      produce a 57.3x scaling error that propagates silently through all
-      spatial operations.
-    remedy: >
-      1. Check coordinate ranges: lat should be [-90, 90], lon [-180, 360].
-      2. If max(|lat|) < π ≈ 3.14, coordinates are in radians.
-      3. Convert: lat_deg = lat_rad × (180/π), lon_deg = lon_rad × (180/π).
-      4. Rebuild grid file with degree coordinates.
-    prevention: >
-      convert_grid_to_esmf.py checks if max(|lat|) < 2π and warns.
-
-  - id: dt_002
-    domain: unit_conversion
-    stage: s1_domain
-    severity: silent
-    symptom: >
-      Conservative regridding does not conserve. Global integral of
-      regridded flux field differs from source by factor of ~3000x.
-    diagnosis: >
-      Grid cell areas are in DEGREES² instead of STERADIANS (radians²).
-      ESMF conservative regridding requires areas in steradians. The ratio
-      (180/π)² ≈ 3283 explains the ~3000x error.
-    remedy: >
-      1. Check grid_area variable units in grid file.
-      2. If units are "degrees" or "degrees^2", convert:
-         area_sr = area_deg² × (π/180)²
-      3. Update the grid_area variable and set units="steradians".
-    prevention: >
-      convert_grid_to_esmf.py computes areas in steradians by default.
-
-  - id: dt_003
-    domain: unit_conversion
-    stage: s4_forcing
-    severity: silent
-    symptom: >
-      Precipitation values are ~86400x too high. Model produces extreme
-      flooding or unrealistic water balance. Mean precip reads as
-      ~50 kg/m²/s instead of ~5.8e-4 kg/m²/s.
-    diagnosis: >
-      Precipitation was provided in mm/day but not converted to kg/m²/s.
-      CF convention uses kg/m²/s (= mm/s for liquid water).
-      50 mm/day ÷ 86400 = 5.8e-4 kg/m²/s.
-    remedy: >
-      1. Divide precipitation by 86400 to convert mm/day → kg/m²/s.
-      2. Verify mean precip is ~1e-5 to 1e-3 kg/m²/s (0.9 to 86 mm/day).
-    prevention: >
-      convert_forcing_to_esmf.py applies mm_day_to_kg_m2_s conversion
-      and checks physical bounds post-conversion.
-
-  - id: dt_004
-    domain: unit_conversion
-    stage: s4_forcing
-    severity: silent
-    symptom: >
-      Relative humidity values > 1.0 in model input. Model may produce
-      supersaturation artifacts or ignore humidity entirely.
-    diagnosis: >
-      Humidity provided as PERCENTAGE (0-100) but CF convention and most
-      ESMF models expect FRACTION (0-1). A value of "65" means 65%, not
-      6500%.
-    remedy: >
-      1. Divide humidity by 100 to convert percentage → fraction.
-      2. Verify range is [0.0, 1.0] after conversion.
-    prevention: >
-      convert_forcing_to_esmf.py includes percent_to_fraction conversion.
-
-  - id: dt_005
-    domain: unit_conversion
-    stage: s4_forcing
-    severity: silent
-    symptom: >
-      Temperature in model is ~273 K too low (near absolute zero) or
-      ~273 K too high (> 500 K). Model crashes or produces nonsense.
-    diagnosis: >
-      Temperature mixing °C and K. Either °C was not converted to K
-      (missing +273.15) or K was converted again (double offset).
-    remedy: >
-      1. Check source data units. If values are -40 to 50, they are °C.
-      2. Add 273.15 for °C → K conversion (once only).
-      3. Verify range is 200-330 K after conversion.
-    prevention: >
-      convert_forcing_to_esmf.py checks post-conversion bounds.
-
-  - id: dt_006
-    domain: unit_conversion
-    stage: s4_forcing
-    severity: silent
-    symptom: >
-      Pressure values ~100x too low or too high. Surface energy balance
-      fails. Specific humidity calculations produce NaN.
-    diagnosis: >
-      Pressure in hPa (hectopascals) instead of Pa (pascals).
-      Standard sea level: 1013.25 hPa = 101325 Pa.
-    remedy: >
-      1. Multiply by 100 to convert hPa → Pa.
-      2. Verify range is 30000-110000 Pa after conversion.
-    prevention: >
-      convert_forcing_to_esmf.py includes hPa_to_Pa conversion.
-
   # --- Grid/Mesh Topology Traps ---
-
-  - id: dt_007
-    domain: grid_topology
-    stage: s1_domain
-    severity: silent
-    symptom: >
-      Regridded field has a visible seam or discontinuity at the 0°/360°
-      longitude boundary on a global grid.
-    diagnosis: >
-      Grid is not configured with periodic boundary in the longitude
-      dimension. ESMF defaults to non-periodic boundaries. For a global
-      grid, the first and last longitude columns must be connected.
-    remedy: >
-      1. When creating grid, specify periodic connection:
-         ESMF_GridCreateNoPeriDim → ESMF_GridCreate1PeriDim
-      2. Or set connflagDim1=ESMF_GRIDCONN_PERIODIC in Grid creation.
-    prevention: >
-      Check grid extent: if lon spans ~360°, enable periodic boundary.
-
-  - id: dt_008
-    domain: grid_topology
-    stage: s1_domain
-    severity: silent
-    symptom: >
-      Unstructured mesh regridding produces wrong results. Some elements
-      map to wrong locations. Visual inspection shows "scrambled" pattern.
-    diagnosis: >
-      Mesh element connectivity uses 0-BASED node indices (C/Python
-      convention) instead of 1-BASED (Fortran/ESMF convention). This
-      shifts all element-node connections by one, producing wrong topology.
-    remedy: >
-      1. Add 1 to all connectivity arrays: conn_1based = conn_0based + 1
-      2. Verify that max(connectivity) == number_of_nodes (not N-1).
-    prevention: >
-      Check min(connectivity): if 0, it's 0-based and needs +1.
-
-  - id: dt_009
-    domain: grid_topology
-    stage: s1_domain
-    severity: silent
-    symptom: >
-      Conservative regridding produces negative weights or total area
-      is wrong. Field integrals have wrong sign in some regions.
-    diagnosis: >
-      SCRIP grid corner coordinates are in CLOCKWISE order instead of
-      COUNTER-CLOCKWISE. This gives negative signed areas for those cells.
-    remedy: >
-      1. Reverse corner order: corners = corners[:, ::-1]
-      2. Or regenerate grid file with CCW corner ordering (SW, SE, NE, NW).
-    prevention: >
-      convert_grid_to_esmf.py writes corners in CCW order (SW, SE, NE, NW).
-
   # --- Mask Convention Traps ---
-
-  - id: dt_010
-    domain: mask_convention
-    stage: s1_domain
-    severity: silent
-    symptom: >
-      Regridded field is zero or fill-value everywhere over land (or ocean).
-      The opposite region has correct values.
-    diagnosis: >
-      Mask convention is INVERTED. ESMF uses 0 = masked (excluded),
-      1 = active (included). Many other tools use the opposite convention
-      (1 = masked, 0 = active).
-    remedy: >
-      1. Invert mask: new_mask = 1 - old_mask (for binary masks).
-      2. Verify that mask=1 cells contain data, mask=0 cells are excluded.
-    prevention: >
-      Check mask against known geography (land/ocean) before regridding.
-
   # --- Runtime / MPI Traps ---
-
-  - id: dt_011
-    domain: runtime
-    stage: s6_run
-    severity: fatal
-    symptom: >
-      Application crashes at startup with "DELayout: PET count does not
-      match" or similar decomposition error.
-    diagnosis: >
-      The number of MPI processes (-np) does not match the DELayout
-      decomposition specified in the application. For a regDecomp=[4,2]
-      layout, exactly 8 PETs (processes) are required.
-    remedy: >
-      1. Count required PETs: product of regDecomp array.
-      2. Run with matching -np: mpirun -np 8 ./app (for regDecomp=[4,2]).
-      3. Or change regDecomp to match available processes.
-    prevention: >
-      run_esmf_application.py checks np vs regDecomp before launching.
-
-  - id: dt_012
-    domain: runtime
-    stage: s6_run
-    severity: fatal
-    symptom: >
-      Segmentation fault at MPI_Init or double-free error immediately
-      on startup.
-    diagnosis: >
-      ESMF was built with ESMF_COMM=mpiuni (serial mode) but the
-      application is launched with mpirun/mpiexec. This causes double
-      MPI initialization → segfault.
-    remedy: >
-      1. If using MPI, rebuild ESMF with ESMF_COMM=openmpi (or matching).
-      2. If serial-only, run without mpirun: ./my_application
-    prevention: >
-      run_esmf_application.py checks ESMF_COMM vs launcher.
-
-  - id: dt_013
-    domain: runtime
-    stage: s6_run
-    severity: fatal
-    symptom: >
-      Segmentation fault during regridding or field halo exchange.
-      Occurs intermittently, sometimes only at high process counts.
-    diagnosis: >
-      Field halo width is too narrow for the regridding stencil. Bilinear
-      needs halo ≥ 1, patch needs halo ≥ 2. Insufficient halo means the
-      stencil reads uninitialized memory beyond the allocated array.
-    remedy: >
-      1. Increase halo width in Field or DistGrid creation.
-      2. Bilinear: haloWidth ≥ 1. Patch: haloWidth ≥ 2.
-      3. Rebuild fields and re-run.
-    prevention: >
-      Match halo width to regridding method stencil requirements.
-
   # --- I/O and Data Traps ---
-
-  - id: dt_014
-    domain: io_format
-    stage: s4_forcing
-    severity: fatal
-    symptom: >
-      ESMF_Clock fails to parse time axis. Error message mentions
-      time units or calendar.
-    diagnosis: >
-      Time axis uses integer indices or non-CF-convention units instead
-      of "units since epoch" format. ESMF requires CF-convention time
-      like "hours since 2000-01-01 00:00:00".
-    remedy: >
-      1. Rewrite time variable with proper CF units attribute.
-      2. Example: time:units = "days since 2000-01-01 00:00:00"
-      3. Include calendar attribute: time:calendar = "standard"
-    prevention: >
-      convert_forcing_to_esmf.py always writes CF-convention time axis.
-
-  - id: dt_015
-    domain: io_format
-    stage: s7_postprocess
-    severity: silent
-    symptom: >
-      Extracted values contain -9999, 1e20, or other fill values mixed
-      with real data. Statistics (mean, max) are corrupted.
-    diagnosis: >
-      NetCDF fill values not properly handled during extraction. The
-      _FillValue attribute was not used to mask invalid data, so fill
-      values are treated as real numbers.
-    remedy: >
-      1. Use masked arrays: data = var[:] (netCDF4 returns masked arrays).
-      2. Or explicitly filter: data[data == var._FillValue] = np.nan.
-      3. Always use np.nanmean/nanmax instead of mean/max.
-    prevention: >
-      parse_esmf_output.py uses .filled(np.nan) to handle masked data.
-
   # --- Calendar and Time Traps ---
-
-  - id: dt_016
-    domain: time_management
-    stage: s6_run
-    severity: silent
-    symptom: >
-      Model results drift by ~1.4% per year relative to observations.
-      Seasonal cycle shifts gradually. After 30 years, seasons are
-      offset by ~5 months.
-    diagnosis: >
-      Model uses a 360-day calendar but analysis assumes Gregorian
-      (365.25 days). Or vice versa. The 5.25-day/year mismatch
-      accumulates over long simulations.
-    remedy: >
-      1. Check calendar type: ncdump -h output.nc | grep calendar
-      2. Use matching calendar in analysis: cftime.num2date(..., calendar="360_day")
-      3. Or set correct calendar at ESMF_Initialize: calkindflag=ESMF_CALKIND_GREGORIAN
-    prevention: >
-      Always specify calendar explicitly in ESMF_Initialize and verify
-      in output files.
-
   # --- Build Traps ---
-
-  - id: dt_017
-    domain: build
-    stage: s0_config
-    severity: fatal
-    symptom: >
-      ESMF build fails with "ESMF_COMPILER not set" or cannot find
-      compiler executable.
-    diagnosis: >
-      Required environment variables not set before running make.
-      ESMF_DIR, ESMF_COMPILER, and ESMF_COMM are mandatory.
-    remedy: >
-      1. Set all three required variables:
-         export ESMF_DIR=/path/to/esmf
-         export ESMF_COMPILER=gfortran
-         export ESMF_COMM=openmpi
-      2. Verify compiler is in PATH: which gfortran
-    prevention: >
-      Use run_esmf_application.py which validates environment first.
-
-  - id: dt_018
-    domain: build
-    stage: s0_config
-    severity: fatal
-    symptom: >
-      Build fails with linker errors: "cannot find -lnetcdff" or
-      "undefined reference to nf90_open".
-    diagnosis: >
-      NetCDF-Fortran library (libnetcdff) not installed or not in
-      library search path. ESMF_NETCDF is set to "split" but only
-      NetCDF-C is available.
-    remedy: >
-      1. Install NetCDF-Fortran: apt install libnetcdff-dev (Debian)
-         or conda install -c conda-forge netcdf-fortran
-      2. Set paths: export ESMF_NETCDF_LIBPATH=$(nf-config --flibs | ...)
-      3. Or disable NetCDF: unset ESMF_NETCDF (limits I/O capabilities)
-    prevention: >
-      Check nf-config exists before setting ESMF_NETCDF=split.
-
   # --- Coupling Traps ---
+# Field names normalised to the controlled vocabulary 2026-08-12
+# (see ki_vocabulary.py). Values unchanged; only keys were renamed.
 
-  - id: dt_019
-    domain: coupling
-    stage: s6_run
-    severity: silent
-    symptom: >
-      Coupled model runs but one component receives all zeros or all
-      fill values from another component. No error reported.
-    diagnosis: >
-      NUOPC field names don't match between export and import states.
-      NUOPC uses exact string matching on field standard_names. A typo
-      or underscore/hyphen difference causes silent field non-delivery.
-    remedy: >
-      1. Check NUOPC Field Dictionary for standard names.
-      2. Ensure export field name exactly matches import field name.
-      3. Enable NUOPC verbose logging to see field matching details.
-    prevention: >
-      Use NUOPC Field Dictionary standard names consistently.
+- id: dt_001
+  failure_domain: unit_conversion
+  stage: s1_domain
+  severity: silent
+  symptom: 'Regridded fields are wildly wrong (e.g., temperature 57x too high or spatial patterns completely
+    distorted) but no error is reported.
 
-  - id: dt_020
-    domain: coupling
-    stage: s7_postprocess
-    severity: silent
-    symptom: >
-      Extracted data at a specific lat/lon point is from the wrong
-      location. Values don't match observations at that site.
-    diagnosis: >
-      Longitude convention mismatch between query and data. Data uses
-      0-360° convention but query uses -180 to 180° (or vice versa).
-      A query for lon=-120 (Western US) in 0-360 data matches lon=240.
-    remedy: >
-      1. Check data longitude range: ncdump -v lon output.nc | tail
-      2. Convert query: if data is 0-360, use lon_query = lon + 360 if lon < 0
-      3. Or vice versa: lon_query = lon - 360 if lon > 180
-    prevention: >
-      parse_esmf_output.py auto-detects longitude convention and adjusts.
+    '
+  diagnosis: 'Grid coordinates are in RADIANS instead of DEGREES. ESMF spherical coordinate grids expect
+    degrees (0-360 or -180 to 180). Radians produce a 57.3x scaling error that propagates silently through
+    all spatial operations.
+
+    '
+  remedy: '1. Check coordinate ranges: lat should be [-90, 90], lon [-180, 360]. 2. If max(|lat|) < π
+    ≈ 3.14, coordinates are in radians. 3. Convert: lat_deg = lat_rad × (180/π), lon_deg = lon_rad × (180/π).
+    4. Rebuild grid file with degree coordinates.
+
+    '
+  prevention: 'convert_grid_to_esmf.py checks if max(|lat|) < 2π and warns.
+
+    '
+- id: dt_002
+  failure_domain: unit_conversion
+  stage: s1_domain
+  severity: silent
+  symptom: 'Conservative regridding does not conserve. Global integral of regridded flux field differs
+    from source by factor of ~3000x.
+
+    '
+  diagnosis: 'Grid cell areas are in DEGREES² instead of STERADIANS (radians²). ESMF conservative regridding
+    requires areas in steradians. The ratio (180/π)² ≈ 3283 explains the ~3000x error.
+
+    '
+  remedy: "1. Check grid_area variable units in grid file. 2. If units are \"degrees\" or \"degrees^2\"\
+    , convert:\n   area_sr = area_deg² × (π/180)²\n3. Update the grid_area variable and set units=\"steradians\"\
+    .\n"
+  prevention: 'convert_grid_to_esmf.py computes areas in steradians by default.
+
+    '
+- id: dt_003
+  failure_domain: unit_conversion
+  stage: s4_forcing
+  severity: silent
+  symptom: 'Precipitation values are ~86400x too high. Model produces extreme flooding or unrealistic
+    water balance. Mean precip reads as ~50 kg/m²/s instead of ~5.8e-4 kg/m²/s.
+
+    '
+  diagnosis: 'Precipitation was provided in mm/day but not converted to kg/m²/s. CF convention uses kg/m²/s
+    (= mm/s for liquid water). 50 mm/day ÷ 86400 = 5.8e-4 kg/m²/s.
+
+    '
+  remedy: '1. Divide precipitation by 86400 to convert mm/day → kg/m²/s. 2. Verify mean precip is ~1e-5
+    to 1e-3 kg/m²/s (0.9 to 86 mm/day).
+
+    '
+  prevention: 'convert_forcing_to_esmf.py applies mm_day_to_kg_m2_s conversion and checks physical bounds
+    post-conversion.
+
+    '
+- id: dt_004
+  failure_domain: unit_conversion
+  stage: s4_forcing
+  severity: silent
+  symptom: 'Relative humidity values > 1.0 in model input. Model may produce supersaturation artifacts
+    or ignore humidity entirely.
+
+    '
+  diagnosis: 'Humidity provided as PERCENTAGE (0-100) but CF convention and most ESMF models expect FRACTION
+    (0-1). A value of "65" means 65%, not 6500%.
+
+    '
+  remedy: '1. Divide humidity by 100 to convert percentage → fraction. 2. Verify range is [0.0, 1.0] after
+    conversion.
+
+    '
+  prevention: 'convert_forcing_to_esmf.py includes percent_to_fraction conversion.
+
+    '
+- id: dt_005
+  failure_domain: unit_conversion
+  stage: s4_forcing
+  severity: silent
+  symptom: 'Temperature in model is ~273 K too low (near absolute zero) or ~273 K too high (> 500 K).
+    Model crashes or produces nonsense.
+
+    '
+  diagnosis: 'Temperature mixing °C and K. Either °C was not converted to K (missing +273.15) or K was
+    converted again (double offset).
+
+    '
+  remedy: '1. Check source data units. If values are -40 to 50, they are °C. 2. Add 273.15 for °C → K
+    conversion (once only). 3. Verify range is 200-330 K after conversion.
+
+    '
+  prevention: 'convert_forcing_to_esmf.py checks post-conversion bounds.
+
+    '
+- id: dt_006
+  failure_domain: unit_conversion
+  stage: s4_forcing
+  severity: silent
+  symptom: 'Pressure values ~100x too low or too high. Surface energy balance fails. Specific humidity
+    calculations produce NaN.
+
+    '
+  diagnosis: 'Pressure in hPa (hectopascals) instead of Pa (pascals). Standard sea level: 1013.25 hPa
+    = 101325 Pa.
+
+    '
+  remedy: '1. Multiply by 100 to convert hPa → Pa. 2. Verify range is 30000-110000 Pa after conversion.
+
+    '
+  prevention: 'convert_forcing_to_esmf.py includes hPa_to_Pa conversion.
+
+    '
+- id: dt_007
+  failure_domain: grid_topology
+  stage: s1_domain
+  severity: silent
+  symptom: 'Regridded field has a visible seam or discontinuity at the 0°/360° longitude boundary on a
+    global grid.
+
+    '
+  diagnosis: 'Grid is not configured with periodic boundary in the longitude dimension. ESMF defaults
+    to non-periodic boundaries. For a global grid, the first and last longitude columns must be connected.
+
+    '
+  remedy: "1. When creating grid, specify periodic connection:\n   ESMF_GridCreateNoPeriDim → ESMF_GridCreate1PeriDim\n\
+    2. Or set connflagDim1=ESMF_GRIDCONN_PERIODIC in Grid creation.\n"
+  prevention: 'Check grid extent: if lon spans ~360°, enable periodic boundary.
+
+    '
+- id: dt_008
+  failure_domain: grid_topology
+  stage: s1_domain
+  severity: silent
+  symptom: 'Unstructured mesh regridding produces wrong results. Some elements map to wrong locations.
+    Visual inspection shows "scrambled" pattern.
+
+    '
+  diagnosis: 'Mesh element connectivity uses 0-BASED node indices (C/Python convention) instead of 1-BASED
+    (Fortran/ESMF convention). This shifts all element-node connections by one, producing wrong topology.
+
+    '
+  remedy: '1. Add 1 to all connectivity arrays: conn_1based = conn_0based + 1 2. Verify that max(connectivity)
+    == number_of_nodes (not N-1).
+
+    '
+  prevention: 'Check min(connectivity): if 0, it''s 0-based and needs +1.
+
+    '
+- id: dt_009
+  failure_domain: grid_topology
+  stage: s1_domain
+  severity: silent
+  symptom: 'Conservative regridding produces negative weights or total area is wrong. Field integrals
+    have wrong sign in some regions.
+
+    '
+  diagnosis: 'SCRIP grid corner coordinates are in CLOCKWISE order instead of COUNTER-CLOCKWISE. This
+    gives negative signed areas for those cells.
+
+    '
+  remedy: '1. Reverse corner order: corners = corners[:, ::-1] 2. Or regenerate grid file with CCW corner
+    ordering (SW, SE, NE, NW).
+
+    '
+  prevention: 'convert_grid_to_esmf.py writes corners in CCW order (SW, SE, NE, NW).
+
+    '
+- id: dt_010
+  failure_domain: mask_convention
+  stage: s1_domain
+  severity: silent
+  symptom: 'Regridded field is zero or fill-value everywhere over land (or ocean). The opposite region
+    has correct values.
+
+    '
+  diagnosis: 'Mask convention is INVERTED. ESMF uses 0 = masked (excluded), 1 = active (included). Many
+    other tools use the opposite convention (1 = masked, 0 = active).
+
+    '
+  remedy: '1. Invert mask: new_mask = 1 - old_mask (for binary masks). 2. Verify that mask=1 cells contain
+    data, mask=0 cells are excluded.
+
+    '
+  prevention: 'Check mask against known geography (land/ocean) before regridding.
+
+    '
+- id: dt_011
+  failure_domain: runtime
+  stage: s6_run
+  severity: fatal
+  symptom: 'Application crashes at startup with "DELayout: PET count does not match" or similar decomposition
+    error.
+
+    '
+  diagnosis: 'The number of MPI processes (-np) does not match the DELayout decomposition specified in
+    the application. For a regDecomp=[4,2] layout, exactly 8 PETs (processes) are required.
+
+    '
+  remedy: '1. Count required PETs: product of regDecomp array. 2. Run with matching -np: mpirun -np 8
+    ./app (for regDecomp=[4,2]). 3. Or change regDecomp to match available processes.
+
+    '
+  prevention: 'run_esmf_application.py checks np vs regDecomp before launching.
+
+    '
+- id: dt_012
+  failure_domain: runtime
+  stage: s6_run
+  severity: fatal
+  symptom: 'Segmentation fault at MPI_Init or double-free error immediately on startup.
+
+    '
+  diagnosis: 'ESMF was built with ESMF_COMM=mpiuni (serial mode) but the application is launched with
+    mpirun/mpiexec. This causes double MPI initialization → segfault.
+
+    '
+  remedy: '1. If using MPI, rebuild ESMF with ESMF_COMM=openmpi (or matching). 2. If serial-only, run
+    without mpirun: ./my_application
+
+    '
+  prevention: 'run_esmf_application.py checks ESMF_COMM vs launcher.
+
+    '
+- id: dt_013
+  failure_domain: runtime
+  stage: s6_run
+  severity: fatal
+  symptom: 'Segmentation fault during regridding or field halo exchange. Occurs intermittently, sometimes
+    only at high process counts.
+
+    '
+  diagnosis: 'Field halo width is too narrow for the regridding stencil. Bilinear needs halo ≥ 1, patch
+    needs halo ≥ 2. Insufficient halo means the stencil reads uninitialized memory beyond the allocated
+    array.
+
+    '
+  remedy: '1. Increase halo width in Field or DistGrid creation. 2. Bilinear: haloWidth ≥ 1. Patch: haloWidth
+    ≥ 2. 3. Rebuild fields and re-run.
+
+    '
+  prevention: 'Match halo width to regridding method stencil requirements.
+
+    '
+- id: dt_014
+  failure_domain: io_format
+  stage: s4_forcing
+  severity: fatal
+  symptom: 'ESMF_Clock fails to parse time axis. Error message mentions time units or calendar.
+
+    '
+  diagnosis: 'Time axis uses integer indices or non-CF-convention units instead of "units since epoch"
+    format. ESMF requires CF-convention time like "hours since 2000-01-01 00:00:00".
+
+    '
+  remedy: '1. Rewrite time variable with proper CF units attribute. 2. Example: time:units = "days since
+    2000-01-01 00:00:00" 3. Include calendar attribute: time:calendar = "standard"
+
+    '
+  prevention: 'convert_forcing_to_esmf.py always writes CF-convention time axis.
+
+    '
+- id: dt_015
+  failure_domain: io_format
+  stage: s7_postprocess
+  severity: silent
+  symptom: 'Extracted values contain -9999, 1e20, or other fill values mixed with real data. Statistics
+    (mean, max) are corrupted.
+
+    '
+  diagnosis: 'NetCDF fill values not properly handled during extraction. The _FillValue attribute was
+    not used to mask invalid data, so fill values are treated as real numbers.
+
+    '
+  remedy: '1. Use masked arrays: data = var[:] (netCDF4 returns masked arrays). 2. Or explicitly filter:
+    data[data == var._FillValue] = np.nan. 3. Always use np.nanmean/nanmax instead of mean/max.
+
+    '
+  prevention: 'parse_esmf_output.py uses .filled(np.nan) to handle masked data.
+
+    '
+- id: dt_016
+  failure_domain: time_management
+  stage: s6_run
+  severity: silent
+  symptom: 'Model results drift by ~1.4% per year relative to observations. Seasonal cycle shifts gradually.
+    After 30 years, seasons are offset by ~5 months.
+
+    '
+  diagnosis: 'Model uses a 360-day calendar but analysis assumes Gregorian (365.25 days). Or vice versa.
+    The 5.25-day/year mismatch accumulates over long simulations.
+
+    '
+  remedy: '1. Check calendar type: ncdump -h output.nc | grep calendar 2. Use matching calendar in analysis:
+    cftime.num2date(..., calendar="360_day") 3. Or set correct calendar at ESMF_Initialize: calkindflag=ESMF_CALKIND_GREGORIAN
+
+    '
+  prevention: 'Always specify calendar explicitly in ESMF_Initialize and verify in output files.
+
+    '
+- id: dt_017
+  failure_domain: build
+  stage: s0_config
+  severity: fatal
+  symptom: 'ESMF build fails with "ESMF_COMPILER not set" or cannot find compiler executable.
+
+    '
+  diagnosis: 'Required environment variables not set before running make. ESMF_DIR, ESMF_COMPILER, and
+    ESMF_COMM are mandatory.
+
+    '
+  remedy: "1. Set all three required variables:\n   export ESMF_DIR=/path/to/esmf\n   export ESMF_COMPILER=gfortran\n\
+    \   export ESMF_COMM=openmpi\n2. Verify compiler is in PATH: which gfortran\n"
+  prevention: 'Use run_esmf_application.py which validates environment first.
+
+    '
+- id: dt_018
+  failure_domain: build
+  stage: s0_config
+  severity: fatal
+  symptom: 'Build fails with linker errors: "cannot find -lnetcdff" or "undefined reference to nf90_open".
+
+    '
+  diagnosis: 'NetCDF-Fortran library (libnetcdff) not installed or not in library search path. ESMF_NETCDF
+    is set to "split" but only NetCDF-C is available.
+
+    '
+  remedy: "1. Install NetCDF-Fortran: apt install libnetcdff-dev (Debian)\n   or conda install -c conda-forge\
+    \ netcdf-fortran\n2. Set paths: export ESMF_NETCDF_LIBPATH=$(nf-config --flibs | ...) 3. Or disable\
+    \ NetCDF: unset ESMF_NETCDF (limits I/O capabilities)\n"
+  prevention: 'Check nf-config exists before setting ESMF_NETCDF=split.
+
+    '
+- id: dt_019
+  failure_domain: coupling
+  stage: s6_run
+  severity: silent
+  symptom: 'Coupled model runs but one component receives all zeros or all fill values from another component.
+    No error reported.
+
+    '
+  diagnosis: 'NUOPC field names don''t match between export and import states. NUOPC uses exact string
+    matching on field standard_names. A typo or underscore/hyphen difference causes silent field non-delivery.
+
+    '
+  remedy: '1. Check NUOPC Field Dictionary for standard names. 2. Ensure export field name exactly matches
+    import field name. 3. Enable NUOPC verbose logging to see field matching details.
+
+    '
+  prevention: 'Use NUOPC Field Dictionary standard names consistently.
+
+    '
+- id: dt_020
+  failure_domain: coupling
+  stage: s7_postprocess
+  severity: silent
+  symptom: 'Extracted data at a specific lat/lon point is from the wrong location. Values don''t match
+    observations at that site.
+
+    '
+  diagnosis: 'Longitude convention mismatch between query and data. Data uses 0-360° convention but query
+    uses -180 to 180° (or vice versa). A query for lon=-120 (Western US) in 0-360 data matches lon=240.
+
+    '
+  remedy: '1. Check data longitude range: ncdump -v lon output.nc | tail 2. Convert query: if data is
+    0-360, use lon_query = lon + 360 if lon < 0 3. Or vice versa: lon_query = lon - 360 if lon > 180
+
+    '
+  prevention: 'parse_esmf_output.py auto-detects longitude convention and adjusts.
+
+    '

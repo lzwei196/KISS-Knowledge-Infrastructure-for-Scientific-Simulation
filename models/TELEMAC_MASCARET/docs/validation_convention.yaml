@@ -1,0 +1,330 @@
+schema_version: 1
+model_id: TELEMAC-MASCARET
+domain: hydrology
+generated_by: "Step-B fleet agent (GPT-5 Codex) - validation-convention pass"
+generated_at: 2026-08-14
+
+# Literature-grounded validation conventions for TELEMAC-MASCARET DAG outputs.
+# Blocks are keyed by the model's own dag_variable names. Numeric bands cite
+# fetched full texts; unresolved conventions use null bands and low confidence.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  williams2017:
+    doi: 10.1155/2017/5251902
+    title: "Guidance on Setup, Calibration, and Validation of Hydrodynamic, Wave, and Sediment Models for Shelf Seas and Estuaries"
+    venue: "Advances in Civil Engineering"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1155_2017_5251902.txt
+  lim2019:
+    doi: 10.1155/2019/9816098
+    title: "Are Feature Agreement Statistics Alone Sufficient to Validate Modelled Flood Extent Quality?"
+    venue: "Mathematical Problems in Engineering"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1155_2019_9816098.txt
+  iglesias2019:
+    doi: 10.3390/w11051040
+    title: "Modelling the Main Hydrodynamic Patterns in Shallow Water Estuaries: The Minho Case Study"
+    venue: "Water"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w11051040.txt
+  guo2020:
+    doi: 10.3390/w12051225
+    title: "Studying the Wake of an Island in a Macro-Tidal Estuary"
+    venue: "Water"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w12051225.txt
+  qiao2018:
+    doi: 10.5194/os-14-437-2018
+    title: "Numerical study of hydrodynamic and salinity transport processes in the Pink Beach wetlands of the Golden Horn Estuary"
+    venue: "Ocean Science"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_os-14-437-2018.txt
+  alzate2024:
+    doi: 10.2166/wcc.2023.567
+    title: "Analysis of different hypotheses for modeling air-water exchange and temperature evolution in a tropical reservoir"
+    venue: "Journal of Water and Climate Change"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_wcc.2023.567.txt
+
+validation:
+  - dag_variable: H
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.10, good: 0.20, satisfactory: 0.30}
+        pass_band: satisfactory
+        band_note: "Transferred from estuarine water-level/depth guidance: Williams 2017 recommends water levels within +/-0.10 m at an estuary mouth and +/-0.30 m at the head."
+        cites: [williams2017]
+      - metric: bias
+        direction: zero_centered
+        unit: m
+        bands: {very_good: 0.10, good: null, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Williams 2017 Table 7 gives estuarine water-level bias <0.20 m as a minimum calibration standard."
+        cites: [williams2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG metric is NSE, but fetched coastal and estuarine hydrodynamic guidance judges water level/depth against RMSE, bias, phase, and scatter index rather than NSE."
+        cites: [williams2017, iglesias2019]
+    validated_when: "Water-depth/stage RMSE <= 0.30 m and |bias| <= 0.20 m after datum alignment."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Williams 2017: minimum estuary water-level performance is "within +/-0.10 m at the mouth,
+      +/-0.30 m at the head"; Table 7 lists water-level estuary bias <0.20 m. Iglesias 2019 reports
+      TELEMAC-MASCARET water-level validation with "small RMSE" and "close to null bias", supporting
+      these metric choices. This supersedes the DAG determining_metric nse for point water depth.
+
+  - dag_variable: H
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched flood-extent literature defines CSI/F-statistics and reports benchmark scores, but no fetched paper provides a universal pass threshold for depth-grid or flood-extent snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: pod
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Lim 2019 recommends interpreting flood spatial predictions with POD, FAR, BIAS, and distance disparities because feature agreement alone can hide local errors."
+        cites: [lim2019]
+      - metric: far
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Lim 2019 treats false-alarm behaviour as necessary supporting context for flood-extent validation, not a standalone pass gate."
+        cites: [lim2019]
+    validated_when: "UNRESOLVED - report CSI/F1 with POD and FAR, but do not auto-validate spatial snapshots until a fetched paper supplies a numeric pass threshold for the target map type."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Lim 2019 states F1 is based on the original CSI equation and ranges from 0 (no fit) to 1
+      (perfect model fit), but also warns that poor-resolution DEMs can produce high scores around
+      F > 0.80 while failing locally. Therefore no numeric CSI gate is asserted here.
+
+  - dag_variable: S
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.10, good: null, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Williams 2017 Table 7 lists RMSE <0.20 m for estuarine water level and the text recommends +/-0.10 m at the mouth to +/-0.30 m at the head."
+        cites: [williams2017]
+      - metric: bias
+        direction: zero_centered
+        unit: m
+        bands: {very_good: 0.10, good: null, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Williams 2017 Table 7 gives water-level bias <0.20 m for estuarine calibration standards."
+        cites: [williams2017]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Williams 2017 Table 7 gives R >0.95 for estuarine water level; Iglesias 2019 co-reports near-unit correlation and skill for TELEMAC-MASCARET water levels."
+        cites: [williams2017, iglesias2019]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Tidal free-surface validation convention in the fetched sources uses RMSE, bias, phase, scatter index, correlation, and skill rather than NSE."
+        cites: [williams2017, iglesias2019]
+    validated_when: "Free-surface elevation RMSE <= 0.20 m and |bias| <= 0.20 m, with matching vertical datum and tidal phase checked."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Williams 2017 recommends examining amplitude, phase, RMSE, bias, and scatter index for water
+      level. Iglesias 2019 validates openTELEMAC-MASCARET with "small root mean square errors,
+      close to null bias and close to unit correlation and skill coefficients."
+
+  - dag_variable: U
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.05, good: 0.10, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Williams 2017 reports current-speed errors <0.05 m/s very good, <0.1 m/s good, <0.2 m/s moderate; satisfactory here uses the <0.2 m/s minimum fit level."
+        cites: [williams2017]
+      - metric: bias
+        direction: zero_centered
+        unit: m/s
+        bands: {very_good: 0.10, good: null, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Williams 2017 recommends bias <0.2 together with SI <0.5 and RMSE <0.2 for a statistically significant current-speed fit."
+        cites: [williams2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched current-validation guidance uses component/speed RMSE, bias, SI, and vector RMAE; NSE is not the hydrodynamic convention for velocity components."
+        cites: [williams2017, guo2020]
+    validated_when: "X-component velocity RMSE <= 0.20 m/s and |bias| <= 0.20 m/s after axis/orientation alignment."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Williams 2017 says predicted current speeds should be within +/-0.20 m/s or 10-20% of measured
+      speed and lists <0.2 m/s as a significant-fit RMSE target. Guo 2020 validates TELEMAC-2D
+      currents with RMSE/R2 and RMAE categories, supporting non-NSE velocity skill assessment.
+
+  - dag_variable: V
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.05, good: 0.10, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Williams 2017 reports current-speed errors <0.05 m/s very good, <0.1 m/s good, <0.2 m/s moderate; satisfactory here uses the <0.2 m/s minimum fit level."
+        cites: [williams2017]
+      - metric: bias
+        direction: zero_centered
+        unit: m/s
+        bands: {very_good: 0.10, good: null, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Williams 2017 recommends bias <0.2 together with SI <0.5 and RMSE <0.2 for a statistically significant current-speed fit."
+        cites: [williams2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched current-validation guidance uses component/speed RMSE, bias, SI, and vector RMAE; NSE is not the hydrodynamic convention for velocity components."
+        cites: [williams2017, guo2020]
+    validated_when: "Y-component velocity RMSE <= 0.20 m/s and |bias| <= 0.20 m/s after axis/orientation alignment."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Same convention as U. Williams 2017 provides the current-speed tolerance and statistical fit
+      rule; Guo 2020 reports TELEMAC-2D velocity validation against ADCP data using scalar and
+      vector metrics rather than NSE.
+
+  - dag_variable: M
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.05, good: 0.10, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Williams 2017 current-speed convention: <0.05 m/s very good, <0.1 m/s good, <0.2 m/s moderate/minimum acceptable fit."
+        cites: [williams2017]
+      - metric: rmae
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.20, good: 0.40, satisfactory: 0.70}
+        pass_band: good
+        band_note: "Guo 2020 cites RMAE qualification ranges: Excellent <0.2, Good 0.2-0.4, Reasonable 0.4-0.7; good is used as the pass band for scalar/vector current speed magnitude."
+        cites: [guo2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For current speed, fetched TELEMAC and estuarine validation papers use RMSE, RMAE, bias, R2/correlation, and SI rather than NSE."
+        cites: [williams2017, guo2020, iglesias2019]
+    validated_when: "Current-speed RMSE <= 0.20 m/s and RMAE <= 0.40 when ADCP/current-meter observations have been depth-averaged consistently."
+    evidence_strength: strong
+    confidence: 0.80
+    notes: >-
+      Williams 2017 recommends current speeds be within +/-0.20 m/s or 10-20% of observed speed.
+      Guo 2020: RMAE of zero is perfect and preliminary categories are Excellent <0.2, Good 0.2-0.4,
+      Reasonable 0.4-0.7. Iglesias 2019 reports TELEMAC-MASCARET current validation with small
+      RMSE, near-null bias, and near-unit skill.
+
+  - dag_variable: T
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No universal numeric NSE threshold was found for the generic TELEMAC passive tracer T because the same output may represent salinity, water temperature, SPM, or another scalar."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: null
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Tracer-specific RMSE units and thresholds must be selected after the activated tracer is known; no generic g/L-or-degC band is cited."
+        cites: []
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Fetched tracer studies use tracer-specific validation: Williams 2017 lists temperature +/-0.5 degC and mean SPM +/-20%, while Qiao 2018 validates salinity qualitatively as reasonably matching measured data."
+        cites: [williams2017, qiao2018, alzate2024]
+    validated_when: "UNRESOLVED for generic T - choose a tracer-specific convention before auto-validation; do not use the null NSE/RMSE bands to loosen a gate."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      Alzate 2024 compares TELEMAC/WAQTEL temperature with field profiles using MAE, NSE, RMSE,
+      and relative error, but gives scenario-specific errors rather than a reusable pass threshold. Qiao
+      2018 says salinity was predicted "reasonably well" but provides no numeric pass band. Williams
+      2017 has tracer-specific values for temperature and SPM, not a generic passive-scalar gate.
+
+  - dag_variable: section_discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow criteria: very good NSE >0.80, good 0.70<NSE<=0.80, satisfactory 0.50<NSE<=0.70."
+        cites: [moriasi2007, moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow criteria: PBIAS <+/-5 very good, +/-5 to +/-10 good, +/-10 to +/-15 satisfactory."
+        cites: [moriasi2007, moriasi2015]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 recommends reporting RSR alongside NSE and PBIAS; Moriasi 2015 recommends RSR be reported with RMSE but leaves PEC to Moriasi 2007."
+        cites: [moriasi2007, moriasi2015]
+    validated_when: "Section discharge is validated when NSE >= 0.50 and |PBIAS| <= 15% for the matched cross-section time series."
+    evidence_strength: strong
+    confidence: 0.90
+    notes: >-
+      This is the standard hydrologic flow convention. Moriasi 2007 says streamflow can be judged
+      satisfactory if NSE >0.50, RSR <0.70, and PBIAS within +/-25%; Moriasi 2015 updates flow PBIAS
+      to +/-15% and keeps NSE >0.50 for daily, monthly, or annual watershed-scale flow.
+
+deferred_paywalled:
+  - ref: "A first collective validation of global fluvial flood models for major floods in Nigeria and Mozambique"
+    doi: 10.1088/1748-9326/aae014
+    needed_for: [H]
+  - ref: "Satellite Video Remote Sensing for Flood Model Validation"
+    doi: 10.1029/2023wr034545
+    needed_for: [H]

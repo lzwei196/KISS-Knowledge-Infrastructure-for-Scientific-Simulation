@@ -413,7 +413,7 @@ outputs:
   - var: "cumdiff"
     validation_rank: 3
     unit: "m"
-    description: "Cumulative total erosion (negative) and deposition (positive) per node."
+    description: "Cumulative total landscape-surface erosion (negative) and deposition (positive) thickness at each TIN node."
     emitted_in: "h5/tin.time*.hdf5"
     observability:
       comparable_obs_shapes:
@@ -647,3 +647,9 @@ safety:
       scope: "reproducibility"
       source: "badlands/model.py seed initialization"
       status: tentative
+
+medium_evidence:
+  - var: "cumdiff"
+    source: "dag.yaml"
+    quote: "Surface mass-balance closure on the TIN: dz/dt = tectonics + hillslope diffusion + fluvial incision + marine/wave/carbonate deposition + flexure. Spatial discretization is a Triangulated Irregular Network (Delaunay) built from a regular DEM; drainage routing is single-flow-direction (steepest descent) with Braun & Willett O(n) stack ordering. Time integration is adaptive (mindt/maxdt) bounded by a CFL-like stability limit dt <= dx^2/(2*kappa). Coordinates are a projected Cartesian CRS in metres, not geographic lat/lon. No surface energy balance is computed."
+    note: "The model closure declares cumdiff as landscape-surface mass balance on the TIN."

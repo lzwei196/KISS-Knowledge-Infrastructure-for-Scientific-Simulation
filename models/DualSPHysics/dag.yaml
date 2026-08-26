@@ -126,7 +126,7 @@ outputs:
   - var: "pressure"
     validation_rank: 2
     unit: "Pa"
-    description: "Per-particle pressure from the Tait equation of state; total pressure (hydrostatic + dynamic) unless the rho*g*z component is removed."
+    description: "Per-water-particle pressure from the Tait equation of state; total pressure (hydrostatic + dynamic) unless the rho*g*z component is removed."
     emitted_in: "Part_XXXX.bi4 (press field, exported via PartVTK/MeasureTool)"
     observability:
       comparable_obs_shapes:
@@ -160,7 +160,7 @@ outputs:
   - var: "force_on_structure"
     validation_rank: 3
     unit: "N"
-    description: "Integrated fluid force on a given MK boundary structure (via ComputeForces)."
+    description: "Integrated wave-water force on a given MK boundary structure (via ComputeForces)."
     emitted_in: "CSV (via ComputeForces)"
     observability:
       comparable_obs_shapes:
@@ -180,7 +180,7 @@ outputs:
   - var: "velocity"
     validation_rank: 4
     unit: "m/s"
-    description: "Per-particle velocity (and magnitude) interpolated to gauges via MeasureTool."
+    description: "Per-water-particle velocity (and magnitude) interpolated to gauges via MeasureTool."
     emitted_in: "Part_XXXX.bi4 (vel field)"
     observability:
       comparable_obs_shapes:
@@ -367,3 +367,17 @@ safety:
       scope: "Spatial representation"
       source: "DualSPHysics features/running wiki and GenCase preprocessor behavior"
       status: "adopted"
+
+medium_evidence:
+  - var: "pressure"
+    source: "docs/s5_output_analysis.md"
+    quote: "Pressure values are physically reasonable (0 - few kPa for water)"
+    note: "Stage 5 verifies pressure as a water-scale output."
+  - var: "force_on_structure"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.coastaleng.2014.11.001.txt"
+    quote: "Wave-generated forces on structures are complex functions of the wave conditions and the geometry of the structure."
+    note: "Validation literature frames structural force as wave-generated loading."
+  - var: "velocity"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.coastaleng.2023.104362.txt"
+    quote: "The numerical results comprise wave heights, phase average velocities, time-averaged velocities, vorticity dynamics, and radiation stress, and are validated versus detailed water surface and velocity measurements carried out in a large-scale laboratory wave flume."
+    note: "Validation literature frames velocity as water-surface wave-flume output."

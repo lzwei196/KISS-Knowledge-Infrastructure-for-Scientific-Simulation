@@ -1,0 +1,281 @@
+schema_version: 1
+model_id: Raven
+domain: hydrology
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  gripgl2022:
+    doi: 10.5194/hess-26-3537-2022
+    title: "The Great Lakes Runoff Intercomparison Project Phase 4: the Great Lakes (GRIP-GL)"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-26-3537-2022.txt
+  odusanya2019:
+    doi: 10.5194/hess-23-1113-2019
+    title: "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration in a data-sparse catchment in southwestern Nigeria"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-1113-2019.txt
+  smap2017:
+    doi: 10.1016/j.rse.2017.01.021
+    title: "Validation of SMAP surface soil moisture products with core validation sites"
+    venue: "Remote Sensing of Environment"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.rse.2017.01.021.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling & Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+
+validation:
+  - dag_variable: "discharge (STREAMFLOW)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 table 9 rates watershed-scale flow NSE above 0.50 as satisfactory; Moriasi 2007 gives the same satisfactory NSE threshold."
+        cites: [moriasi2015, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5, good: 10, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 table 9 rates watershed-scale flow PBIAS within +/-15% as satisfactory."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [gripgl2022]
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [moriasi2007, moriasi2015]
+    validated_when: "Streamflow is validated when NSE >= 0.50 and |PBIAS| <= 15% against gauged discharge after the spinup period and excluding missing-observation diagnostic values."
+    evidence_strength: strong
+    confidence: 0.9
+    notes: >-
+      The DAG determining metric nse is retained as a headline metric. Moriasi 2015 recommends NSE, RMSE/RSR, PBIAS, R2, d, and graphical checks for hydrologic model evaluation, and its abstract states flow is satisfactory when NSE > 0.50 and PBIAS <= +/-15%. GRIP-GL additionally evaluates daily streamflow with KGE in a Raven-based Great Lakes intercomparison.
+
+  - dag_variable: "Soil water storage (SOIL[i])"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: ubrmse
+        direction: minimize
+        unit: m3/m3
+        bands: {very_good: null, good: 0.04, satisfactory: 0.06}
+        pass_band: good
+        band_note: "SMAP validation reports a radiometer ubRMSE target of 0.04 m3/m3 and a radar-product target of 0.06 m3/m3."
+        cites: [smap2017]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.90, good: 0.80, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "GRIP-GL uses Pearson correlation for standardized surface soil moisture and sets medium performance at r >= 0.70."
+        cites: [gripgl2022]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [gripgl2022]
+    validated_when: "Soil storage is validated only after conversion/scaling to comparable soil moisture: ubRMSE <= 0.04 m3/m3 where absolute volumetric observations are used, and r >= 0.70 for anomaly or standardized dynamics."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The DAG determining metric nse is superseded for this output because Raven SOIL[i] is a conceptual water-storage state in mm. GRIP-GL standardizes surface soil moisture and states that mean and variance then become noninformative, leaving Pearson r as the useful metric. The SMAP target applies to volumetric surface soil moisture, not raw Raven layer storage, so the unit conversion/scaling must be documented before applying this block.
+
+  - dag_variable: "Soil water storage (SOIL[i])"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.90, good: 0.80, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "GRIP-GL table 2 defines KGEr component tiers: medium 0.70, good 0.80, excellent 0.90."
+        cites: [gripgl2022]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [bennett2013]
+    validated_when: "Spatial soil-water dynamics are validated when the Pearson correlation of regridded or basin-aggregated standardized soil moisture time series is >= 0.70."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The DAG spatial metric csi is superseded here because fetched Raven/Great Lakes practice compares gridded surface soil moisture as time series and uses Pearson r, while Bennett 2013 only defines categorical CSI and does not provide a numeric pass band.
+
+  - dag_variable: "Snow water equivalent (SNOW / TOTAL_SWE)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: kge
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.83, good: 0.65, satisfactory: 0.48}
+        pass_band: satisfactory
+        band_note: "GRIP-GL table 2 defines KGE medium, good, and excellent thresholds as 0.48, 0.65, and 0.83."
+        cites: [gripgl2022]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [moriasi2015]
+    validated_when: "SWE time series are validated when KGE >= 0.48 against observed or gridded-reference SWE over periods with meaningful snowpack."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      The DAG determining metric nse is superseded by GRIP-GL for Raven-family Great Lakes benchmarking: AET and SWE are evaluated with KGE, and only daily SWE values larger than 1 mm are included. Moriasi NSE remains useful as a hydrologic support metric but is not the headline SWE convention in the fetched Raven benchmark.
+
+  - dag_variable: "Snow water equivalent (SNOW / TOTAL_SWE)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provided a numeric CSI pass threshold for spatial SWE or snow-cover snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [gripgl2022]
+    validated_when: "UNRESOLVED: compare hit/miss/false-alarm snow maps with CSI, but do not auto-validate without a fetched numeric CSI threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Bennett 2013 defines CSI as the hit fraction penalizing misses and false alarms, but gives no numeric satisfactory band. A capped OpenAlex check found a snow-cover spatial verification paper, but its DOI failed to fetch, so the CSI gate remains null.
+
+  - dag_variable: "Actual evapotranspiration (AET)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Odusanya 2019 treated monthly AET NSE > 0.50 in most subbasins as satisfactory."
+        cites: [odusanya2019]
+      - metric: kge
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.83, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Odusanya 2019 uses KGE > 0.50 for satisfactory AET; GRIP-GL table 2 gives derived KGE tiers for AET and SWE."
+        cites: [odusanya2019, gripgl2022]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5, good: 15, satisfactory: 25}
+        pass_band: good
+        band_note: "Odusanya 2019 cites Moriasi/Kouchi monthly AET guidance and reports PBIAS <= +/-25 as satisfactory; the stricter pass here uses <= 15%."
+        cites: [odusanya2019, moriasi2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [odusanya2019]
+    validated_when: "AET is validated when NSE >= 0.50, KGE >= 0.50, and |PBIAS| <= 15% against flux-tower, water-balance, or satellite AET time series at the model aggregation scale."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      The DAG determining metric nse is retained. Odusanya 2019 used NSE, KGE, R2, and PBIAS for monthly AET calibration/validation and reported satisfactory AET when NSE > 0.50, KGE > 0.50, R2 > 0.6, and PBIAS < +/-15% in more than half of the subbasins. GRIP-GL independently uses KGE for AET in basin-wise and grid-cell-wise comparisons.
+
+  - dag_variable: "Actual evapotranspiration (AET)"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: kge
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.83, good: 0.65, satisfactory: 0.48}
+        pass_band: satisfactory
+        band_note: "GRIP-GL table 2 defines KGE medium/good/excellent tiers and applies KGE to gridded AET comparisons."
+        cites: [gripgl2022]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [bennett2013]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [odusanya2019]
+    validated_when: "Spatial AET time series are validated when regridded or basin-wise KGE >= 0.48; use PBIAS and maps as diagnostics."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      The DAG csi metric is superseded because fetched AET studies compare continuous gridded or basin-aggregated time series, not categorical snapshots. GRIP-GL uses KGE for grid-cell-wise AET; Odusanya 2019 corroborates spatial subbasin AET validation with NSE, KGE, R2, and PBIAS.
+
+  - dag_variable: "Performance diagnostics (NSE, KGE, PBIAS, RMSE)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Use the same watershed-scale flow NSE thresholds as the STREAMFLOW hydrograph being diagnosed."
+        cites: [moriasi2015, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5, good: 10, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Use the same watershed-scale flow PBIAS threshold as the STREAMFLOW hydrograph being diagnosed."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [gripgl2022]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [moriasi2007, moriasi2015]
+    validated_when: "Raven performance diagnostics are validated only as discharge-skill summaries: the underlying observed STREAMFLOW must exist, diagnostics must not be -9999, and NSE/PBIAS must satisfy the streamflow convention."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      These diagnostics are not independent observations; they are built-in objective-function summaries against observed discharge. Moriasi 2015 recommends multiple statistical and graphical measures, so use this block to interpret valid diagnostics, not as a separate physical quantity.
+
+deferred_paywalled:
+  - ref: "Objective quantitative spatial verification of distributed snow cover simulation"
+    doi: 10.1623/hysj.53.1.179
+    needed_for: ["Snow water equivalent (SNOW / TOTAL_SWE) spatial_snapshot CSI threshold"]

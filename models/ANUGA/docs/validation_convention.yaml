@@ -1,0 +1,359 @@
+schema_version: 1
+model_id: ANUGA
+domain: hydrology
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+# Literature-grounded validation convention for ANUGA outputs named in dag.yaml.
+# Blocks are keyed by the model's own dag_variable names. Numeric bands are cited
+# only where a fetched paper gives either a domain threshold or an observed
+# benchmark skill/value. Null bands mark outputs where no fetched numeric
+# validation threshold was found.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  roth2016:
+    doi: 10.5194/hess-20-921-2016
+    title: "Comparing CFSR and conventional weather data for discharge and soil loss modelling with SWAT in small catchments in the Ethiopian Highlands"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-921-2016.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling and Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+  mungkasi2013:
+    doi: 10.1088/1742-6596/423/1/012029
+    title: "Validation of ANUGA hydraulic model using exact solutions to shallow water wave problems"
+    venue: "Journal of Physics: Conference Series"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1088_1742-6596_423_1_012029.txt
+  davies2015:
+    doi: 10.36334/modsim.2015.l5.davies
+    title: "Open source flood simulation with a 2D discontinuous-elevation hydrodynamic model"
+    venue: "MODSIM 2015"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.36334_modsim.2015.l5.davies.txt
+  nandasena2015:
+    doi: 10.3389/feart.2015.00032
+    title: "An evaluation of onshore digital elevation models for modeling tsunami inundation zones"
+    venue: "Frontiers in Earth Science"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_feart.2015.00032.txt
+  neal2016:
+    doi: 10.5194/hess-20-4983-2016
+    title: "Calibration of channel depth and friction parameters in the LISFLOOD-FP hydraulic model using medium-resolution SAR data and identifiability techniques"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-4983-2016.txt
+  hoch2019:
+    doi: 10.5194/nhess-19-1723-2019
+    title: "Evaluating the impact of model complexity on flood wave propagation and inundation extent"
+    venue: "Natural Hazards and Earth System Sciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_nhess-19-1723-2019.txt
+  schumann2014:
+    doi: 10.1002/hyp.10019
+    title: "ROC-based calibration of flood inundation models"
+    venue: "Hydrological Processes"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_hyp.10019.txt
+  imani2020:
+    doi: 10.3390/w12010229
+    title: "Uncertainty Analysis of Spatiotemporal Models with Point Estimate Methods (PEMs)-The Case of the ANUGA Hydrodynamic Model"
+    venue: "Water"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w12010229.txt
+  pakoksung2023:
+    doi: 10.2478/johh-2023-0005
+    title: "Comparative analysis of numerical solutions of 2D unsteady dam-break waves using shallow-water schemes"
+    venue: "Journal of Hydrology and Hydromechanics"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2478_johh-2023-0005.txt
+
+validation:
+  - dag_variable: stage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred from hydrologic time-series evaluation; Moriasi 2007 states satisfactory model performance if NSE > 0.50."
+        cites: [moriasi2007, roth2016]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "For water-level or depth hydrographs, fetched ANUGA studies report RMSE/NSE/IoA or qualitative visual fit but do not provide a universal meter-scale RMSE threshold."
+        cites: [imani2020, bennett2013]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Stage comparisons require a common vertical datum; percent bias can be misleading for datum-offset water-surface elevations."
+        cites: [davies2015]
+    validated_when: "NSE >= 0.50 for a same-datum stage time series; RMSE and bias should be reported but have no fetched universal meter-scale band."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Moriasi 2007 table gives very good/good/satisfactory NSE tiers of >0.75, >0.65, and >0.50; Roth 2016 reproduces the same table. Davies 2015 defines stage as water-surface elevation w = h + z, so datum consistency is essential."
+
+  - dag_variable: stage
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric percent-bias threshold for single peak-stage marks; compare same-datum elevation error directly."
+        cites: []
+    secondary_metrics:
+      - metric: absolute_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Peak-stage marks should be evaluated in meters against the same vertical datum; the fetched ANUGA and flood papers do not give a transferable numeric pass band."
+        cites: [davies2015, imani2020]
+    validated_when: "UNRESOLVED - no cited numeric single-snapshot stage threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The dag determining metric is retained, but the fetched literature supports datum-aware absolute stage comparison rather than a general PBIAS gate."
+
+  - dag_variable: depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred from hydrologic time-series evaluation; no fetched depth-specific NSE tier was found."
+        cites: [moriasi2007, roth2016]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "ANUGA uncertainty work evaluates water-depth time series with NSE, RMSE, and IoA but does not establish a numeric RMSE pass threshold."
+        cites: [imani2020]
+    validated_when: "NSE >= 0.50 for a water-depth hydrograph, with RMSE reported in meters."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "Imani 2020 says the comparison used NSE, RMSE, and Index of Agreement on water-depth time series. The numeric NSE band is a transferred hydrologic convention, not a depth-specific ANUGA threshold."
+
+  - dag_variable: depth
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.74, good: null, satisfactory: 0.46}
+        pass_band: satisfactory
+        band_note: "For depth fields judged by wet/dry thresholding, CSI 0.46 is the best 2-D floodplain benchmark in Hoch 2019; Wood 2016 reports 0.74-0.75 against aerial flood extent."
+        cites: [hoch2019, neal2016]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Continuous depth-field RMSE is useful, but the fetched papers do not provide a universal meter-scale pass band."
+        cites: [imani2020, pakoksung2023]
+    validated_when: "CSI >= 0.46 for thresholded wet/dry agreement, with depth RMSE/MAE reported separately where observations exist."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Hoch 2019 reports hit rate, false alarm ratio, and critical success index for inundation maps; its best 2-D floodplain setup has CSI 0.46. Wood 2016 says hydraulic models represented observed flood extent accurately within available-data limits when CSI was 0.74-0.75 versus aerial imagery."
+
+  - dag_variable: inundation_extent
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.74, good: null, satisfactory: 0.46}
+        pass_band: satisfactory
+        band_note: "Benchmark bands from fetched flood-map studies: 0.46 for best coarse 2-D floodplain setup, 0.74-0.75 for aerial-observed hydraulic-model extent."
+        cites: [hoch2019, neal2016]
+    secondary_metrics:
+      - metric: hit_rate
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hoch 2019 co-reports hit rate with CSI; the best 2-D floodplain setup has hit rate 0.70."
+        cites: [hoch2019]
+      - metric: false_alarm_ratio
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hoch 2019 co-reports false alarm ratio with CSI; the best 2-D floodplain setup has FAR 0.42."
+        cites: [hoch2019]
+      - metric: auc
+        direction: maximize
+        status: supportive
+        ceiling_reason: "ROC/AUC is useful for threshold-independent SAR calibration; Schumann 2014 states realistic model simulation has AUC greater than 0.5."
+        cites: [schumann2014]
+    validated_when: "CSI >= 0.46 for remotely sensed flood extent, preferably with hit rate and false alarm ratio reported."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "Wood 2016 defines CSI from flood/non-flood contingency counts and says it scales from 1 for perfect performance to 0 for no match. Hoch 2019 reports CSI 0.46 as best of three setups and notes only around half the actual extent was captured, so 0.46 is a low but literature-observed satisfactory floor, not a high-quality target."
+
+  - dag_variable: inundation_extent
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.74, good: null, satisfactory: 0.46}
+        pass_band: satisfactory
+        band_note: "Transferred from spatial flood-extent contingency-table validation to point/cell flooded-vs-dry events."
+        cites: [hoch2019, neal2016]
+    secondary_metrics:
+      - metric: auc
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For event classifiers with continuous thresholds, Schumann 2014 identifies AUC > 0.5 as realistic prediction skill."
+        cites: [schumann2014]
+    validated_when: "CSI >= 0.46 for flooded/not-flooded classification at cells or points."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "This block transfers the same contingency-table convention from mapped flood extent to categorical wet/dry events because both use hit, miss, and false-alarm counts."
+
+  - dag_variable: xmomentum
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an observed xmomentum time-series validation threshold; momentum is usually validated indirectly through depth/stage/discharge or exact-solution tests."
+        cites: []
+    secondary_metrics:
+      - metric: relative_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Exact-solution ANUGA validation compares x-momentum profiles qualitatively and reports negligible/small errors for some tests, but no numeric pass band."
+        cites: [mungkasi2013]
+    validated_when: "UNRESOLVED - no cited observed-time-series xmomentum threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Mungkasi 2013 defines x-momentum as uh and includes x-momentum exact-solution comparisons; it does not provide NSE tiers for observed point momentum."
+
+  - dag_variable: ymomentum
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an observed ymomentum time-series validation threshold; momentum is usually validated indirectly through depth/stage/discharge or exact-solution tests."
+        cites: []
+    secondary_metrics:
+      - metric: relative_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "ANUGA literature defines y-momentum as vh, but the fetched exact-solution paper reports no numeric observed-time-series threshold for y-momentum."
+        cites: [mungkasi2013]
+    validated_when: "UNRESOLVED - no cited observed-time-series ymomentum threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Mungkasi 2013 defines y-momentum as vh. No fetched source provides a field validation convention for observed point y-momentum NSE."
+
+  - dag_variable: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 general performance ratings for monthly streamflow; Roth 2016 reproduces the same tiers."
+        cites: [moriasi2007, roth2016]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 streamflow PBIAS thresholds: very good < +/-10, good < +/-15, satisfactory < +/-25."
+        cites: [moriasi2007, roth2016]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 co-recommends RSR with satisfactory <0.70; listed as supportive because the dag determining metric is NSE."
+        cites: [moriasi2007, roth2016]
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hoch 2019 co-reports KGE with NSE for discharge validation in flood-wave propagation benchmarks."
+        cites: [hoch2019]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 25% for streamflow/discharge time series."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: "Moriasi 2007 states performance can be evaluated as satisfactory if NSE > 0.50, RSR < 0.70, and PBIAS +/-25% for streamflow. Hoch 2019 flood-wave benchmarks report discharge NSE values from 0.54 to 0.77 at Ganges/Brahmaputra gauges."
+
+  - dag_variable: discharge
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2007 streamflow percent-bias ratings; Moriasi recommends peak-flow percent error for single events but gives no separate numeric peak-only tier."
+        cites: [moriasi2007, roth2016]
+    secondary_metrics:
+      - metric: peak_timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 notes single-event objectives include peak flow rate and time-to-peak; no fetched numeric timing band is provided."
+        cites: [moriasi2007]
+    validated_when: "|PBIAS| <= 25% for peak-discharge magnitude, with timing error reported separately."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "This is a transferred streamflow-volume/magnitude convention. It should not be treated as a strong peak-discharge-only threshold until a fetched single-event flood peak convention is added."
+
+  - dag_variable: "stage (analytical-benchmark centerline)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: l2_relative_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "ANUGA exact-solution validation is qualitative in the fetched paper; no numeric L2/RMSE pass band is reported."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Exact-solution comparisons should report numerical-vs-analytical stage-profile error, but the fetched ANUGA paper gives qualitative statements such as match well, small error, and negligible error rather than a numeric threshold."
+        cites: [mungkasi2013]
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining metric csi is not the field convention for continuous analytical stage profiles; exact-solution profile error supersedes it."
+        cites: [mungkasi2013]
+    validated_when: "UNRESOLVED - compare against exact shallow-water solution with reported profile error; no fetched numeric pass band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Mungkasi 2013 validates ANUGA using four analytical shallow-water benchmarks and says numerical stage/momentum solutions match well, with negligible errors in the long-wave case. The paper does not give a numeric L2/RMSE threshold, so the band remains null."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 - Hydrologic and water quality models: Performance measures and evaluation criteria"
+    doi: 10.13031/trans.58.10715
+    needed_for: [stage, depth, discharge]

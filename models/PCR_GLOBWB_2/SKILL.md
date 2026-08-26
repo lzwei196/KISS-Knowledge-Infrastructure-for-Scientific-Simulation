@@ -1,14 +1,3 @@
----
-name: pcr-globwb-2
-description: >-
-  PCR-GLOBWB 2 (Sutanudjaja et al. 2018, GMD 11:2429-2453) — 5 arcmin global hydrology &
-  water resources spec. Covers grid-based terrestrial hydrology (snow, interception,
-  two-layer soil moisture, groundwater, runoff); river/channel routing along an LDD
-  network including lakes and reservoirs; integrated human water use (irrigation,
-  domestic, industry, livestock demand, withdrawal…. Use when the task involves running,
-  configuring, calibrating or interpreting PCR_GLOBWB_2.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,42 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (32 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (22 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_pcrglobwb.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_pcrglobwb.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/fetch_pcrglobwb_inputs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/fetch_pcrglobwb_inputs.py --help` |
+| `tools/make_clone_map.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/make_clone_map.py --help` |
+| `tools/parse_pcrglobwb_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_pcrglobwb_output.py --help` |
+| `tools/run_pcrglobwb.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_pcrglobwb.py --help` |
+
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # PCR-GLOBWB 2 (PCRaster Global Water Balance) — Knowledge Infrastructure
 
@@ -84,6 +109,113 @@ This knowledge infrastructure enables autonomous simulation of global/regional h
 **Key difference from other HydroCraft models**: PCR-GLOBWB 2 operates on a global/regional grid (not a single point or single lake). It uses the PCRaster spatial modeling framework and reads all parameters/forcing from NetCDF files via OPeNDAP (remote) or local storage. The model runs on a **daily timestep only**.
 
 **Reference paper**: Sutanudjaja et al. (2018), PCR-GLOBWB 2: a 5 arcmin global hydrological and water resources model, Geosci. Model Dev., 11, 2429-2453.
+
+---
+
+## 6. Output Description (dag-sourced)
+
+**Source of truth**: `dag.yaml`. If this section ever disagrees with the dag, the dag wins and this section is wrong.
+
+**Headline output** (`validation_rank: 1`):
+
+> `discharge` — River channel discharge at each cell. (`m3/s`)
+
+| Output variable (dag `var`) | rank | Unit | Description |
+|---|---:|---|---|
+| `discharge` | 1 | `m3/s` | River channel discharge at each cell. |
+| `totalRunoff` | 2 | `m/day` | Total runoff (surface plus subsurface) generated per cell. |
+| `actualET` | 3 | `m/day` | Actual evapotranspiration — water flux from the land surface to the atmosphere. |
+| `gwRecharge` | 4 | `m/day` | Groundwater recharge flux from the lower soil store. |
+| `storGroundwater` | 5 | `m` | Groundwater reservoir storage (S3). |
+| `totalWaterStorageThickness` | 6 | `m` | Total water storage (snow + interception + soil + groundwater + surface water), comparable to satellite total-water-storage-anomaly retrievals. |
+| `snowCoverSWE` | 7 | `m` | Snow water equivalent. |
+
+For quick answers to "what does this model predict", answer with the dag rank-1 output first: `discharge` in `m3/s`. Other dag outputs are `totalRunoff`, `actualET`, `gwRecharge`, `storGroundwater`, `totalWaterStorageThickness`, and `snowCoverSWE`.
+
+---
+
+## 8. Unit Conversion Table
+
+**Source of truth**: `docs/format_spec.yaml`, `dag.yaml`, and `diagnostics/triplets.yaml`. PCR-GLOBWB uses meters for depth-based water quantities internally; most silent failures are 1000x unit mistakes.
+
+| Variable | Source unit (verified or expected) | Model unit | Conversion | Type | Trap |
+|---|---|---|---|---|---|
+| CMFD precipitation `prec` | `kg m-2 s-1` | `mm/day` from `ki_tools_common.load_forcing`, then `m/day` for PCR-GLOBWB | `x86400`, then `/1000`; direct raw-CMFD-to-model factor is `86.4` | multiplicative | dt_001, dt_028 |
+| Generic precipitation forcing | `mm/day` | `m/day` | `/1000` | multiplicative | dt_001 |
+| CMFD temperature `temp` | `K` | `degC` from `ki_tools_common.load_forcing`, then PCR-GLOBWB `degC` | `-273.15` | additive | dt_002 |
+| Generic temperature forcing | `K` | `degC` | `-273.15` | additive | dt_002 |
+| Reference potential ET | `mm/day` | `m/day` | `/1000` | multiplicative | dt_003 |
+| Soil storage / soil water capacity | `mm` | `m` | `/1000` | multiplicative | dt_004 |
+| Water demand | `mm/day` or `m3/day` | `m/day` depth | `mm/day / 1000` or `m3/day / cell_area_m2` | multiplicative / area-normalized | dt_005 |
+| Groundwater abstraction | `m3/day` if supplied as volume | `m/day` depth | `m3/day / cell_area_m2` | area-normalized | dt_006 |
+| Specific yield | `%` | fraction `m3/m3` | `/100` | multiplicative | dt_007 |
+| Aquifer saturated hydraulic conductivity `kSatAquifer` | `cm/hr` | `m/day` | `x0.24` | multiplicative | dt_008 |
+| `discharge` output | computed internally | `m3/s` | none | output unit | dag rank 1 |
+| `totalRunoff` output | computed internally | `m/day` | none | output unit | dag rank 2 |
+| `actualET` output | computed internally | `m/day` | none | output unit | dag rank 3 |
+| `gwRecharge` output | computed internally | `m/day` | none | output unit | dag rank 4 |
+| `storGroundwater` output | computed internally | `m` | none | output unit | dag rank 5 |
+| `totalWaterStorageThickness` output | computed internally | `m` | none | output unit | dag rank 6 |
+| `snowCoverSWE` output | computed internally | `m` | none | output unit | dag rank 7 |
+
+**Output unit verification checklist**:
+
+- Read the NetCDF variable attributes before scoring: `python -c "import xarray as xr; ds=xr.open_dataset('file.nc'); print(ds['discharge'].attrs)"`.
+- Print the first values and their range; `discharge` is absolute river channel discharge in `m3/s`, not a depth.
+- Extract daily discharge with `--aggregation dailyTot`; otherwise the first alphabetical file can be an annual aggregate.
+- Treat flux outputs such as `totalRunoff`, `actualET`, and `gwRecharge` as `m/day` unless the NetCDF metadata proves otherwise.
+
+---
+
+## 9. Diagnostic Triplets (Top 5)
+
+Use `diagnostics/triplets.yaml` before debugging. These five are the most likely silent or early-fail traps for this KI; the YAML remains the full source of truth.
+
+| # | Error | Diagnosis | Remedy |
+|---|---|---|---|
+| dt_001 | Extreme flooding, unrealistic runoff values; river discharge 1000x too high. | Precipitation in `mm/day` instead of `m/day`. | Divide precipitation by `1000` when source values are `mm/day`. |
+| dt_002 | No snow accumulation in cold regions; wrong ET calculation; temperature values above `200`. | Temperature in Kelvin instead of Celsius. | Subtract `273.15` from Kelvin forcing. |
+| dt_003 | Soil is always dry; excessive actual ET; groundwater depletes rapidly. | Reference ET in `mm/day` instead of `m/day`. | Divide reference ET by `1000`. |
+| dt_009 | Model reads zero forcing with no precipitation and zero temperature. | NetCDF variable names do not match the expected names. | Rename forcing variables exactly to `precipitation`, `temperature`, `evapotranspiration`, or `referencePotET`. |
+| dt_021 | Startup crash: `IndexError: list index out of range` at `virtualOS.py:1842`. | `mapattr` binary is not on the subprocess PATH. | Prepend the active conda environment `bin` directory to PATH before running the model. |
+
+---
+
+## 11. Validated Results
+
+**Status**: body campaign pending. This section records the cited validation bars from `docs/validation_convention.yaml`; it does not claim achieved model skill unless a run-specific result is present.
+
+### Headline Validation Target
+
+| Property | Value |
+|---|---|
+| Dag rank-1 variable | `discharge` |
+| Unit | `m3/s` |
+| Description | River channel discharge at each cell. |
+| Observation shape | point time series |
+| Validation source | `docs/validation_convention.yaml` |
+
+### Performance Metrics - judged against the field's bar, not intuition
+
+| Dag variable | Metric | Direction | Convention bar (cited) | Achieved |
+|---|---|---|---|---|
+| `discharge` | `nse` | maximize | satisfactory `0.5` (moriasi2015); good `0.7` (moriasi2015); very_good `0.8` (moriasi2015) | body campaign pending |
+| `discharge` | `pbias` | zero_centered | satisfactory `15` (moriasi2015); good `10` (moriasi2015); very_good `5` (moriasi2015) | body campaign pending |
+| `totalRunoff` | `nse` | maximize | satisfactory `0.55` (moriasi2015); good `0.65` (moriasi2015) | body campaign pending |
+| `totalRunoff` | `pbias` | zero_centered | satisfactory `20` (moriasi2015) | body campaign pending |
+| `actualET` | `nse` | maximize | no cited threshold | body campaign pending |
+
+For zero-centered `pbias`, apply the cited bands to absolute percent bias. A null convention band is written as `no cited threshold`; do not replace it with a guessed threshold.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|---|---|---|---|
+| Forcing | Pipeline via `convert_forcing_to_pcrglobwb` / `ki_tools_common.load_forcing` | Pending per run | CMFD `prec` is `kg m-2 s-1`; CMFD `temp` is `K`; no CMFD `pet` variable. |
+| Soil | Pipeline via `convert_soil_params` | Pending per run | Soil storage and depth quantities must be in `m`. |
+| Land cover | PCR-GLOBWB input tree / configured datasets | Pending per run | Four cover types: forest, grassland, irrPaddy, irrNonPaddy. |
+| DEM / routing | Clone map, landmask, LDD, cell area | Pending per run | Clone map must be local and aligned; gauge snapping must follow the LDD. |
+| Initial conditions | PCR-GLOBWB initial condition files or spin-up | Pending per run | Start on 1 January of `ic_year + 1` when using shipped non-natural initial conditions. |
 
 ---
 

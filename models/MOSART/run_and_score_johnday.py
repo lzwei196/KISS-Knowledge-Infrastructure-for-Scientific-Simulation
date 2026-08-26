@@ -28,6 +28,7 @@ import os, sys, glob, re, json, subprocess
 from pathlib import Path
 
 sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MOSART/source/repo")
 
 import numpy as np
 import pandas as pd

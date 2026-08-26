@@ -173,7 +173,7 @@ outputs:
   - var: "HFX"
     validation_rank: 4
     unit: "W/m2"
-    description: "Total sensible heat flux, positive upward."
+    description: "Total sensible heat flux from the land surface to the atmosphere, positive upward."
     emitted_in: "LDASOUT NetCDF"
     observability:
       comparable_obs_shapes:

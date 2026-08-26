@@ -1,108 +1,101 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:48:03.884497'
-  updated: '2026-04-30'
-  domain: groundwater, vadose_zone_soil_moisture
   name: PFLOTRAN
-  version: v1.1.0
-  changelog:
-    - version: v1.1.0
-      date: '2026-04-30'
-      changes:
-        - Added 8 new diagnostic triplets (dt_019–dt_026) from FLUXNET SWC validation
-        - Added 1D vadose zone FLUXNET validation workflow to SKILL.md (Section 10)
-        - Updated s3_forcing_boundary_conditions.md with ET SOURCE_SINK pattern
-        - Updated s7_output_analysis.md with 1D column HDF5 extraction and FLUXNET metrics
-        - Validated sites: CN-HaM (NSE=0.471), CN-Din (NSE=-0.174), CN-Qia (unsuitable)
-  triplet_count: 26
-  validated_cases:
-    - site: CN-HaM
-      location: Haibei alpine meadow, Qinghai, 37.6N 101.3E
-      period: 2002-2004
-      config: NXYZ 1 1 40, phi=0.60 override, RZ=1.0m, SEEPAGE bottom BC
-      metrics: {R: 0.773, NSE: 0.471, PBIAS: "+0.1%", RMSE: "10.3%"}
-      status: production_validated
-    - site: CN-Din
-      location: Dinghushan subtropical forest, Guangdong, 23.2N 112.5E
-      period: 2003-2005
-      config: NXYZ 1 1 40, phi=0.43, RZ=2.0m, SEEPAGE bottom BC
-      metrics: {R: 0.761, NSE: -0.174, PBIAS: "+22.2%", RMSE: "5.98%"}
-      status: binary_validated
-    - site: CN-Qia
-      location: Qianyanzhou plantation forest, Jiangxi, 26.7N 115.1E
-      period: 2003-2005
-      config: NXYZ 1 1 40, phi=0.43, RZ=1.0m, SEEPAGE bottom BC
-      metrics: {R: 0.575, NSE: -2.06, PBIAS: "+54.2%", RMSE: "10.1%"}
-      status: unsuitable_monsoon_regime
-      note: Structural wet bias from monsoon convective P; see dt_026
+  language: fortran
+  implementation:
+    id: hydrocraft-pflotran-subsurface
+    version: package v1.1.0 (PFLOTRAN v6.0 core, PETSc v3.18+)
+    provenance: Fortran 2003/2008; LANL/SNL/ORNL open-source PFLOTRAN built on PETSc for MPI domain decomposition.
+  scientific_reference_version: PFLOTRAN v6.0 (RICHARDS variably-saturated flow + multicomponent reactive
+    transport; van Genuchten/Mualem characteristic curves)
+  binary:
+    path: KISSPATH_KI_ROOT/PFLOTRAN/source/repo/src/pflotran/pflotran
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_grid_generation
+  - s2_material_properties
+  - s3_forcing_boundary_conditions
+  - s5_input_deck_assembly
+  - s6_execution
+  - s7_output_analysis
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_pflotran.py
+  - tools/convert_soil_to_pflotran.py
+  - tools/parse_pflotran_output.py
+  - tools/run_pflotran.py
+inputs:
+  forcing:
+  - name: Recharge / infiltration flux (top boundary)
+    unit: m/s
+  - name: Root-zone evapotranspiration sink
+    unit: m^3/s
+  - name: River / lake stage (head boundary)
+    unit: Pa
+  - name: Well pumping / injection rate
+    unit: m^3/s
+  parameters:
+  - name: Intrinsic permeability (PERM_ISO)
+    unit: m^2
+  - name: Porosity
+    unit: fraction (0-1)
+  - name: Tortuosity
+    unit: '-'
+  - name: Longitudinal dispersivity
+    unit: m
+  - name: van Genuchten alpha
+    unit: 1/Pa
+  - name: van Genuchten m
+    unit: '-'
+  - name: Liquid residual saturation
+    unit: '-'
+  - name: Molecular diffusion coefficient
+    unit: m^2/s
+  - name: Reaction parameters (equilibrium constants, kinetic rates, sorption isotherm/ion-exchange/surface-complexation
+      coefficients)
+    unit: various
+  initial_conditions:
+  - name: Initial liquid pressure / water table
+    unit: Pa
+  - name: Initial temperature
+    unit: C
+  - name: Initial species concentrations
+    unit: mol/L
+  boundary_conditions:
+  - name: Simulation mode selector
+    unit: '-'
+  - name: Steady-state vs transient flag
+    unit: '-'
+  - name: Saturation / relative-permeability function choice
+    unit: '-'
+  - name: Region / material / strata assignment
+    unit: '-'
+  - name: Boundary condition types
+    unit: '-'
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - Liquid_Pressure
+  - Liquid_Saturation
+  - Hydraulic_Head
+  - Darcy_Velocity
+  - Solute_Concentration
+  - Cumulative_Mass_Balance
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=1.000, KGE=-0.089, R=1.000, 2 scorecard(s)'
+  metrics:
+    best_nse: 1.0
+    best_kge: -0.0895
+    best_r: 1.0
+summary:
+  total_tools: 4
+  total_stage_docs: 6
+  total_diagnostic_triplets: 27
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

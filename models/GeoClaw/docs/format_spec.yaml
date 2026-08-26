@@ -1,108 +1,423 @@
-model:
-  name: "GeoClaw"
-  domain: "Ocean / Coastal / Tsunami / Storm Surge"
-  binary_path: "KISSPATH_BINARIES/GeoClaw/bowl-slosh-test/xgeoclaw"
-  description: >
-    Finite-volume solver for 2D shallow water equations with adaptive mesh
-    refinement (AMR) for geophysical flows including tsunamis, storm surges,
-    and dam-break floods. Part of the Clawpack suite.
-  equation_system: "2D shallow water equations (mass + x-momentum + y-momentum)"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: GeoClaw
+  language: fortran
+  implementation:
+    id: geoclaw-clawpack
+    version: Clawpack/GeoClaw 5.14.x (KI tracks geoclaw-ki v1.0, Clawpack 5.7.1+)
+    provenance: Fortran 90/77 numerical core (xgeoclaw) with Python configuration/I-O; Clawpack (clawutil,
+      amrclaw, geoclaw, riemann, pyclaw, visclaw).
+  scientific_reference_version: GeoClaw 2D depth-averaged shallow-water solver (Clawpack ecosystem; Berger-George-LeVeque-Mandli
+    2011 formulation)
 inputs:
   forcing:
-    - name: "topography"
-      unit: "m (elevation relative to datum; negative = below sea level)"
-      format: "Type 1 (xyz ASCII), Type 2 (header+grid), Type 3 (ESRI ASCII), Type 4 (NetCDF)"
-      valid_range: [-11000, 9000]
-    - name: "dtopo (dynamic topography)"
-      unit: "m (seafloor displacement)"
-      format: "time-dependent (t, x, y, dz) files"
-      valid_range: [-50, 50]
-    - name: "wind_speed (storm surge)"
-      unit: "m/s"
-      valid_range: [0, 100]
-    - name: "pressure (storm surge)"
-      unit: "Pa"
-      valid_range: [85000, 105000]
+  - name: Topography / bathymetry B(x,y)
+    unit: m relative to datum (ocean depth negative, land positive)
+    category: bathymetry
+    source_kind: dataset_lookup
+    model_input_format: topotype 1 (x,y,z), 2/3 (header + grid), or 4 (NetCDF CF); registered via topo_data.topofiles
+    notes: Read into topowork and written to aux(1) per cell; bed slope is consumed directly inside the
+      well-balanced Riemann solver. Files must cover the whole domain or gaps default to zero elevation.
+  - name: Dynamic topography (dtopo)
+    unit: displacement m; time s
+    category: seafloor_deformation
+    source_kind: derived
+    model_input_format: dtopotype 1 (t,x,y,dz) or 3 (.tt3 time-dependent); via dtopo_data.dtopofiles
+    notes: Time-dependent seafloor deformation applied to aux(1) mid-run (topo0+dtopo); the tsunami-generation
+      driver, typically produced by the Okada model from fault slip.
+  - name: Storm wind velocity (surge mode)
+    unit: m/s
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: parametric or data-driven storm fields (storm_module); aux(wind_index)
+    notes: Wind stress applied to momentum in the source step (surge runs only).
+  - name: Atmospheric pressure (surge mode)
+    unit: Pa
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: storm fields; aux(pressure_index)
+    notes: Pressure-gradient forcing is folded into the Riemann/flux step, not the src2 source term.
   parameters:
-    critical:
-      - name: "manning_coefficient"
-        valid_range: [0.01, 0.06]
-        description: "Manning roughness for bottom friction (s/m^{1/3})"
-      - name: "sea_level"
-        unit: "m"
-        valid_range: [-20, 20]
-        description: "Initial water surface elevation relative to datum"
-      - name: "coordinate_system"
-        valid_range: [1, 2]
-        description: "1=Cartesian (meters), 2=lat-lon (degrees). Must be consistent across all inputs."
-      - name: "amr_levels_max"
-        valid_range: [1, 6]
-        description: "Maximum AMR refinement levels"
-      - name: "cfl_desired"
-        valid_range: [0.5, 0.9]
-        description: "Target CFL number for time stepping (must be < 1.0)"
-      - name: "dry_tolerance"
-        unit: "m"
-        valid_range: [0.0001, 0.01]
-        description: "Minimum depth to consider a cell wet"
-      - name: "gravity"
-        unit: "m/s^2"
-        valid_range: [9.78, 9.83]
-        description: "Gravitational acceleration"
-      - name: "earth_radius"
-        unit: "m"
-        valid_range: [6367000, 6368000]
-        description: "Earth radius for lat-lon metric terms"
-    secondary:
-      - name: "wave_tolerance"
-        valid_range: [0.001, 0.1]
-        description: "Threshold for AMR wave flagging"
-      - name: "friction_depth"
-        unit: "m"
-        valid_range: [20, 1000000]
-        description: "Depth limit for Manning friction application"
-      - name: "speed_limit"
-        unit: "m/s"
-        valid_range: [20, 100]
-        description: "Maximum allowable velocity (caps unrealistic values)"
-
+  - name: Manning coefficient (manning_coefficient / manning_break)
+    unit: dimensionless (n); break depths in m
+    category: friction
+    source_kind: calibrated
+    model_input_format: geo_data.manning_coefficient / manning_break; optional per-cell field via friction_module
+    notes: Typical natural-channel range 0.01-0.06; default 0.025. >0.1 stalls flow; can be spatially
+      variable or topo-region selected via manning_break.
+  - name: Gravity
+    unit: m/s^2
+    category: physical_constant
+    source_kind: default
+    model_input_format: geo_data.gravity (read into geoclaw_module.grav)
+    notes: 9.81 m/s^2; controls wave celerity sqrt(gh).
+  - name: Earth radius
+    unit: m
+    category: geodesy
+    source_kind: default
+    model_input_format: geo_data.earth_radius
+    notes: GeoClaw convention 6367500.0 m (not 6371000); used for lat-lon metric terms when coordinate_system=2.
+  - name: dry_tolerance
+    unit: m
+    category: numerical
+    source_kind: default
+    model_input_format: geo_data.dry_tolerance (default 1e-3)
+    notes: Depth below which a cell is treated as dry at wet/dry fronts.
+  - name: speed_limit
+    unit: m/s
+    category: numerical
+    source_kind: default
+    model_input_format: geo_data.speed_limit (v5.11.0+; pre-5.11 data files get no cap)
+    notes: Caps unrealistic velocities; version-dependent default.
+  - name: friction_depth
+    unit: m
+    category: friction
+    source_kind: default
+    model_input_format: geo_data.friction_depth
+    notes: Maximum water depth at which Manning friction is applied.
+  initial_conditions:
+  - name: sea_level
+    unit: m relative to datum
+    category: sea_state
+    source_kind: user_provided
+    model_input_format: geo_data.sea_level
+    notes: Reference still-water surface elevation; must share the bathymetry datum.
+  - name: Initial surface/momentum perturbation (qinit)
+    unit: m (eta) or m^2/s (momentum)
+    category: perturbation
+    source_kind: user_provided
+    model_input_format: qinit_data.qinit_type (0-4), qinitfiles, variable_eta_init, force_dry_list
+    notes: Sets initial h/hu/hv or surface perturbation; force_dry_list marks dry land below sea level.
+  boundary_conditions:
+  - name: Coordinate system
+    unit: enum
+    category: control
+    source_kind: user_provided
+    model_input_format: geo_data.coordinate_system (1=Cartesian/m, 2=spherical/deg)
+    notes: All spatial inputs (topo, domain bounds, gauges, regions) must share this system.
+  - name: Computational domain bounds and resolution
+    unit: m or deg; cell counts
+    category: domain
+    source_kind: user_provided
+    model_input_format: clawdata.lower/upper[0..1], num_cells (mx,my), t0/tfinal (seconds)
+  - name: Per-edge boundary conditions
+    unit: enum
+    category: edge_condition
+    source_kind: user_provided
+    model_input_format: clawdata.bc_lower/bc_upper (e.g. 'extrap' non-reflecting outflow)
+  - name: AMR levels and refinement ratios
+    unit: integer
+    category: amr_control
+    source_kind: user_provided
+    model_input_format: amrdata.amr_levels_max (1-6), refinement_ratios_x/y/t (len = levels-1), flagregions
+    notes: Refinement ratios must be positive integers of length amr_levels_max-1.
+  - name: AMR flagging tolerances
+    unit: 'wave: m; speed: m/s'
+    category: amr_control
+    source_kind: user_provided
+    model_input_format: refinement_data.wave_tolerance, speed_tolerance (per level)
+  - name: CFL targets
+    unit: dimensionless
+    category: numerical
+    source_kind: user_provided
+    model_input_format: clawdata.cfl_desired (~0.75), cfl_max (default 1.0)
+  - name: friction_forcing switch
+    unit: boolean
+    category: control
+    source_kind: user_provided
+    model_input_format: geo_data.friction_forcing
+    notes: Enables/disables the Manning friction source term.
 outputs:
   primary:
-    - name: "h (water depth)"
-      unit: "m"
-      valid_range: [0, 1000]
-      file: "fort.qNNNN"
-    - name: "hu (x-momentum)"
-      unit: "m^2/s"
-      valid_range: [-10000, 10000]
-      file: "fort.qNNNN"
-    - name: "hv (y-momentum)"
-      unit: "m^2/s"
-      valid_range: [-10000, 10000]
-      file: "fort.qNNNN"
-  derived:
-    - name: "eta (surface elevation)"
-      unit: "m"
-      formula: "h + B"
-      description: "Water surface elevation = depth + bathymetry"
-    - name: "speed"
-      unit: "m/s"
-      formula: "sqrt((hu/h)^2 + (hv/h)^2)"
-  gauge_output:
-    - name: "fort.gauge"
-      columns: ["level", "time", "h", "hu", "hv", "eta", "aux0"]
-  fgmax:
-    - name: "max_depth"
-      unit: "m"
-    - name: "max_speed"
-      unit: "m/s"
-    - name: "arrival_time"
-      unit: "s"
-
+  - name: h
+    unit: m
+    description: Water depth (prognostic q[0]); zero in dry cells.
+    validation_rank: 1
+    emitted_in: fort.qNNNN
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - At tide/DART gauges, depth is usually compared via eta; raw depth comparison is mainly meaningful
+          for inundation/flow gauges.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Mapped inundation extent depends on dry_tolerance and AMR resolution.
+      detrending_options:
+      - none
+  - name: eta
+    unit: m
+    description: Free-surface elevation eta = h + B; the primary tsunami/surge observable (computed at
+      write time, not stored in q).
+    validation_rank: 2
+    emitted_in: fort.gauge / gaugeNNNNN.txt; fort.qNNNN (appended column)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - DART/tide-gauge water-surface elevation is the standard comparison; arrival-time error reflects
+          bathymetry + source timing. fgmax surface elevation can be unrealistic if depth and topo are
+          interpolated separately then added.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Maximum-elevation fields compared against post-event survey maps.
+      detrending_options:
+      - none
+  - name: speed
+    unit: m/s
+    description: Total water speed sqrt(u^2+v^2), u=hu/h, v=hv/h; avoid division by zero in dry cells
+      (h < ~1e-6).
+    validation_rank: 3
+    emitted_in: derived in post-processing; fgmax (max speed)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Velocity observations are sparse; momentum flux is the more robust hazard metric.
+      detrending_options:
+      - none
+  - name: max_depth_max_speed_arrival_time
+    unit: m; m/s; s
+    description: 'fgmax running-maximum fields over the whole run: maximum depth, maximum speed, momentum
+      flux, and first-wave arrival time.'
+    validation_rank: 4
+    emitted_in: fgmaxNNNN.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Maximum-inundation depth/extent compared against post-event field surveys; arrival time compared
+          against gauge first-arrival.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: pbias
+        caveats:
+        - Per-site peak runup or arrival time at survey points.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "Bathymetry sign convention (positive-up) must be enforced; many sources use positive-down"
-  - "Coordinate system (meters vs degrees) must be consistent across ALL spatial inputs"
-  - "AMR refinement ratios must be positive integers; array length = amr_levels_max - 1"
-  - "Topography must cover entire computational domain to avoid artificial walls"
-  - "Fault slip must be in meters (not cm) for Okada source; 100x error is silent"
+- id: dt_001
+  symptom: Ocean appears as a mountain — water depth is zero everywhere, no wave propagation.
+  diagnosis: Bathymetry sign convention is wrong — positive-down ocean depth instead of GeoClaw negative-below-datum.;
+    GeoClaw uses negative values for ocean depth and positive for land elevation. Many DEM sources (GEBCO
+    pre-2019, sonar surveys, some NOAA datasets) use positive-down for ocean depth.  If not nega
+  remedy: 'Negate all elevation values: use --flip-sign in convert_bathymetry.py; convert_bathymetry;
+    [''Check z_min and z_max in the topo file'', ''If z_min > 0 and domain includes ocean, the sign is
+    wrong'', ''Re-run convert_bathymetry.py with --flip-sign'']; validate_outputs() checks if all values
+    are positive an'
+  severity: silent
+- id: dt_002
+  symptom: Domain appears empty or solution is concentrated in one corner. Grid looks correct but features
+    are misplaced.
+  diagnosis: Coordinate system mismatch — topo file uses meters but geo_data.coordinate_system=2 (lat-lon),
+    or vice versa.; If topography coordinates are in meters (e.g., UTM) but the solver expects degrees
+    (coordinate_system=2), the topo spans a tiny fraction of the domain in degree-space.  The reverse
+    puts the
+  remedy: Ensure topo coordinates match geo_data.coordinate_system (1=meters, 2=degrees); convert_bathymetry;
+    ['Check topo file header for xll, yll values', 'If values are large (>1000) with coordinate_system=2,
+    they are likely in meters', 'Either convert topo to degrees or set coordinate_system=1']; generate
+  severity: silent
+- id: dt_003
+  symptom: Simulation finishes instantly with only initial condition output, or runs for days without
+    completing.
+  diagnosis: tfinal is in wrong time units — minutes or hours instead of seconds.; GeoClaw uses seconds
+    for all time parameters.  If tfinal=6 is intended as 6 hours but interpreted as 6 seconds, only the
+    initial condition is output. Conversely, tfinal=21600 intended as seconds but supplied as 21600 hours
+    makes t
+  remedy: 'Convert tfinal to seconds: hours×3600, minutes×60; generate_setrun; [''Check clawdata.tfinal
+    in setrun.py'', ''Verify it is in seconds (e.g., 6 hours = 21600 seconds)'', ''Check that output times
+    also make sense in seconds'']; generate_setrun.py warns if tfinal > 1e7 seconds'
+  severity: silent
+- id: dt_004
+  symptom: Water flow stops within a few grid cells from the source. Inundation extent is much smaller
+    than expected.
+  diagnosis: 'Manning coefficient is too high (>0.1), causing extreme bottom friction.; Manning''s n for
+    natural channels is typically 0.01-0.06.  Values > 0.1 create extreme friction that dissipates momentum
+    rapidly.  The simulation runs without error but produces a stunted wave that doesn''t propagate far.  This '
+  remedy: 'Set manning_coefficient to 0.025 (typical default) or check published values for the terrain
+    type; generate_setrun; [''Check geo_data.manning_coefficient in setrun.py'', ''Typical values: open
+    ocean 0.01-0.02, coastal 0.02-0.03, vegetated 0.03-0.06'', ''If > 0.1, likely too high'']; generate_setrun.py
+    war'
+  severity: silent
+- id: dt_005
+  symptom: Initial water level is wrong — domain is either completely flooded or completely dry where
+    it shouldn't be.
+  diagnosis: sea_level is in wrong units (feet or cm instead of meters) or wrong datum.; geo_data.sea_level
+    sets the initial water surface elevation in meters relative to the bathymetry datum.  If bathymetry
+    is referenced to MSL but sea_level is set in feet or relative to a different datum, the initial condition
+  remedy: 'Set sea_level in meters relative to the same datum as the bathymetry; generate_setrun; [''Check
+    geo_data.sea_level and bathymetry datum'', ''Ensure both use the same vertical reference (MSL, NAVD88,
+    etc.)'', ''Convert if necessary: feet×0.3048 → meters'']; Visual inspection of initial condition plot'
+  severity: silent
+- id: dt_006
+  symptom: Wave speed is wrong — tsunami arrives too early or too late by a factor of ~1.7.
+  diagnosis: 'Gravity is set to 32.2 (ft/s²) instead of 9.81 (m/s²).; Shallow water wave speed is c =
+    sqrt(g*h).  Using g=32.2 (imperial) instead of 9.81 (metric) makes waves travel sqrt(32.2/9.81) ≈
+    1.81× too fast. The simulation runs fine but arrival times and wave heights are wrong.
+
+    ; [''setrun'', ''geo_data'']'
+  remedy: Set geo_data.gravity = 9.81 (m/s²); generate_setrun; ['Check geo_data.gravity in setrun.py',
+    'Must be 9.81 m/s² (not 32.2 ft/s²)']; generate_setrun.py uses 9.81 as default
+  severity: silent
+- id: dt_007
+  symptom: In lat-lon mode, distances are scaled by ~1000× — grid cells are enormous or tiny.
+  diagnosis: earth_radius is in km (6367.5) instead of meters (6367500.0).; When coordinate_system=2,
+    GeoClaw uses earth_radius to convert degrees to meters for the metric terms in the shallow water equations.  If
+    earth_radius is in km instead of meters, all distances are 1000× too small, making cells appear 100
+  remedy: 'Set geo_data.earth_radius = 6367500.0 (meters); generate_setrun; [''Check geo_data.earth_radius
+    in setrun.py'', ''Must be in meters: 6367500.0 or 6.3675e6'']; generate_setrun.py uses 6367500.0 as
+    default'
+  severity: silent
+- id: dt_008
+  symptom: Storm surge height is ~2× too large or too small compared to observations.
+  diagnosis: 'Wind speed is in knots or mph instead of m/s.; GeoClaw storm surge module expects wind speed
+    in m/s.  IBTrACS often provides wind in knots (1 knot = 0.5144 m/s).  Using knots directly makes wind
+    forcing about 2× too strong.  NHC best track uses knots; JMA uses m/s.
+
+    ; [''surge_data'', ''storm forcing'']'
+  remedy: 'Convert wind speed: knots × 0.5144 → m/s; mph × 0.4470 → m/s; None; [''Check wind speed units
+    in storm data file'', ''IBTrACS: usually knots → multiply by 0.5144'', ''Verify max wind speed is
+    reasonable: Cat 5 ≈ 70 m/s'']; Check max wind speed against Saffir-Simpson scale'
+  severity: silent
+- id: dt_009
+  symptom: Storm surge is negligible despite strong wind — pressure forcing has no effect.
+  diagnosis: Atmospheric pressure is in mbar/hPa instead of Pa.; GeoClaw expects pressure in Pascals (Pa).  Standard
+    atmospheric pressure is 101325 Pa = 1013.25 hPa = 1013.25 mbar.  If pressure is given in mbar (e.g.,
+    950), it is 100× too small in Pa-space, making the pressure gradient negligible. The inverse ba
+  remedy: 'Convert pressure: mbar × 100 → Pa; hPa × 100 → Pa; None; [''Check pressure values in storm
+    data'', ''If max pressure is ~1013 (not ~101325), convert: × 100'', ''Central pressure deficit should
+    be 10-100 mbar (1000-10000 Pa)'']; Check if pressure values are in realistic Pa range (90000-110000)'
+  severity: silent
+- id: dt_010
+  symptom: Tsunami wave height is negligible — maximum surface elevation is < 1 mm despite large earthquake.
+  diagnosis: 'Fault slip is in centimeters instead of meters.; The Okada model in dtopotools expects slip
+    in meters.  Many published fault models report slip in centimeters.  Using cm directly produces seafloor
+    deformation that is 100× too small.  The simulation runs but the tsunami wave is invisible.
+
+    ; [''dtopoto'
+  remedy: 'Convert fault slip from cm to meters: divide by 100; None; [''Check fault.slip value'', ''For
+    M8+ earthquakes, typical slip is 1-30 meters'', ''If slip values are 100-3000, they are likely in
+    cm'', ''Divide by 100 to convert to meters'']; Check maximum deformation against expected values for
+    the magnitude'
+  severity: silent
+- id: dt_011
+  symptom: Simulation aborts with 'Courant number too large' or output contains NaN/Inf values.
+  diagnosis: 'CFL number exceeds 1.0 due to extreme velocities or insufficient resolution.; The CFL condition
+    requires dt * max_wave_speed / dx < 1.  If cfl_desired is too close to 1.0, transient spikes can exceed
+    cfl_max and abort the run.  This also happens when bathymetry has sharp discontinuities or when the '
+  remedy: Reduce cfl_desired to 0.75 (default) or increase grid resolution; generate_setrun; ['Set cfl_desired
+    = 0.75 and cfl_max = 1.0', 'Check for sharp bathymetry gradients and smooth them', 'Increase grid
+    resolution (smaller dx) if needed', 'Check initial conditions for unrealistic velocities']; generate_
+  severity: fatal
+- id: dt_012
+  symptom: Shoreline oscillates rapidly or water appears/disappears at coast. Checkerboard pattern at
+    wet-dry interface.
+  diagnosis: dry_tolerance is too small, causing numerical oscillations at the wet-dry interface.; The
+    dry_tolerance parameter (default 1e-3 m) sets the minimum depth to consider a cell 'wet'.  Values
+    that are too small (e.g., 1e-8) cause the solver to repeatedly wet and dry cells at the shoreline,
+    producing osc
+  remedy: Set dry_tolerance between 1e-4 and 1e-2 meters (default 1e-3); generate_setrun; ['Check geo_data.dry_tolerance
+    in setrun.py', 'Try 1e-3 (default) for most applications', 'Increase to 1e-2 if oscillations persist'];
+    Default value of 1e-3 works for most cases
+  severity: silent
+- id: dt_013
+  symptom: Fortran runtime error at startup — 'array index out of bounds' or segfault.
+  diagnosis: 'AMR refinement_ratios array length doesn''t match amr_levels_max - 1.; The refinement_ratios_x/y/t
+    arrays must have exactly (amr_levels_max - 1) entries. If amr_levels_max=3, there must be 2 refinement
+    ratios (level 1→2, level 2→3). A mismatch causes an array bounds error in the Fortran AMR code.
+
+    ; ['
+  remedy: Ensure len(refinement_ratios_x) == amr_levels_max - 1; generate_setrun; ['Count entries in refinement_ratios_x/y/t',
+    'Compare to amr_levels_max - 1', 'Add or remove entries as needed']; generate_setrun.py validates
+    array lengths
+  severity: fatal
+- id: dt_014
+  symptom: Artificial walls or cliffs appear at boundaries between topography datasets.
+  diagnosis: Topography files don't cover the entire computational domain.; When topo files have gaps,
+    GeoClaw uses zero elevation for uncovered regions. This creates sudden jumps from real bathymetry
+    to zero, appearing as underwater cliffs.  The simulation runs but waves reflect off these artificial
+    boundaries.
+  remedy: Ensure topography files collectively cover the entire domain without gaps; convert_bathymetry;
+    ['Plot the topo file extent over the computational domain', 'Check for gaps between multiple topo
+    files', 'Extend topo data or adjust domain bounds']; Visual inspection of initial bathymetry
+  severity: silent
+- id: dt_015
+  symptom: Disk fills up during simulation — output directory grows to tens of GB.
+  diagnosis: 'ASCII output with fine AMR grids produces very large files.; Each fort.q file contains all
+    AMR patches in ASCII.  With multiple refinement levels (e.g., 4 levels with ratio 4), the finest level
+    has 256× more cells than the coarsest.  ASCII format is ~4× larger than binary.  A 6-hour simulation
+    with '
+  remedy: 'Use binary output format and reduce output frequency; generate_setrun; ["Set clawdata.output_format
+    = ''binary''", ''Reduce num_output_times'', ''Use FGout for specific regions instead of full domain
+    output'', ''Estimate: n_cells × 3_vars × 8_bytes × n_frames for binary'']; Estimate output size before
+    runni'
+  severity: fatal
+- id: dt_016
+  symptom: fort.gauge file is empty or missing gauge data for a specific gauge ID.
+  diagnosis: Gauge location is outside the computational domain or in a permanently dry cell.; Gauge coordinates
+    must be within [xlower, xupper] × [ylower, yupper]. If a gauge is placed in a dry cell (e.g., on land
+    above sea_level), it reports h=0 for the entire simulation.  GeoClaw does not error on out-of-doma
+  remedy: Verify gauge coordinates are within the domain and in wet cells; None; ['Check gauge x,y against
+    domain bounds', 'Verify the gauge is in a wet region (bathymetry < sea_level)', 'Plot gauge locations
+    on the bathymetry map']; Plot gauge locations before running
+  severity: silent
+- id: dt_017
+  symptom: 'make .exe fails with ''gfortran: command not found'' or ''No rule to make target''.'
+  diagnosis: 'Fortran compiler not installed or CLAW environment variable not set.; GeoClaw requires a
+    Fortran compiler (gfortran recommended) and the CLAW environment variable pointing to the clawpack
+    installation.  The Makefile includes $CLAW/clawutil/src/Makefile.common which contains build rules.
+
+    ; [''Makefile'
+  remedy: 'Install gfortran and set CLAW environment variable; None; [''Install: sudo apt install gfortran
+    (Debian/Ubuntu)'', ''Set: export CLAW=/path/to/clawpack'', ''Set: export FC=gfortran'', ''Verify:
+    gfortran --version'']; run_geoclaw.py checks for compiler before attempting build'
+  severity: fatal
+- id: dt_018
+  symptom: 'ImportError: No module named ''clawpack'' when running setrun.py.'
+  diagnosis: Clawpack Python package is not installed in the active Python environment.; setrun.py imports
+    from clawpack.clawutil and clawpack.geoclaw.  If clawpack is not installed (pip install clawpack)
+    or the wrong Python environment is active, the import fails.  This is distinct from the CLAW environment
+    var
+  remedy: 'pip install clawpack in the active Python environment; None; ["Check: python -c ''import clawpack;
+    print(clawpack.__path__)''", ''If ImportError: pip install clawpack'', ''Or install from source: cd
+    clawpack && pip install -e .'']; run_geoclaw.py checks for clawpack import before running'
+  severity: fatal

@@ -1,563 +1,111 @@
-# ============================================================================
-# Knowledge Infrastructure: SFINCS v2.x (Super-Fast INundation of CoastS)
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: "hydrocraft-sfincs"
-  version: "1.0.0"
-  description: "2D shallow water flood inundation modeling with subgrid resolution"
-  target_model: "SFINCS v2.x"
-  domain: "flood inundation (coastal, fluvial, pluvial, compound)"
-  authors:
-    - "Jianyun Zhang Research Group, Hohai University"
-  license: "GPL-3.0"
-
+  name: SFINCS
+  language: fortran
+  implementation:
+    id: sfincs-v232
+    version: v2.3.2 (mt_Faber lineage)
+    provenance: Fortran reduced-physics flood solver shipped by Deltares; realizes the SFINCS local-inertial/SSWE
+      spec (Leijnse et al. 2021) with subgrid per van Ormondt et al. 2025.
+  scientific_reference_version: SFINCS reduced-physics solver (Leijnse et al. 2021; local-inertial / SSWE),
+    subgrid per van Ormondt et al. 2025
+  binary:
+    path: KISSPATH_BINARIES/sfincs/bin/sfincs
+    type: ELF
 pipeline:
   stages:
-    - id: s1_domain
-      name: "Domain Setup"
-      description: "Define SFINCS computational grid from basin shapefile or bounding box. Auto-detect UTM zone. Compute resolution and CFL-stable timestep."
-      order: 1
-      depends_on: []
-      skill_document: "docs/s1_domain_skill.md"
-      tools: [setup_sfincs_domain]
-      milestones:
-        - id: m1_grid_defined
-          description: "grid_info.json created with valid mmax, nmax, dx, dy, epsg"
-          verification: "Check grid_info.json: mmax > 0, nmax > 0, epsg is UTM"
-
-    - id: s2_topobathy
-      name: "Topography & Bathymetry"
-      description: "Resample DEM to SFINCS grid. Generate sfincs.dep, sfincs.msk, sfincs.ind."
-      order: 2
-      depends_on: [s1_domain]
-      skill_document: "docs/s2_topobathy_skill.md"
-      tools: [build_sfincs_topobathy]
-      milestones:
-        - id: m2_dep_created
-          description: "sfincs.dep, sfincs.msk, sfincs.ind exist with non-zero size"
-          verification: "Check active_cells > 0 in topobathy_summary.json"
-
-    - id: s3_roughness
-      name: "Roughness"
-      description: "Generate Manning's n from AVHRR land cover or uniform value."
-      order: 3
-      depends_on: [s1_domain]
-      skill_document: "docs/s3_roughness_skill.md"
-      tools: [build_sfincs_roughness]
-      milestones:
-        - id: m3_man_created
-          description: "sfincs.man created (or uniform manning set)"
-          verification: "Check manning_mean in roughness_summary.json is 0.02-0.15"
-
-    - id: s4_forcing
-      name: "Forcing & Boundary Conditions"
-      description: "Convert CMFD/MSWX to SFINCS rainfall. Convert CaMa-Flood output to boundary conditions."
-      order: 4
-      depends_on: [s1_domain]
-      skill_document: "docs/s4_forcing_skill.md"
-      tools: [prepare_sfincs_rainfall, cama_to_sfincs_boundary]
-      milestones:
-        - id: m4_forcing_ready
-          description: "sfincs.precip and/or sfincs.src+sfincs.dis created"
-          verification: "Check rainfall_summary.json units=mm/hr; boundary_summary.json has valid stats"
-
-    - id: s5_structures
-      name: "Hydraulic Structures"
-      description: "Optional: add thin dams (levees), weirs, drainage structures."
-      order: 5
-      depends_on: [s2_topobathy]
-      skill_document: "docs/s5_structures_skill.md"
-      tools: []
-      milestones:
-        - id: m5_structures_optional
-          description: "sfincs.thd, sfincs.weir, sfincs.drn created if needed"
-          verification: "Files exist (optional stage)"
-
-    - id: s6_config
-      name: "Configuration"
-      description: "Generate sfincs.inp with CFL-stable timestep and all file references."
-      order: 6
-      depends_on: [s2_topobathy, s3_roughness, s4_forcing]
-      skill_document: "docs/s6_config_skill.md"
-      tools: [generate_sfincs_inp]
-      milestones:
-        - id: m6_inp_created
-          description: "sfincs.inp created with valid parameters"
-          verification: "sfincs.inp contains mmax, nmax, tstart, tstop, dt, outputformat=net"
-
-    - id: s7_execution
-      name: "Execution"
-      description: "Run SFINCS binary with preflight checks, log monitoring, output validation."
-      order: 7
-      depends_on: [s6_config]
-      skill_document: "docs/s7_execution_skill.md"
-      tools: [run_sfincs]
-      milestones:
-        - id: m7_run_complete
-          description: "SFINCS completed with exit code 0, sfincs_map.nc produced"
-          verification: "run_summary.json: exit_code=0, sfincs_map.nc exists"
-
-    - id: s8_postprocess
-      name: "Post-Processing"
-      description: "Extract flood depth/extent maps, compute statistics, generate visualizations."
-      order: 8
-      depends_on: [s7_execution]
-      skill_document: "docs/s8_postprocess_skill.md"
-      tools: [extract_sfincs_results, plot_sfincs_flood_map]
-      milestones:
-        - id: m8_results_extracted
-          description: "Flood stats computed, GeoTIFF and flood map generated"
-          verification: "flood_stats.json exists with flooded_area_km2 > 0"
-
+  - s1_domain_skill
+  - s2_topobathy_skill
+  - s3_roughness_skill
+  - s4_forcing_skill
+  - s5_structures_skill
+  - s6_config_skill
+  - s7_execution_skill
+  - s8_postprocess_skill
 tools:
-  - id: setup_sfincs_domain
-    name: "Setup SFINCS Domain"
-    description: "Define SFINCS computational grid from shapefile or bounding box with auto-UTM"
-    stage: s1_domain
-    script_path: "tools/s1_domain/setup_sfincs_domain.py"
-    language: python
-    inputs:
-      - name: shp_path
-        type: file
-        description: "Basin boundary shapefile"
-        required: false
-        example: "data/shp/chaohe_shp/chaohe.shp"
-      - name: bbox
-        type: string
-        description: "Bounding box xmin,ymin,xmax,ymax (WGS84)"
-        required: false
-        example: "116.0,40.0,117.5,41.5"
-      - name: resolution
-        type: number
-        description: "Grid resolution in meters"
-        required: false
-        example: "100"
-      - name: output_dir
-        type: directory
-        description: "Output directory"
-        required: true
-        example: "outputs/sfincs_test/"
-    outputs:
-      - name: grid_info
-        type: file
-        description: "Grid metadata JSON"
-        path_pattern: "{output_dir}/grid_info.json"
-    preconditions:
-      - "Shapefile or bbox must be provided"
-    postconditions:
-      - "grid_info.json has mmax > 0, nmax > 0"
-
-  - id: build_sfincs_topobathy
-    name: "Build SFINCS Topography"
-    description: "Resample DEM to SFINCS grid, generate dep/msk/ind files"
-    stage: s2_topobathy
-    script_path: "tools/s2_topobathy/build_sfincs_topobathy.py"
-    language: python
-    inputs:
-      - name: grid_info
-        type: file
-        description: "Grid info from s1_domain"
-        required: true
-        example: "outputs/sfincs_test/grid_info.json"
-      - name: shp_path
-        type: file
-        description: "Basin shapefile for masking"
-        required: false
-        example: "data/shp/chaohe_shp/chaohe.shp"
-      - name: output_dir
-        type: directory
-        description: "Output directory"
-        required: true
-        example: "outputs/sfincs_test/"
-    outputs:
-      - name: dep_file
-        type: file
-        description: "Bed level file"
-        path_pattern: "{output_dir}/sfincs.dep"
-      - name: msk_file
-        type: file
-        description: "Mask file"
-        path_pattern: "{output_dir}/sfincs.msk"
-      - name: ind_file
-        type: file
-        description: "Index file"
-        path_pattern: "{output_dir}/sfincs.ind"
-    preconditions:
-      - "grid_info.json exists from s1_domain"
-      - "DEM available (China DEM or Copernicus GLO-30)"
-    postconditions:
-      - "sfincs.dep, sfincs.msk, sfincs.ind exist with correct size (nmax*mmax elements)"
-      - "Active cells > 0"
-
-  - id: build_sfincs_roughness
-    name: "Build SFINCS Roughness"
-    description: "Generate Manning's n from AVHRR land cover"
-    stage: s3_roughness
-    script_path: "tools/s3_roughness/build_sfincs_roughness.py"
-    language: python
-    inputs:
-      - name: grid_info
-        type: file
-        description: "Grid info from s1_domain"
-        required: true
-      - name: uniform_n
-        type: number
-        description: "Uniform Manning's n (optional, overrides LULC)"
-        required: false
-        example: "0.04"
-      - name: output_dir
-        type: directory
-        description: "Output directory"
-        required: true
-    outputs:
-      - name: man_file
-        type: file
-        description: "Manning's n file"
-        path_pattern: "{output_dir}/sfincs.man"
-    preconditions:
-      - "grid_info.json exists"
-    postconditions:
-      - "sfincs.man exists, Manning's n values 0.015-1.0"
-
-  - id: prepare_sfincs_rainfall
-    name: "Prepare SFINCS Rainfall"
-    description: "Convert CMFD/MSWX precipitation to SFINCS NetCDF format (mm/hr)"
-    stage: s4_forcing
-    script_path: "tools/s4_forcing/prepare_sfincs_rainfall.py"
-    language: python
-    inputs:
-      - name: forcing_dir
-        type: directory
-        description: "Forcing data directory"
-        required: true
-      - name: grid_info
-        type: file
-        description: "Grid info from s1_domain"
-        required: true
-      - name: start_date
-        type: string
-        description: "Start date YYYY-MM-DD"
-        required: true
-      - name: end_date
-        type: string
-        description: "End date YYYY-MM-DD"
-        required: true
-      - name: source
-        type: string
-        description: "Forcing source: cmfd, mswx, vic_ascii"
-        required: false
-        example: "cmfd"
-    outputs:
-      - name: precip_file
-        type: file
-        description: "NetCDF precipitation in mm/hr"
-        path_pattern: "{output_dir}/sfincs.precip"
-    preconditions:
-      - "Forcing files exist in forcing_dir"
-    postconditions:
-      - "sfincs.precip has units mm/hr, max < 200 mm/hr"
-
-  - id: cama_to_sfincs_boundary
-    name: "CaMa-Flood to SFINCS Boundary"
-    description: "Convert CaMa-Flood discharge/water level to SFINCS boundary conditions"
-    stage: s4_forcing
-    script_path: "tools/s4_forcing/cama_to_sfincs_boundary.py"
-    language: python
-    inputs:
-      - name: cama_out_dir
-        type: directory
-        description: "CaMa-Flood output directory"
-        required: true
-      - name: grid_info
-        type: file
-        description: "Grid info from s1_domain"
-        required: true
-      - name: bc_type
-        type: string
-        description: "waterlevel or discharge"
-        required: false
-        example: "discharge"
-      - name: start_date
-        type: string
-        description: "Start date"
-        required: true
-      - name: end_date
-        type: string
-        description: "End date"
-        required: true
-    outputs:
-      - name: bc_files
-        type: file
-        description: "sfincs.src+sfincs.dis or sfincs.bnd+sfincs.bzs"
-        path_pattern: "{output_dir}/sfincs.src"
-    preconditions:
-      - "CaMa-Flood output exists with outflw or sfcelv NetCDF files"
-    postconditions:
-      - "Boundary files created with valid time series"
-
-  - id: generate_sfincs_inp
-    name: "Generate SFINCS Config"
-    description: "Generate sfincs.inp with CFL-stable timestep and all parameters"
-    stage: s6_config
-    script_path: "tools/s6_config/generate_sfincs_inp.py"
-    language: python
-    inputs:
-      - name: grid_info
-        type: file
-        description: "Grid info from s1_domain"
-        required: true
-      - name: start_date
-        type: string
-        description: "Start date"
-        required: true
-      - name: end_date
-        type: string
-        description: "End date"
-        required: true
-      - name: output_dir
-        type: directory
-        description: "Output directory (run directory)"
-        required: true
-    outputs:
-      - name: inp_file
-        type: file
-        description: "SFINCS configuration file"
-        path_pattern: "{output_dir}/sfincs.inp"
-    preconditions:
-      - "grid_info.json exists, dep/msk/ind files ready"
-    postconditions:
-      - "sfincs.inp contains mmax, nmax, tstart, tstop, dt, outputformat=net"
-
-  - id: run_sfincs
-    name: "Run SFINCS"
-    description: "Execute SFINCS with preflight validation and output checking"
-    stage: s7_execution
-    script_path: "tools/s7_execution/run_sfincs.py"
-    language: python
-    inputs:
-      - name: run_dir
-        type: directory
-        description: "Directory with sfincs.inp and all input files"
-        required: true
-      - name: sfincs_binary
-        type: file
-        description: "Path to SFINCS executable"
-        required: false
-        example: "model/sfincs/bin/sfincs"
-    outputs:
-      - name: map_nc
-        type: file
-        description: "Gridded flood output"
-        path_pattern: "{run_dir}/sfincs_map.nc"
-    preconditions:
-      - "sfincs.inp and all referenced files exist in run_dir"
-      - "SFINCS binary is executable"
-    postconditions:
-      - "exit code 0, sfincs_map.nc exists with non-zero size"
-
-  - id: extract_sfincs_results
-    name: "Extract SFINCS Results"
-    description: "Parse sfincs_map.nc, compute flood statistics, export GeoTIFF"
-    stage: s8_postprocess
-    script_path: "tools/s8_postprocess/extract_sfincs_results.py"
-    language: python
-    inputs:
-      - name: map_nc
-        type: file
-        description: "Path to sfincs_map.nc"
-        required: true
-      - name: grid_info
-        type: file
-        description: "Grid info for GeoTIFF export"
-        required: false
-      - name: output_dir
-        type: directory
-        description: "Output directory"
-        required: true
-    outputs:
-      - name: flood_stats
-        type: file
-        description: "Flood statistics JSON"
-        path_pattern: "{output_dir}/flood_stats.json"
-      - name: flood_tif
-        type: file
-        description: "Max flood depth GeoTIFF"
-        path_pattern: "{output_dir}/flood_max_depth.tif"
-    preconditions:
-      - "sfincs_map.nc exists from SFINCS run"
-    postconditions:
-      - "flood_stats.json has valid statistics"
-
-  - id: plot_sfincs_flood_map
-    name: "Plot SFINCS Flood Map"
-    description: "Generate publication-quality flood depth map"
-    stage: s8_postprocess
-    script_path: "tools/s8_postprocess/plot_sfincs_flood_map.py"
-    language: python
-    inputs:
-      - name: flood_depth
-        type: file
-        description: "flood_max_depth.tif or .npy"
-        required: true
-      - name: grid_info
-        type: file
-        description: "Grid info for extent"
-        required: false
-      - name: output
-        type: file
-        description: "Output PNG path"
-        required: true
-    outputs:
-      - name: flood_map
-        type: file
-        description: "Flood map image"
-        path_pattern: "{output}"
-    preconditions:
-      - "flood_max_depth file exists"
-    postconditions:
-      - "PNG file created > 1KB"
-
-skill_documents:
-  - id: sd_s1
-    name: "Domain Setup"
-    stage: s1_domain
-    path: "docs/s1_domain_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 800
-
-  - id: sd_s2
-    name: "Topography & Bathymetry"
-    stage: s2_topobathy
-    path: "docs/s2_topobathy_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1000
-
-  - id: sd_s3
-    name: "Roughness"
-    stage: s3_roughness
-    path: "docs/s3_roughness_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 600
-
-  - id: sd_s4
-    name: "Forcing & Boundary Conditions"
-    stage: s4_forcing
-    path: "docs/s4_forcing_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1200
-
-  - id: sd_s5
-    name: "Hydraulic Structures"
-    stage: s5_structures
-    path: "docs/s5_structures_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 500
-
-  - id: sd_s6
-    name: "Configuration"
-    stage: s6_config
-    path: "docs/s6_config_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 800
-
-  - id: sd_s7
-    name: "Execution"
-    stage: s7_execution
-    path: "docs/s7_execution_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 600
-
-  - id: sd_s8
-    name: "Post-Processing"
-    stage: s8_postprocess
-    path: "docs/s8_postprocess_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 800
-
-diagnostic_triplets:
-  path: "diagnostics/triplets.yaml"
-  count: 28
-  validated_from_real_runs: 8
-  failure_domains:
-    - unit_conversion
-    - spatial_error
-    - timestep_stability
-    - boundary_condition
-    - coupling
-    - io_path
-    - parameter_error
-    - file_format
-    - temporal_alignment
-    - runtime
-    - variable_selection
-    - config_generation
-
-error_log:
-  path: "diagnostics/error_log.yaml"
-  count: 12
-  promoted: 8
-  unpromoted: 4
-
+  count: 13
+  files:
+  - tools/calib_run.py
+  - tools/s1_domain/setup_sfincs_domain.py
+  - tools/s2_topobathy/build_sfincs_topobathy.py
+  - tools/s3_roughness/build_sfincs_roughness.py
+  - tools/s4_forcing/cama_to_sfincs_boundary.py
+  - tools/s4_forcing/hydat_to_sfincs_boundary.py
+  - tools/s4_forcing/prepare_sfincs_rainfall.py
+  - tools/s4_forcing/register_vertical_datum.py
+  - tools/s6_config/generate_sfincs_inp.py
+  - tools/s7_execution/run_sfincs.py
+  - tools/s8_postprocess/extract_sfincs_results.py
+  - tools/s8_postprocess/plot_sfincs_flood_map.py
+  - tools/s9_validation/screen_obs_independence.py
+inputs:
+  forcing:
+  - name: precipitation
+    unit: mm/hr
+  - name: river discharge boundary
+    unit: m3/s
+  - name: water level boundary
+    unit: m
+  - name: wind speed and direction
+    unit: m/s, degrees
+  - name: atmospheric pressure
+    unit: Pa
+  parameters:
+  - name: bed level (topography/bathymetry)
+    unit: m (vertical datum must match boundary conditions)
+  - name: active cell mask
+    unit: category code
+  - name: active-cell index map
+    unit: cell indices
+  - name: Manning's n roughness
+    unit: s/m^(1/3) (dimensionless n, ~0.015-0.20)
+  - name: subgrid tables
+    unit: derived (volume-depth, conveyance, roughness)
+  - name: infiltration parameters
+    unit: mm/hr (qinf); method-specific (CN, Green-Ampt, Horton)
+  - name: grid definition
+    unit: m / EPSG
+  initial_conditions:
+  - name: initial water level
+    unit: m
+  - name: restart state
+    unit: mixed
+  boundary_conditions:
+  - name: momentum advection toggle
+    unit: 0/1
+  - name: minimum flow depth threshold (huthresh)
+    unit: m
+  - name: momentum time-integration / smoothing weight (theta)
+    unit: dimensionless
+  - name: simulation time window
+    unit: s / datetime
+  - name: computational timestep control
+    unit: s / dimensionless
+  - name: output format and intervals
+    unit: s
+  - name: hydraulic structures
+    unit: geometry / m
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - hmax
+  - zsmax
+  - zs
+  - point_zs / point_h
+  - flood extent (derived from hmax > threshold)
+  other: []
 validation:
-  basins:
-    - name: "Chaohe downstream"
-      date: "2026-03-21"
-      domain: "174x171 cells, 100m resolution"
-      extent: "40.50-40.65N, 116.60-116.80E"
-      event: "Aug 2-12, 2008 monsoon rainfall (88.7mm)"
-      dem: "China DEM 90m, elevation 143-1387m"
-      runtime_seconds: 5.7
-      max_flood_depth_m: 7.29
-      flood_volume_m3: 37900000
-      flooded_cells: 1887
-      bugs_found: 6
-      status: "validated"
-    - name: "Bengbu (Huai River) floodplain"
-      date: "2026-03-22"
-      validation_step: 3
-      domain: "384x455 cells, 100m resolution"
-      extent: "32.7-33.1N, 117.1-117.5E"
-      event: "July 2003 monsoon flood (390mm)"
-      dem: "China DEM 90m, elevation 3.5-310.2m"
-      runtime_seconds: 397.0
-      max_flood_depth_m: 6.99
-      flood_volume_m3: 701000000
-      flooded_cells_gt03m: 44933
-      flooded_cells_gt1m: 27107
-      mass_balance_ratio: 1.03
-      cama_comparison_max_depth_m: 8.17
-      bugs_found: 2
-      status: "validated"
-
+  tier: validated
+  tier_justification: 'measured: NSE=0.974, KGE=0.870, R=0.997, 5 scorecard(s)'
+  metrics:
+    best_nse: 0.9744294728702535
+    best_kge: 0.8701747092619265
+    best_r: 0.9968596968570795
 summary:
-  total_tools: 9
-  total_tool_lines: 2379
-  total_skill_documents: 8
-  total_skill_words: 3466
-  total_diagnostic_triplets: 28
-  total_error_log_entries: 12
-  failure_domains:
-    - unit_conversion
-    - spatial_error
-    - timestep_stability
-    - boundary_condition
-    - coupling
-    - io_path
-    - parameter_error
-    - file_format
-    - temporal_alignment
-    - runtime
-    - variable_selection
-    - config_generation
-  pipeline_stages: 8
-  pipeline_milestones: 8
-  validated_basins: 2
+  total_tools: 13
+  total_stage_docs: 8
+  total_diagnostic_triplets: 44
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

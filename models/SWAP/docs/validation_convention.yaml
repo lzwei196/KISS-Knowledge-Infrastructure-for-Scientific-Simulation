@@ -1,0 +1,425 @@
+schema_version: 1
+model_id: SWAP
+domain: hydrology
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  ijabe2020:
+    doi: 10.25165/j.ijabe.20201303.5218
+    title: "Simulation and optimization of irrigation schedule for summer maize based on SWAP model"
+    venue: "International Journal of Agricultural and Biological Engineering"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.25165_j.ijabe.20201303.5218.txt
+  ines2002:
+    doi: 10.5194/hess-6-49-2002
+    title: "Inverse modelling in estimating soil hydraulic functions: a Genetic Algorithm approach"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2002
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-6-49-2002.txt
+  sarwar2000:
+    doi: 10.18174/197426
+    title: "A transient model approach to improve on-farm irrigation and drainage in semi-arid zones"
+    venue: "Wageningen University dissertation"
+    year: 2000
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.18174_197426.txt
+  ghosh2014:
+    doi: 10.5027/jnrd.v4i0.01
+    title: "A new novel index for evaluating model performance"
+    venue: "Journal of Natural Resources and Development"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5027_jnrd.v4i0.01.txt
+  dasilva2015:
+    doi: 10.4236/jep.2015.68076
+    title: "Sensitivity Analysis and Calibration of Hydrological Modeling of the Watershed"
+    venue: "Journal of Environmental Protection"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.4236_jep.2015.68076.txt
+  maier2017:
+    doi: 10.1007/s12665-017-6701-y
+    title: "Combining global sensitivity analysis and multiobjective optimisation to estimate soil hydraulic properties for the agro-hydrological SWAP model"
+    venue: "Environmental Earth Sciences"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s12665-017-6701-y.txt
+  xu2016:
+    doi: 10.1016/j.envsoft.2016.05.013
+    title: "Global sensitivity analysis and calibration of parameters for a physically-based agro-hydrological model"
+    venue: "Environmental Modelling & Software"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2016.05.013.txt
+  wang2019:
+    doi: 10.1016/j.jhydrol.2019.04.053
+    title: "Evaluating the effects of limited irrigation on crop water productivity and reducing deep drainage"
+    venue: "Journal of Hydrology"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2019.04.053.txt
+  wang2020:
+    doi: 10.3390/w12051330
+    title: "Modeling Soil Water-Heat Dynamic Changes in Seed-Maize Fields under Film Mulching"
+    venue: "Water"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w12051330.txt
+  swapmanual2017:
+    doi: 10.18174/416321
+    title: "SWAP version 4: theory description and user manual"
+    venue: "Wageningen Environmental Research report"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.18174_416321.txt
+
+validation:
+  - dag_variable: actual_transpiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched SWAP paper gives a numeric observed actual-transpiration NSE validation threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Partitioned actual transpiration is usually not directly observed; Ines 2002 states actual transpiration is difficult to obtain separately from evapotranspiration."
+        cites: [ines2002]
+    validated_when: "UNRESOLVED - require a fetched partitioned-transpiration benchmark before auto-validating."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The dag metric nse is retained with a null band. Ines 2002 used transpiration in synthetic criteria but says evapotranspiration alone is more realistic."
+
+  - dag_variable: actual_soil_evaporation
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric observed soil-evaporation NSE threshold separate from ET."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "SWAP outputs potential/actual evaporation separately, but fetched validation papers evaluate combined ET or soil water rather than measured soil evaporation."
+        cites: [swapmanual2017, ines2002]
+    validated_when: "UNRESOLVED - compare as ET unless a fetched partitioned-evaporation benchmark is available."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "SWAP manual lists actual evaporation as output; no fetched text provides a stand-alone pass band."
+
+  - dag_variable: evapotranspiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mre
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Water 2020 states MRE/NRMSE <10 very good, 10-20 good, 20-30 reasonable, >30 poor."
+        cites: [wang2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is nse, but fetched SWAP ET benchmarks report average error or MRE; Ines 2002 reports ET average-error benchmarks and Water 2020 reports ET MRE."
+        cites: [ines2002, wang2020]
+    validated_when: "MRE <= 30% for point ET; tighter <20% is good in the fetched crop-water convention."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Water 2020 reports simulated ET values were good with MRE 4.3%-25.7%; Ines 2002 found ET average errors were low in synthetic tests but about 0.7 mm/d in real lysimeter cases."
+
+  - dag_variable: soil_water_content_profile
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: cm3/cm3
+        bands: {very_good: null, good: 0.05, satisfactory: 0.05}
+        pass_band: satisfactory
+        band_note: "IJABE 2020 and Wang 2019 both describe RMSE = 0.05 cm3/cm3 as good SWAP soil-water performance."
+        cites: [ijabe2020, wang2019]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Crop-model NRMSE convention reproduced by Wang 2019 and Water 2020."
+        cites: [wang2019, wang2020]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric r is supportive; fetched SWAP soil-water validation convention uses RMSE, NRMSE, MBE, and d."
+        cites: [wang2019, ghosh2014]
+    validated_when: "RMSE <= 0.05 cm3/cm3 and NRMSE <= 30%; NRMSE <= 20% is good."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: "IJABE 2020: RMSE values lower than 0.05 cm3/cm3 and MRE lower than 15% demonstrated good soil-water simulation. Wang 2019 validation: RMSE 0.05, NRMSE 16.26%, d 0.88."
+
+  - dag_variable: soil_water_content_profile
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: cm3/cm3
+        bands: {very_good: null, good: 0.05, satisfactory: 0.05}
+        pass_band: satisfactory
+        band_note: "Transferred from profile/time-series soil-water benchmarks because fetched papers do not give a separate single-snapshot pbias rule."
+        cites: [ijabe2020, wang2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The dag metric pbias is not given a fetched numeric soil-water snapshot threshold; fetched studies evaluate RMSE/MRE/NRMSE."
+        cites: [ijabe2020, wang2019]
+    validated_when: "RMSE <= 0.05 cm3/cm3 at the sampled depth/time; pbias remains contextual only."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Single-profile measurements inherit the field soil-water RMSE convention, with reduced confidence because the fetched papers validate repeated profiles."
+
+  - dag_variable: pressure_head_profile
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: cm
+        bands: {very_good: null, good: null, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Maier 2017 reports best soil-water-potential fits from 9.7 to 15 cm and calls them high model performances; not a universal head standard."
+        cites: [maier2017]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric r is superseded here by the fetched SWAP calibration objective, which used pressure-head RMSE."
+        cites: [maier2017]
+    validated_when: "Pressure-head RMSE <= 15 cm at matching sensor depth, treated as a SWAP-benchmark convention rather than a universal rule."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Maier 2017: best model fits to soil water potential ranged from 9.7 to 15 cm and were described as high model performances."
+
+  - dag_variable: groundwater_level
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched SWAP sources describe good agreement for groundwater levels but provide no numeric r/RMSE/nRMSE pass threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "SWAP groundwater behavior depends on bottom-boundary and surface-water coupling; the manual's Wildenborch example reports good agreement without a numeric band."
+        cites: [swapmanual2017]
+    validated_when: "UNRESOLVED - require a fetched groundwater-head validation convention before auto-validating."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "SWAP manual: groundwater levels with calibrated drainage resistances showed good agreement, but no head-error threshold was given."
+
+  - dag_variable: drainage_flux
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Fetched hydrologic flow convention reproduces NSE tiers: very good >0.75, good >0.65, satisfactory >0.50."
+        cites: [dasilva2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Fetched flow convention reproduces PBIAS tiers: <±10 very good, <±15 good, <±25 satisfactory."
+        cites: [dasilva2015]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RSR is a supporting flow metric in the fetched hydrologic convention, with satisfactory <=0.70."
+        cites: [dasilva2015]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 25% for measured tile/ditch drainage discharge."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: "Transferred from watershed-flow validation to drainage discharge. Sarwar 2000 used SWAP for drainage design but did not give a time-series skill threshold."
+
+  - dag_variable: bottom_flux
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred from fetched hydrologic flow convention because bottom flux is a water-flux time series when independently inferred."
+        cites: [dasilva2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Transferred from fetched hydrologic flow PBIAS convention."
+        cites: [dasilva2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "SWAP manual distinguishes qbot from drainage and notes bottom boundary options; direct bottom-flux observations are usually indirect."
+        cites: [swapmanual2017]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 25% only when bottom flux is independently inferred with comparable support."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "This is a transferred hydrologic-flux convention with reduced confidence; SWAP-specific fetched texts do not provide bottom-flux pass bands."
+
+  - dag_variable: solute_concentration_output
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: mg/cm3
+        bands: {very_good: null, good: 0.1, satisfactory: 0.1}
+        pass_band: satisfactory
+        band_note: "IJABE 2020 states soil salt RMSE <0.1 mg/cm3 and MRE <20% were good and within the allowable error range."
+        cites: [ijabe2020]
+      - metric: mre
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "IJABE 2020 gives MRE <20% as good and says this is within an allowable error range of 25%."
+        cites: [ijabe2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric nse is supportive because fetched SWAP solute papers validate salinity with RMSE/MRE/NRMSE/d rather than a universal NSE threshold."
+        cites: [ijabe2020, xu2016, wang2019]
+    validated_when: "RMSE <= 0.1 mg/cm3 and MRE <= 25% for matching-depth soil-solution salinity/concentration."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "Xu 2016 reports salinity RMSE/NSE/R2 benchmarks, while IJABE 2020 supplies the explicit allowable-error statement."
+
+  - dag_variable: soil_temperature_profile
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Water 2020 uses the same MRE/NRMSE tiers and validates SWAP soil temperature against sensors."
+        cites: [wang2020]
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: null, good: null, satisfactory: 2.6}
+        pass_band: satisfactory
+        band_note: "Water 2020 says SWAP performed well for daily soil temperature, with maximum RMSE 2.6 degC across reported depths."
+        cites: [wang2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric nse is superseded by fetched SWAP soil-temperature papers reporting RMSE, NRMSE, and R2."
+        cites: [wang2020]
+    validated_when: "NRMSE <= 30% and RMSE <= 2.6 degC at matching depth."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Water 2020 reports maximum soil-temperature RMSE/NRMSE of 2.5/11.7, 2.1/10.2, 1.8/9.8, and 2.6/15.1 by depth."
+
+  - dag_variable: crop_yield
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Crop-model NRMSE convention: <10 excellent, 10-20 good, 20-30 fair/reasonable, >30 poor."
+        cites: [wang2019, wang2020]
+      - metric: mre
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "IJABE 2020 reports maize-yield MRE 15.26% as within the allowable error range of 25%."
+        cites: [ijabe2020]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The dag metric pbias is supportive; fetched SWAP crop papers report MRE/NRMSE/d for harvest yield."
+        cites: [ijabe2020, wang2019]
+    validated_when: "Harvest yield NRMSE <= 30% and MRE <= 25%; NRMSE <= 20% is good."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "IJABE 2020: summer maize yield RMSE 1299.6 kg/hm2 and MRE 15.26% were within allowable error. Wang 2019 reports station and county yield NRMSE values."
+
+  - dag_variable: crop_yield
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Wang 2019 reproduces Jamieson-style crop NRMSE tiers and applies them to regional SWAP-WOFOST yields."
+        cites: [wang2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The dag metric pbias is supportive; regional crop-yield evaluation in the fetched paper used RMSE, NRMSE, MBE, and d."
+        cites: [wang2019]
+    validated_when: "Regional aggregate yield NRMSE <= 30% after appropriate spatial/technology-trend handling; <=20% is good."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Wang 2019 reports county-scale winter wheat NRMSE 13.47% and summer maize NRMSE 15.74%, described as good/satisfactory."
+
+  - dag_variable: leaf_area_index
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Fetched SWAP-WOFOST crop papers apply the crop-model NRMSE tiers to LAI."
+        cites: [wang2019, wang2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric nse is supportive; fetched LAI validation uses RMSE, NRMSE, d, and R2."
+        cites: [wang2019, wang2020]
+    validated_when: "LAI NRMSE <= 30% over the growing season; <=20% is good."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "Water 2020 reports SWAP LAI NRMSE 6.7%-26.9% and 15.2%-22.9%. Wang 2019 validation reports LAI NRMSE 24.20% and d 0.95 as fair and reliable."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 update of hydrologic performance ratings"
+    doi: 10.13031/trans.58.10715
+    needed_for: [drainage_flux, bottom_flux]
+  - ref: "Anderson and Woessner / Hill groundwater-head calibration criteria"
+    doi: unknown_not_fetched
+    needed_for: [groundwater_level]
+  - ref: "Partitioned ET evaporation/transpiration field validation studies for SWAP or lysimeter ET partitioning"
+    doi: unknown_not_fetched
+    needed_for: [actual_transpiration, actual_soil_evaporation]

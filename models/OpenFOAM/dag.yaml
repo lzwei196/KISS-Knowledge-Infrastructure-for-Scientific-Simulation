@@ -332,7 +332,7 @@ outputs:
   - var: "U"
     validation_rank: 2
     unit: "m/s"
-    description: "Cell-centre velocity vector field written per write-time directory; the primary kinematic solution variable."
+    description: "Cell-centre velocity vector field of the selected water/air/seawater working fluid written per write-time directory; the primary kinematic solution variable for incompressible flow."
     emitted_in: "time directories (caseDir/<time>/U)"
     observability:
       comparable_obs_shapes:
@@ -350,7 +350,7 @@ outputs:
   - var: "p"
     validation_rank: 3
     unit: "kinematic m^2/s^2 (multiply by rho for Pa)"
-    description: "Kinematic pressure field; pressure differences across patches give head loss / pressure drop after multiplying by rho."
+    description: "Kinematic pressure field of the selected water/air/seawater working fluid; pressure differences across patches give fluid head loss / pressure drop after multiplying by rho."
     emitted_in: "time directories (caseDir/<time>/p)"
     observability:
       comparable_obs_shapes:
@@ -368,7 +368,7 @@ outputs:
   - var: "phi"
     validation_rank: 4
     unit: "m^3/s (volumetric face flux)"
-    description: "Conservative face-area-weighted flux; integrated over an outlet patch gives the volumetric flow rate Q = sum(phi)."
+    description: "Conservative face-area-weighted flux of the selected water/air/seawater working fluid; integrated over an outlet patch gives the volumetric fluid flow rate Q = sum(phi)."
     emitted_in: "time directories (caseDir/<time>/phi); flow rate via surfaceFieldValue postProcessing"
     observability:
       comparable_obs_shapes:
@@ -394,7 +394,7 @@ outputs:
   - var: "k"
     validation_rank: 5
     unit: "m^2/s^2"
-    description: "Turbulent kinetic energy field from the RANS closure; diagnostic of turbulent mixing intensity."
+    description: "Turbulent kinetic energy field of the selected water/air/seawater working fluid from the RANS closure; diagnostic of turbulent mixing intensity in the flow."
     emitted_in: "time directories (caseDir/<time>/k)"
     observability:
       comparable_obs_shapes:
@@ -627,3 +627,21 @@ safety:
       scope: "VoF configuration semantics"
       source: "OpenFOAM-dev incompressibleVoF behaviour (diagnostic triplets dt_026, dt_032)"
       status: "adopted"
+
+medium_evidence:
+  - var: "U"
+    source: "dag.yaml"
+    quote: "Kinematic nu = mu/rho, NOT dynamic mu [Pa.s]; water 20C ~1.004e-6, air 20C ~1.516e-5, seawater 15C ~1.19e-6. Sets the Reynolds number / flow regime."
+    note: "The dag defines the working-fluid physical-property medium as water, air, or seawater depending on case setup."
+  - var: "p"
+    source: "dag.yaml"
+    quote: "Kinematic nu = mu/rho, NOT dynamic mu [Pa.s]; water 20C ~1.004e-6, air 20C ~1.516e-5, seawater 15C ~1.19e-6. Sets the Reynolds number / flow regime."
+    note: "The dag defines the working-fluid physical-property medium as water, air, or seawater depending on case setup."
+  - var: "phi"
+    source: "dag.yaml"
+    quote: "Kinematic nu = mu/rho, NOT dynamic mu [Pa.s]; water 20C ~1.004e-6, air 20C ~1.516e-5, seawater 15C ~1.19e-6. Sets the Reynolds number / flow regime."
+    note: "The dag defines the working-fluid physical-property medium as water, air, or seawater depending on case setup."
+  - var: "k"
+    source: "dag.yaml"
+    quote: "Kinematic nu = mu/rho, NOT dynamic mu [Pa.s]; water 20C ~1.004e-6, air 20C ~1.516e-5, seawater 15C ~1.19e-6. Sets the Reynolds number / flow regime."
+    note: "The dag defines the working-fluid physical-property medium as water, air, or seawater depending on case setup."

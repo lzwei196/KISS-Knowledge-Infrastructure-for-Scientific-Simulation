@@ -1,0 +1,415 @@
+schema_version: 1
+model_id: APEX
+domain: crop
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  jiang2021:
+    doi: 10.1038/s41598-020-79988-3
+    title: "Modelling adaptation strategies to reduce adverse impacts of climate change on maize cropping system in Northeast China"
+    venue: "Scientific Reports"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-020-79988-3.txt
+  luo2019:
+    doi: 10.1016/j.agwat.2019.01.018
+    title: "Modeling the impacts of agricultural management strategies on crop yields and sediment yields using APEX in Guizhou Plateau, southwest China"
+    venue: "Agricultural Water Management"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agwat.2019.01.018.txt
+  muller2017:
+    doi: 10.5194/gmd-10-1403-2017
+    title: "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications"
+    venue: "Geoscientific Model Development"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-10-1403-2017.txt
+  roth2016:
+    doi: 10.5194/hess-20-921-2016
+    title: "Comparing CFSR and conventional weather data for discharge and soil loss modelling with SWAT in small catchments in the Ethiopian Highlands"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-921-2016.txt
+  gassman2009:
+    doi: 10.22004/ag.econ.49156
+    title: "The Agricultural Policy Environmental EXtender (APEX) Model: An Emerging Tool for Landscape and Watershed Environmental Analyses"
+    venue: "CARD Technical Report 09-TR 49"
+    year: 2009
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.22004_ag.econ.49156.txt
+  arnold2012:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42256.txt
+  wang2014:
+    doi: 10.13031/trans.57.10601
+    title: "An Auto-Calibration Tool for the Agricultural Policy Environmental eXtender (APEX) Model"
+    venue: "Transactions of the ASABE"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.57.10601.txt
+  vanliew2017:
+    doi: 10.13031/trans.11903
+    title: "Evaluating the APEX Model for Simulating Streamflow and Water Quality on Ten Agricultural Watersheds in the U.S."
+    venue: "Transactions of the ASABE"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.11903.txt
+  francesconi2014:
+    doi: 10.13031/trans.57.10332
+    title: "Monitoring and APEX Modeling of No-Till and Reduced-Till in Tile-Drained Agricultural Landscapes for Water Quality"
+    venue: "Transactions of the ASABE"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.57.10332.txt
+
+validation:
+  - dag_variable: YLDG
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Jiang 2021 uses nARE as normalized average relative error; this is the crop-yield equivalent of signed percent bias."
+        cites: [jiang2021]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Reproduced crop-model tiers: excellent <=10%, good <=20%, fair <=30%, poor >30%."
+        cites: [jiang2021]
+    secondary_metrics:
+      - metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Jiang 2021 reports d-index classes and validation d >= 0.76, but the APEX dag determines yield by pbias."
+        cites: [jiang2021]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Luo 2019 reports APEX grain-yield NS values and treats values higher than 0.5 as satisfactory, but crop yield papers more often use nRMSE, nARE, and d-index."
+        cites: [luo2019]
+    validated_when: "|PBIAS| <= 15% and nRMSE <= 30% for plot/field grain yield."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      Kept the dag determining metric pbias as a headline metric. Jiang 2021 states yield and biomass performance
+      was satisfactory if nARE was within +/-15% and gives nRMSE tiers. Luo 2019 provides an APEX grain-yield
+      benchmark: RRMSE higher than 0.8 and NS higher than 0.5 indicated acceptable calibration, with validation
+      R2 larger than 0.76.
+
+  - dag_variable: YLDG
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred from the fetched crop-model yield nARE convention; use only after detrending technology/management trends."
+        cites: [jiang2021]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Muller 2017 uses gridded crop-model benchmarking against reference data but cautions it is a benchmark, not direct validation."
+        cites: [muller2017]
+    validated_when: "After detrending regional technology effects, aggregate yield magnitude should have |PBIAS| <= 15%; correlation/R2 is supportive."
+    evidence_strength: weak
+    confidence: 0.5
+    notes: >-
+      Regional aggregate yield has no directly fetched APEX threshold. Muller 2017 says global gridded crop-model
+      benchmarks establish a reference point rather than validation. This block therefore transfers only the crop
+      nARE magnitude convention and lowers confidence.
+
+  - dag_variable: BIOM
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Reproduced crop-model tiers: excellent <=10%, good <=20%, fair <=30%, poor >30%."
+        cites: [jiang2021]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Jiang 2021 says yield and biomass performance was satisfactory if nARE was within +/-15%."
+        cites: [jiang2021]
+    secondary_metrics:
+      - metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Jiang 2021 uses d-index classes for crop yield, biomass, and N uptake, but the dag requests NSE."
+        cites: [jiang2021]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining metric is NSE, but the fetched crop biomass validation convention reports nRMSE, nARE, and d-index rather than an NSE tier."
+        cites: [jiang2021]
+    validated_when: "nRMSE <= 30% and |PBIAS| <= 15%; NSE remains ungraded because no fetched biomass NSE tier was found."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The dag determining metric is nse, retained as a null-band headline metric. Jiang 2021 reports validation
+      performance for maize yield, biomass, and N uptake as good to excellent with nRMSE <= 6.4%, nARE from
+      -1.4% to 3.3%, and d >= 0.76; those values ground the crop biomass magnitude/error convention, not an NSE gate.
+
+  - dag_variable: BIOM
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred from the fetched crop biomass/yield nARE convention; detrending is required before comparing regional aggregate biomass."
+        cites: [jiang2021]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Muller 2017 supports benchmark/reference comparisons for gridded crop models but does not provide a hard validation threshold."
+        cites: [muller2017]
+    validated_when: "After detrending regional technology/management effects, aggregate biomass magnitude should have |PBIAS| <= 15%."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: "No regional biomass-specific APEX threshold was fetched; this is a transferred crop-model magnitude convention."
+
+  - dag_variable: LAI
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched APEX/crop paper provides a numeric LAI NSE validation threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Arnold 2012 notes remotely sensed LAI can improve spatial calibration, but gives no numeric LAI performance band."
+        cites: [arnold2012]
+    validated_when: "UNRESOLVED - LAI remains a data-gap until a fetched LAI-specific benchmark gives a numeric band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "A capped OpenAlex check for APEX LAI validation did not yield a usable fetched threshold paper."
+
+  - dag_variable: WYLD
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Moriasi-style streamflow/water-yield tier reproduced in fetched papers: satisfactory when NSE exceeds about 0.50."
+        cites: [roth2016, gassman2009, wang2014]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Streamflow PBIAS tiers reproduced as very good <10%, good <15%, satisfactory <25%."
+        cites: [roth2016, wang2014]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Roth 2016 reproduces RSR tiers, but the APEX dag determines WYLD by NSE."
+        cites: [roth2016]
+    validated_when: "NSE >= 0.5 and |PBIAS| <= 25% for outlet water-yield/streamflow-equivalent time series."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      WYLD is water yield leaving the subarea/watershed, commonly judged like streamflow at the outlet.
+      Gassman 2009 says Moriasi criteria propose a lower bound of 0.5 for monthly NSE. Wang 2014 says
+      APEX-CUTE accepted satisfactory simulation if NSE >0.50 and PBIAS within +/-25% of observed streamflow.
+
+  - dag_variable: ET
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched APEX ET paper gives a numeric NSE validation band."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Arnold 2012 says spatial ET data can improve local water-balance calibration, but does not define an ET pass/fail threshold."
+        cites: [arnold2012]
+    validated_when: "UNRESOLVED - require an ET-specific APEX or watershed-model benchmark before automatic validation."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "OpenAlex ET search returned SWAT/hydrology papers but no fetched APEX ET validation threshold; bands are intentionally null."
+
+  - dag_variable: DPRK
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Deep percolation is rarely directly observed; no fetched paper gives a direct DPRK PBIAS threshold."
+        cites: []
+    secondary_metrics:
+      - metric: water_balance_residual
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Arnold 2012 treats recharge/deep percolation as part of streamflow/baseflow calibration rather than a directly graded observable."
+        cites: [arnold2012]
+    validated_when: "UNRESOLVED - direct DPRK validation should not be auto-graded without a fetched water-balance residual convention."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "A capped OpenAlex search did not find a usable APEX deep-percolation validation threshold."
+
+  - dag_variable: "Y"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Sediment-yield studies reproduce Moriasi NSE tiers; satisfactory begins above about 0.50."
+        cites: [roth2016, wang2014]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 15.0, good: 30.0, satisfactory: 55.0}
+        pass_band: satisfactory
+        band_note: "Roth 2016 reproduces Moriasi sediment PBIAS tiers; APEX-CUTE used a stricter +/-30% accepted sediment-yield criterion."
+        cites: [roth2016, wang2014]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RSR is a co-reported Moriasi sediment metric, but the dag determining metric is NSE."
+        cites: [roth2016]
+    validated_when: "NSE >= 0.5 and |PBIAS| <= 55% for sediment yield; consider |PBIAS| <= 30% a stronger APEX-CUTE target."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Roth 2016 reproduces the streamflow/sediment Moriasi table: sediment satisfactory PBIAS extends to +/-55%.
+      Wang 2014 says its APEX-CUTE case accepted satisfactory simulation if NSE >0.50 and sediment-yield PBIAS
+      was within +/-30%.
+
+  - dag_variable: "N losses (leaching / runoff / sediment)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS tier for APEX nitrogen losses."
+        cites: []
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.4}
+        pass_band: satisfactory
+        band_note: "Francesconi 2014 states daily nutrient/sediment calibration used NSE >0.40 as satisfactory."
+        cites: [francesconi2014]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "APEX nitrogen-loss skill is limited in tile-drained systems: Francesconi 2014 says APEX has limitations in tile flow and consequently nitrogen loss, and reports low NSE values for several mineral/organic/total N validations."
+        cites: [francesconi2014, vanliew2017]
+    validated_when: "UNRESOLVED for magnitude: NSE >= 0.4 is a weak daily nutrient screen, but PBIAS has no fetched numeric tier."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Francesconi 2014 provides a daily NSE lower bound for sediments and nutrients but not a nitrogen PBIAS band.
+      Van Liew 2017 found fully calibrated APEX satisfactory-or-better for 38% of monthly N data sets, but validation
+      transfer was much weaker. Null pbias keeps this block from auto-validating on an uncited magnitude gate.
+
+  - dag_variable: "P losses (soluble runoff / sediment / tile)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS tier for APEX phosphorus losses."
+        cites: []
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.4}
+        pass_band: satisfactory
+        band_note: "Francesconi 2014 states daily nutrient/sediment calibration used NSE >0.40 as satisfactory."
+        cites: [francesconi2014]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "APEX phosphorus-loss skill is limited for tile systems: Francesconi 2014 says APEX was not capable of modeling phosphorus in tile in that study and P values did not fully meet satisfactory standards."
+        cites: [francesconi2014, vanliew2017]
+    validated_when: "UNRESOLVED for magnitude: NSE >= 0.4 is a weak daily nutrient screen, but PBIAS has no fetched numeric tier."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Van Liew 2017 found fully calibrated APEX satisfactory-or-better for only 27% of monthly P data sets and
+      characterized phosphorus performance as marginal. The dag's pbias gate remains null until a fetched PBIAS
+      convention is available.
+
+  - dag_variable: "outlet hydrograph (HYC)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Moriasi-style streamflow tier reproduced in fetched watershed-model papers."
+        cites: [roth2016, gassman2009, wang2014]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Streamflow PBIAS tiers reproduced as very good <10%, good <15%, satisfactory <25%."
+        cites: [roth2016, wang2014]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Roth 2016 reproduces RSR tiers, but the dag determining metric is NSE."
+        cites: [roth2016]
+    validated_when: "NSE >= 0.5 and |PBIAS| <= 25% for gauged outlet hydrograph/streamflow."
+    evidence_strength: strong
+    confidence: 0.9
+    notes: >-
+      Van Liew 2017 is the APEX multi-watershed benchmark: fully calibrated settings were satisfactory-or-better
+      for 73% of monthly streamflow data sets, but validation transfer remained a caution. Use the Moriasi-style
+      NSE/PBIAS convention reproduced in Roth 2016, Gassman 2009, and Wang 2014.
+
+deferred_paywalled:
+  - ref: "Sensitivity Analysis of the APEX Model for Assessing Sustainability of Switchgrass Grown for Biofuel Production in Central Texas"
+    doi: 10.1007/s12155-017-9878-8
+    needed_for: [BIOM, LAI]
+  - ref: "APEXSENSUN: An Open-Source Package in R for Sensitivity Analysis and Model Performance Evaluation of APEX"
+    doi: 10.1111/1752-1688.12686
+    needed_for: [LAI, ET, DPRK]

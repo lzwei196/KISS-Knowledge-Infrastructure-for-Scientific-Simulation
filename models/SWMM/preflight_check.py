@@ -1,148 +1,231 @@
 #!/usr/bin/env python3
 """
-Preflight check for SWMM — verifies environment before simulation.
+Preflight check for the SWMM Knowledge Infrastructure.
 
-Run this BEFORE attempting any model execution. It checks that all required
-binaries, packages, and data paths are available.
-
-Usage:
-    python preflight_check.py
-
-Exit codes:
-    0 — all checks passed, safe to proceed
-    1 — one or more checks failed, fix before proceeding
+This verifies the real SWMM runtime before model execution: the KI-local venv,
+the compiled SWMM engine shared library, Python packages used by the tools,
+and required KI control/diagnostic files. The final line is the KDT gate
+contract: PREFLIGHT_REPORT=<json>.
 """
 
+from __future__ import annotations
+
+import ctypes
+import json
 import os
-import sys
-import shutil
 import subprocess
-
-PASS = 0
-FAIL = 0
-
-
-def check_file(path, label, executable=False):
-    global PASS, FAIL
-    if os.path.isfile(path):
-        if executable and not os.access(path, os.X_OK):
-            print(f"  WARN  {label}: exists but not executable: {path}")
-            print(f"         Fix: chmod +x {path}")
-            FAIL += 1
-        else:
-            print(f"  OK    {label}: {path}")
-            PASS += 1
-    else:
-        print(f"  FAIL  {label}: NOT FOUND at {path}")
-        FAIL += 1
+import sys
+from pathlib import Path
 
 
-def check_dir(path, label):
-    global PASS, FAIL
-    if os.path.isdir(path):
-        n = len(os.listdir(path))
-        print(f"  OK    {label}: {path} ({n} items)")
-        PASS += 1
-    else:
-        print(f"  FAIL  {label}: directory NOT FOUND at {path}")
-        FAIL += 1
+MODEL_ID = "SWMM"
+KI_DIR = Path(__file__).resolve().parent
+MODEL_DIR = KI_DIR.parent
+SWMM_PYTHON = MODEL_DIR / "venv" / "bin" / "python"
+SWMM_ENGINE = (
+    MODEL_DIR
+    / "venv"
+    / "lib"
+    / "python3.12"
+    / "site-packages"
+    / "swmm"
+    / "toolkit"
+    / "libswmm5.so"
+)
+TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
+FIX_DIAGNOSTICS = f"Check {TRIPLETS} for recovery guidance, then repair the reported path/package."
 
 
-def check_import(module, label):
-    # Also search HydroCraft python_env for packages
-    import sys
-    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
-    if _penv not in sys.path:
-        sys.path.insert(0, _penv)
-    global PASS, FAIL
+def add_check(checks, kind, subject, critical, ok, fix):
+    status = "pass" if ok else "fail"
+    checks.append(
+        {
+            "kind": kind,
+            "subject": str(subject),
+            "critical": bool(critical),
+            "status": status,
+            "fix": "" if ok else fix,
+        }
+    )
+    label = "OK" if ok else ("FAIL" if critical else "WARN")
+    print(f"  {label:<5} {kind}: {subject}")
+    if not ok:
+        print(f"        Fix: {fix}")
+    return ok
+
+
+def check_file(checks, path, label, critical=True, executable=False):
+    path = Path(path)
+    ok = path.is_file()
+    if ok and executable:
+        ok = os.access(path, os.X_OK)
+    fix = f"Restore {label} at {path}. {FIX_DIAGNOSTICS}"
+    if executable:
+        fix = f"Restore {label} at {path} and ensure it is executable. {FIX_DIAGNOSTICS}"
+    return add_check(checks, "binary" if executable else "data", path, critical, ok, fix)
+
+
+def check_dir(checks, path, label, critical=False):
+    path = Path(path)
+    ok = path.is_dir()
+    count = len(list(path.iterdir())) if ok else 0
+    subject = f"{path} ({count} items)" if ok else path
+    fix = f"Restore or mount {label} at {path}. {FIX_DIAGNOSTICS}"
+    return add_check(checks, "data", subject, critical, ok, fix)
+
+
+def check_import(checks, module, critical=True):
+    if not SWMM_PYTHON.is_file():
+        return add_check(
+            checks,
+            "import",
+            f"{module} via {SWMM_PYTHON}",
+            critical,
+            False,
+            f"Restore the SWMM venv interpreter at {SWMM_PYTHON}. {FIX_DIAGNOSTICS}",
+        )
+
+    code = (
+        "import importlib.util, sys; "
+        f"spec = importlib.util.find_spec({module!r}); "
+        "sys.exit(0 if spec is not None else 1)"
+    )
     try:
-        __import__(module)
-        print(f"  OK    {label}: import {module} succeeded")
-        PASS += 1
-    except ImportError as e:
-        print(f"  FAIL  {label}: import {module} failed: {e}")
-        print(f"         Fix: pip install {module.split('.')[0]}")
-        FAIL += 1
+        result = subprocess.run(
+            [str(SWMM_PYTHON), "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        ok = result.returncode == 0
+        detail = (result.stderr or result.stdout).strip()
+    except Exception as exc:
+        ok = False
+        detail = str(exc)
+    fix = (
+        f"Install {module.split('.')[0]} into the SWMM venv with "
+        f"{SWMM_PYTHON} -m pip install {module.split('.')[0]}; probe detail: {detail}. "
+        f"{FIX_DIAGNOSTICS}"
+    )
+    return add_check(
+        checks,
+        "import",
+        f"{module} via {SWMM_PYTHON}",
+        critical,
+        ok,
+        fix,
+    )
 
 
-def check_binary_search(name, label):
-    global PASS, FAIL
-    found = shutil.which(name)
-    if found:
-        print(f"  OK    {label}: {found}")
-        PASS += 1
-        return
-    # Search common locations
-    search_dirs = [
-        "KISSPATH_BINARIES",
-        "KISSPATH_HOME",
-        "/usr/local/bin",
-    ]
-    for d in search_dirs:
-        if not os.path.isdir(d):
-            continue
-        for root, dirs, files in os.walk(d):
-            for f in files:
-                if name.lower() in f.lower() and os.access(os.path.join(root, f), os.X_OK):
-                    print(f"  OK    {label}: {os.path.join(root, f)}")
-                    PASS += 1
-                    return
-            if root.count(os.sep) - d.count(os.sep) > 3:
-                dirs.clear()  # limit depth
-    print(f"  FAIL  {label}: binary '{name}' not found in PATH or common locations")
-    print(f"         Check SKILL.md for the correct binary path")
-    FAIL += 1
-
-
-def check_common_data():
-    """Check common HydroCraft data paths."""
-    global PASS, FAIL
-    common = [
-        ("KISSPATH_OBS", "Observation data"),
-        ("KISSPATH_FORCING", "Forcing data"),
-        ("KISSPATH_STATIC", "DEM data"),
-        ("KISSPATH_STATIC", "Soil data"),
-    ]
-    for path, label in common:
-        if os.path.isdir(path):
-            PASS += 1
+def check_engine_loads(checks):
+    real_engine = Path(os.path.realpath(SWMM_ENGINE))
+    ok = SWMM_ENGINE.is_file() and os.access(SWMM_ENGINE, os.X_OK)
+    if ok:
+        try:
+            ctypes.CDLL(str(real_engine))
+        except OSError as exc:
+            ok = False
+            fix = f"SWMM engine library failed to load: {exc}. {FIX_DIAGNOSTICS}"
         else:
-            print(f"  WARN  {label}: {path} not found (may not be needed)")
+            fix = ""
+    else:
+        fix = f"Restore the compiled SWMM engine at {SWMM_ENGINE}. {FIX_DIAGNOSTICS}"
+
+    # Subject must be the realpath of the executable/library verified so the
+    # KDT gate can compare it against the models DB.
+    return add_check(checks, "binary", real_engine, True, ok, fix)
+
+
+def check_swmm_smoke(checks):
+    if not SWMM_PYTHON.is_file():
+        return add_check(
+            checks,
+            "run",
+            f"pyswmm/swmm.toolkit smoke via {SWMM_PYTHON}",
+            True,
+            False,
+            f"Restore the SWMM venv interpreter at {SWMM_PYTHON}. {FIX_DIAGNOSTICS}",
+        )
+
+    code = """
+from pyswmm import Simulation
+from swmm.toolkit import solver
+assert Simulation is not None
+assert hasattr(solver, "swmm_open")
+assert hasattr(solver, "swmm_close")
+"""
+    try:
+        result = subprocess.run(
+            [str(SWMM_PYTHON), "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        ok = result.returncode == 0
+        detail = (result.stderr or result.stdout).strip()
+    except Exception as exc:
+        ok = False
+        detail = str(exc)
+    fix = f"Repair the SWMM venv/package stack; smoke probe failed: {detail}. {FIX_DIAGNOSTICS}"
+    return add_check(
+        checks,
+        "run",
+        f"pyswmm/swmm.toolkit smoke via {SWMM_PYTHON}",
+        True,
+        ok,
+        fix,
+    )
+
+
+def emit_report(model_id, checks):
+    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": model_id, "checks": checks}, sort_keys=True))
+    critical_failed = any(c["status"] != "pass" and c.get("critical") for c in checks)
+    sys.exit(1 if critical_failed else 0)
 
 
 def main():
-    global PASS, FAIL
-    print(f"=" * 60)
-    print(f"  PREFLIGHT CHECK: SWMM")
-    print(f"=" * 60)
+    checks = []
+    print("=" * 60)
+    print(f"  PREFLIGHT CHECK: {MODEL_ID}")
+    print("=" * 60)
     print()
 
-    # Model-specific checks
-    # Python package: PySWMM
-    check_import("pyswmm", "PySWMM")
-    # Python package: SWMM toolkit
-    check_import("swmm.toolkit", "SWMM toolkit")
+    check_file(checks, SWMM_PYTHON, "SWMM venv Python interpreter", critical=True, executable=True)
+    check_engine_loads(checks)
+    check_import(checks, "pyswmm", critical=True)
+    check_import(checks, "swmm.toolkit", critical=True)
+    check_import(checks, "swmmanywhere", critical=True)
+    check_import(checks, "numpy", critical=True)
+    check_swmm_smoke(checks)
 
     print()
-
-    # Common data checks
-    check_common_data()
-
-    # Diagnostics available?
-    ki_dir = os.path.dirname(os.path.abspath(__file__))
-    triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")
-    if os.path.isfile(triplets):
-        print(f"  INFO  Diagnostic triplets available at: {triplets}")
-        print(f"         If the model fails, check triplets FIRST for known fixes.")
+    check_file(checks, KI_DIR / "SKILL.md", "KI entrypoint", critical=True)
+    check_file(checks, KI_DIR / "knowledge_infrastructure.yaml", "KI manifest", critical=True)
+    check_file(checks, KI_DIR / "dag.yaml", "KI DAG", critical=True)
+    check_file(checks, TRIPLETS, "diagnostic triplets", critical=True)
+    check_file(checks, KI_DIR / "tools" / "s6_execution" / "run_swmm.py", "SWMM execution tool", critical=True)
+    check_file(checks, KI_DIR / "tools" / "s5_model_assembly" / "validate_inp_file.py", "INP validation tool", critical=True)
 
     print()
-    print(f"  Results: {PASS} passed, {FAIL} failed")
-    if FAIL > 0:
-        print(f"  STATUS: PREFLIGHT FAILED — fix the issues above before running")
-        sys.exit(1)
+    # Legacy checks preserved as noncritical: these shared HydroCraft data
+    # mounts are useful for some runs but are not universally required by SWMM.
+    check_dir(checks, "KISSPATH_OBS", "Observation data", critical=False)
+    check_dir(checks, "KISSPATH_FORCING", "Forcing data", critical=False)
+    check_dir(checks, "KISSPATH_STATIC", "DEM data", critical=False)
+    check_dir(checks, "KISSPATH_STATIC", "Soil data", critical=False)
+
+    print()
+    failed = [c for c in checks if c["status"] != "pass"]
+    critical_failed = [c for c in failed if c.get("critical")]
+    print(f"  Results: {len(checks) - len(failed)} passed, {len(failed)} failed")
+    if critical_failed:
+        print("  STATUS: PREFLIGHT FAILED - fix critical blockers before running")
     else:
-        print(f"  STATUS: PREFLIGHT PASSED — safe to proceed with model execution")
-        sys.exit(0)
+        print("  STATUS: PREFLIGHT PASSED - safe to proceed with model execution")
+        if failed:
+            print("  Note: noncritical data mounts are missing; supply run-specific data as needed.")
+
+    emit_report(MODEL_ID, checks)
 
 
 if __name__ == "__main__":

@@ -1,468 +1,90 @@
-# ============================================================================
-# Knowledge Infrastructure — Pywr (Reservoir Operations)
-# Python Water Resources Modelling Framework
-# ============================================================================
-# Built using the Knowledge Dissection Toolkit v1.0
-# Fills the reservoir operations & water resources management gap in HydroCraft.
-#
-# Pywr is a Python-based water resources network modelling framework that uses
-# linear programming (GLPK solver) to optimally allocate water between
-# competing demands at each timestep. It models reservoirs, demands, releases,
-# and operating rules as a node-edge network defined in JSON.
-#
-# Python package: pywr (pip install pywr)
-# Solver: GLPK (GNU Linear Programming Kit)
-# Input format: JSON model files + CSV timeseries
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: "pywr-knowledge-infrastructure"
-  version: "1.0.0"
-  description: "Knowledge infrastructure for autonomous AI operation of Pywr reservoir operations model within HydroCraft"
-  target_model: "Pywr 1.30.0 (Python Water Resources Framework)"
-  domain: "reservoir operations, water resources management, flood control, water supply"
-  authors:
-    - "Jianyun Zhang Research Group"
-    - "Claude (Knowledge Dissection)"
-  license: "CC-BY-4.0"
-
-# --- Pipeline definition ---
+  name: Pywr
+  language: python
+  implementation:
+    id: pywr-1.30
+    version: 1.30.0
+    provenance: Python (Cython core); Pywr (Arnott / Tomlinson / University of Manchester) solves a per-timestep
+      network-allocation LP via GLPK.
+  scientific_reference_version: Pywr 1.30.0 (generalised network resource-allocation simulator; Tomlinson
+    et al. 2020 EMS 104635 formulation)
+  binary:
+    path: KISSPATH_KI_ROOT/Pywr/knowledge_infrastructure/tools/s8_execution/run_pywr.py
+    type: Python
 pipeline:
-  stages:
-    - id: "s1_installation"
-      name: "Installation & Environment Verification"
-      description: "Verify Pywr import, GLPK solver availability, and Python dependency versions. Pywr requires GLPK for its LP solver — without GLPK, no model can run."
-      order: 1
-      depends_on: []
-      tools:
-        - "verify_pywr_installation"
-      milestones:
-        - id: "m_s1_pywr_ok"
-          description: "Pywr imports successfully and GLPK solver runs a minimal model"
-          validation: "verify_pywr_installation exits with code 0"
-        - id: "m_s1_deps_ok"
-          description: "All required Python packages installed (numpy, pandas, geopandas, netCDF4, xarray, matplotlib)"
-          validation: "All dependency checks pass in verify output"
-
-    - id: "s2_dam_inventory"
-      name: "Dam Inventory & Basin Search"
-      description: "Search the GRanD (Global Reservoir and Dam) database for dams within the basin boundary. GRanD contains 7,320 dams worldwide (1,571 in China). Uses shapefile intersection or grid bounding box."
-      order: 2
-      depends_on: ["s1_installation"]
-      tools:
-        - "find_dams_in_basin"
-      milestones:
-        - id: "m_s2_dams_found"
-          description: "List of dams within basin boundary with GRanD properties (name, capacity, height, river)"
-          validation: "find_dams_in_basin exits 0 with at least 1 dam in output JSON"
-        - id: "m_s2_dam_selected"
-          description: "Target dam selected for modeling (largest by capacity, or user-specified)"
-          validation: "Dam name and capacity confirmed by user"
-      data_sources:
-        - name: "GRanD_allocated.csv"
-          path: "model/cmf_v420_pkg/map/data/GRanD_allocated.csv"
-          records: 7320
-          columns: "ID, lat_alloc, lon_alloc, area_alloc, DamName, RiverName, CAP_MCM, YEAR, ELEV_MASL, DAM_HGT_M, lat_ori, lon_ori, area_ori"
-
-    - id: "s3_reservoir_properties"
-      name: "Reservoir Properties Computation"
-      description: "Compute physical reservoir properties from GRanD data: max/min/initial volume, area-volume curve (Liebe et al. 2005), level-volume-area table. These feed directly into Pywr Storage node parameters."
-      order: 3
-      depends_on: ["s2_dam_inventory"]
-      tools:
-        - "build_reservoir_properties"
-      milestones:
-        - id: "m_s3_volumes"
-          description: "max_volume, min_volume (dead storage), initial_volume computed in m3"
-          validation: "max_volume = CAP_MCM * 1e6, min_volume = 10% * max, initial = 50% * max"
-        - id: "m_s3_area_volume"
-          description: "Area-volume curve generated (20-point table)"
-          validation: "Table has monotonically increasing volume and area with level"
-        - id: "m_s3_pywr_node"
-          description: "Pywr Storage node definition generated"
-          validation: "JSON contains type=Storage, max_volume, min_volume, initial_volume"
-
-    - id: "s4_inflow"
-      name: "VIC-to-Inflow Conversion"
-      description: "Convert VIC model output (daily runoff + baseflow per grid cell) into reservoir inflow timeseries. Identifies upstream grid cells and sums (runoff + baseflow) * cell_area to get inflow in m3/s."
-      order: 4
-      depends_on: ["s3_reservoir_properties"]
-      tools:
-        - "convert_vic_to_inflow"
-      milestones:
-        - id: "m_s4_upstream_cells"
-          description: "Upstream VIC grid cells identified using chosen method (all/upstream_lat/nearest)"
-          validation: "At least 1 cell found; cells_missing < 10% of total"
-        - id: "m_s4_inflow_csv"
-          description: "Daily inflow CSV generated with date, inflow_m3s columns"
-          validation: "CSV has expected number of days; mean inflow > 0; no NaN values"
-        - id: "m_s4_mass_balance"
-          description: "Inflow volume consistent with VIC water balance"
-          validation: "Mean annual volume within 10% of expected (area * mean precip * runoff coefficient)"
-      unit_conversions:
-        - from: "VIC runoff + baseflow (mm/day)"
-          to: "inflow (m3/s)"
-          formula: "(runoff_mm + baseflow_mm) * cell_area_m2 / (1000 * 86400)"
-          common_error: "Forgetting /1000 (mm to m) or /86400 (day to seconds)"
-
-    - id: "s5_operating_rules"
-      name: "Operating Rules Definition"
-      description: "Generate monthly reservoir control curves and release rules based on dam purpose (flood control, irrigation, hydropower, multipurpose) and regional flood season. Produces Pywr parameter definitions."
-      order: 5
-      depends_on: ["s3_reservoir_properties"]
-      tools:
-        - "create_operating_rules"
-      milestones:
-        - id: "m_s5_control_curve"
-          description: "Monthly target storage fractions defined (12 values)"
-          validation: "Flood months have lower targets than dry months"
-        - id: "m_s5_release_limits"
-          description: "Maximum and minimum release rates defined per month"
-          validation: "Max release during flood > dry season; min release > 0 (environmental)"
-        - id: "m_s5_pywr_params"
-          description: "Pywr MonthlyProfileParameter and ControlCurveParameter defined"
-          validation: "All parameters have valid type and values arrays"
-
-    - id: "s6_demands"
-      name: "Demand Node Definition"
-      description: "Create water demand nodes for downstream users: environmental flow (Q90 or % MAF), irrigation (crop water need * area), municipal (population * per capita), industrial. Each becomes a Pywr Output node."
-      order: 6
-      depends_on: ["s4_inflow"]
-      tools:
-        - "create_demand_nodes"
-      milestones:
-        - id: "m_s6_env_flow"
-          description: "Environmental minimum flow defined (10% MAF or Tennant method)"
-          validation: "Env flow > 0 and < mean inflow"
-        - id: "m_s6_demand_feasible"
-          description: "Total demand is physically satisfiable by available inflow"
-          validation: "Total mean demand < mean annual inflow (otherwise infeasible)"
-
-    - id: "s7_assembly"
-      name: "Model Assembly & Validation"
-      description: "Assemble all components (reservoir, inflow, rules, demands) into a complete Pywr JSON model file. Validates network topology (all edges reference existing nodes), parameter references, and constraint feasibility."
-      order: 7
-      depends_on: ["s4_inflow", "s5_operating_rules", "s6_demands"]
-      tools:
-        - "assemble_pywr_model"
-      milestones:
-        - id: "m_s7_json_valid"
-          description: "Pywr JSON model file passes structural validation"
-          validation: "All edge endpoints exist as nodes; all parameter refs resolve"
-        - id: "m_s7_topology"
-          description: "Network topology: inflow->storage->release->demands+downstream"
-          validation: "Storage node has at least 1 inflow edge and 1 outflow edge"
-
-    - id: "s8_execution"
-      name: "Execution, Postprocessing & Coupling"
-      description: "Run the Pywr model, extract storage/release/spill timeseries, compute statistics (reliability, deficit days), generate multi-panel visualization, and optionally inject regulated releases back into CaMa-Flood for downstream routing."
-      order: 8
-      depends_on: ["s7_assembly"]
-      tools:
-        - "run_pywr"
-        - "plot_reservoir_operations"
-        - "inject_releases_to_cama"
-        - "check_overtopping"
-      milestones:
-        - id: "m_s8_run_complete"
-          description: "Pywr model runs successfully for full simulation period"
-          validation: "run_pywr exits 0; storage and release CSVs generated"
-        - id: "m_s8_physically_reasonable"
-          description: "Results are physically reasonable"
-          validation: "min_vol <= storage <= max_vol; release >= 0; spill only when storage near max"
-        - id: "m_s8_plot_generated"
-          description: "Multi-panel operations plot generated"
-          validation: "PNG file exists and has 3 panels (storage, flows, demands)"
-        - id: "m_s8_cama_injected"
-          description: "Regulated releases injected into CaMa-Flood runoff (optional)"
-          validation: "Modified NetCDF has non-negative values; dam cell replaced"
-        - id: "m_s8_overtopping_checked"
-          description: "Overtopping analysis complete; DLBreach trigger evaluated"
-          validation: "check_overtopping report generated"
-
-# --- Tool definitions ---
+  stages: []
 tools:
-  - id: "verify_pywr_installation"
-    name: "Verify Pywr Installation"
-    script: "tools/s1_installation/verify_pywr_installation.py"
-    description: "Check Pywr import, GLPK solver, and Python dependencies"
-    inputs: []
-    outputs:
-      - name: "installation_status"
-        format: "json"
-        fields: ["pywr.version", "solver.name", "dependencies"]
-    exit_codes:
-      0: "All OK — Pywr + GLPK + dependencies present"
-      1: "Pywr not installed"
-      2: "GLPK solver not available"
-      3: "Partial — Pywr OK but missing dependencies"
-
-  - id: "find_dams_in_basin"
-    name: "Find Dams in Basin"
-    script: "tools/s2_dam_inventory/find_dams_in_basin.py"
-    description: "Search GRanD database for dams within basin boundary (shapefile or grid)"
-    inputs:
-      - name: "--shp / --grid"
-        required: true
-        description: "Basin boundary shapefile OR basin_grid.nc"
-      - name: "--grand"
-        required: true
-        description: "Path to GRanD_allocated.csv"
-        default: "model/cmf_v420_pkg/map/data/GRanD_allocated.csv"
-      - name: "--buffer_km"
-        required: false
-        default: 0
-        description: "Buffer around basin boundary in km"
-      - name: "--min_capacity_mcm"
-        required: false
-        default: 0
-        description: "Minimum dam capacity filter (MCM)"
-    outputs:
-      - name: "dams_list"
-        format: "json"
-        fields: ["grand_id", "name", "lat", "lon", "capacity_mcm", "dam_height_m", "river_name"]
-    exit_codes:
-      0: "Dams found within basin"
-      1: "No dams found within basin"
-      2: "Input file error"
-      3: "Runtime error"
-
-  - id: "build_reservoir_properties"
-    name: "Build Reservoir Properties"
-    script: "tools/s3_reservoir_properties/build_reservoir_properties.py"
-    description: "Compute reservoir physical properties (volumes, area-volume curve) from GRanD data"
-    inputs:
-      - name: "--dam_json / --capacity_mcm"
-        required: true
-        description: "Dam data source (JSON from s2 or manual capacity)"
-      - name: "--dead_storage_frac"
-        required: false
-        default: 0.10
-      - name: "--initial_frac"
-        required: false
-        default: 0.50
-    outputs:
-      - name: "reservoir_properties"
-        format: "json"
-        fields: ["storage.max_volume_m3", "storage.min_volume_m3", "geometry", "level_volume_area_table", "pywr_node"]
-    exit_codes:
-      0: "Success"
-      2: "Input error"
-      3: "Runtime error"
-
-  - id: "convert_vic_to_inflow"
-    name: "Convert VIC to Inflow"
-    script: "tools/s4_inflow/convert_vic_to_inflow.py"
-    description: "Convert VIC runoff+baseflow output to reservoir daily inflow timeseries (m3/s)"
-    inputs:
-      - name: "--vic_dir"
-        required: true
-        description: "VIC result directory"
-      - name: "--grid_nc"
-        required: true
-        description: "Basin grid NetCDF"
-      - name: "--dam_lat / --dam_lon"
-        required: true
-        description: "Dam coordinates"
-      - name: "--method"
-        required: false
-        default: "all"
-        description: "Upstream cell method: all, upstream_lat, nearest"
-      - name: "--start_year / --end_year"
-        required: true
-      - name: "--output"
-        required: true
-        description: "Output CSV path"
-    outputs:
-      - name: "inflow_csv"
-        format: "csv"
-        columns: ["date", "inflow_m3s", "runoff_m3s", "baseflow_m3s"]
-    exit_codes:
-      0: "Success"
-      1: "No upstream cells found"
-      2: "Input error"
-      3: "Runtime error"
-
-  - id: "create_operating_rules"
-    name: "Create Operating Rules"
-    script: "tools/s5_operating_rules/create_operating_rules.py"
-    description: "Generate monthly control curves and release rules for Pywr"
-    inputs:
-      - name: "--reservoir_json / --capacity_mcm"
-        required: true
-      - name: "--purpose"
-        required: false
-        default: "multipurpose"
-        description: "flood_control, irrigation, hydropower, multipurpose"
-      - name: "--region"
-        required: false
-        default: "default"
-        description: "Flood season region (china_east, china_north, etc.)"
-      - name: "--flood_months"
-        required: false
-        description: "Custom flood months (comma-separated)"
-    outputs:
-      - name: "operating_rules"
-        format: "json"
-        fields: ["monthly_targets", "pywr_parameters", "flood_season"]
-    exit_codes:
-      0: "Success"
-      2: "Input error"
-      3: "Runtime error"
-
-  - id: "create_demand_nodes"
-    name: "Create Demand Nodes"
-    script: "tools/s6_demands/create_demand_nodes.py"
-    description: "Generate Pywr demand node definitions (environmental, irrigation, municipal, industrial)"
-    inputs:
-      - name: "--type"
-        required: true
-        description: "Demand type: environmental, irrigation, municipal, industrial, all"
-      - name: "--mean_annual_flow_m3s"
-        required: "for environmental type"
-      - name: "--irrigated_area_km2"
-        required: "for irrigation type"
-      - name: "--population"
-        required: "for municipal type"
-    outputs:
-      - name: "demands"
-        format: "json"
-        fields: ["demands[].pywr_node", "demands[].monthly_demand_m3s"]
-    exit_codes:
-      0: "Success"
-      2: "Input error"
-      3: "Runtime error"
-
-  - id: "assemble_pywr_model"
-    name: "Assemble Pywr Model"
-    script: "tools/s7_assembly/assemble_pywr_model.py"
-    description: "Assemble complete Pywr JSON model from components (reservoir, inflow, rules, demands)"
-    inputs:
-      - name: "--reservoir_json"
-        required: true
-      - name: "--inflow_csv"
-        required: true
-      - name: "--rules_json"
-        required: false
-      - name: "--demands_json"
-        required: false
-      - name: "--start_date / --end_date"
-        required: true
-        description: "YYYY-MM-DD format"
-      - name: "--output"
-        required: true
-    outputs:
-      - name: "model_json"
-        format: "json"
-        description: "Complete Pywr model ready to run"
-    exit_codes:
-      0: "Success, no validation issues"
-      3: "Validation warnings present"
-
-  - id: "run_pywr"
-    name: "Run Pywr Model"
-    script: "tools/s8_execution/run_pywr.py"
-    description: "Load and run Pywr model, extract storage/release/spill timeseries and statistics"
-    inputs:
-      - name: "--model"
-        required: true
-        description: "Pywr model JSON file"
-      - name: "--output_dir"
-        required: true
-    outputs:
-      - name: "storage_timeseries.csv"
-        format: "csv"
-      - name: "release_timeseries.csv"
-        format: "csv"
-      - name: "summary.json"
-        format: "json"
-    exit_codes:
-      0: "Success"
-      1: "Model infeasible (demands > supply)"
-      2: "Input error"
-      3: "Runtime error"
-
-  - id: "plot_reservoir_operations"
-    name: "Plot Reservoir Operations"
-    script: "tools/s8_execution/plot_reservoir_operations.py"
-    description: "Multi-panel figure: storage, inflow vs release, demand satisfaction"
-    inputs:
-      - name: "--storage_csv"
-        required: true
-      - name: "--release_csv"
-        required: false
-      - name: "--inflow_csv"
-        required: false
-      - name: "--rules_json"
-        required: false
-      - name: "--output"
-        required: true
-    outputs:
-      - name: "operations_plot"
-        format: "png"
-    exit_codes:
-      0: "Success"
-      3: "Runtime error"
-
-  - id: "inject_releases_to_cama"
-    name: "Inject Releases to CaMa-Flood"
-    script: "tools/s8_execution/inject_releases_to_cama.py"
-    description: "Replace VIC runoff at dam cell with Pywr-regulated release in CaMa-Flood input NetCDF"
-    inputs:
-      - name: "--release_csv"
-        required: true
-      - name: "--cama_nc / --cama_dir"
-        required: true
-      - name: "--dam_lat / --dam_lon"
-        required: true
-      - name: "--output / --output_dir"
-        required: true
-    outputs:
-      - name: "regulated_cama_nc"
-        format: "netcdf"
-    exit_codes:
-      0: "Success"
-      2: "Input error"
-      3: "Runtime error"
-
-  - id: "check_overtopping"
-    name: "Check Overtopping Events"
-    script: "tools/s8_execution/check_overtopping.py"
-    description: "Detect storage exceedances above max volume; flag for DLBreach trigger"
-    inputs:
-      - name: "--storage_csv"
-        required: true
-      - name: "--max_volume_m3 / --max_volume_mcm / --reservoir_json"
-        required: true
-    outputs:
-      - name: "overtopping_report"
-        format: "json"
-        fields: ["overtopping_events", "events[]", "dlbreach_trigger"]
-    exit_codes:
-      0: "No overtopping — safe"
-      1: "Overtopping detected — DLBreach trigger"
-      2: "Input error"
-
-# --- Diagnostic triplets reference ---
-diagnostics:
-  triplet_file: "diagnostics/triplets.yaml"
-  triplet_count: 15
-  failure_domains:
-    - "runtime"
-    - "silent_error"
-    - "unit_conversion"
-    - "parameter_format"
-    - "environment"
-    - "dependency_mismatch"
-    - "data_quality"
-
-# --- Coupling documentation ---
-couplings:
-  coupling_file: "docs/model_couplings.yaml"
-  coupling_count: 5
-  models_coupled:
-    - "VIC 5.1.0 -> Pywr (runoff + baseflow -> inflow)"
-    - "Pywr -> CaMa-Flood (regulated release -> modified runoff)"
-    - "CaMa-Flood -> Pywr (downstream feedback, future)"
-    - "DSSAT -> Pywr (irrigation demand from crop model)"
-    - "Pywr -> DLBreach (overtopping trigger for dam-break)"
+  count: 12
+  files:
+  - tools/s1_installation/verify_pywr_installation.py
+  - tools/s2_dam_inventory/find_dams_in_basin.py
+  - tools/s3_reservoir_properties/build_reservoir_properties.py
+  - tools/s4_inflow/convert_obs_to_inflow.py
+  - tools/s4_inflow/convert_vic_to_inflow.py
+  - tools/s5_operating_rules/create_operating_rules.py
+  - tools/s6_demands/create_demand_nodes.py
+  - tools/s7_assembly/assemble_pywr_model.py
+  - tools/s8_execution/check_overtopping.py
+  - tools/s8_execution/inject_releases_to_cama.py
+  - tools/s8_execution/plot_reservoir_operations.py
+  - tools/s8_execution/run_pywr.py
+inputs:
+  forcing:
+  - name: catchment inflow
+    unit: m3/s
+  - name: irrigation demand
+    unit: m3/s
+  - name: municipal/industrial demand
+    unit: m3/s
+  - name: reservoir-surface precipitation
+    unit: mm/day
+  parameters:
+  - name: max_volume (reservoir capacity)
+    unit: m3
+  - name: min_volume / dead storage
+    unit: m3
+  - name: node_cost (priority penalty)
+    unit: dimensionless
+  - name: max_flow / min_flow (node capacity, MRF)
+    unit: m3/s
+  - name: control curve
+    unit: fraction of max_volume
+  - name: demand profile
+    unit: m3/s
+  initial_conditions:
+  - name: initial_volume
+    unit: m3 (or fraction)
+  boundary_conditions:
+  - name: simulation period
+    unit: date / timestep in days
+  - name: spill / overflow path
+    unit: n/a
+  - name: network topology
+    unit: n/a
+  - name: solver selection
+    unit: dimensionless
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - storage_volume
+  - release_discharge
+  - spill_discharge
+  - demand_deficit
+  - supply_reliability
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.943, KGE=0.923, R=0.972, 3 scorecard(s)'
+  metrics:
+    best_nse: 0.943
+    best_kge: 0.923
+    best_r: 0.972
+summary:
+  total_tools: 12
+  total_stage_docs: 0
+  total_diagnostic_triplets: 15
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

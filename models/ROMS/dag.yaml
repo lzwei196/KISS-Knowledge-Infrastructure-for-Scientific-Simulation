@@ -209,7 +209,7 @@ outputs:
   - var: "salt"
     validation_rank: 3
     unit: "PSU"
-    description: "Salinity tracer (3D)"
+    description: "Ocean salinity tracer (3D)"
     emitted_in: "roms_his.nc / roms_avg.nc"
     observability:
       comparable_obs_shapes:
@@ -222,7 +222,7 @@ outputs:
   - var: "u"
     validation_rank: 4
     unit: "m/s"
-    description: "3D baroclinic velocity XI-component (eastward after rotation)"
+    description: "Ocean 3D baroclinic velocity XI-component (eastward after rotation)"
     emitted_in: "roms_his.nc / roms_avg.nc"
     observability:
       comparable_obs_shapes:
@@ -235,7 +235,7 @@ outputs:
   - var: "v"
     validation_rank: 5
     unit: "m/s"
-    description: "3D baroclinic velocity ETA-component (northward after rotation)"
+    description: "Ocean 3D baroclinic velocity ETA-component (northward after rotation)"
     emitted_in: "roms_his.nc / roms_avg.nc"
     observability:
       comparable_obs_shapes:
@@ -248,7 +248,7 @@ outputs:
   - var: "ubar, vbar"
     validation_rank: 6
     unit: "m/s"
-    description: "Vertically-integrated (barotropic) velocity components"
+    description: "Ocean vertically-integrated (barotropic) velocity components"
     emitted_in: "roms_his.nc / roms_avg.nc"
     observability:
       comparable_obs_shapes:
@@ -261,7 +261,7 @@ outputs:
   - var: "rho"
     validation_rank: 7
     unit: "kg/m3"
-    description: "In-situ density anomaly from the nonlinear equation of state"
+    description: "Ocean in-situ density anomaly from the nonlinear equation of state"
     emitted_in: "roms_his.nc"
     observability:
       comparable_obs_shapes:
@@ -488,3 +488,25 @@ safety:
       scope: "Physical constants"
       source: "mod_scalars.F default scalar definitions in ROMS source"
       status: adopted
+
+medium_evidence:
+  - var: "salt"
+    source: "dag.yaml"
+    quote: "Free-surface, hydrostatic, Boussinesq primitive-equation ocean circulation over variable bathymetry"
+    note: "boundary.scope_in declares the whole model ocean circulation"
+  - var: "u"
+    source: "dag.yaml"
+    quote: "Free-surface, hydrostatic, Boussinesq primitive-equation ocean circulation over variable bathymetry"
+    note: "boundary.scope_in declares the whole model ocean circulation"
+  - var: "v"
+    source: "dag.yaml"
+    quote: "Free-surface, hydrostatic, Boussinesq primitive-equation ocean circulation over variable bathymetry"
+    note: "boundary.scope_in declares the whole model ocean circulation"
+  - var: "ubar, vbar"
+    source: "dag.yaml"
+    quote: "Free-surface, hydrostatic, Boussinesq primitive-equation ocean circulation over variable bathymetry"
+    note: "boundary.scope_in declares the whole model ocean circulation"
+  - var: "rho"
+    source: "dag.yaml"
+    quote: "Free-surface, hydrostatic, Boussinesq primitive-equation ocean circulation over variable bathymetry"
+    note: "boundary.scope_in declares the whole model ocean circulation"

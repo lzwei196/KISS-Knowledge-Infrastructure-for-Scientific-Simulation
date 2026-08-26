@@ -1,14 +1,3 @@
----
-name: pybadlands
-description: >-
-  Badlands landscape evolution model. Covers Fluvial incision via detachment-limited
-  Stream Power Law (E = Kd*A^m*S^n); Fluvial sediment transport/deposition
-  (transport-capacity variants); Linear and non-linear hillslope diffusion (subaerial and
-  marine creep); Slope-failure / mass-wasting diffusion; Wave-driven shallow-marine
-  sediment transport; Carbonate reef and pelagic growth. Use when the task involves
-  running, configuring, calibrating or interpreting pyBadlands.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/s3_forcing/convert_forcing_to_badlands.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_forcing/convert_forcing_to_badlands.py --help` |
+| `tools/s4_parameters/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_parameters/convert_soil_params.py --help` |
+| `tools/s5_run/run_badlands.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_run/run_badlands.py --help` |
+| `tools/s6_output/parse_badlands_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_output/parse_badlands_output.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # pyBadlands — Knowledge Infrastructure
 
@@ -162,6 +185,28 @@ model.run_to_time(1000000)  # Run 1 Myr
 | convert_params | s4 | `tools/s4_parameters/convert_soil_params.py` | ~150 | Convert soil/rock parameters → erodibility layers |
 | run_badlands | s5 | `tools/s5_run/run_badlands.py` | ~140 | Execute model with XML config |
 | parse_output | s6 | `tools/s6_output/parse_badlands_output.py` | ~180 | Extract HDF5 → CSV with erosion/deposition budgets |
+
+---
+
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag wins over this body if any output name,
+rank, unit, emitted file, or description ever disagrees.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `discharge` — Accumulated water discharge per node from SFD drainage routing. (`m^3/year`)
+
+| Output variable (dag `var`) | Rank | Emitted in | Unit | Dag description |
+|-----------------------------|------|------------|------|-----------------|
+| discharge | 1 | `h5/flow.time*.hdf5` | `m^3/year` | Accumulated water discharge per node from SFD drainage routing. |
+| elevation | 2 | `h5/tin.time*.hdf5` | `m` | Current topographic surface elevation at each TIN node (z column of coords array). |
+| cumdiff | 3 | `h5/tin.time*.hdf5` | `m` | Cumulative total landscape-surface erosion (negative) and deposition (positive) thickness at each TIN node. |
+| stratigraphy | 4 | `h5/sed.time*.hdf5` and carb mesh HDF5 | `m` | Deposited sediment / stratigraphic layer thicknesses (multi-rock and carbonate meshes). |
+
+**Observable outputs in dag order**: `discharge`, `elevation`, `cumdiff`,
+`stratigraphy`. Other dag outputs include `elevation`, `cumdiff`, and
+`stratigraphy` in addition to the rank-1 `discharge` output.
 
 ---
 
@@ -345,6 +390,10 @@ single-column (z-values only, no x,y coordinates), with no header row.
 
 ## Output Format
 
+`dag.yaml` is the authoritative output contract; this section adds file-layout
+detail for operators. When asked what the model predicts, answer from
+`dag.yaml` first and use the tables below for HDF5/XDMF navigation.
+
 ### Directory Structure
 ```
 output/
@@ -373,6 +422,42 @@ output/
 | discharge | m³/year | Water discharge at each node |
 | slopeTIN | — | Local slope gradient |
 | rain | m/year | Local rainfall rate |
+
+---
+
+## 8. Unit Conversion Table
+
+**Source of truth**: `dag.yaml`, `docs/format_spec.yaml`, and
+`diagnostics/triplets.yaml`. This table records the conversions used by the KI
+pipeline; verify source-data attributes before applying a row to a new dataset.
+
+| Variable / input | Source unit (verified or trap source) | Model unit | Conversion | Type | Trap ID |
+|------------------|----------------------------------------|------------|------------|------|---------|
+| Rainfall (`rval` or rain map) | `mm/day` | `m/year` | `rain_mm_per_day * 365.25 / 1000` | multiplicative | `dt_001` |
+| Rainfall (`rval` or rain map) | `mm/year` | `m/year` | `rain_mm_per_year / 1000` | multiplicative | `dt_001` |
+| River sediment load (`rQs`) | `kg/year` | `Mt/year` | `rQs_kg_per_year / 1e9` | multiplicative | `dt_002` |
+| DEM elevation | `cm` | `m` | `z_cm / 100` | multiplicative | `dt_003` |
+| DEM elevation | `mm` | `m` | `z_mm / 1000` | multiplicative | `dt_003` |
+| DEM elevation | `ft` | `m` | `z_ft * 0.3048` | multiplicative | `dt_003` |
+| Sea-level curve time | `ka` | `years` | `time_ka * 1000` | multiplicative | `dt_004` |
+| Sea-level curve time | `Ma` | `years` | `time_Ma * 1e6` | multiplicative | `dt_004` |
+| Tectonic displacement map | `m/year` rate | `m` total over event | `rate_m_per_year * duration_years` | multiplicative | `dt_005` |
+| Hillslope diffusion coefficient | `m^2/kyr` | `m^2/year` | `kappa_m2_per_kyr / 1000` | multiplicative | `dt_007` |
+| Grain size `D50` | `mm` | `m` | `d50_mm / 1000` | multiplicative | `dt_010` |
+| Grain size `D50` | `um` | `m` | `d50_um / 1e6` | multiplicative | `dt_010` |
+| River water discharge (`rQw`) | `L/s` | `m^3/s` | `rQw_L_per_s / 1000` | multiplicative | `dt_011` |
+| Wave height | `cm` | `m` | `wave_height_cm / 100` | multiplicative | `dt_014` |
+| Elastic thickness | `km` | `m` | `elasticH_km * 1000` | multiplicative | `dt_015` |
+
+### 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| discharge | `m^3/year` accumulated routed volume per TIN node; clamped in the HDF5 writer | Gauged hydrograph in `m^3/s` | Hydrograph NSE/PBIAS tiers are structurally inappropriate; compare drainage structure instead. |
+| elevation | `m`, current topographic surface elevation at each TIN node | Raster elevation on a regular grid | Must resample/match TIN and observation grid before spatial metrics. |
+| cumdiff | `m`, erosion negative and deposition positive | Positive erosion depth or sediment yield rate | Sign inversion changes erosion/deposition interpretation and volume budgets. |
+| stratigraphy | `m`, deposited layer thicknesses | Raw well log point observations | Compare interpreted layer architecture/thickness after matching support and compaction assumptions. |
+| rain | `m/year` local rainfall rate | `mm/day`, `mm/month`, or `mm/year` | 1000x or larger forcing errors can erase relief in the first output step. |
 
 ---
 
@@ -432,6 +517,72 @@ output/
 | dt_018 | fatal | dependency_mismatch | numpy >= 2 incompatible |
 | dt_019 | degraded | parameter_format | Carbonate depth curve non-monotonic |
 | dt_020 | silent | silent_error | Porosity params ignored when 0 |
+
+---
+
+## 9. Diagnostic Triplets (Top 5)
+
+The full diagnostic corpus remains in `diagnostics/triplets.yaml`; do not copy
+the full file into this body because duplicated remedies drift.
+
+| # | Error / symptom | Diagnosis | Remedy |
+|---|-----------------|-----------|--------|
+| 1 | `dt_001`: Extremely rapid landscape denudation in first few timesteps; entire mountain range erased | Rainfall specified in `mm/year` or `mm/day` instead of `m/year` | Convert rainfall: `m/year = mm/day * 365.25 / 1000` |
+| 2 | `dt_002`: River source produces impossibly large sediment plume; basin fills instantly | Sediment load `rQs` specified in `kg/year` instead of `Mt/year` | Convert to `Mt/year`: `rQs_Mt = rQs_kg / 1e9` |
+| 3 | `dt_003`: Erosion rates are orders of magnitude off; landscape morphology unrealistic | DEM elevation in `cm`, `mm`, or feet instead of metres | Convert DEM to metres before ingestion |
+| 4 | `dt_004`: Sea-level changes occur 1000x too rapidly; coastal zones oscillate wildly | Sea-level curve time column in `ka` instead of years | Multiply time column by 1000: `time_years = time_ka * 1000` |
+| 5 | `dt_005`: Tectonic uplift produces negligible topographic change over simulation | Displacement map contains rate (`m/year`) instead of total displacement (`m`) | Multiply rate by event duration: `disp_m = rate_m_per_yr * (dend - dstart)` |
+
+---
+
+## 11. Validated Results
+
+**Source of truth**: `docs/validation_convention.yaml`. The field bar for this
+KI is unresolved for the listed headline metrics; all stated null bands are
+written exactly as `no cited threshold`, and empty convention citations remain
+`cites: []`.
+
+### Headline Output Validation Context
+
+`discharge` is the dag rank-1 output:
+
+> `discharge` — Accumulated water discharge per node from SFD drainage routing. (`m^3/year`)
+
+The convention states that this output should be compared as spatial
+drainage-network / flow-accumulation structure after matching grid, routing
+convention, and drainage mask; hydrograph NSE/PBIAS tiers are not appropriate
+for this output.
+
+### Performance Metrics - Convention Bars
+
+Because the convention `cites` arrays are empty for these headline bars, each
+band carries `cites: []`.
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory |
+|--------------|--------|-----------|-----------|------|--------------|
+| elevation | csi | maximize | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) |
+| elevation | rmse | minimize | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) |
+| cumdiff | csi | maximize | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) |
+| cumdiff | rmse | minimize | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) |
+| cumdiff | pbias | zero_centered | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) |
+| cumdiff | relative_volume_error | zero_centered | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) | no cited threshold (`cites: []`) |
+
+### Achieved Results
+
+No numeric achieved-result table is added here from memory. Use
+`docs/validation_convention.yaml` for validation bars and the KI's generated
+manifest for projected tier metadata; if those disagree, regenerate the
+manifest from the dag and convention rather than editing this section by hand.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending per run | Prepare rainfall, sea-level, tectonic, and river forcing before execution. |
+| DEM / topography | Pipeline | Pending per run | DEM elevation must be in metres and free of NaN/NoData before mesh construction. |
+| Parameters | Pipeline | Pending per run | SPL, diffusion, flexure, wave, carbonate, and lithology parameters require unit checks. |
+| Outputs | pyBadlands binary/package | Pending per run | Run the real model and parse HDF5/XDMF outputs; do not substitute formulas. |
+| Validation observations | External observations | Pending per run | Match spatial support, time window, routing convention, and uncertainty before computing metrics. |
 
 ---
 

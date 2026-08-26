@@ -106,7 +106,7 @@ outputs:
   - var: "inverted_resistivity_model"
     validation_rank: 1
     unit: "Ohm·m"
-    description: "Spatially-distributed electrical resistivity per mesh cell recovered by ERT inversion (inverted in log-space)"
+    description: "Spatially-distributed subsurface electrical resistivity per mesh cell recovered by ERT inversion (inverted in log-space)"
     emitted_in: ".vtk / .bms / .npy (per-mesh-cell array) + model-cells CSV"
     observability:
       comparable_obs_shapes:
@@ -142,7 +142,7 @@ outputs:
   - var: "inverted_conductivity_or_coleCole_model"
     validation_rank: 4
     unit: "S/m (EM) or (rho0, m, tau, c) (SIP)"
-    description: "Electrical conductivity (EM) or Cole-Cole spectral parameters (SIP) recovered by inversion"
+    description: "Subsurface electrical conductivity (EM) or subsurface Cole-Cole spectral parameters (SIP) recovered by inversion"
     emitted_in: ".vtk / .npy"
     observability:
       comparable_obs_shapes:
@@ -155,7 +155,7 @@ outputs:
   - var: "forward_response"
     validation_rank: 2
     unit: "Ohm·m or s (matches data token)"
-    description: "Predicted data (apparent resistivity / traveltime) from the forward operator for the current model"
+    description: "Predicted geophysical survey data (apparent resistivity / traveltime) from the forward operator for the current subsurface model"
     emitted_in: ".npy + residual pseudosection"
     observability:
       comparable_obs_shapes:
@@ -168,7 +168,7 @@ outputs:
   - var: "data_fit_chi2"
     validation_rank: 5
     unit: "dimensionless"
-    description: "Error-weighted data misfit chi^2 = Phi_d/N tracked across iterations; convergence target ~1.0"
+    description: "Error-weighted subsurface geophysical survey data misfit chi^2 = Phi_d/N tracked across iterations; convergence target ~1.0"
     emitted_in: "metrics.json / chi2History"
     observability:
       comparable_obs_shapes:
@@ -181,7 +181,7 @@ outputs:
   - var: "coverage_sensitivity"
     validation_rank: 6
     unit: "normalized 0-1"
-    description: "Cumulative per-cell sensitivity (sumCols of Jacobian); flags reliable vs poorly-constrained regions"
+    description: "Cumulative per-cell sensitivity (sumCols of Jacobian) on the subsurface inversion mesh; flags reliable vs poorly-constrained regions"
     emitted_in: "model-cells CSV / .vtk attribute"
     observability:
       comparable_obs_shapes:
@@ -376,3 +376,25 @@ safety:
       scope: "boundary.closure"
       source: "pyGIMLi solver and frameworks documentation"
       status: "adopted"
+
+medium_evidence:
+  - var: "inverted_resistivity_model"
+    source: "dag.yaml"
+    quote: "Geophysical forward modelling (FEM/FVM PDE solve) of synthetic data from a subsurface property model"
+    note: "scope_in declares the shared medium for the geophysical property model as subsurface"
+  - var: "inverted_conductivity_or_coleCole_model"
+    source: "dag.yaml"
+    quote: "Geophysical forward modelling (FEM/FVM PDE solve) of synthetic data from a subsurface property model"
+    note: "scope_in declares the shared medium for the geophysical property model as subsurface"
+  - var: "forward_response"
+    source: "dag.yaml"
+    quote: "Geophysical forward modelling (FEM/FVM PDE solve) of synthetic data from a subsurface property model"
+    note: "scope_in declares predicted data as forward-modelled from a subsurface property model"
+  - var: "data_fit_chi2"
+    source: "dag.yaml"
+    quote: "Geophysical forward modelling (FEM/FVM PDE solve) of synthetic data from a subsurface property model"
+    note: "scope_in declares the fitted geophysical survey data as tied to a subsurface property model"
+  - var: "coverage_sensitivity"
+    source: "dag.yaml"
+    quote: "Model appraisal: coverage / cumulative sensitivity and resolution analysis"
+    note: "scope_in ties coverage and cumulative sensitivity diagnostics to the subsurface geophysical inversion scope"

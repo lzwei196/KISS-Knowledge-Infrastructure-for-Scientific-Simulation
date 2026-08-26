@@ -63,7 +63,7 @@ inputs:
       unit: "mm/d"
       source_kind: "calibrated"
       model_input_format: "prefixed parameter dict key"
-      notes: "Exchange flux magnitude. SuperflexPy sign convention: positive = groundwater import (gaining stream), negative = export (losing stream) — opposite to some GR4J formulations."
+      notes: "Exchange flux magnitude. SuperflexPy sign convention: positive x2 = EXPORT/loss from the catchment (losing stream), negative = import (gaining stream) — per gr4j.py docstring 'Exchange flux (F), positive if loss' (CORRECTED 2026-08-22; this note previously taught the inverted sign)."
     - category: "routing_store"
       name: "x3 (GR4J routing-store capacity)"
       unit: "mm"
@@ -368,7 +368,7 @@ outputs:
   - var: "AET"
     validation_rank: 3
     unit: "mm/d"
-    description: "Actual evapotranspiration flux from the production store / unsaturated reservoir; via get_aet()/get_AET()."
+    description: "Actual water evapotranspiration flux from the production store / unsaturated reservoir; via get_aet()/get_AET()."
     emitted_in: "element.get_aet() / get_AET()"
     observability:
       comparable_obs_shapes:
@@ -392,7 +392,7 @@ outputs:
   - var: "S"
     validation_rank: 4
     unit: "mm"
-    description: "Reservoir storage state trajectory over time per reservoir element; model.get_states()."
+    description: "Reservoir water storage state trajectory over time per reservoir element; model.get_states()."
     emitted_in: "model.get_states()"
     observability:
       comparable_obs_shapes:
@@ -408,7 +408,7 @@ outputs:
   - var: "F"
     validation_rank: 5
     unit: "mm/d"
-    description: "GR4J groundwater exchange (loss/gain) flux F = (x2/x3^omega)*S^omega; positive = import, negative = export."
+    description: "GR4J groundwater exchange (loss/gain) flux F = (x2/x3^omega)*S^omega; positive x2 = EXPORT/loss from the catchment, negative = import (CORRECTED 2026-08-22, rank audit: superflexpy/implementation/elements/gr4j.py docstring 'Exchange flux (F), positive if loss' and _flux_function_python emits -(x2*(S/x3)**omega); the flux is applied in both the routing store and the lag branch)."
     emitted_in: "model.get_output() (GR4J routing store flux)"
     observability:
       comparable_obs_shapes:
@@ -579,7 +579,7 @@ safety:
       severity: "silent"
     - id: "gr4j_x2_sign_convention"
       kind: "control_semantic"
-      description: "GR4J exchange x2 sign in SuperflexPy is positive=import, negative=export (opposite to some GR4J); a wrong sign breaks water balance."
+      description: "GR4J exchange x2 sign in SuperflexPy is positive=EXPORT/loss, negative=import (gr4j.py docstring: 'Exchange flux (F), positive if loss'; CORRECTED 2026-08-22 — this triplet previously taught the INVERTED sign); a wrong sign breaks water balance."
       severity: "silent"
     - id: "reset_states_lag_memory"
       kind: "initial_condition_semantic"
@@ -607,3 +607,13 @@ safety:
       scope: "all influence edges"
       source: "Dal Molin et al. 2021 (10.5194/gmd-14-7047-2021); van Esse et al. 2013 (10.5194/hess-17-4227-2013); Fenicia/Kavetski 2011 (10.1029/2010WR010174, 10.1029/2011WR010748)"
       status: "adopted"
+
+medium_evidence:
+  - var: "AET"
+    source: "dag.yaml"
+    quote: "Each reservoir element enforces the water-balance ODE dS/dt = I(theta,t) - O(S,theta,t); connectors (Splitter/Junction/Transparent/FluxAggregator) and lag functions conserve mass without storage."
+    note: "DAG boundary notes define reservoir fluxes and state changes as water-balance mass terms."
+  - var: "S"
+    source: "dag.yaml"
+    quote: "Each reservoir element enforces the water-balance ODE dS/dt = I(theta,t) - O(S,theta,t); connectors (Splitter/Junction/Transparent/FluxAggregator) and lag functions conserve mass without storage."
+    note: "DAG boundary notes define reservoir storage trajectories as water-balance state terms."

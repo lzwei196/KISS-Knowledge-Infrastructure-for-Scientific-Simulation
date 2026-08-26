@@ -1,13 +1,3 @@
----
-name: coawst
-description: >-
-  COAWST v3.8. Covers Two-way coupled coastal-ocean circulation (3D temperature, salinity,
-  velocity, free surface) via…; Nearshore spectral wind-wave evolution and wave-current
-  interaction via SWAN; Mesoscale atmospheric forcing and air-sea feedback via WRF;
-  Wave-current driven sediment resuspension, transport, and bed morphodynamics. Use when
-  the task involves running, configuring, calibrating or interpreting COAWST.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (17 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (29 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_grid.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_grid.py --help` |
+| `tools/generate_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_config.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_coawst.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_coawst.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # COAWST Knowledge Infrastructure
 
@@ -246,6 +271,37 @@ All outputs are **NetCDF-4** with CF-1.6 conventions.
 | AKt       | Vertical diffusivity (temp)  | m²/s    | w      |
 | bed_thickness | Sediment bed thickness   | m       | rho    |
 
+### Output Description (sourced from `dag.yaml`)
+
+The dag is the authority for what this KI predicts. If this section ever disagrees with
+`dag.yaml`, treat this section as stale and the dag as correct.
+
+**Rank-1 output**:
+
+> `Hsig` — Significant wave height from the coupled wave model (SWAN HSIGN). (`m`)
+
+| Output variable (dag `var`) | Validation rank | Unit | Description |
+|-----------------------------|-----------------|------|-------------|
+| `Hsig` | 1 | m | Significant wave height from the coupled wave model (SWAN HSIGN). |
+
+**Other dag outputs**: `zeta`, `temp`, `salt`, `u`, `v`, `bed_thickness`.
+
+### Unit Table (outputs and critical conversions)
+
+Use `dag.yaml` for authoritative output units and `docs/format_spec.yaml` for exact I/O
+shapes. This table restates the unit facts needed most often during output parsing and
+validation.
+
+| Variable | Unit in this KI | Source / scope | Notes |
+|----------|-----------------|----------------|-------|
+| `Hsig` | m | `dag.yaml` rank-1 output | Significant wave height from the coupled wave model (SWAN HSIGN). |
+| `zeta` | m | COAWST output table and unit traps | Free-surface elevation; external cm values require divide by 100 before use as model input. |
+| `temp` | degC | COAWST output table and unit traps | Potential temperature; Kelvin forcing requires subtract 273.15 before use as model input. |
+| `salt` | PSU | COAWST output table and unit traps | Salinity; check range 0-42 when preparing initial or boundary conditions. |
+| `u` | m/s | COAWST output table | Eastward velocity component on the u grid. |
+| `v` | m/s | COAWST output table | Northward velocity component on the v grid. |
+| `bed_thickness` | m | COAWST output table | Sediment bed thickness on the rho grid. |
+
 ---
 
 ## 8. Tools Reference
@@ -304,6 +360,22 @@ All outputs are **NetCDF-4** with CF-1.6 conventions.
 | River discharge     | USGS, GRDC                      | CSV/NC    | Daily           |
 | Wave spectra (BC)   | WW3 global hindcast             | NetCDF    | 0.5°            |
 | SST observations    | GHRSST, AVHRR, OSTIA            | NetCDF    | 1 – 5 km       |
+
+### Validated Results (sourced from `docs/validation_convention.yaml`)
+
+The convention file is the authority for validation bars. These are not achieved run
+scores; they are the cited thresholds this KI uses to judge future COAWST validation
+outputs.
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band |
+|--------------|--------|-----------|----------------|-----------|-------------------|
+| `zeta` | rmse | minimize | <= 0.14, cited: `staneva2016`, `ganju2017` | <= 0.16, cited: `staneva2016`, `ganju2017` | <= 0.26, cited: `staneva2016`, `ganju2017` |
+| `zeta` | bias | zero_centered | abs(bias) <= 0.09, cited: `staneva2016` | abs(bias) <= 0.1, cited: `staneva2016` | abs(bias) <= 0.17, cited: `staneva2016` |
+| `zeta` | csi | maximize | not stated in extracted convention | not stated in extracted convention | no cited threshold |
+| `temp` | rmse | minimize | <= 0.35, cited: `lewis2019`, `kumar2015` | <= 0.44, cited: `lewis2019`, `kumar2015` | <= 0.72, cited: `lewis2019`, `kumar2015` |
+
+For null bands in `docs/validation_convention.yaml`, write "no cited threshold" and do
+not substitute a guessed threshold.
 
 ---
 

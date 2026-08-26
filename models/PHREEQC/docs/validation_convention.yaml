@@ -1,0 +1,364 @@
+schema_version: 1
+model_id: PHREEQC
+domain: geochemistry
+generated_by: "Step-B fleet agent - validation convention"
+generated_at: 2026-08-14
+
+references:
+  parkhurst1999:
+    doi: 10.3133/wri994259
+    title: "User's guide to PHREEQC (Version 2): A computer program for speciation, batch-reaction, one-dimensional transport, and inverse geochemical calculations"
+    venue: "U.S. Geological Survey Water-Resources Investigations Report"
+    year: 1999
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3133_wri994259.txt
+  parkhurst1995:
+    doi: 10.3133/wri954227
+    title: "User's guide to PHREEQC, a computer program for speciation, reaction-path, advective-transport, and inverse geochemical calculations"
+    venue: "U.S. Geological Survey Water-Resources Investigations Report"
+    year: 1995
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3133_wri954227.txt
+  steefel2015:
+    doi: 10.1007/s10596-014-9443-x
+    title: "Reactive transport codes for subsurface environmental simulation"
+    venue: "Computational Geosciences"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10596-014-9443-x.txt
+  delucia2021:
+    doi: 10.5194/adgeo-56-33-2021
+    title: "Geochemical and reactive transport modelling in R with the RedModRphree package"
+    venue: "Advances in Geosciences"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_adgeo-56-33-2021.txt
+  marty2015:
+    doi: 10.1007/s10596-014-9463-6
+    title: "Benchmarks for multicomponent reactive transport across a cement/clay interface"
+    venue: "Computational Geosciences"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10596-014-9463-6.txt
+  glaus2015:
+    doi: 10.1007/s10596-015-9481-z
+    title: "Benchmarks for multicomponent diffusion and electrochemical migration"
+    venue: "Computational Geosciences"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10596-015-9481-z.txt
+  plummer1988:
+    doi: 10.3133/wri884153
+    title: "A computer program incorporating Pitzer's equations for calculation of geochemical reactions in brines (PHRQPITZ)"
+    venue: "U.S. Geological Survey Water-Resources Investigations Report"
+    year: 1988
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3133_wri884153.txt
+  zhang2022:
+    doi: 10.1016/j.earscirev.2021.103888
+    title: "Comparison of thermodynamic data files for PHREEQC"
+    venue: "Earth-Science Reviews"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.earscirev.2021.103888.txt
+  meinrath2000:
+    doi: 10.1016/s0169-7722(00)00106-6
+    title: "Database uncertainty as a limiting factor in reactive transport prognosis"
+    venue: "Journal of Contaminant Hydrology"
+    year: 2000
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_s0169-7722(00)00106-6.txt
+  brassard2022:
+    doi: 10.1002/aic.17391
+    title: "Algorithms for activity correction models for geochemical speciation and reactive transport modeling"
+    venue: "AIChE Journal"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_aic.17391.txt
+  katsikaris2025:
+    doi: 10.1007/s12665-024-12066-3
+    title: "Geochemistry and machine learning: methods and benchmarking"
+    venue: "Environmental Earth Sciences"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s12665-024-12066-3.txt
+
+validation:
+  - dag_variable: pH
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: absolute_error
+        direction: minimize
+        unit: pH_unit
+        bands: {very_good: null, good: null, satisfactory: 0.05}
+        pass_band: satisfactory
+        band_note: "PHREEQC inverse-modeling examples use an absolute pH uncertainty of 0.05 unit rather than percent bias."
+        cites: [parkhurst1999, parkhurst1995]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The dag metric is retained only as context; fetched PHREEQC guidance expresses pH tolerance in pH units, not percent bias."
+        cites: [parkhurst1999]
+    validated_when: "Measured and modeled pH agree within 0.05 pH unit at the same temperature, gas condition, and thermodynamic database."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Parkhurst and Appelo state that the inverse-modeling default is 2.5 percent for analytical data except pH, and that pH defaults to 0.05 unit. This clearly supersedes pbias for pH snapshots.
+
+  - dag_variable: pH
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mae
+        direction: minimize
+        unit: pH_unit
+        bands: {very_good: null, good: null, satisfactory: 0.05}
+        pass_band: satisfactory
+        band_note: "Transferred from PHREEQC's pH analytical uncertainty convention; no fetched PHREEQC time-series NSE tier was found."
+        cites: [parkhurst1999, parkhurst1995]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "KINETICS/TRANSPORT pH series may report temporal fit, but fetched geochemical papers benchmark pH by absolute deviations and inter-code/profile agreement, not NSE tiers."
+        cites: [delucia2021, marty2015]
+    validated_when: "Mean absolute pH error <= 0.05 pH unit, with temporal NSE treated only as supportive until a PHREEQC-specific pH time-series tier is fetched."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: >-
+      De Lucia and Kuehn report PHREEQC transport-profile validation as profiles "perfectly superposable" up to negligible floating-point error, while Marty et al. report "excellent agreement"; neither gives an NSE threshold.
+
+  - dag_variable: pe
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: absolute_error
+        direction: minimize
+        unit: pe_unit
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric pe/Eh validation band for PHREEQC; convert Eh to pe consistently before comparison."
+        cites: []
+    secondary_metrics:
+      - metric: water_stability_check
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Near water-stability boundaries, RedModRphree warns that no error control is performed and recommends restricting pe/pH ranges and grid resolution."
+        cites: [delucia2021]
+    validated_when: "UNRESOLVED - compare pe only when field Eh is well posed and converted consistently; no numeric fetched band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Redox state is strongly condition- and convention-dependent. The fetched PHREEQC-oriented literature supports careful pe-pH domain checks, not a universal pe error threshold.
+
+  - dag_variable: element_totals
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: relative_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 2.5}
+        pass_band: satisfactory
+        band_note: "PHREEQC inverse modeling uses 0.025 fractional uncertainty for analytical data; expressed here as 2.5 percent."
+        cites: [parkhurst1999, parkhurst1995]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Percent bias is compatible with concentration data, but PHREEQC's fetched convention is analytical uncertainty by datum."
+        cites: [parkhurst1999]
+    validated_when: "Element totals are within the stated analytical uncertainty; absent a project-specific uncertainty, the fetched PHREEQC examples use 2.5 percent."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      The manual says analytical-data adjustments in inverse models "must be within the specified uncertainties"; the example default is 0.025 for all analytical data except pH.
+
+  - dag_variable: element_totals
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched PHREEQC or reactive-transport paper gives an NSE tier for element-total breakthrough or kinetic time series."
+        cites: []
+      - metric: relative_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 2.5}
+        pass_band: satisfactory
+        band_note: "Magnitude component transferred from PHREEQC analytical uncertainty examples; temporal skill remains unresolved."
+        cites: [parkhurst1999, parkhurst1995]
+    secondary_metrics:
+      - metric: profile_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Reactive-transport benchmarks report excellent or very good agreement among concentration profiles, but do not define NSE pass tiers."
+        cites: [marty2015, glaus2015, delucia2021]
+    validated_when: "Magnitude should be within analytical uncertainty, but the time-series validation gate is unresolved because the required NSE band is uncited."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Keep the dag determining metric nse as a headline metric with a null band. The cited 2.5 percent analytical convention must not by itself validate temporal pattern skill.
+
+  - dag_variable: species_distribution
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: log_activity_error
+        direction: minimize
+        unit: log10_molality_or_activity
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a universal species-activity validation tolerance; most applications validate species indirectly through totals, pH, and SI."
+        cites: []
+    secondary_metrics:
+      - metric: database_choice
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "Thermodynamic data file choice can change minor species by orders of magnitude; Zhang et al. report several minor-species differences up to multiple log units between PHREEQC databases."
+        cites: [zhang2022, meinrath2000]
+    validated_when: "UNRESOLVED - direct species distribution thresholds are not numerically grounded in the fetched set; validate indirectly against totals, pH, SI, and database provenance."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Meinrath et al. note that direct verification of modeled uranium species at low concentration was not available; Zhang et al. show database-driven differences in species distributions.
+
+  - dag_variable: saturation_index
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: si_error
+        direction: zero_centered
+        unit: log10
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "SI=0 defines equilibrium, but no fetched paper gives a universal acceptable SI-error tolerance for PHREEQC validation."
+        cites: []
+    secondary_metrics:
+      - metric: si_error
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "High-salinity and database-choice effects can dominate SI: Plummer et al. report pH-scale effects of about +/-0.5 SI for calcite in brines, and Zhang et al. report carbonate-mineral SI differences up to 2 units or more between TDFs."
+        cites: [plummer1988, zhang2022]
+    validated_when: "UNRESOLVED - require SI sign/state consistency and database provenance; do not auto-validate from an uncited numeric SI tolerance."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The field convention is thermodynamic-state consistency, not a single global SI band. For equilibrated phases SI targets are often zero, but the fetched papers document database and pH-scale limits rather than a pass threshold.
+
+  - dag_variable: ionic_strength
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: relative_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an observation-facing ionic-strength error threshold for PHREEQC."
+        cites: []
+    secondary_metrics:
+      - metric: activity_model_applicability
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Activity-coefficient and TDF selection control ionic-strength applications; Zhang et al. distinguish ion-association, Pitzer, and SIT methods and show high-salinity performance differences, while Brassard et al. show activity-correction robustness changes with ionic strength."
+        cites: [zhang2022, brassard2022, plummer1988]
+    validated_when: "UNRESOLVED - judge ionic strength with the activity model/TDF appropriate to salinity; no numeric validation band was fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      This is a diagnostic output. The strongest fetched evidence concerns applicability and uncertainty of activity models, not a standalone field threshold.
+
+  - dag_variable: specific_conductance
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: relative_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched PHREEQC paper provides a universal specific-conductance validation threshold."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "PHREEQC reports specific conductance as a directly calculated selected-output diagnostic, but the fetched set gives no pass band against field EC probes."
+        cites: [steefel2015]
+    validated_when: "UNRESOLVED - compare directly to field/lab EC at matched temperature, but do not auto-grade without a cited numeric threshold."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      The OpenAlex coverage check returned no PHREEQC-specific EC validation threshold; bands remain null.
+
+  - dag_variable: phase_amounts
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: relative_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a universal phase-transfer amount error band; inverse models constrain phase transfers through analytical-data uncertainties."
+        cites: []
+    secondary_metrics:
+      - metric: mass_balance_closure
+        direction: minimize
+        status: supportive
+        ceiling_reason: "PHREEQC inverse modeling prints mole transfers whose admissibility is constrained by solution analytical uncertainties and required dissolve/precipitate directions."
+        cites: [parkhurst1999, parkhurst1995]
+    validated_when: "UNRESOLVED - phase amounts are acceptable only insofar as mass-balance solutions stay within analytical uncertainties and phase-direction constraints; no direct amount threshold was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      A batch experiment with measured precipitate/dissolution mass can set a study-specific threshold, but the fetched general PHREEQC convention does not provide one.
+
+  - dag_variable: transport_profiles
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched PHREEQC/reactive-transport benchmark gives NSE validation tiers for breakthrough curves."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched benchmarks compare concentration profiles with analytical or inter-code references and report excellent/very good agreement, but without numeric RMSE bands."
+        cites: [parkhurst1999, marty2015, glaus2015, delucia2021]
+    validated_when: "UNRESOLVED - require profile agreement against analytical solution or experiment; no cited NSE pass band exists."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      PHREEQC example 12 explicitly computes deviations from analytical diffusion solutions and expects second-order error reduction, but it does not state a universal pass threshold.
+
+  - dag_variable: transport_profiles
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "CSI is a dag spatial-pattern placeholder; fetched PHREEQC benchmarks use continuous profile agreement, not categorical CSI thresholds."
+        cites: []
+    secondary_metrics:
+      - metric: profile_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Continuous concentration and pH profiles are benchmarked by analytical or inter-code agreement; Marty et al. quantify discrepancies by standard deviation but do not provide a pass band."
+        cites: [marty2015, glaus2015, delucia2021, katsikaris2025]
+    validated_when: "UNRESOLVED - compare continuous 1-D profiles to analytical, experimental, or inter-code reference profiles; do not auto-grade with CSI."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Katsikaris et al. list RMSE, R2, NMAE, NRMSE, MAPE, and RRMSE for geochemical surrogate benchmarks and note that one metric is not adequate across pH, concentrations, and precipitate amounts; no CSI band is given.
+
+deferred_paywalled:
+  - ref: "Mineralogical controls on environmental mobility of arsenic from historic mine processing residues, New Zealand"
+    doi: 10.1016/j.apgeochem.2007.12.030
+    needed_for: [pH, pe, element_totals, species_distribution, saturation_index]
+  - ref: "PHREEQC application papers with field EC validation thresholds were not fetchable in the capped search"
+    doi: unknown_not_fetched
+    needed_for: [specific_conductance]

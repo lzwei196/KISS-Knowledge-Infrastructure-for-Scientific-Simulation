@@ -1,0 +1,314 @@
+schema_version: 1
+model_id: Landlab
+domain: hydrology
+generated_by: "Codex Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  betrie2011:
+    doi: 10.5194/hess-15-807-2011
+    title: "Sediment management modelling in the Blue Nile Basin using SWAT model"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-15-807-2011.txt
+  shobe2017:
+    doi: 10.5194/gmd-10-4577-2017
+    title: "The SPACE 1.0 model: a Landlab component for 2-D calculation of sediment transport, bedrock erosion, and landscape evolution"
+    venue: "Geoscientific Model Development"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-10-4577-2017.txt
+  barnhart2020_sens:
+    doi: 10.1029/2018JF004961
+    title: "Inverting Topography for Landscape Evolution Model Process Representation: 1. Conceptualization and Sensitivity Analysis"
+    venue: "Journal of Geophysical Research: Earth Surface"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018jf004961.txt
+  barnhart2020_calval:
+    doi: 10.1029/2018JF004963
+    title: "Inverting Topography for Landscape Evolution Model Process Representation: 2. Calibration and Validation"
+    venue: "Journal of Geophysical Research: Earth Surface"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018jf004963.txt
+  barnhart2020_ranges:
+    doi: 10.1029/2019JF005287
+    title: "Inverting Topography for Landscape Evolution Model Process Representation: 3. Determining Parameter Ranges and Model Adequacy"
+    venue: "Journal of Geophysical Research: Earth Surface"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2019jf005287.txt
+  mudd2014:
+    doi: 10.1002/2013JF002981
+    title: "A statistical framework to quantify spatial variation in channel gradients using the integral method of channel profile analysis"
+    venue: "Journal of Geophysical Research: Earth Surface"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2013jf002981.txt
+  litwin2025:
+    doi: 10.5194/esurf-13-277-2025
+    title: "Hillslope diffusion and channel steepness in landscape evolution models"
+    venue: "Earth Surface Dynamics"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_esurf-13-277-2025.txt
+  purinton2017:
+    doi: 10.5194/esurf-5-211-2017
+    title: "Validation of digital elevation models (DEMs) and comparison of geomorphic metrics on the southern Central Andean Plateau"
+    venue: "Earth Surface Dynamics"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_esurf-5-211-2017.txt
+  bernard2024:
+    doi: 10.5194/esurf-12-1295-2024
+    title: "GraphFlood 1.0: an efficient algorithm to approximate 2D hydrodynamics for landscape evolution models"
+    venue: "Earth Surface Dynamics"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_esurf-12-1295-2024.txt
+  batista2019:
+    doi: 10.1016/j.earscirev.2019.102898
+    title: "On the evaluation of soil erosion models: Are we doing enough?"
+    venue: "Earth-Science Reviews"
+    year: 2019
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.earscirev.2019.102898.txt
+
+validation:
+  - dag_variable: topographic__elevation
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper defines a CSI pass band for Landlab end-of-run DEM snapshots; Barnhart et al. instead use a weighted cell-by-cell topographic objective function."
+        cites: []
+    secondary_metrics:
+      - metric: weighted_topographic_objective
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Barnhart et al. define model performance from direct modeled-vs-observed DEM residual scores over topographic patches; Purinton and Bookhagen show DEM elevation errors propagate into slope and curvature metrics."
+        cites: [barnhart2020_sens, barnhart2020_calval, purinton2017]
+    validated_when: "UNRESOLVED - compare DEM snapshots with a site-specific weighted topographic objective or geomorphic metrics; do not auto-pass on CSI without a cited threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Barnhart et al.: performance used an objective function from a direct cell-by-cell DEM comparison and validation checked relative model ranking on independent topographies. No universal numeric CSI gate was found."
+
+  - dag_variable: concavity (theta)
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched slope-area or chi-analysis paper provides a percent-bias pass band for theta."
+        cites: []
+    secondary_metrics:
+      - metric: chi_plot_r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Mudd et al. describe choosing m/n by maximizing R2 in chi-elevation space; this is an estimator/diagnostic rather than a validation pass band."
+        cites: [mudd2014]
+    validated_when: "UNRESOLVED - theta should be estimated with the same drainage-area threshold, DEM processing, and chi or slope-area method as observations; no cited PBIAS threshold is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Mudd et al. note reference concavity values near 0.45-0.5 are often used, but this is not a validation tolerance. Keep the DAG metric PBIAS as headline with null bands."
+
+  - dag_variable: steepness (ks)
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper defines a generic percent-bias tolerance for channel steepness index."
+        cites: []
+    secondary_metrics:
+      - metric: chi_plot_fit
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Channel steepness is extracted from slope-area or chi-elevation fits, and Mudd et al. emphasize DEM quality/noise sensitivity; Litwin et al. show coupled channel-hillslope assumptions can alter steepness."
+        cites: [mudd2014, litwin2025]
+    validated_when: "UNRESOLVED - ks should be compared only after matching theta_ref, DEM resolution, channel mask, and drainage-area threshold; no cited PBIAS threshold is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Litwin et al. show channel steepness may increase under common coupled hillslope-diffusion/stream-power assumptions, so a mismatch in ks is not interpretable without model-form and processing context."
+
+  - dag_variable: relief
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched landscape-evolution validation paper gives a percent-bias pass band for basin relief."
+        cites: []
+    secondary_metrics:
+      - metric: topographic_objective
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Barnhart et al. use topographic metrics and direct topographic residuals, including relief-bearing patches, to rank landscape models rather than applying a fixed relief PBIAS threshold."
+        cites: [barnhart2020_sens, barnhart2020_calval]
+    validated_when: "UNRESOLVED - compare relief over the same domain and DEM resolution as observations, preferably as part of a multi-metric topographic objective; no cited PBIAS threshold is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Absolute relief is site-scale and initial-condition sensitive; Barnhart et al. compare observed and simulated topography through objective functions and validation-domain ranking."
+
+  - dag_variable: sediment_yield
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 20}
+        pass_band: satisfactory
+        band_note: "Moriasi et al. 2015 Table 9 gives sediment PBIAS categories: <10 very good, 10-15 good, 15-20 satisfactory; transferred cautiously to Landlab annual sediment yield."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi et al. recommend R2 together with regression slope/intercept and graphical checks; Batista et al. emphasize fit-for-purpose tests and uncertainty in erosion-model evaluation."
+        cites: [moriasi2015, batista2019]
+    validated_when: "|PBIAS| <= 20% for a regional annual/mean sediment-yield aggregate, with units, bulk density, and contributing area matched."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "This is a transferred watershed sediment convention, not a Landlab-specific benchmark. Moriasi et al. caution that 2015 PEC were developed mainly for SWAT, HSPF, WARMF, and ADAPT; Batista et al. argue erosion-model tests should be fit-for-purpose."
+
+  - dag_variable: sediment_yield
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 20}
+        pass_band: satisfactory
+        band_note: "Moriasi et al. 2015 Table 9 applies sediment PBIAS criteria across daily, monthly, and annual scales."
+        cites: [moriasi2015]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.45}
+        pass_band: satisfactory
+        band_note: "Moriasi et al. 2015 Table 9 gives monthly sediment NSE >0.80 very good, >0.70 good, >0.45 satisfactory."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi et al. recommend reporting RSR alongside RMSE; Bétrie et al. reproduce the older Moriasi 2007 sediment satisfactory criteria including RSR <= 0.70."
+        cites: [moriasi2007, betrie2011]
+    validated_when: "|PBIAS| <= 20% and NSE >= 0.45 for multi-year sediment-yield series after aggregation to the observed temporal support."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: "The 2015 sediment NSE threshold is monthly. For annual or sparse event data, treat NSE as contextual and document temporal support; do not interpret interannual land-use/reservoir signals as Landlab process failure."
+
+  - dag_variable: sediment__outflux (SPACE Qs)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 20}
+        pass_band: satisfactory
+        band_note: "Moriasi et al. 2015 Table 9 sediment PBIAS criteria are the closest fetched convention for Qs magnitude."
+        cites: [moriasi2015]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.45}
+        pass_band: satisfactory
+        band_note: "Moriasi et al. 2015 Table 9 gives the monthly sediment NSE bands; use only when Qs has comparable time support."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rating_exponent_fit
+        direction: maximize
+        status: supportive
+        ceiling_reason: "SPACE is a Landlab component for sediment flux, alluvium thickness, and landscape evolution; Shobe et al. discuss field validation potential but do not give a Qs-rating pass threshold."
+        cites: [shobe2017]
+    validated_when: "|PBIAS| <= 20% and NSE >= 0.45 for sediment outflux time series or event/monthly aggregates; also inspect the log(Qs)-log(Q) rating fit when that is the observation."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: "Bétrie et al. show sediment predictions judged by NSE, RSR, and PBIAS against gauge sediment concentrations; Moriasi 2015 supplies stricter modern sediment PBIAS/NSE tiers. The Qs-rating exponent itself has no fetched numeric gate."
+
+  - dag_variable: soil__depth
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI pass band for spatial soil-depth fields."
+        cites: []
+    secondary_metrics:
+      - metric: soil_depth_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Barnhart et al. discuss soil production and soil depth as model components and observations, but provide parameter ranges and model adequacy context rather than a universal soil-depth RMSE threshold."
+        cites: [barnhart2020_ranges]
+    validated_when: "UNRESOLVED - compare soil depth in meters against field or mapped regolith thickness with matched support; no cited CSI/RMSE threshold is available."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "The targeted soil-depth validation paper 10.1029/2008WR007474 failed to fetch. Keep the DAG metric CSI as headline with null bands."
+
+  - dag_variable: surface_water__discharge (steady-state)
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched hydrology or GraphFlood/Landlab paper defines a CSI pass band for a steady-state spatial discharge field."
+        cites: []
+    secondary_metrics:
+      - metric: mass_balance_residual
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "GraphFlood validates stationary discharge calculations against analytical expectations and emphasizes water balance, but does not provide a field CSI threshold."
+        cites: [bernard2024]
+      - metric: outlet_flow_pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Moriasi et al. 2015 provide outlet flow PBIAS/NSE criteria for watershed-scale hydrographs, which are not directly applicable to a steady-state spatial discharge snapshot."
+        cites: [moriasi2015]
+    validated_when: "UNRESOLVED - verify steady-state Q = drainage_area * runoff_rate spatial consistency and compare only like-for-like spatial discharge or channel masks; do not compare against a daily gauge hydrograph."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The DAG determining metric CSI is retained with null bands. Moriasi flow thresholds are useful only if this output is aggregated to an outlet flow observation, not for the spatial snapshot itself."
+
+deferred_paywalled:
+  - ref: "Tesfa et al. 2009 - Modeling soil depth from topographic and land cover attributes"
+    doi: 10.1029/2008WR007474
+    needed_for: [soil__depth]
+  - ref: "Whipple and Tucker 1999 - Dynamics of the stream-power river incision model"
+    doi: 10.1029/1999JB900120
+    needed_for: ["concavity (theta)", "steepness (ks)", topographic__elevation]
+  - ref: "Davy and Lague 2009 - Fluvial erosion/transport equation of landscape evolution models revisited"
+    doi: 10.1029/2008JF001146
+    needed_for: [sediment_yield, "sediment__outflux (SPACE Qs)"]
+  - ref: "Davy et al. 2017 - Improving the stability of a simple formulation of the shallow water equations for 2-D flood modeling"
+    doi: 10.1029/2011WR011570
+    needed_for: ["surface_water__discharge (steady-state)"]

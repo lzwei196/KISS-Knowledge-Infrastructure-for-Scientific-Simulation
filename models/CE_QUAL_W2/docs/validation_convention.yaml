@@ -1,0 +1,349 @@
+schema_version: 1
+model_id: CE_QUAL_W2
+domain: lake_reservoir_hydrology
+generated_by: "Step-B fleet agent (GPT-5 Codex) - validation convention"
+generated_at: 2026-08-14
+
+references:
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  basso2021:
+    doi: 10.3389/fenvs.2021.684703
+    title: "Potential Post-Fire Impacts on a Water Supply Reservoir: An Integrated Watershed-Reservoir Approach"
+    venue: "Frontiers in Environmental Science"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_fenvs.2021.684703.txt
+  shabani2021:
+    doi: 10.3390/w13162308
+    title: "Automatic Calibration for CE-QUAL-W2 Model Using Improved Global-Best Harmony Search Algorithm"
+    venue: "Water"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w13162308.txt
+  mi2019:
+    doi: 10.1186/s12302-019-0202-4
+    title: "Variable withdrawal elevations as a management tool to counter the effects of climate warming in Germany's largest drinking water reservoir"
+    venue: "Environmental Sciences Europe"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1186_s12302-019-0202-4.txt
+  shatwell2019:
+    doi: 10.5194/hess-23-1533-2019
+    title: "Future projections of temperature and mixing regime of European temperate lakes"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-1533-2019.txt
+  hanjaniamin2023:
+    doi: 10.1007/s13201-022-01786-1
+    title: "Dissolved oxygen concentration and eutrophication evaluation in Yamchi dam reservoir using CE-QUAL-W2"
+    venue: "Applied Water Science"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13201-022-01786-1.txt
+  bowen2018:
+    doi: 10.3390/jmse6040137
+    title: "Water Quality Model Calibration via a Full-Factorial Analysis of Algal Growth Kinetic Parameters"
+    venue: "Journal of Marine Science and Engineering"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_jmse6040137.txt
+  benicio2024:
+    doi: 10.3390/w16243556
+    title: "Global Applications of the CE-QUAL-W2 Model in Reservoir Eutrophication: A Systematic Review and Perspectives for Brazil"
+    venue: "Water"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w16243556.txt
+  almurib2018:
+    doi: 10.15760/etd.6114
+    title: "Hydrodynamic and Water Quality Modeling of the Tigris River System in Iraq Using CE-QUAL-W2"
+    venue: "Portland State University Dissertations and Theses"
+    year: 2018
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.15760_etd.6114.txt
+
+validation:
+  - dag_variable: water temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 1.0, good: 1.23, satisfactory: 1.5}
+        pass_band: satisfactory
+        band_note: "Temperature convention is RMSE-centered: Mi 2019 says RMSE <1 K indicates high accuracy; Shatwell 2019 says RMSE generally <1.5 degC showed good precision; Shabani 2021 reports CE-QUAL-W2 benchmark RMSE 0.7-1.23 degC."
+        cites: [mi2019, shatwell2019, shabani2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is nse, but the fetched CE-QUAL-W2 temperature studies use RMSE and R2 as the performance statistics, not NSE."
+        cites: [shabani2021, mi2019]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Shabani 2021 co-reports R2 = 0.98 for CE-QUAL-W2 water temperature calibration and validation."
+        cites: [shabani2021]
+    validated_when: "Water-temperature time series are validated when RMSE <= 1.5 degC, with graphical profile/seasonality agreement checked as supporting evidence."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Field practice for reservoir temperature supersedes the DAG nse choice: Shabani 2021 states RMSE is a
+      standard measure of CE-QUAL-W2 performance, Mi 2019 used RMSE for calibration, and Shatwell 2019
+      treats RMSE generally less than 1.5 degC as good precision for lake temperatures.
+
+  - dag_variable: water temperature
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 1.0, good: 1.23, satisfactory: 1.5}
+        pass_band: satisfactory
+        band_note: "Transferred from fetched lake/reservoir temperature RMSE convention; snapshot-specific PBIAS tiers were not found."
+        cites: [mi2019, shatwell2019, shabani2021]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG snapshot metric is pbias, but fetched temperature papers judge snapshots/profiles by absolute error or RMSE rather than a temperature PBIAS tier."
+        cites: [basso2021, shabani2021]
+    validated_when: "A cast/profile snapshot is validated when layer-matched temperature RMSE <= 1.5 degC."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Basso 2021 compared observed and modeled temperature profiles through depth, while the numeric band is transferred from fetched time-series/profile RMSE conventions."
+
+  - dag_variable: dam release temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 1.0, good: 1.23, satisfactory: 1.5}
+        pass_band: satisfactory
+        band_note: "Transferred from reservoir water-temperature RMSE benchmarks because no fetched paper gives a separate release-temperature validation tier."
+        cites: [mi2019, shabani2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched release/withdrawal-elevation studies evaluate water temperature by RMSE and operational constraints rather than NSE."
+        cites: [mi2019]
+    validated_when: "Dam-release temperature is validated when outlet/release temperature RMSE <= 1.5 degC and the withdrawal-elevation comparison is depth/time aligned."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Mi 2019 is directly about withdrawal elevation and CE-QUAL-W2/GLM water temperature, but it does not provide a separate numeric release-temperature pass band."
+
+  - dag_variable: dissolved oxygen
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched CE-QUAL-W2 dissolved-oxygen paper gives a numeric NSE validation tier."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: mg/L
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched studies report DO RMSE/AME examples, but not a reusable numeric pass band."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Basso 2021 reports DO PBIAS and RMSE, and says water-quality calibration was data-limited; this supports contextual review but not an auto-validation band."
+        cites: [basso2021]
+    validated_when: "UNRESOLVED - use observed DO time series/profile comparison, but do not auto-validate without a fetched numeric DO threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Basso 2021 reports oxygen RMSE 0.37 mg/L and PBIAS 5%; Hanjaniamin 2023 reports DO AME 1.762/1.389 and calls performance acceptable. Neither source defines a general DO pass tier."
+
+  - dag_variable: dissolved oxygen
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper quantifies a point-snapshot DO PBIAS threshold."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: mg/L
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper quantifies a point-snapshot/profile DO RMSE threshold."
+        cites: []
+    secondary_metrics:
+      - metric: graphical_profile_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched CE-QUAL-W2 DO studies rely on profile/seasonal comparison where full statistics are limited."
+        cites: [basso2021, hanjaniamin2023]
+    validated_when: "UNRESOLVED - compare the layer-matched DO profile/cast, but keep the numeric validation gate undecidable."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Low confidence by design: DO benchmark examples exist, but the fetched set does not establish a reusable snapshot band."
+
+  - dag_variable: water surface elevation
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 flow PEC: satisfactory daily/monthly/annual watershed flow has NSE >0.50; Basso 2021 applies NSE to CE-QUAL-W2 water level and reports validation NSE 0.98."
+        cites: [moriasi2015, basso2021]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 flow PEC uses PBIAS < +/-15% as satisfactory; Basso 2021 reports CE-QUAL-W2 water-level validation PBIAS 0.17."
+        cites: [moriasi2015, basso2021]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 recommends R2 with slope/intercept; Basso 2021 reports CE-QUAL-W2 water-level validation R2 0.99."
+        cites: [moriasi2015, basso2021]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hanjaniamin 2023 reports water-surface-elevation RMSE 0.63 m after CE-QUAL-W2 calibration, but no general RMSE tier is defined."
+        cites: [hanjaniamin2023]
+    validated_when: "Water surface elevation is validated when NSE >= 0.5 and |PBIAS| <= 15%, with R2/plots used as supporting checks."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Basso 2021 says a 15 cm water-level difference was acceptable and that Moriasi 2015 confirmed very good model efficiency; Moriasi bands are transferred from flow/water-balance conventions."
+
+  - dag_variable: outflow discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 flow PEC: satisfactory watershed-scale flow has NSE >0.50."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 flow PEC: satisfactory flow has PBIAS < +/-15%."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Al Murib 2018 reports CE-QUAL-W2 flow and water-level RMSE/AME examples, but the field convention for discharge pass/fail is the normalized Moriasi flow criteria."
+        cites: [almurib2018, moriasi2015]
+    validated_when: "Outflow discharge is validated as a flow series when NSE >= 0.5 and |PBIAS| <= 15%."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: "Because W2 outflow may be prescribed or operator-constrained, this block is best read as a water-balance closure check rather than independent hydrodynamic skill."
+
+  - dag_variable: chlorophyll-a / algal biomass
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: abs_normalized_mean_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 13.0}
+        pass_band: satisfactory
+        band_note: "Bowen 2018 selected acceptable CE-QUAL-W2 algal-growth runs using absolute normalized mean error <13%."
+        cites: [bowen2018]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.46}
+        pass_band: satisfactory
+        band_note: "Bowen 2018 selected acceptable runs using Nash-Sutcliffe model efficiency >46% for chlorophyll-a."
+        cites: [bowen2018]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG determining metric is pbias; fetched CE-QUAL-W2 chlorophyll calibration papers instead emphasize normalized mean error, NSE, CDF error, and exceedance probability."
+        cites: [bowen2018, basso2021]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Benicio 2024 reports that chlorophyll-a R2 values vary widely across CE-QUAL-W2 studies, including low values, so R2 alone is not a pass criterion here."
+        cites: [benicio2024]
+    validated_when: "Chlorophyll-a/algal biomass is validated when abs normalized mean error <= 13% and NSE >= 0.46, with bloom-threshold/exceedance checks used when available."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "This is the one fetched paper with explicit CE-QUAL-W2 chlorophyll performance criteria; broader community tiers were not found in the capped search/cache pass."
+
+  - dag_variable: ice thickness
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS band for CE-QUAL-W2 ice thickness."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric RMSE band for CE-QUAL-W2 ice thickness."
+        cites: []
+    secondary_metrics:
+      - metric: ice_on_off_timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Mi 2019 evaluates W2 ice by occurrence and ice-on/ice-off timing; it reports extra thin ice in W2 and a 5-day GLM ice-off delay, but not a W2 thickness threshold."
+        cites: [mi2019, shatwell2019]
+    validated_when: "UNRESOLVED - ice thickness should be compared directly, but no fetched numeric validation band is available."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "The capped OpenAlex check found no CE-QUAL-W2 ice-thickness CSI/RMSE convention. Treat as a data/literature gap."
+
+  - dag_variable: ice thickness
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for CE-QUAL-W2 ice presence/absence."
+        cites: []
+    secondary_metrics:
+      - metric: ice_occurrence_match
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Mi 2019 says capturing ice occurrence in different years is an important criterion for simulating ice dynamics, but does not define CSI/POD/FAR bands."
+        cites: [mi2019]
+    validated_when: "UNRESOLVED - require observed ice/no-ice event comparison, but do not auto-validate on CSI without a fetched threshold."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "Mi 2019 reports W2 simulated 52 days of thin ice when no ice was observed, showing the right diagnostic target but not a reusable categorical pass band."
+
+deferred_paywalled:
+  - ref: "Lake Water Temperature Modeling in an Era of Climate Change: Data Sources, Models, and Future Prospects"
+    doi: 10.1029/2023rg000816
+    needed_for: [water temperature, ice thickness]
+  - ref: "Null et al. 2017 supporting information Appendix S2 with CE-QUAL-W2 water level, temperature, and DO calibration/validation details"
+    doi: 10.1002/2017wr021039
+    needed_for: [dam release temperature, dissolved oxygen]

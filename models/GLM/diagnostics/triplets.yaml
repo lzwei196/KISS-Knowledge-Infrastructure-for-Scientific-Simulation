@@ -771,3 +771,249 @@
     prevention: "Auto-generate wq_init_vals from aed2.nml module list and initial concentrations"
   severity: fatal
   cross_references: [dt_028, dt_029]
+
+# ---------------------------------------------------------------------------
+# Triplets added by self-improve runs after the original corpus was published.
+# Recovered 2026-08-12 and merged back; the block above is the published base,
+# byte-for-byte. See REPORT.md.
+# ---------------------------------------------------------------------------
+- id: dt_031
+  symptom:
+    description: Requested comparison variable is discharge/streamflow at a creek or river gauge; all
+      metrics null; lookup_hydrolakes finds no lake (or only endorheic sloughs with dis_avg=0.0) at the
+      site.
+  diagnosis:
+    root_cause: 'Domain mismatch: GLM is a 1D vertical lake/reservoir thermodynamic model with no rainfall-runoff
+      process and no discharge output variable. lake.csv ''Tot Outflow Vol'' is a prescribed boundary
+      rule, not simulated discharge. No variable->metric_family contract can produce discharge_m3s.'
+  remedy:
+    action: 'REJECT_WRONG_MODEL. Do not run forcing/calibration. Use the SKILL.md Applicability Guard:
+      gate on lookup_hydrolakes (no lake within radius / dis_avg==0.0 / lake too small or >5km away /
+      discharge requested). Validate GLM only against in-lake temperature profiles, surface/bottom temp,
+      lake level, or ice thickness.'
+  format_spec_violated: none (applicability/domain rule, not a format rule)
+  canonical_intent: ki_local_if_pass
+  added_by_run: GLM_retry1
+- id: dt_032
+  symptom:
+    description: GLM-AED2 runs to completion (exit 0, "Model Run Complete") but ALL AED2 water-column
+      STATE variables are NaN/fill everywhere - output.nc OXY_oxy/NIT_*/PHS_frp etc. are entirely _FillValue
+      (parse_aed_output flags all_fill_in_output_nc), and csv_point WQ columns print '-nan' from the first
+      timestep while temp/salt are finite. TOT_tn/TOT_tp read 0.0. Occurs specifically when the &aed2_models
+      list includes aed2_phytoplankton (and/or aed2_silica, aed2_noncohesive) with the glm-aed v3.3.3
+      binary and the shipped aed2_phyto_pars.nml diatom group.
+  diagnosis:
+    root_cause: The phytoplankton/silica/noncohesive modules poison the coupled AED2 ODE solver with a
+      NaN that propagates to the ENTIRE water-column state vector (AED2 solves all S(i) vars jointly;
+      one NaN nulls all of them). repair_state=.true. does not recover it and GLM does NOT abort - it
+      silently writes fill/NaN for every WQ var. The shipped examples/Sparkling-style glm_aed2_phyto_test
+      reference is itself broken this way (its wq_summary.json reports TN/TP mean 0.0), so it cannot be
+      trusted as a working phyto template.
+  remedy:
+    action: 'Use the simplified core-nutrient module set that produces finite WQ state: &aed2_models models
+      = ''aed2_oxygen'',''aed2_nitrogen'',''aed2_phosphorus'',''aed2_organic_matter'',''aed2_totals''
+      (10 water-column vars: OXY_oxy, NIT_amm, NIT_nit, PHS_frp, OGM_doc/poc/don/pon/dop/pop). Drop aed2_phytoplankton,
+      aed2_silica, aed2_noncohesive. Match num_wq_vars=10 and wq_names in &init_profiles to the registered
+      S(1..10) order, and drop SIL_rsi/PHY_diatom/NCS_ss1 from inflow_vars. This yields finite TN/TP/NH3-N.
+      For nutrient (TN/TP/NH3-N) validation, phytoplankton is not required. After fixing, ALWAYS verify
+      the first csv_point WQ row is finite (not -nan) before trusting the run.'
+  format_spec_violated: AED2 module-coupling / solver stability (silent NaN, not a parser rule)
+  canonical_intent: ki_local_if_pass
+  added_by_run: GLM_real_case_guokongzhan
+- id: dt_033
+  symptom:
+    description: AED2 enabled and WQ state is finite, but parse_aed_output.py returns an empty timeseries
+      (only a 'time' column) and total_nitrogen/total_phosphorus mean 0.0. output.nc WQ vars have shape
+      (time, z, lat, lon) = 4-D.
+  diagnosis:
+    root_cause: parse_aed_output.py assumed 2-D (time, layers) arrays; GLM writes 4-D (time, z, lat, lon)
+      with singleton lat/lon. ndim==2 branches were skipped so surface extraction produced nothing and
+      nanmean over padded layers gave 0. Separately, generate_glm_nml.py does NOT wire AED2 (emits num_wq_vars=0,
+      no &wq_setup, inflow_varnum=3) - AED2 wiring is a manual nml-edit step.
+  remedy:
+    action: 'parse_aed_output.py now squeezes trailing singleton dims to (time, layers) and flags all-fill
+      vars. For surface WQ validation prefer the csv_point output: set in &output csv_point_nlevs/csv_point_at
+      (depth from surface with csv_point_frombot=.false.) and csv_point_vars including the AED2 var names;
+      GLM writes a clean daily WQ_<depth>.csv. Manually add &wq_setup (wq_lib=aed2, wq_nml_file), num_wq_vars/wq_names/wq_init_vals
+      in &init_profiles, and inflow_varnum/inflow_vars to glm3.nml after generate_glm_nml.'
+  format_spec_violated: output parsing (array rank) + namelist AED2 wiring gap
+  canonical_intent: ki_global
+  added_by_run: GLM_real_case_guokongzhan
+- id: dt_034
+  symptom:
+    description: 'Validating a depth-resolved AED2 variable (e.g. OXY_oxy dissolved oxygen) over the FULL
+      water column. Two failure modes appear: (1) csv_point fixed-depth output (csv_point_at = 1,5,10,15,20,30,40
+      from surface) returns spurious EXACTLY-0.0 values at some interior depths (e.g. 5 m and 20 m) in
+      stratified months while neighbouring depths (1 m, 10 m, 40 m) are oxic - a physically impossible
+      sandwiched-anoxia profile. (2) Reading the whole DO field with output.nc.variables["OXY_oxy"][:]
+      (a 4018 x 500 x 1 x 1, ~500 MB var) SEGFAULTS the python process inside libnetcdf with NO traceback
+      (the process just dies after the last print; not an OOM - 100+ GB free).'
+  diagnosis:
+    root_cause: 'csv_point samples a FIXED depth-below-surface; as the lake level moves and the adaptive
+      Lagrangian layers split/merge, the requested fixed depth intermittently lands on a layer boundary
+      / below the active column and GLM writes 0.0 (or the oxy_min floor) for that level - so csv_point
+      is reliable only for a single near-surface point, NOT for multi-level column statistics. The bulk
+      [:] read segfault is an HDF5/libnetcdf chunk-decompression issue on the large padded (z=500) variable.
+      Both make a naive column-mean wrong: the spurious 0.0s and the crash.'
+  remedy:
+    action: 'For column / profile WQ statistics read output.nc ONE timestep at a time at only the dates
+      you need: oxy_i = np.squeeze(ds.variables["OXY_oxy"][i])[:NS[i]] using NS (active-layer count per
+      time) and H (layer-top heights) to get the TRUE depth-resolved profile; never bulk-[:] the padded
+      variable. Compute a thickness-weighted column mean (weight = layer thickness from diff(H)) to match
+      a depth-uniform profile sampler, and take the top/bottom active layer for surface/bottom DO. Convert
+      OXY_oxy mmol/m3 -> mg/L via x32/1000. CALIBRATION LEVER: the shipped Fsed_oxy default (-40 mmol/m2/day
+      sediment oxygen demand) OVER-depletes the hypolimnion of meso-/oligotrophic lakes - it drives bottom
+      and column DO to ~0 (DeGray AR column-mean PBIAS -48%, NSE -1.8). Reduce Fsed_oxy to ~-12 and raise
+      Ksed_oxy (~50) so SOD shuts off as DO falls; this lifted DeGray column-mean PBIAS to -6% / NSE +0.06
+      / KGE 0.53 and surface DO to r 0.89 / NSE 0.53 / KGE 0.75. For depthless WQP grab-sample profiles,
+      the depth-unambiguous comparison is per-date obs-max <-> sim top-layer (surface DO).'
+  format_spec_violated: output extraction (fixed-depth csv_point + bulk netcdf read) + SOD calibration
+    default
+  canonical_intent: ki_global
+  added_by_run: GLM_real_case_degray_do
+- id: dt_036
+  symptom:
+    description: 'Validating simulated water TEMPERATURE against an observation taken at a FIXED depth
+      (thermistor chain, profile logger, buried sensor at 5/10/20/50/100 cm). output.nc has no variable
+      that is "temperature at 0.5 m": temp is (time, z=500, lat, lon) on the ADAPTIVE LAGRANGIAN grid,
+      so column index k is a different physical depth at every timestep (NS, the active-layer count, changes
+      daily). Taking temp[:, k] for a fixed k, or using lake.csv surface_temp for every depth, silently
+      compares the model at a WANDERING depth - the series looks plausible (right seasonal shape) but
+      the depth it represents drifts, and any stratified-season metric is meaningless. Before 2026-08-11
+      no KI tool exposed a fixed-depth series at all: parse_glm_output.py returned only global min/max/mean
+      of the whole temp array plus lake.csv surface temperature.'
+  diagnosis:
+    root_cause: GLM discretises the column into Lagrangian layers that split, merge and move with volume
+      change; z[] holds LAYER TOP heights ABOVE THE LAKE BOTTOM (ascending, valid only for the first NS
+      entries) and the water surface is z[NS-1], which itself moves with lake level. Depth below surface
+      therefore has to be recomputed every timestep as z[NS-1] - layer_centre. The dag comparison caveat
+      ("Compare at matched depths; Lagrangian layers shift between outputs so interpolate to fixed observation
+      depths") states exactly this requirement.
+  remedy:
+    action: 'Use parse_glm_output.py --depths "<d1,d2,...>" --depth_timeseries <csv> (added 2026-08-11).
+      It reads output.nc ONE timestep at a time (dt_034 - a bulk [:] read of the padded z=500 variable
+      segfaults libnetcdf), rebuilds layer centres from z[] and NS, converts to depth-below-surface, np.interp-s
+      onto the requested depths and returns NaN (never a clamped bottom value) for depths below the lake
+      bottom; a water_depth_m column records the simulated column depth for each row. Two further alignment
+      traps the same stage: (1) GLM writes the state at the END of each simulated day (first record is
+      start_date + 24 h), so subtract one day before pairing with a daily-mean observation; (2) the FINAL
+      timestep is flushed TWICE (last date repeated, second copy stamped 23:00) - drop duplicate dates
+      or pandas raises "cannot reindex on an axis with duplicate labels". csv_point (dt_033) is an alternative
+      only for a single near-surface point and carries the spurious-0.0 risk of dt_034.'
+  format_spec_violated: output extraction (fixed-depth interpolation on an adaptive grid)
+  canonical_intent: ki_global
+  added_by_run: GLM_real_case_lake_catoma_ismn
+- id: dt_037
+  symptom:
+    description: 'Scoring GLM against an in-situ TEMPERATURE network (ISMN KISSPATH_DATA/ismn_clean.db
+      - SCAN / SNOTEL / USCRN / COSMOS-UK ... soil and near-surface temperature) with hand-rolled sqlite
+      code. Three failure modes: sqlite3.OperationalError "unable to open database file" on the read-only
+      mount; a depth mismatch where the model is sampled at 0.51 m or 1.02 m because the stations table
+      depth_cm label (51, 102) was divided by 100; and inflated / noisy series because multiple sensors
+      at the same nominal depth and non-good QC rows were not aggregated or filtered.'
+  diagnosis:
+    root_cause: ismn_clean.db is WAL-journalled on read-only media, so a plain file:...?mode=ro URI still
+      fails - immutable=1 is required (same class as the MODFLOW6 yearbook.db trap). depth_cm is a ROUNDED
+      label; the physical depth is depth_from_m / depth_to_m in metres (0.0508, 0.1016, 0.2032, 0.508,
+      1.016 for the standard SCAN 2/4/8/20/40-inch stack). The observations table holds one row per (date,
+      depth, SENSOR) with an ISMN qc_flag; only rows starting with G are clean.
+  remedy:
+    action: 'Use tools/s9_output_analysis/load_ismn_obs.py (added 2026-08-11): --list (+ --lat/--lon/--radius_km)
+      discovers qc_pass stations near the lake, and --station/--network/--variable/--start/--end writes
+      a long-form date,depth_cm,depth_m,value CSV with G-flag filtering and per-(date,depth) sensor averaging
+      already applied. Pair the model against depth_m (metres), not depth_cm/100, and feed those same
+      depths to parse_glm_output.py --depths so the comparison is depth-matched on both sides (dt_036).
+      NOTE on interpretation: a soil-temperature station is a PROXY for the lake thermal regime - the
+      seasonal pattern (r) is the KI-validity signal, while magnitude (PBIAS) carries a real physical
+      offset because water has far more thermal inertia than soil (Lake Catoma 2015-2020: winter sim water
+      ~11.5 C vs obs soil ~7.5 C at 5 cm, PBIAS +14.9%, r 0.94). Do not calibrate GLM to remove that offset.'
+  format_spec_violated: observation ingestion (read-only WAL sqlite, depth units, QC/sensor aggregation)
+  canonical_intent: ki_global
+  added_by_run: GLM_real_case_lake_catoma_ismn
+- id: dth
+  stage: s4_outflow
+  failure_domain: outflow_geometry
+  symptom:
+    description: 'Configured outflow is numerically valid, but the simulated lake level or release volume
+      is implausible because the outlet geometry was left at the generic KI defaults: crest_width=100 m,
+      bsn_len_outl=100 m, bsn_wid_outl=50 m, or outflow_elev=crest_elev-5 m.'
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: 'tools/s4_outflow/configure_outflow.py can run with default outlet dimensions when site-specific
+      spillway and withdrawal geometry were not provided.'
+    explanation: >
+      In natural mode GLM computes overflow from crest_width and crest_factor, and in managed outlet modes
+      generate_glm_nml.py carries outl_elvs, bsn_len_outl, and bsn_wid_outl from outflow_config.json into
+      the &outflow block. Defaults are useful for a first executable run, but they are not a calibrated
+      dam-operation rule and can silently bias lake level and downstream coupling.
+    affected_components: [configure_outflow, generate_glm_nml, outflow_block]
+  remedy:
+    action: 'Re-run configure_outflow.py with observed crest/outlet geometry or a documented reservoir-release
+      schedule, then inspect outflow_config.json before s6.'
+    tool_to_run: configure_outflow
+    manual_steps:
+      - 'For natural overflow, set --crest_elev, --crest_width, and --crest_factor from the real spillway.'
+      - 'For managed release, set --outflow_elev, --bsn_len_outl, --bsn_wid_outl, and --schedule_csv or --flow.'
+      - 'Verify outflow_config.json does not contain unreviewed default dimensions for the target lake.'
+    prevention: 'Treat s4 defaults as executable placeholders unless the target lake actually matches them.'
+  severity: silent
+  cross_references: [dt_017, dt_011, dt_012]
+- id: dt_iceon_avg
+  stage: s6_namelist
+  failure_domain: snowice_config
+  symptom:
+    description: 'Ice remains zero or nearly zero in a freezing-climate run even though glm3.nml contains
+      an &snowice block and sub-zero air temperatures occur.'
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: 'The &snowice dt_iceon_avg/min_ice_thickness settings are missing, stale, or unsuitable
+      for the lake depth; values around or above 0.05 days disabled ice again in the Miyun deep-reservoir
+      validation.'
+    explanation: >
+      generate_glm_nml.py now writes dt_iceon_avg = 0.02 and min_ice_thickness = 0.001, matching the
+      Miyun validation fix. If glm3.nml was hand-edited, generated by an older tool copy, or overwritten
+      from an external GLM example, the parameter can be absent or too large even though other snowice
+      options are present.
+    affected_components: [generate_glm_nml, snowice_block, run_glm]
+  remedy:
+    action: 'Inspect glm3.nml &snowice before s8 and regenerate with this KI tool if the ice-onset settings
+      are absent or too large.'
+    tool_to_run: generate_glm_nml
+    manual_steps:
+      - 'Confirm &snowice includes dt_iceon_avg = 0.02 and min_ice_thickness = 0.001.'
+      - 'For deep reservoirs (>50 m), keep dt_iceon_avg <= 0.04 days.'
+      - 'After s8, check lake.csv blue/white ice thickness columns and surface temperature behavior.'
+    prevention: 'Use tools/s6_namelist/generate_glm_nml.py rather than copying a snowice block from generic GLM examples.'
+  severity: silent
+  cross_references: [dt_027, dt_023, dt_014]
+- id: dt_035
+  stage: s9_output_analysis
+  failure_domain: observation_support
+  symptom:
+    description: 'Dissolved oxygen validation reports an acceptable column-mean metric for depthless grab
+      samples while surface and bottom dissolved oxygen tell opposite stories.'
+    error_pattern: ''
+    detection_method: metric_comparison
+  diagnosis:
+    root_cause: 'Depthless OXY_oxy observations do not define a vertical support, while dag.yaml exposes
+      OXY_oxy as point_time_series for the 1-D lake column.'
+    explanation: >
+      A thickness-weighted column mean is an invented aggregate when the provider gives no sample depth.
+      In the DeGray DO case documented in SKILL.md, a column-mean score hid a good surface match and a
+      failed hypolimnetic match. For depthless WQP grab samples, the KI-valid comparison is the simulated
+      top active layer against per-date near-surface observations; bottom or hypolimnetic DO requires
+      depth-resolved observations.
+    affected_components: [parse_aed_output, parse_glm_output, dag_observability]
+  remedy:
+    action: 'Score depthless OXY_oxy observations as surface DO only, or mark bottom/column DO validation
+      as requires_data until depth-resolved observations are available.'
+    tool_to_run: parse_aed_output
+    manual_steps:
+      - 'For surface DO, read the top active layer or a validated near-surface csv_point output.'
+      - 'Do not headline a thickness-weighted column mean unless the observation source is an actual depth-resolved profile.'
+      - 'Convert OXY_oxy from mmol/m3 to mg/L with value * 32 / 1000 before comparing to mg/L observations.'
+    prevention: 'Follow dag.yaml observability and docs/validation_convention.yaml support rules before computing WQ metrics.'
+  severity: silent
+  cross_references: [dt_034, dt_033]

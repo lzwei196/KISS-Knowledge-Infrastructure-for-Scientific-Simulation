@@ -1,13 +1,3 @@
----
-name: daisy
-description: >-
-  Daisy 7.1.x — open Soil-Plant-Atmosphere system model. Covers Soil water transport
-  (Richards equation in 1-D; matrix, secondary and tertiary/macropore…; Surface water
-  balance (snow accumulation/melt, interception, through-fall, infiltration, surface…;
-  Soil heat transport (conduction/convection, freeze/thaw with apparent heat capacity).
-  Use when the task involves running, configuring, calibrating or interpreting Daisy.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (19 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (17 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/convert_soil_to_dai.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_dai.py --help` |
+| `tools/convert_weather_to_dwf.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_weather_to_dwf.py --help` |
+| `tools/parse_daisy_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_daisy_output.py --help` |
+| `tools/run_daisy.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_daisy.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # Daisy v7.1.4 (Soil-Crop-Water Simulation Model) — Knowledge Infrastructure
 
@@ -133,7 +158,33 @@ The Daisy simulation pipeline consists of 6 stages:
 
 ---
 
-## Input Format Reference
+## 7. Tool Inventory
+
+| Tool | Purpose | Inputs | Outputs |
+|------|---------|--------|---------|
+| `tools/convert_weather_to_dwf.py` | Convert meteorological forcing into Daisy weather format | Global forcing CSV/NetCDF | `.dwf` weather file |
+| `tools/convert_soil_to_dai.py` | Convert soil texture/profile data into Daisy soil definitions | HWSD or custom soil texture/profile data | Soil `.dai` file |
+| `tools/run_daisy.py` | Execute the actual Daisy model binary | Main `.dai` setup file and libraries | `.dlf` output files and run logs |
+| `tools/parse_daisy_output.py` | Parse Daisy log files into analysis-ready tables | `.dlf` output files | CSV files, summaries, and figures |
+
+### Shared Utilities (`ki_tools_common`)
+
+Tools should use these shared helpers instead of writing raw data extraction or metric code:
+
+```python
+from ki_tools_common.load_forcing import load_daily_forcing
+from ki_tools_common.metrics import all_metrics
+from ki_tools_common.validation import validate_forcing_ranges
+from ki_tools_common.units import convert
+```
+
+---
+
+## 3. Input Format Reference
+
+Exact machine-readable shapes live in `docs/format_spec.yaml`, projected from `dag.yaml`
+and `diagnostics/triplets.yaml`. Regenerate that file after changing the dag or triplets;
+do not hand-edit it. This section explains the model-facing intent and common traps.
 
 ### Weather File (`.dwf`)
 
@@ -250,6 +301,30 @@ Soil is defined hierarchically: horizons → column.
 
 ---
 
+## 6. Output Description
+
+This section restates `dag.yaml`; if this section and the dag disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `sorg_DM` — Harvested storage-organ (grain) dry matter — the primary crop yield output. (`Mg DM/ha`)
+
+| Output variable (dag `var`) | Rank | Unit | Notes |
+|-----------------------------|------|------|-------|
+| `sorg_DM` | 1 | Mg DM/ha | Harvested storage-organ (grain) dry matter — the primary crop yield output. |
+| `harvest_index` | dag output | see `dag.yaml` | Other dag output. |
+| `Harvest_N` | dag output | see `dag.yaml` | Other dag output. |
+| `Leaching` | dag output | see `dag.yaml` | Other dag output. |
+| `Denitrification` | dag output | see `dag.yaml` | Other dag output. |
+| `Evapotranspiration` | dag output | see `dag.yaml` | Other dag output. |
+| `Drain / Percolation` | dag output | see `dag.yaml` | Other dag output. |
+| `Theta` | dag output | see `dag.yaml` | Other dag output. |
+| `Soil temperature` | dag output | see `dag.yaml` | Other dag output. |
+| `DS` | dag output | see `dag.yaml` | Other dag output. |
+| `LAI` | dag output | see `dag.yaml` | Other dag output. |
+
+---
+
 ## Output Format Reference
 
 ### Daisy Log File (`.dlf`)
@@ -297,6 +372,67 @@ year  month  mday  hour  column  crop  stem_DM  ...
 
 ---
 
+## 8. Unit Conversion Table
+
+This table documents the unit conversions used by the Daisy KI pipeline. Verify source
+data attributes before running a new dataset; `docs/format_spec.yaml` is the exact
+machine-readable contract.
+
+| Variable / parameter | Source unit | Daisy model unit | Conversion | Type |
+|----------------------|-------------|------------------|------------|------|
+| `GlobRad` | MJ/m^2/d daily total | W/m^2 daily mean | ÷ 0.0864 (= ×11.574) | multiplicative |
+| `AirTemp` | K | dgC (°C) | − 273.15 | additive |
+| `AirTemp` | dgC (°C) | dgC (°C) | identity | passthrough |
+| `Precip` | mm/3h (CMFD) | mm/d | × 8 | multiplicative |
+| `Precip` | kg/m^2/s | mm/d | × 86400 | multiplicative |
+| `Precip` | mm/d | mm/d | identity | passthrough |
+| `RefEvap` | mm/d | mm/d | identity | passthrough |
+| `Wind` | m/s | m/s | identity, but check measurement height | passthrough |
+| `RelHum` | fraction (0–1) | % (0–100) | × 100 | multiplicative |
+| `VapPres` | Pa | Pa | identity | passthrough |
+| Elevation | m | m | identity | passthrough |
+| Longitude | degrees (−180 to 180) | dgEast | identity if east; 360−abs(value) if west | convention |
+| Latitude | degrees (−90 to 90) | dgNorth | identity | passthrough |
+| Clay, silt, sand | percent (0–100) | fraction (0–1) | ÷ 100 | multiplicative |
+| Clay, silt, sand | fraction (0–1) | fraction (0–1) | identity | passthrough |
+| Bulk density | kg/m^3 | g/cm^3 | ÷ 1000 | multiplicative |
+| `K_sat` | m/s | cm/h | × 360000 | multiplicative |
+| van Genuchten alpha | m^-1 | cm^-1 | ÷ 100 | multiplicative |
+| Horizon depth | positive depth from surface | negative cm from surface | negate | sign convention |
+| Fertilizer N | g N/m^2 | kg N/ha | × 10 | multiplicative |
+| Organic input | g C/m^2/y | kg C/ha/y | × 10 | multiplicative |
+| Timestep | source frequency | 24 hours | aggregate or resample to daily | temporal |
+
+---
+
+## 8c. Sign Conventions and Output Units
+
+These conventions are checked during input preparation and post-processing because sign or
+accumulation mistakes can silently invalidate validation metrics.
+
+| Variable | Convention in this KI | Common alternative | Impact if wrong |
+|----------|----------------------|--------------------|-----------------|
+| `sorg_DM` | Mg DM/ha harvested storage-organ dry matter | fresh mass or kg/ha | Crop yield magnitude and dry-matter comparisons are wrong. |
+| `harvest_index` | dimensionless ratio of grain to total aboveground dry matter | percent | Ratios are off by 100 if interpreted as percent. |
+| `Harvest_N` | kg N/ha harvested nitrogen | g N/m^2 | Nitrogen removal is off by 10. |
+| `Leaching` | kg N/ha nitrogen loss in field nitrogen outputs | concentration or flux rate | Nitrogen balance and validation metrics are not comparable. |
+| `Denitrification` | kg N/ha nitrogen loss in field nitrogen outputs | rate per day | Period totals are misread as instantaneous rates. |
+| `Evapotranspiration` | mm water-balance output | m or kg/m^2/s | Water balance magnitude is wrong. |
+| `Drain / Percolation` | mm water-balance output | m or mm/s | Drainage magnitude and timing are wrong. |
+| `Theta` | soil water profile output; see `dag.yaml` and `.dlf` headers for exact unit | percent or volumetric fraction without checking | Soil moisture comparisons can be scaled incorrectly. |
+| `Soil temperature` | soil profile temperature; see `dag.yaml` and `.dlf` headers for exact unit | K | Temperature bias is shifted by 273.15. |
+| `DS` | dimensionless crop development stage | calendar day or phenological class | Crop timing diagnostics are invalid. |
+| `LAI` | leaf area index, dimensionless area ratio | percent cover | Canopy comparisons are not comparable. |
+
+**Output unit verification checklist:**
+- Read `dag.yaml` before binding observations or scoring outputs.
+- Read `.dlf` headers and unit rows before parsing a new Daisy log definition.
+- Print the first values from each parsed output and check order of magnitude.
+- For fluxes and balances, verify whether values are timestep rates or period totals.
+- For validation, compare `sorg_DM` in `Mg DM/ha` dry matter against observations in the same basis.
+
+---
+
 ## Unit Trap Table
 
 These are the most dangerous unit conversion pitfalls when preparing Daisy inputs:
@@ -320,6 +456,21 @@ These are the most dangerous unit conversion pitfalls when preparing Daisy input
 | Fertilizer N | kg N/ha | g N/m^2 | × 10 | HIGH |
 | Organic input | kg C/ha/y | g C/m^2/y | × 10 | HIGH |
 | Timestep | 24 hours | — | must match data freq | MEDIUM |
+
+---
+
+## 9. Diagnostic Triplets
+
+On any error, inspect `diagnostics/triplets.yaml` before writing new debugging code. The
+full triplet corpus stays in YAML to avoid drift; this document only points to the workflow.
+
+| Step | Action | Reason |
+|------|--------|--------|
+| 1 | Match the observed symptom against `diagnostics/triplets.yaml`. | Known Daisy/KI failures are documented there with remedies. |
+| 2 | Apply the listed `remedy` exactly when a triplet matches. | The remedy is part of the KI's validated debugging path. |
+| 3 | If no triplet matches, read the relevant `docs/s*_*.md` stage document. | Stage docs contain format expectations and verification traps. |
+| 4 | Compare against working files in `outputs/` or shipped Daisy examples. | The correct `.dai`, `.dwf`, and `.dlf` shapes are easiest to confirm from examples. |
+| 5 | Only then fix the tool or report the full error. | Avoid replacing the actual Daisy model with a hand-coded approximation. |
 
 ---
 
@@ -405,6 +556,78 @@ daisy batch.dai
 | `fertilizer.dai` | Fertilizer types (mineral: N25S, AmmoniumNitrate; organic: slurry) |
 | `log.dai` | Standard output log definitions |
 | `vegetation.dai` | Vegetation parameters |
+
+---
+
+## 10. Coupling Interfaces
+
+| Upstream source | Variable exchanged | Unit | Temporal resolution |
+|-----------------|-------------------|------|---------------------|
+| CMFD/MSWX/NASA POWER via `load_daily_forcing` | Weather forcing: radiation, temperature, precipitation, optional evapotranspiration, wind, humidity, vapor pressure | Daisy `.dwf` units | Daily |
+| HWSD or custom texture/profile data | Soil texture, bulk density, hydraulic parameters, horizon depths | Daisy `.dai` units | Static profile |
+| Management templates or user setup | Tillage, fertilization, sowing, harvest, irrigation | Daisy `.dai` action units | Event-based |
+
+| Downstream consumer | Variable exchanged | Unit | Temporal resolution |
+|---------------------|-------------------|------|---------------------|
+| Validation workflow | `sorg_DM` | Mg DM/ha | Harvest event / period summary |
+| Water-balance analysis | `Evapotranspiration`, `Drain / Percolation`, `Theta` | see `dag.yaml` and `.dlf` headers | Daily to monthly, depending on log definition |
+| Nitrogen-balance analysis | `Harvest_N`, `Leaching`, `Denitrification` | see `dag.yaml` and `.dlf` headers | Daily to monthly, depending on log definition |
+| Crop-development analysis | `DS`, `LAI`, `harvest_index` | see `dag.yaml` and `.dlf` headers | Daily to harvest event, depending on log definition |
+
+---
+
+## 11. Validated Results
+
+The KI status line records `example_validated` for Taastrup, Denmark, 1986-1988. The
+current body campaign is pending; do not invent achieved metric values. When a real
+validation run is scored, judge it against `docs/validation_convention.yaml`, not intuition.
+
+### Test Site: Taastrup
+
+| Property | Value |
+|----------|-------|
+| Location | Taastrup, Denmark |
+| Period | 1986-1988 |
+| Validation status | `example_validated` |
+| Headline output | `sorg_DM` |
+| Headline unit | Mg DM/ha |
+
+### Performance Metrics — judged against the field's bar
+
+Convention for `sorg_DM`: metric `pbias`; direction `zero_centered`; citation `moriasi2015`.
+The convention's null bands are stated as `no cited threshold`.
+
+> Bar for `sorg_DM` (`pbias`, per `moriasi2015`): satisfactory within 25.0 of zero;
+> good: no cited threshold (`moriasi2015`); very good: no cited threshold (`moriasi2015`).
+> Achieved: body campaign pending.
+
+| Metric | Calibration | Validation | Full Period | Bar (convention, cited) |
+|--------|-------------|------------|-------------|-------------------------|
+| PBIAS (%) | body campaign pending | body campaign pending | body campaign pending | satisfactory: zero-centered 25.0 (`moriasi2015`); good: no cited threshold (`moriasi2015`); very good: no cited threshold (`moriasi2015`) |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending for body campaign | Use `convert_weather_to_dwf.py` and verify with `preflight_check.py`. |
+| Soil | Pipeline | Pending for body campaign | Use `convert_soil_to_dai.py` and verify Daisy units/sign conventions. |
+| Management | Daisy setup/template | Pending for body campaign | Keep `.dai` actions in Daisy syntax and units. |
+| Observations | User/site data | Pending for body campaign | Bind to `sorg_DM` in `Mg DM/ha` dry matter for headline scoring. |
+| Outputs | Daisy `.dlf` logs | Pending for body campaign | Parse with `parse_daisy_output.py`; do not hand-code replacement formulas. |
+
+---
+
+## 12. Parameter Selection by Region
+
+These are physically informed starting points, not calibration results. Prefer site-specific
+Daisy documentation, local agronomic management records, and the validated Taastrup example
+when no local calibration exists.
+
+| Climate / region | Key parameters | Rationale |
+|------------------|----------------|-----------|
+| Temperate Northern Europe | Built-in Daisy crop libraries, local sowing/harvest dates, measured soil horizons where available | Daisy crop parameterizations are primarily calibrated for temperate agricultural systems. |
+| New sites with HWSD-only soils | Texture fractions, bulk density, pedotransfer hydraulic parameters | Provides a reproducible starting soil profile while preserving unit checks. |
+| Irrigated fields | Irrigation actions and water-balance logging | Management timing and water additions must be explicit in `.dai` setup files. |
 
 ---
 

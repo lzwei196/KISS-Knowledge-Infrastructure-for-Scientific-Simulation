@@ -1,13 +1,3 @@
----
-name: dssat
-description: >-
-  DSSAT 4.8.5 cropping-system shell. Covers Daily simulation of crop growth, development,
-  and yield for 45+ crops as a function of…; Daily soil water balance across a multi-layer
-  1-D soil column (Ritchie cascading tipping-bucket); Daily soil nitrogen, phosphorus,
-  potassium, and carbon balances with selectable SOM engine…. Use when the task involves
-  running, configuring, calibrating or interpreting DSSAT.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,35 +21,65 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (19 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (9 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (56 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (27 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/dssat_workdir_setup.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/dssat_workdir_setup.py --help` |
+| `tools/parse_plantgro.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_plantgro.py --help` |
+| `tools/s10_calibrate_rice_nsga2.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_calibrate_rice_nsga2.py --help` |
+| `tools/s1_experiment_design/validate_filex_structure.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_experiment_design/validate_filex_structure.py --help` |
+| `tools/s2_weather_prep/calculate_tav_amp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_weather_prep/calculate_tav_amp.py --help` |
+| `tools/s2_weather_prep/convert_cmfd_to_wth.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_weather_prep/convert_cmfd_to_wth.py --help` |
+| `tools/s2_weather_prep/extract_cmfd_points.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_weather_prep/extract_cmfd_points.py --help` |
+| `tools/s2_weather_prep/validate_weather_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_weather_prep/validate_weather_file.py --help` |
+| `tools/s3_soil_setup/convert_hwsd_to_sol.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_soil_setup/convert_hwsd_to_sol.py --help` |
+| `tools/s3_soil_setup/convert_soilgrids_to_sol.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_soil_setup/convert_soilgrids_to_sol.py --help` |
+| `tools/s3_soil_setup/validate_soil_profile.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_soil_setup/validate_soil_profile.py --help` |
+| `tools/s8_batch_execution/create_batch_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_batch_execution/create_batch_file.py --help` |
+| `tools/s8_batch_execution/run_grid_ensemble.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_batch_execution/run_grid_ensemble.py --help` |
+| `tools/s9_output_parsing/aggregate_grid_to_pixel.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_parsing/aggregate_grid_to_pixel.py --help` |
+| `tools/s9_output_parsing/parse_summary_out.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_parsing/parse_summary_out.py --help` |
+| `tools/s9_output_parsing/validate_yield_timeseries.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_parsing/validate_yield_timeseries.py --help` |
+| `tools/setup_rice_experiment.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/setup_rice_experiment.py --help` |
+| `tools/setup_soybean_experiment.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/setup_soybean_experiment.py --help` |
+
+*19 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 ---
 
+## 3. Input Requirements
+
+Exact machine-readable input and output shapes live in `docs/format_spec.yaml`.
+That file is projected from `dag.yaml` and `diagnostics/triplets.yaml`; regenerate
+it after changing either source, and do not hand-edit the projected spec.
+
 ## Data Preparation
-
-### Agent-first reference run (preferred when the user has no prepared data)
-
-Do not turn the 75 DSSAT declarations into a questionnaire.  For a small maize
-point case, run `tools/run_reference_case.py`.  The user supplies only the
-scientific choices that define the scenario (place, year, and planting date).
-The tool then:
-
-1. obtains a complete public daily weather year (NASA POWER first, recorded
-   ERA5 fallback when POWER is unavailable);
-2. states and records the bundled generic-soil assumption when no local soil
-   was supplied;
-3. creates the short DSSAT workdir, FileX, batch, support links, and weather;
-4. executes the real `dscsm048` binary and parses `Summary.OUT`; and
-5. archives the run, `result.json`, and `provenance.json` in the project.
-
-```bash
-python tools/run_reference_case.py \
-  --lat 32.625 --lon 116.375 --year 2010 \
-  --planting-date 2010-06-10 \
-  --output-dir outputs/DSSAT/bengbu-reference-2010
-```
-
-This is a functional, reproducible reference simulation, not a site-calibrated
-yield claim.  Replace the generic soil/cultivar/management with local evidence
-before using the result for inference or decisions.
 
 ### Forcing data
 
@@ -87,6 +107,20 @@ See `data_ki/HWSD/SKILL.md` for soil property documentation.
 
 ---
 
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | DSSAT-CSM (Decision Support System for Agrotechnology Transfer, Cropping System Model) |
+| Version | 4.8.5, Build 41 |
+| Language | Fortran 90 |
+| License | Research/non-commercial |
+| Repository | https://github.com/DSSAT/dssat-csm-os |
+| Primary domain | Crop simulation — multi-crop growth, development, and yield |
+| Spatial mode | Point / site experiment; gridded applications use wrapper scripts |
+
+## 2. What This Model Does
+
 ## Overview
 
 DSSAT simulates crop growth, development, and yield for 24+ species (wheat, maize, rice, soybean,
@@ -97,7 +131,63 @@ daily weather data and management schedules.
 **Key advantage**: Most detailed crop model in HydroCraft — 50+ diagnostic triplets, 9 pipeline
 stages, Chinese cultivar library with 42 calibrated varieties.
 
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag is the model identity for outputs:
+each observable output's `var`, unit, description, validation rank and
+observability live there. This section restates the dag facts already extracted
+for the reader; if this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable — the one this model
+is judged by):
+
+> `HWAM (harvested grain yield at maturity, dry)` — Dry grain/seed yield at physiological maturity per treatment - the canonical end-of-season yield variable. (`kg/ha`)
+
+| Output variable (dag `var`) | rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| HWAM (harvested grain yield at maturity, dry) | 1 | kg/ha | Dry grain/seed yield at physiological maturity per treatment - the canonical end-of-season yield variable. |
+
+Other dag outputs named for this KI:
+
+| Output variable (dag `var`) |
+|-----------------------------|
+| HWAH (harvested yield, dry, at harvest date) |
+| CWAM (aboveground biomass at maturity) |
+| HIAM (harvest index at maturity) |
+| ADAT (anthesis date) |
+| MDAT (physiological maturity date) |
+| EDAT (emergence date) |
+| LAIX (maximum LAI during season) |
+| LAID / XLAI (daily leaf area index) |
+| CWAD (daily aboveground dry weight) |
+| GWAD (daily grain dry weight) |
+| ETCM (cumulative evapotranspiration) |
+| ET (daily actual evapotranspiration) |
+| SW (daily volumetric soil water by layer) |
+| ROCM (cumulative runoff) |
+| DRCM (cumulative deep drainage) |
+| NLCM (cumulative N leached) |
+| NUCM (cumulative crop N uptake) |
+| NFXM (cumulative N fixed) |
+| GNAM (grain N content at maturity) |
+| N2OEM (cumulative N2O-N emissions) |
+| CH4EM (cumulative CH4-C emissions, paddy) |
+
 ---
+
+## 4. Build Instructions
+
+DSSAT-CSM is already built for this KI. Verify the local binary/package/data
+before any run:
+
+```bash
+python preflight_check.py
+```
+
+If the binary must be invoked directly, use the existing local build:
+`KISSPATH_HOME/DSSAT/build/bin/dscsm048`.
+
+## 5. Execution
 
 ## Binary Location & Execution
 
@@ -148,6 +238,8 @@ KISSPATH_HOME/DSSAT/build/bin/dscsm048 B DSSBatch.v48
 ```
 
 ---
+
+## 7. Tool Inventory
 
 ## Pipeline Stages
 
@@ -230,7 +322,7 @@ hybrid (e.g. CN0001 Zhengdan958) + present-day NPKGRIDS N rates should be scored
 
 ---
 
-## Unit Conversion Table
+## 8. Unit Conversion Table
 
 | Variable | Source unit (CMFD) | DSSAT expected | Conversion | Trap if wrong |
 |----------|--------------------|----------------|------------|---------------|
@@ -255,7 +347,7 @@ Location: `KISSPATH_HOME/DSSAT/Data/Genotype/China/`
 
 ---
 
-## Diagnostic Triplets (50 entries)
+## 9. Diagnostic Triplets (50 entries)
 
 See `diagnostics/triplets.yaml` for the full set. Top 5 most common:
 
@@ -269,7 +361,23 @@ See `diagnostics/triplets.yaml` for the full set. Top 5 most common:
 
 ---
 
-## Validated Results
+## 11. Validated Results
+
+### Performance Metrics — judged against the field's bar, not intuition
+
+State bars from `docs/validation_convention.yaml`; do not substitute remembered
+thresholds. For the dag's rank-1 variable, `HWAM (harvested grain yield at
+maturity, dry)`, the convention bars extracted for this KI are:
+
+| dag variable | Metric | Direction | Very good | Good | Satisfactory |
+|--------------|--------|-----------|-----------|------|--------------|
+| HWAM (harvested grain yield at maturity, dry) | pbias | zero_centered | 10 (jamieson1991; chisanga2021; kumar2024) | 20 (jamieson1991; chisanga2021; kumar2024) | 30 (jamieson1991; chisanga2021; kumar2024) |
+| HWAM (harvested grain yield at maturity, dry) | nrmse | minimize | 10 (jamieson1991; chisanga2021; kumar2024) | 20 (jamieson1991; chisanga2021; kumar2024) | 30 (jamieson1991; chisanga2021; kumar2024) |
+| HWAM (harvested grain yield at maturity, dry) | nrmse | minimize | 10 (jamieson1991; chisanga2021; kumar2024) | 20 (jamieson1991; chisanga2021; kumar2024) | 30 (jamieson1991; chisanga2021; kumar2024) |
+
+The duplicate `nrmse` convention row is intentionally restated as extracted
+from the KI facts above. If the convention file is wrong, report it rather than
+editing it from this skill document.
 
 | Basin | Crop | Yield (kg/ha) | Reference | Period |
 |-------|------|---------------|-----------|--------|
@@ -351,6 +459,26 @@ one pair → tool exits rc=2 with a warning. Use single-year SPAM only for
 | **China CUL not auto-loaded** | `create_workdir()` doesn't merge China/ CUL files | Manually append after workdir creation |
 
 ---
+
+## 10. Coupling Interfaces
+
+DSSAT can run as a standalone site model or be coupled through prepared forcing,
+soil and management files. Upstream weather and soil data are converted into
+DSSAT-ready `.WTH` and `SOIL.SOL` files; downstream consumers use parsed
+`Summary.OUT` and `PlantGro.OUT` variables such as `HWAM`, `CWAM`, `LAID`,
+`CWAD`, `GWAD`, `ET`, `SW`, runoff and drainage.
+
+| Upstream component | Variable exchanged | Unit | Temporal resolution |
+|--------------------|-------------------|------|---------------------|
+| CMFD/MSWX/NASA POWER forcing | SRAD, TMAX, TMIN, RAIN, WIND | DSSAT weather units after conversion | Daily |
+| HWSD/SoilGrids soil data | Soil profile properties | DSSAT SOIL.SOL units | Static profile |
+| Crop calendar / management data | Planting, fertilizer, irrigation, population, row spacing | DSSAT FileX controls | Per season / event |
+
+| Downstream component | Variable exchanged | Unit | Temporal resolution |
+|----------------------|-------------------|------|---------------------|
+| Validation tools | HWAM (harvested grain yield at maturity, dry) | kg/ha | Per treatment / season |
+| Growth analysis | LAID, CWAD, GWAD and related PlantGro variables | DSSAT output units | Daily |
+| Hydrology / water-balance post-processing | ET, SW, ROCM, DRCM and related outputs | DSSAT output units | Daily or cumulative |
 
 ## Standalone Workflow (WITHOUT VIC — for single-site or farmer queries)
 
@@ -621,6 +749,8 @@ Returns per run:
 - `total_thermal_time`
 
 ---
+
+## 12. Parameter Selection by Region
 
 ## Crop Calendar Reference (China)
 

@@ -204,13 +204,24 @@ def _load_year_cached(source, lat, lon, year, cache_dir):
             ts = (d - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
             dates.append(datetime.utcfromtimestamp(int(ts)))
     payload = {"dates": [d.strftime("%Y-%m-%d") for d in dates]}
+    import numpy as np
     for k, v in data.items():
-        if k == "dates" or not isinstance(v, (list, tuple)):
+        if k == "dates":
             continue
-        if len(v) != len(dates):
+        # ki_tools_common.load_forcing returns numpy arrays for nasa_power/mswx
+        # (only the local CMFD fallback returns plain lists) -- normalise ANY
+        # 1-D numeric sequence instead of gating on isinstance(v, list), or
+        # every non-CMFD variable silently drops out of the cache memo
+        # (triplet EPIC_029: memo ends up holding only "dates", build() then
+        # falls back to TMX=TMN=0 defaults -> zero diurnal range).
+        try:
+            arr = np.asarray(v)
+        except Exception:
+            continue
+        if arr.ndim != 1 or len(arr) != len(dates):
             continue
         payload[k] = [None if (isinstance(x, float) and x != x) else float(x)
-                      for x in v]
+                      for x in arr]
     os.makedirs(cache_dir, exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w") as fh:
@@ -388,6 +399,22 @@ def build(source, lat, lon, year1, year2, workspace, stn, cache_dir=None):
     # ki_tools_common canonical keys (matching NASA POWER / MSWX / CMFD):
     #   precip_mm, temp_max_c, temp_min_c, temp_mean_c, srad_wm2,
     #   wind_ms, shum_kgkg, pres_pa, (optional) rh_frac
+
+    # GUARD (triplet EPIC_029): a stale/corrupt per-year cache memo can hold
+    # only "dates" (e.g. a memo written before the numpy-array serialisation
+    # fix). _pick(..., default=[0.0]*n) would then silently fabricate
+    # TMX=TMN=precip=0 weather instead of surfacing the real problem. Fail
+    # loud with the missing keys named, rather than run EPIC on zeros.
+    missing = [k for k in ("temp_max_c", "temp_min_c", "precip_mm")
+               if _pick(data, k, default=None) is None]
+    if missing:
+        raise ValueError(
+            f"{source} forcing at ({lat:.3f},{lon:.3f}) {year1}-{year2} is "
+            f"missing load-bearing variable(s) {missing} -- this is the "
+            f"signature of a stale .forcing_cache memo written before the "
+            f"EPIC_029 fix (numpy arrays weren't serialised). Delete "
+            f"{cache_dir} and re-run. See diagnostics/triplets.yaml EPIC_029.")
+
     tmax = list(_pick(data, "temp_max_c", "tmax", default=[0.0] * n))
     tmin = list(_pick(data, "temp_min_c", "tmin", default=[0.0] * n))
     tmean = list(_pick(

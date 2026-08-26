@@ -1,0 +1,488 @@
+schema_version: 1
+model_id: DayCent
+domain: crop
+generated_by: "Step-B validation-convention agent (Codex)"
+generated_at: 2026-08-14
+
+# Conventions are keyed by the DayCent DAG output name. Numeric bands below are
+# either published validation targets or benchmark skill values from fetched full
+# texts. Where the fetched literature reports no admissible numeric convention,
+# bands are null and confidence is kept low.
+
+references:
+  laub2024:
+    doi: 10.5194/bg-21-3691-2024
+    title: "Modeling integrated soil fertility management for maize production in Kenya using a Bayesian calibration of the DayCent model"
+    venue: "Biogeosciences"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-21-3691-2024.txt
+  necpalova2015:
+    doi: 10.1016/j.envsoft.2014.12.011
+    title: "Understanding the DayCent model: Calibration, sensitivity, and identifiability through inverse modeling"
+    venue: "Environmental Modelling & Software"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2014.12.011.txt
+  wang2023cute:
+    doi: 10.1016/j.envsoft.2023.105832
+    title: "DayCent-CUTE: A global sensitivity, auto-calibration, and uncertainty analysis tool for DayCent"
+    venue: "Environmental Modelling & Software"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2023.105832.txt
+  zhang2020:
+    doi: 10.1029/2020JG005750
+    title: "DayCent Model Predictions of NPP and Grain Yields for Agricultural Lands in the Contiguous U.S."
+    venue: "Journal of Geophysical Research: Biogeosciences"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2020jg005750.txt
+  takeda2025:
+    doi: 10.1002/saj2.70003
+    title: "Soil carbon sequestration potential in subtropical grasslands estimated by DayCent-CABBI"
+    venue: "Soil Science Society of America Journal"
+    year: 2025
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_saj2.70003.txt
+  dold2020:
+    doi: 10.1029/2020GB006685
+    title: "Measured and Simulated Carbon Dynamics in Midwestern U.S. Corn-Soybean Rotations"
+    venue: "Global Biogeochemical Cycles"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2020gb006685.txt
+  oliveira2017:
+    doi: 10.1111/gcbb.12427
+    title: "Predicting soil C changes over sugarcane expansion in Brazil using the DayCent model"
+    venue: "GCB Bioenergy"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1111_gcbb.12427.txt
+  clivot2019:
+    doi: 10.1016/j.envsoft.2019.04.004
+    title: "Modeling soil organic carbon evolution in long-term arable experiments with AMG model"
+    venue: "Environmental Modelling & Software"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2019.04.004.txt
+  cui2014:
+    doi: 10.5194/bg-11-91-2014
+    title: "Assessing biogeochemical effects and best management practice for a wheat-maize cropping system using the DNDC model"
+    venue: "Biogeosciences"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-11-91-2014.txt
+  ichii2010:
+    doi: 10.5194/bg-7-2061-2010
+    title: "Multi-model analysis of terrestrial carbon cycles in Japan: limitations and implications of model calibration using eddy flux observations"
+    venue: "Biogeosciences"
+    year: 2010
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-7-2061-2010.txt
+  muller2017:
+    doi: 10.5194/gmd-10-1403-2017
+    title: "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications"
+    venue: "Geoscientific Model Development"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-10-1403-2017.txt
+  brilli2017:
+    doi: 10.1016/j.scitotenv.2017.03.208
+    title: "Review and analysis of strengths and weaknesses of agro-ecosystem models for simulating C and N fluxes"
+    venue: "Science of the Total Environment"
+    year: 2017
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.scitotenv.2017.03.208.txt
+  wang2022atmos:
+    doi: 10.3390/atmos13010050
+    title: "N2O Emissions from Two Austrian Agricultural Catchments Simulated with an N2O Submodule Developed for the SWAT Model"
+    venue: "Atmosphere"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_atmos13010050.txt
+  palosuo2011:
+    doi: 10.1016/j.eja.2011.05.001
+    title: "Simulation of winter wheat yield and its variability in different climates of Europe: A comparison of eight crop growth models"
+    venue: "European Journal of Agronomy"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.eja.2011.05.001.txt
+
+validation:
+  - dag_variable: n2o_emission
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a daily N2O NSE acceptance band; Laub 2024 reports daily EF -0.44 to -0.03 by site, i.e. poor daily timing skill."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Daily N2O is pulse dominated: Laub reports a 'poor match' for daily N2O and attributes timing difficulty to microbial processes, tipping-bucket soil water, and missing gas diffusivity; Necpalova reports DayCent missed fertilization-event N2O spikes."
+        cites: [laub2024, necpalova2015, brilli2017]
+    validated_when: "UNRESOLVED for daily point fluxes; use cumulative/seasonal N2O where possible, not daily NSE alone."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Daily flux validation is structurally limited by pulse timing; no numeric daily NSE threshold was found in the fetched texts."
+
+  - dag_variable: n2o_emission
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 8.74}
+        pass_band: satisfactory
+        band_note: "Benchmark-achieved annual N2O relative mean deviation from Cui 2014 Table 3; not a universal tier."
+        cites: [cui2014]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Laub 2024 reports cumulative seasonal N2O EF 0.06 to 0.69 by site, much better than daily N2O EF."
+        cites: [laub2024]
+    validated_when: "|PBIAS| no worse than the fetched annual/cumulative benchmark, and daily pulse mismatch is not used alone to reject regional totals."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Cui reports annual N2O RMSE 19.45%, RMD 8.74%, ME 0.57; Laub reports cumulative seasonal DayCent N2O is more accurate than daily fluxes."
+
+  - dag_variable: no_emission
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DayCent NO point-time-series NSE convention; DNDC annual NO benchmarks do not justify a daily DayCent NSE gate."
+        cites: []
+    secondary_metrics:
+      - metric: annual_pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Cui 2014 reports annual NO RMD 0.32% and ME 0.53 in a crop biogeochemistry benchmark."
+        cites: [cui2014]
+    validated_when: "UNRESOLVED for daily NO; annual magnitude agreement may contextualize but cannot auto-validate daily NSE."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "NO has even thinner fetched DayCent validation literature than N2O; keep the dag nse metric but leave its band null."
+
+  - dag_variable: ch4_flux
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper reports a CH4 point-time-series NSE threshold for DayCent."
+        cites: []
+    secondary_metrics:
+      - metric: temporal_pattern
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Cui 2014 reports CH4 temporal pattern capture qualitatively but without a metric table for CH4."
+        cites: [cui2014]
+    validated_when: "UNRESOLVED; require a fetched CH4 benchmark before automated grading."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "Fetched texts discuss CH4 mechanisms and qualitative agreement, but no numeric validation convention."
+
+  - dag_variable: co2_heterotrophic
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a heterotrophic-respiration-only NSE convention; most benchmarks validate NEE, NEP, RE, SOC, or total C fluxes."
+        cites: []
+    secondary_metrics:
+      - metric: component_partitioning
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Bennett-style environmental-model evaluation requires purpose- and data-dependent criteria; fetched DayCent studies validate aggregate C observables rather than isolated heterotrophic CO2."
+        cites: [brilli2017, necpalova2015]
+    validated_when: "UNRESOLVED; compare only when observations partition heterotrophic respiration consistently."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "Do not transfer NEE or SOC bands to heterotrophic respiration without a fetched component-specific paper."
+
+  - dag_variable: "cprodc (daily net C production, GPP proxy)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "cprodc is a DayCent net-production proxy; no fetched paper gives an NSE band for this own-output variable."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Ichii 2010 reports multi-model GPP regression slope improvement from 0.64 to 0.88 after calibration and includes DAYCENT among the models, but this is not cprodc-specific."
+        cites: [ichii2010]
+    validated_when: "UNRESOLVED for cprodc-as-GPP; use as supportive only unless the observation mapping explicitly matches DayCent net C production."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Muller 2017 warns that yield or aggregate productivity can hide compensating process errors; do not overgrade the proxy."
+
+  - dag_variable: nee
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.56, satisfactory: 0.25}
+        pass_band: satisfactory
+        band_note: "DayCent-CABBI validation benchmark: weekly NEE NSE 0.25 and cumulative NEE validation NSE 0.56."
+        cites: [takeda2025]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Takeda 2025 reports weekly NEE validation RMSE 1.36 g C m-2 and cumulative validation RMSE 1.16 Mg C ha-1."
+        cites: [takeda2025]
+    validated_when: "NSE >= 0.25 for weekly/daily-style NEE, with cumulative NEE closer to the 0.56 benchmark when aggregation is used."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Cui 2014 similarly reports daily NEE ME 0.40 but did not calculate RMSE/RMD because the observed mean was small and flux signs change."
+
+  - dag_variable: reco
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DayCent ecosystem-respiration NSE band; Ichii reports multi-model RE slope benchmarks, not a threshold."
+        cites: []
+    secondary_metrics:
+      - metric: regression_slope
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Ichii 2010 reports RE regression slope improved from 0.63 to 0.80 after eddy-flux calibration in a multi-model benchmark including DAYCENT."
+        cites: [ichii2010]
+    validated_when: "UNRESOLVED; require an RE-specific fetched benchmark before automated validation."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Flux-tower RE is useful for calibration, but the fetched convention is benchmark context rather than a pass/fail band."
+
+  - dag_variable: "aboveground_biomass (aglivc)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The dag metric is PBIAS, but fetched DayCent biomass papers report EF/RMSE/nRMSE or squared-bias components rather than a PBIAS gate."
+        cites: []
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.231, satisfactory: 0.22}
+        pass_band: satisfactory
+        band_note: "Benchmark DayCent AGB skill: Laub all-site EF 0.231 after calibration; Takeda validation NSE 0.22 for aboveground biomass C."
+        cites: [laub2024, takeda2025]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Laub reports AGB RMSE 3.915 t ha-1 after calibration; Takeda reports biomass validation RMSE 0.88 Mg C ha-1 and nRMSE 55.6%."
+        cites: [laub2024, takeda2025]
+    validated_when: "Prefer NSE/EF >= 0.22 for biomass dynamics; PBIAS remains unresolved until a fetched PBIAS convention is found."
+    evidence_strength: moderate
+    confidence: 0.45
+    notes: "Because one headline metric has a null band, the gate should treat this block as contextual unless PBIAS is supplied by a later convention."
+
+  - dag_variable: "crop_yield (cgrain)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Transferred from DayCent county-yield benchmark language: most counties within +/-20% and many within +/-10% of NASS yields."
+        cites: [zhang2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Laub 2024 reports maize grain yield EF increased from 0.36 to 0.50 across all sites after calibration."
+        cites: [laub2024]
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Palosuo 2011 uses CV(RMSE) and Willmott index of agreement for crop-yield model comparison; the best crop-model CV(RMSE) was 0.18."
+        cites: [palosuo2011]
+    validated_when: "|PBIAS| <= 20% for yield magnitude, with positive EF/NSE or comparable temporal skill as supporting evidence."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "DayCent point studies use EF/RMSE more than PBIAS; the 20% band is transferred from DayCent regional yield benchmarking, so confidence is moderate."
+
+  - dag_variable: "crop_yield (cgrain)"
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Zhang 2020 reports 70% of corn county yields within +/-20% and 47% within +/-10%; soybean 67% within +/-20% and 58% within +/-10%; wheat 64% within +/-20%."
+        cites: [zhang2020]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Zhang 2020 reports overall R2 of 0.54, 0.54, and 0.38 for corn, soybean, and winter wheat county yields; Muller 2017 recommends best-performing crop models as benchmarks when pure observation benchmarks are lacking."
+        cites: [zhang2020, muller2017]
+    validated_when: "|PBIAS| <= 20% against detrended/regional yield statistics; retain trend/correlation metrics as supportive."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "This is the best-grounded yield block because the DayCent benchmark was explicitly county/regional."
+
+  - dag_variable: "soil_organic_carbon (somsc)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 4.3, good: 5.3, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "Clivot 2019 reports SOC RRMSE 5.3%, measurement CV 4.3%, and other top SOC model RRMSE values 6.5%-10%."
+        cites: [clivot2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Dag metric retained as supportive: Oliveira 2017 reports absence of significant bias in DayCent soil C stocks, and Wang 2023 reports evaluation bias -0.73 t C ha-1."
+        cites: [oliveira2017, wang2023cute]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Wang 2023 reports independent evaluation NSE 0.87 for DayCent SOC after auto-calibration."
+        cites: [wang2023cute]
+    validated_when: "RRMSE <= 10% for SOC time-series dynamics; PBIAS should be checked but no percent-bias tier supersedes the fetched RRMSE convention."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: "SOC literature uses RRMSE/RMSE relative to measurement variability more explicitly than PBIAS; this supersedes the dag determining_metric for automated grading."
+
+  - dag_variable: "soil_organic_carbon (somsc)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: rrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 4.3, good: 7.4, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "Snapshot/stock benchmark transferred from SOC stock validation: Takeda reports validation nRMSE 7.4%; Clivot reports 10% as upper range for best SOC models."
+        cites: [takeda2025, clivot2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Takeda reports SOC stock validation RMSE 2.81 Mg C ha-1; Wang 2023 reports evaluation RMSE 6.84 t C ha-1 across broader SOC stocks."
+        cites: [takeda2025, wang2023cute]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Dag PBIAS is informative, but fetched DayCent snapshot validation reports RMSE/nRMSE more consistently."
+        cites: [takeda2025, wang2023cute]
+    validated_when: "RRMSE <= 10% for a measured SOC stock at the matched depth; use RMSE and bias as diagnostics."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Depth matching is mandatory: the dag row says top 20 cm, while some cited benchmarks use 0-30 cm or other depths."
+
+  - dag_variable: soil_moisture_layers
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a correlation threshold for DayCent layer soil moisture; Necpalova reports improved VSWC but not a general r gate."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Cui 2014 reports soil moisture R2 0.29 and ME 0.05 in a crop biogeochemistry validation; Necpalova reports VSWC seasonal dynamics and magnitude improved after DayCent calibration."
+        cites: [cui2014, necpalova2015]
+    validated_when: "UNRESOLVED; match model layer to sensor depth and use r/RMSE as diagnostics until a fetched threshold is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The failed OA coverage fetch for a crop water/soil hydrology benchmark is listed in deferred_paywalled."
+
+  - dag_variable: soil_temperature_layers
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DayCent soil-temperature NSE acceptance band; available texts report benchmark fit, not a pass tier."
+        cites: []
+    secondary_metrics:
+      - metric: model_efficiency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Cui 2014 reports soil temperature ME 0.98 and R2 0.97; Necpalova reports DayCent soil temperature simulated satisfactorily after inverse calibration."
+        cites: [cui2014, necpalova2015]
+    validated_when: "UNRESOLVED for automated NSE grading; use layer-depth-matched RMSE/ME/r diagnostics."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The field clearly validates soil temperature, but the fetched DayCent text does not expose a numeric NSE gate."
+
+  - dag_variable: "evapotranspiration / water_balance"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.58, satisfactory: 0.43}
+        pass_band: satisfactory
+        band_note: "DayCent-CABBI AET validation benchmark: weekly AET NSE 0.43 and cumulative AET validation NSE 0.58."
+        cites: [takeda2025]
+    secondary_metrics:
+      - metric: water_balance_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Wang 2022 uses absolute annual water-balance error <11% as 'good' years for N2O impact interpretation; this is a catchment hydrology support metric, not a DayCent ET pass gate."
+        cites: [wang2022atmos]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Wang 2022 reports simulated ET compared with ALEXI ET with R2 0.90, 0.94, and 0.89 for the catchment setups."
+        cites: [wang2022atmos]
+    validated_when: "NSE >= 0.43 for point time-series AET/ET; cumulative ET should approach the 0.58 validation benchmark."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Units must be converted before comparison; DayCent water-balance output is not a full energy-balance latent heat product."
+
+deferred_paywalled:
+  - ref: "Assessing the sensitivity of modelled estimates of N2O emissions and yield to input uncertainty at a UK cropland experimental site using the DailyDayCent model"
+    doi: 10.1007/s10705-014-9622-0
+    needed_for: [n2o_emission, crop_yield]
+  - ref: "Global scale DAYCENT model analysis of greenhouse gas emissions and mitigation strategies for cropped soils"
+    doi: 10.1016/j.gloplacha.2008.12.006
+    needed_for: [n2o_emission, no_emission, ch4_flux]
+  - ref: "New approach for predicting nitrification and its fraction of N2O emissions in global terrestrial models"
+    doi: 10.1088/1748-9326/abe4f5
+    needed_for: [n2o_emission]
+  - ref: "Comparing hydrological frameworks for simulating crop biomass, water and nitrogen dynamics in a tile drained soybean-corn system"
+    doi: 10.1016/j.hydroa.2018.100015
+    needed_for: [soil_moisture_layers, evapotranspiration / water_balance]

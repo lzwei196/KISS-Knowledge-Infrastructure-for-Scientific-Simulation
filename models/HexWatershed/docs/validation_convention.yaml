@@ -1,0 +1,302 @@
+schema_version: 1
+model_id: HexWatershed
+domain: hydrology
+generated_by: "Step-B Codex agent"
+generated_at: 2026-08-14
+
+references:
+  liao2020_hex:
+    doi: 10.1016/j.envsoft.2020.104702
+    title: "Watershed delineation on a hexagonal mesh grid"
+    venue: "Environmental Modelling & Software"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2020.104702.txt
+  liao2022_hex:
+    doi: 10.1016/j.advwatres.2021.104099
+    title: "Advances in hexagon mesh-based flow direction modeling"
+    venue: "Advances in Water Resources"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.advwatres.2021.104099.txt
+  liao2023_pyflowline:
+    doi: 10.1029/2022MS003089
+    title: "Topological Relationship-Based Flow Direction Modeling: Mesh-Independent River Networks Representation"
+    venue: "Journal of Advances in Modeling Earth Systems"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2022ms003089.txt
+  liao2023_hex3:
+    doi: 10.1029/2022MS003487
+    title: "Topological Relationship-Based Flow Direction Modeling: Stream Burning and Depression Filling"
+    venue: "Journal of Advances in Modeling Earth Systems"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2022ms003487.txt
+  yamazaki2009_flow:
+    doi: 10.5194/hess-13-2241-2009
+    title: "Deriving a global river network map and its sub-grid topographic characteristics from a fine-resolution flow direction map"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2009
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-13-2241-2009.txt
+  mcmaster2002_stream:
+    doi: 10.1029/2000WR000150
+    title: "Effects of digital elevation model resolution on derived stream network positions"
+    venue: "Water Resources Research"
+    year: 2002
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2000wr000150.txt
+  metz2011_stream:
+    doi: 10.5194/hess-15-667-2011
+    title: "Efficient extraction of drainage networks from massive, radar-based elevation models with least cost path search"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-15-667-2011.txt
+  datta2022_limits:
+    doi: 10.2166/nh.2022.126
+    title: "The limits of watershed delineation: implications of different DEMs, DEM resolutions, and area threshold values"
+    venue: "Hydrology Research"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_nh.2022.126.txt
+  aristizabal2024_hand:
+    doi: 10.5194/hess-28-1287-2024
+    title: "Effects of high-quality elevation data and explanatory variables on the accuracy of flood inundation mapping via Height Above Nearest Drainage"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-28-1287-2024.txt
+
+validation:
+  - dag_variable: "dElevation_mean (depression-filled elevation)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched HexWatershed paper gives a CSI pass tier for depression-filled elevation surfaces; compare to a hydro-conditioned DEM, not raw terrain."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an elevation-RMSE acceptance band for filled/stream-burned HexWatershed DEMs."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "The output is intentionally modified: HexWatershed v3 processes river cells with hybrid stream burning and then land cells with revised priority-flood depression filling, producing a depression-free DEM rather than preserving raw elevations."
+        cites: [liao2023_hex3, liao2020_hex]
+    validated_when: "UNRESOLVED - no cited numeric pass band; assess only against an independent hydro-conditioned filled DEM and do not grade against raw DEM elevations."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Liao 2023 describes a two-step stream-burning/depression-filling workflow and says the updated DEM is for hydrologic model requirements; it does not provide a numeric RMSE threshold."
+
+  - dag_variable: "lCellID_downslope_dominant (flow direction)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: upstream_area_me
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.99, good: 0.90, satisfactory: 0.69}
+        pass_band: good
+        band_note: "Yamazaki 2009 validates river-network/flow-direction upscaling by upstream-area modeling efficiency: FLOW 0.99, Doll-Lehner 0.90, Double Maximum 0.69."
+        cites: [yamazaki2009_flow]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag proposed CSI, but fetched flow-direction literature validates with upstream-area agreement, NHD-flowline overlap, and drainage-area consistency rather than a universal CSI threshold."
+        cites: [yamazaki2009_flow, liao2022_hex, liao2023_hex3]
+      - metric: flow_direction_match
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "At coarse resolution, flow direction accuracy is limited by DEM resolution and river-network detail; HexWatershed 2.0 reports missing watershed portions at coarse resolution, and McMaster reports stream-network accuracy decaying beyond about 180 m DEM resolution in the tested terrain."
+        cites: [liao2022_hex, mcmaster2002_stream]
+    validated_when: "Upstream-area modeling efficiency should meet at least the Doll-Lehner-class benchmark (ME >= 0.90); direct CSI is informative only when the reference routing is on the same mesh."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Literature supersedes the dag CSI headline with upstream-area agreement for flow-direction maps. Liao 2023 reports that with topological relationships on, modeled flow directions overlap user-provided river networks."
+
+  - dag_variable: "dAccumulation (flow accumulation)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: upstream_area_me
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.99, good: 0.90, satisfactory: 0.69}
+        pass_band: good
+        band_note: "Flow accumulation is judged through upstream/drainage-area preservation; Yamazaki reports ME values 0.99, 0.90, and 0.69 for three upscaling methods."
+        cites: [yamazaki2009_flow]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag CSI can describe spatial-pattern agreement, but fetched drainage-network papers validate accumulation with upstream-area agreement and drainage-area maps."
+        cites: [yamazaki2009_flow, liao2023_hex3]
+      - metric: upstream_area_me
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "For HexWatershed v3.0, drainage area varies with mesh type and resolution because it is calculated from cell area and flow direction; basin-margin partial cells cause under- or over-estimation."
+        cites: [liao2023_hex3]
+    validated_when: "Upstream-area ME >= 0.90 after converting accumulation cell counts to drainage area or comparing on the same mesh."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "This applies to the cell-count accumulation output only after fair conversion to area or same-mesh comparison."
+
+  - dag_variable: "Drainage area (derived watershed/contributing area)"
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 8.0, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "HexWatershed 2.0 reports stream-burning-enabled drainage-area differences below 8%; HexWatershed v3 high-resolution cases under-estimated total drainage area by 5%-10%."
+        cites: [liao2022_hex, liao2023_hex3]
+    secondary_metrics:
+      - metric: drainage_area_ratio
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "At coarse spatial resolution, partial inclusion/exclusion of cells at basin margins can overestimate total drainage area by as much as 30%, so coarse-mesh failures should trigger mesh/outlet/data review before KI repair."
+        cites: [liao2023_hex3]
+    validated_when: "|PBIAS| <= 10% against a published/reference basin area, with outlet placement and mesh resolution controlled."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "The dag pbias metric is retained. The 10% satisfactory band is a HexWatershed benchmark envelope, not a general SWAT streamflow criterion."
+
+  - dag_variable: "Stream grid / stream network (iFlag_stream, segments)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: area_of_difference_fraction
+        direction: minimize
+        unit: percent
+        bands: {very_good: 1.5, good: 4.2, satisfactory: 4.2}
+        pass_band: satisfactory
+        band_note: "Derived from fetched HexWatershed benchmarks: small-basin HGSD area-of-difference sums are about 0.7%-1.4% of basin area; CRB 40 km stream-burning case is about 4.2%."
+        cites: [liao2020_hex, liao2022_hex]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is a common binary spatial metric in flood mapping, but fetched stream-network papers use area-of-difference, distance-to-reference, and visual overlap rather than a stream-network CSI pass tier."
+        cites: [aristizabal2024_hand, liao2020_hex, liao2022_hex]
+      - metric: positional_error
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "Stream-network positions are resolution limited; McMaster reports predicted-stream accuracy decaying rapidly beyond about 180 m DEM resolution, while HexWatershed 2.0 reports reduced performance as resolution decreases."
+        cites: [mcmaster2002_stream, liao2022_hex]
+    validated_when: "Area of difference between modeled stream network and NHD/reference flowlines <= 4.2% of basin area after aligning stream-order/drainage-area thresholds."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "The dag CSI metric is superseded here because HexWatershed papers validate stream networks by enclosed area of differences against NHD flowlines."
+
+  - dag_variable: "Strahler stream order"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: spearman
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper reports a numeric Spearman threshold for modeled Strahler-order maps."
+        cites: []
+    secondary_metrics:
+      - metric: order_distribution_match
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Stream order is topological and threshold dependent; PyFlowline notes that stream order filters river detail, while HexWatershed v3 says segment and order outputs can vary because of the flow-accumulation threshold."
+        cites: [liao2023_pyflowline, liao2023_hex3]
+    validated_when: "UNRESOLVED - compare max order, per-segment order distribution, and confluence topology; no numeric Spearman pass band was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Keep the dag Spearman metric as headline but null. A fetched order-distribution benchmark is needed before auto-validation."
+
+  - dag_variable: "Watershed boundary / subbasin boundaries"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: area_overlap
+        direction: maximize
+        unit: percent
+        bands: {very_good: 99.7, good: 97.6, satisfactory: 93.0}
+        pass_band: satisfactory
+        band_note: "Datta 2022 reports DEM-derived watershed intersections of 97.62%-99.73% for Halda and 93.08%-99.92% for Sangu; Chengi has a low AW3D30 outlier."
+        cites: [datta2022_limits]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag CSI is compatible with polygon overlap/IoU scoring, but the fetched watershed-delineation convention reports intersected-area percentages rather than a CSI tier."
+        cites: [datta2022_limits]
+      - metric: area_overlap
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Boundary overlap is limited in flat, coastal, and mouth areas; Datta 2022 reports significant variation in catchment size and shape in flat topography near discharge points."
+        cites: [datta2022_limits]
+    validated_when: "Reference-boundary area overlap >= 93% for comparable DEM/outlet setups; use common intersected area and inspect flat/coastal outlet regions."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "The numeric band is transferred from multi-DEM watershed delineation, not a HexWatershed-specific IoU table; reduce confidence accordingly."
+
+  - dag_variable: "Mean / max / min watershed slope"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The dag CSI metric is not a natural slope-magnitude validation target, and no fetched paper gives a numeric slope-map CSI or PBIAS tier."
+        cites: []
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an accepted percent-bias threshold for basin slope statistics."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Slope is highly sensitive to DEM resolution and stream-burning/depression-filling choices: Datta 2022 reports higher maximum, mean, and standard deviation slopes at 30 m and lower values at coarser resolutions; Liao 2023 shows river-cell elevation modifications create much larger nearby slopes when topological relationships are off."
+        cites: [datta2022_limits, liao2023_hex3]
+    validated_when: "UNRESOLVED - convert slope units consistently and compare basin slope distributions against the same DEM/source/resolution; no numeric pass band was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "A literature threshold for slope-statistic PBIAS was not found in the capped pass; this block only prevents over-interpreting unit/resolution artifacts."
+
+  - dag_variable: "Drainage density"
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a general numeric PBIAS threshold for drainage-density validation."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Drainage density directly depends on the area/accumulation threshold because smaller thresholds increase stream length and denser networks; Datta 2022 states threshold selection is crucial for basin characteristics and stream networks."
+        cites: [datta2022_limits]
+    validated_when: "UNRESOLVED - compare drainage density only after matching stream-extraction threshold/order and reference network scale; no cited PBIAS band was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The KI skill note gives a physical range, but it is not a fetched validation threshold; therefore the pass band remains null."
+
+deferred_paywalled:
+  - ref: "Liao & Cooper 2022 - HexWatershed: a mesh-independent flow direction model (JOSS software paper)"
+    doi: 10.21105/joss.04446
+    needed_for: ["lCellID_downslope_dominant (flow direction)", "Stream grid / stream network (iFlag_stream, segments)", "Watershed boundary / subbasin boundaries"]
+  - ref: "Evaluation of Flow Routing on the Unstructured Voronoi Meshes in Earth System Modeling"
+    doi: 10.1029/2024MS004737
+    needed_for: ["lCellID_downslope_dominant (flow direction)", "dAccumulation (flow accumulation)", "Drainage area (derived watershed/contributing area)"]

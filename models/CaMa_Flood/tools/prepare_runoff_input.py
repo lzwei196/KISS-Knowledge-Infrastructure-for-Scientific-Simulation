@@ -51,6 +51,25 @@ except ImportError:
     sys.exit(1)
 
 
+def open_nc(path, **kwargs):
+    """xr.open_dataset with an engine fallback -- see dt_cama_014.
+
+    In the HydroCraft python_env (netCDF4 1.7.4 / HDF5 1.14.6 / xarray 2025.11.0) xarray's
+    DEFAULT 'netcdf4' backend raises `OSError: [Errno -101] NetCDF: HDF error` on EVERY
+    NETCDF4/HDF5 file, including the shipped e2o test forcing under
+    model/cmf_v420_pkg/inp/test_15min_nc/. `netCDF4.Dataset(path)` opens the same file fine,
+    so the file is NOT corrupt -- do not go looking for a bad download. 'h5netcdf' works.
+    """
+    import xarray as xr
+    last = None
+    for engine in (None, "h5netcdf", "netcdf4", "scipy"):
+        try:
+            return xr.open_dataset(path, engine=engine, **kwargs)
+        except Exception as exc:                       # noqa: BLE001 - try every backend
+            last = exc
+    raise OSError(f"cannot open {path} with any xarray engine (dt_cama_014): {last}")
+
+
 # ---------------------------------------------------------------------------
 # VIC source: reads VIC flux text files
 # ---------------------------------------------------------------------------
@@ -183,7 +202,7 @@ def convert_wflow(input_dir, output_dir, basin_name, start_year, end_year):
         return False
 
     print(f"Reading wflow output: {wflow_nc}")
-    ds = xr.open_dataset(wflow_nc)
+    ds = open_nc(wflow_nc)
 
     # Identify runoff variable (lateral_subsurface + overland, or total_runoff)
     runoff_var = None
@@ -255,8 +274,18 @@ def convert_wflow(input_dir, output_dir, basin_name, start_year, end_year):
 
 def convert_netcdf(input_dir, output_dir, basin_name, start_year, end_year,
                    netcdf_var="runoff", netcdf_pattern="runoff_{year}.nc",
-                   scale_factor=1.0):
-    """Convert generic NetCDF runoff files to CaMa-Flood format."""
+                   scale_factor=1.0, west=None, east=None, south=None, north=None):
+    """Convert generic NetCDF runoff files to CaMa-Flood format.
+
+    west/east/south/north (optional, in degrees, CELL-EDGE coordinates) trim the source grid to
+    the basin. This is the implementation of the dt_cama_006 remedy ("trim NetCDF to the actual
+    source grid extent"): a GLOBAL forcing product (e2o/ERA/MSWX) fed to CaMa untrimmed forces the
+    inpmat WESTIN/EASTIN/NORTHIN/SOUTHIN to be global too, and every CaMa cell then maps through a
+    global input matrix -- slow, memory-hungry, and impossible to reconcile with the regional
+    domain a user passes to configure_simulation.py (which uses the SAME extent for both the
+    inpmat source grid and the CaMa domain). Trim here, then hand the printed cell-edge extent
+    straight to configure_simulation.py --west/--east/--south/--north (dt_cama_002).
+    """
     import xarray as xr
 
     os.makedirs(output_dir, exist_ok=True)
@@ -269,7 +298,7 @@ def convert_netcdf(input_dir, output_dir, basin_name, start_year, end_year,
             continue
 
         print(f"Processing: {fpath}")
-        ds = xr.open_dataset(fpath)
+        ds = open_nc(fpath)
 
         if netcdf_var not in ds.data_vars:
             print(f"ERROR: Variable '{netcdf_var}' not found. Available: {list(ds.data_vars)}")
@@ -278,18 +307,52 @@ def convert_netcdf(input_dir, output_dir, basin_name, start_year, end_year,
 
         lat_name = "lat" if "lat" in ds.coords else "y"
         lon_name = "lon" if "lon" in ds.coords else "x"
+
+        # Ensure North-to-South BEFORE any subsetting so the written file obeys dt_cama_007.
+        lats = ds[lat_name].values
+        if len(lats) > 1 and lats[0] < lats[-1]:
+            ds = ds.isel({lat_name: slice(None, None, -1)})
+
+        # Optional bbox trim (cell CENTRES kept when they fall inside the requested EDGES).
+        if any(v is not None for v in (west, east, south, north)):
+            lat_v = ds[lat_name].values
+            lon_v = ds[lon_name].values
+            lat_keep = np.ones(lat_v.shape, dtype=bool)
+            lon_keep = np.ones(lon_v.shape, dtype=bool)
+            if south is not None:
+                lat_keep &= lat_v > south
+            if north is not None:
+                lat_keep &= lat_v < north
+            if west is not None:
+                lon_keep &= lon_v > west
+            if east is not None:
+                lon_keep &= lon_v < east
+            if lat_keep.sum() == 0 or lon_keep.sum() == 0:
+                print(f"ERROR: bbox W={west} E={east} S={south} N={north} selects no cells from "
+                      f"lat[{lat_v.min()},{lat_v.max()}] lon[{lon_v.min()},{lon_v.max()}]")
+                ds.close()
+                return False
+            ds = ds.isel({lat_name: np.where(lat_keep)[0], lon_name: np.where(lon_keep)[0]})
+
         lats = ds[lat_name].values
         lons = ds[lon_name].values
 
-        # Ensure North-to-South
-        if len(lats) > 1 and lats[0] < lats[-1]:
-            ds = ds.isel({lat_name: slice(None, None, -1)})
-            lats = lats[::-1]
+        # Report the CELL-EDGE extent -- this is what inpmat generation needs (dt_cama_002).
+        dlat = abs(float(lats[1] - lats[0])) if len(lats) > 1 else 0.0
+        dlon = abs(float(lons[1] - lons[0])) if len(lons) > 1 else 0.0
+        print(f"  Grid: {len(lats)} lat x {len(lons)} lon, res {dlon:g} deg")
+        print(f"  Cell-edge extent for configure_simulation.py / inpmat (dt_cama_002): "
+              f"--west {float(lons.min()) - dlon / 2:g} --east {float(lons.max()) + dlon / 2:g} "
+              f"--south {float(lats.min()) - dlat / 2:g} --north {float(lats.max()) + dlat / 2:g}")
 
         runoff = ds[netcdf_var].values.astype(np.float32) * scale_factor
 
         output_file = os.path.join(output_dir, f"{basin_name}_runoff_1d_{year}.nc")
         _write_runoff_nc(output_file, runoff, list(lats), list(lons), year, "Generic NetCDF")
+        finite = runoff[np.isfinite(runoff)]
+        if finite.size:
+            print(f"  Runoff range: {finite.min():.3f} .. {finite.max():.3f} mm/day "
+                  f"(mean {finite.mean():.3f})")
         print(f"  Wrote: {output_file}")
         ds.close()
 
@@ -391,6 +454,11 @@ Unit note:
                         help="Filename pattern with {year} placeholder")
     parser.add_argument("--scale_factor", type=float, default=1.0,
                         help="Multiply runoff values by this factor (unit conversion)")
+    # Bounding box (netcdf/hype sources): trim a global product to the basin -- dt_cama_006.
+    parser.add_argument("--west", type=float, help="West cell EDGE of the kept sub-grid (deg)")
+    parser.add_argument("--east", type=float, help="East cell EDGE of the kept sub-grid (deg)")
+    parser.add_argument("--south", type=float, help="South cell EDGE of the kept sub-grid (deg)")
+    parser.add_argument("--north", type=float, help="North cell EDGE of the kept sub-grid (deg)")
 
     args = parser.parse_args()
 
@@ -407,19 +475,15 @@ Unit note:
     elif args.source == "wflow":
         success = convert_wflow(args.input_dir, args.output_dir, args.basin_name,
                                 args.start_year, args.end_year)
-    elif args.source == "hype":
-        # HYPE uses same NetCDF converter with potential scale adjustment
+    elif args.source in ("hype", "netcdf"):
+        # HYPE uses the same NetCDF converter with a potential scale adjustment
         success = convert_netcdf(args.input_dir, args.output_dir, args.basin_name,
                                  args.start_year, args.end_year,
                                  netcdf_var=args.netcdf_var,
                                  netcdf_pattern=args.netcdf_pattern,
-                                 scale_factor=args.scale_factor)
-    elif args.source == "netcdf":
-        success = convert_netcdf(args.input_dir, args.output_dir, args.basin_name,
-                                 args.start_year, args.end_year,
-                                 netcdf_var=args.netcdf_var,
-                                 netcdf_pattern=args.netcdf_pattern,
-                                 scale_factor=args.scale_factor)
+                                 scale_factor=args.scale_factor,
+                                 west=args.west, east=args.east,
+                                 south=args.south, north=args.north)
     else:
         print(f"ERROR: Unknown source: {args.source}")
         success = False

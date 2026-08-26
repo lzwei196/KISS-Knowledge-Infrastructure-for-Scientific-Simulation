@@ -1,14 +1,3 @@
----
-name: simpeg
-description: >-
-  SimPEG gradient-based geophysical simulation/inversion framework. Covers Forward
-  simulation of geophysical responses (gravity, magnetics, DC resistivity, IP/SIP…;
-  Gradient-based deterministic inversion / parameter estimation for subsurface physical
-  properties…; Computation of sensitivities (Jvec/Jtvec) driving the inverse problem;
-  Joint / multiphysics inversion. Use when the task involves running, configuring,
-  calibrating or interpreting SimPEG.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (7 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_mesh.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_mesh.py --help` |
+| `tools/initialize_model.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/initialize_model.py --help` |
+| `tools/parse_results.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_results.py --help` |
+| `tools/run_simpeg.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_simpeg.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # SimPEG Knowledge Infrastructure
 
@@ -281,9 +304,47 @@ mesh.plot_slice(physical_property, normal='Y', ind=slice_index)
 
 ---
 
-## Output Description
+## 6. Output Description — dag.yaml Restatement
 
-SimPEG's `inv.run(m0)` returns the recovered model vector as a numpy array with one value per active mesh cell, representing the inverted physical property (e.g., density in kg/m^3, conductivity in S/m, susceptibility in SI). The predicted data vector is obtained via `sim.dpred(m_recovered)`. Use `model_map * m_recovered` to transform from model space back to physical property space. The `parse_results.py` tool exports: (1) the recovered model as a CSV with columns `x, y, z, property_value`, (2) a convergence log with iteration number, data misfit (phi_d), regularization (phi_m), and trade-off parameter (beta), and (3) optional model-slice plots and observed-vs-predicted data comparisons.
+**Source of truth**: `dag.yaml`. The dag wins over this prose if any wording drifts.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `recovered_model` — Recovered subsurface model vector, one value per active mesh cell, in model space; returned by the inversion. (model space (e.g. ln(S/m); kg/m^3 under identity map))
+
+| Output variable (dag `var`) | Rank | Unit | Description / role |
+|-----------------------------|------|------|--------------------|
+| `recovered_model` | 1 | model space (e.g. ln(S/m); kg/m^3 under identity map) | Recovered subsurface model vector, one value per active mesh cell, in model space; returned by the inversion. |
+| `physical_property` | dag output | see `dag.yaml` | Physical-property output listed by the dag. |
+| `predicted_data` | dag output | see `dag.yaml` | Predicted-data output listed by the dag. |
+| `fields` | dag output | see `dag.yaml` | Fields output listed by the dag. |
+
+SimPEG's `inv.run(m0)` returns the recovered model vector as a numpy array with one value per active mesh cell in model space. The predicted data vector is obtained via `sim.dpred(m_recovered)`. Use `model_map * m_recovered` to transform from model space back to physical property space. The `parse_results.py` tool exports: (1) the recovered model as a CSV with columns `x, y, z, property_value`, (2) a convergence log with iteration number, data misfit (phi_d), regularization (phi_m), and trade-off parameter (beta), and (3) optional model-slice plots and observed-vs-predicted data comparisons.
+
+## 8. Unit Table — Pipeline Units and Output Units
+
+**Source of truth**: output units are restated from `dag.yaml`; conversion behavior comes from the stage docs and tool contracts. Do not infer a physical-property unit for `recovered_model`: the dag defines it as model space.
+
+| Variable | Source unit / representation | Model or output unit | Conversion / mapping |
+|----------|------------------------------|----------------------|----------------------|
+| `recovered_model` | SimPEG inversion result from `inv.run(m0)` | model space (e.g. ln(S/m); kg/m^3 under identity map) | None at return time; values remain in model space. |
+| `physical_property` | `recovered_model` | see `dag.yaml` | Apply `model_map * m_recovered` to transform from model space to physical-property space. |
+| `predicted_data` | simulation response from `sim.dpred(m_recovered)` | see `dag.yaml` | Simulation-dependent; preserve survey data units used by the configured SimPEG method. |
+| `fields` | simulation field solution from `sim.fields(m)` | see `dag.yaml` | Simulation-dependent; preserve field units from the configured SimPEG method. |
+
+Method-specific unit traps remain in the critical domain table above. The most common silent failures are density in `g/cm^3` instead of `kg/m^3`, CGS susceptibility instead of SI susceptibility, resistivity supplied where conductivity is expected, and angular frequency supplied where frequency in Hz is expected.
+
+## 11. Validated Results — validation_convention.yaml Restatement
+
+**Source of truth**: `docs/validation_convention.yaml`. A null convention band is written as `no cited threshold`; no pass/fail threshold is inferred when the convention does not cite one.
+
+| Output variable | Metric | Direction | Very good band | Good band | Satisfactory band | Citation key(s) |
+|-----------------|--------|-----------|----------------|-----------|-------------------|-----------------|
+| `recovered_model` | `csi` | maximize | no cited threshold | no cited threshold | no cited threshold | none listed |
+| `recovered_model` | `pbias` | zero_centered | no cited threshold | no cited threshold | no cited threshold | none listed |
+| `physical_property` | `csi` | maximize | no cited threshold | no cited threshold | no cited threshold | none listed |
+
+No achieved calibration or validation metric values are stated in the supplied KI facts. Treat the body validation campaign as pending until a real SimPEG run is executed and scored against `docs/validation_convention.yaml`.
 
 ---
 

@@ -27,8 +27,8 @@ from datetime import datetime, timedelta
 ROOT   = "KISSPATH_KI_ROOT/Noah_MP"
 KI     = f"{ROOT}/knowledge_infrastructure"
 TOOLS  = f"{KI}/tools"
-BIN    = "KISSPATH_BINARIES/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
-SRCDIR = "KISSPATH_BINARIES/Noah_MP/source/repo"
+BIN    = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
+SRCDIR = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/repo"
 PARAMD = f"{SRCDIR}/parameters"
 CMFD   = "KISSPATH_FORCING/Data_forcing_01dy_010deg"
 HYBAS  = "KISSPATH_DATA/awd_paper/hydrobasins/asia/hybas_as_lev07_v1c.shp"
@@ -38,6 +38,7 @@ OBS    = "KISSPATH_OBS/WJB/HUAIH-51030-wangjiaba.txt"
 WORK   = f"{ROOT}/detached/verify_2"
 CELLS  = f"{WORK}/cells"
 RESULT = f"{WORK}/result.json"
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 
 # ----------------------------------------------------------------------------- config
 POUR_LAT, POUR_LON = 32.43, 115.61   # Wangjiaba gauge (Huai River main stem)

@@ -402,9 +402,15 @@ def convert_forcing_from_load(source, lat, lon, bbox, start_year, end_year,
     """
     from ki_tools_common.load_forcing import load_daily_forcing
 
+    # EF5 needs only precip + temperature here (PET is Hargreaves from Tmin/Tmax/
+    # Tmean). MSWX annual files are one gzip slab per timestep, so every variable
+    # NOT requested saves a whole-year decompression (~5 min/var/yr per the
+    # load_daily_forcing docstring); restricting to P+Tair makes a 17-yr MSWX
+    # build ~1 h instead of ~4 h. `variables` is ignored by cmfd/nasa_power.
     f = load_daily_forcing(source=source, lat=lat, lon=lon,
                            start_year=start_year, end_year=end_year,
-                           forcing_dir=forcing_dir)
+                           forcing_dir=forcing_dir,
+                           variables=("P", "Tair") if source == "mswx" else None)
     dates = f["dates"]
     precip = np.asarray(f["precip_mm"], dtype=np.float64)
     # Optional gauge-undercatch / area-deficit correction. A single multiplicative

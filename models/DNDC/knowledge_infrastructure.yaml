@@ -1,401 +1,152 @@
-package:
-  name: "hydrocraft-dndc-crop"
-  version: "1.0.0"
-  description: "Knowledge infrastructure for DNDCv.CAN crop/soil biogeochemical simulation"
-  target_model: "DNDCv.CAN 9.6.0"
-  domain: "crop biogeochemistry and trace gas emissions"
-  authors:
-    - "Auto-dissect KI generator"
-  license: "GPL-3.0"
-  created: "2026-03-28"
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
+package:
+  name: DNDC
+  language: c++
+  implementation:
+    id: dndc-can-960
+    version: 9.6.0
+    provenance: C++ (closed-source UNH/AAFC); Windows PE32 binary DNDC95.exe, no public source; field-scale
+      daily biogeochemistry.
+  scientific_reference_version: DNDCv.CAN 9.6.0 (Canadian branch of DNDC95, Aug-2015 UNH lineage; AAFC
+    Grant & Smith)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DNDC/dndc_run/DNDC95.exe
+    type: PE32_wine
 pipeline:
   stages:
-    - id: s0_config
-      name: "Configuration"
-      description: >
-        Set up the DNDC run directory, select the .dnd scenario file, and
-        configure global simulation parameters (simulation period, time step,
-        output options).  Resolve all file paths for cross-platform
-        compatibility (Windows native vs. Wine on Linux).
-      knowledge_type: procedural
-      depends_on: []
-      milestones:
-        - id: m_s0_config
-          description: ".dnd scenario file created with valid paths and simulation period"
-          verification: "Parse .dnd XML; confirm all referenced paths resolve and simulation dates are consistent"
-      tools:
-        - validate_dnd_paths
-
-    - id: s1_climate_prep
-      name: "Climate Forcing Preparation"
-      description: >
-        Convert meteorological forcing data (temperature, precipitation,
-        solar radiation, wind speed) from source formats into the DNDC
-        climate input format.  Critical unit conversions: precipitation
-        mm -> cm, radiation W/m2 -> MJ/m2/day, temperature K -> C.
-        File must start at Julian day 1.
-      knowledge_type: procedural
-      depends_on:
-        - s0_config
-      milestones:
-        - id: m_s1_climate
-          description: "Climate file written with correct units, starting at Jday 1, covering full simulation period"
-          verification: "Assert precip in cm, radiation in MJ/m2/day, temp in C; line count >= n_years * 365; first record is Jday 1"
-      tools:
-        - convert_forcing_to_dndc
-
-    - id: s2_soil_prep
-      name: "Soil Profile Preparation"
-      description: >
-        Construct the soil profile for DNDC: layer depths summing to 2 m,
-        SOC in kgC/kg, field capacity and wilting point in WFPS (not
-        volumetric), hydraulic conductivity in m/hr.  Set water table flag
-        with correct reversed logic (0=Yes, 1=No).  Configure SOC pool
-        fractions (labile, resistant, humads, humus).
-      knowledge_type: procedural
-      depends_on:
-        - s0_config
-      milestones:
-        - id: m_s2_soil
-          description: "Soil profile layers sum to 2 m; all units verified; SOC pool fractions set"
-          verification: "sum(layer_depths) == 200 cm; SOC < 0.30 kgC/kg; 0 < WP_wfps < FC_wfps < 1.0"
-      tools:
-        - build_soil_profile
-
-    - id: s3_crop_management
-      name: "Crop & Management Scheduling"
-      description: >
-        Define the crop type, biomass parameters (in kgC/ha), planting and
-        harvest dates, tillage events, and fertilizer applications.
-        Fertilizer amounts must be in kgN/ha per individual N form.
-        Management event dates must fall within the climate record.
-        .dnd time blocks must be written in strict chronological order.
-      knowledge_type: procedural
-      depends_on:
-        - s0_config
-      milestones:
-        - id: m_s3_management
-          description: "Management schedule written with correct units and chronological time blocks"
-          verification: "Fertilizer in kgN/ha; biomass in kgC/ha; all event dates within Jday 1-365; time blocks sequential"
-      tools:
-        - build_management_schedule
-
-    - id: s5_execution
-      name: "Model Execution"
-      description: >
-        Run the DNDC executable (Windows PE32 binary, possibly under Wine
-        on Linux).  Handle batch runs, Wine path translation, and dynamic
-        layer depth settings.  Monitor for crashes related to layer depth
-        or solver thrashing.
-      knowledge_type: procedural
-      depends_on:
-        - s1_climate_prep
-        - s2_soil_prep
-        - s3_crop_management
-      milestones:
-        - id: m_s5_execution
-          description: "DNDC run completes without crash; output files are generated"
-          verification: "Exit code 0 (or Wine equivalent); output CSV/TXT files exist and are non-empty"
-      tools:
-        - run_dndc
-
-    - id: s6_output_analysis
-      name: "Output Analysis & Validation"
-      description: >
-        Parse DNDC output files.  Convert yield from kgC/ha to dry matter
-        (multiply by ~2.22).  Check for silent truncation (fewer years than
-        requested).  Validate N2O, CO2, and CH4 fluxes against expected
-        ranges.  Detect silent errors such as zero denitrification.
-      knowledge_type: procedural
-      depends_on:
-        - s5_execution
-      milestones:
-        - id: m_s6_output
-          description: "Output parsed, unit-converted, and validated against expected ranges"
-          verification: "Yield in kgDM/ha within literature range; output years == requested years; N2O > 0 if fertilized"
-      tools:
-        - parse_dndc_output
-
+  - s0_configuration_skill
+  - s1_climate_preparation_skill
+  - s2_soil_preparation_skill
+  - s3_crop_management_skill
+  - s4_execution_skill
+  - s5_output_analysis_skill
 tools:
-  - id: convert_forcing_to_dndc
-    name: "Forcing Converter"
-    script_path: "tools/convert_forcing_to_dndc.py"
-    description: >
-      Converts meteorological forcing data from common formats (CSV, NetCDF)
-      to the DNDC climate input format.  Handles unit conversion for
-      precipitation (mm->cm), radiation (W/m2->MJ/m2/day), and temperature
-      (K->C).  Validates output ranges and ensures file starts at Jday 1.
-    inputs:
-      - name: forcing_file
-        type: file
-        description: "Source meteorological data file (CSV or NetCDF)"
-      - name: precip_unit
-        type: string
-        description: "Source precipitation unit: mm or cm (default: mm)"
-      - name: radiation_unit
-        type: string
-        description: "Source radiation unit: W/m2 or MJ/m2/day (default: W/m2)"
-      - name: temp_unit
-        type: string
-        description: "Source temperature unit: C or K (default: C)"
-    outputs:
-      - name: climate_file
-        type: file
-        description: "DNDC-formatted climate input file"
-
-  - id: build_soil_profile
-    name: "Soil Profile Builder"
-    script_path: "tools/build_soil_profile.py"
-    description: >
-      Constructs a DNDC soil profile from standard soil survey data.
-      Converts SOC from percentage to kgC/kg, volumetric water content to
-      WFPS, and hydraulic conductivity from cm/min to m/hr.  Enforces
-      2 m total depth constraint.  Handles water table flag reversed logic.
-    inputs:
-      - name: soil_data
-        type: file
-        description: "Soil survey data file (CSV with layer properties)"
-      - name: water_table
-        type: boolean
-        description: "Whether water table simulation is desired (internally mapped to DNDC reversed flag)"
-    outputs:
-      - name: soil_block
-        type: object
-        description: "Soil profile block for insertion into .dnd file"
-
-  - id: build_management_schedule
-    name: "Management Schedule Builder"
-    script_path: "tools/build_management_schedule.py"
-    description: >
-      Builds the crop management time block sequence for the .dnd file.
-      Converts fertilizer from product mass to kgN/ha, biomass parameters
-      from dry matter to kgC/ha.  Enforces chronological ordering of year
-      blocks and validates event dates against the climate record.
-    inputs:
-      - name: management_csv
-        type: file
-        description: "Management schedule CSV (dates, fertilizer types/amounts, tillage, crop)"
-      - name: n_years
-        type: integer
-        description: "Number of simulation years"
-    outputs:
-      - name: time_blocks
-        type: object
-        description: "Chronologically ordered time blocks for .dnd file"
-
-  - id: run_dndc
-    name: "DNDC Runner"
-    script_path: "tools/run_dndc.sh"
-    description: >
-      Wrapper script to execute the DNDC binary, handling both native
-      Windows and Wine-on-Linux execution.  Sets WINEPREFIX, translates
-      paths, validates batch file consistency with .dnd internal paths,
-      and monitors for solver crashes.
-    inputs:
-      - name: dnd_file
-        type: file
-        description: "Path to the .dnd scenario file"
-      - name: batch_mode
-        type: boolean
-        description: "Run in batch mode (multiple .dnd files)"
-      - name: wine_prefix
-        type: string
-        description: "Wine prefix path (Linux only)"
-    outputs:
-      - name: exit_code
-        type: integer
-        description: "Process exit code"
-      - name: output_dir
-        type: directory
-        description: "Directory containing DNDC output files"
-
-  - id: parse_dndc_output
-    name: "Output Parser"
-    script_path: "tools/parse_dndc_output.py"
-    description: >
-      Parses DNDC output files and converts to analysis-ready formats.
-      Converts yield from kgC/ha to kgDM/ha (factor 2.22).  Detects
-      silent truncation (output years < requested years).  Flags zero
-      N2O under fertilized conditions.  Produces summary statistics
-      and time-series CSVs.
-    inputs:
-      - name: output_dir
-        type: directory
-        description: "Directory containing DNDC raw output files"
-      - name: n_years_expected
-        type: integer
-        description: "Number of simulation years expected"
-    outputs:
-      - name: summary_csv
-        type: file
-        description: "Annual summary statistics"
-      - name: timeseries_csv
-        type: file
-        description: "Daily time-series output"
-
-skill_documents:
-  - id: sd_s0
-    name: "Configuration Guide"
-    path: "docs/s0_configuration_skill.md"
-    stage: s0_config
-    description: >
-      Step-by-step guide for setting up a DNDC simulation directory,
-      creating and validating the .dnd scenario file, and resolving
-      cross-platform path issues.
-
-  - id: sd_s1
-    name: "Climate Forcing Preparation Guide"
-    path: "docs/s1_climate_forcing_skill.md"
-    stage: s1_climate_prep
-    description: >
-      Detailed procedures for preparing DNDC climate input files,
-      including all unit conversion traps (precip mm->cm, radiation
-      W/m2->MJ/m2/day, temperature K->C) and the Jday-1 start
-      requirement.
-
-  - id: sd_s2
-    name: "Soil Profile Setup Guide"
-    path: "docs/s2_soil_profile_skill.md"
-    stage: s2_soil_prep
-    description: >
-      Guide for constructing DNDC soil profiles from survey data,
-      covering unit conversions (SOC %, WFPS vs volumetric, Ksat),
-      the 2 m depth constraint, water table flag logic, and SOC
-      pool fraction handling.
-
-  - id: sd_s3
-    name: "Crop Management Guide"
-    path: "docs/s3_crop_management_skill.md"
-    stage: s3_crop_management
-    description: >
-      Instructions for building crop and management schedules,
-      including fertilizer N-form conversion, biomass carbon units,
-      time block ordering, and event date validation.
-
-  - id: sd_s5
-    name: "Execution Guide"
-    path: "docs/s5_execution_skill.md"
-    stage: s5_execution
-    description: >
-      Procedures for running DNDC natively and under Wine, batch
-      execution setup, path consistency validation, dynamic layer
-      depth tuning, and troubleshooting solver crashes.
-
-  - id: sd_s6
-    name: "Output Analysis Guide"
-    path: "docs/s6_output_analysis_skill.md"
-    stage: s6_output_analysis
-    description: >
-      Guide for interpreting DNDC output files, yield unit conversion
-      (kgC/ha to dry matter), detection of silent truncation and
-      zero-flux anomalies, and validation against field data.
-
-diagnostic_triplets:
-  - id: dt_001
-    stage: s1_climate_prep
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_002
-    stage: s1_climate_prep
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_003
-    stage: s1_climate_prep
-    failure_domain: unit_conversion
-    severity: fatal
-  - id: dt_004
-    stage: s2_soil_prep
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_005
-    stage: s2_soil_prep
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_006
-    stage: s2_soil_prep
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_007
-    stage: s3_crop_management
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_008
-    stage: s6_output_analysis
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_009
-    stage: s2_soil_prep
-    failure_domain: parameter_format
-    severity: fatal
-  - id: dt_010
-    stage: s2_soil_prep
-    failure_domain: parameter_format
-    severity: silent
-  - id: dt_011
-    stage: s1_climate_prep
-    failure_domain: parameter_format
-    severity: fatal
-  - id: dt_012
-    stage: s0_config
-    failure_domain: parameter_format
-    severity: fatal
-  - id: dt_013
-    stage: s3_crop_management
-    failure_domain: parameter_format
-    severity: silent
-  - id: dt_014
-    stage: s2_soil_prep
-    failure_domain: parameter_format
-    severity: degraded
-  - id: dt_015
-    stage: s0_config
-    failure_domain: path_resolution
-    severity: fatal
-  - id: dt_016
-    stage: s5_execution
-    failure_domain: path_resolution
-    severity: fatal
-  - id: dt_017
-    stage: s5_execution
-    failure_domain: path_resolution
-    severity: fatal
-  - id: dt_018
-    stage: s5_execution
-    failure_domain: runtime
-    severity: fatal
-  - id: dt_019
-    stage: s5_execution
-    failure_domain: runtime
-    severity: degraded
-  - id: dt_020
-    stage: s6_output_analysis
-    failure_domain: silent_error
-    severity: silent
-  - id: dt_021
-    stage: s6_output_analysis
-    failure_domain: silent_error
-    severity: silent
-  - id: dt_022
-    stage: s3_crop_management
-    failure_domain: silent_error
-    severity: silent
-
+  count: 5
+  files:
+  - tools/convert_forcing_to_dndc.py
+  - tools/convert_soil_to_dndc.py
+  - tools/generate_dnd_file.py
+  - tools/parse_dndc_output.py
+  - tools/run_dndc.py
+inputs:
+  forcing:
+  - name: Maximum air temperature (MaxT)
+    unit: deg C
+  - name: Minimum air temperature (MinT)
+    unit: deg C
+  - name: Precipitation (Prec)
+    unit: cm/day
+  - name: Solar radiation
+    unit: MJ/m2/day
+  - name: Wind speed
+    unit: m/s
+  - name: Relative humidity
+    unit: '% (0-100)'
+  - name: Atmospheric CO2 concentration
+    unit: ppm
+  - name: N concentration in rainfall
+    unit: mg N/L
+  - name: Background atmospheric NH3
+    unit: ug N/m3
+  - name: N deposition
+    unit: kg N/ha/yr
+  parameters:
+  - name: Soil layer thickness (per layer, up to 10)
+    unit: m
+  - name: Bulk density (per layer)
+    unit: g/cm3
+  - name: Surface SOC content
+    unit: kgC/kg soil
+  - name: Soil texture class ID
+    unit: integer 1-12 (DNDC class)
+  - name: Soil pH (H2O)
+    unit: pH
+  - name: Field capacity
+    unit: WFPS fraction
+  - name: Wilting point
+    unit: WFPS fraction
+  - name: Porosity
+    unit: v/v fraction
+  - name: Saturated hydraulic conductivity
+    unit: m/hr
+  - name: Clay fraction
+    unit: 0-1
+  - name: SOC pool partitioning fractions
+    unit: fraction
+  - name: SOC pool C/N ratios (per pool) and bulk C/N
+    unit: '-'
+  - name: Topsoil SOC depth and below-topsoil decrease rate
+    unit: m / factor
+  - name: Crop physiological coefficients (per crop type, 18+ built-in)
+    unit: various
+  - name: N fixation index
+    unit: 0-1
+  - name: Perennial winterkill parameters (CHRMX, CDRMX, cTMX, pDFMX)
+    unit: various
+  - name: Site latitude
+    unit: deg N (-90..90)
+  - name: Site longitude and elevation
+    unit: deg E / m
+  initial_conditions:
+  - name: Initial NO3 / NH4 at surface
+    unit: mg N/kg
+  - name: Initial soil moisture / WFPS by layer
+    unit: fraction
+  - name: Initial soil temperature
+    unit: deg C
+  - name: Initial microbial activity index
+    unit: 0-1
+  - name: Initial SOC pool stocks / surface litter
+    unit: fraction of total SOC / kgC/ha
+  boundary_conditions:
+  - name: Number of simulated years and start year
+    unit: integer
+  - name: Climate format type
+    unit: integer 0-8
+  - name: Planting / harvest dates and harvest mode
+    unit: calendar date / mode 1|2
+  - name: Tillage events
+    unit: date, depth cm, mixing efficiency, inversion flag
+  - name: Fertilization events
+    unit: kg N/ha per form
+  - name: Manure / organic amendment events
+    unit: kgC/ha, kgN/ha
+  - name: Irrigation / controlled drainage
+    unit: cm / index 0-1
+  - name: Grazing (perennials)
+    unit: heads/ha, hours/day, biomass fractions
+  - name: Tile drainage / water table configuration
+    unit: flag, depth m, spacing m, drain coeff 1/day, keDrain
+  - name: Execution switches
+    unit: flags
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - crop_grain_yield
+  - crop_N_uptake
+  - N2O_emission
+  - NO_emission
+  - N2_emission
+  - NH3_volatilization
+  - CO2_soil_respiration
+  - CH4_flux
+  - NO3_leaching
+  - SOC_stock_and_change
+  - water_balance_components
+  - soil_temperature_profile
+  - soil_water_WFPS_and_water_table
+  other: []
 validation:
-  tier: "synthetic"
-  justification: >
-    DNDC is a Windows PE32 binary that cannot be compiled from source;
-    validation uses pipeline integration test with synthetic forcing data.
-    Real-world validation requires licensed field-trial datasets.
-
+  tier: tested
+  tier_justification: 'measured: NSE=-0.438, R=0.344'
+  metrics:
+    best_nse: -0.438
+    best_r: 0.344
 summary:
   total_tools: 5
-  total_skill_documents: 6
+  total_stage_docs: 6
   total_diagnostic_triplets: 22
-  failure_domains:
-    - unit_conversion
-    - parameter_format
-    - path_resolution
-    - runtime
-    - silent_error
-  pipeline_stages: 6
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

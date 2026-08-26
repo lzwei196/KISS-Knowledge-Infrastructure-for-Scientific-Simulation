@@ -1,14 +1,3 @@
----
-name: openfoam
-description: >-
-  OpenFOAM-dev (OpenFOAM Foundation / CFD Direct), foamRun finite-volume incompressible
-  turbulent flow (incompressibleFluid module, RANS k-epsilon…. Covers Incompressible
-  isothermal turbulent fluid flow (steady or transient) by the finite-volume method;
-  Pressure-velocity coupling (SIMPLE / PISO / PIMPLE) on arbitrary polyhedral
-  finite-volume meshes. Use when the task involves running, configuring, calibrating or
-  interpreting OpenFOAM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,43 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (8 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (32 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/check_case.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/check_case.py --help` |
+| `tools/configure_case.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/configure_case.py --help` |
+| `tools/convert_forcing_to_openfoam.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_openfoam.py --help` |
+| `tools/convert_properties_to_openfoam.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_properties_to_openfoam.py --help` |
+| `tools/generate_mesh.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_mesh.py --help` |
+| `tools/parse_openfoam_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_openfoam_output.py --help` |
+| `tools/run_openfoam.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_openfoam.py --help` |
+
+*7 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # OpenFOAM Knowledge Infrastructure
 
@@ -225,7 +251,41 @@ dimensions [kg  m  s  K  mol  A  cd]
 
 ---
 
-## 6. Unit Trap Table
+## 6. Output Description
+
+This section restates `dag.yaml`; if this body ever disagrees with the dag, the dag wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `alpha.water` - VoF phase fraction; the iso-surface alpha=0.5 defines the free surface, from which water-level / wave elevation is derived. (dimensionless 0-1)
+
+| Output variable (dag `var`) | Rank | File / location | Unit | Description |
+|-----------------------------|------|-----------------|------|-------------|
+| `alpha.water` | 1 | OpenFOAM time directory field | dimensionless 0-1 | VoF phase fraction; the iso-surface alpha=0.5 defines the free surface, from which water-level / wave elevation is derived. |
+| `U` | not supplied in extracted facts | OpenFOAM time directory field | m/s | Velocity field. |
+| `p` | not supplied in extracted facts | OpenFOAM time directory field | m^2/s^2 for incompressible kinematic pressure; Pa for dynamic pressure | Pressure field. |
+| `phi` | not supplied in extracted facts | OpenFOAM time directory field | m^3/s for volumetric flux | Face flux field. |
+| `k` | not supplied in extracted facts | OpenFOAM time directory field | m^2/s^2 | Turbulent kinetic energy field. |
+
+Other dag outputs supplied by the KI facts are: `U`, `p`, `phi`, `k`.
+
+---
+
+## 8. Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`. This body table restates the model units
+and the conversions already documented in this KI; do not use it to override dag or format-spec facts.
+
+| Variable | Source unit (verified) | Model/output unit | Conversion | Source in KI |
+|----------|------------------------|-------------------|------------|--------------|
+| `alpha.water` | dimensionless phase fraction | dimensionless 0-1 | none | `dag.yaml` |
+| `U` | m/s | m/s | none when source velocity is already SI | SKILL.md dimension table |
+| `p` | Pa from external dynamic-pressure tools | m^2/s^2 for incompressible kinematic pressure | divide by density | SKILL.md dimension table; `dk_001` |
+| `phi` | m^3/s volumetric flux | m^3/s | none when source flux is already SI | SKILL.md dimension table |
+| `k` | m^2/s^2 | m^2/s^2 | none | SKILL.md dimension table |
+| Storm-surge inverted barometer forcing | mbar | m water-level response | eta_IB = -(Pair-1013.25)*100/(rho*g) | `ut_016` |
+
+### 8.1 Unit Trap Table
 
 These are the most dangerous unit/format traps that cause silent errors or crashes:
 
@@ -440,7 +500,51 @@ With uniform domain-averaged forcing: the IB rise and p_rgh change cancel → η
 
 ---
 
-## 11. Quick Start
+## 11. Validated Results
+
+This section restates the KI's validation facts and `docs/validation_convention.yaml`
+convention bars. A missing/null convention band is written as "no cited threshold";
+no threshold is inferred.
+
+### Recorded Validation Cases
+
+| Case | Metric / result | Location | Notes |
+|------|-----------------|----------|-------|
+| cavity tutorial | not supplied in extracted facts | not supplied in extracted facts | Listed in the KI validation summary. |
+| Hurricane Laura 2020 IB barometric | NSE=0.51, R=0.84 | Grand Isle | Listed in the KI validation summary. |
+
+### Performance Metrics -- judged against the field's bar, not intuition
+
+No convention bar for the rank-1 dag output `alpha.water` was supplied in the extracted
+validation-convention facts. The available convention bars supplied by the KI are:
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band |
+|--------------|--------|-----------|----------------|-----------|-------------------|
+| `U` | rmse | minimize | 0.05 (hydro_guidance2017) | 0.1 (hydro_guidance2017) | 0.2 (hydro_guidance2017) |
+| `U` | bias | zero_centered | no cited threshold (hydro_guidance2017) | no cited threshold (hydro_guidance2017) | 0.2 (hydro_guidance2017) |
+| `U` | rmse | minimize | 0.05 (hydro_guidance2017) | 0.1 (hydro_guidance2017) | 0.2 (hydro_guidance2017) |
+| `U` | scatter_index | minimize | no cited threshold (hydro_guidance2017) | no cited threshold (hydro_guidance2017) | 0.5 (hydro_guidance2017) |
+| `p` | nse | maximize | no cited threshold (no citation key in convention) | no cited threshold (no citation key in convention) | no cited threshold (no citation key in convention) |
+| `p` | comparison_error | minimize | no cited threshold (no citation key in convention) | no cited threshold (no citation key in convention) | no cited threshold (no citation key in convention) |
+
+### Achieved Metrics Against Convention Bars
+
+| Case | Metric | Achieved | Convention bar |
+|------|--------|----------|----------------|
+| Hurricane Laura 2020 IB barometric | NSE | 0.51 | `p` nse has no cited threshold (no citation key in convention). |
+| Hurricane Laura 2020 IB barometric | R | 0.84 | no convention bar supplied in extracted facts. |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | pending | Use `docs/format_spec.yaml` and stage docs for exact inputs before scoring. |
+| Initial conditions | Pipeline | pending | VoF `alpha.water` initialization controls the rank-1 observable. |
+| Outputs | OpenFOAM time directories / parser | pending | Score against `docs/validation_convention.yaml`, not intuition. |
+
+---
+
+## 12. Quick Start
 
 ```bash
 # 1. Source environment
@@ -469,9 +573,9 @@ reconstructPar
 
 ---
 
-## 12. Output Format
+## 13. Output Format
 
-### 12.1 Time Directories
+### 13.1 Time Directories
 Each write produces a directory named by the simulation time (e.g., `0.1/`, `0.2/`):
 ```
 0.1/
@@ -481,7 +585,7 @@ Each write produces a directory named by the simulation time (e.g., `0.1/`, `0.2
 +-- uniform/    # Uniform fields (time info)
 ```
 
-### 12.2 Field File Format
+### 13.2 Field File Format
 ```cpp
 internalField   nonuniform List<scalar>
 1000            // number of cells
@@ -499,7 +603,7 @@ boundaryField
 }
 ```
 
-### 12.3 Log File
+### 13.3 Log File
 The solver writes residuals, Courant number, and execution time to stdout.
 Typical log line:
 ```
@@ -509,7 +613,7 @@ GAMG:  Solving for p, Initial residual = 0.0156, Final residual = 4.5e-07, No It
 ExecutionTime = 1.23 s  ClockTime = 2 s
 ```
 
-### 12.4 Function Objects
+### 13.4 Function Objects
 Post-processing probes, forces, and field averages are written to `postProcessing/`:
 ```
 postProcessing/
@@ -524,7 +628,7 @@ postProcessing/
 
 ---
 
-## 13. Coupling Points
+## 14. Coupling Points
 
 | # | Interface | From | To | Data Exchanged |
 |---|-----------|------|----|----------------|
@@ -537,7 +641,7 @@ postProcessing/
 
 ---
 
-## 14. Diagnostic Triplets Summary
+## 15. Diagnostic Triplets Summary
 
 See `diagnostics/triplets.yaml` for full definitions.
 
@@ -578,7 +682,7 @@ See `diagnostics/triplets.yaml` for full definitions.
 
 ---
 
-## 15. File Structure
+## 16. File Structure
 
 ```
 ki/

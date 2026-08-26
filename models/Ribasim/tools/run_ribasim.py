@@ -283,12 +283,15 @@ def validate_output(toml_path: Path) -> list[str]:
         if fpath.exists():
             print(f"  Optional output found: {fname} ({fpath.stat().st_size} bytes)")
 
-    # Quick NetCDF sanity check
+    # Quick NetCDF sanity check.
+    # engine="h5netcdf": the HydroCraft python_env's netCDF4/HDF5 build fails
+    # with "NetCDF: HDF error" on Ribasim's CF NetCDF outputs; h5netcdf reads
+    # them correctly.
     try:
         import xarray as xr
         basin_nc = results_dir / "basin.nc"
         if basin_nc.exists():
-            ds = xr.open_dataset(basin_nc)
+            ds = xr.open_dataset(basin_nc, engine="h5netcdf")
             n_times = ds.dims.get("time", 0)
             print(f"  basin.nc: {n_times} timesteps")
             if n_times < 2:
@@ -303,16 +306,118 @@ def validate_output(toml_path: Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Batch execution (one solver session for many models)
+# ---------------------------------------------------------------------------
+def run_batch(args) -> None:
+    """Run every TOML listed in --toml_batch_file in one Ribasim session.
+
+    Per-model outcome is validated from each model's own results (basin.nc
+    present and sane); a single diverging trial does not abort the batch.
+    Exits non-zero only if NO model in the batch succeeded.
+    """
+    batch_file = Path(args.toml_batch_file)
+    if not batch_file.exists():
+        print(f"FATAL: batch file not found: {batch_file}")
+        sys.exit(1)
+
+    toml_paths = [
+        Path(line.strip()).resolve()
+        for line in batch_file.read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    if not toml_paths:
+        print("FATAL: batch file lists no TOML paths")
+        sys.exit(1)
+
+    if not args.skip_preflight:
+        print(f"[1/3] Preflight checks on {len(toml_paths)} models...")
+        for tp in toml_paths:
+            errors = preflight_check_toml(tp)
+            if errors:
+                print(f"FATAL: TOML validation failed for {tp}:")
+                for e in errors:
+                    print(f"  - {e}")
+                sys.exit(1)
+
+    binary_path, errors = preflight_check_binary(args.ribasim_bin)
+    if errors or not binary_path or binary_path == "__python_api__":
+        print("FATAL: batch mode needs the Ribasim CLI binary:")
+        for e in errors:
+            print(f"  - {e}")
+        sys.exit(1)
+
+    print(f"[2/3] Running Ribasim batch ({len(toml_paths)} models, one session)...")
+    env = os.environ.copy()
+    if args.threads > 1:
+        env["JULIA_NUM_THREADS"] = str(args.threads)
+    cmd = [binary_path] + [str(p) for p in toml_paths]
+    start_time = time.time()
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=args.timeout, env=env,
+        )
+        batch_rc = result.returncode
+        stdout = result.stdout
+    except subprocess.TimeoutExpired as e:
+        batch_rc = -1
+        stdout = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+        print(f"  Batch TIMED OUT after {args.timeout}s")
+    elapsed = time.time() - start_time
+    print(f"  Batch finished in {elapsed:.1f}s (session exit code {batch_rc})")
+
+    print("[3/3] Validating per-model outputs...")
+    statuses = {}
+    n_ok = 0
+    for tp in toml_paths:
+        errors = validate_output(tp)
+        ok = not errors
+        statuses[str(tp)] = {"success": ok, "output_errors": errors}
+        n_ok += ok
+        print(f"  {'OK  ' if ok else 'FAIL'} {tp}")
+
+    report = {
+        "batch_file": str(batch_file),
+        "method": "binary_batch",
+        "binary": str(binary_path),
+        "n_models": len(toml_paths),
+        "n_success": n_ok,
+        "elapsed_s": round(elapsed, 2),
+        "session_returncode": batch_rc,
+        "models": statuses,
+        "stdout_tail": stdout[-4000:],
+    }
+    report_path = batch_file.parent / "batch_run_report.json"
+    report_path.write_text(json.dumps(report, indent=2))
+    print(f"\nBatch report: {report_path}")
+    print(f"SUCCESS: {n_ok}/{len(toml_paths)} models completed.")
+    if n_ok == 0:
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Run Ribasim with validation")
-    parser.add_argument("--toml_path", required=True, help="Path to ribasim.toml")
+    parser.add_argument("--toml_path", help="Path to ribasim.toml")
+    parser.add_argument("--toml_batch_file",
+                        help="Text file with one ribasim.toml path per line: all "
+                             "models run sequentially in ONE solver session so "
+                             "JIT compilation cost is paid once (calibration "
+                             "batches). Mutually exclusive with --toml_path.")
     parser.add_argument("--ribasim_bin", help="Path to Ribasim binary")
     parser.add_argument("--threads", type=int, default=1, help="Number of threads")
     parser.add_argument("--timeout", type=int, default=3600, help="Timeout in seconds")
     parser.add_argument("--skip_preflight", action="store_true", help="Skip preflight checks")
     args = parser.parse_args()
+
+    if bool(args.toml_path) == bool(args.toml_batch_file):
+        print("FATAL: provide exactly one of --toml_path or --toml_batch_file")
+        sys.exit(1)
+
+    if args.toml_batch_file:
+        run_batch(args)
+        return
 
     toml_path = Path(args.toml_path).resolve()
 

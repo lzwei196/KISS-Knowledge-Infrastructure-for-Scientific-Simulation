@@ -1,0 +1,407 @@
+schema_version: 1
+model_id: ParFlow
+domain: hydrology
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  parflow2020:
+    doi: 10.5194/gmd-13-1373-2020
+    title: "Simulating coupled surface-subsurface flows with ParFlow v3.5.0"
+    venue: "Geosci. Model Dev."
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-1373-2020.txt
+  maxwell2015:
+    doi: 10.5194/gmd-8-923-2015
+    title: "A high-resolution simulation of groundwater and surface water over most of the continental US with the integrated hydrologic model ParFlow v3"
+    venue: "Geosci. Model Dev."
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-8-923-2015.txt
+  naz2023:
+    doi: 10.5194/gmd-16-1617-2023
+    title: "Continental-scale evaluation of a fully distributed coupled land surface and groundwater model, ParFlow-CLM (v3.6.0)"
+    venue: "Geosci. Model Dev."
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-16-1617-2023.txt
+  belleflamme2023:
+    doi: 10.3389/frwa.2023.1183642
+    title: "Hydrological forecasting at impact scale: the integrated ParFlow hydrological model"
+    venue: "Frontiers in Water"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_frwa.2023.1183642.txt
+  moriasi_reproduced2016:
+    doi: 10.5194/hess-20-921-2016
+    title: "Comparing CFSR and conventional weather data for discharge and soil loss modelling with SWAT"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-921-2016.txt
+  moriasi_reproduced2015:
+    doi: 10.5194/hess-19-4127-2015
+    title: "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-4127-2015.txt
+  ihmip2014:
+    doi: 10.1002/2013WR013725
+    title: "Surface-subsurface model intercomparison: A first set of benchmark results to diagnose integrated hydrology and feedbacks"
+    venue: "Water Resour. Res."
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2013wr013725.txt
+  ihmip2_2017:
+    doi: 10.1002/2016WR019191
+    title: "The integrated hydrologic model intercomparison project, IH-MIP2"
+    venue: "Water Resour. Res."
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2016wr019191.txt
+  maxwell2005:
+    doi: 10.1175/JHM422.1
+    title: "Development of a Coupled Land Surface and Groundwater Model"
+    venue: "J. Hydrometeorol."
+    year: 2005
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jhm422.1.txt
+  schalge2019:
+    doi: 10.1002/hyp.13448
+    title: "Improvement of surface run-off in the hydrological model ParFlow by a scale-consistent river parameterization"
+    venue: "Hydrol. Processes"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_hyp.13448.txt
+  keune2022:
+    doi: 10.1016/j.jhydrol.2022.127991
+    title: "Improvement of soil moisture and groundwater level estimations using a scale-consistent river parameterization in ParFlow-CLM"
+    venue: "J. Hydrol."
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2022.127991.txt
+  spinup2014:
+    doi: 10.1002/2013WR014258
+    title: "Assessing the impact of model spin-up on surface water-groundwater interactions using an integrated hydrologic model"
+    venue: "Water Resour. Res."
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2013wr014258.txt
+
+validation:
+  - dag_variable: pressure_head
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred from ParFlow-CLM groundwater/water-table anomaly evaluations, where R > 0.5 is treated as satisfactory or good temporal-dynamics performance."
+        cites: [naz2023, belleflamme2023]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Absolute head or depth comparisons are site- and datum-sensitive; Naz 2023 reports WTD RMSE but emphasizes observation elevation, local topography, and pumping limitations."
+        cites: [naz2023]
+    validated_when: "Monthly or observation-frequency pressure-head anomalies at matched depth achieve r >= 0.5; absolute RMSE is diagnostic unless a site-specific datum/measurement-error target is available."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Belleflamme 2023 reports WTD anomaly correlations above 0.5 as good results over wide areas; Naz 2023 calls R > 0.5 satisfactory for WTD anomalies. This is a transferred groundwater-head convention, not a pressure-head-specific tier."
+
+  - dag_variable: saturation
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched ParFlow or integrated-hydrology paper gives a CSI threshold for binary/thresholded saturation snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: visual_pattern_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "IH-MIP benchmarks inspect cross sections, profiles, saturated storage, and unsaturated storage, but do not define CSI pass bands for saturation fields."
+        cites: [ihmip2014, ihmip2_2017]
+    validated_when: "UNRESOLVED - require site-specific wet/dry classification or remote-sensing product definition before CSI can be used as a pass/fail metric."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "ParFlow computes saturation from pressure head via the retention curve; fetched benchmark papers compare storages, profiles, and qualitative patterns, not CSI tiers."
+
+  - dag_variable: soil_moisture
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "ParFlow-CLM soil-moisture anomaly evaluations treat R > 0.5 as reproducing observed temporal dynamics."
+        cites: [belleflamme2023, naz2023]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Belleflamme 2023 reports RMSEa for near-surface soil moisture and compares it to ESA CCI product uncertainty, but point sensors need matched depth and local error characterization."
+        cites: [belleflamme2023]
+    validated_when: "Matched-depth volumetric soil-moisture time series validate when anomaly r >= 0.5; RMSE is reported for context against sensor/product uncertainty."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "Belleflamme 2023: correlations above 0.5 over 80% of the domain indicate ParFlow/CLM can reproduce near-surface soil moisture; Naz 2023 reports median R = 0.70 against ESA CCI."
+
+  - dag_variable: soil_moisture
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Literature supersedes dag CSI for continuous gridded soil-moisture anomalies; ParFlow studies use correlation and RMSEa."
+        cites: [belleflamme2023, naz2023]
+      - metric: rmse
+        direction: minimize
+        unit: m3/m3
+        bands: {very_good: null, good: 0.03, satisfactory: 0.09}
+        pass_band: satisfactory
+        band_note: "Belleflamme 2023 reports ParFlow/CLM RMSEa = 0.02 m3/m3 and notes it is below ESA CCI uncertainty of 0.03-0.09 m3/m3."
+        cites: [belleflamme2023]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is not the field convention for continuous monthly soil-moisture anomaly fields in the fetched ParFlow evaluations."
+        cites: [belleflamme2023, naz2023]
+    validated_when: "For gridded monthly anomalies, r >= 0.5 and RMSEa <= 0.09 m3/m3; CSI should only be used after an explicit wet/dry event threshold is defined."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Belleflamme 2023 says RMSEa is widely employed for soil moisture and reports good results with 0.02 m3/m3, below the ESA CCI uncertainty range."
+
+  - dag_variable: water_table_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Fetched ParFlow-CLM evaluations explicitly call R > 0.5 satisfactory/good for WTD anomaly dynamics."
+        cites: [naz2023, belleflamme2023]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Absolute WTD error is strongly affected by local elevation, wells, confined/perched aquifers, and pumping; compare anomalies unless datum quality is controlled."
+        cites: [naz2023, belleflamme2023]
+    validated_when: "Monthly WTD anomalies validate when r >= 0.5; absolute bias/RMSE should be diagnostic unless well elevation and datum are controlled."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Naz 2023 reports 20% of sites with satisfactory R > 0.5 for standardized WTD anomalies and more than 50% above 0.5 in the filtered absolute-WTD comparison; Belleflamme 2023 reports WTD correlations above 0.5 as good results."
+
+  - dag_variable: water_table_depth
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: 4.25}
+        pass_band: satisfactory
+        band_note: "Benchmark rather than universal tier: Naz 2023 describes filtered-well WTD comparison as good agreement with RMSE = 4.25 m."
+        cites: [naz2023]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched WTD spatial evaluations use RMSE, bias, and correlation, not CSI, for continuous water-table-depth fields."
+        cites: [naz2023]
+    validated_when: "For gridded WTD snapshots, RMSE <= 4.25 m is no worse than the published ParFlow-CLM filtered-well benchmark; use stricter site-specific bands when available."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "This keeps the dag's spatial intent but supersedes CSI with RMSE because the fetched ParFlow WTD spatial benchmark reports RMSE values and bias distributions."
+
+  - dag_variable: discharge_at_outlet
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Open-access HESS papers reproduce Moriasi et al. hydrologic performance tiers: satisfactory NSE is above 0.50."
+        cites: [moriasi_reproduced2016, moriasi_reproduced2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Streamflow PBIAS tiers reproduced from Moriasi et al.: very good <10%, good 10-15%, satisfactory 15-25%."
+        cites: [moriasi_reproduced2016, moriasi_reproduced2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Belleflamme 2023 reports nearly all gauges better than the KGE mean-flow benchmark of -0.41 and 70% improving on NSE = 0."
+        cites: [belleflamme2023]
+    validated_when: "Monthly or daily discharge validates when NSE >= 0.5 and |PBIAS| <= 25%; KGE and correlation support diagnosis."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: "Moriasi-style tiers are the domain convention; ParFlow benchmarks additionally report KGE, NSE, and R for many gauges."
+
+  - dag_variable: surface_runoff
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred hydrologic time-series convention from streamflow/runoff evaluations using Moriasi NSE tiers."
+        cites: [moriasi_reproduced2016, moriasi_reproduced2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Transferred streamflow/runoff percent-bias convention; compare mean fluxes, not summed rates."
+        cites: [moriasi_reproduced2016, moriasi_reproduced2015]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "ParFlow runoff evaluations also emphasize timing and seasonal agreement; Maxwell 2005 reports monthly runoff simulations agreeing with observation timing and magnitude."
+        cites: [maxwell2005, schalge2019]
+    validated_when: "Surface-runoff flux time series validate when NSE >= 0.5 and |PBIAS| <= 25%, after unit-safe aggregation as mean flux."
+    evidence_strength: moderate
+    confidence: 0.68
+    notes: "The numeric bands are transferred from discharge/runoff conventions, not a ParFlow-specific runoff-flux tier."
+
+  - dag_variable: subsurface_storage
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.76}
+        pass_band: satisfactory
+        band_note: "Benchmark floor from Naz 2023: good agreement for ParFlow-CLM TWS anomalies against GRACE with regional R values from 0.76 to 0.91."
+        cites: [naz2023]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched ParFlow storage evaluations use anomaly correlation against GRACE/TWS, not NSE on absolute subsurface storage."
+        cites: [naz2023, spinup2014]
+    validated_when: "Regional storage anomalies validate when correlation with GRACE-like TWS anomalies is at least the published ParFlow-CLM benchmark floor, r >= 0.76."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "The dag NSE metric is superseded for this observation shape because GRACE-compatible products evaluate storage anomalies with correlation."
+
+  - dag_variable: qflx_evap_tot (CLM total ET)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.6}
+        pass_band: satisfactory
+        band_note: "Flux-tower ET benchmark from Naz 2023: ParFlow-CLM performs well with R values greater than 0.6 for all 60 stations."
+        cites: [naz2023]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched ParFlow-CLM ET evaluations use correlation and seasonal bias against FLUXNET/GLEAM/GLASS rather than NSE."
+        cites: [naz2023, belleflamme2023]
+    validated_when: "CLM total ET point time series validate when monthly ET dynamics have r >= 0.6 against flux-tower or equivalent ET observations."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Naz 2023 reports all FLUXNET stations above R = 0.6 and median R = 0.94; Belleflamme 2023 corroborates ET anomaly R > 0.5 over most of the domain."
+
+  - dag_variable: qflx_evap_tot (CLM total ET)
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Literature supersedes dag CSI for continuous ET fields; Belleflamme 2023 uses gridded anomaly correlation and says R > 0.5 over 86% indicates representation of ET."
+        cites: [belleflamme2023, naz2023]
+      - metric: rmse
+        direction: minimize
+        unit: mm/day
+        bands: {very_good: null, good: null, satisfactory: 0.15}
+        pass_band: satisfactory
+        band_note: "Benchmark value from Belleflamme 2023: RMSEa average 0.15 mm/day confirms good gridded ET results."
+        cites: [belleflamme2023]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched ParFlow-CLM ET spatial evaluations compare continuous anomaly fields with r and RMSEa, not categorical CSI."
+        cites: [belleflamme2023, naz2023]
+    validated_when: "Gridded monthly ET anomaly fields validate when r >= 0.5 and RMSEa <= 0.15 mm/day against GLEAM/GLASS-like products."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Naz 2023 reports spatially aggregated ET R > 0.9 against GLEAM/GLASS; the pass band uses Belleflamme's less stringent grid-cell convention."
+
+  - dag_variable: eflx_lh_tot (CLM latent heat flux)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched ParFlow-CLM latent-heat-flux paper provides an NSE pass band in W/m2."
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "ET evaluations are physically related to latent heat, but the fetched numeric ET bands are in water-flux units and should not be silently converted to W/m2."
+        cites: [naz2023, maxwell2005]
+    validated_when: "UNRESOLVED - evaluate latent heat with a fetched flux-tower latent-heat benchmark before applying an automatic pass threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Maxwell 2005 discusses latent heat and ET behavior; Naz 2023 validates ET against FLUXNET. Neither gives an NSE threshold for eflx_lh_tot in W/m2."
+
+  - dag_variable: swe_out (CLM snow water equivalent)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched ParFlow/CLM SWE validation text provides an NSE pass band or tier."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Maxwell 2005 reports SWE descriptive statistics and agreement language; Naz 2023 reports SWE overprediction in snow-dominated regions, but neither defines a pass threshold."
+        cites: [maxwell2005, naz2023]
+    validated_when: "UNRESOLVED - use observed-vs-simulated SWE diagnostics for context only until a fetched SWE threshold paper is available."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The dag NSE headline is retained with null bands because transferring streamflow NSE tiers to SWE would fabricate a validation convention."
+
+deferred_paywalled:
+  - ref: "Integrated surface-groundwater flow modeling: A free-surface overland flow boundary condition in a parallel groundwater flow model"
+    doi: 10.1016/j.advwatres.2005.08.006
+    needed_for: [pressure_head, saturation, surface_runoff]
+  - ref: "Quantifying the effects of subsurface heterogeneity on hillslope runoff using a stochastic approach"
+    doi: 10.1007/s10040-011-0753-y
+    needed_for: [pressure_head, saturation, surface_runoff]
+  - ref: "Exploring the Sensitivity of Photosynthesis and Stomatal Resistance Parameters in a Land Surface Model"
+    doi: 10.1175/JHM-D-16-0053.1
+    needed_for: [qflx_evap_tot (CLM total ET), eflx_lh_tot (CLM latent heat flux)]
+  - ref: "Exploring the Critical Zone Heterogeneity and the Hydrological Diversity Using a Fully Integrated Hydrological Model"
+    doi: 10.1029/2023WR035672
+    needed_for: [swe_out, subsurface_storage]

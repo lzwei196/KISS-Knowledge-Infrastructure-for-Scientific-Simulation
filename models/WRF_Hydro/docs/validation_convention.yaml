@@ -1,338 +1,358 @@
 schema_version: 1
 model_id: WRF_Hydro
 domain: hydrology
-generated_by: "self-improve session (Claude Opus 4.8) — Step-B validation-convention build, general schema"
+generated_by: self-improve session (Claude Opus 4.8) — Step-B validation-convention build, general schema
 generated_at: 2026-07-09
-
-# Grounded in the in-cache OA full texts. DISCHARGE is the well-grounded headline: the two ASABE
-# watershed-model evaluation conventions (Moriasi 2007 monthly NSE/PBIAS/RSR tiers; Moriasi 2015
-# updated watershed-scale flow criteria) supply the numeric bands, and multiple fetched WRF-Hydro /
-# National Water Model benchmarks corroborate the achievable range. The other quantities are thin on
-# THRESHOLD literature: the fetched WRF-Hydro papers report ACHIEVED skill (soil-moisture R, ET NSE,
-# SWE R2/PBIAS) but no field pass/fail tier specific to those variables, so their bands are transferred
-# from Moriasi (SWE/ET NSE, confidence <=0.4) or left null (soil-moisture, all CSI spatial shapes).
-# Groundwater "storage" is a conceptual exponential bucket (not a measurable water table) -> the temporal
-# skill metric is structurally_limited on documented mechanistic grounds. Bands are plain numbers read
-# via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
-
 references:
   moriasi2007:
     doi: 10.13031/2013.23153
-    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
-    venue: "Transactions of the ASABE"
+    title: Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations
+    venue: Transactions of the ASABE
     year: 2007
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
   moriasi2015:
     doi: 10.13031/trans.58.10715
-    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
-    venue: "Transactions of the ASABE"
+    title: 'Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria'
+    venue: Transactions of the ASABE
     year: 2015
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
   fersch2020:
     doi: 10.5194/hess-24-2457-2020
-    title: "High-resolution fully coupled atmospheric-hydrological modeling: a cross-compartment regional water and energy cycle evaluation (WRF-Hydro)"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: 'High-resolution fully coupled atmospheric-hydrological modeling: a cross-compartment regional
+      water and energy cycle evaluation (WRF-Hydro)'
+    venue: Hydrol. Earth Syst. Sci.
     year: 2020
     oa: gold
     resolves: https://hess.copernicus.org/articles/24/2457/2020/
   zhang2019sm:
     doi: 10.5194/hess-23-4199-2019
-    title: "Assessment of simulated soil moisture from WRF Noah, Noah-MP, and CLM land surface schemes"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Assessment of simulated soil moisture from WRF Noah, Noah-MP, and CLM land surface schemes
+    venue: Hydrol. Earth Syst. Sci.
     year: 2019
     oa: gold
     resolves: https://hess.copernicus.org/articles/23/4199/2019/
   swe_sierra2023:
     doi: 10.3389/feart.2023.1106621
-    title: "Intercomparison of snow water equivalent products in the Sierra Nevada, California"
-    venue: "Frontiers in Earth Science"
+    title: Intercomparison of snow water equivalent products in the Sierra Nevada, California
+    venue: Frontiers in Earth Science
     year: 2023
     oa: gold
     resolves: https://www.frontiersin.org/articles/10.3389/feart.2023.1106621/full
   senatore2020:
     doi: 10.5194/nhess-20-2791-2020
-    title: "Simulation of extreme rainfall and streamflow events in small Mediterranean watersheds with a one-way coupled atmospheric-hydrological modelling system (WRF-Hydro)"
-    venue: "Nat. Hazards Earth Syst. Sci."
+    title: Simulation of extreme rainfall and streamflow events in small Mediterranean watersheds with
+      a one-way coupled atmospheric-hydrological modelling system (WRF-Hydro)
+    venue: Nat. Hazards Earth Syst. Sci.
     year: 2020
     oa: gold
     resolves: https://nhess.copernicus.org/articles/20/2791/2020/
   kim2020lis:
     doi: 10.1007/s13143-020-00205-2
-    title: "Parameter Sensitivity Analysis of the WRF-Hydro Modeling System for Streamflow Simulation: a Case Study in Semi-Humid and Semi-Arid Catchments of Northern China"
-    venue: "Asia-Pacific J. Atmos. Sci."
+    title: 'Parameter Sensitivity Analysis of the WRF-Hydro Modeling System for Streamflow Simulation:
+      a Case Study in Semi-Humid and Semi-Arid Catchments of Northern China'
+    venue: Asia-Pacific J. Atmos. Sci.
     year: 2020
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13143-020-00205-2.txt
   et_diurnal2019:
     doi: 10.5194/hess-23-515-2019
-    title: "Using phase lags to evaluate model biases in simulating the diurnal cycle of evapotranspiration"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Using phase lags to evaluate model biases in simulating the diurnal cycle of evapotranspiration
+    venue: Hydrol. Earth Syst. Sci.
     year: 2019
     oa: gold
     resolves: https://hess.copernicus.org/articles/23/515/2019/
   jung2022gw:
     doi: 10.1016/j.jhydrol.2022.128991
-    title: "Grid-based calibration of the WRF-Hydro with Noah-MP model with improved groundwater dynamics"
-    venue: "Journal of Hydrology"
+    title: Grid-based calibration of the WRF-Hydro with Noah-MP model with improved groundwater dynamics
+    venue: Journal of Hydrology
     year: 2022
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2022.128991.txt
-
 validation:
-
-  # ===================== DISCHARGE / point time series (WELL GROUNDED) =====================
-  - canonical_quantity: discharge
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        cites: [moriasi2007, moriasi2015]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, good: 15, satisfactory: 25}
-        pass_band: satisfactory
-        band_note: "Moriasi 2007 streamflow tier (satisfactory |PBIAS|<=25%); Moriasi 2015 tightens watershed-scale flow to |PBIAS|<=15%. Satisfactory kept at 25, good at 15 per the 2015 update."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics:
-      - metric: r2
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Moriasi 2015 recommends R2>0.60 (watershed-scale flow) alongside NSE/PBIAS; co-reported, not the deciding metric here."
-        cites: [moriasi2015]
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "KGE is widely co-reported for WRF-Hydro streamflow but has no tier in the fetched threshold conventions; treated as informative."
-        cites: []
-    validated_when: "NSE >= 0.50 (Moriasi 2007 'satisfactory' NSE>0.50; Moriasi 2015 watershed-scale flow NSE>0.50) AND |PBIAS| <= 25% (Moriasi 2007 streamflow; tighten to 15% per Moriasi 2015)"
-    evidence_strength: strong
-    confidence: 0.85
-    notes: >-
-      Two independent ASABE watershed-model conventions supply the bands. Moriasi 2007 Table 4 (monthly):
-      NSE very-good 0.75-1.00 / good 0.65-0.75 / satisfactory 0.50-0.65 / unsatisfactory <0.50; streamflow
-      PBIAS very-good <±10 / good ±10-15 / satisfactory ±15-25. Moriasi 2015 abstract: watershed-scale flow
-      "satisfactory ... daily, monthly, or annual R2>0.60, NSE>0.50, and PBIAS<=±15%". Achievable range is
-      corroborated by fetched WRF-Hydro benchmarks: Fersch 2020 subcatchment NSE 0.36-0.68 (0.62-0.64 after
-      timing shift); Jung 2022 basin-outlet streamflow NSE up to 0.94-0.97 after grid calibration. Discard
-      6-12 month cold-start spinup before scoring (dag caveat: day-1 ~237 mm/d artifact); score at the
-      gauge-matched channel feature, not basin-averaged LDASOUT runoff.
-
-  # ===================== DISCHARGE / point snapshot (peak; transferred) =====================
-  - canonical_quantity: discharge
-    obs_shape: point_snapshot
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {good: 15, satisfactory: 25}
-        pass_band: satisfactory
-        band_note: "Single-instant peak-discharge error. Moriasi 2007 recommends percent error in peak flow (PEP) for single-event evaluation but gives no separate PEP tier; the streamflow |PBIAS|<=25% magnitude band is transferred, hence reduced confidence."
-        cites: [moriasi2007]
-    secondary_metrics: []
-    validated_when: "|peak-flow percent error| <= 25% (transferred from Moriasi 2007 streamflow PBIAS magnitude convention; single-event PEP has no distinct fetched tier)"
-    evidence_strength: moderate
-    confidence: 0.40
-    notes: >-
-      Moriasi 2007 ('Single-Event Simulation') recommends a simple percent error in peak flow rate (PEP)
-      and time-to-peak error, but publishes no numeric PEP tier — so the continuous-flow PBIAS band is
-      transferred. Sensitive to routing-timestep / CFL settings (dag caveat). Confidence 0.40 => may
-      contextualize, never loosen the continuous-flow requirement.
-
-  # ===================== SOIL MOISTURE / point time series (achieved skill, no tier) =====================
-  - canonical_quantity: soil_moisture
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No soil-moisture-specific NSE tier in the fetched set; the LSM soil-moisture literature grades by correlation R and index-of-agreement d, not NSE."
-        cites: []
-    secondary_metrics:
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: >-
-          Zhang 2019 (WRF Noah/Noah-MP/CLM soil-moisture assessment) reports layerwise correlation as the
-          skill metric: surface layer R=0.809, third 0.738, second 0.683, fourth 0.498; across sites R spans
-          ~0.10-0.80. Fersch 2020 co-evaluates soil moisture in the coupled water/energy cycle. These are
-          ACHIEVED-skill benchmarks (best layers R~0.7-0.8), not a pass/fail threshold.
-        cites: [zhang2019sm, fersch2020]
-    validated_when: "UNRESOLVED numeric gate — no cited soil-moisture NSE/R pass threshold; correlation R~0.7-0.8 is a documented achievable target for the surface/near-surface layers, not a field-agreed band"
-    evidence_strength: moderate
-    confidence: 0.30
-    notes: >-
-      Two fetched WRF-Hydro/LSM benchmarks report soil-moisture skill (Zhang 2019, Fersch 2020) but neither
-      states a validation threshold; the field uses correlation R and Willmott d, and skill is strongly
-      layer- and retrieval-depth dependent. Match layer depth to the observation depth (surface satellite
-      retrievals = top Noah layer only). Bands null per no-fabrication rule; must not loosen the gate.
-
-  # ===================== SOIL MOISTURE / spatial time series (data gap) =====================
-  - canonical_quantity: soil_moisture
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited CSI (categorical spatial-overlap) threshold for gridded soil moisture in the fetched set."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited spatial soil-moisture CSI threshold; treat as data-gap"
-    evidence_strength: weak
-    confidence: 0.20
-    notes: >-
-      None of the fetched papers grade gridded soil moisture with CSI/POD/FAR; spatial skill is reported as
-      pattern correlation, not a categorical index. Reconcile retrieval footprint with LSM grid resolution.
-      Band null; a spatial soil-moisture categorical-skill benchmark is required to ground this.
-
-  # ===================== SWE / point time series (Moriasi transferred + SWE benchmark) =====================
-  - canonical_quantity: swe
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "No SWE-specific NSE tier in the fetched set; the Moriasi 2007/2015 hydrologic NSE band (satisfactory>0.50) is transferred to snowpack skill, hence confidence <=0.4."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics:
-      - metric: pbias
-        direction: zero_centered
-        status: supportive
-        ceiling_reason: >-
-          Sierra Nevada SWE intercomparison (2023): best reconstruction products reach R2~0.79, MAE 66-73 mm,
-          |PBIAS| 4-8% at pixel scale, whereas the National Water Model (NWM = operational WRF-Hydro/Noah-MP)
-          SWE scores R2=0.15±0.13, RMSE 117 mm, NRMSE 102.6%, PBIAS -43.9% against ASO — documenting a large
-          negative SWE bias as a known model-family limitation, not a threshold.
-        cites: [swe_sierra2023]
-    validated_when: "NSE >= 0.50 (transferred Moriasi hydrologic band); |PBIAS| context: NWM/Noah-MP SWE commonly carries a strong negative bias (~-44% vs ASO), so a passing NSE alone can hide magnitude error"
-    evidence_strength: moderate
-    confidence: 0.40
-    notes: >-
-      SWE NSE band is transferred from the streamflow convention (no fetched SWE NSE tier). The fetched SWE
-      benchmark (Sierra Nevada 2023) shows NWM/Noah-MP SWE is biased low (PBIAS ~-44%, R2 0.15) while the best
-      products reach R2~0.79 — so co-report PBIAS. Cold start needs a full winter to accumulate; early-season
-      SWE is unreliable (dag caveat). Confidence 0.40 => contextualize, do not loosen.
-
-  # ===================== SWE / spatial snapshot (data gap) =====================
-  - canonical_quantity: swe
-    obs_shape: spatial_snapshot
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited snow-cover-extent CSI threshold in the fetched set."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited snow-cover/SWE spatial CSI threshold; treat as data-gap"
-    evidence_strength: weak
-    confidence: 0.20
-    notes: >-
-      Snow-cover-extent categorical skill (CSI/POD/FAR vs snow-cover products on the LSM grid) is not
-      quantified with a tier in the fetched papers. Band null.
-
-  # ===================== EVAPOTRANSPIRATION / point time series (Moriasi transferred + benchmarks) =====================
-  - canonical_quantity: evapotranspiration
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "No ET-specific NSE tier in the fetched set; the Moriasi hydrologic NSE band (satisfactory>0.50) is transferred to latent-heat/ET flux skill, hence confidence <=0.4."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics:
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: >-
-          Achieved WRF-Hydro/Noah-MP ET skill from fetched benchmarks: Jung 2022 reports ET NSE ~0.30-0.68
-          across stations (lower than streamflow NSE at the same sites); the ET diurnal-cycle study (2019)
-          shows simulated latent heat within 96-98% of observed λE (255-259 vs 264 W m-2) in wet conditions
-          but with systematic phase lags. ET is systematically harder than discharge for this model family.
-        cites: [jung2022gw, et_diurnal2019, fersch2020]
-    validated_when: "NSE >= 0.50 (transferred Moriasi hydrologic band); note ET NSE is realistically lower than streamflow (~0.30-0.68 in Jung 2022) so a satisfactory streamflow model may miss this"
-    evidence_strength: moderate
-    confidence: 0.40
-    notes: >-
-      ET NSE band transferred from the streamflow convention (no fetched ET NSE tier). The accumulator ACCET
-      must be differenced to a flux before comparison against flux-tower or remote-sensing ET (dag caveat).
-      Fetched benchmarks give achievable ET NSE ~0.30-0.68 and near-unbiased peak λE with a diurnal phase
-      lag. Confidence 0.40 => contextualize, do not loosen.
-
-  # ===================== EVAPOTRANSPIRATION / spatial time series (data gap) =====================
-  - canonical_quantity: evapotranspiration
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited CSI threshold for gridded ET in the fetched set."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited spatial ET CSI threshold; treat as data-gap"
-    evidence_strength: weak
-    confidence: 0.20
-    notes: >-
-      Gridded ET (vs remote-sensing ET products on the LSM grid) is evaluated by pattern correlation in the
-      fetched literature, not a categorical CSI tier. Band null.
-
-  # ===================== GROUNDWATER STORAGE / point time series (structurally limited) =====================
-  - canonical_quantity: groundwater_storage
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: r
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "The WRF-Hydro groundwater 'bucket' is a conceptual exponential reservoir, not a measurable water table; no cited numeric skill band exists for its storage height."
-        cites: []
-    secondary_metrics:
-      - metric: r
-        direction: maximize
-        status: structurally_limited
-        ceiling_reason: >-
-          WRF-Hydro represents groundwater as a lumped conceptual exponential bucket that releases baseflow,
-          NOT a physical aquifer/water table: Kim 2020 states "WRF-Hydro uses a conceptual baseflow model"
-          (water routed to a per-reach store and slowly released via an exponential model), and Senatore 2020
-          describes the "conceptual baseflow module" / "exponential bucket" (C, a, Zmax parameters). Bucket
-          storage height is therefore not directly comparable to any observable; at best it is judged
-          qualitatively against baseflow-recession behaviour. A low temporal skill is a structural/data
-          ceiling of the conceptual scheme, not a KI defect.
-        cites: [kim2020lis, senatore2020]
-    validated_when: "NOT numerically gradeable — conceptual bucket storage has no observable counterpart; assess qualitatively via baseflow recession. Temporal correlation is structurally limited (conceptual-scheme ceiling)."
-    evidence_strength: weak
-    confidence: 0.30
-    notes: >-
-      z_gwsubbas is a conceptual store, not a water table (dag caveat; Kim 2020 'conceptual baseflow model';
-      Senatore 2020 'exponential bucket'). Default Zmax fills quickly on large basins, producing pass-through
-      with no recession dynamics. Structurally_limited is cited to two fetched WRF-Hydro papers documenting
-      the conceptual mechanism. Band null; the gate must route data-ceiling / acquire_data, never fix_ki, on
-      a failing groundwater-storage skill alone.
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - moriasi2007
+    - moriasi2015
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      good: 15
+      satisfactory: 25
+    pass_band: satisfactory
+    band_note: Moriasi 2007 streamflow tier (satisfactory |PBIAS|<=25%); Moriasi 2015 tightens watershed-scale
+      flow to |PBIAS|<=15%. Satisfactory kept at 25, good at 15 per the 2015 update.
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics:
+  - metric: r2
+    direction: maximize
+    status: supportive
+    ceiling_reason: Moriasi 2015 recommends R2>0.60 (watershed-scale flow) alongside NSE/PBIAS; co-reported,
+      not the deciding metric here.
+    cites:
+    - moriasi2015
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: KGE is widely co-reported for WRF-Hydro streamflow but has no tier in the fetched
+      threshold conventions; treated as informative.
+    cites: []
+  validated_when: NSE >= 0.50 (Moriasi 2007 'satisfactory' NSE>0.50; Moriasi 2015 watershed-scale flow
+    NSE>0.50) AND |PBIAS| <= 25% (Moriasi 2007 streamflow; tighten to 15% per Moriasi 2015)
+  evidence_strength: strong
+  confidence: 0.85
+  notes: 'Two independent ASABE watershed-model conventions supply the bands. Moriasi 2007 Table 4 (monthly):
+    NSE very-good 0.75-1.00 / good 0.65-0.75 / satisfactory 0.50-0.65 / unsatisfactory <0.50; streamflow
+    PBIAS very-good <±10 / good ±10-15 / satisfactory ±15-25. Moriasi 2015 abstract: watershed-scale flow
+    "satisfactory ... daily, monthly, or annual R2>0.60, NSE>0.50, and PBIAS<=±15%". Achievable range
+    is corroborated by fetched WRF-Hydro benchmarks: Fersch 2020 subcatchment NSE 0.36-0.68 (0.62-0.64
+    after timing shift); Jung 2022 basin-outlet streamflow NSE up to 0.94-0.97 after grid calibration.
+    Discard 6-12 month cold-start spinup before scoring (dag caveat: day-1 ~237 mm/d artifact); score
+    at the gauge-matched channel feature, not basin-averaged LDASOUT runoff.'
+  dag_variable: streamflow
+- obs_shape: point_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      good: 15
+      satisfactory: 25
+    pass_band: satisfactory
+    band_note: Single-instant peak-discharge error. Moriasi 2007 recommends percent error in peak flow
+      (PEP) for single-event evaluation but gives no separate PEP tier; the streamflow |PBIAS|<=25% magnitude
+      band is transferred, hence reduced confidence.
+    cites:
+    - moriasi2007
+  secondary_metrics: []
+  validated_when: '|peak-flow percent error| <= 25% (transferred from Moriasi 2007 streamflow PBIAS magnitude
+    convention; single-event PEP has no distinct fetched tier)'
+  evidence_strength: moderate
+  confidence: 0.4
+  notes: Moriasi 2007 ('Single-Event Simulation') recommends a simple percent error in peak flow rate
+    (PEP) and time-to-peak error, but publishes no numeric PEP tier — so the continuous-flow PBIAS band
+    is transferred. Sensitive to routing-timestep / CFL settings (dag caveat). Confidence 0.40 => may
+    contextualize, never loosen the continuous-flow requirement.
+  dag_variable: streamflow
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No soil-moisture-specific NSE tier in the fetched set; the LSM soil-moisture literature
+      grades by correlation R and index-of-agreement d, not NSE.
+    cites: []
+  secondary_metrics:
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: 'Zhang 2019 (WRF Noah/Noah-MP/CLM soil-moisture assessment) reports layerwise correlation
+      as the skill metric: surface layer R=0.809, third 0.738, second 0.683, fourth 0.498; across sites
+      R spans ~0.10-0.80. Fersch 2020 co-evaluates soil moisture in the coupled water/energy cycle. These
+      are ACHIEVED-skill benchmarks (best layers R~0.7-0.8), not a pass/fail threshold.'
+    cites:
+    - zhang2019sm
+    - fersch2020
+  validated_when: UNRESOLVED numeric gate — no cited soil-moisture NSE/R pass threshold; correlation R~0.7-0.8
+    is a documented achievable target for the surface/near-surface layers, not a field-agreed band
+  evidence_strength: moderate
+  confidence: 0.3
+  notes: Two fetched WRF-Hydro/LSM benchmarks report soil-moisture skill (Zhang 2019, Fersch 2020) but
+    neither states a validation threshold; the field uses correlation R and Willmott d, and skill is strongly
+    layer- and retrieval-depth dependent. Match layer depth to the observation depth (surface satellite
+    retrievals = top Noah layer only). Bands null per no-fabrication rule; must not loosen the gate.
+  dag_variable: SOIL_M
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited CSI (categorical spatial-overlap) threshold for gridded soil moisture in the fetched
+      set.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited spatial soil-moisture CSI threshold; treat as data-gap
+  evidence_strength: weak
+  confidence: 0.2
+  notes: None of the fetched papers grade gridded soil moisture with CSI/POD/FAR; spatial skill is reported
+    as pattern correlation, not a categorical index. Reconcile retrieval footprint with LSM grid resolution.
+    Band null; a spatial soil-moisture categorical-skill benchmark is required to ground this.
+  dag_variable: SOIL_M
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: No SWE-specific NSE tier in the fetched set; the Moriasi 2007/2015 hydrologic NSE band
+      (satisfactory>0.50) is transferred to snowpack skill, hence confidence <=0.4.
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics:
+  - metric: pbias
+    direction: zero_centered
+    status: supportive
+    ceiling_reason: 'Sierra Nevada SWE intercomparison (2023): best reconstruction products reach R2~0.79,
+      MAE 66-73 mm, |PBIAS| 4-8% at pixel scale, whereas the National Water Model (NWM = operational WRF-Hydro/Noah-MP)
+      SWE scores R2=0.15±0.13, RMSE 117 mm, NRMSE 102.6%, PBIAS -43.9% against ASO — documenting a large
+      negative SWE bias as a known model-family limitation, not a threshold.'
+    cites:
+    - swe_sierra2023
+  validated_when: 'NSE >= 0.50 (transferred Moriasi hydrologic band); |PBIAS| context: NWM/Noah-MP SWE
+    commonly carries a strong negative bias (~-44% vs ASO), so a passing NSE alone can hide magnitude
+    error'
+  evidence_strength: moderate
+  confidence: 0.4
+  notes: SWE NSE band is transferred from the streamflow convention (no fetched SWE NSE tier). The fetched
+    SWE benchmark (Sierra Nevada 2023) shows NWM/Noah-MP SWE is biased low (PBIAS ~-44%, R2 0.15) while
+    the best products reach R2~0.79 — so co-report PBIAS. Cold start needs a full winter to accumulate;
+    early-season SWE is unreliable (dag caveat). Confidence 0.40 => contextualize, do not loosen.
+  dag_variable: SNEQV
+- obs_shape: spatial_snapshot
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited snow-cover-extent CSI threshold in the fetched set.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited snow-cover/SWE spatial CSI threshold; treat as data-gap
+  evidence_strength: weak
+  confidence: 0.2
+  notes: Snow-cover-extent categorical skill (CSI/POD/FAR vs snow-cover products on the LSM grid) is not
+    quantified with a tier in the fetched papers. Band null.
+  dag_variable: SNEQV
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: No ET-specific NSE tier in the fetched set; the Moriasi hydrologic NSE band (satisfactory>0.50)
+      is transferred to latent-heat/ET flux skill, hence confidence <=0.4.
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics:
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: 'Achieved WRF-Hydro/Noah-MP ET skill from fetched benchmarks: Jung 2022 reports ET
+      NSE ~0.30-0.68 across stations (lower than streamflow NSE at the same sites); the ET diurnal-cycle
+      study (2019) shows simulated latent heat within 96-98% of observed λE (255-259 vs 264 W m-2) in
+      wet conditions but with systematic phase lags. ET is systematically harder than discharge for this
+      model family.'
+    cites:
+    - jung2022gw
+    - et_diurnal2019
+    - fersch2020
+  validated_when: NSE >= 0.50 (transferred Moriasi hydrologic band); note ET NSE is realistically lower
+    than streamflow (~0.30-0.68 in Jung 2022) so a satisfactory streamflow model may miss this
+  evidence_strength: moderate
+  confidence: 0.4
+  notes: ET NSE band transferred from the streamflow convention (no fetched ET NSE tier). The accumulator
+    ACCET must be differenced to a flux before comparison against flux-tower or remote-sensing ET (dag
+    caveat). Fetched benchmarks give achievable ET NSE ~0.30-0.68 and near-unbiased peak λE with a diurnal
+    phase lag. Confidence 0.40 => contextualize, do not loosen.
+  dag_variable: ACCET
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited CSI threshold for gridded ET in the fetched set.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited spatial ET CSI threshold; treat as data-gap
+  evidence_strength: weak
+  confidence: 0.2
+  notes: Gridded ET (vs remote-sensing ET products on the LSM grid) is evaluated by pattern correlation
+    in the fetched literature, not a categorical CSI tier. Band null.
+  dag_variable: ACCET
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: r
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: The WRF-Hydro groundwater 'bucket' is a conceptual exponential reservoir, not a measurable
+      water table; no cited numeric skill band exists for its storage height.
+    cites: []
+  secondary_metrics:
+  - metric: r
+    direction: maximize
+    status: structurally_limited
+    ceiling_reason: 'WRF-Hydro represents groundwater as a lumped conceptual exponential bucket that releases
+      baseflow, NOT a physical aquifer/water table: Kim 2020 states "WRF-Hydro uses a conceptual baseflow
+      model" (water routed to a per-reach store and slowly released via an exponential model), and Senatore
+      2020 describes the "conceptual baseflow module" / "exponential bucket" (C, a, Zmax parameters).
+      Bucket storage height is therefore not directly comparable to any observable; at best it is judged
+      qualitatively against baseflow-recession behaviour. A low temporal skill is a structural/data ceiling
+      of the conceptual scheme, not a KI defect.'
+    cites:
+    - kim2020lis
+    - senatore2020
+  validated_when: NOT numerically gradeable — conceptual bucket storage has no observable counterpart;
+    assess qualitatively via baseflow recession. Temporal correlation is structurally limited (conceptual-scheme
+    ceiling).
+  evidence_strength: weak
+  confidence: 0.3
+  notes: z_gwsubbas is a conceptual store, not a water table (dag caveat; Kim 2020 'conceptual baseflow
+    model'; Senatore 2020 'exponential bucket'). Default Zmax fills quickly on large basins, producing
+    pass-through with no recession dynamics. Structurally_limited is cited to two fetched WRF-Hydro papers
+    documenting the conceptual mechanism. Band null; the gate must route data-ceiling / acquire_data,
+    never fix_ki, on a failing groundwater-storage skill alone.
+  dag_variable: z_gwsubbas
 deferred_paywalled:
-  - ref: "Yucel et al. 2015 — Calibration and evaluation of a WRF-Hydro flood forecasting system (NWP + data assimilation + satellite rainfall); would supply single-event peak-flow error statistics"
-    doi: 10.1016/j.jhydrol.2015.01.042
-    needed_for: [discharge]
-  - ref: "Sharma et al. 2024 — WRF-Hydro evaluation (closed); potential SWE/soil-moisture threshold source"
-    doi: 10.2166/nh.2024.215
-    needed_for: [swe, soil_moisture]
-  - ref: "NCAR WRF-Hydro V5 Technical Description (10.5065/yjv0-yf40) — model documentation of the conceptual bucket / Noah-MP snow and soil layers"
-    doi: 10.5065/yjv0-yf40
-    needed_for: [groundwater_storage, swe, soil_moisture]
+- ref: Yucel et al. 2015 — Calibration and evaluation of a WRF-Hydro flood forecasting system (NWP + data
+    assimilation + satellite rainfall); would supply single-event peak-flow error statistics
+  doi: 10.1016/j.jhydrol.2015.01.042
+  needed_for:
+  - discharge
+- ref: Sharma et al. 2024 — WRF-Hydro evaluation (closed); potential SWE/soil-moisture threshold source
+  doi: 10.2166/nh.2024.215
+  needed_for:
+  - swe
+  - soil_moisture
+- ref: NCAR WRF-Hydro V5 Technical Description (10.5065/yjv0-yf40) — model documentation of the conceptual
+    bucket / Noah-MP snow and soil layers
+  doi: 10.5065/yjv0-yf40
+  needed_for:
+  - groundwater_storage
+  - swe
+  - soil_moisture

@@ -1,13 +1,3 @@
----
-name: geoclaw
-description: >-
-  GeoClaw 2D depth-averaged shallow-water solver. Covers 2D depth-averaged (shallow-water)
-  flow over variable topography; Tsunami generation, propagation, and coastal inundation;
-  Storm surge driven by parametric/data wind and pressure fields; Dam-break and other
-  geophysical free-surface flows; Wetting/drying at shorelines. Use when the task involves
-  running, configuring, calibrating or interpreting GeoClaw.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_bathymetry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_bathymetry.py --help` |
+| `tools/generate_setrun.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_setrun.py --help` |
+| `tools/parse_geoclaw_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_geoclaw_output.py --help` |
+| `tools/run_geoclaw.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_geoclaw.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # GeoClaw Knowledge Infrastructure
 
@@ -169,6 +193,29 @@ incorrect results.  Each entry links to a diagnostic triplet ID.
 
 ---
 
+## 6. Output Description
+
+This section restates the KI's `dag.yaml`.  The dag is the source of truth for
+observable outputs, their units, and the headline variable used for validation;
+if this section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `h` — Water depth (prognostic q[0]); zero in dry cells. (`m`)
+
+`dag.yaml` rank-1 output: var='h' unit='m' description='Water depth (prognostic q[0]); zero in dry cells.'
+
+Other dag outputs: `eta`, `speed`, `max_depth_max_speed_arrival_time`.
+
+| Output variable (dag `var`) | Unit | Description / status |
+|-----------------------------|------|----------------------|
+| `h` | `m` | Water depth (prognostic q[0]); zero in dry cells. |
+| `eta` | See `dag.yaml` | Other dag output. |
+| `speed` | See `dag.yaml` | Other dag output. |
+| `max_depth_max_speed_arrival_time` | See `dag.yaml` | Other dag output. |
+
+---
+
 ## 6. Critical Domain Knowledge
 
 These are non-obvious facts that cause silent failures if violated.
@@ -297,6 +344,16 @@ Tracks maximum values over the entire simulation:
 - Maximum depth, surface elevation, speed
 - Arrival time of first wave
 
+### 8.5 Sign Conventions and Output Units
+
+Output unit and convention checks are part of post-processing, not optional
+documentation.  The dag's rank-1 output is `h`, with unit `m` and description:
+Water depth (prognostic q[0]); zero in dry cells.  Other dag outputs are
+`eta`, `speed`, and `max_depth_max_speed_arrival_time`.
+
+When parsing `fort.qNNNN`, bind `q[0]` to `h` exactly as the dag states.  Do
+not infer a different dry-cell convention from downstream plotting code.
+
 ---
 
 ## 9. Calibration Parameters
@@ -354,6 +411,33 @@ head _output/fort.gauge
 | Dependency | 2 | Missing Fortran compiler, clawpack not found |
 
 See `diagnostics/triplets.yaml` for the full 18-entry diagnostic database.
+
+---
+
+## 11. Validated Results
+
+This section restates the KI's validation convention.  Use
+`docs/validation_convention.yaml` as the source of truth for metrics,
+directions, pass bands, and citation keys; if this section and the convention
+file disagree, the convention file wins.  The current validation status in this
+skill is `example_validated (bowl-slosh analytical solution)`.
+
+### Headline Variable
+
+The dag's rank-1 output is `h`, with unit `m` and description: Water depth
+(prognostic q[0]); zero in dry cells.
+
+### Performance Bars
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band |
+|--------------|--------|-----------|-------------------|-----------|----------------|
+| `h` | `nrmse` | minimize | <= `20.0`, cites `horrillo2015`, `macias2017` | <= `10.0`, cites `horrillo2015`, `macias2017` | no cited threshold, cites `horrillo2015`, `macias2017` |
+| `h` | `csi` | maximize | >= `0.5`, cites `bernhofen2018`, `vogt2024` | >= `0.7`, cites `bernhofen2018`, `vogt2024` | no cited threshold, cites `bernhofen2018`, `vogt2024` |
+| `eta` | `nrmse` | minimize | <= `20.0`, cites `horrillo2015`, `macias2017` | <= `10.0`, cites `horrillo2015`, `macias2017` | no cited threshold, cites `horrillo2015`, `macias2017` |
+
+Run-specific achieved values are not restated here unless they are present in
+the KI's own validation artifacts.  A GeoClaw run should be judged against the
+bars above, not against intuition or remembered thresholds.
 
 ---
 

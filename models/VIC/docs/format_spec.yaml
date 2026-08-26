@@ -1,321 +1,993 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "VIC 5.1.0"
-  domain: "hydrology"
-  binary: "vic_classic.exe"
-  binary_path: "KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/classic/vic_classic.exe"
-  language: "C"
-  working_directory: "./"
-  invocation: "vic_classic.exe -g global_param.txt"
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: VIC
+  language: c
+  implementation:
+    id: vic-classic-510
+    version: 5.1.0
+    provenance: C; UW-Hydro / Computational Hydrology Group VIC-5.1.0 classic driver (per-cell ASCII forcing
+      and flux output).
+  scientific_reference_version: VIC-5 (Hamman et al. 2018, GMD; original Liang et al. 1994 JGR formulation)
 inputs:
-
   forcing:
-    - name: "air_temperature"
-      file: "forcing_{lat}_{lon}"
-      column: 0
-      unit: "degC"
-      valid_range: [-60.0, 60.0]
-      format: "space-delimited ASCII, one file per grid cell"
-      missing_value: -9999
-      conversion_from_cmfd: "K -> degC: subtract 273.15; mean of 8 3-hourly timesteps"
-
-    - name: "precipitation"
-      file: "forcing_{lat}_{lon}"
-      column: 1
-      unit: "mm/timestep"
-      valid_range: [0.0, 500.0]
-      format: "space-delimited ASCII"
-      missing_value: -9999
-      conversion_from_cmfd: "kg/m2/s -> mm/3hr: multiply by 10800"
-
-    - name: "air_pressure"
-      file: "forcing_{lat}_{lon}"
-      column: 2
-      unit: "kPa"
-      valid_range: [50.0, 110.0]
-      conversion_from_cmfd: "Pa -> kPa: divide by 1000"
-
-    - name: "shortwave_radiation"
-      file: "forcing_{lat}_{lon}"
-      column: 3
-      unit: "W/m2"
-      valid_range: [0.0, 1400.0]
-      conversion_from_cmfd: "W/m2 -> W/m2: no conversion needed"
-
-    - name: "longwave_radiation"
-      file: "forcing_{lat}_{lon}"
-      column: 4
-      unit: "W/m2"
-      valid_range: [0.0, 600.0]
-
-    - name: "vapor_pressure"
-      file: "forcing_{lat}_{lon}"
-      column: 5
-      unit: "kPa"
-      valid_range: [0.0, 10.0]
-
-    - name: "wind_speed"
-      file: "forcing_{lat}_{lon}"
-      column: 6
-      unit: "m/s"
-      valid_range: [0.0, 80.0]
-
+  - name: AIR_TEMP
+    unit: degC
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-cell ASCII forcing file column at FORCE_STEPS_PER_DAY cadence (classic driver)
+    notes: Subgrid-band lapse uses default LAPSE_RATE = -0.0065 C/m unless overridden.
+  - name: PREC
+    unit: mm per forcing step
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-cell ASCII forcing file column at FORCE_STEPS_PER_DAY cadence
+    notes: Total precipitation (rain + snow); rain/snow split inside the model. GAUGE_HEIGHT default 1.0
+      m governs optional undercatch correction.
+  - name: PRESSURE
+    unit: kPa
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-cell ASCII forcing file column
+  - name: SWDOWN
+    unit: W/m^2
+    category: radiation
+    source_kind: forcing
+    model_input_format: per-cell ASCII forcing file column
+  - name: LWDOWN
+    unit: W/m^2
+    category: radiation
+    source_kind: forcing
+    model_input_format: per-cell ASCII forcing file column
+  - name: VP
+    unit: kPa
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-cell ASCII forcing file column
+  - name: WIND
+    unit: m/s
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-cell ASCII forcing file column
+  - name: LAI (optional time-varying)
+    unit: m2/m2
+    category: vegetation
+    source_kind: forcing
+    model_input_format: per-cell forcing column when VEGPARAM_LAI / daily LAI forcing enabled
+    notes: When inactive, LAI is read as a static monthly schedule from the vegetation parameter / library
+      file.
+  - name: CO2 (optional, CARBON mode)
+    unit: ppm
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-cell forcing column when CARBON option is on
+    notes: Drives the photosynthesis module (Ci, GPP).
   parameters:
-    critical:
-      - name: "FROZEN_SOIL"
-        file: "global_param.txt"
-        description: "Frozen soil flag — must be TRUE or FALSE, not a path"
-        valid_range: ["TRUE", "FALSE"]
-        default: "FALSE"
-        bug_history: >
-          config_paths.py regex substitution can corrupt this line,
-          replacing the boolean with a file path. VIC errors with
-          'is neither TRUE nor FALSE'. Always verify after running config_paths.py.
-
-      - name: "LAI_SRC"
-        file: "global_param.txt"
-        description: "LAI source flag — must be FROM_VEGPARAM or FROM_VEGLIB"
-        valid_range: ["FROM_VEGPARAM", "FROM_VEGLIB"]
-        default: "FROM_VEGPARAM"
-        bug_history: >
-          config_paths.py can append extra path text to this line.
-          Must be exactly FROM_VEGPARAM with no trailing path.
-
-      - name: "FORCING1 prefix"
-        file: "global_param.txt"
-        description: "Forcing file name prefix — must match actual filenames"
-        bug_history: >
-          Mismatch between FORCING1 prefix and actual forcing file names
-          causes 'Unable to open File' error. Check with ls forcing_final/.
-
-      - name: "MODEL_STEPS_PER_DAY"
-        file: "global_param.txt"
-        description: "Number of model timesteps per day"
-        valid_range: [1, 24]
-        default: 8
-        notes: "Must match FORCE_STEPS_PER_DAY and the forcing temporal resolution"
-
-      - name: "infilt (binfilt)"
-        file: "SOIL_PARAM_COMPLETE.txt"
-        description: "Variable infiltration curve parameter"
-        valid_range: [0.0, 0.4]
-        default: 0.2
-        sensitivity: "very high"
-        notes: "Primary calibration parameter. Controls surface vs subsurface runoff partition."
-
-    calibration:
-      - name: "binfilt"
-        file: "SOIL_PARAM_COMPLETE.txt"
-        description: "Variable infiltration curve parameter"
-        valid_range: [0.001, 0.4]
-        sensitivity: "very high"
-        notes: "Lower values produce more baseflow, higher values more surface runoff"
-
-      - name: "Ds"
-        file: "SOIL_PARAM_COMPLETE.txt"
-        description: "Fraction of Dsmax where non-linear baseflow begins"
-        valid_range: [0.0, 1.0]
-        default: 0.001
-        sensitivity: "high"
-
-      - name: "Dsmax"
-        file: "SOIL_PARAM_COMPLETE.txt"
-        description: "Maximum baseflow velocity (mm/day)"
-        valid_range: [0.0, 30.0]
-        default: 10.0
-        sensitivity: "high"
-
-      - name: "Ws"
-        file: "SOIL_PARAM_COMPLETE.txt"
-        description: "Fraction of max soil moisture where non-linear baseflow begins"
-        valid_range: [0.5, 1.0]
-        default: 0.9
-        sensitivity: "high"
-
-      - name: "soil_depth"
-        file: "SOIL_PARAM_COMPLETE.txt"
-        description: "Soil layer depths (3 layers)"
-        valid_range: [0.01, 3.0]
-        unit: "meters"
-        sensitivity: "moderate"
-
-  files:
-    required:
-      - name: "global_param.txt"
-        description: "Master control file with all paths, time settings, physics options"
-        format: "key-value text"
-        notes: "All paths must be absolute. Time range must match forcing data."
-
-      - name: "SOIL_PARAM_COMPLETE.txt"
-        description: "Soil parameters for all grid cells"
-        format: "space-delimited; one row per grid cell, ~50+ columns"
-        notes: "Column 1 = run flag (1=active). Lat/lon must match forcing filenames."
-
-      - name: "vic_veg_param_final.txt"
-        description: "Vegetation parameters per grid cell"
-        format: "multi-line records: header + N vegetation types per cell"
-        notes: "Root zone fractions may sum to >1 (VIC normalizes internally, warning only)"
-
-      - name: "forcing files"
-        description: "One ASCII file per grid cell with 7 meteorological variables"
-        format: "space-delimited, 3-hourly or daily, columns match OUTVAR order"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: binfilt (b_infilt)
+    unit: '-'
+    category: soil_hydraulic
+    source_kind: calibrated
+    model_input_format: soil parameter file row
+    notes: Shape parameter of the VIC subgrid infiltration-capacity distribution; main lever for the surface-runoff
+      partition.
+  - name: Ds
+    unit: fraction of Dsmax
+    category: soil_hydraulic
+    source_kind: calibrated
+    model_input_format: soil parameter file row
+  - name: Dsmax
+    unit: mm/day
+    category: soil_hydraulic
+    source_kind: calibrated
+    model_input_format: soil parameter file row
+  - name: Ws
+    unit: fraction of max soil moisture
+    category: soil_hydraulic
+    source_kind: calibrated
+    model_input_format: soil parameter file row
+  - name: c (baseflow curve exponent)
+    unit: '-'
+    category: soil_hydraulic
+    source_kind: calibrated
+    model_input_format: soil parameter file row
+  - name: expt (Brooks-Corey exponent per layer)
+    unit: '-'
+    category: soil_hydraulic
+    source_kind: calibrated
+    model_input_format: soil parameter file row
+  - name: Ksat (saturated hydraulic conductivity per layer)
+    unit: mm/day
+    category: soil_hydraulic
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: phi_s (soil moisture diffusion per layer)
+    unit: mm/mm
+    category: soil_hydraulic
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: depth (layer thickness per soil layer)
+    unit: m
+    category: soil_hydraulic
+    source_kind: calibrated
+    model_input_format: soil parameter file row
+    notes: MAX_LAYERS = 3 is a compile-time cap (vic_def.h); requesting more than 3 layers silently fails.
+      Calibration constraint d3 > d2 is conventional but enforced by the calibration tool, not the model.
+  - name: bubble (bubbling pressure per layer)
+    unit: cm
+    category: soil_hydraulic
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: quartz (per layer)
+    unit: '-'
+    category: soil_thermal
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: bulk_density (per layer)
+    unit: kg/m^3
+    category: soil_thermal
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: soil_density (per layer)
+    unit: kg/m^3
+    category: soil_thermal
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: Wcr_FRACT (critical-point soil moisture fraction per layer)
+    unit: fraction
+    category: soil_hydraulic
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: Wpwp_FRACT (wilting-point soil moisture fraction per layer)
+    unit: fraction
+    category: soil_hydraulic
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: resid_moist (residual moisture fraction per layer)
+    unit: fraction
+    category: soil_hydraulic
+    source_kind: default
+    model_input_format: soil parameter file row
+    notes: Default SOIL_RESID_MOIST = 0.0 (initialize_parameters.c); layers drain to bone-dry if not explicitly
+      overridden.
+  - name: avg_T (long-term mean soil temperature at damping depth)
+    unit: degC
+    category: soil_thermal
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: dp (soil thermal damping depth)
+    unit: m
+    category: soil_thermal
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: rough (bare-soil surface roughness)
+    unit: m
+    category: soil_aerodynamic
+    source_kind: default
+    model_input_format: soil parameter file row
+  - name: snow_rough (snowpack surface roughness)
+    unit: m
+    category: soil_aerodynamic
+    source_kind: default
+    model_input_format: soil parameter file row
+  - name: annual_prec (long-term mean annual precipitation)
+    unit: mm
+    category: climatology
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: elev / lat / lon / off_gmt
+    unit: m, deg, deg, hours
+    category: geometry
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file row
+  - name: Nveg / veg_class / Cv
+    unit: count, id, fraction
+    category: vegetation_structure
+    source_kind: dataset_lookup
+    model_input_format: vegetation parameter file
+    notes: Cv values across all tiles must sum to 1 over the cell.
+  - name: root_depth / root_fract (per root zone)
+    unit: m, fraction
+    category: vegetation_structure
+    source_kind: calibrated
+    model_input_format: vegetation parameter file
+    notes: Root-fraction sums may exceed 1; the model auto-normalizes per tile (benign warning).
+  - name: LAI / FCANOPY / ALBEDO (monthly schedule)
+    unit: m2/m2, fraction, fraction
+    category: vegetation_canopy
+    source_kind: dataset_lookup
+    model_input_format: vegetation parameter or vegetation library file (per veg_class)
+    notes: Used when LAI_SRC=FROM_VEGPARAM and time-varying forcing of these fields is disabled.
+  - name: displacement / roughness / trunk_ratio / rad_atten / wind_atten / rmin / Rgl / overstory
+    unit: varies
+    category: vegetation_aerodynamic
+    source_kind: dataset_lookup
+    model_input_format: vegetation library file (per veg_class)
+    notes: 'Defaults from vic_def.h when veg library omits a field: trunk_ratio=0.2, rad_atten=0.5, wind_atten=0.5.'
+  - name: sigma_slope / lag_one / fetch
+    unit: -, -, m
+    category: blowing_snow
+    source_kind: dataset_lookup
+    model_input_format: vegetation parameter file (required when BLOWING_SNOW enabled)
+  - name: lake parameters (basin depth/area curve, depth_in, mindepth, maxdepth, ...)
+    unit: varies
+    category: lake
+    source_kind: dataset_lookup
+    model_input_format: lake parameter file (required when LAKES enabled)
+  initial_conditions:
+  - name: init_moist (initial layer soil moisture)
+    unit: mm
+    category: soil_state
+    source_kind: user_provided
+    model_input_format: soil parameter file column
+  - name: state file (soil moisture and ice per layer; soil-node temperatures; snowpack SWE/temperatures/density/cold-content;
+      canopy snow and dew; lake state; optional carbon pools)
+    unit: varies
+    category: warm_start
+    source_kind: user_provided
+    model_input_format: VIC state file (binary or ASCII per options)
+    notes: Lake areai is restarted from the previous step's new_ice_area; if new_ice_area is not saved,
+      the restart silently begins with areai=0.
+  boundary_conditions:
+  - name: Lower soil thermal boundary
+    unit: degC
+    category: lower_thermal
+    source_kind: dataset_lookup
+    model_input_format: soil parameter file (avg_T at damping depth dp)
+  - name: AreaFract / Elevation / Pfactor per band
+    unit: fraction, m, fraction
+    category: elevation_band
+    source_kind: user_provided
+    model_input_format: snow-band file (required only when number of snow bands > 1)
+    notes: AreaFract and Pfactor each must sum to 1 across bands within a cell.
+  - name: FULL_ENERGY (water+energy vs water-only mode)
+    unit: boolean
+    category: structural_option
+    source_kind: user_provided
+    model_input_format: global parameter file flag
+  - name: FROZEN_SOIL (enable frozen-soil and permafrost module)
+    unit: boolean
+    category: structural_option
+    source_kind: user_provided
+    model_input_format: global parameter file flag
+    notes: Must be a TRUE/FALSE token, not a path.
+  - name: QUICK_FLUX (analytical vs finite-difference soil thermal solver)
+    unit: boolean
+    category: structural_option
+    source_kind: user_provided
+    model_input_format: global parameter file flag
+  - name: LAKES / CARBON / BLOWING / SPATIAL_FROST / SPATIAL_SNOW / ORGANIC_FRACT
+    unit: boolean
+    category: structural_option
+    source_kind: user_provided
+    model_input_format: global parameter file flags (and supporting parameter files when on)
+  - name: LAI_SRC (FROM_VEGPARAM | FROM_VEGLIB | FROM_VEGHIST)
+    unit: enum
+    category: structural_option
+    source_kind: user_provided
+    model_input_format: global parameter file
+  - name: MODEL_STEPS_PER_DAY / FORCE_STEPS_PER_DAY / SNOW_STEPS_PER_DAY / RUNOFF_STEPS_PER_DAY
+    unit: steps/day
+    category: timestep_control
+    source_kind: user_provided
+    model_input_format: global parameter file
+    notes: Bounded by MIN_SUBDAILY_STEPS_PER_DAY=4 and MAX_SUBDAILY_STEPS_PER_DAY=1440 (vic_def.h).
+  - name: STARTYEAR/STARTMONTH/STARTDAY and ENDYEAR/ENDMONTH/ENDDAY
+    unit: date
+    category: simulation_window
+    source_kind: user_provided
+    model_input_format: global parameter file
 outputs:
-
   primary:
-    - name: "runoff"
-      file: "huaihe_fluxes_{lat}_{lon}.txt"
-      variable: "OUT_RUNOFF"
-      unit: "mm/timestep"
-      valid_range: [0, null]
-      notes: "Surface runoff per grid cell per timestep"
-
-    - name: "baseflow"
-      file: "huaihe_fluxes_{lat}_{lon}.txt"
-      variable: "OUT_BASEFLOW"
-      unit: "mm/timestep"
-      valid_range: [0, null]
-      notes: "Subsurface baseflow per grid cell per timestep"
-
-    - name: "evapotranspiration"
-      file: "huaihe_fluxes_{lat}_{lon}.txt"
-      variable: "OUT_EVAP"
-      unit: "mm/timestep"
-      valid_range: [0, 20.0]
-
-    - name: "soil_moisture"
-      file: "huaihe_fluxes_{lat}_{lon}.txt"
-      variable: "OUT_SOIL_MOIST"
-      unit: "mm"
-      valid_range: [0, null]
-
-    - name: "precipitation"
-      file: "huaihe_fluxes_{lat}_{lon}.txt"
-      variable: "OUT_PREC"
-      unit: "mm/timestep"
-      valid_range: [0, 500.0]
-
-  netcdf_postprocessed:
-    - name: "total_runoff"
-      file: "{basin}_runoff_1d_YYYY.nc"
-      variable: "Runoff"
-      unit: "mm/day"
-      dimensions: ["time", "lat", "lon"]
-      notes: "OUT_RUNOFF + OUT_BASEFLOW combined for CaMa-Flood input"
-
-# =========================================================================
-# KNOWN ISSUES
-# =========================================================================
+  - name: OUT_RUNOFF
+    unit: mm
+    description: Surface runoff generated by the variable infiltration capacity partition (per timestep
+      total).
+    validation_rank: 2
+    emitted_in: per-cell ASCII flux file (classic driver); column position controlled by OUTVAR list in
+      the global parameter file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - VIC has no internal routing; gauge streamflow requires post-hoc routing of OUT_RUNOFF+OUT_BASEFLOW
+          before comparison.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Cells are independent; aggregating to basin scale requires routing to be meaningful for hydrograph
+          comparisons.
+      detrending_options:
+      - none
+      - first_difference
+      - linear_residual
+  - name: OUT_BASEFLOW
+    unit: mm
+    description: Subsurface drainage from the bottom soil layer via the ARNO / non-linear baseflow function.
+    validation_rank: 6
+    emitted_in: per-cell ASCII flux file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Baseflow comparison is typically against hydrograph separation of observed streamflow; direct
+          gauge observations of baseflow are rare.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: OUT_DISCHARGE
+    unit: m^3/s
+    description: Routed discharge value emitted only by the lake module; for non-lake cells streamflow
+      is not produced internally.
+    validation_rank: 1
+    emitted_in: per-cell ASCII flux file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Inside VIC, OUT_DISCHARGE is generated only by the optional lake module; basin-scale discharge
+          against a gauge requires an external routing model.
+      detrending_options:
+      - none
+  - name: OUT_EVAP
+    unit: mm
+    description: Total evapotranspiration (canopy interception + transpiration + bare soil + sublimation,
+      per timestep).
+    validation_rank: 3
+    emitted_in: per-cell ASCII flux file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance comparison requires conversion between mm and W/m^2 and energy-balance closure
+          adjustment of the observation.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Remote-sensing ET products carry their own model assumptions; not an independent benchmark in
+          the strict sense.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+      - linear_residual
+  - name: OUT_SOIL_MOIST
+    unit: mm
+    description: Per-layer soil moisture (liquid + ice) integrated over the layer.
+    validation_rank: 7
+    emitted_in: per-cell ASCII flux file (one column per soil layer)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - In-situ probes measure volumetric moisture over a narrow depth range; convert VIC layer-integrated
+          mm to volumetric and align depths.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - ranking_quality
+        determining_metric: csi
+        caveats:
+        - Satellite soil moisture senses only the top ~5 cm; map to VIC top-layer with a representative-depth
+          caveat.
+      detrending_options:
+      - none
+      - first_difference
+  - name: OUT_SWE
+    unit: mm
+    description: Total snow water equivalent of the ground snowpack.
+    validation_rank: 4
+    emitted_in: per-cell ASCII flux file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: pbias
+        caveats:
+        - SNOTEL / pillow observations are point measurements; subgrid heterogeneity within the VIC cell
+          is not resolved.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - Passive-microwave SWE retrievals saturate above ~150-200 mm and degrade in forested cells.
+      detrending_options:
+      - none
+  - name: OUT_SNOW_MELT
+    unit: mm
+    description: Snowmelt flux from the ground snowpack.
+    validation_rank: 8
+    emitted_in: per-cell ASCII flux file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - timing_accuracy
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Direct melt observations are scarce; lysimeter or differenced-SWE proxies typical.
+      detrending_options:
+      - none
+  - name: OUT_SOIL_TEMP
+    unit: degC
+    description: Soil temperature per layer (and OUT_SOIL_TNODE per thermal node).
+    validation_rank: 9
+    emitted_in: per-cell ASCII flux file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Match observation depth to the VIC layer or interpolate between nearest thermal nodes.
+      detrending_options:
+      - none
+  - name: OUT_LATENT
+    unit: W/m^2
+    description: Surface latent heat flux.
+    validation_rank: 10
+    emitted_in: per-cell ASCII flux file (full-energy mode)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance non-closure typically requires Bowen-ratio adjustment of the observation.
+      detrending_options:
+      - none
+  - name: OUT_SENSIBLE
+    unit: W/m^2
+    description: Surface sensible heat flux.
+    validation_rank: 11
+    emitted_in: per-cell ASCII flux file (full-energy mode)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: OUT_R_NET
+    unit: W/m^2
+    description: Net all-wave radiation at the surface.
+    validation_rank: 12
+    emitted_in: per-cell ASCII flux file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: OUT_ALBEDO
+    unit: fraction
+    description: Surface broadband albedo (snow + canopy + bare soil composite).
+    validation_rank: 13
+    emitted_in: per-cell ASCII flux file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Satellite albedo (MODIS MCD43) is narrow-to-broadband; account for spectral conversion.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Flux-tower pyranometer pairs measure broadband albedo at point scale; subgrid heterogeneity
+          within the VIC cell is not resolved.
+      detrending_options:
+      - none
+  - name: OUT_ZWT
+    unit: cm
+    description: Water table depth below the surface.
+    validation_rank: 5
+    emitted_in: per-cell ASCII flux file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - VIC water table is derived from layer moisture; comparison to well levels is qualitative.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: OUT_GPP
+    unit: g C/m^2/day
+    description: Vegetation gross primary production from the optional CARBON module.
+    validation_rank: 14
+    emitted_in: per-cell ASCII flux file (CARBON mode)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance NEE partitioning into GPP/Reco carries partitioning uncertainty.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: OUT_LAKE_VOLUME
+    unit: m^3
+    description: Composite within-cell lake volume (LAKES mode).
+    validation_rank: 15
+    emitted_in: per-cell ASCII flux file (LAKES mode)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - 'Composite-lake assumption: multiple lakes in one cell are not resolved.'
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "frozen_soil_corrupted"
-    description: "FROZEN_SOIL line corrupted by config_paths.py regex substitution"
-    affected_output: "Model fails to start"
-    detection: "Error message 'is neither TRUE nor FALSE'"
-    fix: "Manually set FROZEN_SOIL to FALSE in global_param.txt"
+- id: dt_vic_001
+  symptom: VIC crashes with `FROZEN_SOIL value is neither TRUE nor FALSE` — the field contains a file
+    path instead of a boolean.
+  diagnosis: '`config_paths.create_global_param()` substituted paths with the UNANCHORED pattern `r''SOIL\s+.*''`.
+    `re.sub` matches anywhere in a line, so it also matched the `SOIL             FALSE` substring inside
 
-  - id: "lai_src_corrupted"
-    description: "LAI_SRC line has trailing path appended by config_paths.py"
-    affected_output: "Model fails to start or wrong LAI source"
-    detection: "Check global_param.txt for extra text after FROM_VEGPARAM"
-    fix: "Manually correct to exactly FROM_VEGPARAM"
 
-  - id: "forcing_prefix_mismatch"
-    description: "FORCING1 prefix in global_param.txt does not match actual forcing filenames"
-    affected_output: "Fatal: Unable to open File"
-    detection: "Compare FORCING1 prefix with ls forcing_final/ | head -1"
-    fix: "Update FORCING1 to match actual file naming pattern"
+    ```
 
-  - id: "time_range_mismatch"
-    description: "Simulation time range exceeds forcing data availability"
-    affected_output: "Fatal: Not enough records in forcing file"
-    detection: "Compare STARTYEAR/ENDYEAR with forcing file content"
-    fix: "Synchronize time range in three places: forcing_1d.py, process_forcing.py, global_param.txt"
+    FROZEN_SOIL             FALSE
 
-  - id: "path_inconsistency"
-    description: "Output files scattered across vic_temp vs basin/vic_temp directories"
-    affected_output: "File not found errors at various stages"
-    detection: "Check all paths in global_param.txt resolve correctly"
-    fix: "Unify all paths under outputs/{basin_name}/"
+    ```
 
-  - id: "root_zone_sum_warning"
-    description: "Root zone fractions sum to more than 1"
-    affected_output: "Warning only — VIC auto-normalizes"
-    severity: "warning"
 
-# =========================================================================
-# EXPECTED RANGES (Huai River reference)
-# =========================================================================
-expected_ranges:
-  bengbu_huai_river:
-    basin_area_km2: 121330
-    mean_annual_precip_mm: 800-1000
-    mean_discharge_m3s: 800-1500
+    rewriting that line to `FROZEN_SOIL   /path/SOIL_PARAM_COMP'
+  remedy: 'FIXED IN PLACE. All patterns in `create_global_param()` are now anchored (`r''^SOIL\s+.*$''`
+    with `flags=re.MULTILINE`), and the function asserts post-hoc that `FROZEN_SOIL` / `FULL_ENERGY` still
+    hold `TRUE`/`FALSE`, raising `RuntimeError` otherwise. No hand-editing is needed. The same hazard
+    applies '
+- id: dt_vic_002
+  symptom: Simulated runoff is systematically 8x too high or 8x too low. No error message.
+  diagnosis: CMFD precipitation is in mm/s (kg/m2/s). Converting to mm/3hr requires multiplying by 10800
+    (seconds in 3 hours). Using 86400 (seconds in a day) produces 8x overestimate. The model runs without
+    error but produces vastly inflated runoff.
+  remedy: 'Verify that process_forcing.py uses 10800 (not 86400) as the precipitation conversion factor
+    for 3-hourly CMFD/MSWX data. Always validate one forcing file against CMFD raw data: pick a cell,
+    compare daily total precip (sum of 8 timesteps) against CMFD daily total.'
+- id: dt_vic_003
+  symptom: VIC error `Unable to open forcing file` — the FORCING1 prefix in global_param does not match
+    actual forcing filenames.
+  diagnosis: 'VIC constructs forcing file paths by concatenating: FORCING1 prefix + latitude + `_` + longitude.
+    If process_forcing.py generated files with a different prefix or different decimal precision, VIC
+    cannot find them.'
+  remedy: Check the actual filename prefix in `forcing_final/` and update the FORCING1 line in global_param
+    to match exactly. After process_forcing.py completes, always compare its output filenames against
+    the FORCING1 prefix.
+- id: dt_vic_004
+  symptom: VIC error `Not enough records in forcing file` or `insufficient forcing records`.
+  diagnosis: 'STARTYEAR/ENDYEAR in global_param extends beyond the time range of the forcing files, or
+    FORCEYEARFIRST/FORCEYEARLAST do not match. The time range must be synchronized across four locations:
+    (1) forcing_1d.py YEAR_START/YEAR_END, (2) process_forcing.py START_YEAR/END_YEAR, (3) global_param
+    STARTYEAR'
+  remedy: Synchronize all four time-range variables. Always verify time range consistency before running
+    VIC.
+- id: dt_vic_005
+  symptom: Running sed -i on skill scripts empties the files completely — 0 bytes after sed.
+  diagnosis: Shell expansion in sed -i commands corrupts Python script files. The sed command expands
+    special characters in the replacement string (particularly `/` in file paths and `$` in Python f-strings),
+    producing an invalid command that truncates the file to 0 bytes.
+  remedy: 'NEVER use sed -i on skill scripts. Use Python `str.replace()` or the Edit tool instead. If
+    a file was emptied, restore from backup: `cp <script>.bak <script>`.'
+- id: dt_vic_006
+  symptom: Passing --basin_name or --year_start on the command line has no effect.
+  diagnosis: config_paths.py reads configuration from hardcoded variables at the top of the file, not
+    from argparse or sys.argv. Passing CLI arguments is silently ignored.
+  remedy: Edit the variables directly at the top of config_paths.py (BASIN_NAME, YEAR_START, YEAR_END,
+    RESOLUTION, shp_file) instead of passing CLI arguments.
+- id: dt_vic_007
+  symptom: VIC error parsing soil file — `Error in soil file` or `Invalid number of soil`.
+  diagnosis: fill_parameters2.py interpolation failed for some cells, producing rows with missing or extra
+    columns. VIC expects exactly N columns per row (~53 for a 3-layer configuration). If some cells have
+    no coverage in global reference data, rows may be incomplete.
+  remedy: 'Check column count consistency: `awk ''{print NF}'' SOIL_PARAM_COMPLETE.txt | sort -u` should
+    show exactly one number. Re-run fill_parameters2.py or manually pad/trim problematic rows.'
+- id: dt_vic_008
+  symptom: Forcing files from a previous basin are mixed with the current basin's files. No error — model
+    runs with wrong meteorological data.
+  diagnosis: forcing_1d.py uses BASIN_TAG as a suffix in output filenames. If old files with a different
+    BASIN_TAG remain in the output directory, both old and new files coexist, and process_forcing.py may
+    read the wrong ones.
+  remedy: 'Delete all files in forcing_1d/ before running forcing_1d.py for a new basin: `rm -f forcing_1d/*.nc`.
+    Verify the directory is empty before re-running.'
+- id: dt_vic_009
+  symptom: make_basin_grid_nc.py produces a NetCDF with no cells — `0 grid cells`.
+  diagnosis: The basin shapefile does not intersect any grid cell centers at the chosen resolution. At
+    0.25 deg resolution, each cell is ~625 km2, so basins under ~1000 km2 may have 0-2 cells. A missing/wrong
+    CRS (projected instead of geographic) will also cause zero intersection.
+  remedy: Switch to 0.1 deg resolution for small basins, or check and fix the shapefile CRS. Use 0.1 deg
+    for basins < 5000 km2.
+- id: dt_vic_010
+  symptom: '`FileNotFoundError: SOIL_PARAM_COMPLETE.txt` — soil parameters must be generated before forcing.'
+  diagnosis: 'process_forcing.py reads grid cell coordinates from SOIL_PARAM_COMPLETE.txt. The dependency
+    is: Grid (s2) -> Soil (s3) -> Forcing (s5). This is not obvious because forcing is logically about
+    meteorological data, not soil. However, process_forcing.py needs the exact grid cell coordinates from
+    the soi'
+  remedy: 'Run soil parameter generation (fill_parameters1.py + fill_parameters2.py) before process_forcing.py.
+    Always follow the dependency order: Grid -> Soil -> Forcing.'
+- id: dt_vic_011
+  symptom: VIC runs successfully but simulated discharge is physically unreasonable — NSE < 0.3, PBIAS
+    > 50%.
+  diagnosis: 'Default VIC soil parameters (binfilt, Ds, Dsmax, Ws, soil depths) are not tuned for the
+    specific basin. Typical uncalibrated results show NSE 0.0-0.3 and PBIAS 30-60%. Key parameters: binfilt
+    (infiltration curve), Ds/Dsmax (baseflow), Ws (soil moisture threshold), soil_d2/soil_d3 (layer depths).'
+  remedy: Run AI-assisted calibration using the vic_cali_ai skill if observed discharge data is available.
+    Calibration can improve NSE from ~0.3 to 0.8+. If no observed data, report results as uncalibrated.
+- id: dt_vic_012
+  symptom: Mean air temperature is ~273 K too high or too low. No error message.
+  diagnosis: CMFD stores temperature in Kelvin. VIC expects Celsius. If the conversion (-273.15) is missing,
+    VIC sees temperatures of ~273-310 K interpreted as Celsius, producing extreme ET. If applied twice,
+    temperatures become ~-273 C, causing zero ET.
+  remedy: 'Check first forcing file: column 1 is AIR_TEMP, values should be -40 to +50 (Celsius). If values
+    are 230-320: add -273.15 conversion. If values are -300 to -230: remove one of the two conversions.'
+- id: dt_vic_013
+  symptom: VIC error `Not enough records in forcing file` — same as dt_vic_004 but different root cause.
+  diagnosis: forcing_1d.py or process_forcing.py produced incomplete data — some timesteps are missing,
+    typically at year boundaries or due to interrupted processing. VIC expects exactly n_days * 8 lines
+    per forcing file for 3-hourly data.
+  remedy: 'Check line count: `wc -l <forcing_file>`. Expected: n_days * 8 (e.g., 365*8=2920 per non-leap
+    year). If too few lines, delete forcing_1d/ and forcing_final/ contents and re-run.'
+- id: dt_vic_014
+  symptom: forcing_1d.py fails with FileNotFoundError — MSWX data path has moved.
+  diagnosis: MSWX forcing data was originally at `KISSPATH_DATA/新加卷/msxw/` (auto-mounted external drive)
+    and has been moved to `KISSPATH_FORCING/`. Scripts referencing the old path will fail.
+  remedy: Update INPUT_DATA_DIR in forcing_1d.py to `KISSPATH_FORCING/`. Verify the path exists with `ls
+    KISSPATH_FORCING/`.
+- id: dt_vic_015
+  symptom: VIC runs successfully but simulated discharge is physically unreasonable — forcing_1d.py used
+    CMFD (China-only) for a basin outside China.
+  diagnosis: CMFD only covers mainland China (17.5-55N, 72.5-140E). For basins outside this domain, forcing_1d.py
+    must use MSWX (`KISSPATH_FORCING/`). The script does NOT auto-detect this. When CMFD is used out-of-domain,
+    xarray clips to nearest China border cells, producing completely wrong forcing. Dangerous si
+  remedy: 'Check basin coordinates: if lat/lon is outside China (17.5-55N, 72.5-140E), MUST use MSWX.
+    Change INPUT_DATA_DIR in forcing_1d.py to `KISSPATH_FORCING/`. Also cap max_workers to 4 for MSWX.'
+- id: dt_vic_016
+  symptom: forcing_1d.py hangs with zero output files for minutes when using MSWX — all workers stuck
+    in disk I/O wait state.
+  diagnosis: MSWX yearly files are 3-9 GB each (global coverage). Default max_workers uses all CPU cores
+    (e.g., 113 workers). When 100+ workers each try to read multi-GB files from the same disk, I/O hits
+    100% and all workers enter D (uninterruptible sleep) state.
+  remedy: 'Cap max_workers to 4 when using MSWX data. Kill stuck workers: `pkill -9 -f forcing_1d.py`.
+    Add auto-detection: `if ''msxw'' in str(INPUT_DATA_DIR): max_workers = 4`.'
+- id: dt_vic_017
+  symptom: Agent used CMFD (China-only) forcing for Koksilah River (BC, Canada) — produced meaningless
+    forcing data that was silently wrong.
+  diagnosis: forcing_1d.py INPUT_DATA_DIR defaulted to CMFD; agent did not check basin location vs forcing
+    coverage. This is the discovered instance that led to dt_vic_015.
+  remedy: Added FORCING DATASET SELECTION section to CLAUDE.md. CLAUDE.md now has mandatory forcing check
+    before any simulation.
+- id: dt_vic_018
+  symptom: forcing_1d.py with MSWX hung for 15+ minutes producing zero output — 113 workers saturated
+    disk I/O on 3-9 GB files.
+  diagnosis: Default max_workers uses all CPU cores; MSWX files are 100x larger than CMFD files. This
+    is the discovered instance that led to dt_vic_016.
+  remedy: Capped max_workers to 4 for MSWX. Auto-detect MSWX and cap workers.
+- id: dt_vic_019
+  symptom: You need daily discharge (m3/s) at a gauge, but the flux files only contain `OUT_RUNOFF` /
+    `OUT_BASEFLOW` in mm. `OUT_DISCHARGE` is all zeros (or absent).
+  diagnosis: '`dag.yaml` states it plainly: "Inside VIC, OUT_DISCHARGE is generated only by the optional
+    lake module; basin-scale discharge against a gauge requires an external routing model." Summing runoff+baseflow
+    over the basin and calling it discharge is wrong — it has no travel time, so the hydrograph has n'
+  remedy: Run the Lohmann routing binary `model/route_1.0/src/rout` after VIC. Its 5 parameter files are
+    built by the KI tool `s5_routing/build_routing_param.py` (added 2026-07-09). Preprocess each VIC flux
+    file to 7 columns — `year month day prec evap runoff baseflow`, i.e. `df.iloc[:, [0,1,2,3,18,16,17]]`
+    f
+- id: dt_vic_020
+  symptom: '`build_routing_param` reports a nonsensical outlet, low initial connectivity (e.g. "initial
+    connectivity: 51/251") and needs dozens of "repair" iterations. The station cell''s flow accumulation
+    is SMALLER than that of cells upstream of it.'
+  diagnosis: The original `skills/routing-run/s5_routing_param/run_build_routing_new.py` resampled the
+    DEM to 0.05° (~5.5 km) with an AVERAGE resample and ran `fill_depressions` + `d8_flow_accumulation`
+    on that, over a **bbox-cropped** (not basin-masked) DEM. Averaging obliterates incised gorges, so
+    `fill_depres
+  remedy: FIXED. `s5_routing/build_routing_param.py` now reuses the NATIVE-resolution `flow_accum.tif`
+    + `basin.tif` from `ki_tools_common.terrain_ops.delineate_basin` (pass them via `VIC_FLOW_ACCUM` /
+    `VIC_BASIN_RASTER` / `VIC_FILLED_DEM`, or let the tool call `delineate_basin` itself) and masks accumulation
+- id: dt_vic_021
+  symptom: '`compute_calval_metrics` returns NaN, or n=0, or a validation NSE computed from a handful
+    of days.'
+  diagnosis: The KDT standard split (spinup 1980, cal 1981-85, val 1986-90) assumes a Bengbu-like continuous
+    record. Many Chinese gauge files are sparse and pad missing days with `-99`. 唐乃亥 (Yellow R.) has valid
+    daily Q ONLY for {1985, 1987, 2007-2020, 2022, 2023} — 1986 and 1988-2006 are entirely `-99`. Running
+  remedy: 'ALWAYS profile obs coverage before choosing the simulation period:
 
-    hydrology:
-      mean_runoff_mm_yr: 300-500
-      runoff_ratio: 0.3-0.5
-      notes: "VIC raw runoff (OUT_RUNOFF + OUT_BASEFLOW) before routing"
+    `v = q[q > -90]; v.groupby(v.index.year).size()`
 
-# =========================================================================
-# CALIBRATION REFERENCE
-# =========================================================================
-calibration_reference:
-  recommended_sequence:
-    - "binfilt (0.001-0.4, primary runoff partition)"
-    - "Ds (0.0-1.0, baseflow shape)"
-    - "Dsmax (0.0-30.0, max baseflow rate)"
-    - "Ws (0.5-1.0, soil moisture threshold)"
-    - "soil_depth layers 1-3 (storage capacity)"
+    Pick the first contiguous fully-observed decade, keep a >=1-year spinup ahead of it, confirm the forcing
+    dataset covers it (CMFD spans 1951-2024), and record the deviation from the sta'
+- id: dt_vic_022
+  symptom: You run `python config_paths.py`, it prints "✓ 已更新脚本", yet the stage scripts still point at
+    the previous basin and write to the old `outputs/<old_basin>/` tree.
+  diagnosis: '`SCRIPTS_DIR` was hard-coded to `WORKSPACE_ROOT/"skills"/"vic-auto-run"`, a *copy* of the
+    stage scripts living outside `knowledge_infrastructure/`. The documented workflow then executed the
+    untouched KI copies, so the configuration step did nothing.'
+  remedy: 'FIXED — `SCRIPTS_DIR = Path(__file__).resolve().parent`. Better still, do not rely on the in-place
+    regex rewriting at all: every stage script (`s1_grid`, `s2_forcing`, `s3_soil`, `s4_veg`, `s5_routing`)
+    now reads its configuration from the environment. Export `VIC_BASIN_NAME`, `VIC_BASIN_SHP`, `VIC_'
+- id: dt_vic_023
+  symptom: 'A stage script prints its full success banner ("成功率: 100.0%", all N cells written), every
+    expected output file is on disk and correct, yet the driver reports the stage failed. `run.log` ends
+    with:
 
-  target_metrics:
-    - "NSE > 0.5"
-    - "KGE > 0.5"
-    - "PBIAS < 25%"
 
-  notes: "VIC requires external routing (Lohmann, CaMa-Flood, mizuRoute) for discharge comparison with observed data."
+    ```
 
-# =========================================================================
-# UNIT CONVERSION TABLE
-# =========================================================================
-unit_conversions:
-  - variable: "precipitation"
-    source: "CMFD (kg/m2/s)"
-    target: "VIC (mm/3hr)"
-    factor: 10800
-    operation: "multiply"
-    trap_if_wrong: "Runoff 10800x too high (raw kg/m2/s) or near zero"
+    STDERR: .../xarray/backends/plugins.py:109: RuntimeWarning: Engine ''gmt'' loading failed:
 
-  - variable: "temperature"
-    source: "CMFD (K)"
-    target: "VIC (degC)"
-    offset: -273.15
-    operation: "subtract"
-    trap_if_wrong: "Values ~300 = still in Kelvin; wrong ET, wrong snow"
+    Error loa'
+  diagnosis: 'Two independent conditions must both hold.
 
-  - variable: "pressure"
-    source: "CMFD (Pa)"
-    target: "VIC (kPa)"
-    factor: 0.001
-    operation: "multiply"
-    trap_if_wrong: "Pressure ~101325 instead of ~101.3"
 
-  - variable: "shortwave_radiation"
-    source: "CMFD (W/m2)"
-    target: "VIC (W/m2)"
-    operation: "none"
-    notes: "VIC uses W/m2 natively — no conversion needed"
+    1. `pygmt` 0.18.0 is installed on this server but the GMT C library is **not** (`ldconfig -p | grep
+    gmt` → nothing; there is no `libgmt.so` anywhere on disk). Its `xarray.backends` entrypoint `pygmt.xarray:GMTBackendEntrypoint`
+    therefore fails to import.
+
+    2'
+  remedy: 'FIXED in every stage script. Two rules, both required — pinning alone is sufficient in isolation,
+    but import order is the cheap insurance when a third-party import (`rioxarray`, `rasterstats`) pulls
+    HDF5 in behind your back:
+
+
+    1. `import netCDF4` **before** `import xarray` (`# isort:skip`, `# noqa: F'
+- id: dt_vic_024
+  symptom: 'step s7 prints `✗ 模板文件不存在: .../outputs/pearl_river_calibration_ai/best_run/global_param.txt`,
+
+    no `global_param_<basin>.txt` is produced, and the run dies much later at
+
+    `vic_classic.exe -g <missing file>` with an unrelated-looking I/O error.'
+  diagnosis: '`config_paths.PATH_CONFIG["global_param_template"]` defaulted to a path under
+
+    `outputs/` — an *output* directory of an old calibration run, not a KI asset. That directory
+
+    does not exist on this server. Worse, `create_global_param()` handled the miss with
+
+    `return False`; no caller checked the return '
+  remedy: "FIXED (2026-07-10, Harbin/Songhua run).\n* The template now ships inside the KI: `docs/vic_param/global_param_template.txt`,\
+    \ and is the\n  default value of `VIC_GLOBAL_PARAM_TEMPLATE`.\n* A missing template now raises `FileNotFoundError`\
+    \ instead of returning `False`.\n* The template's header documents t"
+- id: dt_vic_025
+  symptom: '`s5_routing/build_routing_param.py` raises
+
+    `RuntimeError: No VIC_FLOW_ACCUM/VIC_BASIN_RASTER/VIC_FILLED_DEM supplied and no
+
+    VIC_OUTLET_LON/LAT to delineate with`, or `KeyError: ''VIC_BASIN_SHP''`.'
+  diagnosis: 'SKILL.md''s "Server quickstart" env table stops at `VIC_GLOBAL_PARAM_TEMPLATE`,
+
+    but the s9 routing stage additionally reads `VIC_STATION_NAME`, `VIC_OUTLET_LON`,
+
+    `VIC_OUTLET_LAT` and `VIC_DEM`. The outlet coordinates are not optional for a new basin: they
+
+    are both the delineation pour point and the a'
+  remedy: 'export all of them. Working Harbin/Songhua invocation (866 cells, 384,411 km² at the
+
+    outlet vs ~391,000 km² published, connectivity 866/866):
+
+
+    ```bash
+
+    export VIC_BASIN_NAME=harbin_songhua_1980_1987
+
+    export VIC_BASIN_SHP=KISSPATH_DATA/shp/harbin_songhua_shp/harbin_songhua_boundary_'
+- id: dt_vic_026
+  symptom: 'the KDT standard split (spinup 1980 / cal 1981-85 / val 1986-90) appears to work,
+
+    but `nse_val` is computed on ~730 days instead of ~1826.'
+  diagnosis: '`KISSPATH_DATA/china_water_level/松辽txt/哈尔滨.txt` is complete daily
+
+    1980-1987, then `-99` for **1988-2000** inclusive, then 2001-2003, 2005-2019, 2021-2023.
+
+    This is the exact trap dt_vic_021 warns about, at a second basin.'
+  remedy: 'profile first (`v = q[q > -90]; v.groupby(v.index.year).size()`), then either
+
+    truncate the validation window to 1986-1987 (what the Harbin real-case did, keeping the
+
+    standard spinup/cal periods intact) or move the whole experiment to the 2005-2019 block.
+
+    Do not silently accept a 5-year `period_valid'
+- id: dt_vic_027
+  symptom: 'the model finished (`vic rc=0`, `rout rc=0`, routed `.day` on disk) but the
+
+    orchestrator recorded `nse: null`. The runner''s tail shows
+
+    `KeyError: ''nse''` at `cv["calibration"]["nse"]`.'
+  diagnosis: '`ki_tools_common.metrics.all_metrics` returns
+
+    `{''NSE'',''KGE'',''PBIAS'',''RMSE'',''r''}` and `validators.standard_calval.compute_calval_metrics`
+
+    returns `{''NSE'',''KGE'',''PBIAS'',''r'',''n''}` per period — UPPERCASE for every metric except
+
+    `r`. A runner that indexes `[''nse'']` dies AFTER the expensive part has succe'
+  remedy: 'index `m["NSE"]`, `m["KGE"]`, `m["PBIAS"]`, `m["RMSE"]`, `m["r"]`. Do not
+
+    "fix" `ki_tools_common` — every other KI depends on the current casing. Always write
+
+    `result.json` from a `try/except` that emits `status:"failed"` with the traceback, so a
+
+    scoring bug can never masquerade as a null-metrics mo'
+- id: dt_vic_028
+  symptom: 'routed hydrograph has a plausible volume but poor NSE; `r` is stuck around
+
+    0.5-0.6 no matter which soil parameter is calibrated. At 哈尔滨: NSE −0.40, r 0.589,
+
+    PBIAS +28.9%.'
+  diagnosis: '`s5_routing/build_routing_param.py` hard-codes `VELOCITY = 1.5` m/s and
+
+    `DIFFUSIVITY = 800` m²/s (env `VIC_ROUT_VELOCITY` / `VIC_ROUT_DIFF`, undocumented in
+
+    SKILL.md). Those reproduce Bengbu (121,330 km²). At 哈尔滨 (398,330 km², flat Songnen
+
+    Plain) the resulting basin-mean unit-hydrograph lag is **6.2'
+  remedy: 'before scoring, measure both numbers with `s5_routing/run_routing.py`:
+
+    `observed_lag_days(obs, sim)` (lag-correlation) and `basin_mean_uh_lag(uh_s)` (read from
+
+    the `.uh_s` rout itself writes). If the observed lag exceeds the UH lag, IDENTIFY the
+
+    velocity by bisecting until they agree — on the CALIBR'
+- id: dt_vic_029
+  symptom: 'a second `rout` run in the same directory dies on the OPEN of
+
+    `HRB  .uh_s`; or worse, an operator copies the old `.uh_s` in, `rout` takes the
+
+    `UH_STRING(1:4) .ne. ''NONE''` branch, and silently routes with the PREVIOUS velocity''s
+
+    unit hydrograph — the new velocity has no effect at all and the hydrogra'
+  diagnosis: '`unit_hyd_routines.f` `MAKE_GRID_UH` does
+
+    `open(98, file = NAME5//''.uh_s'', status=''new'')`. `status=''new''` requires the file to be
+
+    absent. The station file''s second line is the UH_S filename; `NONE` means "build it".
+
+    `NAME5` is the station name padded to 5 characters, so the file is literally `HRB  .'
+  remedy: 'run every `rout` invocation in a FRESH scratch directory —
+
+    `s5_routing/run_routing.route()` does exactly this and never mutates `routing_param/`,
+
+    which also makes a (velocity, diffusivity) sweep safe to parallelise. One call is ~7 s
+
+    for 866 cells because velocity and diffusivity affect ONLY the rout'
+- id: dt_vic_030
+  symptom: '`nse_cal` >> `nse_val` and PBIAS grows steadily through the record. Looks
+
+    exactly like overfitting; it is not.'
+  diagnosis: '`fill_parameters1.py` writes `init_moist` = 66.79 mm for every layer, i.e.
+
+    ~10-14% saturation, and the KI''s soil column is 0.1 + 0.3 + 1.5 = 1.9 m. SKILL.md''s
+
+    standard split gives it ONE spin-up year (1980). At 哈尔滨 the column takes ~5-6 years to
+
+    equilibrate. From the model''s own flux output, basin-s'
+  remedy: 'before scoring, check the storage trend
+
+    (`OUT_SOIL_MOIST_*` + `OUT_SWE` on 31 Dec of each year) and the baseflow trend. If either
+
+    is still climbing at the start of the calibration window, extend the spin-up. CMFD covers
+
+    1951-2024, so starting the simulation ~5-10 years before `CAL_START` costs only '
+- id: dt_vic_031
+  symptom: 'two failures in sequence when enabling the frozen-soil module on a cold basin.
+
+    First, VIC reads sentinel values into `estimate_layer_ice_content()`. Then, once the soil
+
+    file is fixed, VIC aborts with
+
+    `read_soilparam.c:770 ... The number of soil thermal nodes (N) is too small for the supplied
+
+    damping'
+  diagnosis: '(a) `fill_parameters1.py:213-214` writes `bubble` (cols 28-30) = -9999 and
+
+    `fs_active` (col 53) = 0. Both are inert while `FULL_ENERGY` and `FROZEN_SOIL` are FALSE, so
+
+    no reference basin ever noticed — but they make `FROZEN_SOIL TRUE` unusable.
+
+    (b) `FROZEN_SOIL TRUE` makes VIC set `QUICK_FLUX = FALS'
+  remedy: '`fill_parameters2.py` now derives `bubble = 0.32*expt + 4.3` (VIC''s own texture
+
+    relation, the one used to build the Maurer/Livneh CONUS soil files; gives 7.3-8.4 cm here)
+
+    and sets `fs_active = 1`. Use the shipped
+
+    `docs/vic_param/global_param_template_frozen.txt` (`FULL_ENERGY FALSE`, `FROZEN_SOIL TR'

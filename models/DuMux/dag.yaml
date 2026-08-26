@@ -301,7 +301,7 @@ outputs:
   - var: "pressure"
     validation_rank: 1
     unit: "Pa"
-    description: "Phase / fluid pressure field (primary variable). Hydraulic head h = (p - 101325)/(rho*g) + z is derived from it for comparison with well data."
+    description: "Subsurface porous-medium phase / fluid pressure field (primary variable). Hydraulic head h = (p - 101325)/(rho*g) + z is derived from it for comparison with groundwater well data."
     emitted_in: "VTK (.vtu per step, .pvd time-series index)"
     observability:
       comparable_obs_shapes:
@@ -328,7 +328,7 @@ outputs:
   - var: "velocity"
     validation_rank: 2
     unit: "m/s"
-    description: "Darcy / advective velocity field (only emitted when Vtk.AddVelocity = true)."
+    description: "Subsurface porous-medium Darcy / advective velocity field (only emitted when Vtk.AddVelocity = true)."
     emitted_in: "VTK (.vtu) when AddVelocity enabled"
     observability:
       comparable_obs_shapes:
@@ -343,7 +343,7 @@ outputs:
   - var: "saturation"
     validation_rank: 3
     unit: "-"
-    description: "Phase saturation field (S_w, S_n) for variably-saturated and multi-phase models."
+    description: "Subsurface porous-medium phase saturation field (S_w, S_n) for variably-saturated and multi-phase models."
     emitted_in: "VTK (.vtu / .pvd)"
     observability:
       comparable_obs_shapes:
@@ -363,7 +363,7 @@ outputs:
   - var: "tracer concentration / mass fraction"
     validation_rank: 4
     unit: "mol/m3 (concentration) or - (mass/mole fraction)"
-    description: "Tracer / component concentration transported by the advection-diffusion equation using the flow velocity field."
+    description: "Subsurface porous-medium tracer / component concentration transported by the advection-diffusion equation using the flow velocity field."
     emitted_in: "VTK (.vtu / .pvd)"
     observability:
       comparable_obs_shapes:
@@ -553,3 +553,21 @@ safety:
       scope: "boundary.closure"
       source: "DuMux doxygen master index (model families) and porousmediumflow model pages"
       status: "adopted"
+
+medium_evidence:
+  - var: "pressure"
+    source: "dag.yaml"
+    quote: "Darcy-scale flow and transport in porous media (single-phase saturated, variably-saturated Richards, multi-phase immiscible, multi-component compositional)"
+    note: "boundary.scope_in declares the DuMux output medium as porous media."
+  - var: "velocity"
+    source: "dag.yaml"
+    quote: "Darcy-scale flow and transport in porous media (single-phase saturated, variably-saturated Richards, multi-phase immiscible, multi-component compositional)"
+    note: "boundary.scope_in declares the DuMux output medium as porous media."
+  - var: "saturation"
+    source: "dag.yaml"
+    quote: "Darcy-scale flow and transport in porous media (single-phase saturated, variably-saturated Richards, multi-phase immiscible, multi-component compositional)"
+    note: "boundary.scope_in declares the DuMux output medium as porous media."
+  - var: "tracer concentration / mass fraction"
+    source: "dag.yaml"
+    quote: "Darcy-scale flow and transport in porous media (single-phase saturated, variably-saturated Richards, multi-phase immiscible, multi-component compositional)"
+    note: "boundary.scope_in declares the DuMux output medium as porous media."

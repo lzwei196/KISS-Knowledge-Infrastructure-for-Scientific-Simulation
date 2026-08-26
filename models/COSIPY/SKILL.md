@@ -1,14 +1,3 @@
----
-name: cosipy
-description: >-
-  COSIPY v1.3 (Sauter, Arndt & Schneider 2020, GMD) science spec, as realized by the
-  v2.0.2 codebase. Covers Surface energy balance over snow/ice (net shortwave with
-  subsurface penetration, net longwave…; Iterative surface skin temperature solution
-  constrained to the melting point; Surface mass fluxes: melt, sublimation, evaporation,
-  deposition, condensation. Use when the task involves running, configuring, calibrating
-  or interpreting COSIPY.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (23 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/_netcdf_shim/sitecustomize.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/_netcdf_shim/sitecustomize.py --help` |
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_static.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_static.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_cosipy.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_cosipy.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # COSIPY v2.0.2 (COupled Snowpack and Ice surface energy and mass balance model in PYthon) — Knowledge Infrastructure
 
@@ -79,6 +103,132 @@ This knowledge infrastructure enables autonomous simulation of glacier and snowp
 - Input/output in netCDF format
 - Supports both AWS station data and WRF reanalysis inputs
 - Built-in utilities for data conversion (aws2cosipy, wrf2cosipy, create_static_file)
+
+---
+
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag is the model identity for output variables,
+units, descriptions, validation rank, and observability. If this section and
+`dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `MB` -- Total surface + internal mass balance per timestep (positive = mass gain). (`m w.e.`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `MB` | 1 | `m w.e.` | Total surface + internal mass balance per timestep (positive = mass gain). |
+| `surfMB` | sourced from dag | sourced from dag | Surface mass balance output. |
+| `SNOWHEIGHT` | sourced from dag | sourced from dag | Snow-height output. |
+| `TS` | sourced from dag | sourced from dag | Surface-temperature output. |
+| `ALBEDO` | sourced from dag | sourced from dag | Surface-albedo output. |
+| `Q` | sourced from dag | sourced from dag | Runoff output. |
+| `H` | sourced from dag | sourced from dag | Sensible-heat-flux output. |
+| `LE` | sourced from dag | sourced from dag | Latent-heat-flux output. |
+| layer profiles (`T`, `RHO`, `theta_i`, `theta_w`, `porosity`) | sourced from dag | sourced from dag | Layer-profile outputs. |
+
+Other dag outputs restated from the KI facts: `surfMB`, `SNOWHEIGHT`, `TS`,
+`ALBEDO`, `Q`, `H`, `LE`, and layer profiles (`T`, `RHO`, `theta_i`,
+`theta_w`, `porosity`).
+
+---
+
+## 8. Unit Table
+
+**Exact I/O shapes live in `docs/format_spec.yaml`**. This table restates the
+unit-critical facts already present in this KI body and the dag-derived output
+facts above; it is not a replacement for `docs/format_spec.yaml` or `dag.yaml`.
+
+### Input units and conversions
+
+| Variable | Model unit | Common source unit | Required conversion |
+|----------|------------|--------------------|---------------------|
+| `T2` | `K` | degC (ERA5, AWS) | `+ 273.16` |
+| `RH2` | `%` (`0-100`) | fraction (`0-1`) | `* 100` |
+| `PRES` | `hPa` | Pa (ERA5) | `/ 100` |
+| `RRR` | `mm per timestep` | `mm/day`, `m/s` | depends on `dt` |
+| `G` | `W m^-2` instantaneous | `J m^-2` accumulated (ERA5) | `/ dt_seconds` |
+| `SNOWFALL` | `m` snow height in forcing; `m w.e.` in output | `m w.e.` or `mm` | `/ density * 1000` for forcing snow height |
+| `N` | fraction (`0-1`) | `%` (`0-100`) | `/ 100` |
+| `LWin` | `W m^-2` | `J m^-2` accumulated | `/ dt_seconds` |
+| `U2` | `m s^-1` at 2 m | `m s^-1` at 10 m (ERA5) | `* log(2/z0)/log(10/z0)` |
+| `SLOPE` | degrees | radians | `* 180/pi` |
+
+### Static input units
+
+| Variable | Unit | Description |
+|----------|------|-------------|
+| `HGT` | `m` | Elevation (DEM) |
+| `ASPECT` | degrees | Slope aspect |
+| `SLOPE` | degrees | Terrain slope angle |
+| `MASK` | boolean (`0/1`) | Glacier mask |
+
+### Output units and sign conventions
+
+| Variable | Unit | Convention / description |
+|----------|------|--------------------------|
+| `MB` | `m w.e.` | Total surface + internal mass balance per timestep (positive = mass gain). |
+| `surfMB` | `m w.e.` | Surface mass balance per timestep. |
+| `Q` | `m w.e.` | Runoff per timestep. |
+| `SNOWHEIGHT` | `m` | Total snow height. |
+| `TS` | `K` | Surface temperature. |
+| `ALBEDO` | `-` | Surface albedo (`0-1`). |
+| `H` | `W m^-2` | Sensible heat flux. |
+| `LE` | `W m^-2` | Latent heat flux. |
+| layer profile `T` | `K` | Layer temperature profile. |
+| layer profile `RHO` | `kg m^-3` | Layer density profile. |
+| layer profile `theta_i` | sourced from dag | Layer ice-content profile. |
+| layer profile `theta_w` | sourced from dag | Layer liquid-water-content profile. |
+| layer profile `porosity` | sourced from dag | Layer porosity profile. |
+
+---
+
+## 11. Validated Results
+
+**Source of truth for pass bands**: `docs/validation_convention.yaml`. The
+convention file wins over remembered thresholds. Null bands in the convention
+are written here as `no cited threshold`.
+
+### Test glacier
+
+| Property | Value |
+|----------|-------|
+| Site | Zhadang Glacier, Tibet |
+| Forcing | ERA5 2009 |
+| Validation status | `validated` |
+| Headline dag variable | `MB` |
+| Headline unit | `m w.e.` |
+
+### Performance Metrics -- field bars from the convention
+
+No achieved rank-1 `MB` metric value is stated in the supplied convention facts
+or in the existing `SKILL.md` body. Use the cited bars below to judge a
+run-specific metric value; do not assign a verdict without the achieved value.
+
+| Variable | Metric | Direction | Very good band | Good band | Satisfactory band | Convention cites |
+|----------|--------|-----------|----------------|-----------|-------------------|------------------|
+| `MB` | `rmse` | minimize | `<= 0.17` (`arndt2024`, `huintjes2015`) | `<= 0.34` (`arndt2024`, `huintjes2015`) | `<= 0.36` (`arndt2024`, `huintjes2015`) | `arndt2024`, `huintjes2015` |
+| `MB` | `r` | maximize | no cited threshold | `>= 0.83` (`huintjes2015`) | `>= 0.73` (`huintjes2015`) | `huintjes2015` |
+| `MB` | `rmse` | minimize | `<= 0.16` (`temme2023`) | `<= 0.3` (`temme2023`) | `<= 0.56` (`temme2023`) | `temme2023` |
+| `MB` | `pbias` | zero_centered | no cited threshold | no cited threshold | no cited threshold | none |
+| `surfMB` | `rmse` | minimize | `<= 0.17` (`arndt2024`, `huintjes2015`) | `<= 0.34` (`arndt2024`, `huintjes2015`) | `<= 0.36` (`arndt2024`, `huintjes2015`) | `arndt2024`, `huintjes2015` |
+| `surfMB` | `r` | maximize | no cited threshold | `>= 0.83` (`huintjes2015`) | `>= 0.73` (`huintjes2015`) | `huintjes2015` |
+
+### Additional validated point-snow result already recorded in this KI body
+
+| Site / station | Period | Forcing | Configuration note | Metrics |
+|----------------|--------|---------|--------------------|---------|
+| Canadian Historical Daily Snow Depth Database station `117CA90` GLACIER NP MT FIDELITY | WY2001-2014; NASA POWER 2009-2014; skip WY2010 as spinup; eval-start `2010-08-01` | Daily NASA POWER | point-snow constants template, `mult_factor_RRR = 1.7` | overall NSE `0.892` / KGE `0.829` / r `0.952` / PBIAS `-1.5%`; cal WY2011-12 NSE `0.890`; val WY2013-14 NSE `0.890` |
+
+### Data replacement tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Atmospheric forcing | `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER | documented | See `data_ki/CMFD/SKILL.md`. |
+| Snow observations | SNOTEL or Canadian Historical Daily Snow Depth Database CSV extraction | documented; no obs-reader tool exists in this KI | Use `parse_output.py --mode compare` after extracting observations. |
+| Static glacier inputs | `tools/convert_static.py` or 1x1 `MASK=1` point column | documented | Point seasonal-snow runs bypass `convert_static.py`. |
+| COSIPY execution | `tools/run_cosipy.py` | documented | Uses the h5netcdf shim on this host when needed. |
 
 ---
 

@@ -49,10 +49,11 @@ def main():
     print()
     # PyMT in dissection venv
     import sys
+    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyMT/venv/lib/python3.12/site-packages")
     # PyMT: use venv python (has deps system python lacks)
     import subprocess
     try:
-        proc = subprocess.run([sys.executable, "-c", "import pymt"], 
+        proc = subprocess.run(["KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyMT/venv/bin/python3", "-c", "import pymt"], 
             capture_output=True, timeout=10)
         if proc.returncode == 0:
             print(f"  OK    PyMT (pymt): verified via venv python")

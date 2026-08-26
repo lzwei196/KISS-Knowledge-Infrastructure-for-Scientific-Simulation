@@ -1,270 +1,484 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: PHREEQC Knowledge Infrastructure
-  domain: water_quality
-  binary_path: ''
-  language: unknown
+  name: PHREEQC
+  language: c++
+  implementation:
+    id: phreeqc-3
+    version: 3.8.9
+    provenance: C++ (C++11); USGS public-domain PHREEQC version 3 command-line executable, evolved from
+      the Fortran PHREEQE lineage, with an embedded Basic interpreter for user-defined rate equations.
+  scientific_reference_version: PHREEQC version 3 (USGS Techniques and Methods 6-A43, Parkhurst & Appelo
+    2013)
 inputs:
   forcing:
-  - name: Temperature
-    unit: Celsius
-    format: ''
-    source: skill_md
-  - name: Pressure
-    unit: bar
-    format: ''
-    source: skill_md
+  - name: Influent boundary solution composition (TRANSPORT cell 0)
+    unit: mol/kgw
+    category: boundary_solute_flux
+    source_kind: user_provided
+    model_input_format: SOLUTION 0 block; advected into the domain each transport shift
+    notes: Time-varying driver only in transport mode; in batch mode there is no per-timestep forcing.
+  - name: Flow/velocity field (coupled mode)
+    unit: m/s
+    category: external_flow
+    source_kind: forcing
+    model_input_format: supplied by external flow model in PHT3D/PHAST-style coupling; not native to standalone
+      PHREEQC
+  parameters:
+  - name: Thermodynamic database (log_k, delta_h, activity-model parameters)
+    unit: log_k dimensionless; delta_h kJ/mol
+    category: thermodynamic_database
+    source_kind: dataset_lookup
+    model_input_format: .dat file selected via DATABASE (phreeqc.dat, wateq4f.dat, minteq.dat, llnl.dat,
+      pitzer.dat, sit.dat, iso.dat); must define SOLUTION_MASTER_SPECIES for every element used
+    notes: Database choice fixes element coverage, equilibrium constants, and activity model (ion-association
+      vs Pitzer vs SIT).
+  - name: Mineral/phase log_k
+    unit: dimensionless
+    category: mineral_thermodynamics
+    source_kind: calibrated
+    model_input_format: PHASES block; high sensitivity
+  - name: Kinetic rate constant
+    unit: mol/m2/s (rate-expression dependent)
+    category: kinetics
+    source_kind: calibrated
+    model_input_format: RATES Basic expression; typical 1e-12 to 1e-6; time in seconds
+  - name: Cation exchange capacity / selectivity coefficients
+    unit: mol/kgw; selectivity dimensionless
+    category: exchange
+    source_kind: calibrated
+    model_input_format: EXCHANGE / EXCHANGE_SPECIES blocks; typical CEC 0.001-1 mol/kgw
+  - name: Surface site density and area; intrinsic surface-complexation constants
+    unit: site density mol/kgw; area m2/g; log_k dimensionless
+    category: surface
+    source_kind: calibrated
+    model_input_format: SURFACE block; site density typically 0.001-1 mol/kgw
+  - name: Dispersivity, diffusion coefficient, porosity, cell length, number of cells
+    unit: dispersivity m; diffusion m2/s; porosity fraction; length m; cells count
+    category: transport_geometry
+    source_kind: calibrated
+    model_input_format: TRANSPORT block; dispersivity 0.01-100 m, diffusion 1e-10 to 1e-9 m2/s, porosity
+      0.01-0.5
+    notes: Dispersivity and porosity are high-sensitivity; cell count is a grid parameter governed by
+      Peclet/Courant constraints.
+  initial_conditions:
+  - name: Initial domain solution composition (TRANSPORT cells 1..N)
+    unit: mol/kgw
+    category: domain_chemistry
+    source_kind: user_provided
+    model_input_format: SOLUTION 1-N blocks defining starting per-cell chemistry
+  - name: Initial mineral/phase moles in EQUILIBRIUM_PHASES
+    unit: mol
+    category: phase_inventory
+    source_kind: user_provided
+    model_input_format: second numeric field after the SI target; 0 = precipitate-only, large value =
+      dissolution allowed
+  - name: Initial exchanger / surface / gas / solid-solution / kinetic reactant amounts
+    unit: mol or mol/kgw
+    category: reactant_state
+    source_kind: user_provided
+    model_input_format: EXCHANGE / SURFACE / GAS_PHASE / SOLID_SOLUTIONS / KINETICS blocks; SAVE/USE-able
+      numbered states
+  boundary_conditions:
+  - name: Solution temperature, pH, pe (or Eh), pressure, density, concentration units
+    unit: temp C; pH/pe dimensionless; pressure atm; density kg/L; units mg/L|ug/L|mmol/kgw|mol/kgw
+    category: solution_state
+    source_kind: user_provided
+    model_input_format: SOLUTION block headers; -Eh keyword supplies redox in mV (pe = Eh(mV)/59.16 at
+      25C); 'units' keyword controls interpretation of all element concentrations
+  - name: Element total concentrations with oxidation-state and reporting-basis qualifiers
+    unit: per units keyword
+    category: element_specification
+    source_kind: user_provided
+    model_input_format: SOLUTION element lines; oxidation-state notation S(6)/C(4)/N(-3)/N(5); 'as' qualifier
+      (as HCO3, as CaCO3, as SiO2, as SO4)
+  - name: Reaction/temperature/pressure sweeps, mixing, charge-balance target
+    unit: dimensionless / per-block
+    category: reaction_control
+    source_kind: user_provided
+    model_input_format: REACTION / REACTION_TEMPERATURE / REACTION_PRESSURE / MIX blocks; 'charge' keyword
+      on a chosen ion or pH
+  - name: Thermodynamic database selector
+    unit: n/a
+    category: database_selection
+    source_kind: user_provided
+    model_input_format: DATABASE keyword (first line) or command-line database argument
+  - name: Transport time step, shifts, boundary condition type, stagnant-zone options
+    unit: time step s; shifts count
+    category: transport_control
+    source_kind: user_provided
+    model_input_format: TRANSPORT -time_step / -shifts / -boundary_conditions; ADVECTION for dispersion-free
+      1-D
 outputs:
   primary:
-  - name: Temperature
-    unit: Celsius
-    format: ''
-    source: skill_md
-  - name: Concentration
-    unit: mg/L (ppm)
-    format: ''
-    source: skill_md
-  - name: total_nitrogen
-    canonical_id: total_nitrogen
-    unit: mgN/L
-  - name: total_phosphorus
-    canonical_id: total_phosphorus
-    unit: mgP/L
-  - name: dissolved_oxygen
-    canonical_id: dissolved_oxygen
-    unit: mg/L
-  - name: chlorophyll_a
-    canonical_id: chlorophyll_a
-    unit: ug/L
+  - name: pH
+    unit: dimensionless
+    description: Negative log of hydrogen-ion activity in the modeled water solution
+    validation_rank: 1
+    emitted_in: output.pqo; .sel via SELECTED_OUTPUT -pH
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Equilibrium endpoint; compare against measured field/lab pH at the same temperature and CO2
+          condition.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Time series only meaningful in KINETICS/TRANSPORT mode.
+      detrending_options:
+      - none
+  - name: pe
+    unit: dimensionless
+    description: Negative log of electron activity in the modeled water solution (redox state)
+    validation_rank: 2
+    emitted_in: output.pqo; .sel via SELECTED_OUTPUT -pe
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Field Eh is often poorly poised; convert measured Eh to pe (pe = Eh(mV)/59.16 at 25C) before
+          comparison.
+      detrending_options:
+      - none
+  - name: element_totals
+    unit: mol/kgw
+    description: Total dissolved concentration of each element in the modeled water solution
+    validation_rank: 3
+    emitted_in: output.pqo; .sel via SELECTED_OUTPUT -totals
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Output is molal (mol/kgw); convert to mg/L for lab comparison (mg/L = molality * MW * 1000 *
+          density).
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Time series applies to transport breakthrough or kinetic evolution at a fixed cell.
+      detrending_options:
+      - none
+  - name: species_distribution
+    unit: mol/kgw molality; dimensionless activity
+    description: Speciated aqueous species molalities, activities, and activity coefficients in the modeled
+      water solution
+    validation_rank: 4
+    emitted_in: output.pqo; .sel via -molalities / -activities
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Individual species activities are rarely measured directly; usually validated indirectly via
+          totals, pH, and SI.
+      detrending_options:
+      - none
+  - name: saturation_index
+    unit: dimensionless
+    description: Mineral saturation index for the modeled water solution, log(IAP/K) per phase; >0 supersaturated,
+      <0 undersaturated, 0 equilibrium
+    validation_rank: 5
+    emitted_in: output.pqo; .sel via -saturation_indices
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - SI depends strongly on the chosen thermodynamic database; benchmark cases expect SI~0 for equilibrated
+          minerals (e.g., calcite).
+      detrending_options:
+      - none
+  - name: ionic_strength
+    unit: mol/kgw
+    description: Ionic strength of the modeled water solution
+    validation_rank: 6
+    emitted_in: output.pqo; .sel via -ionic_strength
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Diagnostic; >0.7 mol/kgw signals the ion-association activity model is out of range and Pitzer
+          should be used.
+      detrending_options:
+      - none
+  - name: specific_conductance
+    unit: uS/cm
+    description: Calculated electrical conductivity of the modeled water solution
+    validation_rank: 7
+    emitted_in: output.pqo
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Directly comparable to field EC measurements.
+      detrending_options:
+      - none
+  - name: phase_amounts
+    unit: mol
+    description: Moles transferred (dissolved/precipitated) for each mineral, gas, exchanger, surface,
+      or solid-solution reactant
+    validation_rank: 8
+    emitted_in: output.pqo; .sel via -equilibrium_phases
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Mass-transfer amounts compared against batch-experiment or inverse-model mole balances.
+      detrending_options:
+      - none
+  - name: transport_profiles
+    unit: mol/kgw vs cell/time
+    description: Solute concentration profiles in 1-D column water over cells and time shifts (breakthrough
+      curves)
+    validation_rank: 9
+    emitted_in: output.pqo; .sel per shift
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Breakthrough at a fixed column position; validate against analytical Ogata-Banks solution or
+          column-experiment data.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - 1-D profile along the column at a fixed time.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: '{''description'': ''Element concentrations in output are ~1000x too
-    high or too low compared to expected values'', ''error_pattern'': ''Molality values
-    orders of magnitude off from expected'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Input concentrations in mg/L but PHREEQC units
-    keyword set to mol/kgw, or vice versa'', ''explanation'': ''PHREEQC interprets
-    numeric values according to the units keyword. If data is in m'
-  detection: '{''root_cause'': ''Input concentrations in mg/L but PHREEQC units keyword
-    set to mol/kgw, or vice versa'', ''explanation'': ''PHREEQC interprets numeric
-    values according to the units keyword. If data is in m'
-  fix: '{''action'': ''Verify and correct the units keyword in SOLUTION block'', ''tool_to_run'':
-    ''convert_solution_input.py'', ''manual_steps'': [''Check lab report for concentration
-    units'', ''Set SOLUTION units keywor'
+  symptom: Element concentrations in output are ~1000x too high or too low compared to expected values
+  diagnosis: Input concentrations in mg/L but PHREEQC units keyword set to mol/kgw, or vice versa; PHREEQC
+    interprets numeric values according to the units keyword. If data is in mg/L but units says mol/kgw,
+    every value is treated as moles per kilogram water, making concentrations ~(molecular weight * 1000)x
+    too
+  remedy: 'Verify and correct the units keyword in SOLUTION block; convert_solution_input.py; [''Check
+    lab report for concentration units'', ''Set SOLUTION units keyword to match: mg/L, ug/L, mmol/kgw,
+    or mol/kgw'', ''Re-run and verify output concentrations match expected ranges'']; Always explicitly
+    specify units i'
+  severity: silent
 - id: dt_002
-  description: '{''description'': ''Redox speciation is completely wrong - Fe3+/Fe2+
-    or As5+/As3+ ratios inverted'', ''error_pattern'': ''pe values unreasonable (e.g.,
-    pe=200 instead of pe=3)'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Eh (mV) entered directly as pe without conversion'',
-    ''explanation'': ''pe = Eh(V) * F / (2.303 * R * T_K). At 25C, pe = Eh(mV) / 59.16.
-    If Eh=200 mV is entered as pe=200, the system appea'
-  detection: '{''root_cause'': ''Eh (mV) entered directly as pe without conversion'',
-    ''explanation'': ''pe = Eh(V) * F / (2.303 * R * T_K). At 25C, pe = Eh(mV) / 59.16.
-    If Eh=200 mV is entered as pe=200, the system appea'
-  fix: '{''action'': ''Convert Eh to pe before input'', ''tool_to_run'': ''convert_solution_input.py'',
-    ''manual_steps'': [''Identify whether field data reports Eh (mV) or pe'', ''Convert:
-    pe = Eh(mV) / 59.16 at 25C'', ''Fo'
+  symptom: Redox speciation is completely wrong - Fe3+/Fe2+ or As5+/As3+ ratios inverted
+  diagnosis: 'Eh (mV) entered directly as pe without conversion; pe = Eh(V) * F / (2.303 * R * T_K). At
+    25C, pe = Eh(mV) / 59.16. If Eh=200 mV is entered as pe=200, the system appears extremely oxidizing,
+    shifting all redox couples to their most oxidized forms.
+
+    ; [''SOLUTION'', ''redox_speciation'', ''Fe_species'', ''As'
+  remedy: 'Convert Eh to pe before input; convert_solution_input.py; [''Identify whether field data reports
+    Eh (mV) or pe'', ''Convert: pe = Eh(mV) / 59.16 at 25C'', ''For other temperatures: pe = Eh(V) * 96485
+    / (2.303 * 8.314 * T_K)'']; Always label Eh vs pe clearly in data files; use converter tool'
+  severity: silent
 - id: dt_003
-  description: '{''description'': ''Alkalinity/DIC concentration is exactly 2x too
-    high or too low'', ''error_pattern'': ''C(4) molality double or half the expected
-    value'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': "Alkalinity reported as mg/L CaCO3 but entered
-    without ''as CaCO3'' qualifier", ''explanation'': ''CaCO3 has a molecular weight
-    of 100 g/mol and provides 2 equivalents of alkalinity. If 200 '
-  detection: '{''root_cause'': "Alkalinity reported as mg/L CaCO3 but entered without
-    ''as CaCO3'' qualifier", ''explanation'': ''CaCO3 has a molecular weight of 100
-    g/mol and provides 2 equivalents of alkalinity. If 200 '
-  fix: '{''action'': "Use ''as CaCO3'' or ''as HCO3'' qualifier", ''manual_steps'':
-    [''Identify alkalinity reporting format in lab data'', ''Use: Alkalinity 200 as
-    CaCO3  (for mg/L CaCO3)'', ''Or: C(4) 244 as HCO3  (for m'
+  symptom: Alkalinity/DIC concentration is exactly 2x too high or too low
+  diagnosis: Alkalinity reported as mg/L CaCO3 but entered without 'as CaCO3' qualifier; CaCO3 has a molecular
+    weight of 100 g/mol and provides 2 equivalents of alkalinity. If 200 mg/L as CaCO3 is entered as 200
+    mg/L of C(4), PHREEQC interprets it as 200/12.011 = 16.65 mmol/L of carbon instead of the correct
+    200
+  remedy: 'Use ''as CaCO3'' or ''as HCO3'' qualifier; [''Identify alkalinity reporting format in lab data'',
+    ''Use: Alkalinity 200 as CaCO3  (for mg/L CaCO3)'', ''Or: C(4) 244 as HCO3  (for mg/L HCO3)'', ''Or
+    convert to meq/L and enter as: Alkalinity 4.0 (meq/L)'']; Always use ''as'' qualifier for alkalinity
+    species'
+  severity: silent
 - id: dt_004
-  description: '{''description'': ''Exchange reactions dominate unrealistically -
-    all Na displaced, extreme Ca/Na ratios'', ''error_pattern'': ''Exchange capacity
-    orders of magnitude too large'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''CEC from HWSD (cmol+/kg) entered directly as
-    mol in EXCHANGE block'', ''explanation'': ''HWSD reports CEC in cmol(+)/kg soil
-    = meq/100g soil. PHREEQC EXCHANGE needs mol per kg water. The c'
-  detection: '{''root_cause'': ''CEC from HWSD (cmol+/kg) entered directly as mol
-    in EXCHANGE block'', ''explanation'': ''HWSD reports CEC in cmol(+)/kg soil =
-    meq/100g soil. PHREEQC EXCHANGE needs mol per kg water. The c'
-  fix: '{''action'': ''Convert CEC properly: mol_kgw = CEC_cmol/100 * bulk_density
-    / porosity'', ''tool_to_run'': ''convert_soil_params.py'', ''manual_steps'': [''Get
-    CEC in cmol+/kg from HWSD'', ''Divide by 100 to get mo'
+  symptom: Exchange reactions dominate unrealistically - all Na displaced, extreme Ca/Na ratios
+  diagnosis: 'CEC from HWSD (cmol+/kg) entered directly as mol in EXCHANGE block; HWSD reports CEC in
+    cmol(+)/kg soil = meq/100g soil. PHREEQC EXCHANGE needs mol per kg water. The conversion requires:
+    (1) divide by 100 to get mol/kg soil, (2) multiply by bulk_density/porosity to convert soil mass to
+    water mass. E'
+  remedy: 'Convert CEC properly: mol_kgw = CEC_cmol/100 * bulk_density / porosity; convert_soil_params.py;
+    [''Get CEC in cmol+/kg from HWSD'', ''Divide by 100 to get mol/kg soil'', ''Multiply by bulk_density
+    (g/cm3) / porosity (dimensionless)'', ''Enter result as mol in EXCHANGE block'']; Always use convert_soil_param'
+  severity: silent
 - id: dt_005
-  description: '{''description'': ''Transport dispersion is 100x too large - concentration
-    fronts are completely smeared'', ''error_pattern'': ''Dispersivity >> expected
-    from tracer tests'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Dispersivity entered in centimeters instead
-    of meters'', ''explanation'': ''PHREEQC TRANSPORT block uses meters for all length
-    units. If dispersivity is measured as 5 cm but entered as 5 ('
-  detection: '{''root_cause'': ''Dispersivity entered in centimeters instead of meters'',
-    ''explanation'': ''PHREEQC TRANSPORT block uses meters for all length units. If
-    dispersivity is measured as 5 cm but entered as 5 ('
-  fix: '{''action'': ''Convert dispersivity to meters'', ''manual_steps'': [''Check
-    dispersivity units in source data'', ''Convert cm -> m (divide by 100)'', ''Verify
-    grid Peclet number > 2: Pe = cell_length / dispersiv'
+  symptom: Transport dispersion is 100x too large - concentration fronts are completely smeared
+  diagnosis: 'Dispersivity entered in centimeters instead of meters; PHREEQC TRANSPORT block uses meters
+    for all length units. If dispersivity is measured as 5 cm but entered as 5 (m), dispersion is 100x
+    too large. The grid Peclet number (dx/alpha) also drops below 2, causing numerical oscillations.
+
+    ; [''TRANSPORT'
+  remedy: 'Convert dispersivity to meters; [''Check dispersivity units in source data'', ''Convert cm
+    -> m (divide by 100)'', ''Verify grid Peclet number > 2: Pe = cell_length / dispersivity'']; Always
+    specify and verify length units for transport parameters'
+  severity: silent
 - id: dt_006
-  description: '{''description'': ''Transport concentration profile is shifted by
-    one cell relative to expected'', ''error_pattern'': ''Breakthrough curve arrives
-    one step too early or late'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Confusion between cell 0 (boundary) and cell
-    1 (first domain cell)'', ''explanation'': ''In PHREEQC TRANSPORT, cell 0 is the
-    influent boundary condition, not part of the domain. Cells 1 th'
-  detection: '{''root_cause'': ''Confusion between cell 0 (boundary) and cell 1 (first
-    domain cell)'', ''explanation'': ''In PHREEQC TRANSPORT, cell 0 is the influent
-    boundary condition, not part of the domain. Cells 1 th'
-  fix: '{''action'': ''Use cell numbering 1-N for domain, 0 for boundary'', ''manual_steps'':
-    [''Set SOLUTION 0 as the influent (boundary) water'', ''Set SOLUTION 1-N as the
-    initial pore water in each cell'', ''Set EQUI'
+  symptom: Transport concentration profile is shifted by one cell relative to expected
+  diagnosis: Confusion between cell 0 (boundary) and cell 1 (first domain cell); In PHREEQC TRANSPORT,
+    cell 0 is the influent boundary condition, not part of the domain. Cells 1 through N are the actual
+    transport domain. If initial conditions are set for cells 0-N instead of 1-N, the boundary cell gets
+    initial c
+  remedy: Use cell numbering 1-N for domain, 0 for boundary; ['Set SOLUTION 0 as the influent (boundary)
+    water', 'Set SOLUTION 1-N as the initial pore water in each cell', 'Set EQUILIBRIUM_PHASES, EXCHANGE
+    etc. for cells 1-N']; Always verify cell 0 = boundary, 1-N = domain
+  severity: degraded
 - id: dt_007
-  description: '{''description'': "PHREEQC crashes with ''Numerical method failed
-    to converge'' or exits with non-zero code", ''error_pattern'': ''Numerical method
-    failed|convergence|exceeded maximum iterations'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''Initial conditions too far from equilibrium
-    for Newton-Raphson solver'', ''explanation'': ''PHREEQC uses Newton-Raphson iteration
-    which requires reasonable initial guesses. If the initial '
-  detection: '{''root_cause'': ''Initial conditions too far from equilibrium for Newton-Raphson
-    solver'', ''explanation'': ''PHREEQC uses Newton-Raphson iteration which requires
-    reasonable initial guesses. If the initial '
-  fix: '{''action'': ''Simplify initial conditions and add reactions stepwise'', ''manual_steps'':
-    [''Start with a simpler system (fewer phases/reactions)'', ''Use REACTION to add
-    reagents in small steps'', ''Use REACTI'
+  symptom: PHREEQC crashes with 'Numerical method failed to converge' or exits with non-zero code
+  diagnosis: 'Initial conditions too far from equilibrium for Newton-Raphson solver; PHREEQC uses Newton-Raphson
+    iteration which requires reasonable initial guesses. If the initial solution composition is wildly
+    inconsistent (e.g., pH=2 with high alkalinity, or extreme redox + mineral equilibria), the solver
+    may '
+  remedy: Simplify initial conditions and add reactions stepwise; ['Start with a simpler system (fewer
+    phases/reactions)', 'Use REACTION to add reagents in small steps', 'Use REACTION_TEMPERATURE for temperature
+    sweeps', 'Check for internally inconsistent initial conditions', 'Try adjusting pe or removing pro
+  severity: fatal
 - id: dt_008
-  description: '{''description'': ''PHREEQC runs out of memory or is killed by OOM
-    during transport simulation'', ''error_pattern'': ''Killed|MemoryError|segmentation
-    fault'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''Too many cells or excessive SELECTED_OUTPUT
-    print frequency'', ''explanation'': ''Each transport cell stores a full solution
-    composition. With many cells (>1000) and many species (using ll'
-  detection: '{''root_cause'': ''Too many cells or excessive SELECTED_OUTPUT print
-    frequency'', ''explanation'': ''Each transport cell stores a full solution composition.
-    With many cells (>1000) and many species (using ll'
-  fix: '{''action'': ''Reduce cells or print frequency'', ''manual_steps'': [''Reduce
-    number of transport cells'', ''Add -print_frequency N to TRANSPORT (print every
-    N shifts)'', ''Reduce SELECTED_OUTPUT columns'', ''Use '
+  symptom: PHREEQC runs out of memory or is killed by OOM during transport simulation
+  diagnosis: Too many cells or excessive SELECTED_OUTPUT print frequency; Each transport cell stores a
+    full solution composition. With many cells (>1000) and many species (using llnl.dat), memory can exceed
+    available RAM. Additionally, SELECTED_OUTPUT with many columns and high print frequency creates very
+    large
+  remedy: Reduce cells or print frequency; ['Reduce number of transport cells', 'Add -print_frequency
+    N to TRANSPORT (print every N shifts)', 'Reduce SELECTED_OUTPUT columns', 'Use a simpler database
+    with fewer species']; Start with coarse grid, refine only when needed
+  severity: fatal
 - id: dt_009
-  description: '{''description'': ''Error: Element not found in database'', ''error_pattern'':
-    ''Element.*not found|Unknown.*element'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''Solution contains elements not defined in the
-    selected thermodynamic database'', ''explanation'': "Each database covers a specific
-    set of elements. phreeqc.dat lacks many trace elements ('
-  detection: '{''root_cause'': ''Solution contains elements not defined in the selected
-    thermodynamic database'', ''explanation'': "Each database covers a specific set
-    of elements. phreeqc.dat lacks many trace elements ('
-  fix: '{''action'': ''Switch to a database that includes the missing element'', ''manual_steps'':
-    [''Identify the missing element from the error message'', ''Check element coverage:
-    phreeqc.dat < wateq4f.dat < llnl.d'
+  symptom: 'Error: Element not found in database'
+  diagnosis: Solution contains elements not defined in the selected thermodynamic database; Each database
+    covers a specific set of elements. phreeqc.dat lacks many trace elements (As, U, Se, Ni, etc.). If
+    the SOLUTION block references an element not in the database's SOLUTION_MASTER_SPECIES section, PHREEQC
+    erro
+  remedy: 'Switch to a database that includes the missing element; [''Identify the missing element from
+    the error message'', ''Check element coverage: phreeqc.dat < wateq4f.dat < llnl.dat'', ''Switch DATABASE
+    to one that includes the element'', ''Alternatively, remove the element from SOLUTION if not critical''];
+    Run '
+  severity: fatal
 - id: dt_010
-  description: '{''description'': ''Activity coefficients incorrect for brine - mineral
-    SIs differ from published values by >1 unit'', ''error_pattern'': ''Ionic strength
-    > 0.7 with non-Pitzer database'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Using ion-association database for high ionic
-    strength solution'', ''explanation'': ''The Davies and B-dot equations in phreeqc.dat/wateq4f.dat
-    are valid only for ionic strength < ~0.7 mol'
-  detection: '{''root_cause'': ''Using ion-association database for high ionic strength
-    solution'', ''explanation'': ''The Davies and B-dot equations in phreeqc.dat/wateq4f.dat
-    are valid only for ionic strength < ~0.7 mol'
-  fix: '{''action'': ''Use pitzer.dat for solutions with I > 0.7'', ''manual_steps'':
-    [''Calculate ionic strength from solution composition'', ''If I > 0.7 mol/kgw,
-    switch to pitzer.dat'', ''Verify all elements are avai'
+  symptom: Activity coefficients incorrect for brine - mineral SIs differ from published values by >1
+    unit
+  diagnosis: Using ion-association database for high ionic strength solution; The Davies and B-dot equations
+    in phreeqc.dat/wateq4f.dat are valid only for ionic strength < ~0.7 mol/kgw. For brines and evaporites,
+    the Pitzer model (pitzer.dat) must be used. Using the wrong model silently produces incorrect activi
+  remedy: Use pitzer.dat for solutions with I > 0.7; ['Calculate ionic strength from solution composition',
+    'If I > 0.7 mol/kgw, switch to pitzer.dat', 'Verify all elements are available in pitzer.dat (fewer
+    elements)', 'If elements missing from pitzer.dat, consider SIT model (sit.dat)']; Check ionic strength
+  severity: silent
 - id: dt_011
-  description: '{''description'': ''Error opening database file'', ''error_pattern'':
-    ''ERROR:.*database|Could not open'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''Database path is incorrect or relative path
-    resolves wrong'', ''explanation'': ''PHREEQC resolves database paths relative
-    to the current working directory, not relative to the input file l'
-  detection: '{''root_cause'': ''Database path is incorrect or relative path resolves
-    wrong'', ''explanation'': ''PHREEQC resolves database paths relative to the current
-    working directory, not relative to the input file l'
-  fix: '{''action'': ''Use absolute path or verify CWD'', ''manual_steps'': [''Use
-    absolute path: /full/path/to/database/phreeqc.dat'', ''Or cd to the directory
-    containing the database before running'', ''Or use DATABAS'
+  symptom: Error opening database file
+  diagnosis: 'Database path is incorrect or relative path resolves wrong; PHREEQC resolves database paths
+    relative to the current working directory, not relative to the input file location. If running from
+    a different directory, the database path must be adjusted.
+
+    ; [''database'', ''startup'']'
+  remedy: 'Use absolute path or verify CWD; [''Use absolute path: /full/path/to/database/phreeqc.dat'',
+    ''Or cd to the directory containing the database before running'', ''Or use DATABASE keyword in input
+    file with correct path'']; Always use absolute paths in scripts and wrappers'
+  severity: fatal
 - id: dt_012
-  description: '{''description'': ''SELECTED_OUTPUT file not created or empty'', ''error_pattern'':
-    ''selected output file missing'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': "SELECTED_OUTPUT -file path contains directory
-    that doesn''t exist", ''explanation'': "PHREEQC does not create parent directories
-    for output files. If -file points to a subdirectory that d'
-  detection: '{''root_cause'': "SELECTED_OUTPUT -file path contains directory that
-    doesn''t exist", ''explanation'': "PHREEQC does not create parent directories
-    for output files. If -file points to a subdirectory that d'
-  fix: '{''action'': ''Create output directory before running'', ''manual_steps'':
-    [''mkdir -p output_directory/'', ''Use -file output_directory/results.sel'', ''Or
-    use a simple filename without directory path''], ''preve'
+  symptom: SELECTED_OUTPUT file not created or empty
+  diagnosis: 'SELECTED_OUTPUT -file path contains directory that doesn''t exist; PHREEQC does not create
+    parent directories for output files. If -file points to a subdirectory that doesn''t exist, the selected
+    output file is silently not created (no error, just missing file).
+
+    ; [''SELECTED_OUTPUT'', ''output_files'']'
+  remedy: Create output directory before running; ['mkdir -p output_directory/', 'Use -file output_directory/results.sel',
+    'Or use a simple filename without directory path']; Use run_phreeqc.py wrapper which creates directories
+  severity: fatal
 - id: dt_013
-  description: '{''description'': ''Charge balance error > 10% in output despite correct
-    input data'', ''error_pattern'': ''Percent error.*>.*5'', ''detection_method'':
-    ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Missing major ion in input or incorrect alkalinity'',
-    ''explanation'': ''If a major cation or anion is omitted from the SOLUTION block,
-    the charge balance will be poor. This does not preve'
-  detection: '{''root_cause'': ''Missing major ion in input or incorrect alkalinity'',
-    ''explanation'': ''If a major cation or anion is omitted from the SOLUTION block,
-    the charge balance will be poor. This does not preve'
-  fix: '{''action'': ''Add missing ions or use charge balance adjustment'', ''manual_steps'':
-    [''Check which ions contribute most to charge imbalance'', ''Add missing major
-    ions from lab data'', "If data is incomplete,'
+  symptom: Charge balance error > 10% in output despite correct input data
+  diagnosis: 'Missing major ion in input or incorrect alkalinity; If a major cation or anion is omitted
+    from the SOLUTION block, the charge balance will be poor. This does not prevent PHREEQC from running
+    but produces unreliable speciation. Common missing ions: SO4, Na, K (often in trace amounts in lab
+    reports bu'
+  remedy: Add missing ions or use charge balance adjustment; ['Check which ions contribute most to charge
+    imbalance', 'Add missing major ions from lab data', "If data is incomplete, add 'charge' keyword to
+    one ion (usually Cl or SO4)"]; Always include all major ions; verify charge balance before modeling
+  severity: degraded
 - id: dt_014
-  description: '{''description'': ''Concentration values seem wrong when converting
-    PHREEQC output to mg/L'', ''error_pattern'': "mg/L values don''t match lab data
-    or expected ranges", ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Forgot that PHREEQC output totals are in mol/kgw,
-    not mg/L'', ''explanation'': ''PHREEQC always reports element totals in mol/kgw
-    (molality) in the full output, regardless of input units. '
-  detection: '{''root_cause'': ''Forgot that PHREEQC output totals are in mol/kgw,
-    not mg/L'', ''explanation'': ''PHREEQC always reports element totals in mol/kgw
-    (molality) in the full output, regardless of input units. '
-  fix: '{''action'': ''Convert mol/kgw to mg/L in post-processing'', ''tool_to_run'':
-    ''parse_output.py'', ''manual_steps'': [''mg/L = molality * atomic_weight * 1000'',
-    ''For Ca: mg/L = mol/kgw * 40.078 * 1000'', ''For com'
+  symptom: Concentration values seem wrong when converting PHREEQC output to mg/L
+  diagnosis: 'Forgot that PHREEQC output totals are in mol/kgw, not mg/L; PHREEQC always reports element
+    totals in mol/kgw (molality) in the full output, regardless of input units. To convert back to mg/L:
+    mg/L = molality * molecular_weight * 1000 * solution_density. For dilute solutions, density ≈ 1 so
+    mg/L ≈ mo'
+  remedy: 'Convert mol/kgw to mg/L in post-processing; parse_output.py; [''mg/L = molality * atomic_weight
+    * 1000'', ''For Ca: mg/L = mol/kgw * 40.078 * 1000'', ''For compound-reported elements (e.g., SiO2):
+    use compound MW'']; Use SELECTED_OUTPUT with appropriate units or convert in parser'
+  severity: silent
 - id: dt_015
-  description: '{''description'': ''Selected output file parsed incorrectly - all
-    data in single column'', ''error_pattern'': ''DataFrame has 1 column instead of
-    expected many'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Tab-delimited .sel file parsed with comma separator'',
-    ''explanation'': "PHREEQC SELECTED_OUTPUT files (.sel) use tab characters as delimiters.
-    Using pd.read_csv with default sep='','' or s'
-  detection: '{''root_cause'': ''Tab-delimited .sel file parsed with comma separator'',
-    ''explanation'': "PHREEQC SELECTED_OUTPUT files (.sel) use tab characters as delimiters.
-    Using pd.read_csv with default sep='','' or s'
-  fix: '{''action'': "Use sep=''\\t'' when reading .sel files", ''tool_to_run'': ''parse_output.py'',
-    ''manual_steps'': ["df = pd.read_csv(''file.sel'', sep=''\\t'')", ''Verify column
-    count matches expected''], ''prevention'':'
+  symptom: Selected output file parsed incorrectly - all data in single column
+  diagnosis: 'Tab-delimited .sel file parsed with comma separator; PHREEQC SELECTED_OUTPUT files (.sel)
+    use tab characters as delimiters. Using pd.read_csv with default sep='','' or sep='';'' produces a
+    single column containing the entire row as a string.
+
+    ; [''post_processing'', ''data_analysis'']'
+  remedy: Use sep='\t' when reading .sel files; parse_output.py; ["df = pd.read_csv('file.sel', sep='\\t')",
+    'Verify column count matches expected']; Always use parse_output.py which handles delimiters correctly
+  severity: silent
 - id: dt_016
-  description: '{''description'': ''Kinetic reaction rate is ~86400x too fast or too
-    slow'', ''error_pattern'': ''Mineral dissolves/precipitates in minutes instead
-    of days (or vice versa)'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Rate constant in per-day or per-year units
-    but PHREEQC KINETICS uses seconds'', ''explanation'': ''The -steps keyword in
-    KINETICS defines time in seconds. Rate expressions in RATES blocks '
-  detection: '{''root_cause'': ''Rate constant in per-day or per-year units but PHREEQC
-    KINETICS uses seconds'', ''explanation'': ''The -steps keyword in KINETICS defines
-    time in seconds. Rate expressions in RATES blocks '
-  fix: '{''action'': ''Convert rate constants to per-second units'', ''manual_steps'':
-    [''Check published rate constant units'', ''Convert: rate_per_s = rate_per_day
-    / 86400'', ''Convert: rate_per_s = rate_per_year / 31'
+  symptom: Kinetic reaction rate is ~86400x too fast or too slow
+  diagnosis: Rate constant in per-day or per-year units but PHREEQC KINETICS uses seconds; The -steps
+    keyword in KINETICS defines time in seconds. Rate expressions in RATES blocks must produce rates in
+    mol/s. If a published rate constant is in mol/m2/day, it must be divided by 86400 before use. Mixing
+    time units
+  remedy: 'Convert rate constants to per-second units; [''Check published rate constant units'', ''Convert:
+    rate_per_s = rate_per_day / 86400'', ''Convert: rate_per_s = rate_per_year / 31536000'', ''Verify
+    TIME variable in RATES is in seconds'']; Always document rate constant units in comments'
+  severity: silent
 - id: dt_017
-  description: '{''description'': ''EQUILIBRIUM_PHASES mineral cannot dissolve - delta
-    moles always zero or positive'', ''error_pattern'': ''Phase moles unchanged despite
-    undersaturation'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Initial moles in EQUILIBRIUM_PHASES set to
-    0'', ''explanation'': "In ''Calcite 0.0 0.0'', the second number (0.0) is the
-    initial moles available. With 0 moles, PHREEQC cannot dissolve the m'
-  detection: '{''root_cause'': ''Initial moles in EQUILIBRIUM_PHASES set to 0'', ''explanation'':
-    "In ''Calcite 0.0 0.0'', the second number (0.0) is the initial moles available.
-    With 0 moles, PHREEQC cannot dissolve the m'
-  fix: '{''action'': ''Set initial moles > 0 for minerals that should dissolve'',
-    ''manual_steps'': ["Change ''Calcite 0.0 0.0'' to ''Calcite 0.0 10.0''", ''Use
-    a large number (10-100) if unlimited dissolution is expect'
+  symptom: EQUILIBRIUM_PHASES mineral cannot dissolve - delta moles always zero or positive
+  diagnosis: 'Initial moles in EQUILIBRIUM_PHASES set to 0; In ''Calcite 0.0 0.0'', the second number
+    (0.0) is the initial moles available. With 0 moles, PHREEQC cannot dissolve the mineral - only precipitation
+    is possible. For dissolution to occur, initial moles must be > 0.
+
+    ; [''EQUILIBRIUM_PHASES'', ''mineral_disso'
+  remedy: Set initial moles > 0 for minerals that should dissolve; ["Change 'Calcite 0.0 0.0' to 'Calcite
+    0.0 10.0'", 'Use a large number (10-100) if unlimited dissolution is expected', 'Use 0 only for minerals
+    that should only precipitate']; Document the meaning of both numbers in EQUILIBRIUM_PHASES
+  severity: silent
 - id: dt_018
-  description: '{''description'': ''Surface complexation adsorption is 10000x too
-    strong or too weak'', ''error_pattern'': ''Unrealistic surface coverage or negligible
-    adsorption'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Surface area in cm2/g instead of m2/g'', ''explanation'':
-    ''PHREEQC SURFACE block expects surface area in m2/g. BET measurements often report
-    in m2/g, but some literature values are in cm2'
-  detection: '{''root_cause'': ''Surface area in cm2/g instead of m2/g'', ''explanation'':
-    ''PHREEQC SURFACE block expects surface area in m2/g. BET measurements often report
-    in m2/g, but some literature values are in cm2'
-  fix: '{''action'': ''Convert surface area to m2/g'', ''manual_steps'': [''1 m2/g
-    = 10,000 cm2/g'', ''Divide cm2/g by 10,000 to get m2/g'', ''Typical values: ferrihydrite
-    600 m2/g, goethite 50 m2/g, kaolinite 20 m2/g'']'
-unit_conversions: []
+  symptom: Surface complexation adsorption is 10000x too strong or too weak
+  diagnosis: Surface area in cm2/g instead of m2/g; PHREEQC SURFACE block expects surface area in m2/g.
+    BET measurements often report in m2/g, but some literature values are in cm2/g. The conversion factor
+    is 1 m2/g = 10,000 cm2/g. Entering cm2/g values directly makes the surface area (and thus adsorption)
+    10,00
+  remedy: 'Convert surface area to m2/g; [''1 m2/g = 10,000 cm2/g'', ''Divide cm2/g by 10,000 to get m2/g'',
+    ''Typical values: ferrihydrite 600 m2/g, goethite 50 m2/g, kaolinite 20 m2/g'']; Always verify surface
+    area units; reference typical values for minerals'
+  severity: silent

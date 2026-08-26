@@ -139,12 +139,11 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
     # Load HWSD soil database for texture lookup
     import pandas as pd
     hwsd_csv = os.path.join(HYDROCRAFT_ROOT, "data/soil/HWSD_DATA.csv")
-    if os.path.exists(hwsd_csv):
-        process._hwsd_df = pd.read_csv(hwsd_csv, low_memory=False)
-        print(f"Loaded HWSD database: {len(process._hwsd_df)} records")
-    else:
-        process._hwsd_df = None
-        print(f"WARNING: HWSD_DATA.csv not found at {hwsd_csv}, using default loam texture")
+    if not os.path.exists(hwsd_csv):
+        # No silent all-loam fallback: that would be a silent-substitution bug
+        raise FileNotFoundError(f"HWSD_DATA.csv not found at {hwsd_csv}")
+    process._hwsd_df = pd.read_csv(hwsd_csv, low_memory=False)
+    print(f"Loaded HWSD database: {len(process._hwsd_df)} records")
 
     with open(domain_json) as f:
         domain = json.load(f)
@@ -175,6 +174,9 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
 
     # For each active surface cell, sample HWSD
     texture_counts = {}
+    texture_names = list(ROSETTA_VAN_GENUCHTEN.keys())  # stable class codes
+    tex_code_2d = np.zeros((ny, nx), dtype=np.int32)
+    default_code = texture_names.index(DEFAULT_TEXTURE) + 1
     with rasterio.open(HWSD_RASTER) as hwsd_src:
         for j in range(ny):
             for i in range(nx):
@@ -210,6 +212,7 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
                             )
 
                 texture_counts[texture] = texture_counts.get(texture, 0) + 1
+                tex_code_2d[j, i] = texture_names.index(texture) + 1
 
                 # Get van Genuchten parameters
                 params = ROSETTA_VAN_GENUCHTEN.get(texture, ROSETTA_VAN_GENUCHTEN[DEFAULT_TEXTURE])
@@ -230,6 +233,21 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
                     s_sat[k, j, i] = ts  # ParFlow Ssat = porosity
                     spec_storage[k, j, i] = ss
 
+    # IndicatorField for the run script (washita LW_Test.py pattern): integer
+    # texture class per cell, replicated over all layers, plus the class->
+    # parameter table the s7 script generator consumes.
+    tex_code_2d[tex_code_2d == 0] = default_code  # outside-basin cells
+    tex_code_3d = np.repeat(tex_code_2d[np.newaxis, :, :], nz, axis=0)
+    tex_params = {}
+    for code in np.unique(tex_code_3d):
+        name = texture_names[int(code) - 1]
+        a, n_vg, tr, ts, ks = ROSETTA_VAN_GENUCHTEN[name]
+        tex_params[int(code)] = {
+            "name": name, "ks_m_hr": ks, "porosity": ts,
+            "alpha_1m": a, "n": n_vg, "sres": tr,
+            "ss_1m": SPECIFIC_STORAGE.get(name, 1.0e-4),
+        }
+
     # Save all arrays
     outputs = {}
     for name, arr in [
@@ -242,6 +260,7 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
         ("residual_saturation", s_res),
         ("saturation_at_saturation", s_sat),
         ("specific_storage", spec_storage),
+        ("texture_indicator", tex_code_3d.astype(np.float64)),
     ]:
         path = os.path.join(output_dir, f"{name}.npy")
         np.save(path, arr)
@@ -269,6 +288,11 @@ def process(domain_json, mask_npy, output_dir, k_anisotropy_ratio=0.1):
                 "max": float(np.max(valid)),
                 "mean": float(np.mean(valid)),
             }
+
+    params_path = os.path.join(output_dir, "texture_params.json")
+    with open(params_path, "w") as f:
+        json.dump(tex_params, f, indent=2)
+    outputs["texture_params_json"] = params_path
 
     result = {
         "status": "success",

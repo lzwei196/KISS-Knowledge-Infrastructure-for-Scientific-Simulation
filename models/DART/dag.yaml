@@ -295,7 +295,7 @@ outputs:
   - var: "analysis ensemble mean (posterior state)"
     validation_rank: 1
     unit: "host-model state units"
-    description: "Posterior ensemble-mean state estimate after assimilation and posterior inflation; the primary analysis product seeding the next cycle."
+    description: "Posterior ensemble-mean estimate in the coupled host model's physical medium (atmosphere, ocean, land, ice, etc.) and state space after assimilation and posterior inflation; the primary analysis product seeding the next cycle."
     emitted_in: "analysis_mean.nc / output_mean.nc"
     observability:
       comparable_obs_shapes:
@@ -316,7 +316,7 @@ outputs:
   - var: "analysis ensemble spread (posterior sd)"
     validation_rank: 2
     unit: "host-model state units"
-    description: "Posterior ensemble standard deviation (N-1 normalized); for a well-calibrated ensemble it should approximately equal the analysis RMSE (spread-skill consistency)."
+    description: "Posterior ensemble standard deviation in the coupled host model's physical medium (atmosphere, ocean, land, ice, etc.) and state space (N-1 normalized); for a well-calibrated ensemble it should approximately equal the analysis RMSE (spread-skill consistency)."
     emitted_in: "analysis_sd.nc / output_sd.nc"
     observability:
       comparable_obs_shapes:
@@ -330,7 +330,7 @@ outputs:
   - var: "observation-space innovations and QC (obs_seq.final)"
     validation_rank: 3
     unit: "observation units"
-    description: "Per-observation prior/posterior ensemble-mean expected obs, prior/posterior spread, and DART_qc flag; prior innovations measure forecast skill, posterior measures analysis fit."
+    description: "Per-observation diagnostics in the coupled host model's physical observation medium (atmosphere, ocean, land, ice, etc.) and observation space: prior/posterior ensemble-mean expected obs, prior/posterior spread, and DART_qc flag; prior innovations measure forecast skill, posterior measures analysis fit."
     emitted_in: "obs_seq.final"
     observability:
       comparable_obs_shapes:
@@ -345,7 +345,7 @@ outputs:
   - var: "binned observation-space diagnostics (bias, rmse, totalspread)"
     validation_rank: 4
     unit: "observation units"
-    description: "Time/region/level-binned innovation statistics (bias = mean innovation, RMSE, totalspread, obs counts used/possible) for verification."
+    description: "Time/region/level-binned observation-space innovation statistics in the coupled host model's physical observation medium (atmosphere, ocean, land, ice, etc.) (bias = mean innovation, RMSE, totalspread, obs counts used/possible) for verification."
     emitted_in: "obs_diag_output.nc"
     observability:
       comparable_obs_shapes:
@@ -551,3 +551,21 @@ safety:
       scope: "boundary geometry"
       source: "DART docs overview and filter program documentation"
       status: "adopted"
+
+medium_evidence:
+  - var: "analysis ensemble mean (posterior state)"
+    source: "SKILL.md"
+    quote: "DART supports 50+ models spanning atmosphere, ocean, land, ice, and idealized dynamical systems."
+    note: "DART is model-agnostic, so state outputs live in the coupled host model's physical medium."
+  - var: "analysis ensemble spread (posterior sd)"
+    source: "SKILL.md"
+    quote: "DART supports 50+ models spanning atmosphere, ocean, land, ice, and idealized dynamical systems."
+    note: "DART is model-agnostic, so spread outputs live in the coupled host model's physical medium."
+  - var: "observation-space innovations and QC (obs_seq.final)"
+    source: "SKILL.md"
+    quote: "DART supports 50+ models spanning atmosphere, ocean, land, ice, and idealized dynamical systems."
+    note: "DART is model-agnostic, so observation-space outputs live in the coupled host model's physical observation medium."
+  - var: "binned observation-space diagnostics (bias, rmse, totalspread)"
+    source: "SKILL.md"
+    quote: "DART supports 50+ models spanning atmosphere, ocean, land, ice, and idealized dynamical systems."
+    note: "DART is model-agnostic, so binned observation diagnostics live in the coupled host model's physical observation medium."

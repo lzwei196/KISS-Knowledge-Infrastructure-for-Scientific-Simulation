@@ -1,0 +1,408 @@
+schema_version: 1
+model_id: COSIPY
+domain: cryosphere
+generated_by: "step-b validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  sauter2020:
+    doi: 10.5194/gmd-13-5645-2020
+    title: "COSIPY v1.3 - an open-source coupled snowpack and ice surface energy and mass balance model"
+    venue: "Geoscientific Model Development"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-5645-2020.txt
+  blau2021:
+    doi: 10.1017/jog.2021.56
+    title: "Surface mass balance and energy balance of the 79N Glacier (Nioghalvfjerdsfjorden, NE Greenland) modeled by linking COSIPY and Polar WRF"
+    venue: "Journal of Glaciology"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1017_jog.2021.56.txt
+  arndt2024:
+    doi: 10.1017/jog.2024.42
+    title: "Surface energy and mass balance of Mera Glacier (Nepal, Central Himalaya) and their sensitivity to temperature and precipitation"
+    venue: "Journal of Glaciology"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1017_jog.2024.42.txt
+  huintjes2015:
+    doi: 10.1657/aaar0014-073
+    title: "Evaluation of a Coupled Snow and Energy Balance Model for Zhadang Glacier, Tibetan Plateau, Using Glaciological Measurements and Time-Lapse Photography"
+    venue: "Arctic, Antarctic, and Alpine Research"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1657_aaar0014-073.txt
+  temme2023:
+    doi: 10.5194/tc-17-2343-2023
+    title: "Strategies for regional modeling of surface mass balance at the Monte Sarmiento Massif, Tierra del Fuego"
+    venue: "The Cryosphere"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-17-2343-2023.txt
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  cullen2007:
+    doi: 10.3189/172756407782871224
+    title: "Energy-balance model validation on the top of Kilimanjaro, Tanzania, using eddy covariance data"
+    venue: "Annals of Glaciology"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3189_172756407782871224.txt
+  conway2013:
+    doi: 10.3189/2013aog63a604
+    title: "Constraining turbulent heat flux parameterization over a temperate maritime glacier in New Zealand"
+    venue: "Annals of Glaciology"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3189_2013aog63a604.txt
+  klein2002:
+    doi: 10.3189/172756402781817662
+    title: "Development and validation of a snow albedo algorithm for the MODIS instrument"
+    venue: "Annals of Glaciology"
+    year: 2002
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3189_172756402781817662.txt
+
+validation:
+  - dag_variable: MB
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m w.e.
+        bands: {very_good: 0.17, good: 0.34, satisfactory: 0.36}
+        pass_band: satisfactory
+        band_note: "Stake/cumulative mass-balance benchmarks: Mera optimized absolute error 0.17 m w.e.; Zhadang COSIMA/COSIPY-predecessor stake RMSE 0.34-0.36 m w.e."
+        cites: [arndt2024, huintjes2015]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.83, satisfactory: 0.73}
+        pass_band: satisfactory
+        band_note: "Zhadang stake mass balance reported R = 0.83 for AWS-forced and R = 0.73 for HAR-forced runs."
+        cites: [huintjes2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag requested NSE, but fetched glacier mass-balance validation papers report RMSE/absolute error and R for stake or cumulative MB rather than an NSE tier."
+        cites: [arndt2024, huintjes2015]
+    validated_when: "Stake or cumulative point MB is validated when RMSE <= 0.36 m w.e. and r >= 0.73, matching the published Zhadang and Mera point-scale benchmark envelope."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Use seasonally aggregated or cumulative MB, not noisy per-step MB. Huintjes reports observations and model results agree within error bounds; Arndt reports an optimized point-MB AE of 0.17 m w.e."
+
+  - dag_variable: MB
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m w.e. yr-1
+        bands: {very_good: 0.16, good: 0.30, satisfactory: 0.56}
+        pass_band: satisfactory
+        band_note: "Regional/geodetic SMB comparison in Monte Sarmiento reports calibration-strategy RMSEs of 0.56, 0.30 and 0.16-0.19 m w.e. yr-1."
+        cites: [temme2023]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched glacier-wide MB paper gives a percent-bias pass threshold for geodetic MB; use RMSE/absolute error instead."
+        cites: []
+    secondary_metrics: []
+    validated_when: "Regional MB is validated on area-weighted RMSE against geodetic or glacier-wide observations; PBIAS is retained from the dag but has no cited numeric band."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Temme describes 'very good agreement' when modeled surface MB RMSE is in the range of geodetic-MB uncertainty. Null PBIAS must not loosen the gate."
+
+  - dag_variable: surfMB
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m w.e.
+        bands: {very_good: 0.17, good: 0.34, satisfactory: 0.36}
+        pass_band: satisfactory
+        band_note: "Surface MB at stakes follows the same field convention as point MB where internal MB is not observed."
+        cites: [arndt2024, huintjes2015]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.83, satisfactory: 0.73}
+        pass_band: satisfactory
+        cites: [huintjes2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched surface-MB validations report RMSE/AE and R, not NSE thresholds; the determining metric is therefore superseded by reported glacier benchmark metrics."
+        cites: [arndt2024, huintjes2015]
+    validated_when: "Surface stake MB is validated when RMSE <= 0.36 m w.e. and r >= 0.73 on cumulative/seasonal comparisons."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Surface stakes observe surface ablation/accumulation, so do not include COSIPY internal refreezing/subsurface melt unless the observation protocol measures total height or water-equivalent change."
+
+  - dag_variable: SNOWHEIGHT
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.10, good: 0.35, satisfactory: 0.60}
+        pass_band: satisfactory
+        band_note: "COSIPY v1.3 reports surface-height RMSE 0.09-0.10 m; Zhadang COSIMA reports 0.049/0.35 m; COSIPY-WRF 79N reports 0.32-0.60 m."
+        cites: [sauter2020, huintjes2015, blau2021]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.94, good: 0.80, satisfactory: 0.68}
+        pass_band: satisfactory
+        band_note: "79N relative snow-height R spans 0.68-0.94 across optimization/evaluation station cases."
+        cites: [blau2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag requested NSE, but fetched snow-height validations use RMSE and R; settling, density and sensor-stripping errors limit direct height comparison."
+        cites: [sauter2020, blau2021]
+    validated_when: "Snow height is validated when RMSE <= 0.60 m and r >= 0.68, with stricter performance near 0.10 m when forcing and sonic-ranger data quality are high."
+    evidence_strength: strong
+    confidence: 0.80
+    notes: "Blau notes snow-height sensor errors and density/drift causes for positive snow-height bias, so compare cleaned accumulated height-change series."
+
+  - dag_variable: TS
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: K
+        bands: {very_good: 2.12, good: 3.30, satisfactory: 5.13}
+        pass_band: satisfactory
+        band_note: "Surface-temperature benchmarks: Zhadang COSIMA 2.12 K; COSIPY v1.3 2.2-3.3 K; 79N COSIPY-WRF 2.03-5.13 K."
+        cites: [huintjes2015, sauter2020, blau2021]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.95, good: 0.92, satisfactory: 0.90}
+        pass_band: satisfactory
+        band_note: "79N reports surface-temperature R = 0.90-0.95 across station/period combinations."
+        cites: [blau2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched surface-temperature literature reports RMSE/R or R2, not NSE; skin temperature is capped at melting and longwave-derived observations have K-scale uncertainty."
+        cites: [sauter2020, huintjes2015, blau2021]
+    validated_when: "Surface skin temperature is validated when RMSE <= 5.13 K and r >= 0.90 against longwave/IR-derived surface temperature."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: "Sauter states COSIPY RMSE is within typical longwave-radiation uncertainty; Huintjes gives a 2-2.5 K measurement-uncertainty context for Ts."
+
+  - dag_variable: TS
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched COSIPY or glacier surface-temperature paper gives a CSI threshold for spatial TS/LST maps."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Point TS benchmarks of 2.12-5.13 K provide context, but do not define a spatial CSI pass rule."
+        cites: [huintjes2015, blau2021]
+    validated_when: "UNRESOLVED - spatial TS CSI has no cited numeric pass band in the fetched literature."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "Use point RMSE/R benchmarks for context only; satellite LST clear-sky sampling and grid mismatch need a dedicated spatial validation convention."
+
+  - dag_variable: ALBEDO
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.096, good: 0.10, satisfactory: 0.12}
+        pass_band: satisfactory
+        band_note: "AWS albedo benchmarks report RMSE 0.096 for COSIMA/Zhadang and 0.09-0.12 for COSIPY-WRF/79N."
+        cites: [huintjes2015, blau2021]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.85, good: 0.78, satisfactory: 0.62}
+        pass_band: satisfactory
+        band_note: "79N reports albedo R = 0.62-0.85 across optimization/evaluation station cases."
+        cites: [blau2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag requested NSE, but fetched albedo validations use RMSE and R; snow aging, fresh-snow reset, and wet/dry snow parameterization choices dominate errors."
+        cites: [sauter2020, blau2021, huintjes2015]
+    validated_when: "Point albedo is validated when RMSE <= 0.12 and r >= 0.62 against AWS shortwave-in/shortwave-out albedo."
+    evidence_strength: strong
+    confidence: 0.80
+    notes: "Blau calls the 79N albedo correlations relatively high and reports manual optimization difficulty across heterogeneous ice surfaces."
+
+  - dag_variable: ALBEDO
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched albedo paper gives CSI tiers for broadband albedo maps; MODIS validation reports absolute albedo differences instead."
+        cites: []
+    secondary_metrics:
+      - metric: absolute_difference
+        direction: minimize
+        status: supportive
+        ceiling_reason: "MODIS snow-albedo validation reports best broadband daily differences of 1-8% and maximum daily differences of 15%, but that is not a CSI threshold."
+        cites: [klein2002]
+    validated_when: "UNRESOLVED - spatial albedo CSI has no cited numeric pass band; evaluate spatial albedo with absolute-difference/RMSE studies where available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Klein and Stroeve provide satellite albedo error context; it cannot be converted honestly into a categorical CSI gate."
+
+  - dag_variable: Q
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred hydrologic runoff convention from Moriasi: satisfactory NSE > 0.50; good > 0.65; very good > 0.75."
+        cites: [moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Transferred streamflow/surface-runoff magnitude convention; only use after COSIPY column runoff is routed/aggregated consistently with observations."
+        cites: [moriasi2007]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi recommends RSR with satisfactory < 0.70; included as context where observation standard deviation is available."
+        cites: [moriasi2007]
+    validated_when: "Runoff is validated when NSE >= 0.50 and |PBIAS| <= 25%, after routing/aggregation makes column Q comparable to gauged runoff."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: "This is a transferred hydrologic convention, not a COSIPY-specific runoff benchmark. Do not compare raw per-cell column Q directly to catchment discharge."
+
+  - dag_variable: H
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: W m-2
+        bands: {very_good: 3.1, good: null, satisfactory: 4.8}
+        pass_band: satisfactory
+        band_note: "Eddy-covariance glacier SEB benchmark: modeled sensible/latent turbulent fluxes compared well with RMS differences 3.1-4.8 W m-2."
+        cites: [cullen2007]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Flux validation papers compare bulk-method turbulent fluxes with eddy covariance using RMSE, correlation or bias rather than NSE tiers."
+        cites: [cullen2007, conway2013]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Conway reports that stability-parameterization choices can create sensible-heat bias under low wind speed and large temperature gradients."
+        cites: [conway2013]
+    validated_when: "Sensible heat flux is validated when RMSE <= 4.8 W m-2 against eddy-covariance fluxes under comparable glacier-surface conditions."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "The band is transferred from glacier SEB bulk-method validation, not COSIPY-specific H validation; roughness length and stability correction dominate uncertainty."
+
+  - dag_variable: LE
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: W m-2
+        bands: {very_good: 3.1, good: null, satisfactory: 4.8}
+        pass_band: satisfactory
+        band_note: "Eddy-covariance glacier SEB benchmark: modeled sensible/latent turbulent fluxes compared well with RMS differences 3.1-4.8 W m-2."
+        cites: [cullen2007]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Flux validation papers compare latent heat flux with eddy covariance using RMSE/correlation/bias rather than NSE tiers."
+        cites: [cullen2007, conway2013]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Conway reports latent heat flux agreement and sensitivity to scalar roughness and humidity assumptions, but not a universal pass tier."
+        cites: [conway2013]
+    validated_when: "Latent heat flux is validated when RMSE <= 4.8 W m-2 against eddy-covariance fluxes under comparable glacier-surface conditions."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "COSIPY assumes a saturated surface for turbulent moisture exchange; compare against screened eddy-covariance LE where available."
+
+  - dag_variable: "layer profiles (T, RHO, theta_i, theta_w, porosity)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS threshold for full COSIPY layer profiles including density, ice fraction, liquid water and porosity."
+        cites: []
+    secondary_metrics:
+      - metric: rmse_temperature
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Zhadang subsurface-temperature validation reports RMSE 0.15-0.16 K, but this does not validate density, liquid-water, ice-fraction or porosity snapshots."
+        cites: [huintjes2015]
+    validated_when: "UNRESOLVED - profile snapshot PBIAS has no cited numeric pass band for the full layer-state vector."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "Sauter says stored profiles will allow comparison with snow pits in future; fetched texts do not provide a full-profile convention."
+
+  - dag_variable: "layer profiles (T, RHO, theta_i, theta_w, porosity)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a correlation threshold for time-varying full COSIPY layer profiles."
+        cites: []
+    secondary_metrics:
+      - metric: rmse_temperature
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Subsurface-temperature strings can be evaluated with depth-aligned RMSE; Zhadang reports 0.15 K for AWS-forced and 0.16 K for HAR-forced runs."
+        cites: [huintjes2015]
+    validated_when: "UNRESOLVED - profile time-series r has no cited numeric pass band for the full layer-state vector."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Thermistor-string temperature skill is only partial support; density/liquid-water/porosity need snow-pit or firn-core profile conventions."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 updated watershed model evaluation guidelines"
+    doi: 10.13031/trans.58.10715
+    needed_for: [Q]
+  - ref: "Dedicated COSIPY or COSIMA full-profile snow/firn pit validation with density, temperature, liquid water, ice fraction and porosity metrics"
+    doi: unknown_not_fetched
+    needed_for: ["layer profiles (T, RHO, theta_i, theta_w, porosity)"]
+  - ref: "Dedicated spatial glacier LST/albedo validation paper reporting CSI/POD/FAR or IoU tiers"
+    doi: unknown_not_fetched
+    needed_for: [TS, ALBEDO]

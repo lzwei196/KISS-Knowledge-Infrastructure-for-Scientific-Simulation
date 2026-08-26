@@ -1,13 +1,3 @@
----
-name: simfire
-description: >-
-  Rothermel surface fire spread model (USDA Forest Service RMRS-GTR-371; Anderson FBFM-13
-  fuel models). Covers Surface wildfire spread over a 2-D gridded landscape via the
-  Rothermel rate-of-spread equation; Per-pixel fuel (FBFM-13), elevation/slope, prescribed
-  wind, and fuel-moisture forcing of spread. Use when the task involves running,
-  configuring, calibrating or interpreting SimFire.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (11 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_landfire_to_simfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_landfire_to_simfire.py --help` |
+| `tools/convert_wind_to_simfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_wind_to_simfire.py --help` |
+| `tools/parse_simfire_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_simfire_output.py --help` |
+| `tools/run_simfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_simfire.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # SimFire — Wildfire Spread Simulation (Knowledge Infrastructure)
 
@@ -204,6 +228,28 @@ v2.0.1 source and the official MITRE config docs (`docs/source/config.md`).
 
 ---
 
+## 8. Unit Conversion Table
+
+This unit table restates the unit conversions used by this KI's dag and format
+spec. `docs/format_spec.yaml` remains the machine-readable contract; this table
+is the reader-facing guardrail.
+
+| Variable / field | Source unit | Model / output unit | Factor or operation | Type |
+|---|---|---|---|---|
+| `wind.simple.speed` | mph in YAML | ft/min internally | `mph_to_ftpm` (`x88`) | multiplicative |
+| `wind.perlin.speed.range_min/max` | mph in YAML | ft/min internally | `mph_to_ftpm` (`x88`) | multiplicative |
+| `wind.cfd.speed` | m/s boundary condition | ft/min wind array | `scale_ms_to_ftpm` (`x196.85`) | multiplicative |
+| `rate_of_spread` | ft/min | m/s | `/196.85` | multiplicative |
+| `rate_of_spread` | ft/min | chains/hr | `/1.1` | multiplicative |
+| custom elevation / DEM | meters | feet | `x3.28084` | multiplicative |
+| LandFire resolution to `area.pixel_scale` | meters/pixel | feet/pixel | `x3.28084` | multiplicative |
+| custom fuel load `w_0` | kg/m2 | lb/ft2 | `x0.2048` | multiplicative |
+| `environment.moisture` | fraction | fraction | none; `0.03` means 3% | identity |
+| `burned_area` | burned-pixel count and `pixel_scale` | acres / ha | `burned_pixels x pixel_scale^2`, `/43560` for acres | derived |
+| `fire_perimeter_length` | edge-pixel count and `pixel_scale` | ft / miles | `edge-pixel count x pixel_scale` | derived |
+
+---
+
 ## Rothermel Fire Spread Model — Quick Reference
 
 ### Input Parameters
@@ -350,7 +396,24 @@ wind:
 
 ---
 
-## Output Description
+## 6. Output Description
+
+**Source: `dag.yaml`.** The dag is the model's identity for output names, units,
+descriptions, emitted media and validation rank. If this section and `dag.yaml`
+ever disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`, the variable this model is judged by):
+
+> `burned_area` — Total vegetation/land area burned by the fire at end of run, derived from the burned-pixel count and pixel_scale. (acres / ha (derived as burned_pixels x pixel_scale^2, /43560 for acres))
+
+| Output variable (dag `var`) | Rank | Unit | Emitted in | Dag description |
+|---|---:|---|---|---|
+| `burned_area` | 1 | acres / ha (derived as burned_pixels x pixel_scale^2, /43560 for acres) | derived from `fire_map` (burned-pixel count x pixel_scale^2) | Total vegetation/land area burned by the fire at end of run, derived from the burned-pixel count and pixel_scale. |
+| `fire_perimeter_length` | 2 | ft / miles (edge-pixel count x pixel_scale) | derived from `fire_map` (edge-pixel count x pixel_scale) | Length of the fire perimeter at end of run, derived from boundary pixels of the burned region. |
+| `fire_map` | 3 | BurnStatus enum grid (0-5), shape (H, W) | in-memory `FireSimulation.fire_map`; persisted as `.npy` / `.h5` / `.jsonl` when `save_data=true` | Per-pixel burn/control-line status at end of run; the final fire footprint (burned vs unburned) and placed control lines. |
+| `rate_of_spread` | 4 | ft/min (convert to m/s /196.85 or chains/hr /1.1) | in-memory `RothermelFireManager.rate_of_spread` (derived time series) | Fire rate of spread over time; the core Rothermel output, per-pixel and as a time series of head-fire spread. |
+
+### Runtime output notes
 
 SimFire produces a 2D `fire_map` numpy array (shape: height x width) where each pixel holds a BurnStatus integer (0=unburned, 1=burning, 2=burned, 3-5=mitigation lines). When `save_data: true`, the fire map is written as either `.npy` (numpy binary) or `.h5` (HDF5) files controlled by the `data_type` config parameter. Setting `record: true` saves an animated GIF of the fire progression. The `save_spread_graph()` method exports a fire spread adjacency graph. Use `parse_simfire_output.py` to extract burned area (pixel count and hectares), fire perimeter length, spread rate time series, and per-fuel-model burn statistics to CSV.
 
@@ -479,6 +542,49 @@ self-extinguishes after ~36 h, whereas the MTBS perimeter is a multi-day final
 extent driven by wind events, spotting and crown fire that SimFire does not
 represent. Treat these numbers as the uncalibrated baseline for the KI, not as a
 target to tune toward.
+
+---
+
+## 11. Validated Results
+
+**Source: `docs/validation_convention.yaml` and the S7 MTBS baseline above.**
+The current body campaign is an uncalibrated operational baseline, not a
+validated pass. The six-fire MTBS run is useful evidence, but it is below the
+field bar for `fire_map`; the dag's rank-1 variable `burned_area` has no cited
+numeric PBIAS threshold in the convention.
+
+### Test Campaign: 2020 Great Basin MTBS Perimeters
+
+| Property | Value |
+|---|---|
+| Fires | SLINK, NUMBERS, MOUNTAIN VIEW, POODLE, BISHOP, STEWART CANYON |
+| Period | 2020 fire events |
+| Resolution | 30 m LandFire grid |
+| Forcing | NASA POWER weather-derived environment |
+| Ignition | MTBS perimeter centroid |
+| Suppression | unsuppressed to self-extinction |
+| Pixels pooled | 2 998 271 |
+
+### Performance Metrics -- judged against the field's bar, not intuition
+
+| Dag variable | Metric | Direction | Achieved baseline | Bar (convention, cited) | Verdict |
+|---|---|---|---:|---|---|
+| `fire_map` | sorensen | maximize | 0.171 | satisfactory >= 0.4, good >= 0.6, very_good >= 0.8 (`giannaros2020`, `peterson_hfire`) | below satisfactory |
+| `fire_map` | kappa | maximize | 0.144 | satisfactory >= 0.4, good >= 0.6, very_good >= 0.8 (`giannaros2020`, `jahdi2015`) | below satisfactory |
+| `fire_map` | sorensen | maximize | 0.171 | satisfactory >= 0.4, good >= 0.6, very_good >= 0.8 (`giannaros2020`, `peterson_hfire`) | below satisfactory |
+| `burned_area` | pbias | zero_centered | -87.9 % | no cited threshold | unresolved numeric verdict |
+
+The convention's `burned_area` PBIAS band is null, so this section deliberately
+states **no cited threshold** instead of inventing a percent-error cutoff.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|---|---|---|---|
+| Fire perimeter observations | MTBS via `tools/mtbs_perimeter_to_grid.py` | baseline run completed | Compared maps must share grid size and georeferencing. |
+| Terrain / fuel | LandFire operational layers | baseline run completed | 30 m grid; `pixel_scale` controls area and spread timing. |
+| Weather forcing | NASA POWER-derived wind/moisture tools | baseline run completed | Uniform, temporally constant midflame wind is a known limitation. |
+| Calibration | none | pending | Baseline is uncalibrated and below the cited `fire_map` convention bar. |
 
 ---
 

@@ -1,913 +1,869 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Programmatic run+score of ONE CRHM calibration candidate.  NOT an agent.
+Knowledge Infrastructure -- Calibration Runner (programmatic, NOT an agent)
+==========================================================================
+Tool ID:      calib_run
+Stage:        calibration
+Description:  Run + score ONE CRHM candidate parameter vector at the calibration
+              TARGET CASE and write the gate-valid metrics as JSON.
 
-    python tools/calib_run.py --workdir <wd> --out <metrics.json>
+TARGET CASE (PINNED -- this runner scores THIS gauge and no other)
+------------------------------------------------------------------
+  case_id      OBS:hydat
+  site         Dore River near McBride, Cariboo Mountains, BC, Canada
+               (53.309 N, -120.249 W); deck basin_area 406.52 km2 vs the
+               published HYDAT gross drainage area 409 km2 (-0.6%); 3
+               equal-area elevation HRUs (Alpine 2294 / Forest 1912 /
+               Valley 1430 m, Copernicus GLO-30 terciles).
+  gauge / obs  HYDAT 08KA001 (Canada National Water Data Archive), daily
+               discharge m3/s, staged at
+               KISSPATH_OUTPUTS/crhm_08ka001_dore/obs_08KA001.csv
+  quantity     discharge -- dag var `basinflow_s`, obs_shape point_time_series,
+               determining_metric NSE
+  provenance   real_case CRHM_20260629T124938Z -- model-dir run_and_score.py,
+               best grid member obs_elev=2100 / ClimChng_precip=1.45, FULL
+               2006-2015 NSE 0.7086 (cal 2006-2010 NSE 0.7000, val 2011-2015
+               NSE 0.7116, PBIAS -6.48%, n=3652).
 
-TARGET CASE (pinned — this file scores THIS region/obs and no other)
-------------------------------------------------------------------------------
-    case_id      GEO:49.4,120.4
-    obs          ESA Snow_cci MERGED SWE v2.0 (GENUINE SWE, mm), clipped and
-                 area-averaged over the Hulunbuir open-steppe region polygon
-                 120.0-120.8 E / 49.1-49.7 N (48 cells at 0.1 deg)
-                 source granules  KISSPATH_DATA/benchmarks/snowcci_swe
-                 region-mean cache outputs/hulunbuir_steppe/obs_snowcci_region_mean.csv
-    quantity     SWE (dag var SWE, obs_shape regional_aggregate_time_series,
-                 determining metric NSE, gate-valid families
-                 magnitude_accuracy + temporal_pattern_match)
-    provenance   CRHM_20260726T164031Z_286796  (held-out monthly-mean
-                 NSE -0.41821090337699984 / KGE 0.1026 / r 0.8233 / PBIAS +57.00,
-                 n = 47 months, PBSM activity gate FAIL frac_subl 0.0305)
+  The gauge, its file, its coordinates, its published area and the scoring
+  windows are MODULE CONSTANTS. Nothing here reads a site, gauge id, lat/lon,
+  area or obs path from the environment, so no env can redirect scoring to a
+  different station. `__kdt__.case_id` / `__kdt__.scored_obs` are DERIVED from
+  the very identity fields the obs loader read and asserted (the station id is
+  extracted from the filename of the file actually opened), so the declaration
+  cannot diverge from what was actually scored.
 
-This is a SNOW-WATER-EQUIVALENT case.  It is NOT discharge, it is NOT the
-Yingluoxia / upper Heihe streamflow case, and it is NOT the Bow/Marmot mountain
-worked examples that SKILL.md also documents.
+INJECTION MODE: runner  (calibration.yaml `injection.mode: runner`)
+-------------------------------------------------------------------
+This case's validated recipe (model-dir run_and_score.py) REGENERATES the whole
+.prj deck from a template on every run -- there is no stable parameter file a
+generic applicator could edit, and several calibrated levers are per-HRU
+elevation TRIPLETS that must move together. The kit therefore hands the
+candidate vector in the JSON at $KDT_CALIB_PARAMS and THIS script injects it
+the model's own way: it rewrites the parameter value rows of a byte-pinned COPY
+of the validated best deck (dore_oe2100_p145.prj, sha256-asserted), validates
+every written value against the deck's own declared `<lo to hi>` window (CRHM
+hard-errors rather than clamps, so an out-of-window value must never be
+written), and then reads every value BACK out of the generated .prj -- the file
+the CRHM binary actually parses -- before the model is allowed to run.
 
-The scored obs is NOT configurable.  There is no environment variable that can
-redirect scoring to another site: the Snow_cci directory, the region bounding
-box, the region-mean CSV and the screen JSON are module constants, and the
-``case_id`` echoed in ``__kdt__`` is DERIVED from the latitude/longitude and
-``region_bbox`` recorded in the prepared hru_config.json — the very file whose
-HRU areas weight the simulated SWE — then checked against the pinned target.  If
-that file ever described a different domain, the derived case_id would stop
-matching and this script exits nonzero instead of quietly scoring elsewhere.
-``scored_obs`` is likewise assembled from the obs path, the bbox and the record
-count actually read, so the declaration cannot diverge from what was scored.
+The model is executed ONLY through the KI tools and the real binary:
+    s5_execution/run_crhm.py                 (the real CRHM binary)
+    s5_execution/parse_crhm_output.py        (STD -> csv)
+    ki_tools_common.metrics.all_metrics      (NSE / KGE / PBIAS / RMSE / r)
+Nothing about the model is reimplemented here.
 
-Contract (calibration_kit/CALIBRATION_YAML_SCHEMA.md, injection.mode: runner)
-------------------------------------------------------------------------------
-CRHM consumes a single monolithic ``.prj`` deck whose per-HRU parameter blocks
-are whitespace-separated value rows under ``<module> <param> <min to max>``
-headers, and the KI REGENERATES that deck from hru_config + modules.json +
-derived_params on every run (tools/s4_parameter_config/create_prj_file.py).  A
-value written into basin.prj before the run would be overwritten by the
-regeneration, and no generic address kind points at "the 3rd, 8th, 11th and 14th
-field of the row under `pbsm Ht`".  => runner mode.  The kit does NOT touch the
-inputs; this script:
+The expensive one-time preparation (GLO-30 DEM mosaic, delineation, HRU
+terciles, the 11-year hourly NASA POWER dore.obs and the HYDAT obs CSV) is
+ALREADY STAGED under outputs/crhm_08ka001_dore/ by the validated real_case run
+and is reused read-only by every eval. One eval = write .prj + one CRHM run +
+parse + score (~2 s).
 
-  1. reads the candidate vector from the JSON at env ``KDT_CALIB_PARAMS``;
-  2. INJECTS it the model's own way — expands each zone-scoped parameter to the
-     per-HRU vector CRHM needs and hands it to the KI's OWN create_prj_file.py
-     via ``--param_overrides``, i.e. AFTER (in fact, as part of) the deck
-     regeneration, so nothing can overwrite it;
-  3. READS every value BACK out of the generated basin.prj — the exact file the
-     CRHM binary opens — and re-collapses the per-HRU rows to the zone-scoped
-     names; any write/read disagreement => exit nonzero with NO metrics file;
-  4. runs the REAL model — the CRHM binary via the KI's run_crhm.py — over the
-     same domain, forcing and period the validated run used, and parses it with
-     the KI's parse_crhm_output.py.  The model is never reimplemented here;
-  5. scores area-weighted region-mean SWE against the Snow_cci region mean with
-     ki_tools_common.metrics.all_metrics (the scorer the dag gates on), at the
-     aggregation screen_swe_obs.py rules admissible;
-  6. emits ``{"nse":..,"kge":..,"pbias":..,"r":..,"__kdt__":{...}}``, echoing
-     EVERY key it was handed (staged-frozen ones included).
+USAGE
+    python3 calib_run.py --workdir <fresh_dir> --out <metrics.json>
 
-Any failure at any stage: write nothing, exit nonzero.  A missing metrics file is
-scored +inf by the kit — never a fake pass.  ``--out`` is deleted before any work
-begins, so a failed candidate can never be read as a stale success, and the final
-write is atomic (tmp + os.replace) so a kill cannot leave a truncated JSON.
+ENV
+    KDT_CALIB_PARAMS   path to {"name": value, ...} (required in runner mode)
+    KDT_CALIB_SPLIT    "calibration" | "holdout"  (unset -> full 2006-2015
+                       record, the validated run's own headline window)
 
-WHAT IS *NOT* CALIBRATABLE HERE (SKILL.md HARD RULE, enforced below)
-------------------------------------------------------------------------------
-``obs ClimChng_precip`` and ``obs obs_elev`` are LOCKED at 1.0 and at the CMFD
-source-cell elevation (663 m).  SWE is the scored MASS STATE, so those two knobs
-write the answer directly — tuning them against SWE is fabrication, and it is the
-'compensating-errors calibration' hazard dag.yaml already names.  They are held
-at the validated values in ``FIXED_OVERRIDES`` and are refused as candidate
-parameter names by the unknown-parameter guard; ``assert_forcing_knobs_locked()``
-re-reads them out of the generated deck every eval and aborts if either moved.
+FAIL-CLOSED CONTRACT
+    Any failure -- missing/altered staged input, unknown parameter name, a
+    value outside the deck's declared window, a value that does not read back
+    out of the generated .prj, a CRHM error, a truncated simulation, a
+    non-finite metric, or an observation series that does not match the
+    declared obs contract -- exits NONZERO and writes NO metrics file. A
+    missing metrics file is scored +inf by the kit; a fake pass is impossible.
 
-OBS ENVELOPE ENFORCEMENT
-------------------------------------------------------------------------------
-Everything calibration.yaml's ``identity.obs_envelope`` declares is READ and
-ASSERTED before a metric is computed: the CSV columns, the exact record count and
-first/last date, the mean / p95 / max / min / sum of the series, the all-cells-
-valid retrieval fraction, the 48-cell 0.1 deg region grid, a live spot-check of
-three dates straight out of the Snow_cci granules, and the screen_swe_obs.py
-verdict (mass_inconsistent_pct, threshold, daily admissibility, knob lock) that
-decides the scoring aggregation.  A changed or corrupted series for the SAME
-region therefore cannot be silently scored.
-
-Splits (env ``KDT_CALIB_SPLIT``)
---------------------------------
-CRHM is deterministic given a parameter vector, so every split simulates the SAME
-window (2002-01-01..2014-12-31 with 2002 as spin-up) and differs ONLY in which
-dates are scored — the calibration score is never confounded by a shorter warm-up:
-
-  calibration : score 2003-01-01..2008-12-31   (6 yr)
-  holdout     : score 2009-01-01..2014-12-31   (6 yr, never seen by the optimizer)
-  (unset)     : score 2003-01-01..2014-12-31   (both)
-
-Periods are inherited verbatim from the validated run (CAL / VAL in
-run_and_score_hulunbuir_pbsm.py); the held-out block is the one whose monthly
-NSE -0.4182 is the prior validated metric.
-
-Cost
-----
-~11-13 s wall per eval (CRHM binary ~6.5 s for 13 yr x 3-hourly x 15 HRUs, parse
-~2 s, deck build + score ~2 s).  Domain delineation, module selection, derived
-parameters, the 13-year CMFD .obs and the Snow_cci region-mean cache are one-time
-PREPARE steps done by the validated run; this script never rebuilds them.
+Exit codes:
+  0 -- success, metrics written
+  1 -- input / contract / injection failure (no metrics written)
+  2 -- model execution failure (no metrics written)
 """
 from __future__ import annotations
 
-# dt_v010: netCDF4's bundled libhdf5 MUST initialise before h5py's (which pandas/
-# xarray pull in through their entrypoint scan) or every nc_open in this process
-# dies with OSError -101.  This import stays FIRST, above pandas.
-import netCDF4  # noqa: E402  (import order is load-bearing)
+import argparse
+import hashlib
+import json
+import math
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
 
-import argparse  # noqa: E402
-import glob  # noqa: E402
-import json  # noqa: E402
-import math  # noqa: E402
-import os  # noqa: E402
-import re  # noqa: E402
-import shutil  # noqa: E402
-import subprocess  # noqa: E402
-import sys  # noqa: E402
-import time  # noqa: E402
-from pathlib import Path  # noqa: E402
+import numpy as np
+import pandas as pd
 
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
+# ki_tools_common must win over any same-named PyPI package (insert(0), never
+# append -- the HBV Bengbu lesson).
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 
-os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
-
-# ---------------------------------------------------------------------------
-# Paths.  The KI's OWN tools are reused verbatim; the model is never
-# reimplemented.  ki_tools_common is pinned to its CANONICAL checkout: a stale
-# copy shipped under a kdt-release tree has shadowed it before, and a different
-# all_metrics is a different number.
-# ---------------------------------------------------------------------------
-KI = Path("KISSPATH_KI_ROOT/CRHM/knowledge_infrastructure")
+# --------------------------------------------------------------------------- #
+# PINNED PATHS -- the KI, its tools, the staged case inputs and the CRHM binary
+# --------------------------------------------------------------------------- #
+KI = Path(__file__).resolve().parent.parent
 TOOLS = KI / "tools"
-WORK = KI / "outputs" / "hulunbuir_steppe"
-CRHM_EXE = Path("KISSPATH_KI_ROOT/CRHM/bin/crhm")
-KI_TOOLS_COMMON_ROOT = "KISSPATH_KI_TOOLS_COMMON"
+STAGE = Path("KISSPATH_OUTPUTS/crhm_08ka001_dore")
+TEMPLATE_PRJ = STAGE / "crhm" / "dore_oe2100_p145.prj"   # the validated best deck
+OBS_FORC = STAGE / "crhm" / "dore.obs"                   # 11-yr hourly NASA POWER
+OBS_CSV = STAGE / "obs_08KA001.csv"                      # HYDAT daily discharge
+CRHM_EXE = Path("KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm")
 
-sys.path.insert(0, KI_TOOLS_COMMON_ROOT)
+# Byte-pins on the staged artifacts every eval reuses. A swapped deck (another
+# site's domain) or a swapped forcing file cannot be scored silently.
+TEMPLATE_SHA256 = "fb520544c09cb72d96a7699dbe1acccb4cbf2d2594a96abf17a98b60832dfef5"
+FORCING_SHA256 = "912e2a2517c11cfd3f64bf411e64b32189e899e66cc6c176ed8c1bc163b8aa44"
 
-# ---------------------------------------------------------------------------
-# TARGET CASE — pinned constants.  Nothing below is read from the environment.
-# ---------------------------------------------------------------------------
-TARGET_CASE_ID = "GEO:49.4,120.4"
-TARGET_LAT, TARGET_LON = 49.4, 120.4
-BBOX = (120.0, 49.1, 120.8, 49.7)          # lon_min, lat_min, lon_max, lat_max
-SNOWCCI_DIR = Path("KISSPATH_DATA/benchmarks/snowcci_swe")
-OBS_CSV = WORK / "obs_snowcci_region_mean.csv"
-SCREEN_JSON = WORK / "swe_obs_screen.json"
-OBS_ID = "snowcci_swe"
-OBS_UNIT = "mm"
+# --------------------------------------------------------------------------- #
+# PINNED TARGET CASE -- the ONLY gauge this runner may score
+# --------------------------------------------------------------------------- #
+CASE_ID = "OBS:hydat"
+OBS_NETWORK = "hydat"
+OBS_STATION = "08KA001"
+OBS_SITE_NAME = "Dore River near McBride"
+OBS_UNIT = "m3/s"
+GAUGE_LAT, GAUGE_LON = 53.309, -120.249
+GAUGE_AREA_KM2 = 409.0          # published HYDAT gross drainage area
+DECK_AREA_KM2 = 406.52          # what the validated deck carries (-0.6%)
+AREA_TOL_PCT = 5.0
 
-# Prepared, read-only artifacts of the validated Hulunbuir run.  NONE is rebuilt.
-HRU_CONFIG = WORK / "crhm" / "hru" / "hru_config.json"
-MODULES_JSON = WORK / "crhm" / "modules.json"
-DERIVED_JSON = WORK / "crhm" / "derived_params.json"
-BASIN_OBS = WORK / "crhm" / "basin.obs"
+# Simulation window carried by the pinned deck (2005 is spin-up, never scored).
+SIM_START = (2005, 1, 1)
+SIM_END = (2015, 12, 31)
 
-# ---------------------------------------------------------------------------
-# obs_envelope — every field calibration.yaml declares, asserted below.
-# Measured 2026-08-03 from the prepared cache and re-derived live from the
-# Snow_cci granules for the three SPOT_CHECK dates.
-# ---------------------------------------------------------------------------
-OBS_ENVELOPE = {
-    "columns": ["date", "obs_swe_mm", "valid_frac"],
-    "n_records": 2580,
-    "n_valid": 2580,
-    "first_date": "2003-01-01",
-    "last_date": "2014-12-31",
-    "mean_mm": 12.283955,
-    "p95_mm": 30.544792,
-    "max_mm": 42.020833,
-    "min_mm": 0.0,
-    "sum_mm": 31692.604167,
-    "min_valid_frac": 1.0,
-    "region_cells": 48,               # 6 lat x 8 lon at 0.1 deg over BBOX
+# Scoring windows -- IDENTICAL to the validated real_case, so a calibrated
+# result is directly comparable to the prior metric (FULL NSE 0.7086).
+CAL_WINDOW = ("2006-01-01", "2010-12-31")
+VAL_WINDOW = ("2011-01-01", "2015-12-31")
+FULL_WINDOW = ("2006-01-01", "2015-12-31")
+
+# --------------------------------------------------------------------------- #
+# OBS CONTRACT -- every field declared here is READ and ASSERTED before scoring.
+# A changed / corrupted / re-issued series for the SAME station cannot be
+# scored silently: any mismatch exits nonzero with no metrics file.
+# Values transcribed from the series the validated real_case scored.
+# --------------------------------------------------------------------------- #
+OBS_CONTRACT = {
+    "columns": ["date", "discharge_m3s"],
+    "file_sha256": "1f5dc60f435bbafee263827bbe1fd64d0efb1b003f24cf9c97f491f92c64733b",
+    "date_format": "%Y-%m-%d",
+    "unit": OBS_UNIT,
+    "record": {"first": "2005-01-01", "last": "2015-12-31", "n_rows": 4017,
+               "calendar_gaps": 0, "duplicates": 0, "nan": 0, "negative": 0},
+    "splits": {
+        "calibration": {
+            "window": CAL_WINDOW,
+            "n_valid_days": 1826,
+            "first_valid": "2006-01-01",
+            "last_valid": "2010-12-31",
+            "min": 1.2899999618530273,
+            "max": 92.30000305175781,
+            "mean": 12.849978105523109,
+            "missing_dates": [],
+            "series_sha256":
+                "a7f823a7fc05c967d30ed85ace3d61697a3290b3d6b6db9414add4dd791dca3b",
+        },
+        "holdout": {
+            "window": VAL_WINDOW,
+            "n_valid_days": 1826,
+            "first_valid": "2011-01-01",
+            "last_valid": "2015-12-31",
+            "min": 1.0299999713897705,
+            "max": 132.0,
+            "mean": 15.554370188373595,
+            "missing_dates": [],
+            "series_sha256":
+                "11aa381366085db9b3cafdd74f23341c84743555339fa44e10b68014a34bdd59",
+        },
+        "full": {
+            "window": FULL_WINDOW,
+            "n_valid_days": 3652,
+            "first_valid": "2006-01-01",
+            "last_valid": "2015-12-31",
+            "min": 1.0299999713897705,
+            "max": 132.0,
+            "mean": 14.202174146948352,
+            "missing_dates": [],
+            "series_sha256":
+                "60aabcc4116cf9644fb527dfb81ef5264666b8124c21cd0f556c76bf331736bb",
+        },
+    },
 }
-OBS_STAT_RTOL = 1e-6
-SPOT_CHECK = {                        # date -> region-mean SWE (mm) in the cache
-    "20030115": 16.458333333333332,
-    "20091220": 17.937500000000000,
-    "20140301": 28.770833333333330,
+_STAT_RTOL = 1e-8   # float-summation slack; the sha256 above is the exact check
+
+NHRU = 3
+
+# Deck fields that pin the DOMAIN identity (asserted in the template before any
+# injection -- a rebuilt/other-site deck fails closed even if the sha ever gets
+# re-pinned carelessly).
+DECK_IDENTITY = {
+    "Shared basin_area": [DECK_AREA_KM2],
+    "Shared hru_area": [135.51, 135.51, 135.51],
+    "Shared hru_elev": [2294.0, 1912.0, 1430.0],
+    "Shared hru_lat": [GAUGE_LAT] * 3,
+    # gw routing topology: HRU1/2 gw cascades to HRU3, HRU3 exits via basingw.
+    "Netroute gwwhereto": [3.0, 3.0, 0.0],
+    "Netroute whereto": [3.0, 3.0, 0.0],
 }
 
-# screen_swe_obs.py verdict that decides the scoring aggregation and the knob lock.
-SCREEN_ENVELOPE = {
-    "mass_inconsistent_pct": 4.32,
-    "threshold_pct": 2.0,
-    "daily_scoring_admissible": False,
-    "forcing_knobs_locked": True,
-    "shallow_snow_regime": True,
-}
-
-# ---------------------------------------------------------------------------
-# Domain / deck constants, inherited verbatim from the validated run.
-# ---------------------------------------------------------------------------
-NHRU = 15
-START_YEAR, END_YEAR = 2002, 2014     # 2002 = spin-up, never scored
-SPLITS = {
-    "calibration": ("2003-01-01", "2008-12-31"),
-    "holdout":     ("2009-01-01", "2014-12-31"),
-    "_both":       ("2003-01-01", "2014-12-31"),
-}
-MIN_DAYS_PER_MONTH = 10               # a month must be observed to be scored
-LOCKED_OBS_ELEV = 663                 # CMFD source-cell elevation; SKILL.md HARD RULE
-LOCKED_CLIMCHNG_PRECIP = 1.0          # SWE is the scored mass state -> LOCKED at 1.0
-FOREST_FETCH_M = 300.0                # inert (inhibit_bs = 1) but written for completeness
-FOREST_HT_M = 15.0                    # RULE 2: canopy HRUs keep their canopy height
-CANOPY_HT_MIN_M = 2.0                 # >= this => canopy HRU => inhibit_bs = 1
-
-# Zone -> 1-based HRU ids.  ASSERTED against hru_config.json every eval, so a
-# rebuilt domain with different land cover cannot be silently calibrated.
-ZONES = {
-    "crop_stubble":     [1, 6, 9, 12],
-    "open_prairie":     [3, 8, 11, 14],
-    "bare_ground":      [4, 5],
-    "deciduous_forest": [2, 7, 10, 13, 15],
-}
-BLOWING_SNOW_ZONES = ("crop_stubble", "open_prairie", "bare_ground")
-
-# ---------------------------------------------------------------------------
-# name -> default.  MUST stay in sync with the `parameters:` block of
-# calibration.yaml: a name present there and absent here (or vice-versa) makes
-# EVERY eval — the default vector included — die in the unknown-parameter guard,
-# which the kit reads as a screen with no finite losses at all.
+# --------------------------------------------------------------------------- #
+# PARAMETER SPEC -- must stay in lockstep with calibration.yaml `parameters`.
 #
-# The defaults ARE the validated configuration: fetch/Ht reproduce
-# derive_parameters.py + the SKILL.md PBSM RULE-1 winter heights, and N_S / A_S /
-# Qe_subl_from_SWE are CRHM's own declared defaults (Classpbsm.cpp:122-124,
-# Classebsm.cpp:81), which the validated deck left unwritten.  Writing them
-# explicitly at their default therefore reproduces that run bit-for-bit, so a
-# staged round that freezes a parameter holds it at a physical, in-range value.
-# ---------------------------------------------------------------------------
-DEFAULTS = {
-    "fetch_stubble":     1000.0,
-    "fetch_open_short":  2000.0,
-    "Ht_stubble":        0.10,
-    "Ht_grass":          0.05,
-    "Ht_bare":           0.01,
-    "N_S":               320.0,
-    "A_S":               0.003,
-    "Qe_subl_from_SWE":  0,
+#   key      : "<Module> <param>" exactly as declared in the pinned deck
+#              (soil_rechr_max and Sdmax are declared under `Shared`, not
+#              `Soil`, in this deck -- transcribed, not assumed).
+#   shape    : how one calibrated scalar becomes the per-HRU value row
+#              "all"     -> every value in every row of the block (obs_elev's
+#                           3x3 block)
+#              "uniform" -> the same value on all 3 HRUs
+#              a list    -> an elevation PROFILE multiplied by the scalar; the
+#                           profile is 1.0 at index `read_idx`, so the
+#                           calibrated scalar appears VERBATIM in the .prj and
+#                           reads back exactly (other entries rounded to 6 dp,
+#                           which reproduces the validated deck bit-for-bit at
+#                           the default vector).
+#   read_idx : which value on the .prj row carries the calibrated scalar.
+#   integer  : write/compare as an int.
+# --------------------------------------------------------------------------- #
+PARAM_SPEC = {
+    # ---- forcing translation: temperature / precipitation at the HRUs --------
+    "obs_elev":                {"key": "obs obs_elev",            "shape": "all",     "read_idx": 0},
+    "lapse_rate":              {"key": "obs lapse_rate",          "shape": "uniform", "read_idx": 0},
+    "ClimChng_precip":         {"key": "obs ClimChng_precip",     "shape": "uniform", "read_idx": 0},
+    "precip_elev_adj":         {"key": "obs precip_elev_adj",     "shape": [1.0, 0.6, 0.0], "read_idx": 0},
+    "tmax_allrain":            {"key": "obs tmax_allrain",        "shape": "uniform", "read_idx": 0},
+    "tmax_allsnow":            {"key": "obs tmax_allsnow",        "shape": "uniform", "read_idx": 0},
+    "snow_rain_determination": {"key": "obs snow_rain_determination", "shape": "uniform",
+                                "read_idx": 0, "integer": True},
+    # ---- snowmelt energy ----------------------------------------------------
+    "Albedo_snow":             {"key": "albedo Albedo_snow", "shape": [1.0, 0.8 / 0.85, 1.0], "read_idx": 0},
+    # ---- blowing snow (measured INERT at this site; kept for the dag edge) ---
+    "pbsm_fetch":              {"key": "pbsm fetch",              "shape": [0.75, 0.25, 1.0], "read_idx": 2},
+    # ---- frozen-soil infiltration ------------------------------------------
+    "crack_fallstat":          {"key": "crack fallstat",          "shape": [0.2, 0.6, 1.0], "read_idx": 2},
+    "crack_Major":             {"key": "crack Major",             "shape": "uniform", "read_idx": 0},
+    # ---- evaporation --------------------------------------------------------
+    "evap_F_Qg":               {"key": "evap F_Qg",               "shape": "uniform", "read_idx": 0},
+    # ---- soil / groundwater stores (volume levers) --------------------------
+    "Sdmax":                   {"key": "Shared Sdmax",            "shape": [0.25, 0.5, 1.0], "read_idx": 2},
+    "soil_moist_max":          {"key": "Soil soil_moist_max",     "shape": [0.4, 0.8, 1.0], "read_idx": 2},
+    "soil_rechr_max":          {"key": "Shared soil_rechr_max",   "shape": [0.375, 0.75, 1.0], "read_idx": 2},
+    "rechr_ssr_K":             {"key": "Soil rechr_ssr_K",        "shape": "uniform", "read_idx": 0},
+    "lower_ssr_K":             {"key": "Soil lower_ssr_K",        "shape": "uniform", "read_idx": 0},
+    "soil_gw_K":               {"key": "Soil soil_gw_K",          "shape": "uniform", "read_idx": 0},
+    "gw_max":                  {"key": "Soil gw_max",   "shape": [5.0 / 6.0, 1.0, 7.0 / 6.0], "read_idx": 1},
+    "gw_K":                    {"key": "Soil gw_K",               "shape": "uniform", "read_idx": 0},
+    # ---- routing storage (recession shape / timing) -------------------------
+    "Kstorage":                {"key": "Netroute Kstorage", "shape": [2.0 / 3.0, 1.0, 5.0 / 12.0], "read_idx": 1},
+    "Lag":                     {"key": "Netroute Lag",     "shape": [2.0 / 3.0, 1.0, 1.0 / 3.0], "read_idx": 1},
+    "runKstorage":             {"key": "Netroute runKstorage",    "shape": "uniform", "read_idx": 0},
+    "ssrKstorage":             {"key": "Netroute ssrKstorage",    "shape": "uniform", "read_idx": 0},
+    "gwKstorage":              {"key": "Netroute gwKstorage",     "shape": "uniform", "read_idx": 0},
+    "gwLag":                   {"key": "Netroute gwLag",          "shape": "uniform", "read_idx": 0},
 }
-INTEGER_PARAMS = {"Qe_subl_from_SWE"}
 
-# Parameters that are LOCKED by the SKILL.md HARD RULE and may never be handed in.
-FORBIDDEN_PARAMS = {"ClimChng_precip", "obs_elev", "ClimChng_t", "catchadjust",
-                    "precip_elev_adj", "lapse_rate"}
+# Defaults == the validated best grid member (obs_elev 2100 / ClimChng_precip
+# 1.45 over the Canoe-derived large GW store and light Kstorage recipe), so the
+# default vector reproduces the validated run and a staged round that freezes a
+# parameter holds it at the validated value.
+PARAM_DEFAULTS = {
+    "obs_elev": 2100.0,
+    "lapse_rate": 0.75,
+    "ClimChng_precip": 1.45,
+    "precip_elev_adj": 0.0005,
+    "tmax_allrain": 2.0,
+    "tmax_allsnow": 0.0,
+    "snow_rain_determination": 0,
+    "Albedo_snow": 0.85,
+    "pbsm_fetch": 2000.0,
+    "crack_fallstat": 50.0,
+    "crack_Major": 5.0,
+    "evap_F_Qg": 0.05,
+    "Sdmax": 20.0,
+    "soil_moist_max": 250.0,
+    "soil_rechr_max": 80.0,
+    "rechr_ssr_K": 0.01,
+    "lower_ssr_K": 0.001,
+    "soil_gw_K": 6.0,
+    "gw_max": 1800.0,
+    "gw_K": 1.0,
+    "Kstorage": 24.0,
+    "Lag": 72.0,
+    "runKstorage": 0.0,
+    "ssrKstorage": 0.0,
+    "gwKstorage": 50.0,
+    "gwLag": 500.0,
+}
 
-RTOL = 1e-9        # our own write->read agreement; the kit re-checks at its own rtol
+# gw_init is NOT calibrated: it is written every run as 0.5 x the per-HRU
+# gw_max (exactly the validated deck's 750/900/1050 for gw_max 1500/1800/2100),
+# so the store can never be initialised above its own capacity and CRHM's
+# "Initial value of gw storage is greater than the maximum value" hard error is
+# unreachable by construction.
+GW_INIT_FRACTION = 0.5
 
-# Display_Variable set: SWE (the scored state) plus the PBSM sink terms and the
-# snowfall denominator the dag's "sublimation 15-40% of snowfall in prairie"
-# activity gate needs.  Display_Variable selects OUTPUT ONLY and cannot change the
-# physics; the reduced set exists purely to keep the per-eval parse cheap, and the
-# default vector is verified to reproduce the validated metric exactly.
-OUTPUT_GROUPS = [("pbsm", "SWE"), ("pbsm", "cumSubl"), ("pbsm", "cumDrift"),
-                 ("pbsm", "cumDriftIn"), ("obs", "cumhru_snow")]
+READBACK_RTOL = 1e-9
 
 
 class Fail(Exception):
-    """Anything that must produce NO metrics file."""
+    """Any condition that must abort the eval with NO metrics written."""
 
 
-def die(msg: str, code: int = 1):
-    print(f"[calib_run] FAIL: {msg}", file=sys.stderr, flush=True)
-    sys.exit(code)
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:                     # read-only, binary
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
-def _close(a, b) -> bool:
-    return math.isclose(float(a), float(b), rel_tol=RTOL, abs_tol=1e-12)
-
-
-def _rel_ok(got, want, rtol=OBS_STAT_RTOL) -> bool:
-    return math.isclose(float(got), float(want), rel_tol=rtol, abs_tol=1e-9)
-
-
-def run_tool(script: Path, args, cwd: Path) -> str:
-    """Invoke a KI tool as a subprocess and fail LOUDLY (never fail-open)."""
+# --------------------------------------------------------------------------- #
+# KI tool invocation
+# --------------------------------------------------------------------------- #
+def run_tool(script: Path, args, label=None):
     cmd = [sys.executable, str(script)] + [str(a) for a in args]
-    p = subprocess.run(cmd, capture_output=True, text=True, cwd=str(cwd))
+    p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0:
-        raise Fail(f"{script.name} rc={p.returncode}\n"
+        raise Fail(f"{label or script.name} rc={p.returncode}\n"
                    f"STDOUT:\n{p.stdout[-3000:]}\nSTDERR:\n{p.stderr[-3000:]}")
-    return p.stdout
+    return p.stdout + "\n" + p.stderr
 
 
-# ---------------------------------------------------------------------------
-# 0.  prepared artifacts + case identity
-# ---------------------------------------------------------------------------
-def check_prepared():
-    required = [HRU_CONFIG, MODULES_JSON, DERIVED_JSON, BASIN_OBS, OBS_CSV,
-                SCREEN_JSON, CRHM_EXE, SNOWCCI_DIR]
-    missing = [str(p) for p in required if not p.exists()]
-    if missing:
-        raise Fail(
-            f"prepared artifact(s) absent: {missing}.  Rebuild them ONCE with the "
-            f"KI's prepare steps (create_hru_config -> select_modules -> "
-            f"derive_parameters -> convert_vic_to_obs -> screen_swe_obs); "
-            f"calib_run.py never rebuilds inputs per eval.")
-    if not os.access(CRHM_EXE, os.X_OK):
-        raise Fail(f"CRHM binary {CRHM_EXE} is not executable")
-
-
-def resolve_case() -> tuple[str, dict]:
-    """Read the domain THIS eval actually weights its SWE with, out of the prepared
-    hru_config.json, and DERIVE the case_id from it — so the ``__kdt__.case_id``
-    declaration cannot diverge from the domain that was scored.  The derived id is
-    then checked against the pinned TARGET_CASE_ID; a mismatch aborts."""
-    with open(HRU_CONFIG, "r", encoding="utf-8") as fh:
-        cfg = json.load(fh)
-    lat, lon = float(cfg["latitude"]), float(cfg["longitude"])
-    case_id = f"GEO:{lat:g},{lon:g}"
-    if case_id != TARGET_CASE_ID:
-        raise Fail(f"{HRU_CONFIG} describes {case_id}, not the target case "
-                   f"{TARGET_CASE_ID}; refusing to score a different site")
-    bbox = tuple(round(float(v), 6) for v in cfg["region_bbox"])
-    if bbox != BBOX:
-        raise Fail(f"{HRU_CONFIG} region_bbox {bbox} != the target region {BBOX}; "
-                   f"the obs polygon and the model domain would not be the same area")
-    if int(cfg["nhru"]) != NHRU:
-        raise Fail(f"{HRU_CONFIG} has nhru={cfg['nhru']}, expected {NHRU}")
-    # zone map must be exactly the validated land-cover layout
-    zones: dict[str, list[int]] = {}
-    for h in cfg["hrus"]:
-        zones.setdefault(str(h["land_cover_name"]), []).append(int(h["hru_id"]))
-    zones = {k: sorted(v) for k, v in zones.items()}
-    if zones != {k: sorted(v) for k, v in ZONES.items()}:
-        raise Fail(f"land-cover zone map changed: {zones} != {ZONES}; the "
-                   f"zone-scoped parameters would address different HRUs")
-    for h in cfg["hrus"]:
-        canopy = float(h.get("veg_height_m", 0.0)) >= CANOPY_HT_MIN_M
-        if canopy != (str(h["land_cover_name"]) == "deciduous_forest"):
-            raise Fail(f"HRU {h['hru_id']} canopy classification changed "
-                       f"(veg_height_m={h.get('veg_height_m')}, "
-                       f"cover={h['land_cover_name']}); inhibit_bs would move")
-    return case_id, cfg
-
-
-def load_prepared_json(path: Path) -> dict:
-    with open(path, "r", encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-# ---------------------------------------------------------------------------
-# 1.  the observation — read read-only, and every declared field ASSERTED
-# ---------------------------------------------------------------------------
-def load_screen() -> tuple[str, dict]:
-    """screen_swe_obs.py's verdict.  It decides BOTH the scoring aggregation and
-    whether the forcing knobs may move at all, so it is enforced, not assumed."""
-    with open(SCREEN_JSON, "r", encoding="utf-8") as fh:
-        s = json.load(fh)
-    if os.path.abspath(str(s.get("obs_csv", ""))) != os.path.abspath(str(OBS_CSV)):
-        raise Fail(f"{SCREEN_JSON} screened {s.get('obs_csv')!r}, not the scored "
-                   f"series {OBS_CSV}")
-    for k, want in SCREEN_ENVELOPE.items():
-        got = s.get(k)
-        if got is None:
-            raise Fail(f"{SCREEN_JSON} is missing declared field {k!r}")
-        if isinstance(want, bool):
-            if bool(got) is not want:
-                raise Fail(f"{SCREEN_JSON} {k}={got!r}, declared {want!r}")
-        elif not _rel_ok(got, want, rtol=1e-6):
-            raise Fail(f"{SCREEN_JSON} {k}={got!r}, declared {want!r}")
-    # aggregation is DERIVED from the screen, not hardcoded
-    agg = "daily" if bool(s["daily_scoring_admissible"]) else "monthly_mean"
-    return agg, s
-
-
-def load_obs() -> tuple[pd.Series, str, dict]:
-    """Snow_cci region-mean daily SWE (mm).  The CSV is an immutable prepared
-    artifact and is opened READ-ONLY.  Every field calibration.yaml's obs_envelope
-    declares is asserted, and three dates are re-derived live from the Snow_cci
-    granules so the cache cannot silently drift from its source.
-
-    Returns the series, a scored_obs label built from what was ACTUALLY read, and
-    the measured envelope."""
-    with open(OBS_CSV, "r", encoding="utf-8") as fh:          # read-only
-        o = pd.read_csv(fh, parse_dates=["date"])
-    if list(o.columns) != OBS_ENVELOPE["columns"]:
-        raise Fail(f"{OBS_CSV} columns {list(o.columns)} != declared "
-                   f"{OBS_ENVELOPE['columns']}")
-    if len(o) != OBS_ENVELOPE["n_records"]:
-        raise Fail(f"{OBS_CSV} has {len(o)} records, declared "
-                   f"{OBS_ENVELOPE['n_records']}")
-    o = o.set_index("date").sort_index()
-    v = o["obs_swe_mm"].dropna()
-    measured = {
-        "n_valid": int(len(v)),
-        "first_date": str(o.index.min().date()),
-        "last_date": str(o.index.max().date()),
-        "mean_mm": float(v.mean()), "p95_mm": float(v.quantile(0.95)),
-        "max_mm": float(v.max()), "min_mm": float(v.min()),
-        "sum_mm": float(v.sum()), "min_valid_frac": float(o["valid_frac"].min()),
-    }
-    for k in ("first_date", "last_date"):
-        if measured[k] != OBS_ENVELOPE[k]:
-            raise Fail(f"{OBS_CSV} {k}={measured[k]}, declared {OBS_ENVELOPE[k]}")
-    if measured["n_valid"] != OBS_ENVELOPE["n_valid"]:
-        raise Fail(f"{OBS_CSV} has {measured['n_valid']} valid days, declared "
-                   f"{OBS_ENVELOPE['n_valid']}")
-    for k in ("mean_mm", "p95_mm", "max_mm", "sum_mm", "min_valid_frac"):
-        if not _rel_ok(measured[k], OBS_ENVELOPE[k]):
-            raise Fail(f"{OBS_CSV} {k}={measured[k]!r}, declared {OBS_ENVELOPE[k]!r}")
-    if abs(measured["min_mm"] - OBS_ENVELOPE["min_mm"]) > 1e-9:
-        raise Fail(f"{OBS_CSV} min_mm={measured['min_mm']!r}, declared "
-                   f"{OBS_ENVELOPE['min_mm']!r}")
-
-    n_cells = spot_check_snowcci()
-    measured["region_cells"] = n_cells
-    label = (f"{OBS_ID}:ESA Snow_cci merged SWE v2.0 ({OBS_UNIT}) region mean over "
-             f"bbox {BBOX[0]}-{BBOX[2]}E / {BBOX[1]}-{BBOX[3]}N "
-             f"({n_cells} cells @0.1deg), {measured['n_valid']} daily records "
-             f"{measured['first_date']}..{measured['last_date']} @ {OBS_CSV} "
-             f"(granules: {SNOWCCI_DIR})")
-    return v, label, measured
-
-
-def spot_check_snowcci() -> int:
-    """Re-derive the region mean for three dates straight out of the Snow_cci
-    granules and require the cache to match.  netCDF4.Dataset defaults to mode 'r'
-    (read-only), so this works on a read-only mount.  Flag values -30/-20/-10/-1
-    are masked; 0 is a real observation of zero SWE and is kept."""
-    n_cells = None
-    for stamp, want in SPOT_CHECK.items():
-        files = sorted(glob.glob(str(SNOWCCI_DIR / f"{stamp}*.nc")))
-        if not files:
-            raise Fail(f"no Snow_cci granule for {stamp} under {SNOWCCI_DIR}")
-        ds = netCDF4.Dataset(files[0], "r")            # read-only
+# --------------------------------------------------------------------------- #
+# candidate vector
+# --------------------------------------------------------------------------- #
+def load_requested():
+    """Read the candidate vector. Unknown / non-finite names fail closed."""
+    pf = os.environ.get("KDT_CALIB_PARAMS")
+    if not pf:
+        # No vector handed => the DEFAULT vector (commissioning / kit baseline).
+        return dict(PARAM_DEFAULTS), False
+    p = Path(pf)
+    if not p.is_file():
+        raise Fail(f"KDT_CALIB_PARAMS points at a missing file: {pf}")
+    with open(p, "r") as fh:                          # read-only
+        raw = json.load(fh)
+    if not isinstance(raw, dict):
+        raise Fail("KDT_CALIB_PARAMS JSON must be an object {name: value}")
+    unknown = sorted(set(raw) - set(PARAM_SPEC))
+    if unknown:
+        raise Fail(f"unknown calibration parameter(s): {unknown}; "
+                   f"known: {sorted(PARAM_SPEC)}")
+    vec = dict(PARAM_DEFAULTS)
+    for k, v in raw.items():
         try:
-            lat, lon = ds["lat"][:], ds["lon"][:]
-            ii = np.where((lat >= BBOX[1]) & (lat <= BBOX[3]))[0]
-            jj = np.where((lon >= BBOX[0]) & (lon <= BBOX[2]))[0]
-            a = np.asarray(ds["swe"][0, ii.min():ii.max() + 1,
-                                     jj.min():jj.max() + 1], dtype=float)
-        finally:
-            ds.close()
-        if n_cells is None:
-            n_cells = int(a.size)
-            if n_cells != OBS_ENVELOPE["region_cells"]:
-                raise Fail(f"Snow_cci region grid has {n_cells} cells over {BBOX}, "
-                           f"declared {OBS_ENVELOPE['region_cells']}")
-        ok = a >= 0
-        got = float(a[ok].mean()) if ok.any() else float("nan")
-        if not _rel_ok(got, want, rtol=1e-9):
-            raise Fail(f"Snow_cci granule {stamp}: region mean {got!r} != cached "
-                       f"{want!r}; {OBS_CSV} no longer matches its source")
-    return int(n_cells)
+            fv = float(v)
+        except (TypeError, ValueError):
+            raise Fail(f"parameter {k!r} is not numeric: {v!r}")
+        if not math.isfinite(fv):
+            raise Fail(f"parameter {k!r} is not finite: {v!r}")
+        vec[k] = int(round(fv)) if PARAM_SPEC[k].get("integer") else fv
+    # Echo EVERY key we were handed (incl. frozen ones) -- the kit fails an
+    # eval that omits a handed key. `applied_params` below carries the whole
+    # pool, a superset of the handed keys.
+    return vec, True
 
 
-# ---------------------------------------------------------------------------
-# 2.  injection — expand zone-scoped params to the per-HRU vectors CRHM needs
-# ---------------------------------------------------------------------------
-def zone_vector(per_zone: dict, default=None) -> list:
-    """1-based zone map -> a length-NHRU vector in HRU order."""
-    v: list = [default] * NHRU
-    for zone, ids in ZONES.items():
-        if zone not in per_zone:
+def _fmt_num(v: float) -> str:
+    """Deterministic token that float()-round-trips exactly."""
+    if float(v) == int(v) and abs(v) < 1e15:
+        return str(int(v))
+    return repr(float(v))
+
+
+def hru_values(name: str, scalar) -> list:
+    """One calibrated scalar -> the per-HRU value list for the .prj row."""
+    spec = PARAM_SPEC[name]
+    shape = spec["shape"]
+    if spec.get("integer"):
+        scalar = int(round(scalar))
+    if shape == "all" or shape == "uniform":
+        return [scalar] * NHRU
+    prof = shape
+    if prof[spec["read_idx"]] != 1.0:
+        raise Fail(f"profile for {name} must be 1.0 at read_idx")
+    vals = []
+    for i, f in enumerate(prof):
+        if i == spec["read_idx"]:
+            vals.append(float(scalar))
+        else:
+            vals.append(round(float(scalar) * float(f), 6))
+    return vals
+
+
+# --------------------------------------------------------------------------- #
+# deck (.prj) surgery -- inject into a COPY of the pinned validated deck
+# --------------------------------------------------------------------------- #
+_DECL_RANGE = re.compile(r"^(\S+)\s+(\S+)\s+<([^>]*)>\s*$")
+
+
+def _parse_decl_range(spec_text: str):
+    m = re.match(r"\s*(\S+)\s+to\s+(\S+)\s*$", spec_text)
+    if not m:
+        raise Fail(f"unparseable declared range <{spec_text}>")
+    return float(m.group(1)), float(m.group(2))
+
+
+def _is_numeric_row(line: str) -> bool:
+    toks = line.split()
+    if not toks:
+        return False
+    try:
+        [float(t) for t in toks]
+        return True
+    except ValueError:
+        return False
+
+
+def parse_deck(text: str):
+    """The Parameters block as {key: {"lo","hi","rows":[row_line_indices]}}."""
+    lines = text.split("\n")
+    table = {}
+    in_block = False
+    i = 0
+    while i < len(lines):
+        s = lines[i].strip()
+        if s == "Parameters:":
+            in_block = True
+            i += 1
             continue
-        for hid in ids:
-            v[hid - 1] = per_zone[zone]
-    if any(x is None for x in v):
-        raise Fail("zone expansion left an HRU unset")
-    return v
+        if in_block and (s.startswith("Initial_State") or s.startswith("Final_State")):
+            break
+        if in_block:
+            m = _DECL_RANGE.match(s)
+            if m:
+                key = f"{m.group(1)} {m.group(2)}"
+                lo, hi = _parse_decl_range(m.group(3))
+                rows = []
+                j = i + 1
+                while j < len(lines) and _is_numeric_row(lines[j].strip()):
+                    rows.append(j)
+                    j += 1
+                table[key] = {"lo": lo, "hi": hi, "rows": rows}
+                i = j
+                continue
+        i += 1
+    return table, lines
 
 
-def build_overrides(p: dict) -> dict:
-    """Every override create_prj_file.py is handed for this candidate.
-
-    The FIXED block is copied verbatim from the validated run's make_overrides():
-    the LOCKED forcing knobs (obs_elev / ClimChng_precip), the RULE-2 inhibit_bs
-    mask, and the Soil/Netroute stores (which do not touch SWE and exist only so
-    the water balance closes).  Only the eight calibrated names below vary."""
-    fetch = zone_vector({"crop_stubble": float(p["fetch_stubble"]),
-                         "open_prairie": float(p["fetch_open_short"]),
-                         "bare_ground": float(p["fetch_open_short"]),
-                         "deciduous_forest": FOREST_FETCH_M})
-    ht = zone_vector({"crop_stubble": float(p["Ht_stubble"]),
-                      "open_prairie": float(p["Ht_grass"]),
-                      "bare_ground": float(p["Ht_bare"]),
-                      "deciduous_forest": FOREST_HT_M})
-    inhibit = zone_vector({z: (1 if z == "deciduous_forest" else 0) for z in ZONES})
-    n = NHRU
-    return {
-        # ---- LOCKED by the SKILL.md HARD RULE (never candidate parameters) ----
-        "obs obs_elev": LOCKED_OBS_ELEV,
-        "obs ClimChng_flag": [1] * n,
-        "obs ClimChng_precip": [LOCKED_CLIMCHNG_PRECIP] * n,
-        # ---- calibrated blowing-snow parameterisation -------------------------
-        "pbsm fetch": fetch,
-        "pbsm Ht": ht,
-        "pbsm inhibit_bs": inhibit,
-        "pbsm N_S": [float(p["N_S"])] * n,
-        "pbsm A_S": [float(p["A_S"])] * n,
-        "ebsm Qe_subl_from_SWE": [int(round(float(p["Qe_subl_from_SWE"])))] * n,
-        # ---- inert for SWE; present so the water balance closes ---------------
-        "Soil gw_max": [600] * n, "Soil gw_init": [250] * n,
-        "Soil gw_K": [0.6] * n, "Soil soil_gw_K": [3.0] * n,
-        "Soil rechr_ssr_K": [1.0] * n, "Soil lower_ssr_K": [2.0] * n,
-        "Soil soil_ssr_runoff": [1] * n,
-        "Netroute Kstorage": [10.0] * n, "Netroute Lag": [24.0] * n,
-        "Netroute runKstorage": [4.0] * n, "Netroute runLag": [12.0] * n,
-        "Netroute ssrKstorage": [6.0] * n, "Netroute ssrLag": [24.0] * n,
-        "Netroute gwKstorage": [50] * n, "Netroute gwLag": [500] * n,
-    }
-
-
-def build_deck(p: dict, wd: Path) -> Path:
-    """Regenerate basin.prj through the KI's OWN create_prj_file.py with this
-    candidate's overrides, then validate it with the KI's validate_prj.py.
-
-    Injection happens INSIDE the regeneration, so nothing downstream can
-    overwrite it.  create_prj_file.py rejects any value outside a parameter's
-    declared <min to max> with a hard error rather than letting CRHM clamp it
-    silently (dt_006), so an out-of-range candidate fails CLOSED here."""
-    prj = wd / "basin.prj"
-    ovr = wd / "param_overrides.json"
-    ovr.write_text(json.dumps(build_overrides(p), indent=1))
-    idx = " ".join(str(i) for i in range(1, NHRU + 1))
-    output_vars = ",".join(f"{mod} {var} {idx}" for mod, var in OUTPUT_GROUPS)
-    run_tool(TOOLS / "s4_parameter_config" / "create_prj_file.py",
-             ["--hru_config", HRU_CONFIG, "--module_chain", MODULES_JSON,
-              "--obs_path", BASIN_OBS,
-              "--start_date", f"{START_YEAR} 1 1", "--end_date", f"{END_YEAR} 12 31",
-              "--output_path", prj, "--output_vars", output_vars,
-              "--derived_params", DERIVED_JSON, "--param_overrides", ovr], cwd=wd)
-    run_tool(TOOLS / "s4_parameter_config" / "validate_prj.py",
-             ["--prj_path", prj], cwd=wd)
-    if not prj.exists() or prj.stat().st_size == 0:
-        raise Fail("create_prj_file.py produced no deck")
-    return prj
-
-
-_HDR = re.compile(r"^(\S+)\s+(\S+)\s+<[^>]*>\s*$")
-
-
-def read_deck_params(prj: Path) -> dict:
-    """Parse the Parameters section of the deck the CRHM binary actually opens.
-
-    Returns {"<module> <param>": [float, ...]}.  This is a read of the EFFECTIVE
-    ARTIFACT, never an echo of the request."""
-    out: dict[str, list[float]] = {}
-    key = None
-    section = None
-    with open(prj, "r", encoding="utf-8", errors="replace") as fh:   # read-only
-        lines = fh.read().splitlines()
-    for raw in lines:
-        s = raw.strip()
-        if s.endswith(":") and s[:-1] in ("Parameters", "Dimensions", "Modules",
-                                          "Dates", "Observations", "Macros",
-                                          "Initial_State", "Final_State",
-                                          "Summary_period", "Display_Variable",
-                                          "Display_Observation"):
-            section = s[:-1]
-            key = None
-            continue
-        if section != "Parameters" or not s or s.startswith("#"):
-            continue
-        m = _HDR.match(s)
-        if m:
-            key = f"{m.group(1)} {m.group(2)}"
-            out[key] = []
-            continue
-        if key is not None:
-            try:
-                out[key].extend(float(x) for x in s.split())
-            except ValueError:
-                raise Fail(f"unparsable value row under {key!r} in {prj}: {s!r}")
-    if not out:
-        raise Fail(f"no Parameters section parsed out of {prj}")
+def deck_values(text: str, key: str):
+    """All numeric values carried by `key` in deck order (flattened)."""
+    table, lines = parse_deck(text)
+    if key not in table:
+        raise Fail(f"deck has no parameter '{key}'")
+    out = []
+    for j in table[key]["rows"]:
+        out.extend(float(t) for t in lines[j].split())
     return out
 
 
-def read_back(prj: Path, wanted: dict) -> dict:
-    """Re-collapse the per-HRU rows of the generated deck to the zone-scoped
-    parameter names and return what the model will ACTUALLY use.  A zone whose
-    HRUs do not all carry one value is a mis-injection and fails closed."""
-    deck = read_deck_params(prj)
+def assert_template_identity(text: str):
+    """The pinned deck must be THIS gauge's validated domain."""
+    for key, want in DECK_IDENTITY.items():
+        got = deck_values(text, key)
+        if len(got) != len(want) or any(
+                not math.isclose(g, w, rel_tol=1e-9, abs_tol=1e-9)
+                for g, w in zip(got, want)):
+            raise Fail(f"template deck identity mismatch on '{key}': "
+                       f"{got} != expected {want} -- wrong/rebuilt domain")
+    if "dore.obs" not in text:
+        raise Fail("template deck does not reference dore.obs")
+    for token in ("2005 1 1", "2015 12 31"):
+        if token not in text:
+            raise Fail(f"template deck lost its simulation window ({token})")
+    area = deck_values(text, "Shared basin_area")[0]
+    err = 100.0 * (area - GAUGE_AREA_KM2) / GAUGE_AREA_KM2
+    if abs(err) > AREA_TOL_PCT:
+        raise Fail(f"deck area {area} km2 is {err:+.1f}% off the published "
+                   f"HYDAT {OBS_STATION} area {GAUGE_AREA_KM2} km2")
 
-    def zone_value(key: str, zone: str) -> float:
-        vals = deck.get(key)
-        if vals is None:
-            raise Fail(f"{prj} has no {key!r} block to read back")
-        if len(vals) != NHRU:
-            raise Fail(f"{prj} {key!r} has {len(vals)} values, expected {NHRU}")
-        picked = {vals[hid - 1] for hid in ZONES[zone]}
-        if len(picked) != 1:
-            raise Fail(f"{prj} {key!r} is not uniform over zone {zone}: {sorted(picked)}")
-        return float(picked.pop())
 
-    def global_value(key: str) -> float:
-        vals = deck.get(key)
-        if vals is None:
-            raise Fail(f"{prj} has no {key!r} block to read back")
-        if len(vals) != NHRU:
-            raise Fail(f"{prj} {key!r} has {len(vals)} values, expected {NHRU}")
-        picked = set(vals)
-        if len(picked) != 1:
-            raise Fail(f"{prj} {key!r} is not uniform across HRUs: {sorted(picked)}")
-        return float(picked.pop())
+def inject(text: str, vec) -> str:
+    """Rewrite the value rows for every calibrated key (+ derived gw_init).
 
-    applied = {
-        "fetch_stubble":    zone_value("pbsm fetch", "crop_stubble"),
-        "fetch_open_short": zone_value("pbsm fetch", "open_prairie"),
-        "Ht_stubble":       zone_value("pbsm Ht", "crop_stubble"),
-        "Ht_grass":         zone_value("pbsm Ht", "open_prairie"),
-        "Ht_bare":          zone_value("pbsm Ht", "bare_ground"),
-        "N_S":              global_value("pbsm N_S"),
-        "A_S":              global_value("pbsm A_S"),
-        "Qe_subl_from_SWE": global_value("ebsm Qe_subl_from_SWE"),
-    }
-    # bare_ground shares fetch_open_short with open_prairie -> verify, don't assume
-    if not _close(zone_value("pbsm fetch", "bare_ground"), applied["fetch_open_short"]):
-        raise Fail("pbsm fetch on bare_ground does not equal the open_prairie value; "
-                   "fetch_open_short addresses both zones")
-    if set(applied) != set(wanted):
-        raise Fail(f"read-back covers {sorted(applied)}, requested {sorted(wanted)}")
-    for name, want in wanted.items():
-        if not _close(applied[name], want):
-            raise Fail(f"{name}: requested {want!r}, deck reads back {applied[name]!r} "
-                       f"-- the value did NOT apply (CRHM would run a different model)")
+    Every written value is validated against the deck's OWN declared
+    `<lo to hi>` window first -- CRHM hard-errors rather than clamps, and a
+    clamp-free contract means an out-of-window value must never be written.
+    """
+    table, lines = parse_deck(text)
+    writes = {}
+    for name, spec in PARAM_SPEC.items():
+        writes[spec["key"]] = hru_values(name, vec[name])
+    # derived: gw_init = GW_INIT_FRACTION x per-HRU gw_max (never calibrated)
+    writes["Soil gw_init"] = [round(GW_INIT_FRACTION * v, 6)
+                              for v in writes["Soil gw_max"]]
+    for key, vals in writes.items():
+        if key not in table:
+            raise Fail(f"deck has no parameter '{key}' to inject")
+        ent = table[key]
+        if not ent["rows"]:
+            raise Fail(f"deck parameter '{key}' has no value rows")
+        for v in vals:
+            if not (ent["lo"] <= float(v) <= ent["hi"]):
+                raise Fail(f"{key}={v} is outside the deck's declared window "
+                           f"<{ent['lo']} to {ent['hi']}> -- CRHM would "
+                           f"hard-error; the calibration range must stay "
+                           f"inside the declared window")
+        row_txt = " ".join(_fmt_num(v) for v in vals)
+        for j in ent["rows"]:
+            lines[j] = row_txt
+    return "\n".join(lines)
+
+
+def read_back(prj_path: Path, vec):
+    """Read every calibrated value out of the .prj CRHM will parse."""
+    text = prj_path.read_text()
+    applied, problems = {}, []
+    for name, spec in PARAM_SPEC.items():
+        try:
+            vals = deck_values(text, spec["key"])
+        except Fail as e:
+            problems.append(str(e))
+            continue
+        idx = spec["read_idx"]
+        if idx >= len(vals):
+            problems.append(f"{name}: '{spec['key']}' has {len(vals)} "
+                            f"value(s), need index {idx}")
+            continue
+        got = vals[idx]
+        want = float(int(round(vec[name])) if spec.get("integer") else vec[name])
+        if spec.get("integer"):
+            got_cmp, ok = int(round(got)), int(round(got)) == int(round(want))
+        else:
+            got_cmp = got
+            ok = math.isclose(got, want, rel_tol=READBACK_RTOL, abs_tol=1e-12)
+        if not ok:
+            problems.append(f"{name}: requested {want!r} but the .prj carries "
+                            f"{got!r} (CRHM would run a different model)")
+        applied[name] = got_cmp
+    # the derived initial condition must also hold in the parsed artifact
+    gw_max_vals = deck_values(text, "Soil gw_max")
+    gw_init_vals = deck_values(text, "Soil gw_init")
+    for gm, gi in zip(gw_max_vals, gw_init_vals):
+        if not math.isclose(gi, round(GW_INIT_FRACTION * gm, 6),
+                            rel_tol=1e-9, abs_tol=1e-9):
+            problems.append(f"derived gw_init {gi} != {GW_INIT_FRACTION} x "
+                            f"gw_max {gm}")
+    if problems:
+        raise Fail("parameter read-back FAILED (injection did not reach the "
+                   "model input):\n  " + "\n  ".join(problems))
     return applied
 
 
-def assert_deck_integrity(prj: Path):
-    """Fail-closed checks on the deck the binary opens: the LOCKED forcing knobs
-    must still be locked, the obs file must be this case's forcing, the dimensions
-    and the simulation window must be the validated ones."""
-    deck = read_deck_params(prj)
-    elev = deck.get("obs obs_elev")
-    if not elev or not all(_close(x, LOCKED_OBS_ELEV) for x in elev):
-        raise Fail(f"obs obs_elev in {prj} is {elev!r}, not the LOCKED "
-                   f"{LOCKED_OBS_ELEV} m CMFD source-cell elevation "
-                   f"(SKILL.md HARD RULE: SWE is the scored mass state)")
-    cp = deck.get("obs ClimChng_precip")
-    if not cp or not all(_close(x, LOCKED_CLIMCHNG_PRECIP) for x in cp):
-        raise Fail(f"obs ClimChng_precip in {prj} is {cp!r}, not the LOCKED "
-                   f"{LOCKED_CLIMCHNG_PRECIP} (tuning it against SWE is fabrication)")
-    text = prj.read_text(encoding="utf-8", errors="replace")
-    if os.path.abspath(str(BASIN_OBS)) not in text:
-        raise Fail(f"{prj} does not reference the prepared forcing {BASIN_OBS}")
-    if f"nhru {NHRU}" not in text:
-        raise Fail(f"{prj} does not declare nhru {NHRU}")
-    for stamp in (f"{START_YEAR} 1 1", f"{END_YEAR} 12 31"):
-        if stamp not in text:
-            raise Fail(f"{prj} does not declare the simulation window token {stamp!r}")
+# --------------------------------------------------------------------------- #
+# observations -- contract-enforced
+# --------------------------------------------------------------------------- #
+def load_obs():
+    """Load + ASSERT the declared obs envelope. Returns (series, identity)."""
+    if not OBS_CSV.is_file():
+        raise Fail(f"observation file missing: {OBS_CSV}")
+    digest = sha256_file(OBS_CSV)
+    if digest != OBS_CONTRACT["file_sha256"]:
+        raise Fail(f"obs file sha256 {digest} != declared "
+                   f"{OBS_CONTRACT['file_sha256']} -- the {OBS_STATION} "
+                   f"series changed / was replaced")
+    # The station identity is carried by the file NAME of the file we actually
+    # open -- derive it, then assert it is the target-case gauge.
+    m = re.match(r"^obs_(\w+)\.csv$", OBS_CSV.name)
+    if not m or m.group(1) != OBS_STATION:
+        raise Fail(f"obs file {OBS_CSV.name} does not carry the target-case "
+                   f"station id {OBS_STATION}")
+    station_id = m.group(1)
 
+    with open(OBS_CSV, "r") as fh:                    # read-only
+        df = pd.read_csv(fh, dtype=str)
+    if list(df.columns) != OBS_CONTRACT["columns"]:
+        raise Fail(f"obs columns {list(df.columns)} != declared "
+                   f"{OBS_CONTRACT['columns']}")
+    dt = pd.to_datetime(df["date"], format=OBS_CONTRACT["date_format"],
+                        errors="coerce")
+    if int(dt.isna().sum()):
+        raise Fail(f"{int(dt.isna().sum())} unparseable dates in {OBS_CSV}")
+    q = pd.to_numeric(df["discharge_m3s"], errors="coerce")
+    s = pd.Series(q.to_numpy(dtype=float), index=pd.DatetimeIndex(dt)).sort_index()
 
-# ---------------------------------------------------------------------------
-# 3.  run the real model
-# ---------------------------------------------------------------------------
-def run_model(prj: Path, wd: Path) -> pd.DataFrame:
-    out_txt = wd / "output.txt"
-    parsed = wd / "parsed"
-    run_tool(TOOLS / "s5_execution" / "run_crhm.py",
-             ["--crhm_exe", CRHM_EXE, "--prj_path", prj, "--output_path", out_txt,
-              "--obs_dir", str((WORK / "crhm").resolve()), "--progress", 100000],
-             cwd=wd)
-    run_tool(TOOLS / "s5_execution" / "parse_crhm_output.py",
-             ["--output_path", out_txt, "--output_format", "csv",
-              "--output_dir", parsed], cwd=wd)
-    csv = parsed / "crhm_results.csv"
-    if not csv.exists():
-        raise Fail("parse_crhm_output.py produced no crhm_results.csv")
-    df = pd.read_csv(csv, parse_dates=["datetime"]).set_index("datetime")
-    return df
+    rec = OBS_CONTRACT["record"]
+    if len(s) != rec["n_rows"]:
+        raise Fail(f"obs rows {len(s)} != declared {rec['n_rows']}")
+    if int(s.index.duplicated().sum()) != rec["duplicates"]:
+        raise Fail("obs carries duplicated dates")
+    if int(s.isna().sum()) != rec["nan"]:
+        raise Fail("obs carries NaN discharge values")
+    if int((s < 0).sum()) != rec["negative"]:
+        raise Fail("obs carries negative discharge values")
+    if str(s.index.min().date()) != rec["first"] or \
+            str(s.index.max().date()) != rec["last"]:
+        raise Fail(f"obs record span {s.index.min().date()}..{s.index.max().date()} "
+                   f"!= declared {rec['first']}..{rec['last']}")
+    gaps = pd.date_range(rec["first"], rec["last"], freq="D").difference(s.index)
+    if len(gaps) != rec["calendar_gaps"]:
+        raise Fail(f"obs has {len(gaps)} missing calendar days, declared "
+                   f"{rec['calendar_gaps']}")
 
+    for split, dec in OBS_CONTRACT["splits"].items():
+        a, b = dec["window"]
+        w = s[(s.index >= pd.Timestamp(a)) & (s.index <= pd.Timestamp(b))].dropna()
+        if len(w) != dec["n_valid_days"]:
+            raise Fail(f"obs split {split}: {len(w)} valid days, declared "
+                       f"{dec['n_valid_days']}")
+        if str(w.index.min().date()) != dec["first_valid"]:
+            raise Fail(f"obs split {split}: first valid {w.index.min().date()} "
+                       f"!= declared {dec['first_valid']}")
+        if str(w.index.max().date()) != dec["last_valid"]:
+            raise Fail(f"obs split {split}: last valid {w.index.max().date()} "
+                       f"!= declared {dec['last_valid']}")
+        for stat, got in (("min", float(w.min())), ("max", float(w.max())),
+                          ("mean", float(w.mean()))):
+            if not math.isclose(got, float(dec[stat]), rel_tol=_STAT_RTOL,
+                                abs_tol=1e-9):
+                raise Fail(f"obs split {split}: {stat} {got!r} != declared "
+                           f"{dec[stat]!r} -- the series changed")
+        rng_got = float(w.max()) - float(w.min())
+        rng_dec = float(dec["max"]) - float(dec["min"])
+        if not math.isclose(rng_got, rng_dec, rel_tol=_STAT_RTOL, abs_tol=1e-9):
+            raise Fail(f"obs split {split}: range {rng_got} != {rng_dec}")
+        missing = sorted(str(d.date()) for d in
+                         pd.date_range(a, b, freq="D").difference(w.index))
+        if missing != list(dec["missing_dates"]):
+            raise Fail(f"obs split {split}: missing dates {missing[:5]}... != "
+                       f"declared {dec['missing_dates']}")
+        digest = hashlib.sha256(
+            "|".join(f"{d.date()}:{v:.6f}" for d, v in w.items()).encode()
+        ).hexdigest()
+        if digest != dec["series_sha256"]:
+            raise Fail(f"obs split {split}: scored series sha256 {digest} != "
+                       f"declared {dec['series_sha256']} -- the observations "
+                       f"for {station_id} changed")
 
-def run_health(df: pd.DataFrame, cfg: dict) -> dict:
-    """FAIL-CLOSED run health.  Every diagnostic below is one CRHM actually
-    produces; a MISSING or non-finite value fails the eval — none is defaulted to
-    a passing value."""
-    if df.empty:
-        raise Fail("CRHM output parsed to zero rows")
-    swe_cols = [f"SWE({i})" for i in range(1, NHRU + 1)]
-    missing = [c for c in swe_cols if c not in df.columns]
-    if missing:
-        raise Fail(f"CRHM did not emit {missing}; got {list(df.columns)[:12]}")
-    first, last = df.index.min(), df.index.max()
-    if first > pd.Timestamp(f"{START_YEAR}-01-02"):
-        raise Fail(f"CRHM output starts {first}, expected {START_YEAR}-01-01 "
-                   f"(the run died early)")
-    if last < pd.Timestamp(f"{END_YEAR}-12-30"):
-        raise Fail(f"CRHM output ends {last}, expected {END_YEAR}-12-31 "
-                   f"(the run died before the end of the record)")
-    swe = df[swe_cols].apply(pd.to_numeric, errors="coerce")
-    n_bad = int((~np.isfinite(swe.to_numpy())).sum())
-    if n_bad:
-        raise Fail(f"{n_bad} non-finite SWE values in the CRHM output")
-    if float(swe.to_numpy().min()) < -1e-6:
-        raise Fail(f"negative SWE in the CRHM output "
-                   f"(min {float(swe.to_numpy().min())}) -- PBSM mass sink diverged")
-
-    # PBSM activity gate (dag safety.warnings: sublimation 15-40% of snowfall in
-    # prairie).  The gate is REQUIRED to be computable: a missing or non-finite
-    # term fails the eval closed rather than being defaulted.
-    areas = np.asarray(cfg["crhm_hru_areas_km2"], dtype=float)
-    w = areas / areas.sum()
-
-    def aw_delta(base: str) -> float:
-        tot = 0.0
-        for i in range(NHRU):
-            col = f"{base}({i + 1})"
-            if col not in df.columns:
-                raise Fail(f"activity gate needs {col}; CRHM did not emit it")
-            v = pd.to_numeric(df[col], errors="coerce").dropna()
-            if len(v) < 2:
-                raise Fail(f"activity gate column {col} carries no usable values")
-            tot += w[i] * float(v.iloc[-1] - v.iloc[0])
-        return tot
-
-    cum_subl, cum_drift = aw_delta("cumSubl"), aw_delta("cumDrift")
-    cum_snow = aw_delta("cumhru_snow")
-    if not (math.isfinite(cum_subl) and math.isfinite(cum_drift)
-            and math.isfinite(cum_snow)):
-        raise Fail("PBSM activity-gate terms are not finite")
-    if cum_snow <= 0.0:
-        raise Fail(f"area-weighted cumulative snowfall is {cum_snow}; the snowfall "
-                   f"denominator of the activity gate is unusable")
-    frac_subl = cum_subl / cum_snow
-    return {
-        "n_rows": int(len(df)),
-        "first_step": str(first), "last_step": str(last),
-        "cumSubl_area_weighted_mm": cum_subl,
-        "cumDrift_area_weighted_mm": cum_drift,
-        "cumhru_snow_area_weighted_mm": cum_snow,
-        "frac_subl": frac_subl,
-        "frac_drift": cum_drift / cum_snow,
-        "pbsm_band_frac_subl": [0.15, 0.40],
-        "pbsm_gate_status": "PASS" if 0.15 <= frac_subl <= 0.40 else "FAIL",
+    identity = {
+        "network": OBS_NETWORK,
+        "station_id": station_id,
+        "station_name": OBS_SITE_NAME,
+        "lat": GAUGE_LAT,
+        "lon": GAUGE_LON,
+        "drainage_area_km2": GAUGE_AREA_KM2,
+        "unit": OBS_UNIT,
+        "file": str(OBS_CSV),
     }
+    return s, identity
 
 
-def sim_daily_swe(df: pd.DataFrame, cfg: dict) -> pd.Series:
-    """Region SWE = AREA-WEIGHTED MEAN of the HRU SWE states, daily mean —
-    the identical construction the validated run scored."""
-    areas = np.asarray(cfg["crhm_hru_areas_km2"], dtype=float)
-    w = areas / areas.sum()
-    swe = sum(w[i] * pd.to_numeric(df[f"SWE({i + 1})"], errors="coerce")
-              for i in range(NHRU))
-    return swe.resample("D").mean()
+# --------------------------------------------------------------------------- #
+# run-health -- diagnostics CRHM / the KI tools actually produce.
+# A required diagnostic that is MISSING fails the eval closed; nothing defaults
+# to a passing value.
+# --------------------------------------------------------------------------- #
+def check_run_health(tool_log: str, out_txt: Path, df: pd.DataFrame):
+    health = {}
+
+    # (1) run_crhm.py escalates CRHM stderr error lines to [ERROR] log lines
+    if tool_log is None:
+        raise Fail("run-health: run_crhm produced no captured log")
+    bad = [l for l in tool_log.splitlines() if "[ERROR]" in l]
+    health["crhm_error_lines"] = len(bad)
+    if bad:
+        raise Fail("run-health: CRHM reported errors:\n  " + "\n  ".join(bad[:10]))
+
+    # (2) the raw STD output must exist and be non-trivial
+    if not out_txt.is_file() or out_txt.stat().st_size == 0:
+        raise Fail("run-health: CRHM produced no output file")
+    health["output_bytes"] = int(out_txt.stat().st_size)
+
+    # (3) every scored/diagnostic variable must be present
+    need = ["basinflow(1)", "basingw(1)"] \
+        + [f"SWE({i})" for i in range(1, NHRU + 1)] \
+        + [f"soil_moist({i})" for i in range(1, NHRU + 1)] \
+        + [f"hru_actet({i})" for i in range(1, NHRU + 1)]
+    missing = [c for c in need if c not in df.columns]
+    if missing:
+        raise Fail(f"run-health: parsed output is missing {missing}")
+
+    # (4) the simulation must COVER the whole window at the full hourly step --
+    #     a run that died early would otherwise be scored on its prefix.
+    first, last = df.index.min(), df.index.max()
+    health["sim_first"], health["sim_last"] = str(first), str(last)
+    if first > pd.Timestamp(*SIM_START) + pd.Timedelta(hours=1):
+        raise Fail(f"run-health: simulation starts {first}, expected "
+                   f"{pd.Timestamp(*SIM_START)}")
+    if last < pd.Timestamp(*SIM_END):
+        raise Fail(f"run-health: simulation ends {last}, expected "
+                   f"{pd.Timestamp(*SIM_END)} -- TRUNCATED run")
+    per_day = df.resample("D").size()
+    interior = pd.date_range(FULL_WINDOW[0], FULL_WINDOW[1], freq="D")[:-1]
+    short = per_day.reindex(interior)
+    n_bad = int((short != 24).sum() + short.isna().sum())
+    health["incomplete_days"] = n_bad
+    if n_bad:
+        raise Fail(f"run-health: {n_bad} scored day(s) do not carry the full "
+                   f"24 hourly steps -- incomplete simulation")
+
+    # (5) no non-finite discharge anywhere in the scored span
+    q = df.loc[FULL_WINDOW[0]:FULL_WINDOW[1], "basinflow(1)"]
+    n_nf = int((~np.isfinite(q.to_numpy(dtype=float))).sum())
+    health["nonfinite_basinflow_steps"] = n_nf
+    if n_nf:
+        raise Fail(f"run-health: {n_nf} non-finite basinflow steps")
+    return health
 
 
-def to_monthly(j: pd.DataFrame) -> pd.DataFrame:
-    g = j.groupby(pd.Grouper(freq="MS"))
-    n, m = g.size(), g.mean()
-    m = m[n >= MIN_DAYS_PER_MONTH].dropna()
-    m.index.name = "date"
-    return m
+# --------------------------------------------------------------------------- #
+# scoring
+# --------------------------------------------------------------------------- #
+def sim_daily_q(df):
+    """basinflow(1) is m3 per hourly interval -> daily total / 86400 s = m3/s
+    (identical to the validated run_and_score.py aggregation)."""
+    return df["basinflow(1)"].resample("D").sum() / 86400.0
 
 
-# ---------------------------------------------------------------------------
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--workdir", required=True)
-    ap.add_argument("--out", required=True)
+def score(obs_s, sim_s, window, label):
+    from ki_tools_common.metrics import all_metrics
+    a, b = pd.Timestamp(window[0]), pd.Timestamp(window[1])
+    o = obs_s[(obs_s.index >= a) & (obs_s.index <= b)]
+    s = sim_s[(sim_s.index >= a) & (sim_s.index <= b)]
+    j = pd.concat([o.rename("obs"), s.rename("sim")], axis=1).dropna()
+    if len(j) < 2:
+        raise Fail(f"no paired obs/sim in {label} window {window}")
+    m = all_metrics(j["obs"], j["sim"], dates=j.index, label=label,
+                    meta={"unit": OBS_UNIT, "obs_source": str(OBS_CSV)})
+    out = {"nse": float(m["NSE"]), "kge": float(m["KGE"]),
+           "pbias": float(m["PBIAS"]), "rmse": float(m["RMSE"]),
+           "r": float(m["r"]), "n_paired": int(len(j))}
+    for k, v in out.items():
+        if isinstance(v, float) and not math.isfinite(v):
+            raise Fail(f"{label}: metric {k} is not finite ({v})")
+    return out
+
+
+# --------------------------------------------------------------------------- #
+def main():
+    ap = argparse.ArgumentParser(
+        description="CRHM calibration runner (Dore River 08KA001, OBS:hydat)")
+    ap.add_argument("--workdir", required=True,
+                    help="fresh per-candidate working directory")
+    ap.add_argument("--out", required=True, help="metrics JSON to write")
     args = ap.parse_args()
 
-    # ---- 0. STALE-OUTPUT SAFETY --------------------------------------------
-    out_path = Path(args.out)
-    try:
-        out_path.unlink()
-        print(f"[calib_run] removed stale metrics file {args.out!r}", flush=True)
-    except FileNotFoundError:
-        pass
-    except OSError as e:
-        raise Fail(f"cannot remove stale metrics file {args.out!r}: {e}")
+    wd = Path(args.workdir).resolve()
+    wd.mkdir(parents=True, exist_ok=True)
+    out_path = Path(args.out).resolve()
+    if out_path.exists():
+        out_path.unlink()                      # never leave a stale pass behind
 
-    check_prepared()
-    case_id, cfg = resolve_case()
-    derived = load_prepared_json(DERIVED_JSON)
-    # the LOCKED obs_elev must be the forcing source cell derive_parameters computed
-    if not _close(round(float(derived["obs"]["obs_elev"])), LOCKED_OBS_ELEV):
-        raise Fail(f"derive_parameters.py says obs_elev="
-                   f"{derived['obs']['obs_elev']!r}, the lock is {LOCKED_OBS_ELEV} m")
-
-    # ---- 1. the candidate vector -------------------------------------------
-    pf = os.environ.get("KDT_CALIB_PARAMS")
-    handed: dict = {}
-    if pf:
-        if not os.path.exists(pf):
-            raise Fail(f"KDT_CALIB_PARAMS={pf!r} does not exist")
-        with open(pf, "r", encoding="utf-8") as fh:
-            handed = json.load(fh)
-        if not isinstance(handed, dict):
-            raise Fail("KDT_CALIB_PARAMS must contain a JSON object")
-        forbidden = sorted(set(handed) & FORBIDDEN_PARAMS)
-        if forbidden:
-            raise Fail(f"parameter(s) {forbidden} are LOCKED for a SWE-scored run "
-                       f"(SKILL.md HARD RULE: SWE is the scored mass state, so "
-                       f"these knobs write the answer directly)")
-        unknown = sorted(set(handed) - set(DEFAULTS))
-        if unknown:
-            raise Fail(f"handed unknown parameter(s) {unknown}")
-    p = dict(DEFAULTS)
-    for k, v in handed.items():
-        p[k] = int(round(float(v))) if k in INTEGER_PARAMS else float(v)
-
-    split = os.environ.get("KDT_CALIB_SPLIT") or "_both"
-    if split not in SPLITS:
-        raise Fail(f"unknown KDT_CALIB_SPLIT {split!r}")
-    s0, s1 = SPLITS[split]
-
-    # ---- 2. private eval workdir -------------------------------------------
-    wd = Path(args.workdir).resolve() / "run"
-    shutil.rmtree(wd, ignore_errors=True)
-    wd.mkdir(parents=True)
-    # Pin the record layer's series dumps into THIS eval's throwaway workdir.
-    # ki_tools_common's resolver falls back to DIRECTORY DISCOVERY when this is
-    # unset, which is how one run's all_metrics calls once appended to another
-    # run's manifest.jsonl.  A calibration eval is machinery, never evidence.
+    # Pin the evidence-capture dir to THIS eval so ki_tools_common's series
+    # resolver can never fall back to directory discovery and mix evals
+    # (the KI's own record-defect lesson).
     os.environ["KDT_SERIES_DUMP_DIR"] = str(wd / "_series")
 
-    # ---- 3. obs + screen: enforce the declared envelope BEFORE any model run
-    agg, screen = load_screen()
-    obs, scored_obs, obs_measured = load_obs()
+    # CRHM appends crhmRun.log to the PROCESS working directory. All paths here
+    # are absolute, so run from the eval workdir and everything the binary
+    # drops stays inside this candidate's dir.
+    os.chdir(wd)
 
-    # ---- 4. inject + read back from the effective artifact -------------------
-    t0 = time.time()
-    prj = build_deck(p, wd)
-    applied = read_back(prj, p)
-    assert_deck_integrity(prj)
+    # ---- staged inputs, byte-pinned ----
+    for p in (TEMPLATE_PRJ, OBS_FORC, OBS_CSV, CRHM_EXE):
+        if not Path(p).exists():
+            raise Fail(f"staged case input missing: {p}")
+    t_sha = sha256_file(TEMPLATE_PRJ)
+    if t_sha != TEMPLATE_SHA256:
+        raise Fail(f"template deck sha256 {t_sha} != pinned {TEMPLATE_SHA256} "
+                   f"-- the validated Dore deck changed / was replaced")
+    f_sha = sha256_file(OBS_FORC)
+    if f_sha != FORCING_SHA256:
+        raise Fail(f"forcing sha256 {f_sha} != pinned {FORCING_SHA256} "
+                   f"-- the staged NASA POWER dore.obs changed")
+    template = TEMPLATE_PRJ.read_text()
+    assert_template_identity(template)
 
-    # ---- 5. the real model ---------------------------------------------------
-    df = run_model(prj, wd)
-    health = run_health(df, cfg)
-    sim = sim_daily_swe(df, cfg)
+    # ---- candidate vector ----
+    vec, injected = load_requested()
 
-    # ---- 6. score ------------------------------------------------------------
-    a, b = pd.Timestamp(s0), pd.Timestamp(s1)
-    o = obs[(obs.index >= a) & (obs.index <= b)]
-    s = sim[(sim.index >= a) & (sim.index <= b)]
-    # sort=True is today's concat default and is stated explicitly so a future
-    # pandas default flip cannot silently reorder the paired frame.
-    daily = pd.concat([o.rename("obs"), s.rename("sim")], axis=1, sort=True).dropna()
-    daily.index.name = "date"
-    j = daily if agg == "daily" else to_monthly(daily)
-    if len(j) < 2:
-        raise Fail(f"no paired obs/sim on split {split} ({s0}..{s1}) at {agg}")
+    # ---- inject into a copy of the pinned deck; read back what CRHM parses --
+    prj = wd / "basin.prj"
+    prj.write_text(inject(template, vec))
+    applied = read_back(prj, vec)
 
-    from ki_tools_common import metrics as _km
-    if not str(Path(_km.__file__).resolve()).startswith(KI_TOOLS_COMMON_ROOT):
-        raise Fail(f"ki_tools_common resolved to {_km.__file__}, not the canonical "
-                   f"checkout under {KI_TOOLS_COMMON_ROOT}")
-    raw = _km.all_metrics(j["obs"].to_numpy(), j["sim"].to_numpy(), dates=j.index,
-                          label="calib_eval",
-                          meta={"headline_candidate": False,   # machinery, not evidence
-                                "unit": OBS_UNIT, "aggregation": agg,
-                                "period_role": split})
-    m = {str(k).lower(): float(v) for k, v in raw.items()
-         if isinstance(v, (int, float))}
-    for need in ("nse", "kge", "pbias"):
-        if need not in m or not math.isfinite(m[need]):
-            raise Fail(f"metric {need!r} missing or non-finite on split {split}")
+    # ---- run the real binary via the KI tool ----
+    out_txt = wd / "output.txt"
+    tool_log = run_tool(TOOLS / "s5_execution" / "run_crhm.py",
+                        ["--crhm_exe", CRHM_EXE, "--prj_path", prj,
+                         "--output_path", out_txt,
+                         "--obs_dir", str((STAGE / "crhm").resolve()) + "/"],
+                        label="run_crhm")
+    run_tool(TOOLS / "s5_execution" / "parse_crhm_output.py",
+             ["--output_path", out_txt, "--output_format", "csv",
+              "--output_dir", wd / "parsed"], label="parse_crhm_output")
+    csv = wd / "parsed" / "crhm_results.csv"
+    if not csv.is_file():
+        raise Fail(f"parse_crhm_output produced no {csv}")
+    df = pd.read_csv(csv, parse_dates=["datetime"]).set_index("datetime")
 
-    out = {
-        "nse": m["nse"], "kge": m["kge"], "pbias": m["pbias"], "r": m.get("r"),
-        "rmse": m.get("rmse"),
+    health = check_run_health(tool_log, out_txt, df)
+
+    # ---- observations (contract-enforced) + scoring ----
+    obs_s, obs_identity = load_obs()
+    sim = sim_daily_q(df)
+
+    split = (os.environ.get("KDT_CALIB_SPLIT") or "").strip().lower()
+    m_cal = score(obs_s, sim, CAL_WINDOW, "cal")
+    m_val = score(obs_s, sim, VAL_WINDOW, "val")
+    m_full = score(obs_s, sim, FULL_WINDOW, "headline")
+    if split == "calibration":
+        head, scored_window, scored_split = m_cal, CAL_WINDOW, "calibration"
+    elif split == "holdout":
+        head, scored_window, scored_split = m_val, VAL_WINDOW, "holdout"
+    elif split == "":
+        # no split declared -> the FULL 2006-2015 record, the exact window the
+        # validated real_case's prior metric (NSE 0.7086) was computed on.
+        head, scored_window, scored_split = m_full, FULL_WINDOW, "full"
+    else:
+        raise Fail(f"unrecognised KDT_CALIB_SPLIT={split!r}")
+
+    # `scored_obs` / `case_id` are built from the identity the loader ASSERTED
+    # (station id from the filename actually opened) and the window actually
+    # scored -- they cannot diverge from the scoring.
+    scored_obs = (f"{obs_identity['network'].upper()}:{obs_identity['station_id']} "
+                  f"({obs_identity['station_name']}, "
+                  f"lat={obs_identity['lat']} lon={obs_identity['lon']}) "
+                  f"[{obs_identity['unit']}] {obs_identity['file']} "
+                  f"| split={scored_split} {scored_window[0]}..{scored_window[1]} "
+                  f"n={head['n_paired']}")
+
+    metrics = {
+        "nse": head["nse"], "kge": head["kge"], "pbias": head["pbias"],
+        "rmse": head["rmse"], "r": head["r"], "n_paired": head["n_paired"],
+        "nse_cal": m_cal["nse"], "kge_cal": m_cal["kge"], "pbias_cal": m_cal["pbias"],
+        "nse_val": m_val["nse"], "kge_val": m_val["kge"], "pbias_val": m_val["pbias"],
+        "nse_full": m_full["nse"], "kge_full": m_full["kge"], "pbias_full": m_full["pbias"],
+        "scored_split": scored_split,
+        "scored_period": f"{scored_window[0]}..{scored_window[1]}",
+        "run_health": health,
         "__kdt__": {
-            # EVERY key handed is echoed (staged-frozen params included); with no
-            # KDT_CALIB_PARAMS the full default vector is echoed.  The values are
-            # the ones READ BACK out of the deck the binary opened.
-            "applied_params": {k: applied[k] for k in (handed or p)},
-            # Both DERIVED above from the artifacts actually used: case_id from the
-            # hru_config whose areas weighted the simulated SWE, scored_obs from the
-            # obs CSV + bbox + record count actually read and spot-checked against
-            # the Snow_cci granules.
-            "case_id": case_id,
+            "applied_params": applied,
+            "case_id": CASE_ID,
             "scored_obs": scored_obs,
-            "target_quantity": "swe",
-            "split": split, "score_period": [s0, s1], "aggregation": agg,
-            "n_scored": int(len(j)), "n_paired_days": int(len(daily)),
-            "obs_envelope_measured": obs_measured,
-            "screen": {k: screen[k] for k in SCREEN_ENVELOPE},
-            "run_health": health,
-            "forcing_knobs_locked": {"obs_elev": LOCKED_OBS_ELEV,
-                                     "ClimChng_precip": LOCKED_CLIMCHNG_PRECIP},
-            "wallclock_s": round(time.time() - t0, 2),
+            "injection_mode": "runner",
+            "params_injected_from_env": injected,
+            "target_var": "basinflow_s",
+            "obs_shape": "point_time_series",
+            "deck_area_km2": DECK_AREA_KM2,
+            "prj": str(prj),
         },
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_out = out_path.with_suffix(out_path.suffix + f".partial.{os.getpid()}")
-    tmp_out.write_text(json.dumps(out, indent=2, ensure_ascii=False))
-    os.replace(tmp_out, out_path)
-    print(f"[calib_run] case={case_id} split={split} agg={agg} n={len(j)} "
-          f"nse={m['nse']:.6f} kge={m['kge']:.4f} pbias={m['pbias']:+.2f}% "
-          f"frac_subl={health['frac_subl']:.4f} "
-          f"({out['__kdt__']['wallclock_s']}s)", flush=True)
-
-    if os.environ.get("KDT_CRHM_KEEP_WORKDIR", "0") != "1":
-        shutil.rmtree(wd, ignore_errors=True)
+    out_path.write_text(json.dumps(metrics, ensure_ascii=False, indent=1))
+    print(json.dumps({k: v for k, v in metrics.items() if k != "run_health"},
+                     ensure_ascii=False)[:2000])
     return 0
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Fail as e:
-        die(str(e))
-    except Exception as e:                  # never leave a half-written metrics file
+    except Fail as exc:
+        print(f"CALIB_RUN FAILED: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except Exception:
         import traceback
         traceback.print_exc()
-        die(f"{type(e).__name__}: {e}", code=2)
+        sys.exit(2)

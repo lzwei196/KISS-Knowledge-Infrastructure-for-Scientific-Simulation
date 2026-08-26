@@ -341,7 +341,7 @@ outputs:
   - var: "burned_area"
     validation_rank: 1
     unit: "acres / ha (derived as burned_pixels x pixel_scale^2, /43560 for acres)"
-    description: "Total area burned at end of run, derived from the burned-pixel count and pixel_scale."
+    description: "Total vegetation/land area burned by the fire at end of run, derived from the burned-pixel count and pixel_scale."
     emitted_in: "derived from fire_map (burned-pixel count x pixel_scale^2)"
     observability:
       comparable_obs_shapes:

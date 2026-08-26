@@ -1,77 +1,126 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:00:35.410584'
-  domain: ocean
   name: MOM6
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: mom6-gfdl
+    version: version 6 (dev/gfdl branch)
+    provenance: Fortran 90/95 with C FMS infrastructure; NOAA-GFDL open-development MOM6 dynamic core
+      wrapping the ALE primitive-equation solver.
+  scientific_reference_version: MOM6 (NOAA-GFDL primitive-equation ocean core; ALE generalized vertical
+    coordinate; OM4.0 lineage, Adcroft et al. 2019)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MOM6/source/repo/.testing/build/symmetric/MOM6
+    type: work_dir
 pipeline:
-  stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  stages: []
+tools:
+  count: 4
+  files:
+  - tools/forcing_converter.py
+  - tools/output_parser.py
+  - tools/run_mom6.py
+  - tools/topography_converter.py
+inputs:
+  forcing:
+  - name: zonal wind stress (taux)
+    unit: Pa
+  - name: meridional wind stress (tauy)
+    unit: Pa
+  - name: shortwave radiation (SW)
+    unit: W/m^2
+  - name: longwave radiation (LW, net)
+    unit: W/m^2
+  - name: latent heat flux (laten)
+    unit: W/m^2
+  - name: sensible heat flux (sens)
+    unit: W/m^2
+  - name: evaporation (evap)
+    unit: kg/m^2/s
+  - name: precipitation (precip)
+    unit: kg/m^2/s
+  - name: near-surface air temperature (t_air)
+    unit: degC
+  - name: specific humidity (q_air)
+    unit: kg/kg
+  - name: sea level pressure (slp)
+    unit: Pa
+  parameters:
+  - name: horizontal supergrid geometry (ocean_hgrid)
+    unit: deg, m, m^2
+  - name: ocean bottom depth / bathymetry
+    unit: m (positive down)
+  - name: vertical coordinate definition
+    unit: m
+  - name: Boussinesq reference density (RHO_0)
+    unit: kg/m^3
+  - name: gravitational acceleration (G_EARTH)
+    unit: m/s^2
+  - name: seawater heat capacity (C_P)
+    unit: J/kg/K
+  - name: minimum layer thickness floor (ANGSTROM)
+    unit: m
+  - name: lateral mixing coefficients (KH, SMAG_BI_CONST, THICKNESSDIFFUSE)
+    unit: m^2/s (Laplacian), nondim (Smagorinsky)
+  - name: vertical mixing coefficients (KD background, KV)
+    unit: m^2/s
+  - name: bottom drag coefficient (CDRAG)
+    unit: nondim
+  initial_conditions:
+  - name: initial temperature (temp)
+    unit: degC
+  - name: initial salinity (salt)
+    unit: PSU or g/kg
+  - name: initial layer thickness (h)
+    unit: m (Boussinesq) or kg/m^2 (non-Boussinesq)
+  - name: initial velocity (u, v)
+    unit: m/s
+  - name: open boundary data (regional only)
+    unit: degC, PSU, m/s, m
+  boundary_conditions:
+  - name: equation-of-state selection (EQUATION_OF_STATE)
+    unit: switch
+  - name: vertical coordinate mode (REGRIDDING_COORDINATE_MODE)
+    unit: switch
+  - name: baroclinic timestep (DT)
+    unit: s
+  - name: thermodynamic timestep (DT_THERM)
+    unit: s
+  - name: barotropic timestep (DTBT)
+    unit: s
+  - name: boundary-layer scheme selection (USE_KPP / energetic PBL)
+    unit: switch
+  - name: MPI domain decomposition layout (LAYOUT / MASKTABLE)
+    unit: switch
+  - name: domain periodicity (REENTRANT_X / REENTRANT_Y)
+    unit: switch
+  - name: 'open-boundary scheme (OBC_SEGMENT_* : FLATHER/ORLANSKI)'
+    unit: switch
+  - name: diagnostic output configuration (diag_table)
+    unit: switch
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - SSH
+  - SST
+  - thetao
+  - SSS
+  - MLD_003
+  - u
+  - ocean_heat_content
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=-0.011, KGE=-0.478, R=0.988, 2 scorecard(s)'
+  metrics:
+    best_nse: -0.0106
+    best_kge: -0.4776
+    best_r: 0.9883
+summary:
+  total_tools: 4
+  total_stage_docs: 0
+  total_diagnostic_triplets: 16
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

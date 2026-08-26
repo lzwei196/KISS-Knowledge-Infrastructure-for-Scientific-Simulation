@@ -455,7 +455,7 @@ outputs:
   - var: "GroundedMask"
     validation_rank: 6
     unit: "(-1,0,+1)"
-    description: "Grounded (+1) / grounding line (0) / floating (-1) mask; grounding-line position"
+    description: "Grounded ice (+1) / ice grounding line (0) / floating ice (-1) mask; ice grounding-line position"
     emitted_in: "results*.vtu"
     observability:
       comparable_obs_shapes:
@@ -671,3 +671,9 @@ safety:
       scope: "influence block evidence basis"
       source: "Bulthuis et al. 2019 (TC 13, 1349); Cheng et al. 2021 (TC 15, 715); Zhao et al. 2018 (TC 12, 2637)"
       status: tentative
+
+medium_evidence:
+  - var: "GroundedMask"
+    source: dag.yaml
+    quote: "Grounding-line dynamics (contact/flotation problem) and grounded/floating mask"
+    note: "boundary.scope_in places GroundedMask in Elmer/Ice grounding-line dynamics for grounded and floating ice."

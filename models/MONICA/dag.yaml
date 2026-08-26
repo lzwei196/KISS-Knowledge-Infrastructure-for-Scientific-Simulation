@@ -144,7 +144,7 @@ outputs:
   - var: "Yield"
     validation_rank: 1
     unit: "kg DM ha-1"
-    description: "Harvested marketable dry-matter yield."
+    description: "Harvested crop marketable dry-matter yield."
     emitted_in: "MONICA output CSV (crop/harvest events)"
     observability:
       comparable_obs_shapes:
@@ -167,7 +167,7 @@ outputs:
   - var: "LAI"
     validation_rank: 2
     unit: "m2 m-2"
-    description: "Leaf area index."
+    description: "Crop canopy leaf area index."
     emitted_in: "MONICA output CSV (daily/crop events)"
     observability:
       comparable_obs_shapes:
@@ -180,7 +180,7 @@ outputs:
   - var: "Stage"
     validation_rank: 5
     unit: "0-7"
-    description: "Phenological development stage."
+    description: "Crop phenological development stage."
     emitted_in: "MONICA output CSV (daily)"
     observability:
       comparable_obs_shapes:
@@ -193,7 +193,7 @@ outputs:
   - var: "Act_ET"
     validation_rank: 3
     unit: "mm"
-    description: "Actual evapotranspiration."
+    description: "Actual evapotranspiration from the soil-plant column water balance."
     emitted_in: "MONICA output CSV (daily)"
     observability:
       comparable_obs_shapes:
@@ -219,7 +219,7 @@ outputs:
   - var: "NLeach"
     validation_rank: 7
     unit: "kg N ha-1"
-    description: "Nitrogen (nitrate) leaching below the root zone / lower boundary."
+    description: "Soil nitrate leaching below the root zone / lower boundary of the soil column."
     emitted_in: "MONICA output CSV (daily/yearly)"
     observability:
       comparable_obs_shapes:
@@ -237,7 +237,7 @@ outputs:
   - var: "N2O"
     validation_rank: 8
     unit: "kg N ha-1"
-    description: "Nitrous oxide emissions from nitrification/denitrification."
+    description: "Soil nitrous oxide emissions from nitrification/denitrification."
     emitted_in: "MONICA output CSV (daily)"
     observability:
       comparable_obs_shapes:
@@ -281,7 +281,7 @@ outputs:
   - var: "GPP"
     validation_rank: 10
     unit: "kg C ha-1"
-    description: "Gross primary production."
+    description: "Crop canopy gross primary production."
     emitted_in: "MONICA output CSV (daily)"
     observability:
       comparable_obs_shapes:
@@ -514,3 +514,33 @@ safety:
       scope: "CO2 forcing"
       source: "CO2ForDate logic in the MONICA core source (monica-model.cpp)"
       status: tentative
+
+medium_evidence:
+  - var: "Yield"
+    source: "dag.yaml"
+    quote: "Crop growth: thermal-sum phenology, radiation-driven assimilation, organ-based biomass partitioning, N demand/uptake, water/N/heat/oxygen/frost stress, yield"
+    note: "boundary.scope_in declares yield as part of crop growth in the soil-plant column"
+  - var: "LAI"
+    source: "dag.yaml"
+    quote: "Crop growth: thermal-sum phenology (stages 0-7), radiation-use assimilation/photosynthesis, organ-based biomass partitioning, N demand/uptake, transpiration and water-uptake deficit, frost/heat/N/oxygen stress; emits LAI, height, biomass, yield."
+    note: "CropModule emits LAI as a crop/canopy output"
+  - var: "Stage"
+    source: "dag.yaml"
+    quote: "Crop growth: thermal-sum phenology, radiation-driven assimilation, organ-based biomass partitioning, N demand/uptake, water/N/heat/oxygen/frost stress, yield"
+    note: "boundary.scope_in declares phenology as crop growth"
+  - var: "Act_ET"
+    source: "dag.yaml"
+    quote: "Soil water balance (capacity-based): infiltration, interception, evaporation, transpiration, percolation, surface runoff, capillary rise"
+    note: "boundary.scope_in places evaporation and transpiration in the soil water balance"
+  - var: "NLeach"
+    source: "dag.yaml"
+    quote: "Coupled daily turnover of carbon, nitrogen and water in a 1-D agro-ecosystem soil-plant column"
+    note: "boundary.scope_in declares nitrogen and water turnover in the soil-plant column; SoilTransport defines NLeach as nitrate leaching through that column"
+  - var: "N2O"
+    source: "dag.yaml"
+    quote: "Soil organic matter C/N turnover (AOM/SMB/SOM multi-pool) with mineralisation, nitrification, denitrification, N2O"
+    note: "boundary.scope_in places N2O in soil organic matter C/N turnover"
+  - var: "GPP"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.scitotenv.2024.174995.txt"
+    quote: "GPP in ecosystems serves as a crucial link between soil, plants, atmosphere and the global C cycle (Beer et al., 2010; Liao et al., 2023)."
+    note: "paper identifies GPP as an ecosystem carbon flux linking soil, plants and atmosphere"

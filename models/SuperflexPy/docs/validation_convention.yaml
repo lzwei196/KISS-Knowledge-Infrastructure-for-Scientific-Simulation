@@ -1,0 +1,253 @@
+schema_version: 1
+model_id: SuperflexPy
+domain: hydrology
+generated_by: "Step-B validation-convention campaign"
+generated_at: 2026-08-14
+
+references:
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  superflexpy2021:
+    doi: 10.5194/gmd-14-7047-2021
+    title: "SuperflexPy 1.3.0: an open-source Python framework for building, testing, and improving conceptual hydrological models"
+    venue: "Geosci. Model Dev."
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-14-7047-2021.txt
+  vanesse2013:
+    doi: 10.5194/hess-17-4227-2013
+    title: "The influence of conceptual model structure on model performance: a comparative study for 237 French catchments"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-17-4227-2013.txt
+  knoben2019:
+    doi: 10.5194/hess-23-4323-2019
+    title: "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-4323-2019.txt
+  koch2018:
+    doi: 10.5194/hess-22-1299-2018
+    title: "Combining satellite data and appropriate objective functions for improved spatial pattern performance of a distributed hydrologic model"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-22-1299-2018.txt
+  tong2021:
+    doi: 10.5194/hess-25-1389-2021
+    title: "The value of ASCAT soil moisture and MODIS snow cover data for calibrating a conceptual hydrologic model"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-25-1389-2021.txt
+  kavetski2011:
+    doi: 10.1029/2011WR010748
+    title: "Elements of a flexible approach for conceptual hydrological modeling: 2. Application and experimental insights"
+    venue: "Water Resources Research"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2011wr010748.txt
+  dalmolin2021:
+    doi: 10.1016/j.jhydrol.2021.127286
+    title: "Modeling streamflow variability at the regional scale: (2) Development of a bespoke distributed conceptual model"
+    venue: "Journal of Hydrology"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2021.127286.txt
+
+validation:
+  - dag_variable: Q_sim
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow criteria: 'NSE > 0.80', '0.70 < NSE <= 0.80', and '0.50 < NSE <= 0.70'."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow criteria: 'PBIAS < +/-5', '+/-5 <= PBIAS < +/-10', and '+/-10 <= PBIAS < +/-15'."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "KGE is useful only with an explicit benchmark; Knoben 2019 states KGE has 'no inherent benchmark' and that the mean-flow benchmark is about -0.41."
+        cites: [knoben2019]
+    validated_when: "Daily/monthly/annual outlet streamflow is validated when NSE >= 0.50 and |PBIAS| <= 15% after warmup and with units/support area matched."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      This keeps the dag determining metric NSE and adds PBIAS because Moriasi 2015 recommends multiple
+      statistics and says flow simulations are satisfactory for NSE > 0.50 and PBIAS <= +/-15%. SuperflexPy
+      itself is a model-building framework; van Esse 2013 reports SUPERFLEX validation criteria focused on
+      high flows, low flows, volume error, and variability, with CR1* being the Nash-Sutcliffe efficiency.
+
+  - dag_variable: Q_sim
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched source gives a numeric single-instant streamflow PBIAS validation band"
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - a single streamflow instant is only a weak magnitude check; prefer the point_time_series convention."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The dag determining metric is retained, but Moriasi 2015 cautions that PBIAS cannot be used for
+      single-event simulations. No numeric snapshot-specific threshold was found in the fetched texts.
+
+  - dag_variable: Network_Q
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Use the same watershed-scale flow criteria as outlet streamflow at each routed gauge node."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 flow PBIAS criterion applies to daily, monthly, and annual flow."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: signature_r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For semi-distributed SuperflexPy, Dal Molin 2021 also validates streamflow-average, baseflow-index, and hydrograph-lag signatures across internal subcatchments."
+        cites: [dalmolin2021]
+    validated_when: "Each interior gauge/node meets NSE >= 0.50 and |PBIAS| <= 15%; spatial routing credibility is strengthened by matching streamflow signatures across nodes."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Dal Molin 2021 reports space-time validation for 26 subcatchments and matched streamflow-average
+      (r = 0.96), baseflow-index (r = 0.86), and hydrograph-lag signatures. The numeric pass bands still
+      come from Moriasi 2015 because Dal Molin 2021 is a benchmark study, not a tier table.
+
+  - dag_variable: AET
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched paper gives a point-time-series AET NSE threshold for conceptual rainfall-runoff models"
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 recommends RMSE with RSR as a reported statistic but says no RMSE PEC were developed because available data were insufficient."
+        cites: [moriasi2015]
+    validated_when: "UNRESOLVED - compare against eddy-covariance or independent ET estimates when available, but do not auto-validate on an uncited AET NSE band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag determining metric NSE is retained with a null band. Moriasi 2015 says NSE, RMSE/RSR,
+      and PBIAS are common hydrologic PMs, but the fetched threshold table does not provide an AET
+      point-time-series validation tier. One OpenAlex AET candidate, 10.3390/w9060384, failed to fetch.
+
+  - dag_variable: AET
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: spaef
+        direction: maximize
+        unit: dimensionless
+        bands: {good: 0.46, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Koch 2018 describes simulated AET pattern match with average SPAEF = 0.46 and 0.40 as 'quite good'."
+        cites: [koch2018]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric CSI is categorical; Koch 2018 supersedes it for continuous AET maps with SPAEF, a bias-insensitive spatial pattern metric."
+        cites: [koch2018]
+    validated_when: "Spatial AET pattern is validated when SPAEF >= 0.40 against satellite/remote-sensing AET maps, with water-balance bias checked separately."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Literature supersedes the dag determining metric CSI for continuous spatial AET. Koch 2018 developed
+      SPAEF from correlation, coefficient of variation, and histogram intersection; it notes the metric is
+      bias-insensitive and leaves water-balance bias to be constrained by streamflow.
+
+  - dag_variable: S
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {good: 0.54, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Tong 2021 validation medians for satellite soil-moisture correlation range from 0.40 for runoff-only calibration to 0.54 when using SSM and runoff."
+        cites: [tong2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Conceptual storage is an effective state; Tong 2021 selects correlation because it compares temporal dynamics irrespective of magnitudes and intercepts."
+        cites: [tong2021]
+      - metric: groundwater_pattern
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Kavetski 2011 uses observed groundwater levels to inspect trends and patterns of internal model states, with scale-representativeness limits."
+        cites: [kavetski2011]
+    validated_when: "Conceptual storage is validated only as a relative pattern: r >= 0.40 against independent relative soil moisture or groundwater-level dynamics, not by absolute storage magnitude."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Literature clearly supersedes the dag NSE metric for S. Tong 2021 defines the soil-moisture objective
+      as Pearson correlation between relative simulated root-zone soil moisture and ASCAT SWI because this
+      compares dynamics irrespective of magnitude. Kavetski 2011 likewise treats piezometers as pattern
+      evidence for lumped internal states, subject to scale mismatch.
+
+  - dag_variable: F
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched paper gives a direct observed groundwater-exchange-flux NSE threshold"
+        cites: []
+    secondary_metrics:
+      - metric: water_balance_closure
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "SuperflexPy/FLEX papers treat groundwater exchange as a catchment-function hypothesis evaluated through streamflow, flow-duration, and groundwater-pattern evidence rather than direct flux observations."
+        cites: [kavetski2011, dalmolin2021]
+    validated_when: "UNRESOLVED - direct F validation requires observed or independently inferred exchange flux; otherwise use it as supportive process evidence alongside streamflow validation."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The dag metric NSE is retained but left null. Kavetski 2011 shows that groundwater-store components
+      can be appraised through piezometer patterns and recession signatures; Dal Molin 2021 treats regional
+      groundwater flow as a model hypothesis for streamflow spatial variability. Neither provides a numeric
+      pass band for the exchange flux F itself.
+
+deferred_paywalled:
+  - ref: "Sensitivity of Calibrated Parameters and Water Resource Estimates on Different Objective Functions and Optimization Algorithms"
+    doi: 10.3390/w9060384
+    needed_for: [AET]

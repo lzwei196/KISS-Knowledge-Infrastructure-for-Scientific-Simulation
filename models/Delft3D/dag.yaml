@@ -164,7 +164,7 @@ outputs:
   - var: "velocity"
     validation_rank: 3
     unit: "m/s"
-    description: "Depth-averaged (2D) or per-layer cell-centre flow velocity (ucx, ucy)"
+    description: "Depth-averaged (2D) or per-layer cell-centre water flow velocity (ucx, ucy)"
     emitted_in: "_map.nc, _his.nc"
     observability:
       comparable_obs_shapes:
@@ -177,7 +177,7 @@ outputs:
   - var: "salinity"
     validation_rank: 4
     unit: "PSU"
-    description: "Salt concentration constituent (sa1)"
+    description: "Water-column salinity / salt concentration constituent (sa1)"
     emitted_in: "_map.nc, _his.nc"
     observability:
       comparable_obs_shapes:
@@ -433,3 +433,13 @@ safety:
       scope: "implementation identity"
       source: "Deltares Delft3D repository (two co-existing kernel lineages)"
       status: adopted
+
+medium_evidence:
+  - var: "velocity"
+    source: "SKILL.md"
+    quote: "**What Delft3D does**: 2D/3D hydrodynamic model for coastal and inland waters. Simulates:"
+    note: "The KI overview declares Delft3D's hydrodynamic variables are in coastal and inland waters; the output description now names water flow velocity."
+  - var: "salinity"
+    source: "SKILL.md"
+    quote: "**What Delft3D does**: 2D/3D hydrodynamic model for coastal and inland waters. Simulates:"
+    note: "The KI overview declares Delft3D's transport variables are in coastal and inland waters; the output description now names water-column salinity."

@@ -1,14 +1,3 @@
----
-name: lpjml
-description: >-
-  LPJmL 6.0.0. Covers Carbon cycle (GPP, NPP, autotrophic and heterotrophic respiration;
-  vegetation/soil/litter carbon…; Nitrogen cycle (deposition, fertilizer/manure,
-  biological N fixation, leaching, denitrification…; Terrestrial water balance (soil
-  moisture by layer, evapotranspiration, runoff, percolation); Lateral river routing,
-  reservoir operations, and irrigation demand/supply. Use when the task involves running,
-  configuring, calibrating or interpreting LPJmL.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,42 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_climate_to_clm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_climate_to_clm.py --help` |
+| `tools/convert_forcing_to_clm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_clm.py --help` |
+| `tools/convert_soil_to_clm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_clm.py --help` |
+| `tools/convert_soil_to_lpjml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_lpjml.py --help` |
+| `tools/parse_lpjml_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_lpjml_output.py --help` |
+| `tools/run_lpjml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_lpjml.py --help` |
+
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # LPJmL v6.0.0 — Knowledge Infrastructure
 
@@ -224,6 +249,33 @@ Where 0.45 is the carbon fraction of dry biomass (`biomass2c` in units.h).
 
 ---
 
+## 6. Output Description
+
+This section restates `dag.yaml`; the dag is the source of truth for output identity, units,
+descriptions, and validation ranking. If this section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `discharge` — River discharge at the cell, produced by lateral routing through the drainage network. (`hm3/day`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `discharge` | 1 | `hm3/day` | River discharge at the cell, produced by lateral routing through the drainage network. |
+
+Other dag outputs recorded for this KI:
+
+| Output variable (dag `var`) |
+|-----------------------------|
+| `pft_harvestc` |
+| `npp` |
+| `gpp` |
+| `runoff` |
+| `transp` |
+| `vegc` |
+| `soilc` |
+
+---
+
 ## Soil Types (13 classes)
 
 LPJmL uses a simplified 13-class soil texture scheme based on USDA classification:
@@ -383,6 +435,32 @@ make test
 | `convert_soil_to_lpjml` | s2 | `tools/convert_soil_to_lpjml.py` | Convert HWSD soil data to LPJmL codes |
 | `run_lpjml` | s5-s6 | `tools/run_lpjml.py` | Execute LPJmL with preflight checks |
 | `parse_lpjml_output` | s7 | `tools/parse_lpjml_output.py` | Parse binary output to CSV |
+
+---
+
+## 11. Validated Results
+
+This section restates `docs/validation_convention.yaml`; the convention file is the source of
+truth for metric choice, direction, cited pass-bands, and verdicts. A model run should be judged
+against these bars rather than against intuition. No achieved run score is stated here unless it
+is produced by the KI's validation workflow.
+
+### Convention Bars
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band |
+|--------------|--------|-----------|----------------|-----------|-------------------|
+| `pft_harvestc` | `nrmse` | minimize | no cited threshold (`li2021crop`) | no cited threshold (`li2021crop`) | `10.0` (`li2021crop`) |
+| `npp` | `nmse` | minimize | no cited threshold (`schaphoff2018eval`, `kelley2012benchmark`) | no cited threshold (`schaphoff2018eval`, `kelley2012benchmark`) | `1.0` (`schaphoff2018eval`, `kelley2012benchmark`) |
+
+### Current Validation State
+
+| Item | Status | Source |
+|------|--------|--------|
+| Headline dag output | `discharge`, `hm3/day` | `dag.yaml` |
+| Headline output description | River discharge at the cell, produced by lateral routing through the drainage network. | `dag.yaml` |
+| Other dag outputs | `pft_harvestc`, `npp`, `gpp`, `runoff`, `transp`, `vegc`, `soilc` | `dag.yaml` |
+| Stated convention bars | `pft_harvestc`, `npp` | `docs/validation_convention.yaml` |
+| Achieved validation metrics | Not stated in this body; produce them with the KI validation workflow before assigning a verdict. | validation workflow |
 
 ---
 

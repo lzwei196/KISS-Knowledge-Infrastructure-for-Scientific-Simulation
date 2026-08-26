@@ -1,146 +1,273 @@
 #!/usr/bin/env python3
 """
-Preflight check for HYPE — verifies environment before simulation.
+Preflight check for the HydroCraft HYPE KI.
 
-Run this BEFORE attempting any model execution. It checks that all required
-binaries, packages, and data paths are available.
-
-Usage:
-    python preflight_check.py
-
-Exit codes:
-    0 — all checks passed, safe to proceed
-    1 — one or more checks failed, fix before proceeding
+This script verifies the real HYPE executable, the HydroCraft Python
+environment used by this KI's tools, reference/demo model inputs, and recovery
+diagnostics before a model run starts.
 """
 
+import json
 import os
-import sys
-import shutil
 import subprocess
-
-PASS = 0
-FAIL = 0
-
-
-def check_file(path, label, executable=False):
-    global PASS, FAIL
-    if os.path.isfile(path):
-        if executable and not os.access(path, os.X_OK):
-            print(f"  WARN  {label}: exists but not executable: {path}")
-            print(f"         Fix: chmod +x {path}")
-            FAIL += 1
-        else:
-            print(f"  OK    {label}: {path}")
-            PASS += 1
-    else:
-        print(f"  FAIL  {label}: NOT FOUND at {path}")
-        FAIL += 1
+import sys
+import tempfile
+from pathlib import Path
 
 
-def check_dir(path, label):
-    global PASS, FAIL
-    if os.path.isdir(path):
-        n = len(os.listdir(path))
-        print(f"  OK    {label}: {path} ({n} items)")
-        PASS += 1
-    else:
-        print(f"  FAIL  {label}: directory NOT FOUND at {path}")
-        FAIL += 1
+MODEL_ID = "HYPE"
+HYDROCRAFT_ROOT = Path("KISSPATH_ROOT")
+KI_DIR = Path(__file__).resolve().parent
+HYPE_BINARY = HYDROCRAFT_ROOT / "model" / "hype" / "hype"
+HYPE_DEMO = HYDROCRAFT_ROOT / "model" / "hype" / "demo"
+PYTHON_ENV = HYDROCRAFT_ROOT / "python_env" / "bin" / "python"
+TRIPLETS = KI_DIR / "diagnostics" / "triplets.yaml"
+
+CHECKS = []
 
 
-def check_import(module, label):
-    # Also search HydroCraft python_env for packages
-    import sys
-    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
-    if _penv not in sys.path:
-        sys.path.insert(0, _penv)
-    global PASS, FAIL
-    try:
-        __import__(module)
-        print(f"  OK    {label}: import {module} succeeded")
-        PASS += 1
-    except ImportError as e:
-        print(f"  FAIL  {label}: import {module} failed: {e}")
-        print(f"         Fix: pip install {module.split('.')[0]}")
-        FAIL += 1
+def emit_report(model_id, checks):
+    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": model_id, "checks": checks}))
+    ready = all(c["status"] == "pass" or not c.get("critical") for c in checks)
+    sys.exit(0 if ready else 1)
 
 
-def check_binary_search(name, label):
-    global PASS, FAIL
-    found = shutil.which(name)
-    if found:
-        print(f"  OK    {label}: {found}")
-        PASS += 1
+def add_check(kind, subject, critical, status, fix=""):
+    check = {
+        "kind": kind,
+        "subject": str(subject),
+        "critical": bool(critical),
+        "status": status,
+        "fix": fix,
+    }
+    CHECKS.append(check)
+    label = "OK" if status == "pass" else ("FAIL" if critical else "WARN")
+    print(f"  {label:<5} {kind}: {subject}")
+    if status != "pass" and fix:
+        print(f"        Fix: {fix}")
+
+
+def check_file(path, label, critical=True, executable=False, subject_realpath=False):
+    path = Path(path)
+    subject = path
+    if path.exists():
+        subject = path.resolve() if subject_realpath else path
+    if not path.is_file():
+        add_check(
+            "binary" if executable else "data",
+            subject,
+            critical,
+            "fail",
+            f"Restore {label} at {path}; see {TRIPLETS} for recovery.",
+        )
+        return False
+    if executable and not os.access(path, os.X_OK):
+        add_check(
+            "binary",
+            subject,
+            critical,
+            "fail",
+            f"Run chmod +x {path}; see {TRIPLETS} for recovery.",
+        )
+        return False
+    add_check("binary" if executable else "data", subject, critical, "pass")
+    return True
+
+
+def check_dir(path, label, critical=True, non_empty=False):
+    path = Path(path)
+    if not path.is_dir():
+        add_check(
+            "data",
+            path,
+            critical,
+            "fail",
+            f"Restore {label} directory at {path}; see {TRIPLETS} for recovery.",
+        )
+        return False
+    if non_empty and not any(path.iterdir()):
+        add_check(
+            "data",
+            path,
+            critical,
+            "fail",
+            f"Populate {label} directory at {path}; see {TRIPLETS} for recovery.",
+        )
+        return False
+    add_check("data", path, critical, "pass")
+    return True
+
+
+def check_binary_starts(binary_path):
+    binary_path = Path(binary_path)
+    subject = binary_path.resolve() if binary_path.exists() else binary_path
+    if not binary_path.is_file() or not os.access(binary_path, os.X_OK):
+        add_check(
+            "run",
+            subject,
+            True,
+            "fail",
+            f"Fix executable availability first: {binary_path}; see {TRIPLETS}.",
+        )
         return
-    # Search common locations
-    search_dirs = [
-        "KISSPATH_BINARIES",
-        "KISSPATH_HOME",
-        "/usr/local/bin",
-    ]
-    for d in search_dirs:
-        if not os.path.isdir(d):
-            continue
-        for root, dirs, files in os.walk(d):
-            for f in files:
-                if name.lower() in f.lower() and os.access(os.path.join(root, f), os.X_OK):
-                    print(f"  OK    {label}: {os.path.join(root, f)}")
-                    PASS += 1
-                    return
-            if root.count(os.sep) - d.count(os.sep) > 3:
-                dirs.clear()  # limit depth
-    print(f"  FAIL  {label}: binary '{name}' not found in PATH or common locations")
-    print(f"         Check SKILL.md for the correct binary path")
-    FAIL += 1
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="hype_preflight_") as tmp:
+            infodir = tmp + os.sep
+            result = subprocess.run(
+                [str(binary_path), infodir],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            combined = "\n".join([result.stdout or "", result.stderr or ""])
+            log_mentions_info = "info.txt" in combined
+            for log in Path(tmp).glob("hyss_*.log"):
+                try:
+                    if "info.txt" in log.read_text(errors="ignore"):
+                        log_mentions_info = True
+                        break
+                except OSError:
+                    pass
+
+        if result.returncode in (0, 1) or log_mentions_info:
+            add_check("run", subject, True, "pass")
+        else:
+            add_check(
+                "run",
+                subject,
+                True,
+                "fail",
+                f"HYPE started but returned unexpected code {result.returncode}; see {TRIPLETS}.",
+            )
+    except subprocess.TimeoutExpired:
+        add_check(
+            "run",
+            subject,
+            True,
+            "fail",
+            f"HYPE did not return within 5 seconds during startup check; see {TRIPLETS}.",
+        )
+    except OSError as exc:
+        add_check(
+            "run",
+            subject,
+            True,
+            "fail",
+            f"Could not start HYPE executable: {exc}; see {TRIPLETS}.",
+        )
+
+
+def python_env():
+    env = os.environ.copy()
+    # The HydroCraft interpreter already adds its site-packages directory.
+    # Putting site-packages in PYTHONPATH makes Python process .pth files while
+    # a legacy pathlib backport can shadow the stdlib pathlib module.
+    env.pop("PYTHONPATH", None)
+    return env
+
+
+def check_import(module):
+    subject = f"{PYTHON_ENV}: import {module}"
+    if not PYTHON_ENV.is_file() or not os.access(PYTHON_ENV, os.X_OK):
+        add_check(
+            "import",
+            subject,
+            True,
+            "fail",
+            f"Restore HydroCraft Python interpreter at {PYTHON_ENV}; see {TRIPLETS}.",
+        )
+        return
+    result = subprocess.run(
+        [str(PYTHON_ENV), "-c", f"import {module}"],
+        capture_output=True,
+        text=True,
+        env=python_env(),
+        cwd=str(KI_DIR),
+        timeout=10,
+    )
+    if result.returncode == 0:
+        add_check("import", subject, True, "pass")
+    else:
+        detail = (result.stderr or result.stdout or "").strip().splitlines()
+        message = detail[-1] if detail else "import failed"
+        add_check(
+            "import",
+            subject,
+            True,
+            "fail",
+            f"Install/fix {module} in {PYTHON_ENV}: {message}; see {TRIPLETS}.",
+        )
 
 
 def check_common_data():
-    """Check common HydroCraft data paths."""
-    global PASS, FAIL
-    common = [
-        ("KISSPATH_OBS", "Observation data"),
-        ("KISSPATH_FORCING", "Forcing data"),
-        ("KISSPATH_STATIC", "DEM data"),
-        ("KISSPATH_STATIC", "Soil data"),
+    common_data = [
+        (HYDROCRAFT_ROOT / "data" / "obs", "observation data"),
+        (Path("KISSPATH_FORCING"), "forcing data"),
+        (HYDROCRAFT_ROOT / "data" / "dem", "DEM data"),
+        (HYDROCRAFT_ROOT / "data" / "soil", "soil data"),
     ]
-    for path, label in common:
-        if os.path.isdir(path):
-            PASS += 1
-        else:
-            print(f"  WARN  {label}: {path} not found (may not be needed)")
+    for path, label in common_data:
+        check_dir(path, label, critical=False, non_empty=False)
 
 
 def main():
-    global PASS, FAIL
-    print(f"=" * 60)
-    print(f"  PREFLIGHT CHECK: HYPE")
-    print(f"=" * 60)
+    print("=" * 60)
+    print("  PREFLIGHT CHECK: HYPE")
+    print("=" * 60)
     print()
 
-    # Model-specific checks
-    # Binary: HYPE v5.35
-    check_file("KISSPATH_BINARIES/hype/hype", "HYPE v5.35", executable=True)
+    check_file(HYPE_BINARY, "HYPE v5.35.0 binary", critical=True, executable=True, subject_realpath=True)
+    check_binary_starts(HYPE_BINARY)
 
-    print()
+    check_file(PYTHON_ENV, "HydroCraft Python interpreter", critical=True, executable=True)
+    for module in [
+        "numpy",
+        "pandas",
+        "geopandas",
+        "rasterio",
+        "shapely",
+        "xarray",
+        "matplotlib",
+        "ki_tools_common",
+    ]:
+        check_import(module)
 
-    # Common data checks
+    for relpath in [
+        "tools/s3_forcing_preparation/convert_forcing_to_hype.py",
+        "tools/s4_geodata_generation/generate_geodata.py",
+        "tools/s5_parameter_setup/setup_parameters.py",
+        "tools/s7_execution/configure_info.py",
+        "tools/s7_execution/run_hype.py",
+        "tools/s8_output_analysis/parse_hype_output.py",
+    ]:
+        check_file(KI_DIR / relpath, f"KI tool {relpath}", critical=True)
+
+    for path, label in [
+        (HYPE_DEMO / "info.txt", "HYPE demo info.txt"),
+        (HYPE_DEMO / "modelfiles" / "GeoData.txt", "HYPE demo GeoData.txt"),
+        (HYPE_DEMO / "modelfiles" / "GeoClass.txt", "HYPE demo GeoClass.txt"),
+        (HYPE_DEMO / "modelfiles" / "par.txt", "HYPE demo par.txt"),
+        (HYPE_DEMO / "forcingdir" / "Pobs.txt", "HYPE demo precipitation forcing"),
+        (HYPE_DEMO / "forcingdir" / "Tobs.txt", "HYPE demo temperature forcing"),
+        (HYPE_DEMO / "forcingdir" / "ForcKey.txt", "HYPE demo forcing key"),
+    ]:
+        check_file(path, label, critical=True)
+
+    check_file(TRIPLETS, "diagnostic triplets", critical=True)
     check_common_data()
 
-    # Diagnostics available?
-    ki_dir = os.path.dirname(os.path.abspath(__file__))
-    triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")
-    if os.path.isfile(triplets):
-        print(f"  INFO  Diagnostic triplets available at: {triplets}")
-        print(f"         If the model fails, check triplets FIRST for known fixes.")
-
     print()
-    print(f"  Results: {PASS} passed, {FAIL} failed")
-    if FAIL > 0:
-        print(f"  STATUS: PREFLIGHT FAILED — fix the issues above before running")
-        sys.exit(1)
+    passed = sum(1 for c in CHECKS if c["status"] == "pass")
+    failed = len(CHECKS) - passed
+    print(f"  Results: {passed} passed, {failed} failed")
+    if any(c["status"] == "fail" and c["critical"] for c in CHECKS):
+        print(f"  STATUS: PREFLIGHT FAILED - fix blockers above; start with {TRIPLETS}")
     else:
-        print(f"  STATUS: PREFLIGHT PASSED — safe to proceed with model execution")
-        sys.exit(0)
+        print("  STATUS: PREFLIGHT PASSED - critical checks are ready")
+
+    emit_report(MODEL_ID, CHECKS)
 
 
 if __name__ == "__main__":

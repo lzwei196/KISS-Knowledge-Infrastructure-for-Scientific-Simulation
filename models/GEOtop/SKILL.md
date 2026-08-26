@@ -1,14 +1,3 @@
----
-name: geotop
-description: >-
-  GEOtop 2.0. Covers Coupled surface energy balance (net radiation partitioned into H, LE,
-  ground heat flux); Variably-saturated subsurface water flow via 3D Richards equation (1D
-  column in point mode); Soil temperature including freeze/thaw and permafrost;
-  Multi-layer snowpack mass and energy balance (accumulation, melt, compaction, albedo
-  aging); Glacier accumulation/ablation mass balance. Use when the task involves running,
-  configuring, calibrating or interpreting GEOtop.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,42 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (24 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_domain.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_domain.py --help` |
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/read_modis_lst.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/read_modis_lst.py --help` |
+| `tools/run_geotop.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_geotop.py --help` |
+
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # GEOtop Knowledge Infrastructure
 
@@ -259,7 +284,26 @@ must exist. Missing it silently sets all horizon angles to 0, overpredicting sol
 
 ---
 
-## 6. Input File Specifications
+## 6. Output Description
+
+**Source of truth: `dag.yaml`.** The dag is the contract for what GEOtop predicts
+and how outputs are named. If this section ever disagrees with `dag.yaml`, the dag
+wins and this body text must be corrected.
+
+**Headline output** (`validation_rank: 1` in `dag.yaml`):
+
+> `discharge` -- Catchment discharge at the basin outlet from the channel network. (`m3/s`)
+
+| Output variable (dag `var`) | rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `discharge` | 1 | `m3/s` | Catchment discharge at the basin outlet from the channel network. |
+
+Other dag outputs named by this KI are: `SWE`, `snowDepth`, `soilTz`,
+`thetaliq`, `thetaice`, `LE`, `H`, and `Tsurface`.
+
+---
+
+## 6a. Input File Specifications
 
 ### 6.1 geotop.inpts (Main Configuration)
 - **Format**: Key-value pairs, TAB-separated, `!` comments
@@ -313,7 +357,30 @@ must exist. Missing it silently sets all horizon angles to 0, overpredicting sol
 
 ---
 
-## 8. Calibration Parameters (Priority Order)
+## 8. Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`; regenerate that file from the KI
+instead of hand-editing it. This table restates unit conversions already documented
+in this body and the output unit from `dag.yaml`.
+
+| Variable | Source unit / representation | Model or KI unit | Conversion | Type |
+|----------|------------------------------|------------------|------------|------|
+| CMFD precipitation | `kg/m2/s` | `mm` per 3-hour step | multiply by `10800` | accumulated depth |
+| CMFD temperature | `K` | `C` | subtract `273.15` | additive |
+| CMFD shortwave radiation | `W/m2` | `W/m2` | none | identity |
+| CMFD longwave radiation | `W/m2` | `W/m2` | none | identity |
+| CMFD relative humidity | percent | percent | none | identity |
+| MSWX precipitation | `mm/3hr` | `mm` per 3-hour step | no multiplication; sum 8 steps for daily totals | accumulated depth |
+| MSWX temperature | `C` | `C` | none | identity |
+| Soil layer thickness `Dz` | meters or centimeters in outside sources | `mm` | convert to millimeters before writing `soilXXXX.txt` | length |
+| Hydraulic conductivity `Kh`, `Kv` | `cm/day` in HWSD-style sources | `m/s` | divide by `86400` and then by `100` | rate |
+| Van Genuchten `alpha` | `1/cm` in many literature tables | `1/mm` | divide by `10` | inverse length |
+| Vegetation height `VegHeight` | meters in land-cover sources | `mm` | multiply by `1000` | length |
+| Rank-1 output `discharge` | `output-tabs/discharge.txt` | `m3/s` | read as written | dag output unit |
+
+---
+
+## 8a. Calibration Parameters (Priority Order)
 
 | Priority | Parameter                    | Typical Range    | Units    | Sensitivity          |
 |----------|------------------------------|------------------|----------|----------------------|
@@ -366,7 +433,41 @@ See `diagnostics/triplets.yaml` for full symptom-diagnosis-remedy entries.
 
 ---
 
-## 11. File Structure
+## 11. Validated Results
+
+**Source of truth for judgment bars: `docs/validation_convention.yaml`.** These
+thresholds are the field convention used by this KI; do not replace them with
+remembered hydrology thresholds. A run is not graded by intuition.
+
+### Headline Output Bar
+
+The dag's rank-1 output is `discharge`, with unit `m3/s` and description:
+"Catchment discharge at the basin outlet from the channel network."
+
+| Dag variable | Metric | Direction | Bands from convention |
+|--------------|--------|-----------|-----------------------|
+| `discharge` | `nse` | maximize | satisfactory `0.5` (`moriasi2015`, `schuol2012`); good `0.7` (`moriasi2015`, `schuol2012`); very_good `0.8` (`moriasi2015`, `schuol2012`) |
+| `discharge` | `pbias` | zero_centered | satisfactory `15` (`moriasi2015`); good `10` (`moriasi2015`); very_good `5` (`moriasi2015`) |
+
+### Other Convention Bars Carried by This KI
+
+| Dag variable | Metric | Direction | Bands from convention |
+|--------------|--------|-----------|-----------------------|
+| `SWE` | `rmse` | minimize | satisfactory `95` (`endrizzi2014`, `terzago2020`, `avanzi2023`); good `40` (`endrizzi2014`, `terzago2020`, `avanzi2023`); very_good `37.1` (`endrizzi2014`, `terzago2020`, `avanzi2023`) |
+| `SWE` | `pbias` | zero_centered | satisfactory `17.3` (`endrizzi2014`, `avanzi2023`); good `8.5` (`endrizzi2014`, `avanzi2023`); very_good `3.2` (`endrizzi2014`, `avanzi2023`) |
+| `SWE` | `rmse` | minimize | satisfactory `300` (`avanzi2023`); good `200` (`avanzi2023`); very_good `95` (`avanzi2023`) |
+
+### Achieved Results Recorded in This Body
+
+The body currently records two validation anchors below: the repository reference
+case `tests/1D/Matsch_B2_Ref_007`, and an end-to-end North China Plain point
+recipe comparing `Tsurface` against MODIS MOD11A2. The field bars above are the
+cited convention bars extracted for `discharge` and `SWE`; no discharge achieved
+metric is stated in this body section.
+
+---
+
+## 11a. File Structure
 
 ```
 ki/

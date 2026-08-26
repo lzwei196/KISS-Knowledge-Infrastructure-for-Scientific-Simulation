@@ -1,342 +1,794 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "SUMMA (Structure for Unifying Multiple Modeling Alternatives)"
-  domain: "hydrology"
-  binary: "summa.exe"
-  binary_path: "KISSPATH_BINARIES/summa/bin/summa.exe"
-  language: "Fortran 90"
-  working_directory: "./"
-  invocation: "summa.exe -m fileManager.txt"
-  dependencies: "gfortran 6+, NetCDF-Fortran, LAPACK/BLAS"
-  notes: >
-    Multi-physics framework with 35 decision categories. Unlike fixed-physics
-    models, SUMMA lets you choose which equations to solve for each process
-    and systematically compare alternatives. Shares this philosophy with
-    Raven but at a lower level (equation-level vs model-level).
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: SUMMA
+  language: fortran
+  implementation:
+    id: summa-ncar
+    version: FILE_MANAGER_V3.0.0-era build (NCAR/CH-Earth summa)
+    provenance: Fortran 90; NCAR RAL / CH-Earth open-source SUMMA, NetCDF I/O, reuses Noah-MP land-surface
+      parameter tables.
+  scientific_reference_version: SUMMA (Clark et al. 2015 WRR concept+implementation; SUMMA_FILE_MANAGER_V3.0.0
+    configuration era)
 inputs:
-
   forcing:
-    - name: "precipitation"
-      file: "forcing_YYYY.nc"
-      variable: "pptrate"
-      unit: "kg/m2/s"
-      valid_range: [0.0, 0.1]
-      format: "NetCDF; dimensions (time, hru)"
-      conversion_from_cmfd: "mm/3hr -> kg/m2/s: divide by 10800 (same as mm/s)"
-      bug_history: "Wrong divisor -> runoff 8x wrong with no error (dt_003)"
-
-    - name: "air_temperature"
-      file: "forcing_YYYY.nc"
-      variable: "airtemp"
-      unit: "K"
-      valid_range: [180.0, 340.0]
-      conversion_from_cmfd: "K -> K: no conversion (SUMMA uses Kelvin natively)"
-      notes: "Unlike most HydroCraft models, SUMMA expects KELVIN"
-
-    - name: "air_pressure"
-      file: "forcing_YYYY.nc"
-      variable: "airpres"
-      unit: "Pa"
-      valid_range: [50000, 110000]
-      conversion_from_cmfd: "Pa -> Pa: no conversion"
-      bug_history: "kPa instead of Pa -> ET 100x wrong (dt_004)"
-      notes: "Unlike Raven/VIC which use kPa, SUMMA expects Pa"
-
-    - name: "shortwave_radiation"
-      file: "forcing_YYYY.nc"
-      variable: "SWRadAtm"
-      unit: "W/m2"
-      valid_range: [0.0, 1400.0]
-
-    - name: "longwave_radiation"
-      file: "forcing_YYYY.nc"
-      variable: "LWRadAtm"
-      unit: "W/m2"
-      valid_range: [0.0, 600.0]
-
-    - name: "specific_humidity"
-      file: "forcing_YYYY.nc"
-      variable: "spechum"
-      unit: "kg/kg"
-      valid_range: [0.0, 0.04]
-
-    - name: "wind_speed"
-      file: "forcing_YYYY.nc"
-      variable: "windspd"
-      unit: "m/s"
-      valid_range: [0.0, 80.0]
-
+  - name: pptrate
+    unit: kg m-2 s-1
+    category: forcing
+    source_kind: forcing
+    model_input_format: forcing NetCDF (time, hru)
+    notes: precipitation rate; partitioned to rain/snow by air temperature relative to tempCritRain; temperate
+      mean ~1e-5 to 1e-4 kg/m2/s
+  - name: airtemp
+    unit: K
+    category: forcing
+    source_kind: forcing
+    model_input_format: forcing NetCDF (time, hru)
+    notes: air temperature at measurement height; controls rain/snow phase partition and melt energy
+  - name: SWRadAtm
+    unit: W m-2
+    category: forcing
+    source_kind: forcing
+    model_input_format: forcing NetCDF (time, hru)
+    notes: downward shortwave radiation at upper boundary
+  - name: LWRadAtm
+    unit: W m-2
+    category: forcing
+    source_kind: forcing
+    model_input_format: forcing NetCDF (time, hru)
+    notes: downward longwave radiation at upper boundary
+  - name: windspd
+    unit: m s-1
+    category: forcing
+    source_kind: forcing
+    model_input_format: forcing NetCDF (time, hru)
+    notes: wind speed at measurement height
+  - name: airpres
+    unit: Pa
+    category: forcing
+    source_kind: forcing
+    model_input_format: forcing NetCDF (time, hru)
+    notes: air pressure at measurement height; expected ~80000-105000 Pa, in kPa breaks saturation-vapour-pressure/energy
+      balance
+  - name: spechum
+    unit: g g-1
+    category: forcing
+    source_kind: forcing
+    model_input_format: forcing NetCDF (time, hru)
+    notes: specific humidity (mass ratio, numerically kg/kg); expected ~0.002-0.015; sets vapour-pressure
+      deficit for ET
   parameters:
-    critical:
-      - name: "fileManager.txt"
-        description: "Master config pointing to all other files"
-        notes: >
-          Every path MUST be absolute — SUMMA Fortran resolves from CWD.
-          controlVersion MUST be 'SUMMA_FILE_MANAGER_V3.0.0'.
-          Directory paths must end with '/'. Always run validate_file_manager.py.
-
-      - name: "decisions"
-        file: "decisions.txt"
-        description: "35 categories of physics options (snow, soil, veg, radiation, groundwater)"
-        notes: >
-          SUMMA's unique feature. Some names use intentional abbreviations:
-          'itertive' (not iterative), 'numericl' (not numerical).
-          Invalid decision option causes STOP 30 (dt_009).
-
-      - name: "hruId consistency"
-        description: "ALL NetCDF files must have identical hruId values in identical order"
-        bug_history: >
-          Regenerating any one file (attributes, forcing, coldState, trialParams)
-          without the others causes immediate crashes (dt_005, dt_010).
-
-      - name: "Fortran path length"
-        description: "All file paths must be < 256 characters (CHARACTER(256))"
-        bug_history: "Silently truncated paths cause file-not-found or wrong file read (dt_002)"
-
-      - name: "soil_layer_count"
-        file: "trialParams.nc and coldState.nc"
-        description: "Number of soil layers must match between parameter and state files"
-        bug_history: "Mismatch causes fatal error (dt_006)"
-
-    decisions_key:
-      - name: "snowLayers"
-        options: ["jrdn1991", "CLM_2010"]
-        description: "Snow layer management algorithm"
-
-      - name: "soilCatTbl"
-        options: ["STAS", "STAS-RUC", "ROSETTA"]
-        description: "Soil category lookup table"
-
-      - name: "canopyEmis"
-        options: ["difTrans", "simplExp"]
-        description: "Canopy emissivity formulation"
-
-      - name: "snowDenNew"
-        options: ["hedAndPom", "anderson", "pahinger_2"]
-        description: "New snow density calculation"
-
-      - name: "groundwatr"
-        options: ["qTopmodl", "bigBuckt", "noXplict"]
-        description: "Groundwater model selection"
-
-  files:
-    required:
-      - name: "fileManager.txt"
-        description: "Master configuration file"
-        format: "Text; key-value pairs with absolute paths"
-        notes: "controlVersion MUST be 'SUMMA_FILE_MANAGER_V3.0.0'"
-
-      - name: "decisions.txt"
-        description: "Physics option selections (35 categories)"
-        format: "Text; decision_name option_name pairs"
-
-      - name: "attributes.nc"
-        description: "GRU/HRU attributes (area, elevation, latitude, longitude)"
-        format: "NetCDF; dimensions (hru, gru)"
-
-      - name: "forcing_YYYY.nc"
-        description: "Meteorological forcing (7 variables)"
-        format: "NetCDF; dimensions (time, hru)"
-
-      - name: "trialParams.nc"
-        description: "Trial parameter values per HRU"
-        format: "NetCDF; dimensions (hru, nSoil, nSnow)"
-
-      - name: "coldState.nc"
-        description: "Initial conditions for cold start"
-        format: "NetCDF; dimensions (hru, ifcToto, midToto, midSoil, scalarv)"
-
-      - name: "VEGPARM.TBL"
-        description: "Vegetation parameter lookup table"
-      - name: "SOILPARM.TBL"
-        description: "Soil parameter lookup table"
-      - name: "GENPARM.TBL"
-        description: "General parameter file"
-      - name: "MPTABLE.TBL"
-        description: "Noah-MP parameter table"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: k_soil (saturated hydraulic conductivity)
+    unit: m s-1
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc / localParamInfo.txt
+    notes: range ~1e-7 to 1e-3
+  - name: theta_sat (porosity / saturated water content)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc / SOILPARM.TBL
+    notes: range ~0.30-0.55
+  - name: theta_res (residual water content)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc / SOILPARM.TBL
+    notes: must be < theta_sat; range ~0.01-0.15
+  - name: vGn_alpha (van Genuchten alpha)
+    unit: m-1
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc
+    notes: 'matric-head sign convention: SUMMA requires NEGATIVE values (valid ~[-1.0,-0.01]); positive
+      yields NaN'
+  - name: vGn_n (van Genuchten n shape)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc
+    notes: range ~1.1-3.0
+  - name: critSoilWilting (wilting point)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc
+    notes: ET shutoff; must satisfy theta_res < critSoilWilting < critSoilTranspire < fieldCapacity <
+      theta_sat
+  - name: critSoilTranspire (transpiration threshold)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc
+    notes: range ~0.15-0.40
+  - name: fieldCapacity
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc
+    notes: theta at -33 kPa; ~0.30
+  - name: heightCanopyTop (canopy height)
+    unit: m
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: trialParams.nc / VEGPARM.TBL
+    notes: controls radiation and roughness; ~0.1-40 m
+  - name: rootingDepth (root zone depth)
+    unit: m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc
+    notes: ~0.5-3.0 m
+  - name: qSurfScale (surface runoff scaling)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc
+    notes: ~10-100
+  - name: aquiferScaleFactor (aquifer response time)
+    unit: m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: basinParamInfo.txt / trialParams.nc
+    notes: ~10-500
+  - name: tempCritRain (rain/snow threshold)
+    unit: K
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc
+    notes: ~272-275 K
+  - name: frozenPrecipMultip (snow undercatch correction)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: trialParams.nc
+    notes: ~0.8-1.5
+  - name: vegTypeIndex / soilTypeIndex / slopeTypeIndex
+    unit: '-'
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: attributes.nc
+    notes: classification indices selecting Noah-MP VEGPARM/SOILPARM/GENPARM lookup-table defaults unless
+      overridden by trialParams
+  - name: HRU geometry (HRUarea, elevation, tan_slope, contourLength, mHeight, downHRUindex)
+    unit: mixed (m2, m, m/m, m)
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: attributes.nc
+    notes: local spatial attributes; downHRUindex=0 marks the outlet
+  initial_conditions:
+  - name: mLayerTemp (initial soil/snow layer temperature)
+    unit: K
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: coldState.nc (midToto)
+    notes: cold-start ~ mean annual air temperature; unrealistic values motivate nrg_flux convergence
+      failure / two-phase spinup
+  - name: mLayerVolFracLiq / mLayerVolFracIce (initial layer moisture)
+    unit: '-'
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: coldState.nc (midToto)
+    notes: cold-start ~field capacity 0.25-0.35; too dry causes 5+ yr spinup, above theta_sat causes runoff
+      spikes
+  - name: mLayerMatricHead (initial soil matric head)
+    unit: m
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: coldState.nc (midSoil)
+  - name: scalarSWE / nSnow (initial snow water equivalent / snow layer count)
+    unit: kg m-2 / -
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: coldState.nc
+    notes: typically SWE=0, nSnow=0; snow builds up naturally
+  - name: canopy state (scalarCanopyLiq, scalarCanopyIce)
+    unit: kg m-2
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: coldState.nc
+  - name: scalarAquiferStorage (initial aquifer storage)
+    unit: m
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: coldState.nc
+    notes: high initial storage can absorb all water and yield near-zero runoff
+  - name: nSoil / soil layer discretization
+    unit: '-'
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: coldState.nc
+    notes: default 8 layers to ~4 m; must match model configuration exactly (else dimension-mismatch abort)
+  - name: dt_init (initial time sub-step length)
+    unit: s
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: coldState.nc
+  boundary_conditions:
+  - name: model decisions (~35 physics-option categories)
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: decisions.txt (case-sensitive <keyword> <value>)
+    notes: 'selects flux parameterizations and numerics: snowLayers, thCondSnow, snowIncept, compaction,
+      f_Richards, groundwatr, hc_profile, stomResist, soilStress, canopySrad, num_method, fDerivMeth,
+      etc. — these change the structural model, not just parameters'
+  - name: bcUpprTdyn / bcUpprSoiH (upper temperature/soil-head boundary)
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: decisions.txt
+    notes: presTemp/nrg_flux/zeroFlux (energy) and presHead/liq_flux (water); presTemp diagnostic mode
+      bypasses energy balance and yields zero ET hence zero runoff
+  - name: bcLowrTdyn / bcLowrSoiH (lower temperature/soil-head boundary)
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: decisions.txt
+    notes: presTemp/zeroFlux (energy) and presHead/bottmPsi/drainage/zeroFlux (water); constrained by
+      groundwater choice
+  - name: simStartTime / simEndTime / data_step
+    unit: datetime / s
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: fileManager.txt
+    notes: simulation window and forcing timestep (period-ending stamps)
+  - name: output control (variables, frequency, statistics)
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: outputControl.txt
+    notes: selects retained variables, output frequency (multiple of forcing step), and statistic (instantaneous/sum/mean/variance/min/max/mode)
 outputs:
-
   primary:
-    - name: "total_runoff"
-      file: "output/*.nc"
-      variable: "averageRoutedRunoff or scalarTotalRunoff"
-      unit: "m/s"
-      valid_range: [0, null]
-      notes: "Routed or unrouted runoff depending on routing decision"
-
-    - name: "evapotranspiration"
-      variable: "scalarTotalET"
-      unit: "kg/m2/s"
-      valid_range: [0, null]
-
-    - name: "soil_moisture"
-      variable: "mLayerVolFracWat"
-      unit: "m3/m3"
-      valid_range: [0, 1.0]
-
-    - name: "snow_water_equivalent"
-      variable: "scalarSWE"
-      unit: "kg/m2"
-      valid_range: [0, 5000]
-
-    - name: "snow_depth"
-      variable: "scalarSnowDepth"
-      unit: "m"
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: scalarTotalRunoff
+    unit: m s-1
+    description: Total runoff (surface runoff + soil drainage + baseflow) per HRU as a flux; discharge
+      Q(m3/s) = scalarTotalRunoff x HRUarea(m2), no /1000.
+    validation_rank: 1
+    emitted_in: SUMMA output NetCDF (variables selected in outputControl.txt; defined in def_output.f90)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - SUMMA has no channel routing; comparison to gauged streamflow requires external routing of HRU
+          runoff to the outlet.
+        - Discard 1-2 yr (5+ for groundwater basins) cold-start spinup before scoring.
+        - Runoff is m/s while ET/precip are kg/m2/s; mixing the unit families biases the water balance.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Per-HRU/GRU runoff fields, not channel discharge.
+      detrending_options:
+      - none
+  - name: scalarTotalET
+    unit: kg m-2 s-1
+    description: Total evapotranspiration (canopy + ground evaporation, transpiration, sublimation). Negative
+      = evaporation (water leaving surface), positive = condensation.
+    validation_rank: 2
+    emitted_in: SUMMA output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - 'Sign convention: negative ET is upward (evaporative) flux.'
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: scalarSWE
+    unit: kg m-2
+    description: Snow water equivalent of the snowpack per HRU.
+    validation_rank: 3
+    emitted_in: SUMMA output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Point SNOTEL-style SWE; timing of accumulation/melt onset matters as much as peak magnitude.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Gridded/remote-sensing SWE; sub-canopy SWE is sensitive to canopy-snow unloading scheme.
+      detrending_options:
+      - none
+  - name: scalarSnowDepth
+    unit: m
+    description: Total snow depth per HRU.
+    validation_rank: 4
+    emitted_in: SUMMA output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: mLayerVolFracLiq
+    unit: '-'
+    description: Volumetric liquid water fraction at soil layer midpoints (soil moisture profile).
+    validation_rank: 5
+    emitted_in: SUMMA output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Layer-specific; must match the observation's measurement depth to a model layer.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Satellite surface soil moisture compares to near-surface layers only.
+      detrending_options:
+      - none
+  - name: scalarNetRadiation
+    unit: W m-2
+    description: Net radiation at the land surface (canopy + ground).
+    validation_rank: 6
+    emitted_in: SUMMA output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Flux-tower energy-balance comparison; sub-daily resolution required.
+      detrending_options:
+      - none
+  - name: scalarLatHeatTotal
+    unit: W m-2
+    description: Total latent heat flux to the atmosphere (turbulent moisture flux), energy-balance counterpart
+      of total ET.
+    validation_rank: 7
+    emitted_in: SUMMA output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Flux-tower eddy-covariance comparison; energy-balance non-closure in observations is a known
+          caveat.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "path_missing"
-    triplet: "dt_001"
-    description: "Missing file referenced in fileManager.txt"
-    severity: "fatal"
-    fix: "Verify all paths with validate_file_manager.py"
+- id: dt_001
+  symptom: SUMMA crashes immediately with 'STOP 10' or 'Error opening file' when starting execution.
+  diagnosis: 'A file referenced in fileManager.txt does not exist at the specified path.; SUMMA Fortran
+    reads all config file paths from fileManager.txt and opens them sequentially. If ANY file is missing,
+    SUMMA calls STOP 10 but the error message does not always identify WHICH file is missing. This is
+    the #1 SUM'
+  remedy: 'Run validate_file_manager.py to check all paths before execution.; validate_file_manager; ["Check
+    that settingsPath, forcingPath, outputPath all end with ''/''", ''Verify every file listed in fileManager.txt
+    exists at the specified location'', ''Check that all paths are ABSOLUTE (not relative)'']; Always '
+  severity: fatal
+- id: dt_002
+  symptom: SUMMA silently truncates long file paths, opening the wrong file or failing with a cryptic
+    error.
+  diagnosis: File path exceeds Fortran CHARACTER(256) limit.; SUMMA Fortran source uses CHARACTER(len=256)
+    for file paths. When settingsPath + fileName exceeds 256 characters, the string is truncated silently.
+    The Fortran OPEN statement then tries to open a non-existent file. This is the same Fortran path trunca
+  remedy: 'Create a symlink to shorten the path. Target total path < 200 chars.; ; [''ln -s /long/path/to/outputs/basin_run/settings
+    /tmp/summa_settings'', ''Update fileManager.txt to use the symlink path'', "Verify total path length:
+    echo -n ''path'' | wc -c"]; Keep output directory paths short. Use validate_file_m'
+  severity: fatal
+- id: dt_003
+  symptom: SUMMA runs without error but precipitation is 8x too high or too low. Runoff is completely
+    wrong.
+  diagnosis: 'VIC precipitation units (mm/timestep) divided by wrong time interval.; VIC forcing uses
+    mm per timestep. For 3-hourly data, the timestep is 10800 seconds. SUMMA expects kg/m2/s (= mm/s).
+    The correct conversion is: pptrate = VIC_precip / 10800. If you divide by 86400 (daily), the precipitation
+    is 8x '
+  remedy: 'Verify DATA_STEP matches the actual VIC forcing timestep (10800 for 3-hourly, 3600 for hourly).;
+    convert_vic_forcing_to_summa; [''Check VIC forcing file: count rows per day (8 = 3-hourly, 24 = hourly)'',
+    ''Set DATA_STEP = 10800 for 3-hourly, 3600 for hourly'', ''After conversion, check: mean pptrate shou'
+  severity: silent
+- id: dt_004
+  symptom: SUMMA energy balance is wildly unstable. Soil temperatures diverge to unrealistic values (>400K
+    or <200K).
+  diagnosis: 'Air pressure in wrong units: kPa instead of Pa.; VIC forcing stores air pressure in kPa.
+    SUMMA expects Pa. If you forget the *1000 conversion, air pressure is 101.325 instead of 101325. This
+    causes the energy balance to fail catastrophically because saturation vapor pressure, psychrometric
+    constant,'
+  remedy: 'Multiply VIC pressure by 1000 when converting to SUMMA format.; convert_vic_forcing_to_summa;
+    [''Check forcing: ncdump -v airpres forcing.nc | head -20'', ''Values should be ~80000-105000 Pa,
+    NOT 80-105 (kPa)'', ''If in kPa, multiply by 1000 and regenerate'']; The convert_vic_forcing_to_summa
+    tool handles'
+  severity: fatal
+- id: dt_005
+  symptom: SUMMA crashes at startup with 'hruId mismatch' or 'wrong number of HRUs in forcing'.
+  diagnosis: HRU IDs or count in forcing NetCDF do not match the attributes file.; SUMMA requires that
+    hruId values in the forcing file exactly match those in the attributes file, in the same order. If
+    you regenerate attributes (changing the GRU/HRU structure) without regenerating forcing files, or
+    vice versa, t
+  remedy: 'Regenerate forcing files from scratch using the current attributes file.; convert_vic_forcing_to_summa;
+    [''ncdump -v hruId attributes.nc | tail -5'', ''ncdump -v hruId forcing_YYYY.nc | tail -5'', ''If
+    different, re-run convert_vic_forcing_to_summa.py with current attributes'']; Always regenerate forcing '
+  severity: fatal
+- id: dt_006
+  symptom: SUMMA crashes with 'layer dimension mismatch' or 'nSoil inconsistency' at startup.
+  diagnosis: Number of soil layers in initial conditions file does not match the model configuration.;
+    The initial conditions (coldState) NetCDF must have exactly nSoil layers matching the value stored
+    in the nSoil variable. If you change the number of soil layers in trial parameters but do not regenerate
+    the co
+  remedy: 'Regenerate coldState.nc with the correct number of soil layers.; create_initial_conditions;
+    [''Check current nSoil: ncdump -v nSoil coldState.nc'', ''Check midSoil dimension: ncdump -h coldState.nc
+    | grep midSoil'', ''Regenerate with matching --n_soil_layers'']; Always regenerate initial conditions
+    after '
+  severity: fatal
+- id: dt_007
+  symptom: 'SUMMA convergence failure: ''dt < dtmin'' or ''failed to converge'' messages, then STOP.'
+  diagnosis: The numerical solver cannot find a stable solution within the minimum time step.; SUMMA adaptively
+    reduces the time step when the energy balance equation does not converge. If it reaches the minimum
+    (dt_init in coldState.nc controls the initial step, but the internal minimum is ~0.01s), it aborts.
+    C
+  remedy: 'Check forcing data for unrealistic values. Try switching num_method from ''itersurf'' to ''itertive''.
+    Increase dt_init.; ; [''Check forcing: ncdump -v SWRadAtm forcing.nc | python -c \''import sys; print(min(float(x)
+    for x in sys.stdin.read().split() if x.replace(".","").replace("-","").isdigit()))\'''', '''
+  severity: fatal
+- id: dt_008
+  symptom: SUMMA crashes with STOP 20 or 'NetCDF dimension error'.
+  diagnosis: NetCDF file has wrong dimensions or variable names.; SUMMA Fortran reads NetCDF files using
+    specific dimension and variable names. If ANY variable is misspelled (e.g., 'ppt_rate' instead of
+    'pptrate'), or dimensions are in wrong order (hru,time instead of time,hru), SUMMA issues STOP 20.
+    The Fortran
+  remedy: 'Check NetCDF variable names and dimensions against SUMMA requirements.; validate_file_manager;
+    [''ncdump -h forcing.nc and compare variable names to SUMMA docs'', ''Required forcing vars: pptrate,
+    airtemp, SWRadAtm, LWRadAtm, windspd, airpres, spechum'', ''Dimensions must be (time, hru) for forcing,
+    (hru'
+  severity: fatal
+- id: dt_009
+  symptom: SUMMA crashes with STOP 30 or 'unknown option' for a model decision.
+  diagnosis: 'A decision keyword has an invalid option value.; Each SUMMA decision has a fixed set of
+    valid options defined in mDecisions.f90. Typos (e.g., ''BallBery'' instead of ''BallBerry''), case
+    errors (options are case-sensitive in some versions), or using an option from one decision with a
+    different decision '
+  remedy: 'Use configure_decisions.py which validates all options against the known catalog.; configure_decisions;
+    [''Check each line in decisions file against VALID_DECISIONS in configure_decisions.py'', "Common
+    typo: ''itertive'' (correct) vs ''iterative'' (wrong)", "Common typo: ''numericl'' (correct) vs ''numerical'
+  severity: fatal
+- id: dt_010
+  symptom: GRU/HRU IDs are inconsistent across NetCDF files (attributes, forcing, coldState, trialParams).
+  diagnosis: Files were generated at different times with different domain configurations.; SUMMA requires
+    ALL NetCDF files to have identical hruId values in identical order. The attributes file defines the
+    master list. Forcing, coldState, and trialParams must match exactly. If you change the domain setup
+    (add/r
+  remedy: 'Regenerate ALL NetCDF files from the same attributes file.; ; [''Start from create_local_attributes
+    (defines master hruId)'', ''Then regenerate: forcing, initial conditions, trial parameters'', ''Run
+    validate_file_manager to confirm consistency'']; After ANY change to GRU/HRU structure, regenerate
+    ALL dow'
+  severity: fatal
+- id: dt_011
+  symptom: SUMMA runs to completion but all runoff values are zero or near-zero.
+  diagnosis: 'Precipitation forcing is zero (unit conversion error) or all water is being stored in soil/aquifer.;
+    Three common causes: (1) Precipitation was divided by an extra factor during conversion, making it
+    effectively zero. (2) The aquifer storage parameter is set too high, absorbing all water. (3) The
+    so'
+  remedy: 'Check forcing precipitation values and soil initialization.; parse_summa_output; [''ncdump
+    -v pptrate forcing.nc | tail -20  # check values are non-zero'', ''Mean pptrate should be ~1e-5 to
+    1e-4 kg/m2/s'', ''Check scalarAquiferStorage in output -- if growing continuously, aquifer is absorbing
+    everything'''
+  severity: silent
+- id: dt_012
+  symptom: SUMMA runs but ET is unrealistically high (>10 mm/day mean) or negative.
+  diagnosis: Specific humidity or air pressure units are wrong.; SUMMA expects specific humidity in g/g
+    (dimensionless mass ratio) and air pressure in Pa. If humidity is in g/kg (need to divide by 1000)
+    or pressure in kPa (need to multiply by 1000), the Penman-Monteith equation computes wrong vapor pressure
+    defi
+  remedy: 'Verify humidity and pressure units in forcing file.; ; [''ncdump -v spechum forcing.nc | tail
+    -5  # should be ~0.001-0.020 g/g'', ''ncdump -v airpres forcing.nc | tail -5  # should be ~60000-105000
+    Pa'', ''If spechum > 1: divide by 1000 (was g/kg)'', ''If airpres < 1000: multiply by 1000 (was kPa)''];
+    Use c'
+  severity: silent
+- id: dt_013
+  symptom: SUMMA output has NaN for some HRUs but not others.
+  diagnosis: Partial forcing coverage -- some HRUs have missing or fill-value forcing data.; When VIC
+    forcing files do not cover all HRUs (e.g., a coastal cell partially over water), the forcing conversion
+    fills those HRUs with default values. If the default is the fill value (-9999), SUMMA propagates NaN
+    throug
+  remedy: Check for fill values in forcing. Remove HRUs with no forcing coverage.; ; ['python -c "from
+    netCDF4 import Dataset; ds=Dataset(\'forcing.nc\'); print(ds.variables[\'pptrate\'][-1,:])"', 'If
+    any values are -9999 or NaN, identify those HRUs', 'Either remove those HRUs from attributes or ensure
+    forcin
+  severity: degraded
+- id: dt_014
+  symptom: Trial parameters are ignored -- SUMMA uses default values from lookup tables.
+  diagnosis: Trial parameter NetCDF variable names do not match SUMMA's internal parameter names.; SUMMA
+    parameter names are case-sensitive and specific. For example, 'k_soil' (correct) vs 'ksat' (wrong),
+    'theta_sat' (correct) vs 'porosity' (wrong). If the variable name in trialParams.nc does not match,
+    SUMMA si
+  remedy: 'Verify parameter names match SUMMA''s internal names exactly.; set_trial_parameters; [''ncdump
+    -h trialParams.nc to list variable names'', ''Cross-reference with SUMMA source: build/source/engine/popMetadat.f90'',
+    "Common errors: ''ksat'' should be ''k_soil'', ''porosity'' should be ''theta_sat''"]; Use set_tria'
+  severity: silent
+- id: dt_015
+  symptom: First 1-2 years of SUMMA output show unrealistic patterns (runoff spike or drought) before
+    stabilizing.
+  diagnosis: Cold start initial conditions are far from equilibrium.; Cold start assumes uniform soil
+    moisture and temperature. In reality, the soil profile has a characteristic moisture and temperature
+    distribution. SUMMA takes 1-2 years to reach dynamic equilibrium (spinup). If you analyze the full
+    output incl
+  remedy: 'Discard the first 1-2 years of output as spinup.; parse_summa_output; [''If simulating 2000-2010,
+    start forcing from 1998 and discard 1998-1999 in analysis'', ''For groundwater-dominated basins, use
+    3-5 year spinup'', ''Alternatively: run once, save the final state as a restart file, re-run from
+    that sta'
+  severity: silent
+- id: dt_016
+  symptom: 'summa.exe fails with ''error while loading shared libraries: libnetcdff.so.7'' or similar.'
+  diagnosis: NetCDF-Fortran shared library not in LD_LIBRARY_PATH.; SUMMA links dynamically to libnetcdff
+    (NetCDF-Fortran) and liblapack. If the binary was compiled on a different system or the library paths
+    are not set, the dynamic linker cannot find the shared objects. This is a common issue when moving
+    binari
+  remedy: 'Set LD_LIBRARY_PATH to include NetCDF-Fortran library directory.; ; [''ldd model/summa/bin/summa.exe  #
+    check which libs are missing'', ''locate libnetcdff.so  # find the library'', ''export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH'',
+    ''Or recompile: cd model/summa/build && make clean && '
+  severity: fatal
+- id: dt_017
+  symptom: Physics comparison shows identical results for different decision options.
+  diagnosis: The modified decisions file was not actually used -- SUMMA read the original.; When running
+    multiple physics variants, each must use a different decisions file. If the fileManager still points
+    to the original decisions file (the modification was to a copy that was not referenced), all runs
+    use the s
+  remedy: 'Verify each modified fileManager points to its own decisions file.; compare_physics; [''For
+    each variant, check: grep decisionsFile fileManager_runX.txt'', ''Verify the decisions files are actually
+    different: diff decisions_run1.txt decisions_run2.txt'', ''Use compare_physics.py which handles this
+    correc'
+  severity: silent
+- id: dt_018
+  symptom: All HRUs have identical elevation, slope, and area values despite being in different locations.
+  diagnosis: DEM raster does not overlap with basin shapefile due to CRS mismatch.; If the basin shapefile
+    is in a projected CRS (e.g., UTM) but the DEM is in geographic CRS (WGS84), the spatial intersection
+    returns zero overlap. The tool falls back to default values (elevation=0, slope=0.01) for all HRUs.
+    SUMMA
+  remedy: 'Reproject basin shapefile and DEM to the same CRS (recommend EPSG:4326).; ; [''python -c "import
+    geopandas as gpd; print(gpd.read_file(\''basin.shp\'').crs)"'', ''python -c "import rasterio; print(rasterio.open(\''dem.tif\'').crs)"'',
+    "If different, reproject shapefile: gdf.to_crs(''EPSG:4326'').to_file(''basi'
+  severity: silent
+- id: dt_019
+  symptom: SUMMA produces NaN for all soil moisture and runoff variables. Model runs but output is meaningless.
+  diagnosis: vGn_alpha (van Genuchten alpha) is positive. SUMMA requires NEGATIVE values (matric head
+    convention).; SUMMA's van Genuchten functions in soil_utils.f90 expect alpha < 0 because matric head
+    (psi) is negative for unsaturated conditions. The product alpha*psi must be positive for the power-law
+    to work
+  remedy: 'Use negative vGn_alpha values. Range: [-1.0, -0.01]. Typical loam: -1.1.; ; [''Check trialParams.nc:
+    ncdump -v vGn_alpha trialParams.nc'', ''If positive, negate: vGn_alpha = -abs(vGn_alpha)'', ''Reference
+    values by soil type in SOILPARM.TBL'']; set_trial_parameters.py PARAM_RANGES now enforces [-1.0, -0.0'
+  severity: silent
+- id: dt_020
+  symptom: SUMMA crashes with 'numerical derivates do not account for the cross derivatives between hydrology
+    and thermodynamics'.
+  diagnosis: fDerivMeth=numericl is completely broken in SUMMA — it cannot compute cross-derivative terms.;
+    soilLiqFlx.f90:305-308 immediately returns err=20 when fDerivMeth=numericl is selected. The numerical
+    derivative method was never fully implemented for coupled hydro-thermal solutions. This is NOT a bug
+    bu
+  remedy: 'Set fDerivMeth=analytic. This is the ONLY working option.; ; [''Edit decisions.txt: fDerivMeth  analytic''];
+    configure_decisions.py now defaults to analytic and errors on numericl.'
+  severity: fatal
+- id: dt_021
+  symptom: SUMMA crashes with 'lower boundary condition for soil hydology must be zeroFlux with qbaseTopmodel'.
+  diagnosis: 'groundwatr=qTopmodl requires bcLowrSoiH=zeroFlux AND hc_profile=pow_prof.; mDecisions.f90:660-671
+    enforces two hard constraints for TOPMODEL groundwater: (1) bcLowrSoiH must be zeroFlux (TOPMODEL
+    handles all baseflow, no free drainage), (2) hc_profile must be pow_prof (power-law transmissivity
+    profi'
+  remedy: 'Either (a) set bcLowrSoiH=zeroFlux + hc_profile=pow_prof for qTopmodl, or (b) use groundwatr=noXplict
+    with drainage.; ; [''Option A: groundwatr=qTopmodl, bcLowrSoiH=zeroFlux, hc_profile=pow_prof'', ''Option
+    B (safer): groundwatr=noXplict, bcLowrSoiH=drainage, hc_profile=constant'']; configure_decisions.'
+  severity: fatal
+- id: dt_023
+  symptom: 'All forcing values are physically wrong: precip ~100 mm/day, temperature ~50°C, pressure ~2500
+    Pa, wind ~160 m/s. SUMMA may still run but output is meaningless.'
+  diagnosis: VIC forcing column order mismatch. HydroCraft VIC uses AIR_TEMP,PREC,PRESSURE,SWDOWN,LWDOWN,VP,WIND
+    (7 cols) but converter assumed PREC,TMAX,TMIN,WIND,SW,LW,PRESSURE,QAIR (8 cols).; HydroCraft's forcing_1d.py
+    + process_forcing.py produce VIC forcing in the order defined by the global_param FORCE_TYP
+  remedy: 'Use --column_order hydrocraft (default) for HydroCraft VIC forcing. Always verify forcing with
+    a sanity check after conversion.; ; [''Check: python3 -c "from netCDF4 import Dataset; import numpy
+    as np; ds=Dataset(\''forcing_YYYY.nc\''); print(\''P=\'', np.nanmean(ds[\''pptrate\''][:])*86400,
+    \''mm/day, T=\'''
+  severity: silent
+- id: dt_026
+  symptom: SUMMA crashes with 'critSoilWilting parameter is out of range' or 'critSoilTranspire out of
+    range' even though values look reasonable.
+  diagnosis: 'Soil parameters from different pedotransfer functions (Saxton-Rawls vs ROSETTA) are inconsistent.;
+    SUMMA requires theta_res < critSoilWilting < critSoilTranspire < fieldCapacity < theta_sat. Saxton-Rawls
+    gives wilting_point=0.025 for sandy soil, but ROSETTA gives theta_res=0.068 for the same soil — '
+  remedy: Use set_trial_parameters.py --from_hwsd which derives ALL parameters from ROSETTA consistently.;
+    python tools/s4_parameters/set_trial_parameters.py --from_hwsd --attributes_nc ... --output_nc ...;
+    ['Do NOT mix saxton_rawls() with ROSETTA_VGN table', 'FC = vgn_theta(psi=-3.36m), WP = vgn_theta(psi=-1
+  severity: fatal
+- id: dt_025
+  symptom: SUMMA appears to produce zero runoff (PBIAS=-99.9%) despite correct precipitation and ET. Water
+    balance appears to have a 1000 mm/yr gap.
+  diagnosis: 'SUMMA output variables use MIXED UNITS: some in kg/m²/s (=mm/s), others in m/s. A factor
+    of 1000 difference.; SUMMA''s computFlux.f90 divides throughfall (kg/m²/s) by iden_water (1000 kg/m³)
+    to get RainPlusMelt in m/s. Other variables like scalarThroughfallRain and scalarTotalET remain in
+    kg/m²/s. Wh'
+  remedy: 'Check the ''units'' attribute of each output variable. Use Q = scalarTotalRunoff(m/s) × area(m²).
+    Do NOT divide by 1000.; ; ["ncdump -h output.nc | grep ''units'' to see m s-1 vs kg m-2 s-1", ''For
+    Q: Q_m3s = scalarTotalRunoff * HRUarea (both in SI, result is m³/s)'', ''For water balance: convert
+    all to mm'
+  severity: silent
+- id: dt_024
+  symptom: SUMMA crashes with 'canopySnow/failed to converge [mass]' for ALL GRUs at first freezing event.
+    nrg_flux fails universally on subtropical basins.
+  diagnosis: 'AVHRR IGBP-DIS class 11 (Wetland/Cropland) mapped directly as USGS class 11 (Deciduous Broadleaf
+    Forest, 20m canopy).; AVHRR 1km uses IGBP-DIS classification. SUMMA VEGPARM.TBL uses USGS 27-class
+    scheme. Class 11 means completely different things: IGBP=Wetland (flat cropland/paddy in China), USGS=De'
+  remedy: 'Apply IGBP→USGS crosswalk table in create_gru_hru.py. Key mapping: IGBP 11→USGS 3 (Irrigated
+    Cropland).; ; [''Check veg types: ncdump -v vegTypeIndex attributes.nc'', ''If subtropical basin has
+    many type 11 (Deciduous Broadleaf): wrong classification'', ''Apply crosswalk: IGBP_TO_USGS = {11:3,
+    12:2, 10:7'
+  severity: fatal
+- id: dt_022
+  symptom: SUMMA crashes with 'vegTypeTable not found in MPTABLE.TBL' or similar table section error.
+  diagnosis: vegeParTbl=MODIFIED_IGBP_MODIS_NOAH selected but MPTABLE.TBL lacks that section.; MPTABLE.TBL
+    shipped with some SUMMA case studies only contains the USGS vegetation section. If vegeParTbl is set
+    to MODIFIED_IGBP_MODIS_NOAH, SUMMA looks for that section header in MPTABLE.TBL and crashes when it's
+    not
+  remedy: 'Use vegeParTbl=USGS (always available), or copy a complete MPTABLE.TBL from case_study/base_settings/.;
+    ; ["grep ''MODIFIED_IGBP_MODIS_NOAH'' settings/MPTABLE.TBL", ''If missing: cp model/summa/case_study/base_settings/MPTABLE.TBL
+    settings/'', ''Or change decision: vegeParTbl  USGS'']; Default decisions n'
+  severity: fatal
+- id: dt_027
+  symptom: 'Large negative discharge bias (PBIAS -40% to -70%) with a GOOD correlation (r > 0.7) and a
+    water balance that CLOSES. Routing changes, gamma-scale sweeps and soil calibration all fail to move
+    PBIAS. scalarTotalET exceeds (basin precipitation - observed runoff).
 
-  - id: "path_truncation"
-    triplet: "dt_002"
-    description: "Fortran CHARACTER(256) silently truncates long paths"
-    severity: "fatal"
-    fix: "Keep all paths < 256 characters; use symlinks"
+    '
+  diagnosis: 'vegTypeIndex was invented (uniform value, or a rule keyed on elevation) rather than sourced
+    from a land-cover raster, giving the basin a taller canopy and a higher, less seasonal LAI than it
+    has.
 
-  - id: "precip_divisor_wrong"
-    triplet: "dt_003"
-    description: "Precipitation divisor wrong — 8x runoff error"
-    severity: "silent"
-    fix: "Divide mm/3hr by 10800 to get kg/m2/s"
+    ; vegTypeIndex indexes MPTABLE.TBL''s HVT (canopy top height) and LAIM (monthly LAI) rows, which set
+    aero'
+  remedy: 'Source vegTypeIndex from land cover, and check the ET ceiling BEFORE calibrating or routing.
 
-  - id: "pressure_kpa_not_pa"
-    triplet: "dt_004"
-    description: "Pressure in kPa instead of Pa"
-    severity: "fatal"
-    fix: "Multiply kPa by 1000 for Pa"
+    ; tools/s8_routing/build_river_network.py --landcover_tif ... --veg_scheme modis; [''Compute the ceiling:
+    ET_max = P_basin_mean - Q_obs (both mm/yr). Compare scalarTotalET.'', ''If scalarTotalET > ET_max,
+    disch'
+  severity: high
+- id: dt_028
+  symptom: 'Canopy interception loss computed as (pptrate - scalarThroughfallRain - scalarThroughfallSnow)
+    reads an implausible 35-45% of precipitation, leading to a "canopy parameter problem / requires_calibration"
+    verdict.
 
-  - id: "hru_id_mismatch"
-    triplet: "dt_005"
-    description: "hruId values differ between forcing, attributes, and state files"
-    severity: "fatal"
-    fix: "Regenerate all files from same GRU/HRU definition"
+    '
+  diagnosis: 'P minus throughfall is the interception RATE, not the interception LOSS. It counts intercepted
+    water that later reaches the ground as if it had evaporated.
 
-  - id: "soil_layer_mismatch"
-    triplet: "dt_006"
-    description: "Soil layer count mismatch between trialParams and coldState"
-    severity: "fatal"
-    fix: "Ensure both files use same nSoil dimension"
+    ; SUMMA defines scalarThroughfallRain as "rain that reaches the ground without ever touching the canopy"
+    (vegLiqFlux.f90:62). Water the canopy D'
+  remedy: Compute interception loss as canopy evaporation + canopy sublimation.; ; ['Add scalarCanopyEvaporation,
+    scalarCanopySublimation, scalarCanopyTranspiration, scalarGroundEvaporation, scalarCanopyLiqDrainage,
+    scalarCanopySnowUnloading to outputControl.txt.', 'interception_loss = |scalarCanopyEvaporatio
+  severity: medium
+- id: dt_029
+  symptom: 'SUMMA aborts immediately with "FATAL ERROR: summa_paramSetup/paramCheck/height of canopy top
+    is less than the height of the canopy bottom", typically right after switching vegeParTbl or after
+    writing a short-canopy (shrub/grass/barren) vegTypeIndex.
 
-  - id: "convergence_failure"
-    triplet: "dt_007"
-    description: "Numerical convergence failure during integration"
-    severity: "fatal"
-    fix: "Reduce timestep or change solver decision (itertive vs numericl)"
+    '
+  diagnosis: 'set_trial_parameters.py --from_hwsd wrote heightCanopyTop/heightCanopyBottom from a hard-coded
+    USGS-27 dict (ZTOPV/ZBOTV) while vegTypeIndex was written against a different table, or for a class
+    whose ZTOPV is 0.
 
-  - id: "invalid_decision"
-    triplet: "dt_009"
-    description: "Invalid decision option name — STOP 30"
-    severity: "fatal"
-    fix: "Check decision name spelling (note: itertive, numericl are intentional)"
+    ; heightCanopyTop and heightCanopyBottom are ordinary SUMMA parameters (popMetadat.f90:'
+  remedy: 'Pass --veg_scheme so canopy heights are read from MPTABLE.TBL HVT/HVB for the table vegTypeIndex
+    actually uses.; tools/s4_parameters/set_trial_parameters.py --from_hwsd --veg_scheme <usgs|modis>;
+    [''python tools/s4_parameters/set_trial_parameters.py --attributes_nc settings/attributes.nc --output_nc '
+  severity: fatal
+- id: dt_030
+  symptom: 'Every GRU is assigned a vegTypeIndex (and soilTypeIndex) equal to the smallest class id present
+    in that cell, not the areally dominant one.
 
-  - id: "all_runoff_zero"
-    triplet: "dt_011"
-    description: "All runoff is zero despite non-zero forcing"
-    severity: "silent"
-    detection: "Check forcing units and soil parameters"
+    '
+  diagnosis: The single-HRU branch computed the mode as Counter(np.unique(values)).most_common(1)[0][0].
+    np.unique() collapses the pixel array to its DISTINCT values, so the Counter sees each class exactly
+    once, every count ties at 1, and most_common() returns the first item of a sorted-ascending array
+    -- i.e. t
+  remedy: Take the mode over the FULL clipped pixel array, never over the unique list.; tools/s1_domain_setup/create_gru_hru.py;
+    ['vals, counts = np.unique(lc_values, return_counts=True); lc_mode = int(vals[np.argmax(counts)])',
+    'Keep the unique list ONLY for the --multi_hru branch (one HRU per class).', "Aud
+  severity: silent
+- id: dt_031
+  symptom: 'SUMMA either aborts reading SOILPARM.TBL out of range, or runs with a sea-level domain: forcing
+    lapse-corrected from the reanalysis grid elevation down to "0 m" is warmed by ~26 K on a 4000 m basin,
+    so snow never accumulates and the energy balance is wrong everywhere.
 
-  - id: "trial_params_ignored"
-    triplet: "dt_014"
-    description: "Trial parameters silently ignored if variable names do not match exactly"
-    severity: "silent"
-    fix: "Verify parameter names match SUMMA internal variable names exactly"
+    '
+  diagnosis: '(a) create_gru_hru.py called rio_mask(..., nodata=np.nan) on the DEM. Real DEMs are int16
+    (SRTM, MERIT, china_dem_90m), and rasterio raises when a NaN nodata is applied to an integer band.
+    The bare "except Exception: elevation = 0.0" then assigned 0.0 to every GRU. (b) The soil raster''s
+    modal value '
+  remedy: 'Mask the DEM on its OWN nodata in float space; resolve out-of-range soil values through the
+    HWSD texture crosswalk.; tools/s1_domain_setup/create_gru_hru.py; [''rio_mask(dem_ds, geom, crop=True,
+    filled=True) then cast float64 and NaN out dem_ds.nodata'', ''Reject |elev| outside -500..9000 m regardless '
+  severity: silent
+- id: dt_032
+  symptom: '[''validate_file_manager.py exits 2 with a single forcingListFile error, while forcingFileList.txt
+    plainly exists in the forcing directory next to forcing_YYYY.nc'', ''If validate_file_manager is skipped,
+    SUMMA itself aborts in ffile_info with a file-open error on the list, having never read a single f'
+  diagnosis: A directory-ownership gap, not a bad path string. The tool that PRODUCES the list does not
+    know settingsPath; the tool that CONSUMES it (create_file_manager.py) knows both but used to emit
+    the `forcingListFile 'forcingFileList.txt'` line without checking that the referenced file exists
+    at settingsPa
+  remedy: Let create_file_manager.py place the list at settingsPath; never hand-copy it and never point
+    forcingPath at the settings dir to compensate.; tools/s6_execution/create_file_manager.py; ['Run create_file_manager.py
+    with --settings_path and --forcing_path as usual; ensure_forcing_list() copies the lis
+  severity: fatal
+- id: dt_033
+  symptom: '["SUMMA aborts in under a second with ''FATAL ERROR: summa_readForcing/read_force/getFirstTimestep/first
+    requested simulation timestep not in any forcing file'', then STOP 1.", ''The forcing files are plainly
+    present, validate_file_manager passed, and the year in question is obviously covered.'']; SUMMA'
+  diagnosis: 'Off-by-one-timestep between the period-ending forcing convention and a hand-written sim
+    window. Not corrupt forcing, not a missing year.
 
-  - id: "spinup_artifact"
-    triplet: "dt_015"
-    description: "Cold-start initial conditions produce 1-2 years of unrealistic output"
-    fix: "Add extra spinup years and discard in analysis; use 3-5 years for GW basins"
+    ; The Fortran message names neither the requested time nor the available range, so it reads as "the
+    forcing is broken" and sends you back to rebuild s2 -- which re'
+  remedy: Derive the sim window from the forcing time axis instead of hard-coding YYYY-01-01 00:00.; tools/s6_execution/validate_file_manager.py;
+    ['First valid start = first stamp of the earliest forcing file = YYYY-01-01 00:00 + data_step (03:00
+    for 3-hourly CMFD).', 'Last valid end  = last stamp of the late
+  severity: fatal
+- id: dt_034
+  symptom: '[''Runoff is effectively zero (1e-13 m/s, i.e. 1e-5 mm/day) for the whole first year or more,
+    even through the melt season and monsoon.'', ''P and ET are both sane and the water balance CLOSES
+    -- the missing water is all going into soil storage, so no conservation check fires.'', ''mLayerVolFracLiq
+    at th'
+  diagnosis: 'Under the KI''s own default decision `f_Richards = mixdform`, matric head is the PROGNOSTIC
+    variable in unsaturated soil, so SUMMA recomputes theta from psi at the first step and the -100 m
+    head wins. --init_moisture is silently discarded.
 
-  - id: "identical_physics_results"
-    triplet: "dt_017"
-    description: "Different decision options produce identical results"
-    severity: "silent"
-    detection: "Compare output arrays element-wise"
-    fix: "Verify that the decision change actually affects the active code path"
-
-# =========================================================================
-# EXPECTED RANGES
-# =========================================================================
-expected_ranges:
-  notes: >
-    SUMMA expected ranges depend heavily on which decisions are selected.
-    No single baseline exists. Compare with VIC output for the same basin.
-
-# =========================================================================
-# CALIBRATION REFERENCE
-# =========================================================================
-calibration_reference:
-  notes: >
-    SUMMA does not have built-in calibration. Use external optimization
-    (DDS, SCE) modifying trialParams.nc. The key value of SUMMA is
-    physics comparison, not traditional calibration.
-
-  physics_comparison_workflow:
-    description: >
-      Run multiple decision variants on the same basin and compare.
-      Use compare_physics.py to automate.
-    steps:
-      - "Create base fileManager.txt"
-      - "Define variation set (e.g., 3 snow options x 2 soil options)"
-      - "Run all variants"
-      - "Compare with plot_summa_results.py"
-
-  key_parameters:
-    - "k_soil (soil hydraulic conductivity)"
-    - "k_macropore (macropore conductivity)"
-    - "theta_sat (saturated water content)"
-    - "theta_res (residual water content)"
-    - "vGn_alpha, vGn_n (van Genuchten parameters)"
-    - "critSoilWilting, critSoilTranspire (ET thresholds)"
-    - "routingGammaShape, routingGammaScale (hillslope routing)"
-
-  target_metrics:
-    - "NSE > 0.5"
-    - "KGE > 0.5"
-    - "PBIAS < 25%"
-
-  warmup: "2-5 years depending on groundwater decision"
-
-# =========================================================================
-# UNIT CONVERSION TABLE
-# =========================================================================
-unit_conversions:
-  - variable: "precipitation"
-    source: "CMFD (mm/3hr or kg/m2/s)"
-    target: "SUMMA (kg/m2/s)"
-    operation: "divide mm/3hr by 10800"
-    trap_if_wrong: "Runoff 8x wrong (if mm/3hr used as kg/m2/s)"
-
-  - variable: "temperature"
-    source: "CMFD (K)"
-    target: "SUMMA (K)"
-    operation: "none (SUMMA uses Kelvin natively)"
-    notes: "Unlike VIC/Raven/wflow which need degC, SUMMA uses K"
-
-  - variable: "air_pressure"
-    source: "CMFD (Pa)"
-    target: "SUMMA (Pa)"
-    operation: "none"
-    notes: "Unlike Raven/VIC (kPa), SUMMA uses Pa"
-    trap_if_wrong: "If kPa provided, ET is 100x wrong"
+    ; -100 m is near the wilting point for most textures. On the '
+  remedy: Invert the van Genuchten retention curve so head and theta describe one state, using the same
+    s4 parameters SUMMA will use.; tools/s5_initial_conditions/create_initial_conditions.py; ['Pass --trial_params_nc
+    settings/trialParams.nc so the tool can read per-HRU theta_sat / theta_res / vGn_alpha / vGn
+  severity: silent

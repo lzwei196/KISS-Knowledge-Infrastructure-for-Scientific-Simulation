@@ -1,358 +1,352 @@
-# HydroTrend Diagnostic Triplets
-# Format: symptom → diagnosis → remedy
-# Each entry: symptom, diagnosis, remedy, severity, tags
-
-triplets:
-
-  # ============================================================
-  # UNIT CONVERSION TRAPS
-  # ============================================================
-
-  - id: ht_001
-    symptom: "Simulated discharge is near zero; only baseflow contributes to Q"
-    diagnosis: >
-      Monthly precipitation (HYDRO.IN lines 12-23) was provided in meters
-      instead of millimeters. The model internally divides by 1000, so values
-      already in meters become 1000x too small (e.g., 0.005m → 0.000005m).
-    remedy: >
-      Ensure monthly precipitation values in HYDRO.IN lines 12-23 are in
-      millimeters (mm). Typical values: 5-500 mm/month. The model converts
-      to meters internally. Check: if values are < 1, they are likely in meters.
-    severity: critical
-    tags: [unit_conversion, precipitation, silent_failure]
-
-  - id: ht_002
-    symptom: "Simulated discharge is 1000x too high; extreme flooding every year"
-    diagnosis: >
-      Annual precipitation (HYDRO.IN line 9) was provided in mm/yr instead
-      of m/yr. HydroTrend expects m/yr here (no internal conversion).
-      1240mm/yr entered as 1240 instead of 1.24 gives 1000x too much water.
-    remedy: >
-      Convert annual precipitation to meters: divide mm/yr by 1000.
-      Line 9 should read like "1.24 0.0002 0.05" for ~1240mm/yr basin.
-    severity: critical
-    tags: [unit_conversion, precipitation, silent_failure]
-
-  - id: ht_003
-    symptom: "Snow/ice melt is negligible despite high-altitude glaciated basin"
-    diagnosis: >
-      Lapse rate (HYDRO.IN line 24) was provided in °C/m instead of °C/km.
-      The model divides by 1000 internally, so 0.0065 °C/m becomes
-      0.0000065 °C/m internal — effectively no temperature variation with
-      altitude, preventing snow/ice accumulation.
-    remedy: >
-      Provide lapse rate in °C/km (typical: 5-10 °C/km). Standard atmosphere
-      is ~6.5 °C/km. Use -9999 for the global default calculation.
-    severity: critical
-    tags: [unit_conversion, lapse_rate, glacier]
-
-  - id: ht_004
-    symptom: "Basin length appears 1000x too large in log; travel times unrealistic"
-    diagnosis: >
-      Basin length (HYDRO.IN line 31) was provided in meters instead of
-      kilometers. The model multiplies by 1000 internally, so 100000m
-      becomes 100,000,000m = 100,000km.
-    remedy: >
-      Provide basin length in kilometers. A 100km basin should be entered
-      as "100" on line 31. The model converts to meters internally.
-    severity: high
-    tags: [unit_conversion, basin_geometry]
-
-  - id: ht_005
-    symptom: "Evapotranspiration/canopy interception has negligible effect"
-    diagnosis: >
-      Canopy interception α (line 27) or evapotranspiration α (line 28)
-      was provided in m/d instead of mm/d. The model divides by 1000,
-      making the already-small m/d value effectively zero.
-    remedy: >
-      Provide α values in mm/d. Typical canopy α: -0.1 to 1.0 mm/d.
-      Typical ET α: 5-15 mm/d. The model converts to m/d internally.
-    severity: high
-    tags: [unit_conversion, evapotranspiration]
-
-  - id: ht_006
-    symptom: "Hydraulic conductivity too low; no subsurface flow contribution"
-    diagnosis: >
-      Saturated hydraulic conductivity Ko (line 39) was provided in m/day
-      instead of mm/day. The model divides by 1000, so 0.25 m/day becomes
-      0.00025 m/day internally — negligible percolation.
-    remedy: >
-      Provide Ko in mm/day. Typical values: 10-1000 mm/day depending on
-      soil type. Sandy soil ~500 mm/d, clay ~1 mm/d, loam ~50-250 mm/d.
-    severity: high
-    tags: [unit_conversion, hydraulic_conductivity, groundwater]
-
-  # ============================================================
-  # INPUT FORMAT ERRORS
-  # ============================================================
-
-  - id: ht_007
-    symptom: "Model crashes immediately with 'Unable to open input file' error"
-    diagnosis: >
-      Input file naming mismatch. The model looks for {PREFIX}.IN with
-      exact case. Common: prefix is HYDRO but file is hydro.in or Hydro.IN.
-    remedy: >
-      Ensure the input file name matches the prefix exactly: if --prefix=HYDRO,
-      the file must be HYDRO.IN (uppercase). Also verify --in-dir points to
-      the correct directory.
-    severity: high
-    tags: [input_format, file_naming]
-
-  - id: ht_008
-    symptom: "Grain size proportions don't sum to 1; sediment mass not conserved"
-    diagnosis: >
-      Line 7 grain fractions do not sum to exactly 1.0. The model does NOT
-      normalize these values. Sum > 1 creates excess sediment; sum < 1 loses
-      sediment mass.
-    remedy: >
-      Manually verify grain fractions sum to 1.0000. For 4 grain sizes:
-      e.g., 0.20 + 0.20 + 0.25 + 0.35 = 1.00. Use enough decimal places
-      to ensure exact sum.
-    severity: medium
-    tags: [input_format, sediment, mass_balance]
-
-  - id: ht_009
-    symptom: "Model reads wrong values for parameters after monthly climate block"
-    diagnosis: >
-      The monthly climate section (lines 12-23) has the wrong number of
-      columns or months. Each line must have exactly 5 fields: month_name,
-      T_mean, T_std, P_total, P_std. Missing or extra values shift all
-      subsequent line reads.
-    remedy: >
-      Verify exactly 12 monthly lines (Jan-Dec), each with 5 space-separated
-      values. The month name is read but not used; it can be any 3-character
-      string. Comments after the 5th value are ignored.
-    severity: high
-    tags: [input_format, parsing, climate]
-
-  - id: ht_010
-    symptom: "Output directory is empty after seemingly successful run"
-    diagnosis: >
-      ASCII output flag (line 2) is set to OFF. The model only writes
-      binary .DIS file when ASCII is OFF. Also possible: output directory
-      path in line 3 doesn't end with '/' or doesn't exist.
-    remedy: >
-      Set line 2 to "ON" for ASCII output. Ensure line 3 output directory
-      ends with '/' and the directory exists before running.
-    severity: medium
-    tags: [input_format, output, silent_failure]
-
-  # ============================================================
-  # RUNTIME / NaN CRASHES
-  # ============================================================
-
-  - id: ht_011
-    symptom: "NaN error in HydroSedload: Qs = nan"
-    diagnosis: >
-      Sediment calculation produced NaN. Common causes: (1) Qbartotal = 0
-      causing division by zero in Qs(i)/Qbar ratio, (2) negative values
-      in pow() function with fractional exponent, (3) extreme C exponent
-      from log10 of very small Qsbar.
-    remedy: >
-      Check: (a) precipitation is not zero (ensures Qbar > 0),
-      (b) hypsometry area > 0, (c) temperature is reasonable for the
-      sediment formula. For BQART with T < 2°C, formula switches to
-      doubled coefficient — check if Tbar calculation is correct.
-    severity: critical
-    tags: [runtime, nan, sediment]
-
-  - id: ht_012
-    symptom: "Model runs but Qbar is unrealistically low or zero"
-    diagnosis: >
-      Mean annual discharge (Qbar) is near zero, typically because:
-      (1) precipitation is zero or negligible, (2) evapotranspiration
-      exceeds precipitation (arid basin), (3) all precipitation falls as
-      snow but never melts (ELA too low or lapse rate wrong).
-    remedy: >
-      Check water balance: P - ET should be positive for runoff.
-      Verify monthly P values are in mm (not m). Check ELA is above
-      basin maximum elevation if no glaciers are intended. Check lapse
-      rate allows snowmelt.
-    severity: high
-    tags: [runtime, discharge, water_balance]
-
-  - id: ht_013
-    symptom: "Segmentation fault or memory error during long simulation"
-    diagnosis: >
-      The model pre-allocates random number arrays sized by nyears.
-      Very long simulations (>10000 years) with many grain sizes may
-      exhaust memory. Also possible: array index out of bounds if
-      hypsometry bins exceed allocated size.
-    remedy: >
-      Reduce simulation length or grain size count. Check hypsometry
-      file has correct bin count on line 6 matching actual data lines.
-      Monitor memory usage with tools like valgrind.
-    severity: medium
-    tags: [runtime, memory, segfault]
-
-  # ============================================================
-  # SILENT OUTPUT ERRORS
-  # ============================================================
-
-  - id: ht_014
-    symptom: "Sediment load is orders of magnitude too high"
-    diagnosis: >
-      Hypsometry area values were provided in m² instead of km². The
-      BQART formula uses A in km² — with m² values, A is 1e6 too large.
-      Since Qs ∝ A^0.5, sediment is ~1000x too high.
-    remedy: >
-      Verify hypsometry file areas are in km². Total basin area in the
-      last bin should match known watershed area (e.g., 100-100000 km²,
-      not 1e8-1e11 m²).
-    severity: critical
-    tags: [silent_failure, sediment, hypsometry, unit_conversion]
-
-  - id: ht_015
-    symptom: "No seasonal variation in discharge; flat hydrograph"
-    diagnosis: >
-      Monthly climate variability is too low. If T_std and P_std are
-      near zero for all months, the stochastic weather generator produces
-      near-constant daily values with no seasonal cycle.
-    remedy: >
-      Ensure monthly standard deviations reflect actual climate variability.
-      T_std typically 1-5°C within a month. P_std typically 20-100% of
-      P_mean. Check that standard deviations were not accidentally set to
-      zero or confused with standard errors.
-    severity: medium
-    tags: [silent_failure, climate, seasonality]
-
-  - id: ht_016
-    symptom: "BQART sediment load doubles unexpectedly for cold basins"
-    diagnosis: >
-      The BQART formula has a hard threshold at T = 2°C. Below 2°C, the
-      coefficient doubles and the temperature term is dropped. A basin
-      with Tbar just below 2°C may show much higher sediment than expected.
-    remedy: >
-      This is intended model behavior (Syvitski & Milliman 2007) to account
-      for glacial erosion. If basin temperature is near 2°C, be aware of
-      this discontinuity when comparing scenarios. Verify Tbar calculation
-      uses lapse-rate-adjusted temperature, not sea-level temperature.
-    severity: medium
-    tags: [silent_failure, sediment, bqart, temperature]
-
-  - id: ht_017
-    symptom: "Reservoir trapping efficiency seems wrong; TE doesn't match Brune curve"
-    diagnosis: >
-      HydroTrend uses two different TE formulas depending on reservoir
-      volume. Volume < 0.5 km³ uses Brown's method; volume ≥ 0.5 km³
-      uses Vorosmarty's method. The cutoff is hard-coded and may not
-      match published Brune curves for your reservoir.
-    remedy: >
-      Understand which formula applies to your reservoir size. For fine
-      control, you can modify the reservoir volume to fall on the desired
-      side of the 0.5 km³ threshold, or modify the sediment filter
-      parameter (line 44) to adjust trapping post-hoc.
-    severity: medium
-    tags: [silent_failure, reservoir, sediment_trapping]
-
-  # ============================================================
-  # BUILD / DEPENDENCY ISSUES
-  # ============================================================
-
-  - id: ht_018
-    symptom: "CMake error: Could not find bmi-c / bmic library"
-    diagnosis: >
-      The CMakeLists.txt requires the bmi-c library (Basic Model Interface
-      for C). This is an optional coupling library that may not be installed
-      in a standard development environment.
-    remedy: >
-      Option 1: Install bmi-c from https://github.com/csdms/bmi-c
-      (mkdir build && cd build && cmake .. && make && make install).
-      Option 2: Comment out bmi-c references in CMakeLists.txt if you
-      only need the standalone executable.
-    severity: high
-    tags: [build, dependency, bmi]
-
-  - id: ht_019
-    symptom: "Linker error: undefined reference to 'BMI_*' functions"
-    diagnosis: >
-      The bmi-c library was found by CMake but not properly linked.
-      This can happen if bmi-c was installed to a non-standard prefix
-      or if pkg-config cannot find it.
-    remedy: >
-      Set CMAKE_PREFIX_PATH to the bmi-c install location:
-      cmake .. -DCMAKE_PREFIX_PATH=/path/to/bmi-c/install
-      Or set PKG_CONFIG_PATH to include the bmi-c .pc file directory.
-    severity: medium
-    tags: [build, linker, bmi]
-
-  - id: ht_020
-    symptom: "Compiler warning: implicit declaration of getopt functions"
-    diagnosis: >
-      The system does not provide getopt.h. The code has a fallback for
-      systems without getopt, but the CLI parsing will be limited to
-      positional arguments only (no --in-dir, --prefix flags).
-    remedy: >
-      Install getopt development headers (typically part of libc-dev on
-      Linux). On systems without getopt, use positional arguments:
-      hydrotrend PREFIX INPUT_DIR
-    severity: low
-    tags: [build, getopt, portability]
-
-  - id: ht_021
-    symptom: "Daily discharge r ~0.3 and NSE negative at a low-relief prairie/seasonal gauge, even though magnitude matches (PBIAS small, sim peak ~ obs peak, variance similar)"
-    diagnosis: >
-      HydroTrend's lumped degree-day snow routine releases melt basin-wide the
-      moment air temp crosses the melt point, with no snowpack cold-content/
-      ripening delay, no distributed-melt spreading, and no frozen-soil or
-      depression-storage (fill-and-spill) routing. On a low-relief snowmelt
-      prairie basin the simulated freshet leads observed by a constant ~6 days
-      and is over-broad, structurally capping daily Pearson r near 0.3
-      (NSE <= r^2 ~ 0.08) no matter how magnitude is tuned.
-    remedy: >
-      Treat as a domain limit, not a bug. Validate against monthly/seasonal Q
-      or annual suspended-sediment yield (the model's design output) instead of
-      the daily gauge. Reserve daily-Q-vs-gauge validation for nival/rainfall
-      basins whose freshet timing is channel-routing-controlled. Per-basin melt-
-      timing tuning (cooling via lapse rate / elevation) is calibration, not a
-      KI fix, and the residual broadening still caps r near 0.5.
-    severity: medium
-    tags: [domain_mismatch, snowmelt, daily_timing, prairie, structural_ceiling]
-
-  - id: ht_021
-    symptom: >
-      Run aborts immediately: "hydrotrend ERROR; hydroreadhypsom.c  The
-      elevation bin size is not equal in the hypsometry file at number N.
-      Elevation bin size was set to 26.700000, calculated binsize at N is
-      26.600000."
-    diagnosis: >
-      hydroreadhypsom.c computes the elevation bin size from the first two
-      hypsometry rows and requires EVERY subsequent pair to match to within
-      masscheck (~1e-5 m). build_hypsometry.py --manual rounded elevations to
-      1 decimal (round(elev,1)); whenever (max_elev-min_elev)/(n_bins-1) is not
-      a clean 1-decimal number (e.g. 1200/45 = 26.666... -> 26.7, 53.3, 80.0,
-      diffs 26.6/26.7) the spacing is unequal and the model exits(-1).
-    remedy: >
-      Use the fixed build_hypsometry.py (manual mode now keeps full float
-      precision so consecutive elevation differences stay exactly bin_size).
-      If editing a HYPS by hand, ensure constant elevation spacing to <1e-5 m,
-      OR choose n_bins / max_elev so the bin size is an exact decimal (e.g.
-      max_elev=1125, n_bins=46 -> 25.0 m bins). The DEM/CSV paths already step
-      by an exact bin_size and are unaffected.
-    severity: critical
-    tags: [input_format, hypsometry, bin_size, tool_bug, fatal]
-
-  - id: ht_022
-    symptom: >
-      Daily Q correlates in phase with a routed reference/gauge but peaks are
-      2-5x too high and NSE is negative on a large (>~10000 km2) lowland basin,
-      even after the mean (PBIAS) is calibrated.
-    diagnosis: >
-      HydroTrend's only hydrograph attenuation is the channel travel-time lag
-      in hydrorain.c (distbins), set by basin length (line 28, km) divided by
-      mean river velocity (line 32, m/s). With a short length / fast velocity
-      (e.g. 300 km / 1.2 m/s ~ 3-day spread) a lumped basin dumps each day's
-      runoff almost instantly, so storm peaks vastly exceed a network-routed
-      product (GloFAS/LISFLOOD) that spreads flow over ~1-2 weeks.
-    remedy: >
-      Calibrate the routing travel time L/v to attenuate peaks: increase basin
-      length and/or lower mean velocity until the simulated hydrograph spread
-      (~L/v in seconds /86400 days) matches the basin's concentration time.
-      Verified on Huai @ Wangjiaba (30,630 km2): L=600 km, v=0.6 m/s (~12-day
-      spread) lifted pooled daily NSE from -0.96 to 0.73 and r from 0.56 to
-      0.86 vs GloFAS dis24. This makes daily-Q validation viable for large
-      RAINFALL-dominated lowland basins (contrast the snowmelt-prairie ceiling
-      in ht_020). Also raise groundwater storage (line 33) to add baseflow
-      damping; set evaporation (lines 26/26b) to fix the mean independently.
-    severity: medium
-    tags: [routing, daily_timing, peak_attenuation, lowland, calibration]
+- id: dt_001
+  name: "monthly_precip_meters_double_converted"
+  symptom: "Simulated discharge is near zero or only baseflow contributes even though monthly precipitation looks nonzero."
+  diagnosis: "HydroTrend expects monthly precipitation in HYDRO.IN lines 12-23 field 4 in mm and divides by 1000 internally; values already supplied in m become 1000x too small. This unit trap is documented in SKILL.md, docs/01_climate_preparation.md, docs/03_input_file_assembly.md, and tools/convert_climate_to_hydrotrend.py."
+  remedy: "Put monthly precipitation totals in mm on HYDRO.IN lines 12-23, or regenerate those 12 lines with tools/convert_climate_to_hydrotrend.py using the correct --precip-units. Check that typical monthly wet-season totals are 5-500, not 0.005-0.5."
+  severity: silent
+  stage: "s1_climate_preparation"
+  failure_domain: unit_conversion
+  detection: "awk 'NR>=12 && NR<=23 {print NR,$4}' HYDRO.IN"
+  cross_references:
+    - "SKILL.md Unit Conversion Trap Table"
+    - "docs/01_climate_preparation.md"
+    - "tools/convert_climate_to_hydrotrend.py"
+- id: dt_002
+  name: "annual_precip_millimeters_not_meters"
+  symptom: "Qbar and annual runoff are about 1000x too high, with extreme flooding in most years."
+  diagnosis: "HYDRO.IN line 9 expects annual precipitation trend terms in m/yr, m/yr^2, and m; unlike monthly precipitation, line 9 is not internally divided by 1000. Supplying mm/yr makes the annual water term 1000x too large."
+  remedy: "Divide annual precipitation terms by 1000 before writing HYDRO.IN line 9. Cross-check that sum(lines 12-23 monthly P in mm)/1000 is approximately the first value on line 9 in m/yr."
+  severity: silent
+  stage: "s1_climate_preparation"
+  failure_domain: unit_conversion
+  detection: "python3 - <<'PY'\nfrom pathlib import Path\np=Path('HYDRO.IN').read_text().splitlines(); print('line9=',p[8]); print('monthly_m_per_yr=',sum(float(x.split()[3]) for x in p[11:23])/1000)\nPY"
+  cross_references:
+    - "docs/01_climate_preparation.md"
+    - "docs/03_input_file_assembly.md"
+- id: dt_003
+  name: "lapse_rate_in_degc_per_meter"
+  symptom: "Snow and ice melt are negligible, or elevation has almost no effect on temperature in a high-relief basin."
+  diagnosis: "HYDRO.IN line 24 expects lapse rate in degC/km and HydroTrend divides by 1000 to get degC/m internally. Supplying degC/m such as 0.0065 is divided again and becomes nearly zero."
+  remedy: "Use a positive degC/km value such as 6.5 on line 24, or use -9999 for HydroTrend's default. Re-run and confirm the snow/glacier seasonal signal changes."
+  severity: silent
+  stage: "s3_parameterization"
+  failure_domain: unit_conversion
+  detection: "awk 'NR==24 {print \"line24_lapserate=\",$1}' HYDRO.IN"
+  cross_references:
+    - "SKILL.md Unit Conversion Trap Table"
+    - "docs/03_input_file_assembly.md"
+- id: dt_004
+  name: "evaporation_alpha_meters_per_day"
+  symptom: "Canopy interception or evapotranspiration has almost no effect after changing HYDRO.IN lines 27-28."
+  diagnosis: "The canopy interception alpha on line 27 and evapotranspiration alpha on line 28 are user-facing mm/d values; HydroTrend divides these alpha terms by 1000 internally. Pre-converted m/d values are therefore 1000x too small."
+  remedy: "Enter alpha values in mm/d on lines 27-28, for example ET alpha near 5-15 mm/d rather than 0.005-0.015. Then rerun and compare mean Q or runoff ratio."
+  severity: silent
+  stage: "s3_parameterization"
+  failure_domain: unit_conversion
+  detection: "awk 'NR==27 || NR==28 {print NR,$0}' HYDRO.IN"
+  cross_references:
+    - "SKILL.md Unit Conversion Trap Table"
+    - "docs/03_input_file_assembly.md"
+- id: dt_005
+  name: "basin_length_meters_not_kilometers"
+  symptom: "Travel times and peak attenuation are unrealistic; logs or calibration imply a basin length 1000x too large."
+  diagnosis: "HYDRO.IN line 31 expects basin length in km and the C model multiplies it by 1000 internally. Supplying meters makes the internal length 1000x too large and distorts the routing spread used by HydroTrend."
+  remedy: "Write basin length in km on line 31. For a 100 km basin, enter 100, not 100000. Re-run and check peak-to-mean ratio and timing."
+  severity: silent
+  stage: "s3_parameterization"
+  failure_domain: unit_conversion
+  detection: "awk 'NR==31 {print \"line31_basin_length_km=\",$1}' HYDRO.IN"
+  cross_references:
+    - "SKILL.md Unit Conversion Trap Table"
+    - "docs/03_input_file_assembly.md"
+- id: dt_006
+  name: "hydraulic_conductivity_meters_per_day"
+  symptom: "Subsurface storm flow and groundwater response are negligible despite a permeable basin setup."
+  diagnosis: "HYDRO.IN line 39 expects saturated hydraulic conductivity Ko in mm/day and HydroTrend divides it by 1000 internally. Supplying m/day gives a Ko value 1000x too small in the groundwater module."
+  remedy: "Enter Ko in mm/day on line 39. For 0.25 m/day, write 250. Re-run and inspect baseflow and hydrograph recession."
+  severity: silent
+  stage: "s3_parameterization"
+  failure_domain: unit_conversion
+  detection: "awk 'NR==39 {print \"line39_Ko_mm_day=\",$1}' HYDRO.IN"
+  cross_references:
+    - "SKILL.md Unit Conversion Trap Table"
+    - "docs/03_input_file_assembly.md"
+- id: dt_007
+  name: "hypsometry_area_m2_not_km2"
+  symptom: "Suspended sediment load is orders of magnitude too high while discharge magnitude looks plausible."
+  diagnosis: "{PREFIX}0.HYPS area values must be cumulative area in km2. HydroTrend uses this area directly in BQART/ART sediment formulas; m2 values inflate basin area by 1e6 and can inflate BQART Qs by about 1000x through A^0.5."
+  remedy: "Regenerate the HYPS file with tools/build_hypsometry.py or divide m2 areas by 1e6 before use. Confirm the last HYPS area matches the known basin area in km2."
+  severity: silent
+  stage: "s2_hypsometry_construction"
+  failure_domain: unit_conversion
+  detection: "tail -n 1 HYDRO0.HYPS"
+  cross_references:
+    - "docs/02_hypsometry_construction.md"
+    - "tools/build_hypsometry.py"
+- id: dt_008
+  name: "temperature_kelvin_not_celsius"
+  symptom: "Monthly T_mean values are around 270-310 and sediment or snow/glacier behavior is nonsensical."
+  diagnosis: "ERA5 and CMFD temperatures may be Kelvin, but HydroTrend monthly climate lines 12-23 require degC. tools/convert_climate_to_hydrotrend.py handles this only when --temp-units K is specified."
+  remedy: "Regenerate the monthly climate block with --temp-units K, or subtract 273.15 before writing HYDRO.IN. Verify all monthly T_mean values are physically plausible in degC."
+  severity: silent
+  stage: "s1_climate_preparation"
+  failure_domain: unit_conversion
+  detection: "awk 'NR>=12 && NR<=23 {print NR,$2}' HYDRO.IN"
+  cross_references:
+    - "docs/01_climate_preparation.md"
+    - "tools/convert_climate_to_hydrotrend.py"
+- id: dt_009
+  name: "monthly_climate_trailing_marker_removed"
+  symptom: "Parameters after the monthly climate block are read as the wrong values, or HydroCheckInput fails after a hand-edited HYDRO.IN."
+  diagnosis: "HydroTrend reads each monthly line with a scanf format that consumes trailing whitespace until it sees a non-whitespace character. This KI's tools/convert_climate_to_hydrotrend.py deliberately appends a trailing tab marker to lines 12-23 so the reader does not swallow the next line and shift downstream parameters."
+  remedy: "Regenerate lines 12-23 with tools/convert_climate_to_hydrotrend.py or add trailing descriptive text after the fifth value on every monthly climate line. Then verify lines 24-47 still contain the intended parameters."
+  severity: fatal
+  stage: "s3_input_file_assembly"
+  failure_domain: configuration
+  detection: "awk 'NR>=12 && NR<=23 {print NR,NF,$0}' HYDRO.IN"
+  cross_references:
+    - "tools/convert_climate_to_hydrotrend.py format_hydro_in_lines"
+    - "docs/03_input_file_assembly.md"
+- id: dt_010
+  name: "daily_climate_leap_day_included"
+  symptom: "A run using HYDRO.CLIMATE aborts with insufficient climate data or drifts out of phase after leap years."
+  diagnosis: "HydroTrend uses fixed 365-day years. The KI's write_hydro_climate routine in tools/convert_climate_to_hydrotrend.py drops Feb 29 and writes exactly 365 records per model year after six headers and a count line. A hand-built HYDRO.CLIMATE with leap days has the wrong day index."
+  remedy: "Generate HYDRO.CLIMATE with tools/convert_climate_to_hydrotrend.py --climate-out and matching --climate-start-year/--climate-end-year, or remove Feb 29 so the record count is exactly 365 times the number of years."
+  severity: fatal
+  stage: "s1_climate_preparation"
+  failure_domain: configuration
+  detection: "awk 'NR==7 {print \"declared_steps=\",$1}' HYDRO.CLIMATE && tail -n +8 HYDRO.CLIMATE | wc -l"
+  cross_references:
+    - "tools/convert_climate_to_hydrotrend.py write_hydro_climate"
+    - "docs/05_output_analysis.md"
+- id: dt_011
+  name: "hypsometry_absolute_asl_not_outlet_relative"
+  symptom: "Run aborts with a hypsometric elevation not interpolated message for an inland or upland basin."
+  diagnosis: "HydroTrend's hypsometry interpolation starts elevation bins at 0 above the river mouth. This KI's tools/build_hypsometry.py shifts the curve down to a first elevation of 0 unless --no-anchor is used. Absolute sea-level elevations with a first bin hundreds of meters above zero leave low model bins uninterpolated."
+  remedy: "Regenerate HYDRO0.HYPS with tools/build_hypsometry.py without --no-anchor, or subtract the first elevation from all HYPS elevations while preserving relief and cumulative areas."
+  severity: fatal
+  stage: "s2_hypsometry_construction"
+  failure_domain: configuration
+  detection: "sed -n '6,8p' HYDRO0.HYPS"
+  cross_references:
+    - "tools/build_hypsometry.py"
+    - "docs/02_hypsometry_construction.md"
+- id: dt_012
+  name: "hypsometry_unequal_elevation_bins"
+  symptom: "Run aborts with hydroreadhypsom.c reporting that the elevation bin size is not equal at bin N."
+  diagnosis: "hydroreadhypsom.c computes bin size from the first two HYPS rows and requires every later elevation difference to match within masscheck. Older hand-rounded manual curves can alternate differences such as 26.6 and 26.7 m. This KI's current build_hypsometry.py keeps full float precision in manual mode to avoid that failure."
+  remedy: "Regenerate HYDRO0.HYPS with the current tools/build_hypsometry.py, or choose min/max/n_bins that produce a constant exact bin size. Verify all consecutive elevation differences are constant to about 1e-5 m."
+  severity: fatal
+  stage: "s2_hypsometry_construction"
+  failure_domain: configuration
+  detection: "python3 - <<'PY'\nrows=[]\nfor line in open('HYDRO0.HYPS').read().splitlines()[6:]:\n    p=line.split()\n    if len(p)>=2: rows.append(float(p[0]))\nprint([round(rows[i]-rows[i-1],10) for i in range(1,min(len(rows),8))])\nPY"
+  cross_references:
+    - "tools/build_hypsometry.py build_manual"
+- id: dt_013
+  name: "ascii_outputs_missing"
+  symptom: "The model exits successfully but parse_hydrotrend_output.py reports the discharge file is missing, or the output directory has no HYDROASCII.Q/QS/QB/CS/VWD files."
+  diagnosis: "HYDRO.IN line 2 controls ASCII output. If it is OFF, HydroTrend writes binary .DIS only. run_hydrotrend.py warns on this flag, and parse_hydrotrend_output.py requires {PREFIX}ASCII.Q."
+  remedy: "Set HYDRO.IN line 2 to ON, ensure the output directory in HYDRO.IN line 3 exists and is writable, rerun tools/run_hydrotrend.py, and confirm the five ASCII files are non-empty."
+  severity: degraded
+  stage: "s4_model_execution"
+  failure_domain: configuration
+  detection: "awk 'NR==2 || NR==3 {print NR,$0}' HYDRO.IN; ls -l HYDRO_OUTPUT/*ASCII.* 2>/dev/null"
+  cross_references:
+    - "tools/run_hydrotrend.py"
+    - "tools/parse_hydrotrend_output.py"
+    - "docs/04_model_execution.md"
+- id: dt_014
+  name: "prefix_case_mismatch"
+  symptom: "run_hydrotrend.py reports Main input file not found or Hypsometry file not found although similarly named files exist."
+  diagnosis: "HydroTrend and this KI's run_hydrotrend.py look for exact-case {PREFIX}.IN and {PREFIX}0.HYPS in --in-dir. On case-sensitive filesystems, hydro.in, Hydro.IN, or HYDRO.HYPS will not satisfy prefix HYDRO."
+  remedy: "Rename the files to match the prefix exactly, for example HYDRO.IN and HYDRO0.HYPS for --prefix HYDRO, or pass the prefix that matches the files."
+  severity: fatal
+  stage: "s4_model_execution"
+  failure_domain: configuration
+  detection: "find input -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | sort"
+  cross_references:
+    - "tools/run_hydrotrend.py validate_inputs"
+    - "docs/04_model_execution.md"
+- id: dt_015
+  name: "grain_size_fractions_not_one"
+  symptom: "Sediment mass is biased even though the run completes and no parser error is raised."
+  diagnosis: "HYDRO.IN line 7 grain-size proportions are user-provided fractions and HydroTrend does not renormalize them. Sums below 1 lose sediment mass; sums above 1 create excess sediment allocation."
+  remedy: "Edit HYDRO.IN line 7 so the number of fractions matches line 6 and their sum is exactly 1.0 within rounding tolerance."
+  severity: silent
+  stage: "s3_input_file_assembly"
+  failure_domain: configuration
+  detection: "python3 - <<'PY'\nlines=open('HYDRO.IN').read().splitlines(); n=int(lines[5].split()[0]); vals=[float(x) for x in lines[6].split()[:n]]; print(n, vals, sum(vals))\nPY"
+  cross_references:
+    - "dag.yaml inputs.parameters Grain-size proportions"
+    - "docs/03_input_file_assembly.md"
+- id: dt_016
+  name: "sediment_nan_from_zero_qbar"
+  symptom: "stderr contains NaN in HydroSedload, or output Qs/Cs contain nan values."
+  diagnosis: "The suspended sediment rating divides by epoch-mean discharge Qbartotal. If precipitation/runoff is effectively zero, or if extreme parameters drive Qbar to zero, HydroTrend can hit division by zero or invalid powers in the sediment calculation."
+  remedy: "Fix the upstream water balance first: check monthly precipitation units, annual precipitation, ET alpha, ELA/lapse rate, and hypsometry area. Rerun and confirm mean Q is positive before validating Qs or Cs."
+  severity: fatal
+  stage: "s4_model_execution"
+  failure_domain: runtime
+  detection: "grep -Rni 'nan\\|HydroSedload' HYDRO_OUTPUT . 2>/dev/null | head"
+  cross_references:
+    - "docs/04_model_execution.md"
+    - "docs/05_output_analysis.md"
+- id: dt_017
+  name: "baseflow_exceeds_mean_discharge"
+  symptom: "The model aborts during water-balance setup or reports impossible baseflow relative to Qbar."
+  diagnosis: "dag.yaml notes that constant annual baseflow on HYDRO.IN line 11 must be lower than epoch-mean discharge Qbartotal. If baseflow is larger than available water from climate and basin area, HydroTrend cannot rescale the water budget consistently."
+  remedy: "Lower HYDRO.IN line 11 or increase the physically justified precipitation/runoff inputs. After rerun, compare parsed mean Q against the baseflow value."
+  severity: fatal
+  stage: "s3_parameterization"
+  failure_domain: configuration
+  detection: "awk 'NR==11 {print \"line11_baseflow_m3s=\",$1}' HYDRO.IN"
+  cross_references:
+    - "dag.yaml inputs.parameters Constant annual baseflow"
+- id: dt_018
+  name: "groundwater_initial_outside_bounds"
+  symptom: "Groundwater storage behaves erratically or HydroTrend fails input checks near initialization."
+  diagnosis: "HYDRO.IN line 37 initial groundwater storage must lie between the GW_min and GW_max values on line 36. The dag lists this as an initial condition carried across years via gwlast."
+  remedy: "Set line 37 to a value between the two numbers on line 36. Re-run and confirm no groundwater initialization warning appears."
+  severity: fatal
+  stage: "s3_parameterization"
+  failure_domain: initial_conditions
+  detection: "awk 'NR==36 || NR==37 {print NR,$0}' HYDRO.IN"
+  cross_references:
+    - "dag.yaml inputs.initial_conditions Initial groundwater storage"
+    - "docs/03_input_file_assembly.md"
+- id: dt_019
+  name: "bmi_c_cmake_missing"
+  symptom: "CMake configure fails with a bmi-c or bmic library not found message."
+  diagnosis: "HydroTrend v3.0.5 includes a C BMI interface and the source CMake configuration can require the bmi-c dependency. This is documented in SKILL.md and docs/04_model_execution.md; run_hydrotrend.py reports the cmake_configure stage stderr."
+  remedy: "Install bmi-c and expose it with CMAKE_PREFIX_PATH or PKG_CONFIG_PATH, or build a standalone executable with BMI disabled if the source tree supports that option. Then rerun tools/run_hydrotrend.py."
+  severity: fatal
+  stage: "s4_model_execution"
+  failure_domain: dependency
+  detection: "python3 tools/run_hydrotrend.py --source-dir /path/to/hydrotrend/source/repo --in-dir ./input --out-dir ./output --prefix HYDRO --timeout 60"
+  cross_references:
+    - "SKILL.md Installation and Build"
+    - "docs/04_model_execution.md"
+    - "tools/run_hydrotrend.py build_hydrotrend"
+- id: dt_020
+  name: "output_dates_include_leap_days"
+  symptom: "Parsed dates after a leap year are one day later than HydroTrend's fixed 365-day model calendar."
+  diagnosis: "HydroTrend output has no date column and every model year has exactly 365 days. tools/parse_hydrotrend_output.py reconstructs dates by adding Python timedelta days to January 1, which introduces Gregorian Feb 29 dates in leap years."
+  remedy: "For exact model-calendar validation, rebuild dates as start_year plus 365-day model years rather than Gregorian dates, or aggregate to monthly/annual summaries before comparing. Confirm raw line count remains N_years times 365."
+  severity: silent
+  stage: "s5_output_analysis"
+  failure_domain: validation
+  detection: "python3 tools/parse_hydrotrend_output.py --out-dir ./HYDRO_OUTPUT --prefix HYDRO --start-year 1908 --output-json summary.json | head"
+  cross_references:
+    - "tools/parse_hydrotrend_output.py parse_all_outputs"
+    - "docs/05_output_analysis.md"
+- id: dt_021
+  name: "multi_outlet_fractions_not_one"
+  symptom: "Multi-outlet delta discharge or sediment totals do not match the single-outlet basin total even though the model completes."
+  diagnosis: "HYDRO.IN line 41 selects outlet count and line 42 provides outlet fractions. The dag notes that multi-outlet fractions must sum to 1; HydroTrend partitions Q and Qs by these fractions and does not infer a corrected total."
+  remedy: "If line 41 is greater than 1 or variable outlet mode is active, edit line 42 so the active outlet fractions sum to exactly 1.0. Rerun and compare summed outlet totals with the basin total."
+  severity: silent
+  stage: "s3_input_file_assembly"
+  failure_domain: configuration
+  detection: "awk 'NR==41 || NR==42 {print NR,$0}' HYDRO.IN"
+  cross_references:
+    - "dag.yaml inputs.boundary_conditions Number of outlets and outlet fractions"
+    - "docs/03_input_file_assembly.md"
+- id: dt_022
+  name: "reservoir_trapping_threshold_misread"
+  symptom: "Sediment trapping efficiency changes abruptly near reservoir volume 0.5 km3 or does not match a Brune curve expectation."
+  diagnosis: "HydroTrend's ReservoirTrapping module uses Brown's method below 0.5 km3 and Vorosmarty's method at or above 0.5 km3. The hard cutoff is in the model behavior described by this KI, so TE can jump when line 32 crosses that threshold."
+  remedy: "Check HYDRO.IN line 32 reservoir volume and parameter flag, document which trapping method applies, and validate long-term Qs with that method in mind. Adjust only if the reservoir representation is scientifically justified."
+  severity: warning
+  stage: "s3_parameterization"
+  failure_domain: validation
+  detection: "awk 'NR==32 {print \"line32_reservoir=\",$0}' HYDRO.IN"
+  cross_references:
+    - "dag.yaml processes.modules ReservoirTrapping"
+    - "docs/03_input_file_assembly.md"
+- id: dt_023
+  name: "bqart_cold_basin_threshold"
+  symptom: "BQART suspended sediment load doubles unexpectedly when basin mean temperature is near 2 degC."
+  diagnosis: "The HydroTrend/Syvitski-Milliman BQART implementation has a cold-basin threshold: below about 2 degC the coefficient changes and the temperature behavior differs. A small lapse-rate or climate-unit error can move Tbar across this discontinuity."
+  remedy: "Confirm HYDRO.IN line 45 selects BQART, then inspect monthly temperatures and lapse rate. Treat the threshold as intended model behavior once the temperature inputs are correct, and validate aggregated Qs rather than interpreting it as a crash."
+  severity: warning
+  stage: "s5_output_analysis"
+  failure_domain: validation
+  detection: "awk 'NR==12,NR==24 {print NR,$0}' HYDRO.IN; awk 'NR==45 {print \"formula=\",$1}' HYDRO.IN"
+  cross_references:
+    - "dag.yaml processes.modules SedimentCoefficientSelector"
+    - "docs/05_output_analysis.md"
+- id: dt_024
+  name: "large_lowland_peak_attenuation"
+  symptom: "Daily Q is in phase with observations but peaks are 2-5x too high and NSE is negative after mean PBIAS is calibrated."
+  diagnosis: "HydroTrend is a lumped basin model and its daily attenuation depends strongly on routing travel time from basin length on line 31 and average river velocity on line 35. A short length or fast velocity can dump runoff too quickly in large lowland basins compared with routed products."
+  remedy: "Calibrate the L/v travel time with physically plausible basin length and average velocity, then use tools/parse_hydrotrend_output.py to recheck NSE, KGE, PBIAS, and peak-to-mean ratio."
+  severity: degraded
+  stage: "s5_output_analysis"
+  failure_domain: validation
+  detection: "awk 'NR==31 || NR==35 {print NR,$0}' HYDRO.IN"
+  cross_references:
+    - "dag.yaml processes.modules FlowIntegration"
+    - "docs/05_output_analysis.md"
+- id: dt_025
+  name: "snowmelt_prairie_daily_timing_limit"
+  symptom: "Daily Q correlation remains low and NSE negative in a low-relief seasonal snow basin even after magnitude and peak size are calibrated."
+  diagnosis: "HydroTrend's lumped degree-day snowmelt structure releases melt broadly by temperature threshold and lacks explicit distributed routing, frozen-soil storage, and snowpack ripening. The KI boundary states the model is lumped and not spatially distributed routing, so daily timing can be structurally limited in prairie snowmelt basins."
+  remedy: "Treat this as a validation-domain limit. Compare monthly or seasonal Q and long-term sediment yield, or reserve daily-Q validation for basins where lumped outlet timing is defensible."
+  severity: degraded
+  stage: "s5_output_analysis"
+  failure_domain: validation
+  detection: "python3 tools/parse_hydrotrend_output.py --out-dir ./HYDRO_OUTPUT --prefix HYDRO --start-year 1908 --observed observed_Q.csv --output-json summary.json"
+  cross_references:
+    - "dag.yaml boundary.scope_out"
+    - "docs/05_output_analysis.md"
+- id: dt_026
+  name: "monthly_output_average_misread_as_total"
+  symptom: "Monthly or seasonal output appears too small when compared with observed monthly totals."
+  diagnosis: "HYDRO.IN line 5 controls output averaging as D, M, S, or Y. HydroTrend computes daily internally, but docs/05_output_analysis.md states that M output values represent monthly averages, not monthly totals."
+  remedy: "If line 5 uses M, compare against observed monthly mean discharge/load rates, or convert rates to volumes/loads using the number of days in each month. Use D output when tools/parse_hydrotrend_output.py daily parsing is required."
+  severity: silent
+  stage: "s5_output_analysis"
+  failure_domain: validation
+  detection: "awk 'NR==5 {print \"line5_time_control=\",$0}' HYDRO.IN"
+  cross_references:
+    - "docs/03_input_file_assembly.md"
+    - "docs/05_output_analysis.md"
+- id: dt_027
+  name: "missing_generate_hydro_in_tool"
+  symptom: "python3 tools/generate_hydro_in.py fails with No such file or directory, or a workflow stops at HYDRO.IN assembly."
+  diagnosis: "SKILL.md lists generate_hydro_in.py in the pipeline table, but the same KI later states that no generate_hydro_in.py tool ships. The actual tools directory contains climate conversion, hypsometry building, model execution, and output parsing only."
+  remedy: "Assemble HYDRO.IN by adapting a shipped or prior working HYDRO.IN example, then use docs/03_input_file_assembly.md as the 47-line checklist. Confirm the file has the expected 47 control lines before running tools/run_hydrotrend.py."
+  severity: fatal
+  stage: "s3_input_file_assembly"
+  failure_domain: dependency
+  detection: "test ! -e tools/generate_hydro_in.py && printf 'missing tools/generate_hydro_in.py\n'"
+  cross_references:
+    - "SKILL.md Authoring HYDRO.IN"
+    - "docs/03_input_file_assembly.md"
+    - "tools/"
+- id: dt_028
+  name: "output_directory_missing_trailing_slash"
+  symptom: "The run completes but output files are missing from the expected directory or filenames appear concatenated with the output path."
+  diagnosis: "docs/03_input_file_assembly.md requires HYDRO.IN line 3 to end with a slash. HydroTrend uses the line 3 path while writing outputs, so a missing trailing slash can redirect files to an unintended concatenated path."
+  remedy: "Edit HYDRO.IN line 3 so the output directory exists, is writable, and ends with '/'. Rerun tools/run_hydrotrend.py and verify HYDROASCII.Q, HYDROASCII.QS, HYDROASCII.QB, HYDROASCII.CS, and HYDROASCII.VWD exist in that directory."
+  severity: degraded
+  stage: "s4_model_execution"
+  failure_domain: configuration
+  detection: "awk 'NR==3 {print \"line3_output_dir=\",$0; if ($0 !~ /\\/$/) print \"missing trailing slash\"}' HYDRO.IN"
+  cross_references:
+    - "docs/03_input_file_assembly.md"
+    - "docs/04_model_execution.md"
+    - "tools/run_hydrotrend.py"
+- id: dt_029
+  name: "daily_gauge_validation_without_climate_override"
+  symptom: "Daily discharge metrics are poor against an observed gauge even though annual or monthly magnitudes look reasonable."
+  diagnosis: "HydroTrend's default weather generator is stochastic, so the default daily sequence is not date-aligned to observed events. tools/convert_climate_to_hydrotrend.py documents that a HYDRO.CLIMATE daily override is required for point_time_series validation against a gauge."
+  remedy: "Generate HYDRO.CLIMATE with tools/convert_climate_to_hydrotrend.py --climate-out plus --climate-start-year and --climate-end-year, then rerun HydroTrend and parse outputs with the matching start year. If no daily override is used, validate annual, decadal, monthly, or frequency behavior instead of exact daily dates."
+  severity: silent
+  stage: "s1_climate_preparation"
+  failure_domain: validation
+  detection: "test ! -e HYDRO.CLIMATE && printf 'no daily climate override present\n'"
+  cross_references:
+    - "tools/convert_climate_to_hydrotrend.py write_hydro_climate"
+    - "docs/01_climate_preparation.md"
+    - "docs/05_output_analysis.md"

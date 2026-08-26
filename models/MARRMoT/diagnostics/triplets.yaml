@@ -453,3 +453,71 @@
     prevention: "run_marrmot.py validates Octave availability at startup."
   severity: fatal
   cross_references: [dt_016]
+
+# ---------------------------------------------------------------------------
+# Triplets added by self-improve runs after the original corpus was published.
+# Recovered 2026-08-12 and merged back; the block above is the published base,
+# byte-for-byte. See REPORT.md.
+# ---------------------------------------------------------------------------
+- id: dt_018
+  symptom:
+    description: preflight_forcing.py aborts with 'Unable to detect data source' when run on convert_forcing.py's
+      MARRMoT [P,Ep,T] CSV or on nasa_power point forcing; mandatory forcing preflight cannot run on the
+      KI's own product.
+  diagnosis:
+    root_cause: preflight_forcing.py only recognizes raw gridded source dirs (cmfd/mswx/era5/fluxnet)
+      and has no handler for the MARRMoT CSV layout or nasa_power point forcing emitted by the KI's own
+      convert_forcing.py — a tool-coverage gap, not a data/unit error.
+  remedy:
+    action: Add a MARRMoT-CSV / nasa_power source branch to preflight_forcing.py that detects the [P,Ep,T]
+      daily CSV (or point nasa_power frame) and runs the same physical-range checks (P 0.5-15 mm/d, Ep
+      0.5-8 mm/d, T plausibility, NaN count). Until then, document the manual plausibility fallback in
+      SKILL.md. Also update SKILL.md's stale data_ki/CMFD|HWSD|ObservedQ paths to ki_tools_common (KDT
+      5.0 removed data_ki/X).
+  format_spec_violated: none — orthogonal tool-coverage gap, not a format_spec rule
+  canonical_intent: ki_local_if_pass
+  added_by_run: MARRMoT_retry1
+- id: dt_019
+  symptom:
+    description: water_balance FAIL (residual ~15-20%) with a negative pbias on a cold, high-altitude,
+      high-radiation basin (e.g. Tibetan Plateau / upper Yellow R), DESPITE a respectable NSE/r; GR4J
+      x2 (groundwater exchange) pinned near its bound (theta ~ -13 to -20 mm/d). Oudin/Hargreaves PET
+      annual total falls below the closure requirement Ep >= P - Q_obs.
+  diagnosis:
+    root_cause: Oudin and Hargreaves are temperature-index PET formulae calibrated on temperate lowlands;
+      on cold, high-insolation, high-altitude terrain they structurally UNDER-estimate atmospheric demand,
+      so Ep < P - Q. MARRMoT bounds Ea by Ep, leaving no evaporative exit for the water surplus, so the
+      optimiser drives the only remaining mass-removal flux (GR4J x2 groundwater exchange) against its
+      bound -- a non-physical, non-identifiable fit that a P - Ea - Q closure check catches.
+  remedy:
+    action: 'Before calibrating, verify Ep_annual >= (P - Q_obs)_annual. If it fails and downwelling radiation
+      is available (CMFD always has srad/lrad/pres), rebuild forcing with convert_forcing.py --pet-method
+      priestley_taylor --srad-col <sw> --lrad-col <lw> --pres-col <pres> (ALWAYS pass --pres-col: the
+      101325 Pa sea-level fallback inflates the psychrometric constant gamma and under-estimates Ep at
+      altitude). Re-run and re-check water balance.'
+  format_spec_violated: none -- PET-method decision rule, not a format_spec rule
+  canonical_intent: ki_local_if_pass
+  added_by_run: MARRMoT_retry1_tangnaihai
+- id: dt_020
+  symptom:
+    description: 'A MARRMoT structure dies on its FIRST objective evaluation with "error: ''normcdf''
+      undefined near line 20, column 11 ... The ''normcdf'' function belongs to the statistics package
+      from Octave Forge which seems to not be installed". Stack: saturation_13 -> model_fun -> ODE_approx_IE
+      -> get_streamflow -> calibrate>fitness_fun. The structure yields no theta and silently drops out
+      of a multi-structure comparison, looking like a "model that does not fit this basin" when it never
+      ran at all.'
+  diagnosis:
+    root_cause: 'This Octave install has no reachable packages.octave.org, so the Octave-Forge statistics
+      package is absent (same offline condition that already required the lsqnonlin shim for the missing
+      optim package). MARRMoT''s flux function saturation_13 -- saturation-excess flow from a store with
+      a lognormal distribution of contributing area -- calls normcdf. Exactly one flux function and exactly
+      one structure depend on it: m_42_hycymodel_12p_6s.'
+  remedy:
+    action: 'Use the KI-local shim tools/octave_shims/normcdf.m (auto-added to the Octave path by all
+      three script builders in run_marrmot.py). The standard normal CDF is exact in the complementary
+      error function, which IS core Octave: Phi(z) = 0.5*erfc(-z/sqrt(2)), so the shim is an exact substitute,
+      not an approximation (verified against reference values to 1e-6). Do NOT conclude a structure is
+      unsuitable for the basin until it has actually produced a theta.'
+  format_spec_violated: none -- missing optional Octave-Forge dependency, not a format_spec rule
+  canonical_intent: ki_local_if_pass
+  added_by_run: MARRMoT_tangnaihai_all47

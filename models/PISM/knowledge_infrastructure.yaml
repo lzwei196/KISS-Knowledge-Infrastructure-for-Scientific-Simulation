@@ -1,106 +1,137 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:02:18.142094'
-  domain: cryosphere
   name: PISM
-  version: auto-generated
+  language: c++
+  implementation:
+    id: pism-2.3.0
+    version: 2.3.0
+    provenance: C++; PISM (University of Alaska Fairbanks + Potsdam Institute for Climate Impact Research),
+      parallel via PETSc/MPI, CF-NetCDF I/O.
+  scientific_reference_version: PISM 2.3.x (Parallel Ice Sheet Model; User's Manual v2.3.1)
+  binary:
+    path: KISSPATH_KI_ROOT/PISM/build/pism
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s1_domain_setup
+  - s2_input_preparation
+  - s3_climate_forcing
+  - s4_ocean_forcing
+  - s5_configuration
+  - s6_spinup
+  - s7_transient_run
+tools:
+  count: 4
+  files:
+  - tools/convert_climate_forcing.py
+  - tools/convert_geometry.py
+  - tools/parse_output.py
+  - tools/run_pism.py
+inputs:
+  forcing:
+  - name: air_temp
+    unit: K
+  - name: precipitation
+    unit: kg m-2 s-1
+  - name: air_temp_sd
+    unit: K
+  - name: theta_ocean
+    unit: degC
+  - name: salinity_ocean
+    unit: g kg-1 (PSU)
+  - name: delta_SL
+    unit: m
+  - name: delta_T
+    unit: K
+  - name: frac_P / delta_P
+    unit: 1 or kg m-2 s-1
+  parameters:
+  - name: SIA enhancement factor (stress_balance.sia.enhancement_factor)
+    unit: '1'
+  - name: SSA enhancement factor (stress_balance.ssa.enhancement_factor)
+    unit: '1'
+  - name: pseudo-plastic sliding exponent q (basal_resistance.pseudo_plastic.q)
+    unit: '1'
+  - name: till effective fraction of overburden (basal_yield_stress.mohr_coulomb.till_effective_fraction_overburden)
+    unit: '1'
+  - name: till friction angle parameterization (topg_to_phi)
+    unit: degrees (with m breakpoints)
+  - name: PDD factor for ice (surface.pdd.factor_ice)
+    unit: m degC-1 day-1 (water equiv.)
+  - name: PDD factor for snow (surface.pdd.factor_snow)
+    unit: m degC-1 day-1 (water equiv.)
+  - name: ice density (constants.ice.density)
+    unit: kg m-3
+  - name: sea water density (constants.sea_water.density)
+    unit: kg m-3
+  - name: adaptive timestep ratio (time_stepping.adaptive_ratio)
+    unit: '1'
+  initial_conditions:
+  - name: thk
+    unit: m
+  - name: topg
+    unit: m
+  - name: enthalpy
+    unit: J kg-1
+  - name: tillwat
+    unit: m
+  - name: ice_surface_temp
+    unit: K
+  - name: climatic_mass_balance
+    unit: kg m-2 s-1
+  - name: previous spinup state (restart)
+    unit: mixed
+  boundary_conditions:
+  - name: bheatflx
+    unit: W m-2
+  - name: domain / grid specification
+    unit: m (extent), count (points)
+  - name: map projection (PROJ)
+    unit: n/a
+  - name: grid registration
+    unit: n/a
+  - name: stress-balance model selection
+    unit: n/a
+  - name: energy model selection
+    unit: n/a
+  - name: subglacial hydrology selection
+    unit: n/a
+  - name: surface (SMB) model selection
+    unit: n/a
+  - name: ocean model selection
+    unit: n/a
+  - name: calving / front-retreat selection
+    unit: n/a
+  - name: bed deformation selection
+    unit: n/a
+  - name: time axis / calendar
+    unit: n/a
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - thk
+  - usurf
+  - velsurf_mag
+  - velbase_mag
+  - mask
+  - ice_volume_glacierized
+  - tendency_of_ice_mass
+  - tendency_of_ice_mass_due_to_discharge
+  - tillwat
+  - temppabase
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=1.000, KGE=1.000, R=1.000, 2 scorecard(s)'
+  metrics:
+    best_nse: 1.0
+    best_kge: 1.0
+    best_r: 1.0
+summary:
+  total_tools: 4
+  total_stage_docs: 7
+  total_diagnostic_triplets: 24
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

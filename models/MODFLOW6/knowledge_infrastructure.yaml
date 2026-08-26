@@ -1,1144 +1,134 @@
-# ============================================================================
-# Knowledge Infrastructure — MODFLOW 6
-# USGS Modular Hydrologic Model (Groundwater Flow & Transport)
-# ============================================================================
-# Built using the Knowledge Dissection Toolkit v1.0
-# Fills the groundwater modeling gap in HydroCraft.
-#
-# MODFLOW 6 is the USGS standard for three-dimensional finite-difference
-# groundwater flow modeling. It uses a block/keyword input format, supports
-# structured (DIS) and unstructured (DISV/DISU) grids, and is controlled
-# via the FloPy Python interface or direct text input files.
-#
-# Binary: mf6 (Fortran CLI)
-# Python interface: flopy.mf6 (FloPy)
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: "modflow6-knowledge-infrastructure"
-  version: "1.0.0"
-  description: "Knowledge infrastructure for autonomous AI operation of MODFLOW 6 groundwater flow model within HydroCraft"
-  target_model: "MODFLOW 6 (USGS Modular Hydrologic Model, v6.5+)"
-  domain: "groundwater hydrology, subsurface flow, solute transport"
-  authors:
-    - "Jianyun Zhang Research Group"
-    - "Claude (Knowledge Dissection)"
-  license: "CC-BY-4.0"
-
-# --- Pipeline definition ---
+  name: MODFLOW6
+  language: fortran
+  implementation:
+    id: mf6-661
+    version: 6.6.1
+    provenance: Fortran; USGS-distributed mf6 command-line executable, control-volume finite-difference
+      groundwater flow/transport solver.
+  scientific_reference_version: MODFLOW 6 Groundwater Flow (GWF) Model — USGS TM 6-A55 (Langevin et al.
+    2017) on the TM 6-A57 framework (Hughes et al. 2017); GWT transport per TM 6-A61 (Langevin et al.
+    2022)
+  binary:
+    path: KISSPATH_BINARIES/modflow6/mf6.6.1_linux/bin/mf6
+    type: ELF
 pipeline:
   stages:
-    - id: "s1_installation"
-      name: "Installation & Environment Setup"
-      description: "Install MODFLOW 6 binary (mf6) and FloPy Python package. Verify Fortran compiler availability for source builds. Confirm mf6 is on PATH and FloPy can locate it."
-      order: 1
-      depends_on: []
-      skill_document: "docs/s1_installation_skill.md"
-      tools:
-        - "verify_mf6_installation"
-      milestones:
-        - id: "m1_mf6_binary"
-          description: "mf6 executable is available and returns version string"
-          verification: "Run 'mf6 --version' or verify binary at known path"
-        - id: "m1_flopy_installed"
-          description: "FloPy is importable and can locate the mf6 binary"
-          verification: "python -c \"import flopy; print(flopy.__version__)\""
-
-    - id: "s2_grid_discretization"
-      name: "Grid & Spatial Discretization"
-      description: "Define the 3D finite-difference grid: number of layers, rows, columns, cell sizes (DELR, DELC), layer top/bottom elevations, and active/inactive cell mask (IDOMAIN). Choose DIS (structured), DISV (vertex), or DISU (unstructured)."
-      order: 2
-      depends_on: ["s1_installation"]
-      skill_document: "docs/s2_grid_discretization_skill.md"
-      tools:
-        - "create_grid_from_basin"
-        - "build_dis_package"
-      milestones:
-        - id: "m2_grid_defined"
-          description: "DIS package created with correct NLAY, NROW, NCOL, DELR, DELC, TOP, BOTM"
-          verification: "FloPy model.dis.nlay.data == expected layers"
-        - id: "m2_idomain_set"
-          description: "IDOMAIN array masks inactive cells outside basin boundary"
-          verification: "Count of active cells (IDOMAIN>0) matches expected basin coverage"
-
-    - id: "s3_layer_properties"
-      name: "Aquifer & Layer Properties"
-      description: "Set hydraulic conductivity (K), vertical anisotropy (K33), specific storage (Ss), specific yield (Sy), and cell type (confined/convertible) via NPF and STO packages. Map geology or soil data to grid cells."
-      order: 3
-      depends_on: ["s2_grid_discretization"]
-      skill_document: "docs/s3_layer_properties_skill.md"
-      tools:
-        - "build_npf_package"
-        - "build_sto_package"
-      milestones:
-        - id: "m3_npf_created"
-          description: "NPF package created with K, K33, and ICELLTYPE arrays"
-          verification: "All K values > 0; ICELLTYPE correctly set (0=confined, 1=convertible)"
-        - id: "m3_sto_created"
-          description: "STO package created with Ss and Sy arrays"
-          verification: "Ss in [1e-6, 1e-3], Sy in [0.01, 0.35] for typical aquifers"
-
-    - id: "s4_boundary_conditions"
-      name: "Boundary Conditions"
-      description: "Define boundary conditions: constant head (CHD), wells (WEL), drains (DRN), rivers (RIV), general head boundaries (GHB), recharge (RCH), and evapotranspiration (EVT). Each is a separate MODFLOW 6 stress package."
-      order: 4
-      depends_on: ["s2_grid_discretization"]
-      skill_document: "docs/s4_boundary_conditions_skill.md"
-      tools:
-        - "build_chd_package"
-        - "build_rch_package"
-        - "build_riv_package"
-        - "build_drn_package"
-        - "build_wel_package"
-      milestones:
-        - id: "m4_bc_defined"
-          description: "At least one boundary condition package is active"
-          verification: "Model has CHD or RCH or WEL package attached"
-        - id: "m4_rch_units"
-          description: "Recharge rates are in model length units per time (e.g., m/day)"
-          verification: "Typical recharge 1e-5 to 1e-2 m/day for temperate climates"
-
-    - id: "s5_stress_periods"
-      name: "Stress Periods & Temporal Discretization"
-      description: "Define stress periods (TDIS package): period length, number of timesteps, timestep multiplier. Map time-varying boundary conditions (pumping rates, recharge) to stress periods. Set initial conditions (IC package)."
-      order: 5
-      depends_on: ["s3_layer_properties", "s4_boundary_conditions"]
-      skill_document: "docs/s5_stress_periods_skill.md"
-      tools:
-        - "build_tdis_package"
-        - "build_ic_package"
-        - "assign_transient_stress"
-      milestones:
-        - id: "m5_tdis_created"
-          description: "TDIS package created with correct NPER, PERLEN, NSTP, TSMULT"
-          verification: "Sum of PERLEN equals total simulation time"
-        - id: "m5_ic_created"
-          description: "IC package created with reasonable starting heads"
-          verification: "Starting heads within layer top/bottom bounds"
-
-    - id: "s6_solver"
-      name: "Solver Configuration"
-      description: "Configure the Iterative Model Solution (IMS) package: outer/inner iteration limits, convergence criteria (head change DVCLOSE and residual RCLOSE), solver method (CG, BICGSTAB), under-relaxation, and backtracking for nonlinear problems."
-      order: 6
-      depends_on: ["s5_stress_periods"]
-      skill_document: "docs/s6_solver_skill.md"
-      tools:
-        - "build_ims_package"
-      milestones:
-        - id: "m6_ims_created"
-          description: "IMS package created with convergence criteria set"
-          verification: "DVCLOSE and RCLOSE are positive and appropriately scaled"
-
-    - id: "s7_execution"
-      name: "Model Execution"
-      description: "Write all input files via FloPy, run the mf6 binary, and check for successful completion. Monitor the listing file (.lst) for convergence warnings, budget errors, and dry cell counts."
-      order: 7
-      depends_on: ["s6_solver"]
-      skill_document: "docs/s7_execution_skill.md"
-      tools:
-        - "write_and_run_simulation"
-      milestones:
-        - id: "m7_simulation_complete"
-          description: "mf6 exits with code 0 and 'Normal termination' in listing file"
-          verification: "grep 'Normal termination' mfsim.lst"
-        - id: "m7_no_convergence_failure"
-          description: "No convergence failure messages in listing file"
-          verification: "grep -c 'FAILED TO CONVERGE' returns 0"
-
-    - id: "s8_output_extraction"
-      name: "Head & Budget Extraction"
-      description: "Read binary head file (.hds) and cell budget file (.cbc) using FloPy utilities (HeadFile, CellBudgetFile). Extract heads, water table elevation, flow terms (recharge, drain discharge, river leakage) per stress period."
-      order: 8
-      depends_on: ["s7_execution"]
-      skill_document: "docs/s8_output_extraction_skill.md"
-      tools:
-        - "extract_heads"
-        - "extract_budget"
-      milestones:
-        - id: "m8_heads_extracted"
-          description: "Head arrays read for all time steps with no HDRY sentinels in active cells"
-          verification: "No head values equal to -1e30 (HDRY) in active cells"
-        - id: "m8_budget_balanced"
-          description: "Budget percent discrepancy < 0.1% for all time steps"
-          verification: "Read listing file budget summary, check percent discrepancy"
-
-    - id: "s9_postprocessing"
-      name: "Postprocessing & Visualization"
-      description: "Generate water table contour maps, head time series, cross-sections, water budget summaries, and coupling outputs for downstream models (VIC, CaMa-Flood). Export results to NetCDF for integration with HydroCraft pipeline."
-      order: 9
-      depends_on: ["s8_output_extraction"]
-      skill_document: "docs/s9_postprocessing_skill.md"
-      tools:
-        - "plot_head_map"
-        - "plot_water_budget"
-        - "export_to_netcdf"
-      milestones:
-        - id: "m9_maps_generated"
-          description: "Water table contour map and budget bar chart produced"
-          verification: "PNG files exist and are non-empty"
-        - id: "m9_netcdf_exported"
-          description: "Heads and fluxes exported to NetCDF for HydroCraft coupling"
-          verification: "NetCDF file has correct dimensions and variables"
-
-# --- Layer 1: Validated Tools ---
+  - s1_installation_skill
+  - s2_grid_discretization_skill
+  - s3_layer_properties_skill
+  - s4_boundary_conditions_skill
+  - s5_stress_periods_skill
+  - s6_solver_skill
+  - s7_execution_skill
+  - s8_output_extraction_skill
+  - s9_postprocessing_skill
 tools:
-  # S1 tools
-  - id: "verify_mf6_installation"
-    name: "Verify MODFLOW 6 Installation"
-    description: "Check that mf6 binary and FloPy are installed and functional. Optionally install mf6 via pymake or download pre-built binary."
-    stage: "s1_installation"
-    script_path: "tools/s1/verify_mf6_installation.py"
-    language: "python"
-    inputs:
-      - name: "mf6_path"
-        type: "file"
-        description: "Path to mf6 executable (auto-detected if on PATH)"
-        required: false
-        example: "/usr/local/bin/mf6"
-    outputs:
-      - name: "installation_status"
-        type: "value"
-        description: "JSON with mf6_version, flopy_version, mf6_path, status"
-        path_pattern: ""
-    preconditions:
-      - "Python 3.8+ available"
-    postconditions:
-      - "mf6 binary is executable"
-      - "FloPy can import successfully"
-
-  # S2 tools
-  - id: "create_grid_from_basin"
-    name: "Create MODFLOW Grid from Basin Shapefile"
-    description: "Generate a structured MODFLOW grid aligned to a basin boundary shapefile. Computes NROW, NCOL from basin extent and desired cell size. Creates IDOMAIN mask from shapefile intersection."
-    stage: "s2_grid_discretization"
-    script_path: "tools/s2/create_grid_from_basin.py"
-    language: "python"
-    inputs:
-      - name: "shapefile_path"
-        type: "file"
-        description: "Basin boundary shapefile (.shp)"
-        required: true
-        example: "data/shp/basin/basin.shp"
-      - name: "cell_size"
-        type: "number"
-        description: "Grid cell size in meters"
-        required: true
-        example: 1000
-      - name: "nlay"
-        type: "number"
-        description: "Number of model layers"
-        required: true
-        example: 3
-      - name: "layer_bottoms"
-        type: "config"
-        description: "List of layer bottom elevations (m) relative to surface, e.g. [-10, -50, -200]"
-        required: true
-        example: "[-10, -50, -200]"
-      - name: "dem_path"
-        type: "file"
-        description: "DEM raster for top elevation (optional, uses flat surface if absent)"
-        required: false
-    outputs:
-      - name: "grid_config"
-        type: "value"
-        description: "JSON with nlay, nrow, ncol, delr, delc, top, botm, idomain arrays"
-        path_pattern: ""
-    preconditions:
-      - "Shapefile exists and has valid geometry"
-      - "Cell size is in meters and > 0"
-    postconditions:
-      - "Grid covers entire basin extent"
-      - "IDOMAIN correctly masks cells outside basin"
-
-  - id: "build_dis_package"
-    name: "Build DIS Package via FloPy"
-    description: "Create the MODFLOW 6 DIS (structured discretization) package using FloPy. Sets NLAY, NROW, NCOL, DELR, DELC, TOP, BOTM, IDOMAIN, and LENGTH_UNITS."
-    stage: "s2_grid_discretization"
-    script_path: "tools/s2/build_dis_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "model_name"
-        type: "string"
-        description: "GWF model name"
-        required: true
-        example: "gwf_model"
-      - name: "grid_config"
-        type: "config"
-        description: "Grid configuration dict from create_grid_from_basin"
-        required: true
-    outputs:
-      - name: "dis_package"
-        type: "value"
-        description: "JSON confirmation with nlay, nrow, ncol, ncells_active"
-        path_pattern: ""
-    preconditions:
-      - "FloPy is installed"
-      - "grid_config has all required arrays"
-    postconditions:
-      - "DIS package attached to GWF model"
-      - "BOTM[k] < BOTM[k-1] for all layers (bottom elevation decreases with depth)"
-
-  # S2 tools (automated setup from global datasets)
-  - id: "build_layers_from_global"
-    name: "Build TOP/BOTM/IDOMAIN/STRT from Global Rasters"
-    description: "Builds layer elevations (TOP, BOTM), IDOMAIN mask, and initial heads (STRT) from DEM + depth-to-bedrock + water table depth rasters. Uses basin shapefile for masking."
-    stage: "s2_grid_discretization"
-    script_path: "tools/s2/build_layers_from_global.py"
-    language: "python"
-    inputs:
-      - name: "dem_path"
-        type: "file"
-        description: "DEM raster for surface elevation (TOP)"
-        required: true
-      - name: "dtb_path"
-        type: "file"
-        description: "Depth-to-bedrock raster (m) for computing BOTM of deepest layer"
-        required: true
-      - name: "wtd_path"
-        type: "file"
-        description: "Water table depth raster (m below surface) for initial heads (STRT)"
-        required: true
-      - name: "shapefile_path"
-        type: "file"
-        description: "Basin boundary shapefile for IDOMAIN masking"
-        required: true
-      - name: "nlay"
-        type: "number"
-        description: "Number of model layers"
-        required: true
-        example: 3
-      - name: "cell_size"
-        type: "number"
-        description: "Grid cell size in meters"
-        required: true
-        example: 1000
-    outputs:
-      - name: "layer_arrays"
-        type: "value"
-        description: "JSON with top, botm, idomain, strt arrays and grid dimensions"
-        path_pattern: ""
-    preconditions:
-      - "DEM, DTB, and WTD rasters exist and cover the basin extent"
-      - "Basin shapefile has valid geometry"
-    postconditions:
-      - "TOP > BOTM[0] > BOTM[1] > ... for all active cells"
-      - "STRT is between TOP and BOTM[0] for all active cells"
-      - "IDOMAIN=0 outside basin boundary"
-
-  # S3 tools
-  - id: "build_npf_package"
-    name: "Build NPF Package via FloPy"
-    description: "Create the MODFLOW 6 NPF (Node Property Flow) package. Sets ICELLTYPE (confined=0, convertible=1), K (hydraulic conductivity), and K33 (vertical K). Optionally enables Newton-Raphson formulation for unconfined problems."
-    stage: "s3_layer_properties"
-    script_path: "tools/s3/build_npf_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "model_name"
-        type: "string"
-        description: "GWF model name"
-        required: true
-      - name: "k_values"
-        type: "config"
-        description: "Hydraulic conductivity per layer (m/day) — scalar or 3D array"
-        required: true
-        example: "[10.0, 1.0, 0.1]"
-      - name: "k33_values"
-        type: "config"
-        description: "Vertical K per layer (m/day) — if omitted, K33 = K"
-        required: false
-      - name: "icelltype"
-        type: "config"
-        description: "Cell type per layer: 0=confined, 1=convertible (unconfined top)"
-        required: true
-        example: "[1, 0, 0]"
-    outputs:
-      - name: "npf_status"
-        type: "value"
-        description: "JSON confirmation with K range per layer"
-        path_pattern: ""
-    preconditions:
-      - "DIS package exists on model"
-      - "K values > 0"
-    postconditions:
-      - "NPF package attached to GWF model"
-      - "Top layer ICELLTYPE=1 for water table simulation"
-
-  - id: "assign_k_from_glhymps"
-    name: "Assign K/Sy from GLHYMPS 2.0 Global Hydrogeology"
-    description: "Assigns hydraulic conductivity (K) and specific yield (Sy) from GLHYMPS 2.0 global hydrogeology shapefile for deep layers, plus HWSD pedotransfer for the shallow (soil) layer. Handles GLHYMPS CRS (Cylindrical Equal Area) reprojection and logK×100 decoding."
-    stage: "s3_layer_properties"
-    script_path: "tools/s3/assign_k_from_glhymps.py"
-    language: "python"
-    inputs:
-      - name: "glhymps_path"
-        type: "file"
-        description: "Path to GLHYMPS 2.0 shapefile (data/groundwater/glhymps/GLHYMPS.shp)"
-        required: true
-        example: "data/groundwater/glhymps/GLHYMPS.shp"
-      - name: "grid_config"
-        type: "config"
-        description: "Grid configuration with cell centroids for spatial join"
-        required: true
-      - name: "hwsd_path"
-        type: "file"
-        description: "HWSD raster/MDB for shallow layer pedotransfer K (optional, uses GLHYMPS for all layers if absent)"
-        required: false
-    outputs:
-      - name: "k_arrays"
-        type: "value"
-        description: "JSON with K (m/day) and Sy per layer, source attribution"
-        path_pattern: ""
-    preconditions:
-      - "GLHYMPS shapefile exists at specified path"
-      - "Grid config has cell centroids in WGS84"
-    postconditions:
-      - "K > 0 for all active cells"
-      - "Sy in [0.01, 0.35] for typical aquifers"
-
-  - id: "build_sto_package"
-    name: "Build STO Package via FloPy"
-    description: "Create the MODFLOW 6 STO (Storage) package for transient simulations. Sets specific storage (Ss), specific yield (Sy), and marks transient/steady-state stress periods."
-    stage: "s3_layer_properties"
-    script_path: "tools/s3/build_sto_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "model_name"
-        type: "string"
-        description: "GWF model name"
-        required: true
-      - name: "ss_values"
-        type: "config"
-        description: "Specific storage per layer (1/m)"
-        required: true
-        example: "[1e-5, 1e-5, 1e-4]"
-      - name: "sy_values"
-        type: "config"
-        description: "Specific yield per layer (dimensionless)"
-        required: true
-        example: "[0.15, 0.10, 0.05]"
-      - name: "steady_state"
-        type: "config"
-        description: "List of booleans per stress period — True=steady, False=transient"
-        required: true
-        example: "[true, false, false]"
-    outputs:
-      - name: "sto_status"
-        type: "value"
-        description: "JSON confirmation"
-        path_pattern: ""
-    preconditions:
-      - "DIS package exists on model"
-      - "Ss > 0 and 0 < Sy < 0.5"
-    postconditions:
-      - "STO package attached to GWF model"
-
-  # S4 tools
-  - id: "build_chd_package"
-    name: "Build CHD Package via FloPy"
-    description: "Create the MODFLOW 6 CHD (Constant Head) package. Specifies cells with fixed head values, typically at model boundaries or surface water features."
-    stage: "s4_boundary_conditions"
-    script_path: "tools/s4/build_chd_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "model_name"
-        type: "string"
-        description: "GWF model name"
-        required: true
-      - name: "chd_data"
-        type: "config"
-        description: "List of [layer, row, col, head] per constant-head cell"
-        required: true
-        example: "[[(0, 0, 0), 100.0], [(0, 0, 1), 99.5]]"
-    outputs:
-      - name: "chd_status"
-        type: "value"
-        description: "JSON confirmation with cell count"
-        path_pattern: ""
-    preconditions:
-      - "DIS package exists"
-      - "CHD cells are within active domain (IDOMAIN > 0)"
-    postconditions:
-      - "CHD package attached to model"
-
-  - id: "build_rch_package"
-    name: "Build RCH Package via FloPy"
-    description: "Create the MODFLOW 6 RCH (Recharge) package. Applies areal recharge to the highest active cell in each vertical column. Rate in model length/time units (e.g., m/day)."
-    stage: "s4_boundary_conditions"
-    script_path: "tools/s4/build_rch_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "model_name"
-        type: "string"
-        description: "GWF model name"
-        required: true
-      - name: "recharge_rate"
-        type: "config"
-        description: "Recharge rate — scalar (uniform) or 2D array [nrow, ncol] in m/day"
-        required: true
-        example: "0.001"
-      - name: "vic_recharge_nc"
-        type: "file"
-        description: "NetCDF with VIC deep percolation for coupling (optional)"
-        required: false
-    outputs:
-      - name: "rch_status"
-        type: "value"
-        description: "JSON confirmation with mean recharge rate"
-        path_pattern: ""
-    preconditions:
-      - "DIS package exists"
-      - "Recharge rate > 0 and in correct length/time units"
-    postconditions:
-      - "RCH package attached to model"
-
-  - id: "build_riv_from_cama"
-    name: "Build RIV Package from CaMa-Flood River Network"
-    description: "Builds MODFLOW RIV package from CaMa-Flood river network and discharge output. Extracts river cells, stage, width, and depth from CaMa maps. Clamps rbot to max(rbot, botm+0.5) to prevent fatal 'RIVER BOTTOM IS LESS THAN CELL BOTTOM' error."
-    stage: "s4_boundary_conditions"
-    script_path: "tools/s4/build_riv_from_cama.py"
-    language: "python"
-    inputs:
-      - name: "cama_map_dir"
-        type: "directory"
-        description: "CaMa-Flood regional map directory (e.g., model/cmf_v420_pkg/map/<basin>_15min)"
-        required: true
-      - name: "cama_out_dir"
-        type: "directory"
-        description: "CaMa-Flood output directory with discharge/stage NetCDF"
-        required: false
-      - name: "grid_config"
-        type: "config"
-        description: "MODFLOW grid configuration for cell mapping"
-        required: true
-      - name: "botm_array"
-        type: "config"
-        description: "MODFLOW BOTM array for rbot clamping"
-        required: true
-    outputs:
-      - name: "riv_data"
-        type: "value"
-        description: "JSON with RIV stress period data (cellid, stage, cond, rbot) and river cell count"
-        path_pattern: ""
-    preconditions:
-      - "CaMa-Flood map directory exists with rivwth, rivhgt, rivseq files"
-      - "MODFLOW grid covers the same spatial domain as CaMa map"
-    postconditions:
-      - "All rbot > cell BOTM (clamped to botm+0.5 where needed)"
-      - "River stage > rbot for all river cells"
-
-  - id: "build_riv_package"
-    name: "Build RIV Package via FloPy"
-    description: "Create the MODFLOW 6 RIV (River) package. Each river cell needs: cellid, stage, conductance, and river bottom elevation. Supports CaMa-Flood river stage coupling."
-    stage: "s4_boundary_conditions"
-    script_path: "tools/s4/build_riv_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "model_name"
-        type: "string"
-        description: "GWF model name"
-        required: true
-      - name: "riv_data"
-        type: "config"
-        description: "List of [cellid, stage, cond, rbot] per river cell"
-        required: true
-        example: "[[(0, 5, 10), 95.0, 500.0, 93.0]]"
-      - name: "cama_stage_nc"
-        type: "file"
-        description: "CaMa-Flood river stage NetCDF for coupling (optional)"
-        required: false
-    outputs:
-      - name: "riv_status"
-        type: "value"
-        description: "JSON confirmation with river cell count"
-        path_pattern: ""
-    preconditions:
-      - "DIS package exists"
-      - "River bottom < river stage for each cell"
-    postconditions:
-      - "RIV package attached to model"
-
-  - id: "build_drn_package"
-    name: "Build DRN Package via FloPy"
-    description: "Create the MODFLOW 6 DRN (Drain) package. Drains remove water when head exceeds the drain elevation. Used for springs, tile drains, and baseflow coupling to routing models."
-    stage: "s4_boundary_conditions"
-    script_path: "tools/s4/build_drn_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "model_name"
-        type: "string"
-        description: "GWF model name"
-        required: true
-      - name: "drn_data"
-        type: "config"
-        description: "List of [cellid, elevation, conductance] per drain cell"
-        required: true
-    outputs:
-      - name: "drn_status"
-        type: "value"
-        description: "JSON confirmation with drain cell count"
-        path_pattern: ""
-    preconditions:
-      - "DIS package exists"
-      - "Drain elevation within layer top/bottom"
-    postconditions:
-      - "DRN package attached to model"
-
-  - id: "build_wel_package"
-    name: "Build WEL Package via FloPy"
-    description: "Create the MODFLOW 6 WEL (Well) package. Each well needs cellid and volumetric rate (negative = pumping, positive = injection). Rate in m3/day."
-    stage: "s4_boundary_conditions"
-    script_path: "tools/s4/build_wel_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "model_name"
-        type: "string"
-        description: "GWF model name"
-        required: true
-      - name: "wel_data"
-        type: "config"
-        description: "List of [cellid, rate] per well — negative = extraction"
-        required: true
-        example: "[[(1, 10, 10), -500.0]]"
-    outputs:
-      - name: "wel_status"
-        type: "value"
-        description: "JSON confirmation with well count and total rate"
-        path_pattern: ""
-    preconditions:
-      - "DIS package exists"
-      - "Well cells are active (IDOMAIN > 0)"
-    postconditions:
-      - "WEL package attached to model"
-
-  # S5 tools
-  - id: "build_tdis_package"
-    name: "Build TDIS Package via FloPy"
-    description: "Create the MODFLOW 6 TDIS (Temporal Discretization) package. Defines stress period lengths, timesteps per period, and timestep multiplier."
-    stage: "s5_stress_periods"
-    script_path: "tools/s5/build_tdis_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "nper"
-        type: "number"
-        description: "Number of stress periods"
-        required: true
-        example: 12
-      - name: "period_data"
-        type: "config"
-        description: "List of [perlen, nstp, tsmult] per period"
-        required: true
-        example: "[[365.25, 365, 1.0]]"
-      - name: "time_units"
-        type: "string"
-        description: "Time units: seconds, minutes, hours, days, years"
-        required: true
-        example: "days"
-    outputs:
-      - name: "tdis_status"
-        type: "value"
-        description: "JSON confirmation with total simulation time"
-        path_pattern: ""
-    preconditions:
-      - "NPER >= 1"
-      - "All PERLEN > 0, NSTP >= 1, TSMULT >= 1.0"
-    postconditions:
-      - "TDIS package attached to simulation"
-
-  - id: "build_ic_package"
-    name: "Build IC Package via FloPy"
-    description: "Create the MODFLOW 6 IC (Initial Conditions) package. Sets starting head for all cells. Can use uniform value, interpolated surface, or results from a prior steady-state run."
-    stage: "s5_stress_periods"
-    script_path: "tools/s5/build_ic_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "model_name"
-        type: "string"
-        description: "GWF model name"
-        required: true
-      - name: "strt"
-        type: "config"
-        description: "Starting head — scalar, per-layer list, or 3D array"
-        required: true
-        example: "100.0"
-    outputs:
-      - name: "ic_status"
-        type: "value"
-        description: "JSON confirmation with head range"
-        path_pattern: ""
-    preconditions:
-      - "DIS package exists"
-      - "Starting head >= layer bottom for active cells"
-    postconditions:
-      - "IC package attached to model"
-
-  - id: "assign_transient_stress"
-    name: "Assign Transient Stress Data"
-    description: "Update stress package data (RCH, WEL, RIV) per stress period for transient simulations. Maps time-varying VIC recharge or pumping schedules to MODFLOW stress periods."
-    stage: "s5_stress_periods"
-    script_path: "tools/s5/assign_transient_stress.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "model_name"
-        type: "string"
-        description: "GWF model name"
-        required: true
-      - name: "package_name"
-        type: "string"
-        description: "Package to update: rch, wel, riv, etc."
-        required: true
-      - name: "transient_data"
-        type: "config"
-        description: "Dict mapping stress period index to package data"
-        required: true
-    outputs:
-      - name: "assignment_status"
-        type: "value"
-        description: "JSON confirmation with stress periods updated"
-        path_pattern: ""
-    preconditions:
-      - "Target package exists on model"
-      - "Stress period indices within valid range"
-    postconditions:
-      - "Package stress_period_data updated for specified periods"
-
-  # S6 tools
-  - id: "build_ims_package"
-    name: "Build IMS Package via FloPy"
-    description: "Create the MODFLOW 6 IMS (Iterative Model Solution) package. Configures the numerical solver: method (CG/BICGSTAB), outer/inner iterations, convergence criteria (DVCLOSE, RCLOSE), under-relaxation, and backtracking."
-    stage: "s6_solver"
-    script_path: "tools/s6/build_ims_package.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "complexity"
-        type: "string"
-        description: "Solver complexity: SIMPLE, MODERATE, COMPLEX"
-        required: true
-        example: "MODERATE"
-      - name: "dvclose"
-        type: "number"
-        description: "Head change convergence criterion (m)"
-        required: false
-        example: 0.001
-      - name: "rclose"
-        type: "number"
-        description: "Residual convergence criterion (m3/day)"
-        required: false
-        example: 0.1
-    outputs:
-      - name: "ims_status"
-        type: "value"
-        description: "JSON confirmation with solver settings"
-        path_pattern: ""
-    preconditions:
-      - "Simulation object exists"
-    postconditions:
-      - "IMS package attached to simulation and registered to GWF model"
-
-  # S7 tools
-  - id: "write_and_run_simulation"
-    name: "Write Input Files and Run MODFLOW 6"
-    description: "Write all FloPy packages to disk as MODFLOW 6 text input files, then execute mf6. Checks listing file for errors, convergence failures, and budget balance."
-    stage: "s7_execution"
-    script_path: "tools/s7/write_and_run_simulation.py"
-    language: "python"
-    inputs:
-      - name: "sim_path"
-        type: "directory"
-        description: "Simulation workspace directory"
-        required: true
-      - name: "mf6_path"
-        type: "file"
-        description: "Path to mf6 executable"
-        required: false
-        example: "mf6"
-      - name: "silent"
-        type: "string"
-        description: "Suppress mf6 stdout (true/false)"
-        required: false
-        example: "false"
-    outputs:
-      - name: "run_result"
-        type: "value"
-        description: "JSON with success, runtime_seconds, convergence_failures, budget_error_pct"
-        path_pattern: ""
-    preconditions:
-      - "Simulation has TDIS, IMS, GWF model with DIS, NPF, IC, OC packages"
-      - "mf6 executable is available"
-    postconditions:
-      - "mfsim.lst contains 'Normal termination'"
-      - "Binary output files (.hds, .cbc) exist"
-
-  # S8 tools
-  - id: "extract_heads"
-    name: "Extract Heads from Binary File"
-    description: "Read MODFLOW 6 binary head file (.hds) using flopy.utils.HeadFile. Returns head arrays per timestep, water table elevation, and flags dry cells (HDRY sentinel = 1e30)."
-    stage: "s8_output_extraction"
-    script_path: "tools/s8/extract_heads.py"
-    language: "python"
-    inputs:
-      - name: "hds_path"
-        type: "file"
-        description: "Path to binary head file (.hds)"
-        required: true
-      - name: "model_path"
-        type: "directory"
-        description: "Model workspace (for grid info)"
-        required: true
-      - name: "kstpkper"
-        type: "config"
-        description: "Timestep/period tuple to extract, or 'all'"
-        required: false
-        example: "(0, 0)"
-    outputs:
-      - name: "heads"
-        type: "value"
-        description: "JSON with head_array shape, water_table, dry_cell_count, min/max heads"
-        path_pattern: ""
-    preconditions:
-      - ".hds file exists"
-      - "Simulation completed successfully"
-    postconditions:
-      - "Head arrays have correct dimensions (nlay, nrow, ncol)"
-      - "HDRY cells flagged"
-
-  - id: "extract_budget"
-    name: "Extract Budget from Binary File"
-    description: "Read MODFLOW 6 cell budget file (.cbc) using flopy.utils.CellBudgetFile. Extracts flow terms by package (STO, RCH, RIV, DRN, WEL, CHD) and computes volumetric budget balance."
-    stage: "s8_output_extraction"
-    script_path: "tools/s8/extract_budget.py"
-    language: "python"
-    inputs:
-      - name: "cbc_path"
-        type: "file"
-        description: "Path to cell budget file (.cbc)"
-        required: true
-      - name: "kstpkper"
-        type: "config"
-        description: "Timestep/period tuple to extract, or 'all'"
-        required: false
-      - name: "text"
-        type: "string"
-        description: "Budget term to extract (e.g., 'RCH', 'STO-SS', 'DRN')"
-        required: false
-    outputs:
-      - name: "budget"
-        type: "value"
-        description: "JSON with flow terms, total_in, total_out, percent_discrepancy"
-        path_pattern: ""
-    preconditions:
-      - ".cbc file exists"
-      - "Simulation completed successfully"
-    postconditions:
-      - "Budget terms sum to near-zero discrepancy (<0.1%)"
-
-  # S9 tools
-  - id: "plot_head_map"
-    name: "Plot Water Table Contour Map"
-    description: "Generate a contour map of simulated water table (head in top active layer) for a given stress period. Overlays basin boundary and optionally river network."
-    stage: "s9_postprocessing"
-    script_path: "tools/s9/plot_head_map.py"
-    language: "python"
-    inputs:
-      - name: "hds_path"
-        type: "file"
-        description: "Binary head file path"
-        required: true
-      - name: "model_path"
-        type: "directory"
-        description: "Model workspace for grid info"
-        required: true
-      - name: "output_png"
-        type: "file"
-        description: "Output PNG file path"
-        required: true
-      - name: "kstpkper"
-        type: "config"
-        description: "Timestep/period to plot"
-        required: false
-        example: "(0, 0)"
-      - name: "shapefile_path"
-        type: "file"
-        description: "Basin shapefile for overlay (optional)"
-        required: false
-    outputs:
-      - name: "plot_file"
-        type: "file"
-        description: "Water table contour map PNG"
-        path_pattern: "{output_png}"
-    preconditions:
-      - "Head file exists"
-      - "matplotlib is installed"
-    postconditions:
-      - "PNG file exists and is > 10 KB"
-
-  - id: "plot_water_budget"
-    name: "Plot Water Budget Summary"
-    description: "Generate a bar chart showing volumetric water budget components (recharge, drain, river, storage, wells) for the simulation."
-    stage: "s9_postprocessing"
-    script_path: "tools/s9/plot_water_budget.py"
-    language: "python"
-    inputs:
-      - name: "listing_file"
-        type: "file"
-        description: "MODFLOW 6 listing file (.lst)"
-        required: true
-      - name: "output_png"
-        type: "file"
-        description: "Output PNG file path"
-        required: true
-    outputs:
-      - name: "plot_file"
-        type: "file"
-        description: "Water budget bar chart PNG"
-        path_pattern: "{output_png}"
-    preconditions:
-      - "Listing file exists with budget summary"
-    postconditions:
-      - "PNG file exists and is > 10 KB"
-
-  - id: "export_to_netcdf"
-    name: "Export MODFLOW Results to NetCDF"
-    description: "Export heads, water table, and flux arrays to a CF-compliant NetCDF file for coupling with HydroCraft (VIC recharge feedback, CaMa-Flood baseflow, routing)."
-    stage: "s9_postprocessing"
-    script_path: "tools/s9/export_to_netcdf.py"
-    language: "python"
-    inputs:
-      - name: "hds_path"
-        type: "file"
-        description: "Binary head file"
-        required: true
-      - name: "cbc_path"
-        type: "file"
-        description: "Cell budget file"
-        required: true
-      - name: "model_path"
-        type: "directory"
-        description: "Model workspace for grid info"
-        required: true
-      - name: "output_nc"
-        type: "file"
-        description: "Output NetCDF file path"
-        required: true
-    outputs:
-      - name: "netcdf_file"
-        type: "file"
-        description: "NetCDF with head, water_table, recharge, drain_flux variables"
-        path_pattern: "{output_nc}"
-    preconditions:
-      - "Head and budget files exist"
-      - "netCDF4 or xarray is installed"
-    postconditions:
-      - "NetCDF has correct dimensions (time, layer, row, col)"
-      - "Variables have units attributes"
-
-# --- Layer 2: Skill Documents ---
-skill_documents:
-  - id: "sd_s1"
-    name: "Installation & Environment Setup"
-    stage: "s1_installation"
-    path: "docs/s1_installation_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1200
-
-  - id: "sd_s2"
-    name: "Grid & Spatial Discretization"
-    stage: "s2_grid_discretization"
-    path: "docs/s2_grid_discretization_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1800
-
-  - id: "sd_s3"
-    name: "Aquifer & Layer Properties"
-    stage: "s3_layer_properties"
-    path: "docs/s3_layer_properties_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1600
-
-  - id: "sd_s4"
-    name: "Boundary Conditions"
-    stage: "s4_boundary_conditions"
-    path: "docs/s4_boundary_conditions_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 2200
-
-  - id: "sd_s5"
-    name: "Stress Periods & Temporal Discretization"
-    stage: "s5_stress_periods"
-    path: "docs/s5_stress_periods_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1400
-
-  - id: "sd_s6"
-    name: "Solver Configuration"
-    stage: "s6_solver"
-    path: "docs/s6_solver_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1400
-
-  - id: "sd_s7"
-    name: "Model Execution"
-    stage: "s7_execution"
-    path: "docs/s7_execution_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1200
-
-  - id: "sd_s8"
-    name: "Head & Budget Extraction"
-    stage: "s8_output_extraction"
-    path: "docs/s8_output_extraction_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1200
-
-  - id: "sd_s9"
-    name: "Postprocessing & Visualization"
-    stage: "s9_postprocessing"
-    path: "docs/s9_postprocessing_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1400
-
-# --- Layer 3: Diagnostic Triplets ---
-# See diagnostics/triplets.yaml for full definitions
-diagnostic_triplets:
-  - id: "dt_mf6_001"
-    stage: "s7_execution"
-    failure_domain: "runtime"
-    severity: "fatal"
-  - id: "dt_mf6_002"
-    stage: "s7_execution"
-    failure_domain: "runtime"
-    severity: "degraded"
-  - id: "dt_mf6_003"
-    stage: "s8_output_extraction"
-    failure_domain: "silent_error"
-    severity: "silent"
-  - id: "dt_mf6_004"
-    stage: "s4_boundary_conditions"
-    failure_domain: "unit_conversion"
-    severity: "silent"
-  - id: "dt_mf6_005"
-    stage: "s2_grid_discretization"
-    failure_domain: "parameter_format"
-    severity: "fatal"
-  - id: "dt_mf6_006"
-    stage: "s8_output_extraction"
-    failure_domain: "parameter_format"
-    severity: "fatal"
-  - id: "dt_mf6_007"
-    stage: "s1_installation"
-    failure_domain: "environment"
-    severity: "fatal"
-  - id: "dt_mf6_008"
-    stage: "s4_boundary_conditions"
-    failure_domain: "silent_error"
-    severity: "silent"
-  - id: "dt_mf6_009"
-    stage: "s6_solver"
-    failure_domain: "runtime"
-    severity: "degraded"
-  - id: "dt_mf6_010"
-    stage: "s3_layer_properties"
-    failure_domain: "silent_error"
-    severity: "silent"
-  - id: "dt_mf6_011"
-    stage: "s5_stress_periods"
-    failure_domain: "dependency_mismatch"
-    severity: "fatal"
-  - id: "dt_mf6_012"
-    stage: "s7_execution"
-    failure_domain: "path_resolution"
-    severity: "fatal"
-  - id: "dt_mf6_013"
-    stage: "s4_boundary_conditions"
-    failure_domain: "dependency_mismatch"
-    severity: "silent"
-  - id: "dt_mf6_014"
-    stage: "s2_grid_discretization"
-    failure_domain: "silent_error"
-    severity: "silent"
-  - id: "dt_mf6_015"
-    stage: "s8_output_extraction"
-    failure_domain: "silent_error"
-    severity: "silent"
-  - id: "dt_mf6_016"
-    stage: "s4_boundary_conditions"
-    failure_domain: "parameter_format"
-    severity: "fatal"
-  - id: "dt_mf6_017"
-    stage: "s5_stress_periods"
-    failure_domain: "parameter_format"
-    severity: "fatal"
-
-# --- Summary statistics ---
+  count: 28
+  files:
+  - tools/calib_run.py
+  - tools/s1/verify_mf6_installation.py
+  - tools/s10_transport/configure_gwt.py
+  - tools/s10_transport/parse_gwt_output.py
+  - tools/s11_sfr/configure_sfr.py
+  - tools/s11_sfr/parse_sfr_output.py
+  - tools/s2/build_dis_package.py
+  - tools/s2/build_layers_from_global.py
+  - tools/s2/create_grid_from_basin.py
+  - tools/s3/assign_k_from_glhymps.py
+  - tools/s3/build_npf_package.py
+  - tools/s3/build_sto_package.py
+  - tools/s4/build_chd_package.py
+  - tools/s4/build_drn_package.py
+  - tools/s4/build_rch_package.py
+  - tools/s4/build_riv_from_cama.py
+  - tools/s4/build_riv_package.py
+  - tools/s4/build_wel_package.py
+  - tools/s5/assign_transient_stress.py
+  - tools/s5/build_ic_package.py
+  - tools/s5/build_tdis_package.py
+  - tools/s6/build_ims_package.py
+  - tools/s7/write_and_run_simulation.py
+  - tools/s8/extract_budget.py
+  - tools/s8/extract_heads.py
+  - tools/s9/export_to_netcdf.py
+  - tools/s9/plot_head_map.py
+  - tools/s9/plot_water_budget.py
+inputs:
+  forcing:
+  - name: Areal recharge (RCH RATE)
+    unit: m/day
+  - name: Evapotranspiration demand (EVT)
+    unit: m/day
+  parameters:
+  - name: Hydraulic conductivity tensor (K11/K22/K33)
+    unit: m/day
+  - name: Cell type (ICELLTYPE)
+    unit: dimensionless
+  - name: Specific storage (Ss)
+    unit: 1/m
+  - name: Specific yield (Sy)
+    unit: dimensionless
+  - name: Grid geometry (TOP/BOTM, DELR/DELC)
+    unit: m
+  - name: Active-domain mask (IDOMAIN)
+    unit: dimensionless
+  - name: GWT dispersivity (ALH/ATH1/ATV) and diffusion
+    unit: m (dispersivity); m2/s (diffusion)
+  - name: GWT mobile-storage / sorption / decay (porosity, bulk_density, distcoef, decay)
+    unit: porosity [-]; rho_b kg/L; Kd L/kg; lambda 1/day
+  - name: SFR reach geometry and roughness (rlen, rwid, rgrd, rtp, rbth, rhk, man)
+    unit: m (length/width/thickness); dimensionless (gradient); m/day (rhk); s/m^(1/3) (Manning n)
+  initial_conditions:
+  - name: Starting hydraulic head (STRT)
+    unit: m
+  - name: Initial solute concentration
+    unit: mg/L
+  boundary_conditions:
+  - name: Constant head (CHD)
+    unit: m
+  - name: Well pumping/injection (WEL)
+    unit: m3/day
+  - name: Drain (DRN)
+    unit: elevation m; conductance m2/day
+  - name: River (RIV)
+    unit: stage m; conductance m2/day; rbot m
+  - name: General head boundary (GHB)
+    unit: head m; conductance m2/day
+  - name: Temporal discretization (TDIS)
+    unit: dimensionless
+  - name: Solver configuration (IMS complexity preset)
+    unit: dimensionless
+  - name: Newton-Raphson formulation switch (NEWTON UNDER_RELAXATION)
+    unit: dimensionless
+  - name: Output control (OC) save/print settings
+    unit: dimensionless
+  - name: Advection scheme (ADV)
+    unit: dimensionless
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - hydraulic_head
+  - water_table_elevation
+  - cell_budget_flux_terms
+  - solute_concentration
+  - stream_stage
+  - stream_aquifer_exchange
+  - volumetric_budget_discrepancy
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.723, KGE=0.906, R=0.923, 7 scorecard(s)'
+  metrics:
+    best_nse: 0.7226
+    best_kge: 0.9057
+    best_r: 0.9228
 summary:
-  total_tools: 23
-  total_tool_lines: 4200
-  total_skill_documents: 9
-  total_skill_words: 13400
+  total_tools: 28
+  total_stage_docs: 9
   total_diagnostic_triplets: 22
-  failure_domains:
-    - "runtime"
-    - "silent_error"
-    - "unit_conversion"
-    - "parameter_format"
-    - "environment"
-    - "path_resolution"
-    - "dependency_mismatch"
-  pipeline_stages: 9
-  pipeline_milestones: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

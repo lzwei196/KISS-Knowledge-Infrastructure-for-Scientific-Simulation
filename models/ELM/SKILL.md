@@ -1,13 +1,3 @@
----
-name: elm
-description: >-
-  E3SM Land Model (ELM), E3SM v2/v3 lineage — CLM4.5-derived land-surface scheme with
-  CN(P) biogeochemistry and optional FATES vegetation demography. Covers Terrestrial water
-  balance (soil moisture, infiltration, surface runoff, sub-surface drainage…; Surface
-  energy balance (latent and sensible heat flux, ground/soil heat, soil temperature with….
-  Use when the task involves running, configuring, calibrating or interpreting ELM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (22 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_elm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_elm.py --help` |
+| `tools/convert_surface_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_surface_data.py --help` |
+| `tools/parse_elm_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_elm_output.py --help` |
+| `tools/run_elm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_elm.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # ELM (E3SM Land Model) — Knowledge Infrastructure
 
@@ -240,10 +264,31 @@ Contains ~500 PFT-level and global parameters:
 
 ---
 
-## 6. Output Variables
+## 6. Output Description
 
 ELM writes history files in NetCDF format. Up to 6 independent output streams
 (history tapes) can be configured with different variables and frequencies.
+
+This section restates `dag.yaml`. The dag is the model identity for observable
+outputs; if this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+### Headline output
+
+> `QRUNOFF` — Total runoff (surface runoff plus sub-surface drainage) leaving the land column. (`mm/s`)
+
+### DAG output inventory
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| QRUNOFF | 1 | mm/s | Total runoff (surface runoff plus sub-surface drainage) leaving the land column. |
+| QDRAI | — | See `dag.yaml` | Other dag output |
+| H2OSOI | — | See `dag.yaml` | Other dag output |
+| EFLX_LH_TOT | — | See `dag.yaml` | Other dag output |
+| FSH | — | See `dag.yaml` | Other dag output |
+| GPP | — | See `dag.yaml` | Other dag output |
+| NEE | — | See `dag.yaml` | Other dag output |
+| TSOI | — | See `dag.yaml` | Other dag output |
+| TWS | — | See `dag.yaml` | Other dag output |
 
 ### Key output variables
 
@@ -332,7 +377,38 @@ by CIME's `build-namelist` utility. Key namelist groups:
 
 ---
 
-## 8. Critical Domain Knowledge — Unit Trap Table
+## 8. Unit Conversion Table and Critical Domain Knowledge
+
+Exact I/O shapes live in `docs/format_spec.yaml`; this table summarizes the
+unit conversions and unit-preservation rules called out by this KI.
+
+### Unit table
+
+| Variable | Source unit | Model or output unit | Factor | Type | Notes |
+|----------|-------------|----------------------|--------|------|-------|
+| TBOT | K | K | x1 | preserve | Air temperature forcing; do not convert to °C. |
+| PRECTmms | mm/s | mm/s | x1 | preserve | Rain forcing; do not convert from or to mm/day. |
+| SNOW | mm/s | mm/s | x1 | preserve | Frozen precipitation forcing; same rate convention as rain. |
+| SHUM | kg/kg | kg/kg | x1 | preserve | Specific humidity; not relative humidity percent. |
+| FSDS | W/m² | W/m² | x1 | preserve | Downwelling shortwave radiation. |
+| FLDS | W/m² | W/m² | x1 | preserve | Downwelling longwave radiation. |
+| WIND | m/s | m/s | x1 | preserve | Wind speed magnitude at reference height. |
+| PSRF | Pa | Pa | x1 | preserve | Surface pressure; not hPa, kPa, or mbar. |
+| z | m | m | x1 | preserve | Reference height. |
+| PCT_PFT | % | % | x1 | preserve | Plant functional type fractions, 0-100. |
+| PCT_SAND | % | % | x1 | preserve | Sand fraction per soil layer. |
+| PCT_CLAY | % | % | x1 | preserve | Clay fraction per soil layer. |
+| ORGANIC | kg/m³ | kg/m³ | x1 | preserve | Soil organic matter density. |
+| MONTHLY_LAI | m²/m² | m²/m² | x1 | preserve | Monthly leaf area index per PFT. |
+| MONTHLY_SAI | m²/m² | m²/m² | x1 | preserve | Monthly stem area index per PFT. |
+| LANDFRAC_PFT | fraction (0-1) | fraction (0-1) | x1 | preserve | Land fraction. |
+| TOPO | m | m | x1 | preserve | Surface elevation. |
+| SLOPE | degrees | degrees | x1 | preserve | Terrain slope. |
+| STD_ELEV | m | m | x1 | preserve | Standard deviation of elevation. |
+| QRUNOFF | mm/s | mm/s | x1 | preserve | Rank-1 output: total runoff leaving the land column. |
+| QDRAI | mm/s | mm/s | x1 | preserve | Subsurface drainage output/coupling flux. |
+
+### Critical domain knowledge — unit trap table
 
 These are the most common silent errors when setting up ELM. Each entry links
 to a diagnostic triplet for automated detection.
@@ -412,7 +488,36 @@ For lake grid cells, a 10-layer lake model computes:
 
 ---
 
-## 11. Key Physical Constants
+## 11. Validated Results
+
+This KI is marked `documentation_validated` because no HPC cluster was available
+for execution. No achieved calibration or validation metric is claimed here.
+Judgment of any future run should use `docs/validation_convention.yaml`, restated
+below from the KI's convention facts.
+
+### Performance metrics — judged against the field's bar, not intuition
+
+| Dag variable | Metric | Direction | Bands (convention, cited) |
+|--------------|--------|-----------|---------------------------|
+| QRUNOFF | nse | maximize | very_good ≥ 0.8 (`moriasi2015`, `arnold2012`); good ≥ 0.7 (`moriasi2015`, `arnold2012`); satisfactory ≥ 0.5 (`moriasi2015`, `arnold2012`) |
+| QRUNOFF | pbias | zero_centered | very_good ≤ 5.0 (`moriasi2015`); good ≤ 10.0 (`moriasi2015`); satisfactory ≤ 15.0 (`moriasi2015`) |
+| QRUNOFF | csi | maximize | satisfactory: no cited threshold |
+| QDRAI | nse | maximize | very_good ≥ 0.8 (`moriasi2015`); good ≥ 0.7 (`moriasi2015`); satisfactory ≥ 0.5 (`moriasi2015`) |
+| QDRAI | pbias | zero_centered | very_good ≤ 5.0 (`moriasi2015`); good ≤ 10.0 (`moriasi2015`); satisfactory ≤ 15.0 (`moriasi2015`) |
+
+### Data replacement tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Documentation validated | CMFD/MSWX/NASA POWER loaders are referenced by this KI. |
+| Soil | Pipeline | Documentation validated | Surface dataset preparation is covered by `tools/convert_surface_data.py`. |
+| Land cover | Pipeline | Documentation validated | PFT fractions are prepared in the surface dataset workflow. |
+| Initial conditions | CIME/ELM case configuration | Documentation validated | Cold/warm start setup is covered in the pipeline stages. |
+| Model execution | E3SM/CIME | Pending runtime validation | No HPC execution result is claimed by this KI. |
+
+---
+
+## 12. Key Physical Constants
 
 | Constant | Value | Units | Used in |
 |----------|-------|-------|---------|
@@ -428,7 +533,7 @@ For lake grid cells, a 10-layer lake model computes:
 
 ---
 
-## 12. Coupling Points with Other Models
+## 13. Coupling Points with Other Models
 
 ELM exchanges fields with other E3SM components through the MCT coupler:
 
@@ -443,7 +548,7 @@ ELM exchanges fields with other E3SM components through the MCT coupler:
 
 ---
 
-## 13. Diagnostic Triplets Summary
+## 14. Diagnostic Triplets Summary
 
 20 triplets covering 6 failure domains:
 
@@ -472,7 +577,7 @@ ELM exchanges fields with other E3SM components through the MCT coupler:
 
 ---
 
-## 14. Quick Start (on a supported machine)
+## 15. Quick Start (on a supported machine)
 
 ```bash
 # 1. Clone E3SM
@@ -513,7 +618,7 @@ ls $(./xmlquery --value DOUT_S_ROOT)/lnd/hist/
 
 ---
 
-## 15. File Structure
+## 16. File Structure
 
 ```
 ki/

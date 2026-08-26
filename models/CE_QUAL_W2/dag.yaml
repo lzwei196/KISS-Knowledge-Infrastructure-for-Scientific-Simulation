@@ -457,7 +457,7 @@ outputs:
   - var: "dam release temperature"
     validation_rank: 3
     unit: "deg C"
-    description: "temperature of selective-withdrawal outflow at the outlet, controlled by withdrawal elevation and stratification"
+    description: "water temperature of selective-withdrawal outflow at the outlet, controlled by withdrawal elevation and stratification"
     emitted_in: "tsr*.opt (withdrawal cell), withdrawal/structure outflow output"
     observability:
       comparable_obs_shapes:
@@ -471,7 +471,7 @@ outputs:
   - var: "dissolved oxygen"
     validation_rank: 4
     unit: "g/m^3 (mg/L)"
-    description: "dissolved oxygen concentration over the segment-layer grid; hypolimnetic depletion driven by SOD, respiration, and organic decay"
+    description: "dissolved oxygen concentration in reservoir water over the segment-layer grid; hypolimnetic depletion driven by SOD, respiration, and organic decay"
     emitted_in: "snp*.opt, tsr*.opt, prf*.opt"
     observability:
       comparable_obs_shapes:
@@ -803,3 +803,13 @@ safety:
       scope: "meteorological forcing"
       source: "CE-QUAL-W2 User Manual surface boundary condition / WDIC card; version-dependence noted in v3.x"
       status: "adopted"
+
+medium_evidence:
+  - var: "dam release temperature"
+    source: "dag.yaml"
+    quote: "water temperature and density-driven thermal stratification"
+    note: "scope_in declares the model temperature state as water; selective withdrawal produces the dam-release temperature output."
+  - var: "dissolved oxygen"
+    source: "dag.yaml"
+    quote: "water quality kinetics (DO, NH4, NO3, bioavailable P, organic matter, algae/periphyton, CBOD, TDS/ISS, zooplankton, macrophytes, sediment diagenesis)"
+    note: "scope_in declares DO under water quality kinetics, so the output is dissolved oxygen in reservoir water."

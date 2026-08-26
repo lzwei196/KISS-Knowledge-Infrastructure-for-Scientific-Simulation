@@ -1,145 +1,563 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "ISSM"
-  full_name: "Ice-sheet and Sea-level System Model"
-  version: "2026.1"
-  domain: "cryosphere"
-  developer: "NASA JPL / UC Irvine"
-  binary_path: "KISSPATH_BINARIES/ISSM/source/repo/bin/issm.exe"
-  binary_slc_path: "KISSPATH_BINARIES/ISSM/source/repo/bin/issm_slc.exe"
-  ld_library_path: "KISSPATH_BINARIES/ISSM/source/repo/externalpackages/triangle/install/lib"
-  mesh_type: "unstructured triangular/prismatic finite-element"
-
+  name: ISSM
+  language: c++
+  implementation:
+    id: issm-core
+    version: '2026.2'
+    provenance: C++/Fortran computational core (FemModel::Solve dispatch over *_core solvers) with Python/MATLAB
+      model-object APIs; NASA JPL / UC Irvine (ISSMteam).
+  scientific_reference_version: ISSM (Ice-sheet and Sea-level System Model) v2026.x finite-element ice-sheet/sea-level
+    formulation
 inputs:
-  domain:
-    - name: "domain_outline"
-      format: ".exp (Argus contour)"
-      description: "Polygon boundary of ice sheet domain in projected coordinates"
-      unit: "m"
-
-  geometry:
-    - name: "surface"
-      unit: "m"
-      valid_range: [-500, 5000]
-      description: "Ice surface elevation"
-    - name: "base"
-      unit: "m"
-      valid_range: [-5000, 5000]
-      description: "Ice base elevation"
-    - name: "thickness"
-      unit: "m"
-      valid_range: [0, 5000]
-      description: "Ice thickness (= surface - base)"
-    - name: "bed"
-      unit: "m"
-      valid_range: [-5000, 5000]
-      description: "Bedrock elevation"
-
   forcing:
-    - name: "smb"
-      unit: "m/yr ice equivalent"
-      valid_range: [-50, 50]
-      description: "Surface mass balance"
-    - name: "geothermal_flux"
-      unit: "W/m^2"
-      valid_range: [0.0, 0.3]
-      description: "Geothermal heat flux at ice base"
-    - name: "surface_temperature"
-      unit: "K"
-      valid_range: [200, 280]
-      description: "Surface temperature forcing"
-
+  - name: md.smb.mass_balance
+    unit: m/yr ice equivalent
+    category: forcing
+    source_kind: forcing
+    model_input_format: 'per-vertex field on the mesh (or SMBcomponents: accumulation/runoff/evaporation)'
+    notes: 'Prescribed surface mass balance; SMBgradients variant is in mm/yr water equivalent. Common
+      unit trap: datasets in kg/m^2/yr or mm w.e./yr must be converted via division by rho_ice (917).'
+  - name: md.thermal.spctemperature
+    unit: K
+    category: forcing
+    source_kind: forcing
+    model_input_format: per-vertex Dirichlet surface-temperature constraint (NaN = free node)
+    notes: Surface temperature boundary forcing for the thermal solve; must be in Kelvin.
+  - name: md.basalforcings.geothermalflux
+    unit: W/m^2
+    category: forcing
+    source_kind: forcing
+    model_input_format: per-vertex field (Neumann basal flux for thermal solve)
+    notes: 'Common trap: geothermal datasets in mW/m^2 are off by 1000x.'
+  - name: md.basalforcings.groundedice_melting_rate / floatingice_melting_rate
+    unit: m/yr
+    category: forcing
+    source_kind: forcing
+    model_input_format: per-vertex basal melt-rate fields
+    notes: Floating-ice melt enters the shelf thickness budget; can also be computed by a basal-melt parameterization
+      (linear/quadratic/PICO/ISMIP6).
   parameters:
-    critical:
-      - name: "rheology_B"
-        unit: "Pa s^(1/n)"
-        valid_range: [1.0e7, 5.0e8]
-        description: "Ice viscosity parameter (Glen's flow law, B convention). Use paterson(T_kelvin) to compute."
-      - name: "rheology_n"
-        unit: "-"
-        valid_range: [1, 5]
-        description: "Flow law exponent (typically 3)"
-      - name: "friction_coefficient"
-        unit: "(Pa m^-1 s)^(1/2)"
-        valid_range: [0, 500]
-        description: "Basal friction coefficient. Must be 0 on floating ice."
-      - name: "rho_ice"
-        unit: "kg/m^3"
-        valid_range: [910, 920]
-        description: "Ice density (default 917)"
-      - name: "rho_water"
-        unit: "kg/m^3"
-        valid_range: [1020, 1030]
-        description: "Ocean water density (default 1023)"
-
+  - name: md.materials.rheology_B
+    unit: Pa s^(1/n)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: per-element ice-hardness field; default 1e8, typically set via paterson(T_in_K)
+    notes: 'Glen''s flow-law ice hardness (B convention). Trap: Glen''s fluidity A must be converted as
+      B = A^(-1/n), not used directly. Units reduce to Pa s^(1/3) only when n=3.'
+  - name: md.materials.rheology_n
+    unit: '-'
+    category: parameters
+    source_kind: default
+    model_input_format: per-element Glen exponent (default 3)
+  - name: md.materials.rho_ice / rho_water / rho_freshwater
+    unit: kg/m^3
+    category: parameters
+    source_kind: default
+    model_input_format: scalar densities (defaults 917 / 1023 / 1000)
+    notes: rho_ice and rho_water set flotation and hydrostatic base; using freshwater 1000 instead of
+      seawater 1023 for marine ice sheets shifts the grounding line.
+  - name: md.materials.heatcapacity / latentheat / thermalconductivity / meltingpoint / beta
+    unit: J/kg/K, J/kg, W/m/K, K, K/Pa
+    category: parameters
+    source_kind: default
+    model_input_format: scalar thermal constants (2093 / 3.34e5 / 2.4 / 273.15 / 9.8e-8)
+    notes: Clausius-Clapeyron beta sets pressure-dependence of the melting point; meltingpoint is the
+      1-atm pressure-melting reference.
+  - name: md.friction.coefficient
+    unit: law-dependent (e.g. (Pa m^-1 s)^(1/2) for the default law)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: per-vertex basal drag coefficient
+    notes: MUST be 0 on floating ice (ocean_levelset < 0), else artificial drag slows shelves. Dimensional
+      meaning depends on the configured friction law (p/q exponents).
+  - name: md.friction.p / md.friction.q
+    unit: '-'
+    category: parameters
+    source_kind: default
+    model_input_format: per-element friction-law exponents
+  - name: md.geometry.bed
+    unit: m
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: per-vertex bedrock topography (e.g. BedMachine)
+    notes: Static substrate; consumed by the flotation criterion.
+  initial_conditions:
+  - name: md.geometry.surface / base / thickness
+    unit: m
+    category: initial_conditions
+    source_kind: dataset_lookup
+    model_input_format: per-vertex geometry fields; surface = base + thickness must hold
+    notes: 'Initial ice geometry; thickness evolves prognostically in transient runs. Inconsistent surface/base/thickness
+      causes solver instability. Trap: thickness in km is off by 1000x.'
+  - name: md.initialization.vx / vy / vz
+    unit: m/yr
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: per-vertex initial velocity (initial guess; transient flux)
+    notes: 'For transient runs, seed from a prior Stressbalance solve; zero/NaN initial velocity gives
+      a spurious first-step jump. Trap: m/s input is off by ~3.15e7.'
+  - name: md.initialization.temperature
+    unit: K
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: per-vertex initial temperature
+    notes: 'Trap: Celsius input shifts by 273.15 and corrupts paterson()-derived rheology.'
+  - name: md.initialization.pressure
+    unit: Pa
+    category: initial_conditions
+    source_kind: derived
+    model_input_format: per-vertex initial pressure (preferably computed from geometry)
+  - name: md.initialization.waterfraction
+    unit: 0-1
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: per-vertex temperate-ice liquid water fraction (enthalpy formulation)
   boundary_conditions:
-    - name: "spcvx"
-      unit: "m/yr"
-      description: "Prescribed x-velocity (NaN = free node)"
-    - name: "spcvy"
-      unit: "m/yr"
-      description: "Prescribed y-velocity (NaN = free node)"
-    - name: "spctemperature"
-      unit: "K"
-      description: "Prescribed temperature (NaN = free node)"
-
+  - name: domain outline / ice-front contour
+    unit: m (projected)
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: closed .exp Argus contour polygon in projected meters (read by expread)
+    notes: 'Defines the meshed domain; Front contour sets the ice-shelf / marine boundary. Trap: degree
+      (lat/lon) coordinates give a microscopic mesh; reproject to polar stereographic (EPSG:3031/3413).'
+  - name: mesh resolution / hmin / hmax / gradation
+    unit: m
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: triangle()/bamg() meshing controls in meters
+    notes: 'Trap: resolution in km yields too-fine or too-coarse meshes.'
+  - name: md.mask.ocean_levelset / ice_levelset
+    unit: '- (signed distance)'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: per-vertex signed-distance levelsets; negative = inside (ocean_levelset<0 floating,
+      ice_levelset<0 ice present)
+    notes: Partitions grounded/floating and ice/no-ice. Inverted sign convention inverts the velocity
+      pattern.
+  - name: md.stressbalance.spcvx / spcvy
+    unit: m/yr
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: per-vertex Dirichlet velocity constraint (NaN = free node)
+    notes: Use NaN, not 0, for free nodes; 0 constrains the node and creates artificial frozen interiors/divides.
+  - name: md.flowequation (approximation choice)
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: 'flow-equation selector: SIA / SSA / L1L2 / MOLHO / HO / FS, assigned by setflowequation()'
+    notes: Structural switch selecting the momentum approximation; wrong choice for the regime degrades
+      magnitudes (e.g. SSA on slow grounded interior).
+  - name: md.groundingline.migration / md.masstransport.stabilization / md.thermal.isenthalpy / md.friction.coupling
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: method/scheme selectors (migration scheme; stabilization 0-5; enthalpy on/off;
+      effective-pressure coupling 0-4)
+    notes: Numerical-scheme and formulation switches. Advection-dominated thermal/mass-transport equations
+      require stabilization (artificial diffusion or SUPG).
+  - name: md.timestepping.start_time / final_time / time_step / time_adapt / cfl_coefficient
+    unit: year
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: transient time-control fields
+    notes: Time step must satisfy the CFL condition dt < dx/max(vel); too-large steps make transient thickness
+      oscillate or diverge.
 outputs:
   primary:
-    - name: "Vel"
-      unit: "m/yr"
-      valid_range: [0, 15000]
-      description: "Ice velocity magnitude"
-    - name: "Vx"
-      unit: "m/yr"
-      valid_range: [-15000, 15000]
-      description: "X-component of ice velocity"
-    - name: "Vy"
-      unit: "m/yr"
-      valid_range: [-15000, 15000]
-      description: "Y-component of ice velocity"
-    - name: "Pressure"
-      unit: "Pa"
-      valid_range: [0, 5.0e7]
-      description: "Ice pressure"
-    - name: "Thickness"
-      unit: "m"
-      valid_range: [0, 5000]
-      description: "Ice thickness (from transient/masstransport)"
-    - name: "Temperature"
-      unit: "K"
-      valid_range: [200, 273.15]
-      description: "Ice temperature (from thermal solution)"
-
-  solution_types:
-    - "Stressbalance"
-    - "Masstransport"
-    - "Thermal"
-    - "Transient"
-    - "Balancethickness"
-    - "Hydrology"
-    - "DamageEvolution"
-    - "Steadystate"
-
-  flow_equations:
-    - code: "SSA"
-      name: "Shallow Shelf Approximation"
-      dimensions: "2D"
-    - code: "SIA"
-      name: "Shallow Ice Approximation"
-      dimensions: "2D"
-    - code: "HO"
-      name: "Higher-Order (Blatter-Pattyn)"
-      dimensions: "3D"
-    - code: "FS"
-      name: "Full Stokes"
-      dimensions: "3D"
-    - code: "L1L2"
-      name: "L1L2 hybrid"
-      dimensions: "2D"
-    - code: "MOLHO"
-      name: "Modular higher-order"
-      dimensions: "2D+3D"
-
+  - name: Vel (and Vx, Vy, Vz)
+    unit: m/yr
+    description: Ice velocity magnitude and components from the stress-balance solution.
+    validation_rank: 3
+    emitted_in: md.results.StressbalanceSolution (or TransientSolution[i])
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Observed surface velocities (e.g. InSAR/feature-tracking) are surface fields; compare against
+          modeled surface velocity, mind m/yr vs m/s unit convention.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Point/fluxgate velocity time series only meaningful for transient runs.
+      detrending_options:
+      - none
+  - name: Thickness
+    unit: m
+    description: Evolved ice thickness from the depth-integrated mass-transport solution.
+    validation_rank: 4
+    emitted_in: md.results.MasstransportSolution / TransientSolution[i].Thickness
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against radar-sounding thickness; surface = base + thickness consistency required.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+      - linear_residual
+  - name: Surface (and Base)
+    unit: m
+    description: Free-surface elevation and floating-ice base elevation.
+    validation_rank: 5
+    emitted_in: md.results.MasstransportSolution / TransientSolution[i].Surface
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Altimetry surface-elevation-change time series suit transient validation.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: Temperature
+    unit: K
+    description: Ice temperature field from the thermal solution.
+    validation_rank: 2
+    emitted_in: md.results.ThermalSolution.Temperature
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Borehole temperature profiles are sparse point observations; bounded by surface T and the pressure-melting
+          point.
+      detrending_options:
+      - none
+  - name: grounding-line position (MaskOceanLevelset)
+    unit: '- (signed distance)'
+    description: Grounded/floating partition from the flotation criterion H = H_f.
+    validation_rank: 6
+    emitted_in: md.results.TransientSolution[i] (MaskOceanLevelset)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Grounding-line location compared as a contour against InSAR-derived grounding lines; sensitive
+          to rho_ice/rho_water and bed.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - timing_accuracy
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Grounding-line retreat/advance over time for transient runs.
+      detrending_options:
+      - none
+  - name: IceVolume / GroundedArea / TotalSmb
+    unit: m^3 / m^2 / m^3 ice eq
+    description: 'Integrated transient diagnostics: total ice volume, grounded area, total surface mass
+      balance per timestep.'
+    validation_rank: 1
+    emitted_in: md.results.TransientSolution[i]
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Basin/ice-sheet integrated mass change (e.g. gravimetry-derived) compared as an aggregate trend;
+          evaluate trend match + magnitude of decadal-mean rather than raw r/NSE; mass-conservation diagnostics
+          apply.
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - decadal_mean
+      - linear_residual
+      - none
+  - name: relative sea level (S)
+    unit: m
+    description: Gravitationally and deformationally self-consistent relative sea-level change (sea-level
+      fingerprints).
+    validation_rank: 7
+    emitted_in: md.results (Slr / sea-level-change solution)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Sea-level fingerprint fields; only meaningful when GIA/sea-level coupling is active.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "Binary requires LD_LIBRARY_PATH set for libtriangle.so from externalpackages"
-  - "Validation metrics poor on SquareIceShelf benchmark (R2=-2.0, PBIAS=-99.82%) — likely parameterization issue in benchmark run, not a model defect"
-  - "13/20 diagnostic triplets are silent errors — ISSM tolerates physically unreasonable inputs without warning"
+- id: dt_001
+  symptom: Ice velocity is essentially zero everywhere. Model converges but produces no meaningful flow.
+  diagnosis: Velocity initialization in m/s instead of m/yr — off by 3.15e7; ISSM uses m/yr for all velocity
+    quantities. Satellite-derived velocities (e.g., MEaSUREs, InSAR products) are sometimes provided in
+    m/s or m/day. If m/s values are loaded directly as md.initialization.vx/vy, the initial velocity field
+    i
+  remedy: 'Multiply velocity values by 3.1536e7 (seconds per year) before assigning to md.initialization;
+    convert_forcing_to_issm; [''Check max velocity after loading: should be 1-15000 m/yr for typical ice
+    sheets'', ''If max(vel) < 0.001, values are likely in m/s — multiply by 3.1536e7'', ''If max(vel)
+    < 1, values'
+  severity: silent
+- id: dt_002
+  symptom: Rheology is wildly wrong — ice is either impossibly stiff (no flow) or impossibly soft (instant
+    collapse).
+  diagnosis: 'Temperature in °C instead of K when computing rheology via paterson(); ISSM uses Kelvin
+    for temperature. The paterson() function converts temperature (K) to the viscosity parameter B (Pa
+    s^(1/n)). If temperature is provided in °C (e.g., -10°C = 263.15 K), paterson() interprets it as 263.15
+    K or -10 '
+  remedy: 'Add 273.15 to Celsius temperatures before calling paterson(); convert_forcing_to_issm; [''Verify
+    temperature array: min should be > 200 K (~-73°C)'', ''If min(T) < 200, values are likely in °C —
+    add 273.15'', ''Recompute: md.materials.rheology_B = paterson(T_in_kelvin)'']; convert_forcing_to_issm
+    converts'
+  severity: silent
+- id: dt_003
+  symptom: Ice sheet appears paper-thin. Geometry looks flat. Surface elevation nearly equals bed.
+  diagnosis: 'Thickness in km instead of m — off by 1000x; ISSM uses meters for all geometry fields. Some
+    GIS datasets or summary tables provide ice thickness in kilometers. If km values are loaded directly,
+    a 3 km thick ice sheet becomes 3 m thick, producing unrealistic results with near-zero driving stress.
+
+    ; ['
+  remedy: 'Multiply thickness by 1000 if values are in km; convert_geometry_to_issm; [''Check max thickness:
+    should be 100-5000 m for ice sheets'', ''If max(thickness) < 10, values are likely in km — multiply
+    by 1000'']; convert_geometry_to_issm warns if max thickness < 10 m'
+  severity: silent
+- id: dt_004
+  symptom: Mesh is microscopic (~1 m domain). Physics produces nonsensical results. All velocities near
+    zero.
+  diagnosis: Domain coordinates in degrees (lat/lon) instead of meters (projected); ISSM requires projected
+    coordinates in meters (e.g., polar stereographic EPSG:3031 for Antarctica, EPSG:3413 for Greenland).
+    If geographic coordinates (lat/lon in degrees) are used, the domain is ~180×360 units instead of ~5,000,
+  remedy: 'Reproject coordinates to polar stereographic before creating .exp file; None; [''Check mesh
+    extent: max(x) - min(x) should be > 10,000 m for any ice simulation'', ''If extent < 1000, coordinates
+    are in degrees — project to EPSG:3031 or EPSG:3413'', ''Use pyproj or GDAL for coordinate transformation''];
+    Ve'
+  severity: silent
+- id: dt_005
+  symptom: Ice shelf velocities are unrealistically slow. Floating ice barely moves despite high thickness
+    gradients.
+  diagnosis: Non-zero friction coefficient on floating ice; Floating ice has no basal contact — friction
+    must be zero. If md.friction.coefficient is set uniformly (e.g., 30 everywhere) without zeroing it
+    on floating nodes (where md.mask.ocean_levelset < 0), the solver applies artificial basal drag to
+    the ice she
+  remedy: 'Set friction.coefficient = 0 where ocean_levelset < 0; None; [''md.friction.coefficient[md.mask.ocean_levelset
+    < 0] = 0'', ''Verify: all floating vertices should have friction = 0'']; Parameter file template includes
+    floating ice friction check'
+  severity: silent
+- id: dt_006
+  symptom: Velocity is orders of magnitude wrong. Ice either doesn't flow or flows impossibly fast.
+  diagnosis: 'Glen''s fluidity A used instead of viscosity B — B = A^(-1/n); ISSM uses the B (viscosity)
+    convention: η = B^n / (2 ε̇^(n-1)). Many publications and datasets use the A (fluidity) convention:
+    ε̇ = A σ^n. The two are related by B = A^(-1/n). Typical values: A ~ 10^-25 to 10^-23 Pa^-3 s^-1,
+    B ~ 10^7 to '
+  remedy: 'Convert A to B: rheology_B = A**(-1.0/n) where n is typically 3; None; [''Check rheology_B
+    range: should be 10^6 to 10^9 Pa s^(1/3)'', ''If values are < 1, they are likely in A convention —
+    convert'', ''Alternatively, use paterson(temperature_in_K) which returns B directly'']; Always use
+    paterson() for te'
+  severity: silent
+- id: dt_007
+  symptom: Surface mass balance is 1000x too large or too small. Ice sheet grows/shrinks unrealistically
+    fast.
+  diagnosis: 'SMB in mm w.e./yr or kg/m^2/yr instead of m/yr ice equivalent; ISSM expects SMB in m/yr
+    ice equivalent. RACMO2 provides kg/m^2/yr (= mm w.e./yr). MAR provides mm w.e./yr. Conversion: kg/m^2/yr
+    ÷ 917 = m/yr ice equivalent. Off by ~1000 if mm w.e./yr is used directly as m/yr.
+
+    ; [''parameterize'', ''smb'']'
+  remedy: 'Convert SMB: m_ice_yr = kg_m2_yr / 917; convert_forcing_to_issm; [''Check SMB range: typical
+    -10 to +2 m/yr ice for ice sheets'', ''If max(|SMB|) > 50, values may be in mm/yr — divide by 1000'',
+    ''If max(|SMB|) > 50000, values may be in kg/m^2/yr — divide by 917'']; convert_forcing_to_issm handles
+    unit co'
+  severity: silent
+- id: dt_008
+  symptom: Basal temperature too warm. Excessive basal melting. Unrealistic thermal field.
+  diagnosis: 'Geothermal heat flux in mW/m^2 instead of W/m^2 — off by 1000x; ISSM expects geothermal
+    flux in W/m^2. Common datasets (Shapiro & Ritzwoller, Fox-Maule) provide values in mW/m^2. Typical
+    values: 40-150 mW/m^2 = 0.04-0.15 W/m^2. If mW/m^2 values are used directly as W/m^2, the basal heat
+    input is 100'
+  remedy: 'Divide geothermal flux by 1000; convert_forcing_to_issm; [''Check geothermal flux: should be
+    0.01-0.3 W/m^2 for typical ice sheets'', ''If values are 20-200, they are in mW/m^2 — divide by 1000''];
+    convert_forcing_to_issm handles conversion with --geothermal_units flag'
+  severity: silent
+- id: dt_009
+  symptom: Pressure values nonsensical. Solver may diverge or produce unrealistic stress fields.
+  diagnosis: 'Pressure initialization in wrong units (kPa, MPa, or bar instead of Pa); ISSM uses Pascals
+    (Pa) for pressure. Ice overburden pressure is typically 1-40 MPa (1e6 to 4e7 Pa). If pressure is provided
+    in MPa, it is 1e6 too small. The solver may still converge but stress fields will be wrong.
+
+    ; [''paramet'
+  remedy: 'Multiply MPa by 1e6, kPa by 1e3, bar by 1e5 to get Pa; None; [''Ice overburden: P = ρ_ice *
+    g * thickness ≈ 917 * 9.81 * H Pa'', ''For 3000 m ice: P ≈ 27 MPa = 2.7e7 Pa'']; Let ISSM compute
+    initial pressure internally from geometry'
+  severity: silent
+- id: dt_010
+  symptom: Mesh has millions of elements (too fine) or 1 element (too coarse). Resolution doesn't match
+    intent.
+  diagnosis: 'Mesh resolution specified in km instead of m; triangle(md, ''Domain.exp'', resolution) takes
+    resolution in meters. If 50 is passed (meaning 50 km), the mesh generator creates elements of 50 m
+    × 50 m, producing millions of elements for a typical ice sheet domain. Conversely, specifying 50000000
+    (50 km '
+  remedy: 'Specify resolution in meters: 50 km = 50000; None; [''Common resolutions: 5 km = 5000, 10 km
+    = 10000, 50 km = 50000, 100 km = 100000'', ''For BAMG: hmin and hmax are also in meters'']; Check
+    element count after meshing — should be 1000-100000 for typical studies'
+  severity: silent
+- id: dt_011
+  symptom: Ice velocities inverted — fast where expected slow, slow where expected fast. Friction applied
+    to ocean.
+  diagnosis: 'Mask levelset sign convention inverted (positive where should be negative); ISSM levelset
+    convention: negative = inside, positive = outside. ocean_levelset < 0 means floating, > 0 means grounded.
+    ice_levelset < 0 means ice present, > 0 means no ice. If these are reversed, floating ice gets friction '
+  remedy: 'Negate the levelset arrays if convention is wrong; None; [''Verify: sum(ocean_levelset < 0)
+    should match expected floating area'', ''If inverted: md.mask.ocean_levelset = -md.mask.ocean_levelset''];
+    Check floating/grounded counts match known ice sheet geography'
+  severity: silent
+- id: dt_012
+  symptom: Artificial ice divides or frozen boundaries where ice should flow freely. Zero velocity at
+    unexpected locations.
+  diagnosis: Using 0 instead of NaN for free (unconstrained) boundary condition nodes; In ISSM, prescribed
+    BCs (spcvx, spcvy, spctemperature) use NaN to indicate free nodes. A value of 0 means the node is
+    constrained to zero velocity/temperature. If an array of zeros is assigned instead of NaNs, every
+    node becom
+  remedy: 'Initialize spc arrays with NaN, only set specific values at constrained nodes; None; [''md.stressbalance.spcvx
+    = np.nan * np.ones(nv)'', ''md.stressbalance.spcvy = np.nan * np.ones(nv)'', ''Then set specific BCs:
+    spcvx[boundary_nodes] = prescribed_value'']; Use SetIceShelfBC() or SetMarineIceSheetBC() whi'
+  severity: silent
+- id: dt_013
+  symptom: Solver crashes immediately with matrix assembly error or singular matrix.
+  diagnosis: 'Degenerate triangular elements with zero or near-zero area; Zero-area triangles produce
+    singular element stiffness matrices. This can happen when the domain outline has coincident points,
+    sharp notches, or when the resolution is too large relative to narrow domain features.
+
+    ; [''triangle'', ''bamg'', ''m'
+  remedy: 'Clean domain outline (remove duplicate points) and adjust resolution; None; [''Check element
+    areas: min_area should be > 0'', ''Remove coincident points from .exp file'', ''Reduce resolution
+    (larger value = coarser mesh)'']; BAMG automatically avoids degenerate elements with gradation control'
+  severity: fatal
+- id: dt_014
+  symptom: Only part of the domain is solved. Some regions have zero velocity. Solution looks incomplete.
+  diagnosis: 'Mesh contains disconnected regions — separate mesh components not linked; If the domain
+    outline produces multiple disconnected polygons or the mesher creates isolated element groups, the
+    solver treats them as separate problems. One region may be solved while others get default zero values.
+
+    ; [''trian'
+  remedy: Ensure domain outline is a single closed polygon without self-intersections; None; ['Check mesh
+    connectivity after generation', 'Merge disconnected domain outlines into a single polygon', "Use BAMG's
+    'hmax' to ensure all regions are connected"]; Inspect mesh visually after generation
+  severity: fatal
+- id: dt_015
+  symptom: Velocities qualitatively wrong (pattern correct but magnitude off). Missing vertical shear
+    effects.
+  diagnosis: Wrong flow equation for the domain type (e.g., SSA for slow grounded interior); SSA (Shallow
+    Shelf Approximation) neglects vertical shear — it works for ice shelves and fast ice streams but underestimates
+    velocity in slow grounded regions where internal deformation (vertical shear) dominates. SIA ca
+  remedy: 'Use SIA for slow grounded ice, SSA for fast streams/shelves, HO/FS for complex regions; None;
+    [''For ice shelves: use SSA'', ''For grounded interiors: use SIA or HO'', ''For transition zones:
+    use HO or FS'', ''When in doubt: start with SSA, compare to observations'']; Compare simulated vs
+    observed velocity '
+  severity: degraded
+- id: dt_016
+  symptom: 'Error: PETSc library not found. Or: issm binary crashes with shared library error.'
+  diagnosis: 'PETSc not installed or not in LD_LIBRARY_PATH; ISSM''s C++ solver requires PETSc for all
+    matrix operations. If PETSc is not compiled or its libraries are not in the linker path, the issm
+    binary cannot start. This is the most common build-related failure.
+
+    ; [''issm_binary'', ''petsc'', ''environment'']'
+  remedy: 'Install PETSc and source ISSM environment script; None; [''cd externalpackages/petsc && ./install-3.22-linux64.sh'',
+    ''source etc/environment.sh'', ''Verify: ldd bin/issm | grep petsc'']; Always source etc/environment.sh
+    before running ISSM'
+  severity: fatal
+- id: dt_017
+  symptom: Transient simulation produces oscillating or exploding thickness. Results diverge after few
+    timesteps.
+  diagnosis: 'Time step too large — violates CFL condition for mass transport; The mass transport equation
+    has a CFL stability condition: dt < dx / max(vel). For fast-flowing glaciers (vel ~ 10 km/yr) with
+    fine mesh (dx ~ 5 km), dt must be < 0.5 yr. Using dt = 1 yr or larger produces numerical oscillations
+    that g'
+  remedy: 'Reduce time step: dt < min(dx) / max(vel); None; [''Estimate CFL: dt_max = min_element_size
+    / max_velocity'', ''Set md.timestepping.time_step = 0.5 * dt_max for safety margin'', ''Typical values:
+    0.01-1.0 years depending on mesh and velocity'']; Start with small dt and increase gradually'
+  severity: degraded
+- id: dt_018
+  symptom: Solver produces non-physical surface elevation. Surface does not match expected profile.
+  diagnosis: Inconsistent geometry — surface ≠ base + thickness; ISSM enforces the constraint surface
+    = base + thickness. If these three fields are loaded from different datasets at different resolutions
+    and not reconciled, small inconsistencies accumulate. Large inconsistencies can cause the solver to
+    fail or p
+  remedy: 'Recompute one field from the other two: surface = base + thickness; convert_geometry_to_issm;
+    [''Choose two trusted fields and compute the third'', ''md.geometry.surface = md.geometry.base + md.geometry.thickness'',
+    ''Verify: max(|surface - base - thickness|) < 0.01 m'']; convert_geometry_to_issm enforces'
+  severity: silent
+- id: dt_019
+  symptom: Transient simulation starts from zero velocity. First few timesteps produce unrealistic thickness
+    changes.
+  diagnosis: Missing initial velocity for transient solve; Transient simulations need initial velocity
+    fields (md.initialization.vx, vy). If these are zero or NaN, the first mass transport step uses zero
+    velocity, producing zero flux divergence and no thickness change — or an abrupt jump when velocity
+    catches up
+  remedy: 'Run Stressbalance solve first, use results as initialization; run_issm; ["md = solve(md, ''Stressbalance'')",
+    ''md.initialization.vx = md.results.StressbalanceSolution.Vx'', ''md.initialization.vy = md.results.StressbalanceSolution.Vy'',
+    "Then: md = solve(md, ''Transient'')"]; Always run diagnostic solve be'
+  severity: degraded
+- id: dt_020
+  symptom: Flotation criterion wrong. Grounding line in wrong position. Ice shelf base elevation incorrect.
+  diagnosis: 'Wrong density constants — ρ_ice and/or ρ_water incorrect; ISSM uses md.materials.rho_ice
+    (default 917 kg/m^3) and md.materials.rho_water (default 1023 kg/m^3 for ocean). The flotation criterion
+    is: base = -ρ_ice/ρ_water × thickness. If freshwater density (1000) is used instead of seawater (1023),
+    th'
+  remedy: 'Set md.materials.rho_ice = 917, md.materials.rho_water = 1023 for marine ice sheets; None;
+    [''Verify: md.materials.rho_ice should be ~917 kg/m^3'', ''Verify: md.materials.rho_water should be
+    ~1023 kg/m^3 (ocean) or 1000 (freshwater lakes)'']; ISSM defaults are correct — only check if manually
+    overridden'
+  severity: silent
+- id: dt_021
+  symptom: Verifier metrics all null, _dag_lookup_failed=true; requested obs variable is snowpack SWE
+    at a mid-latitude seasonal-snow site (SNOTEL).
+  diagnosis: Structural wrong-variable + wrong-domain mismatch — ISSM (ice-sheet FEM) has no SWE output
+    and the site has no glacier.
+  remedy: Reject at dag gate, no retry; reassign to a valid ice-sheet/glacier variable (Vel/Thickness/Surface
+    elevation) over a glaciated domain, or document as out-of-domain.

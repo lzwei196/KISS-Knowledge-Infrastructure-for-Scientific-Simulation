@@ -1,14 +1,3 @@
----
-name: hec-hms
-description: >-
-  HEC-HMS public-domain rainfall-runoff method set (USACE HEC; SCS Curve Number loss, SCS
-  dimensionless Unit Hydrograph transform, Muskingum channel…. Covers Precipitation-loss /
-  runoff-volume computation (SCS Curve Number); Direct-runoff transform of excess rainfall
-  to a hydrograph (SCS dimensionless Unit Hydrograph); Conceptual baseflow generation
-  (Linear Reservoir recession store). Use when the task involves running, configuring,
-  calibrating or interpreting HEC_HMS.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,42 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (22 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calibrate_hms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calibrate_hms.py --help` |
+| `tools/convert_forcing_to_hms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_hms.py --help` |
+| `tools/convert_soil_to_hms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_hms.py --help` |
+| `tools/parse_hms_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_hms_output.py --help` |
+| `tools/run_hec_hms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_hec_hms.py --help` |
+| `tools/validate_hms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/validate_hms.py --help` |
+
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # HEC-HMS (Hydrologic Engineering Center — Hydrologic Modeling System) — Knowledge Infrastructure
 
@@ -125,6 +150,41 @@ python3 ki/tools/run_hec_hms.py \
 
 ---
 
+## Output Description
+
+This section restates the KI dag output facts. If this body and `dag.yaml` ever
+disagree, `dag.yaml` is the source of truth.
+
+**Headline output** (`validation_rank: 1` in `dag.yaml`):
+
+> `discharge` — Simulated routed streamflow at the basin (or subbasin) outlet. (`m^3/s`)
+
+| Output variable (dag `var`) | Validation role | Unit | Description |
+|-----------------------------|-----------------|------|-------------|
+| `discharge` | rank 1 output | `m^3/s` | Simulated routed streamflow at the basin (or subbasin) outlet. |
+
+Other dag outputs present in this KI: `runoff_depth`, `loss`, `subbasin_outflow`.
+
+---
+
+## Unit Table / Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`; this table is the body-level
+unit checklist for the HEC-HMS pipeline and known unit traps.
+
+| Variable | Source or pipeline unit | Model/output unit | Conversion or check |
+|----------|-------------------------|-------------------|---------------------|
+| Precipitation | CMFD `mm/day` | daily HEC-HMS timestep `mm` | Use daily value directly for daily runs; for sub-daily runs divide by the number of timesteps per day. |
+| Temperature | CMFD `K` | HEC-HMS `Celsius` | Subtract `273.15`. |
+| PET | forcing converter output `mm` | HEC-HMS daily PET depth | Confirm daily-vs-monthly before execution; see `dt_118`. |
+| Basin area | `km2` | `km2` in runoff-to-discharge conversion | Do not pass `m2` or acres where `area_km2` is expected. |
+| Runoff depth | model intermediate/output `runoff_depth` | depth variable | Listed as a dag output; consult `dag.yaml` for its authoritative unit. |
+| Loss | model intermediate/output `loss` | loss variable | Listed as a dag output; consult `dag.yaml` for its authoritative unit. |
+| Subbasin outflow | model output `subbasin_outflow` | routed flow variable | Listed as a dag output; consult `dag.yaml` for its authoritative unit. |
+| Discharge | routed streamflow | `m^3/s` | Rank-1 dag output: `discharge`. |
+
+---
+
 ## Tools Reference
 
 | # | Tool | Stage | Lines | Purpose |
@@ -142,13 +202,13 @@ python3 ki/tools/run_hec_hms.py \
 
 | # | Document | Stage | Knowledge Type |
 |---|----------|-------|----------------|
-| 1 | `s0_configuration_skill.md` | s0 | procedural |
-| 2 | `s1_domain_setup_skill.md` | s1 | procedural |
-| 3 | `s2_soil_parameters_skill.md` | s2-s3 | evaluative |
-| 4 | `s4_forcing_conversion_skill.md` | s4 | evaluative |
-| 5 | `s5_model_execution_skill.md` | s5-s6 | procedural |
-| 6 | `s6_output_analysis_skill.md` | s7 | evaluative |
-| 7 | `s7_calibration_skill.md` | s5 | evaluative |
+| 1 | [`docs/s0_configuration_skill.md`](docs/s0_configuration_skill.md) | s0 | procedural |
+| 2 | [`docs/s1_domain_setup_skill.md`](docs/s1_domain_setup_skill.md) | s1 | procedural |
+| 3 | [`docs/s2_soil_parameters_skill.md`](docs/s2_soil_parameters_skill.md) | s2-s3 | evaluative |
+| 4 | [`docs/s4_forcing_conversion_skill.md`](docs/s4_forcing_conversion_skill.md) | s4 | evaluative |
+| 5 | [`docs/s5_model_execution_skill.md`](docs/s5_model_execution_skill.md) | s5-s6 | procedural |
+| 6 | [`docs/s6_output_analysis_skill.md`](docs/s6_output_analysis_skill.md) | s7 | evaluative |
+| 7 | [`docs/s7_calibration_skill.md`](docs/s7_calibration_skill.md) | s5 | evaluative |
 
 ---
 
@@ -249,6 +309,26 @@ to pandas datetime, 2400 must map to 00:00 of the next day.
 | Loss method | SCS Curve Number (Ia = 0.05S) |
 | Transform | SCS Unit Hydrograph |
 | Baseflow | Linear Reservoir (recession) |
+
+---
+
+## Validated Results
+
+This section restates the KI's validation convention facts. The convention file
+wins if this body ever disagrees with `docs/validation_convention.yaml`.
+
+**Rank-1 judged output**: `discharge` (`m^3/s`) — Simulated routed streamflow at the basin (or subbasin) outlet.
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band | Convention cite |
+|--------------|--------|-----------|----------------|-----------|-------------------|-----------------|
+| `discharge` | `nse` | maximize | `>= 0.8` (`moriasi2015`) | `>= 0.7` (`moriasi2015`) | `>= 0.5` (`moriasi2015`) | `moriasi2015` |
+| `discharge` | `pbias` | zero_centered | `abs(PBIAS) <= 5.0` (`moriasi2015`) | `abs(PBIAS) <= 10.0` (`moriasi2015`) | `abs(PBIAS) <= 15.0` (`moriasi2015`) | `moriasi2015` |
+| `runoff_depth` | `nse` | maximize | `>= 0.8` (`moriasi2015`) | `>= 0.7` (`moriasi2015`) | `>= 0.5` (`moriasi2015`) | `moriasi2015` |
+| `runoff_depth` | `pbias` | zero_centered | `abs(PBIAS) <= 5.0` (`moriasi2015`) | `abs(PBIAS) <= 10.0` (`moriasi2015`) | `abs(PBIAS) <= 15.0` (`moriasi2015`) | `moriasi2015` |
+| `loss` | `pbias` | zero_centered | no cited threshold | no cited threshold | no cited threshold | none |
+
+Achieved metric values are produced by `validate_hms.py` for the Bengbu validation
+run; this body section records the cited pass-bands used to judge those values.
 
 ---
 

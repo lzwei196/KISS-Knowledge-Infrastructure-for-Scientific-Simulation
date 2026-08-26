@@ -1,14 +1,3 @@
----
-name: wflow
-description: >-
-  Wflow.jl v1.x (CSDMS standard-name TOML era); wflow_sbm SBM concept per van Verseveld et
-  al. 2024 GMD. Covers Distributed grid-based catchment hydrology (wflow_sbm SBM vertical
-  concept); Interception, snow accumulation/melt, glacier melt (degree-day), multi-layer
-  soil water…; Lateral routing of river, overland and subsurface flow (kinematic wave or
-  local inertial). Use when the task involves running, configuring, calibrating or
-  interpreting wflow.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -33,6 +22,61 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (24 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (9 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (39 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/run_wflow_full_pipeline.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wflow_full_pipeline.py --help` |
+| `tools/s0_config/setup_wflow_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_config/setup_wflow_config.py --help` |
+| `tools/s10_reservoir/configure_reservoirs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_reservoir/configure_reservoirs.py --help` |
+| `tools/s10_reservoir/lookup_dams.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_reservoir/lookup_dams.py --help` |
+| `tools/s1_hydromt/build_data_catalog.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_hydromt/build_data_catalog.py --help` |
+| `tools/s1_hydromt/derive_landsurface_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_hydromt/derive_landsurface_params.py --help` |
+| `tools/s1_hydromt/fetch_merit_hydro_tiles.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_hydromt/fetch_merit_hydro_tiles.py --help` |
+| `tools/s1_hydromt/run_hydromt_build.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_hydromt/run_hydromt_build.py --help` |
+| `tools/s2_forcing/calculate_pet.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_forcing/calculate_pet.py --help` |
+| `tools/s2_forcing/convert_forcing_to_wflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_forcing/convert_forcing_to_wflow.py --help` |
+| `tools/s3_parameters/adjust_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_parameters/adjust_parameters.py --help` |
+| `tools/s3_parameters/generate_wflow_toml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_parameters/generate_wflow_toml.py --help` |
+| `tools/s4_execution/run_wflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_execution/run_wflow.py --help` |
+| `tools/s5_postprocess/compare_with_vic.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_postprocess/compare_with_vic.py --help` |
+| `tools/s5_postprocess/extract_discharge.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_postprocess/extract_discharge.py --help` |
+| `tools/s5_postprocess/extract_spatial_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_postprocess/extract_spatial_output.py --help` |
+| `tools/s5_postprocess/water_balance.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_postprocess/water_balance.py --help` |
+| `tools/s6_sediment/build_sediment_model.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_sediment/build_sediment_model.py --help` |
+| `tools/s6_sediment/derive_usle_c.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_sediment/derive_usle_c.py --help` |
+| `tools/s6_sediment/derive_usle_k.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_sediment/derive_usle_k.py --help` |
+| `tools/s6_sediment/run_wflow_sediment.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_sediment/run_wflow_sediment.py --help` |
+| `tools/s8_sediment_post/analyze_sediment.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_sediment_post/analyze_sediment.py --help` |
+| `tools/s9_coupling/wflow_recharge_to_modflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_coupling/wflow_recharge_to_modflow.py --help` |
+| `tools/s9_coupling/wflow_to_cama.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_coupling/wflow_to_cama.py --help` |
+
+*24 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -81,6 +125,258 @@ python tools/s6_sediment/derive_usle_c.py --lat [LAT] --lon [LON]
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-04-03
 **Stats**: 21 tools | 9 skill documents | 29 diagnostic triplets | ~5,681 lines of validated Python + Julia
+
+---
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | wflow v1.1.0-dev (Deltares Wflow.jl) |
+| Package | `hydrocraft-wflow` v1.1.0 |
+| Language | Julia model core, Python pipeline tools |
+| Model variants | `wflow_sbm` hydrology + `wflow_sediment` erosion/transport |
+| Primary domain | Distributed hydrology and sediment transport |
+| Spatial mode | Distributed gridded basin model |
+| Validation status | `PRODUCTION_VALIDATED` for Bengbu basin |
+
+---
+
+## 2. What This Model Does
+
+wflow simulates distributed catchment hydrology with the Soil Budget Model: interception, snow, infiltration, soil water, evapotranspiration, groundwater recharge, and routed river discharge. Its sediment post-processor uses the hydrology output to estimate splash erosion, overland-flow erosion, in-stream sediment transport, deposition, and outlet sediment yield.
+
+---
+
+## 3. Input Requirements
+
+Exact shapes live in `docs/format_spec.yaml`, projected from `dag.yaml` and `diagnostics/triplets.yaml`; regenerate that file after changing the dag or triplets, never hand-edit it. Read the stage documents under `docs/` before running a stage; this section gives the operational intent and traps.
+
+### 3.1 Meteorological Forcing
+
+| Variable | Unit model expects | Source dataset | Source unit / note | Conversion / tool |
+|----------|-------------------|----------------|--------------------|-------------------|
+| Precipitation | mm per timestep; daily runs use mm/day | CMFD / MSWX / VIC | CMFD/MSWX are handled by the forcing loader; existing triplets warn against mm/s | `tools/s2_forcing/convert_forcing_to_wflow.py`; ensure daily totals are not left as rates |
+| Temperature | degC | CMFD / MSWX | K | subtract 273.15 |
+| Potential evapotranspiration | model-ready PET forcing | calculated from meteorology | PET must be provided or configured | `tools/s2_forcing/calculate_pet.py` |
+
+### 3.2 Static Inputs
+
+| Input | Source | Tool that prepares it | Critical note |
+|-------|--------|----------------------|---------------|
+| Domain and river network | DEM or MERIT-Hydro | `tools/s1_hydromt/run_hydromt_build.py` | Domain must come from the flow network; `n_outlets` must be exactly 1 |
+| DEM / topography | China 90 m DEM inside China; MERIT DEM outside China | `tools/s1_hydromt/run_hydromt_build.py` | Read the `DEM sampled from ...` line every run |
+| MERIT-Hydro flow network | MERIT-Hydro dir/upa/elv tiles | `tools/s1_hydromt/fetch_merit_hydro_tiles.py` | Stage with `--kinds dir,upa,elv` |
+| Soil properties | HWSD | `ki_tools_common.soil_utils.lookup_hwsd`; stage-1 builders | Non-soil mapping units are excluded by area weighting |
+| USLE K factor | HWSD texture | `tools/s6_sediment/derive_usle_k.py` | Patch into sediment staticmaps when running sediment |
+| USLE C factor | AVHRR land cover lookup | `tools/s6_sediment/derive_usle_c.py` | Patch into sediment staticmaps when running sediment |
+| Reservoirs | GRanD | `tools/s10_reservoir/lookup_dams.py`, `tools/s10_reservoir/configure_reservoirs.py` | Capacity is MCM and must be converted to m3 |
+
+### 3.3 Configuration Files
+
+| File | Format | Notes |
+|------|--------|-------|
+| `wflow_config.yaml` | YAML | Basin, forcing, period, resolution, data paths |
+| `wflow_sbm.toml` | TOML | v1.0+ Wflow.jl format generated by `tools/s3_parameters/generate_wflow_toml.py` |
+| `staticmaps.nc` | NetCDF | y-axis descending; inactive mask cells as NaN; Brooks-Corey `c` has a `layer` dimension |
+| `forcing.nc` | NetCDF | precipitation, temperature, and PET in model-ready units |
+
+---
+
+## 4. Build Instructions
+
+Run `python preflight_check.py` before building or executing. For a full basin build, create the basin config, build static maps, convert forcing, then generate the TOML with the stage tools listed in the quick start and tool inventory.
+
+Known build issues are not copied here in full because `diagnostics/triplets.yaml` is the source of truth. For the most common build failures, check dt_w027 for LDD cycles, dt_w040 for DEM source fallback, dt_w041 for outlet-cell activation, and dt_w031 for required dimensionality / reservoir-unit problems.
+
+---
+
+## 5. Execution
+
+Execute the real Wflow.jl model through `tools/s4_execution/run_wflow.py`; do not replace it with a simplified hydrologic formula or Python approximation. The validated Bengbu run completed 1,096 timesteps over 224 cells in 14 seconds after the Julia environment was available; first runs can pause 30-60 seconds for Julia JIT compilation.
+
+---
+
+## 6. Output Description
+
+This section restates `dag.yaml`; if this section and the dag disagree, the dag wins. The headline output is the dag's `validation_rank: 1` variable, which is the variable this KI is judged by.
+
+**Headline output**:
+
+> `river discharge (q_river / river_water__volume_flow_rate)` — Routed river discharge per cell and at gauge points. (m³ s⁻¹)
+
+| Output variable (dag `var`) | Rank | Unit / note | Description |
+|-----------------------------|------|-------------|-------------|
+| river discharge (q_river / river_water__volume_flow_rate) | 1 | m³ s⁻¹ | Routed river discharge per cell and at gauge points. |
+| unrouted runoff (runoff) | other dag output | see `dag.yaml` | Other dag output. |
+| actual evapotranspiration (actevap) | other dag output | see `dag.yaml` | Other dag output. |
+| soil moisture / saturated water depth (satwaterdepth) | other dag output | see `dag.yaml` | Other dag output. |
+| snow water equivalent (SWE) | other dag output | see `dag.yaml` | Other dag output. |
+| groundwater recharge | other dag output | see `dag.yaml` | Other dag output. |
+| reservoir storage (storage_reservoir / reservoir_water__volume) | other dag output | see `dag.yaml` | Other dag output. |
+| soil loss / erosion rate (soilloss) | other dag output | see `dag.yaml` | Other dag output. |
+| sediment yield / specific yield at outlet | other dag output | see `dag.yaml` | Other dag output. |
+
+---
+
+## 7. Tool Inventory
+
+Use the stage tools under `tools/`; read each tool's `--help` before composing a command. The detailed inventory remains in the later **Tools Reference** section.
+
+| Stage | Main tools | Purpose |
+|-------|------------|---------|
+| s0 | `setup_wflow_config` | Generate basin configuration |
+| s1 | `build_data_catalog`, `run_hydromt_build`, `fetch_merit_hydro_tiles` | Build catalog, domain, river network, static maps |
+| s2 | `convert_forcing_to_wflow`, `calculate_pet` | Convert forcing and PET |
+| s3 | `generate_wflow_toml`, `adjust_parameters` | Generate TOML and parameter transforms |
+| s4 | `run_wflow` | Run the Julia model |
+| s5 | `extract_discharge`, `extract_spatial_output`, `compare_with_vic` | Extract hydrologic outputs and compare |
+| s6-s8 | `build_sediment_model`, `derive_usle_k`, `derive_usle_c`, `run_wflow_sediment`, `analyze_sediment` | Build, run, and analyze sediment model |
+| s9 | `wflow_to_cama`, `wflow_recharge_to_modflow` | Coupling exports |
+| s10 | `lookup_dams`, `configure_reservoirs` | Reservoir lookup and configuration |
+
+Shared utilities that tools should use instead of ad hoc extraction:
+
+```python
+from ki_tools_common.load_forcing import load_daily_forcing
+from ki_tools_common.soil_utils import lookup_hwsd
+from ki_tools_common.metrics import all_metrics
+from ki_tools_common.validation import validate_forcing_ranges
+from ki_tools_common.units import convert
+```
+
+---
+
+## 8. Unit Conversion Table
+
+This table records the unit conversions called out by this KI's tools, stage docs, and diagnostic triplets. `docs/format_spec.yaml` remains the exact machine-readable I/O contract.
+
+| Variable / component | Source unit or convention | Model / output unit | Factor / conversion | Type |
+|----------------------|---------------------------|---------------------|---------------------|------|
+| Precipitation forcing | mm/s is a known wrong input; CMFD/MSWX forcing is handled before model execution | mm per timestep; daily runs use mm/day | convert rates to timestep totals before running | rate-to-amount |
+| Temperature forcing | K | degC | subtract 273.15 | additive |
+| Potential evapotranspiration | absent or zero PET is invalid for normal SBM water balance | model-ready PET forcing | calculate with `calculate_pet.py` or configure PET explicitly | derived forcing |
+| KsatVer when transferring from VIC | mm/s | mm/day | multiply by 86400 | multiplicative |
+| KsatVer when transferring to MODFLOW context | mm/day in wflow; m/day in MODFLOW | m/day | convert length unit consistently before coupling | multiplicative |
+| GRanD reservoir capacity | MCM | m3 | multiply by 1e6 | multiplicative |
+| GRDC-Caravan streamflow observations | mm/day | m³/s for discharge comparison | area-dependent conversion before metrics | area-scaled rate |
+| River discharge output | model routed discharge | m³ s⁻¹ | no conversion for discharge metrics after gauge extraction | native output |
+| CaMa-Flood coupling input | wflow routed discharge would double-count routing | use unrouted runoff | export with `wflow_to_cama.py` | coupling convention |
+
+---
+
+## 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| river discharge (q_river / river_water__volume_flow_rate) | Routed discharge in m³ s⁻¹ at cells and gauge points | Runoff depth or unrouted runoff | Wrong magnitude or double routing in downstream models |
+| unrouted runoff (runoff) | Runoff before routing; use for CaMa-Flood coupling | Routed q_river | Flow routed twice |
+| actual evapotranspiration (actevap) | wflow output; check NetCDF attributes before metrics | Opposite sign or different accumulation convention in other models | ET metrics or water balance can invert |
+| groundwater recharge | wflow output used for MODFLOW coupling | Different length/time unit in groundwater model | Recharge magnitude mismatch |
+| reservoir storage (storage_reservoir / reservoir_water__volume) | Reservoir volume output | Capacity left in MCM | Reservoir appears 1e6 too small |
+
+Output unit verification checklist:
+
+- Read `units` attributes from output NetCDF variables before metrics.
+- Print sample values and check order of magnitude.
+- For discharge, confirm whether the data are routed discharge in m³ s⁻¹ or runoff depth.
+- For fluxes, confirm whether values are rates or timestep accumulations.
+- For coupling, use the tool designed for the downstream model instead of renaming variables.
+
+---
+
+## 9. Diagnostic Triplets (Top 5)
+
+The full corpus is `diagnostics/triplets.yaml`; check it before debugging. These are the most likely high-impact triplets for current basin builds.
+
+| # | Error | Diagnosis | Remedy |
+|---|-------|-----------|--------|
+| 1 | dt_w027: cycles detected in flow graph | Coarse-grid LDD / transformed-space boundary problem | Use the stage-1 builder's WhiteboxTools / MERIT-Hydro path and verify both numpy-space and wflow-space drainage |
+| 2 | dt_w040: DEM samples invalid or placeholder-flat outside China | DEM auto-resolution regressed or wrong DEM source used | Read `DEM sampled from ...`; require a real source and plausible elevation range |
+| 3 | dt_w041: basin pruned to only the outlet cell | Outlet cell was inactive before coarse LDD upscaling | Activate the gauge cell before building the coarse LDD |
+| 4 | dt_w001: discharge magnitude explodes | Precipitation rate used as timestep amount | Convert precipitation to mm per timestep / mm/day for daily runs |
+| 5 | dt_w025: downstream routing double-counted | Routed `q_river` sent to CaMa-Flood | Export unrouted runoff with `wflow_to_cama.py` |
+
+---
+
+## 10. Coupling Interfaces
+
+| Upstream model | Variable exchanged | Unit | Temporal resolution |
+|----------------|-------------------|------|---------------------|
+| VIC / shared forcing sources | Meteorological forcing | model-ready forcing units | daily in the validated runs |
+| OGGM | Glacier mass balance | see coupling setup | site-specific |
+
+| Downstream model | Variable exchanged | Unit | Temporal resolution |
+|------------------|-------------------|------|---------------------|
+| CaMa-Flood | Unrouted runoff | see `wflow_to_cama.py` output | model timestep |
+| MODFLOW | Groundwater recharge | m/day after conversion | model timestep |
+| SWAT+ | Sediment loading | see sediment analysis output | model timestep / postprocessed |
+
+---
+
+## 11. Validated Results
+
+### Test Basin: Bengbu (Huai River)
+
+| Property | Value |
+|----------|-------|
+| Basin | Huai River @ Bengbu (~121,330 km2) |
+| Period | 2003-2005 (2003 warmup) |
+| Resolution | 0.25 deg (224 cells, 16x24 grid) |
+| Forcing | CMFD 3-hourly -> daily (P, T, PET Hargreaves) |
+| Soil | HWSD via VIC soil params (KsatVer, theta_s, theta_r, expt) |
+| DEM | china_dem_90m (resampled to 0.25 deg) |
+| Routing | Kinematic wave, daily timestep |
+| Runtime | 14 seconds (1,096 timesteps, 224 cells) |
+| Output directory | `outputs/bengbu_wflow_test/` |
+
+### Performance Metrics — judged against the field's bar, not intuition
+
+The headline dag variable is `river discharge (q_river / river_water__volume_flow_rate)`. The convention bars below restate `docs/validation_convention.yaml`; each threshold carries its citation key, and null convention bands are written as no cited threshold.
+
+| Dag variable | Metric | Direction | Convention bar, cited | Achieved in this SKILL body |
+|--------------|--------|-----------|------------------------|-----------------------------|
+| river discharge (q_river / river_water__volume_flow_rate) | KGE | maximize | satisfactory >= 0.4 (vanverseveld2024); good >= 0.7 (vanverseveld2024) | no KGE value stated in this SKILL body |
+| river discharge (q_river / river_water__volume_flow_rate) | NSE | maximize | satisfactory >= 0.5 (singh2019, golmohammadi2014); good >= 0.65 (singh2019, golmohammadi2014); very_good >= 0.75 (singh2019, golmohammadi2014) | no NSE value stated in this SKILL body |
+| unrouted runoff (runoff) | CSI | maximize | no cited threshold | no CSI value stated in this SKILL body |
+
+### Validated Bengbu Run Values
+
+| Metric / diagnostic | Value |
+|---------------------|-------|
+| wflow mean Q | 1,088 m3/s (2004-2005) |
+| VIC mean Q | 1,767 m3/s (raw unrouted runoff sum) |
+| wflow/VIC ratio | 0.615 |
+| Correlation r | 0.404 (lag=0), 0.621 (lag=-3d) |
+| Monsoon cycle | Present (Jul ~5,500 m3/s, Jan ~90 m3/s) |
+| Annual precip | ~1,125 mm/yr |
+| PET | ~1,009 mm/yr |
+| wflow runoff | ~283 mm/yr |
+| VIC runoff | ~459 mm/yr |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | CMFD 3-hourly -> daily | validated for Bengbu | P, T, PET Hargreaves |
+| Soil | HWSD via VIC soil params | validated for Bengbu | KsatVer, theta_s, theta_r, expt |
+| DEM | china_dem_90m | validated for Bengbu | resampled to 0.25 deg |
+| Routing | wflow kinematic wave | validated for Bengbu | daily timestep |
+| Sediment | wflow_sediment pipeline | available | run only after SBM hydrology output exists |
+
+---
+
+## 12. Parameter Selection by Region
+
+These are physically informed starting points and coupling cautions, not calibration results. Tune against observations using the convention bars above.
+
+| Climate / region | Key parameters / source choices | Rationale |
+|------------------|---------------------------------|-----------|
+| China basins with CMFD coverage | CMFD forcing, China 90 m DEM, HWSD soils | Matches the Bengbu production-validated setup |
+| Non-China basins | MSWX forcing, MERIT DEM, MERIT-Hydro dir/upa/elv, HWSD soils | Avoids the China-only DEM and CMFD assumptions |
+| Low-relief basins / floodplains | MERIT-Hydro flow directions and upstream area | Coarse DEM D8 can be noise in low relief |
+| Reservoir basins | GRanD lookup and configured reservoir cells | Reservoirs must be placed on river cells and capacity converted from MCM to m3 |
+| Sediment runs | USLE K from HWSD, USLE C from AVHRR, validated grain fractions | Sediment requires hydrology output and mass-conserving grain classes |
 
 ---
 

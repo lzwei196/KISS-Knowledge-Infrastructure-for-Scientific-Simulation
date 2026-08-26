@@ -375,7 +375,7 @@ outputs:
   - var: "Pressure"
     validation_rank: 1
     unit: "psi (US) / m (SI)"
-    description: "Gage pressure at each node (head minus elevation, expressed as pressure)."
+    description: "Gage pressure of water at each node in the pressurized distribution pipe network (head minus elevation, expressed as pressure)."
     emitted_in: "Binary .out per-period node arrays; text .rpt node table"
     observability:
       comparable_obs_shapes:
@@ -395,7 +395,7 @@ outputs:
   - var: "Head"
     validation_rank: 4
     unit: "ft (US) / m (SI)"
-    description: "Hydraulic head (elevation + pressure head) at each node."
+    description: "Hydraulic head of water at each node in the pressurized distribution pipe network (elevation + pressure head)."
     emitted_in: "Binary .out per-period node arrays; text .rpt node table"
     observability:
       comparable_obs_shapes:
@@ -408,7 +408,7 @@ outputs:
   - var: "Flow"
     validation_rank: 5
     unit: "flow units (GPM/CFS/LPS/...)"
-    description: "Flow rate in each link; negative indicates reverse flow (Node2 to Node1)."
+    description: "Water flow rate in each link of the pressurized distribution pipe network; negative indicates reverse flow (Node2 to Node1)."
     emitted_in: "Binary .out per-period link arrays; text .rpt link table"
     observability:
       comparable_obs_shapes:
@@ -427,7 +427,7 @@ outputs:
   - var: "Velocity"
     validation_rank: 3
     unit: "ft/s (US) / m/s (SI)"
-    description: "Mean flow velocity in each link."
+    description: "Mean water flow velocity in each link of the pressurized distribution pipe network."
     emitted_in: "Binary .out per-period link arrays; text .rpt link table"
     observability:
       comparable_obs_shapes:
@@ -455,7 +455,7 @@ outputs:
   - var: "Node quality (chemical concentration)"
     validation_rank: 6
     unit: "mg/L or ug/L"
-    description: "Concentration of the simulated constituent (e.g., chlorine) at each node."
+    description: "Concentration of the simulated constituent (e.g., chlorine) in distribution-network water at each node."
     emitted_in: "Binary .out per-period node arrays; text .rpt node table"
     observability:
       comparable_obs_shapes:
@@ -503,7 +503,7 @@ outputs:
   - var: "Pump energy and cost"
     validation_rank: 9
     unit: "kWh, kW, cost/day, % efficiency"
-    description: "Per-pump utilization, efficiency, energy use, peak power, and operating cost; plus system peak energy demand."
+    description: "Per-pump utilization, efficiency, energy use, peak power, and operating cost for pumping water through the pressurized distribution pipe network; plus system peak energy demand."
     emitted_in: "Binary .out energy section; text .rpt energy usage summary"
     observability:
       comparable_obs_shapes:
@@ -684,3 +684,29 @@ safety:
       scope: "conservation properties"
       source: "EPANET 2.2 manual, Network Model — Computational Methods; quality MassBalance accounting in source"
       status: "adopted"
+
+medium_evidence:
+  - var: "Pressure"
+    source: dag.yaml
+    quote: "Pressurized pipe-network hydraulics: flow, velocity, head, pressure at every node and link"
+    note: "scope_in declares the hydraulic outputs as pressurized pipe-network water hydraulics"
+  - var: "Head"
+    source: dag.yaml
+    quote: "Pressurized pipe-network hydraulics: flow, velocity, head, pressure at every node and link"
+    note: "scope_in declares the hydraulic outputs as pressurized pipe-network water hydraulics"
+  - var: "Flow"
+    source: dag.yaml
+    quote: "Pressurized pipe-network hydraulics: flow, velocity, head, pressure at every node and link"
+    note: "scope_in declares the hydraulic outputs as pressurized pipe-network water hydraulics"
+  - var: "Velocity"
+    source: dag.yaml
+    quote: "Pressurized pipe-network hydraulics: flow, velocity, head, pressure at every node and link"
+    note: "scope_in declares the hydraulic outputs as pressurized pipe-network water hydraulics"
+  - var: "Node quality (chemical concentration)"
+    source: SKILL.md
+    quote: "EPANET performs extended-period simulation of hydraulic and water quality behavior within pressurized drinking water distribution pipe networks."
+    note: "KI overview declares water-quality behavior within pressurized drinking-water distribution pipe networks"
+  - var: "Pump energy and cost"
+    source: SKILL.md
+    quote: "EPANET performs extended-period simulation of hydraulic and water quality behavior within pressurized drinking water distribution pipe networks."
+    note: "KI overview declares the model medium for pump energy accounting as pressurized drinking-water distribution pipe networks"

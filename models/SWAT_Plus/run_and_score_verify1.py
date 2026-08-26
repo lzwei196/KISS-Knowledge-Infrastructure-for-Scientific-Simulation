@@ -25,6 +25,8 @@ OUTDIR    = Path(ROOT) / "models/SWAT+/detached/verify_1"
 RESULT    = OUTDIR / "result.json"
 
 sys.path.insert(0, str(KI / "tools/s9"))
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED")
 
 from extract_discharge import find_channel_file, parse_channel_day, load_obs   # KI s9 tool
 from ki_tools_common.metrics import all_metrics

@@ -497,7 +497,7 @@ outputs:
   - var: "evap"
     validation_rank: 2
     unit: "mm/day"
-    description: "Actual evapotranspiration."
+    description: "Actual evapotranspiration from subbasin soil water and land surface."
     emitted_in: "timeEVAP.txt"
     observability:
       comparable_obs_shapes:
@@ -559,7 +559,7 @@ outputs:
   - var: "c1TN"
     validation_rank: 7
     unit: "ug/L"
-    description: "Modelled total nitrogen concentration in main outflow."
+    description: "Modelled total nitrogen concentration in surface-water main outflow."
     emitted_in: "timeC1TN.txt"
     observability:
       comparable_obs_shapes:
@@ -574,7 +574,7 @@ outputs:
   - var: "c1TP"
     validation_rank: 8
     unit: "ug/L"
-    description: "Modelled total phosphorus concentration in main outflow."
+    description: "Modelled total phosphorus concentration in surface-water main outflow."
     emitted_in: "timeC1TP.txt"
     observability:
       comparable_obs_shapes:
@@ -778,3 +778,17 @@ safety:
       scope: "nutrient output units"
       source: "HYPE 5.35.0 SKILL.md output table and SMHI HYPE wiki variable reference"
       status: "tentative"
+
+medium_evidence:
+  - var: "evap"
+    source: "CAPABILITY_INVENTORY.md"
+    quote: "Reduces PET based on soil moisture (lp parameter), splits between soil layers, handles snow evaporation option."
+    note: "Actual evapotranspiration is a subbasin soil-water and land-surface flux, not a surface-water concentration or temperature."
+  - var: "c1TN"
+    source: "dag.yaml"
+    quote: "Nitrogen cycle (inorganic N, organic N) in soil and surface water"
+    note: "The fixed c1TN output is the computed main-flow concentration; the model scope declares nitrogen as present in surface water."
+  - var: "c1TP"
+    source: "dag.yaml"
+    quote: "Phosphorus cycle (soluble P, particulate P) in soil and surface water"
+    note: "The fixed c1TP output is the computed main-flow concentration; the model scope declares phosphorus as present in surface water."

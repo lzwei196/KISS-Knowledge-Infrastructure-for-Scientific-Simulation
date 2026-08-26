@@ -409,7 +409,7 @@ outputs:
   - var: "optimized_control"
     validation_rank: 4
     unit: "varies (A in MPa^-3 yr^-1, or C in Weertman units)"
-    description: "Best-fit fluidity or basal-friction field inferred from observed velocity via the inverse problem."
+    description: "Best-fit ice fluidity or ice-bed basal-friction field inferred from observed ice velocity via the inverse problem."
     emitted_in: "icepack.statistics MaximumProbabilityEstimator result"
     observability:
       comparable_obs_shapes:
@@ -424,7 +424,7 @@ outputs:
   - var: "simulated_velocity"
     validation_rank: 5
     unit: "m/yr"
-    description: "Model velocity at the inverse-problem optimum, for comparison against the observed velocity used in inversion."
+    description: "Model ice velocity at the inverse-problem optimum, for comparison against the observed ice velocity used in inversion."
     emitted_in: "icepack.statistics simulation at optimum"
     observability:
       comparable_obs_shapes:
@@ -547,3 +547,13 @@ safety:
       scope: "IceStream / ShallowIce / HybridModel"
       source: "icepack.compute_surface (utilities.py) and docs s4"
       status: "adopted"
+
+medium_evidence:
+  - var: "optimized_control"
+    source: "dag.yaml"
+    quote: "Parameter inference (ice fluidity, basal friction) via adjoint optimization"
+    note: "scope_in declares the inferred control medium as ice fluidity or basal friction."
+  - var: "simulated_velocity"
+    source: "dag.yaml"
+    quote: "Ice momentum balance / velocity diagnostic solve (SSA, SIA, hybrid)"
+    note: "scope_in declares the velocity solve as ice momentum balance."

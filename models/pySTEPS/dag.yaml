@@ -302,7 +302,7 @@ states:
 outputs:
   - var: "precipitation_intensity"
     unit: "mm/h"
-    description: "Deterministic or ensemble nowcast of N future frames on the same radar grid as the input. STEPS computes internally in log (dBR) space and converts the output back to mm/h. Shape (n_leadtimes, ny, nx) deterministic or (n_ens, n_leadtimes, ny, nx) ensemble; values are instantaneous rates per lead time, not accumulations."
+    description: "Deterministic or ensemble nowcast of N future atmospheric radar precipitation-intensity frames on the same radar grid as the input. STEPS computes internally in log (dBR) space and converts the output back to mm/h. Shape (n_leadtimes, ny, nx) deterministic or (n_ens, n_leadtimes, ny, nx) ensemble; values are instantaneous rates per lead time, not accumulations."
     emitted_in: "nowcast array returned by nowcasts.<method>.forecast (exported to NetCDF/GeoTIFF/CSV in postprocess)"
     observability:
       comparable_obs_shapes:
@@ -339,7 +339,7 @@ outputs:
   - var: "exceedance_probability"
     validation_rank: 2
     unit: "dimensionless [0,1]"
-    description: "Probability-of-exceedance maps derived from the STEPS ensemble (fraction of members exceeding a given mm/h threshold at each grid cell and lead time). Requires >=20 ensemble members for stable estimates."
+    description: "Atmospheric radar precipitation-intensity probability-of-exceedance maps derived from the STEPS ensemble (fraction of members whose precipitation intensity exceeds a given mm/h threshold at each grid cell and lead time). Requires >=20 ensemble members for stable estimates."
     emitted_in: "ensemble post-processing (thresholded ensemble) / nowcasts.lagrangian_probability"
     observability:
       comparable_obs_shapes:
@@ -356,7 +356,7 @@ outputs:
   - var: "motion_field"
     validation_rank: 1
     unit: "pixels/timestep"
-    description: "Estimated 2-D advection velocity field (2, ny, nx) from the optical-flow stage; an intermediate product also returnable on its own."
+    description: "Estimated 2-D atmospheric radar precipitation advection velocity field (2, ny, nx) from the optical-flow stage on the radar precipitation frame sequence; an intermediate product also returnable on its own."
     emitted_in: "motion.<method> output (e.g. dense_lucaskanade)"
     observability:
       comparable_obs_shapes:
@@ -536,3 +536,17 @@ safety:
       scope: "Inputs / unit handling"
       source: "pysteps io documentation and utils.conversion / utils.transformation modules"
       status: "adopted"
+
+medium_evidence:
+  - var: "precipitation_intensity"
+    source: "dag.yaml"
+    quote: "Short-term probabilistic / deterministic nowcasting of 2-D radar precipitation intensity fields"
+    note: "scope_in declares the nowcast output medium as radar precipitation intensity fields"
+  - var: "exceedance_probability"
+    source: "dag.yaml"
+    quote: "Short-term probabilistic / deterministic nowcasting of 2-D radar precipitation intensity fields"
+    note: "scope_in declares the ensemble exceedance maps are over radar precipitation intensity fields"
+  - var: "motion_field"
+    source: "dag.yaml"
+    quote: "Motion (advection) field estimation from a past radar frame sequence via optical flow"
+    note: "scope_in declares the motion field is estimated from radar precipitation frames"

@@ -1,285 +1,528 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: LISFLOOD
-  version: 4.3.1
-  domain: flood
-  developer: European Commission Joint Research Centre (EC-JRC)
-  language: Python (with Numba JIT-compiled soil loop)
-  binary_path: KISSPATH_HOME/miniconda3/envs/lisflood/bin/lisflood
-  source_path: KISSPATH_BINARIES/LISFLOOD/source/repo/src/lisf1.py
-  settings_format: XML (lisfloodSettings.xml)
-  spatial_discretization: Gridded (PCRaster/NetCDF maps with LDD drainage network)
-  timestep: 'Sub-daily to daily (typical: DtSec=21600 s = 6-hourly)'
+  language: python
+  implementation:
+    id: hydrocraft-lisflood
+    version: lisflood-model v1.0.0 (hydrocraft-lisflood package)
+    provenance: Python; EC-JRC LISFLOOD on the PCRaster Environmental Modelling Framework with a Numba
+      JIT-compiled soil loop and channel routing.
+  scientific_reference_version: EC-JRC LISFLOOD (Van Der Knijff et al. 2010; Burek et al. 2013 Revised
+    User Manual, JRC EUR 26162 EN) — distributed rainfall-runoff core of EFAS/GloFAS
 inputs:
   forcing:
-  - name: pr
-    description: Precipitation (rainfall + snowfall)
+  - name: Precipitation (pr / P)
     unit: mm/day
-    valid_range:
-    - 0
-    - 500
-    format: NetCDF stack or PCRaster maps
-    note: "ERA5 gives m/timestep \u2014 multiply by 1000. CMFD gives mm/3hr \u2014\
-      \ sum to daily."
-  - name: ta
-    description: Air temperature
-    unit: degrees_C (or K with TemperatureInKelvin=1)
-    valid_range:
-    - -50
-    - 55
-    format: NetCDF stack or PCRaster maps
-    note: Set TemperatureInKelvin option to match input units
-  - name: et0
-    description: Reference evapotranspiration (POTENTIAL, not actual)
+    category: forcing
+    source_kind: forcing
+    model_input_format: NetCDF stack or PCRaster map series (PrecipitationMaps)
+    notes: Total liquid+solid precipitation; PrScaling converts from input unit to mm/timestep; negative
+      values clipped to 0. Unit confusion (m/day, mm/3hr) is silent and shifts discharge ~1000x.
+  - name: Average air temperature (ta / T_avg)
+    unit: °C (or K when TemperatureInKelvin=1)
+    category: forcing
+    source_kind: forcing
+    model_input_format: NetCDF stack or PCRaster map series (TavgMaps)
+    notes: Drives rain/snow partitioning and frost index; the TemperatureInKelvin flag must match the
+      input units or snow thresholds shift by 273.15.
+  - name: Reference (potential) evapotranspiration (et0 / ET0)
     unit: mm/day
-    valid_range:
-    - 0
-    - 25
-    format: NetCDF stack or PCRaster maps
-  - name: e0
-    description: Open water evaporation (POTENTIAL)
+    category: forcing
+    source_kind: forcing
+    model_input_format: NetCDF stack or PCRaster map series (ET0Maps); preparable with LISVAP
+    notes: Must be POTENTIAL ET; LISFLOOD reduces it internally via soil-moisture stress. Supplying actual
+      ET silently double-reduces evaporation.
+  - name: Potential open-water evaporation (e0 / EW0)
     unit: mm/day
-    valid_range:
-    - 0
-    - 30
-    format: NetCDF stack or PCRaster maps
+    category: forcing
+    source_kind: forcing
+    model_input_format: NetCDF stack or PCRaster map series (E0Maps); preparable with LISVAP
+    notes: Penman open-water rate (~1.05 × et0); a distinct required input.
+  - name: Potential bare-soil evaporation (ES0)
+    unit: mm/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: NetCDF stack or PCRaster map series; preparable with LISVAP
+    notes: Potential evaporation from bare soil; reduced internally by soil-moisture availability.
   parameters:
-    critical:
-    - name: UpperZoneTimeConstant
-      valid_range:
-      - 1
-      - 100
-      unit: days
-      description: Quick baseflow response time constant
-      sensitivity: HIGH
-    - name: LowerZoneTimeConstant
-      valid_range:
-      - 10
-      - 5000
-      unit: days
-      description: Slow baseflow / recession time constant
-      sensitivity: HIGH
-    - name: b_Xinanjiang
-      valid_range:
-      - 0.01
-      - 1.0
-      unit: dimensionless
-      description: Saturation excess runoff shape parameter
-      sensitivity: HIGH
-    - name: PowerPrefFlow
-      valid_range:
-      - 1.0
-      - 4.0
-      unit: dimensionless
-      description: Preferential flow nonlinearity exponent
-      sensitivity: MEDIUM
-    - name: CalChanMan
-      valid_range:
-      - 0.1
-      - 10.0
-      unit: dimensionless
-      description: Channel Manning's n MULTIPLIER (not n itself)
-      sensitivity: MEDIUM
-    - name: SnowMeltCoef
-      valid_range:
-      - 1.0
-      - 10.0
-      unit: mm/degC/day
-      description: Degree-day snowmelt coefficient
-      sensitivity: MEDIUM (snow basins)
-    - name: GwPercValue
-      valid_range:
-      - 0.1
-      - 10.0
-      unit: mm/day
-      description: Maximum upper zone to lower zone percolation
-      sensitivity: MEDIUM
-    - name: GwLoss
-      valid_range:
-      - 0.0
-      - 5.0
-      unit: mm/day
-      description: Groundwater loss to deep aquifer
-      sensitivity: LOW
-    soil:
-    - name: ThetaSat
-      valid_range:
-      - 0.3
-      - 0.6
-      unit: m3/m3
-      description: Saturated water content (Van Genuchten)
-    - name: ThetaRes
-      valid_range:
-      - 0.01
-      - 0.15
-      unit: m3/m3
-      description: Residual water content (Van Genuchten)
-    - name: GenuAlpha
-      valid_range:
-      - 0.001
-      - 0.5
-      unit: 1/cm
-      description: Van Genuchten alpha (NOT Brooks-Corey)
-    - name: Lambda
-      valid_range:
-      - 0.05
-      - 0.8
-      unit: dimensionless
-      description: Van Genuchten pore-size distribution index
-    - name: KSat
-      valid_range:
-      - 1
-      - 10000
-      unit: mm/day
-      description: Saturated hydraulic conductivity
-    - name: SoilDepth1
-      valid_range:
-      - 50
-      - 300
-      unit: mm
-      description: Top soil layer depth (NOT meters)
-    - name: SoilDepth2
-      valid_range:
-      - 300
-      - 1500
-      unit: mm
-      description: Middle soil layer depth
-    - name: SoilDepth3
-      valid_range:
-      - 300
-      - 1500
-      unit: mm
-      description: Bottom soil layer depth
-  static_maps:
-  - name: MaskMap
-    description: Domain mask defining computational extent
-    format: PCRaster boolean or NetCDF
-  - name: Ldd
-    description: Local drainage direction (PCRaster convention 1-9, 5=pit)
-    format: PCRaster LDD
-    note: NOT ArcGIS D8 encoding
-  - name: Elevation
-    description: DEM
+  - name: Local Drainage Direction (Ldd)
+    unit: PCRaster flow-direction code 1-9 (5=pit/outlet)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: PCRaster map
+    notes: MUST be PCRaster encoding, NOT ArcGIS D8 (1,2,4,…,128); wrong encoding crashes or misroutes
+      flow.
+  - name: Channel geometry (ChanBottomWidth, ChanGrad, ChanLength, ChanManMaps, side slope, bankfull depth)
+    unit: m / m·m⁻¹ / m / s·m^(-1/3)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: PCRaster / NetCDF maps
+    notes: ChanGrad in m/m (not %), ChanLength in m (not km), ChanManMaps is Manning's n modified by the
+      CalChanMan multiplier.
+  - name: Elevation and elevation standard deviation (Elevation, elvstd)
     unit: m
-    format: PCRaster/NetCDF
-  - name: ChanBottomWidth
-    description: Channel bottom width
-    unit: m
-  - name: ChanGrad
-    description: Channel slope
-    unit: m/m
-  - name: ChanLength
-    description: Channel segment length
-    unit: m
-  - name: ChanManMaps
-    description: Channel Manning's n map (modified by CalChanMan multiplier)
-    unit: s/m^(1/3)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: NetCDF or PCRaster map
+    notes: Elevation StD drives sub-pixel 3-zone snow partitioning (DeltaTSnow).
+  - name: Saturated hydraulic conductivity per layer (MapKSat1/2/3 +Forest)
+    unit: mm/day
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: PCRaster / NetCDF maps
+    notes: mm/day, NOT cm/day (HWSD) or m/s (SoilGrids).
+  - name: Van Genuchten alpha per layer (MapGenuAlpha1/2/3 +Forest)
+    unit: 1/cm
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: PCRaster / NetCDF maps
+    notes: 1/cm, NOT 1/m; 100x error shifts the water-retention curve.
+  - name: Van Genuchten pore-size index Lambda per layer (MapLambda1/2/3 +Forest)
+    unit: dimensionless (Lambda = N-1)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: PCRaster / NetCDF maps
+  - name: Saturated and residual water content per layer (MapThetaSat / MapThetaRes 1/2/3 +Forest)
+    unit: m³/m³
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: PCRaster / NetCDF maps
+    notes: ThetaRes typically ~0.01; ThetaSat is porosity.
+  - name: Soil layer depths (SoilDepth1/2/3)
+    unit: mm
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: PCRaster / NetCDF maps
+    notes: mm, NOT m or cm; SoilDepth1 ~50-300 mm, SoilDepth2/3 ~300-1500 mm.
+  - name: Land-use fraction maps (Forest / Sealed-impervious / Water / Irrigation / Other)
+    unit: 0-1 fraction
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: PCRaster / NetCDF maps
+    notes: Per-class ET and fluxes are area-weighted by these fractions.
+  - name: Leaf Area Index (LAI) per land-use class
+    unit: m²/m² (monthly)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: PCRaster / NetCDF maps + day-of-year lookup table
+    notes: Drives canopy interception and transpiration.
+  - name: Lake / reservoir property tables (TabLakeArea, TabTotStorage, outflow parameters)
+    unit: table
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: Tab-separated text lookup tables keyed by water-body ID
+    notes: Every lake/reservoir ID in the spatial map must have an entry in all Tab* tables or routing
+      produces NaN.
+  - name: UpperZoneTimeConstant
+    unit: days (range ~1-100)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: settings XML binding
+    notes: Quick groundwater (upper-zone) residence time; HIGH-sensitivity calibration parameter.
+  - name: LowerZoneTimeConstant
+    unit: days (range ~10-5000)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: settings XML binding
+    notes: Lower-zone baseflow recession time constant; HIGH-sensitivity calibration parameter.
+  - name: b_Xinanjiang
+    unit: dimensionless (range ~0.01-1.0)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: settings XML binding
+    notes: Saturation-excess runoff shape; HIGH-sensitivity. Near-0 gives a flashy, no-baseflow hydrograph.
+  - name: PowerPrefFlow
+    unit: dimensionless (range ~1.0-4.0)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: settings XML binding
+    notes: Preferential (bypass) flow nonlinearity.
+  - name: CalChanMan
+    unit: dimensionless multiplier (range ~0.1-10, default 1.0)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: settings XML binding
+    notes: Multiplier on ChanManMaps Manning's n — NOT a raw n value; setting it to 0.03-0.05 gives near-zero
+      effective roughness.
+  - name: SnowMeltCoef
+    unit: mm/°C/day (range ~1.0-10.0)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: settings XML binding
+    notes: Degree-day snowmelt rate; matters in snow-influenced basins.
+  - name: GwPercValue
+    unit: mm/day (range ~0.1-10.0)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: settings XML binding
+    notes: Maximum upper-zone → lower-zone percolation.
+  - name: GwLoss
+    unit: mm/day (range ~0.0-5.0, default 0)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: settings XML binding
+    notes: Groundwater loss to a deep aquifer; if it exceeds percolation, baseflow depletes.
+  - name: LZThreshold
+    unit: mm (range ~0-100)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: settings XML binding
+    notes: Lower-zone no-outflow (baseflow cutoff) threshold.
+  - name: LakeMultiplier
+    unit: dimensionless (range ~0.1-10.0)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: settings XML binding
+    notes: Lake outflow scaling; matters in lake basins.
+  initial_conditions:
+  - name: Soil moisture per layer (ThetaInit1/2/3Value → theta1/2/3)
+    unit: m³/m³ (expected ~0.1-0.5)
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: settings XML *InitValue or warm-start EndMaps NetCDF
+  - name: Upper-zone groundwater storage (UZInitValue → uz)
+    unit: mm (expected ~0-100)
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: settings XML *InitValue or warm-start EndMaps NetCDF
+  - name: Lower-zone groundwater storage (LZInitValue → lz)
+    unit: mm (expected ~0-500)
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: settings XML *InitValue or warm-start EndMaps NetCDF
+    notes: LZInitValue == -9999 triggers steady-state lower-zone initialisation.
+  - name: Snow cover / SWE per elevation zone (SnowCoverAInitValue +B,+C → snowcov)
+    unit: mm (expected ~0-2000)
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: settings XML *InitValue or warm-start EndMaps NetCDF
+  - name: Channel storage and second (split-routing) channel storage
+    unit: m³
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: warm-start EndMaps NetCDF; cold-start constrained by channel geometry
+  boundary_conditions:
+  - name: MaskMap (active domain mask)
+    unit: binary (1=active, 0=outside)
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: NetCDF or PCRaster map
+    notes: Defines the gridded simulation domain; missing path is a fatal startup error.
+  - name: Gauges / Outlets reporting points
+    unit: map
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: PCRaster / NetCDF point maps
+    notes: Define discharge reporting locations for .tss time series.
+  - name: Simulation time window (CalendarDayStart, StepStart, StepEnd, DtSec, DtSecChannel)
+    unit: calendar dates / step numbers / seconds
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: settings XML (lfuser)
+    notes: StepStart/StepEnd must match CalendarDayStart convention; forcing time axis must align with
+      DtSec or precip is mis-scaled.
+  - name: Process-module switches (simulateLakes, simulateReservoirs, wateruse, SplitRouting, dynamicWave,
+      openwaterevapo)
+    unit: boolean
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: settings XML (lfoptions)
+    notes: Select optional physics; unset options fall back to hardcoded defaults (e.g. dynamicWave off
+      → kinematic-only routing).
+  - name: Unit / IO control switches (TemperatureInKelvin, readNetcdfStack, writeNetcdfStack, writeNetcdf,
+      gridSizeUserDefined)
+    unit: boolean
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: settings XML (lfoptions)
+    notes: TemperatureInKelvin must match the ta input units; writeNetcdfStack and writeNetcdf both off
+      yields only .tss output, no spatial maps.
+  - name: Initialisation / restart mode (InitLisflood)
+    unit: 0=warm start | 1=cold start (spin-up)
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: settings XML option
+    notes: Cold start sets state from *InitValue and writes EndMaps to PathInit; warm start reads saved
+      end-state maps. Cold start forces channel sub-stepping NoRoutSteps=1.
 outputs:
   primary:
   - name: dis
-    unit: m3/s
-    valid_range:
-    - 0
-    - 100000
-    description: Discharge at every channel pixel
-    file: dis.nc
-  - name: rain
-    unit: mm
-    valid_range:
-    - 0
-    - 500
-    description: Rainfall (liquid precipitation)
-    file: rain.nc
-  - name: snow
-    unit: mm
-    valid_range:
-    - 0
-    - 500
-    description: Snowfall
-    file: snow.nc
+    unit: m³/s
+    description: River channel discharge at every channel pixel (primary product); also written as gauge-point
+      .tss time series.
+    validation_rank: 1
+    emitted_in: dis.nc / *.tss
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Gauge-point discharge vs a routed pixel; ensure the model gauge pixel maps to the correct upstream
+          area.
+        - Acceptance thresholds (NSE/KGE >0.7 good, 0.5-0.7 acceptable; |PBIAS| <10% good, <25% acceptable)
+          are run-time scoring policy, not model knowledge.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Distributed discharge fields are typically only sparsely observed; comparison is usually at
+          gauged sub-reaches.
+      detrending_options:
+      - none
   - name: snowcov
     unit: mm
-    valid_range:
-    - 0
-    - 5000
-    description: Snow water equivalent
-    file: snowcov.nc
-  - name: flood_depth
-    canonical_id: flood_depth
-    unit: m
-  - name: water_surface_elevation
-    canonical_id: water_surface_elevation
-    unit: m
-  - name: inundation_extent
-    canonical_id: inundation_extent
-    unit: km2
-  soil_moisture:
-  - name: theta1
-    unit: m3/m3
-    valid_range:
-    - 0
-    - 1
-    description: Soil moisture layer 1
-  - name: theta2
-    unit: m3/m3
-    valid_range:
-    - 0
-    - 1
-    description: Soil moisture layer 2
-  - name: theta3
-    unit: m3/m3
-    valid_range:
-    - 0
-    - 1
-    description: Soil moisture layer 3
-  groundwater:
-  - name: uz
-    unit: mm
-    valid_range:
-    - 0
-    - 1000
-    description: Upper zone storage
-  - name: lz
-    unit: mm
-    valid_range:
-    - 0
-    - 5000
-    description: Lower zone storage
-  diagnostics:
+    description: Snow water equivalent (snow cover) aggregated over sub-pixel elevation zones.
+    validation_rank: 3
+    emitted_in: snowcov.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - Remote-sensing SWE/snow-cover-area products differ in definition (SCA fraction vs SWE depth);
+          match the quantity before scoring.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Point SWE (e.g. snow pillow) is sub-pixel; sub-pixel elevation-zone aggregation limits exact
+          magnitude match.
+      detrending_options:
+      - none
+  - name: theta1/2/3
+    unit: m³/m³
+    description: Volumetric soil moisture per Van Genuchten layer.
+    validation_rank: 2
+    emitted_in: theta1.nc / theta2.nc / theta3.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Satellite soil-moisture (e.g. surface ~5 cm) maps mainly to the topsoil layer, not subsoil;
+          depth support must be matched.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - In-situ probes are point-depth specific; anomaly/temporal correlation is more defensible than
+          absolute volumetric match.
+      detrending_options:
+      - none
+      - linear_residual
+  secondary:
   - name: twb
     unit: mm
-    valid_range:
-    - -1
-    - 1
-    description: Total water balance residual (should be near zero)
-  - name: surfr
-    unit: mm
-    valid_range:
-    - 0
-    - 500
-    description: Surface runoff
-  - name: gwperc
-    unit: mm
-    valid_range:
-    - 0
-    - 50
-    description: Groundwater percolation
+    description: Total water balance residual over the catchment — a mass-conservation diagnostic, not
+      a physical observable.
+    validation_rank: null
+    emitted_in: twb.nc
+    observability:
+      comparable_obs_shapes: []
+      detrending_options:
+      - none
 known_issues:
 - id: dt_001
-  description: Precipitation unit mismatch (mm/day vs m/day) causes 1000x discharge
-    error with no warning
+  symptom: Basin floods constantly or dries out completely. Discharge is 1000x too high or too low.
+  diagnosis: Precipitation units wrong — mm/day vs m/day; LISFLOOD expects precipitation in mm/day. ERA5
+    provides total precipitation in meters per timestep. If the ×1000 conversion (m → mm) is omitted,
+    the basin receives 1000× too little rain. Conversely, if CMFD mm/3hr is summed to daily but then multiplied
+    by
+  remedy: 'Verify max daily precipitation is reasonable (typically < 200 mm/day for most climates); convert_forcing;
+    [''Check source data units in ncdump -h'', ''ERA5 tp: multiply by 1000 (m → mm)'', ''CMFD prec: sum
+    8 steps of mm/3hr to get mm/day'', ''Validate: max precip < 500 mm/day'']; convert_forcing.py validate'
   severity: silent
 - id: dt_002
-  description: TemperatureInKelvin flag mismatch causes snow model failure
+  symptom: Snow never forms even in cold climates, or snow never melts even in summer.
+  diagnosis: Temperature Kelvin/Celsius flag mismatch — TemperatureInKelvin option doesn't match input;
+    If TemperatureInKelvin=0 (default, expects °C) but input temperature is in Kelvin (~280 K), LISFLOOD
+    interprets it as 280°C. The snow threshold TempSnow (typically 1°C) is never reached, and snowmelt
+    coefficie
+  remedy: 'Match TemperatureInKelvin flag to actual input units; convert_forcing; [''Check temperature
+    range in forcing NetCDF'', ''If values 230-320: input is Kelvin → set TemperatureInKelvin=1 or convert'',
+    ''If values -40 to 50: input is Celsius → set TemperatureInKelvin=0'']; convert_forcing.py checks
+    temperatur'
+  severity: silent
+- id: dt_003
+  symptom: Evapotranspiration is systematically too low (30-50% below expected). Soil stays too wet.
+  diagnosis: ET0 provided as actual ET instead of potential ET; LISFLOOD expects et0 as POTENTIAL evapotranspiration
+    — the maximum ET rate under unlimited water supply. LISFLOOD internally reduces this to actual ET
+    using soil moisture stress functions. If actual ET (already reduced by water stress) is provided a
+  remedy: 'Ensure et0 is potential (reference) ET, not actual ET; convert_forcing; [''Verify ET0 method:
+    Penman-Monteith reference, Hargreaves, or similar potential method'', ''Check typical values: potential
+    ET0 = 2-8 mm/day in summer, 0-2 in winter'', ''If values are 0.5-3 mm/day year-round, likely actual
+    ET — us'
+  severity: silent
+- id: dt_004
+  symptom: Model produces correct mean discharge but wrong timing. Peaks arrive early or late by one timestep.
+  diagnosis: Forcing timestep doesn't match DtSec — accumulated vs instantaneous mismatch; LISFLOOD's
+    DtSec defines the model timestep (e.g., 86400 = daily, 21600 = 6-hourly). If daily forcing is provided
+    but DtSec=21600, LISFLOOD reads the same daily value for each 6-hour step, effectively multiplying
+    precipita
+  remedy: Ensure forcing time axis aligns with CalendarDayStart and DtSec; ; ['Match forcing timestep
+    to DtSec in settings', 'Or let LISFLOOD interpolate (it handles daily → sub-daily internally)', 'Check
+    CalendarDayStart matches first forcing timestamp']; Verify time axis alignment before running
   severity: silent
 - id: dt_005
-  description: Van Genuchten alpha in 1/m instead of 1/cm produces wrong soil hydraulics
+  symptom: Field capacity and wilting point are wrong. Soil either saturates immediately or never drains.
+  diagnosis: 'Van Genuchten alpha (GenuAlpha) in wrong units: 1/m instead of 1/cm; LISFLOOD expects GenuAlpha
+    in 1/cm. Some soil databases (e.g., SoilGrids) provide alpha in 1/m, which is 100× larger. If 1/m
+    values are used directly, the water retention curve is shifted, producing wrong field capacity, wilting
+    po'
+  remedy: 'Divide alpha by 100 if source is in 1/m; convert_soil_params; [''Check GenuAlpha range: should
+    be 0.001-0.5 in 1/cm'', ''If values are 0.1-50, they are in 1/m — divide by 100'']; convert_soil_params.py
+    validates GenuAlpha range'
   severity: silent
+- id: dt_006
+  symptom: LISFLOOD crashes at startup with LDD error, or water routes in wrong directions.
+  diagnosis: LDD uses ArcGIS D8 encoding (1,2,4,8,16,32,64,128) instead of PCRaster (1-9); PCRaster LDD
+    encoding uses values 1-9, where each value represents a direction (7=NW, 8=N, 9=NE, 4=W, 5=pit, 6=E,
+    1=SW, 2=S, 3=SE). ArcGIS D8 uses powers of 2 (1=E, 2=SE, 4=S, 8=SW, 16=W, 32=NW, 64=N, 128=NE). Using
+    ArcGIS
+  remedy: 'Convert LDD from ArcGIS D8 to PCRaster encoding; ; [''Check unique values in LDD: if {1,2,4,8,16,32,64,128}
+    → ArcGIS format'', ''If {1,2,3,4,5,6,7,8,9} → PCRaster format (correct)'', ''Use lddcreate in PCRaster
+    to generate from DEM directly'']; Always generate LDD using PCRaster tools, not ArcGIS'
+  severity: fatal
 - id: dt_007
-  description: SoilDepth in meters instead of mm gives 1000x error in water storage
+  symptom: Soil saturates in minutes or never saturates. Soil water storage capacity is 1000x wrong.
+  diagnosis: 'SoilDepth in meters instead of millimeters — 1000x error; LISFLOOD expects SoilDepth1, SoilDepth2,
+    SoilDepth3 in millimeters. Typical values: 50-300 mm (layer 1a), 300-1500 mm (layers 1b, 2). If values
+    are 0.05-1.5 (meters), soil water storage capacity is 1000x too small. The model saturates almost '
+  remedy: 'Multiply SoilDepth by 1000 if values are in meters; convert_soil_params; [''Check SoilDepth
+    values: if <10, they are likely in meters'', ''Typical mm values: SoilDepth1=200, SoilDepth2=800,
+    SoilDepth3=1200'']; convert_soil_params.py warns if SoilDepth < 10'
+  severity: silent
+- id: dt_008
+  symptom: Infiltration is unrealistic — either everything infiltrates or nothing does.
+  diagnosis: 'KSat (saturated hydraulic conductivity) in wrong units: cm/day or m/s instead of mm/day;
+    LISFLOOD expects KSat in mm/day. HWSD provides KSat in cm/day (×10 to get mm/day). SoilGrids may provide
+    in m/s (×86400000 to get mm/day). Using cm/day values directly gives 10x too low KSat; using m/s values
+    gi'
+  remedy: 'Convert KSat to mm/day; convert_soil_params; [''HWSD cm/day → mm/day: multiply by 10'', ''SoilGrids
+    m/s → mm/day: multiply by 86400 × 1000'', ''Typical range: 1-1000 mm/day (sand ~1000, clay ~1)''];
+    convert_soil_params.py validates KSat range'
   severity: silent
 - id: dt_009
-  description: CalChanMan treated as Manning's n value instead of multiplier
+  symptom: Water moves through channels unrealistically fast (or slow). Flood peaks arrive days early.
+  diagnosis: CalChanMan set to Manning's n value (0.03-0.05) instead of MULTIPLIER on n (0.5-2.0); CalChanMan
+    is a calibration MULTIPLIER applied to the Manning's n map (ChanManMaps). Effective n = ChanManMaps
+    × CalChanMan. If CalChanMan is set to 0.04 (thinking it's the Manning's n value), the effective n
+    becom
+  remedy: 'Set CalChanMan as a multiplier (typical: 0.5-2.0, default 1.0); ; [''If CalChanMan < 0.1: likely
+    being used as n directly — change to 1.0'', ''If ChanGrad values are 0.1-10: likely in percent — divide
+    by 100'', ''If ChanLength values are 0.1-10: likely in km — multiply by 1000'']; run_lisflood.py prefligh'
+  severity: silent
+- id: dt_010
+  symptom: LISFLOOD runs for wrong period or crashes at startup with time parsing error.
+  diagnosis: StepStart/StepEnd format doesn't match CalendarDayStart convention; StepStart and StepEnd
+    can be either calendar dates (format matching CalendarDayStart, e.g., '02/01/1990 06:00' for DD/MM/YYYY
+    HH:MM) or integer step numbers. Mixing formats, or using a date format different from CalendarDayStart,
+    ca
+  remedy: Use consistent date format in CalendarDayStart, StepStart, StepEnd; ; ['Ensure all three use
+    the same DD/MM/YYYY HH:MM format', 'Or use integer step numbers for StepStart/StepEnd']; run_lisflood.py
+    preflight validates time settings
+  severity: fatal
+- id: dt_011
+  symptom: 'LISFLOOD crashes immediately: ''Could not find/open file'' for MaskMap or other static maps.'
+  diagnosis: MaskMap or other map path not found — $(PathRoot) variable resolves incorrectly; LISFLOOD
+    resolves paths using $(Variable) substitution in the settings XML. If PathRoot is wrong, or the directory
+    structure doesn't match expectations, map files cannot be found. This affects MaskMap, Ldd, soil maps,
+    a
+  remedy: 'Verify all $(PathRoot)-relative paths resolve to existing files; run_lisflood; [''Run: python
+    tools/run_lisflood.py --settings settings.xml --check_only'', ''Check all PathRoot, PathMaps, PathMeteo,
+    PathInit, PathOut'', ''Ensure MaskMap file exists (with or without .nc/.map extension)'']; run_lisflood.py '
+  severity: fatal
+- id: dt_012
+  symptom: LISFLOOD crashes when trying to read forcing data. 'Unable to open' or 'No such file'.
+  diagnosis: 'Forcing file path or naming convention mismatch; Forcing files must follow LISFLOOD''s naming
+    convention: either a single NetCDF file with time dimension (if readNetcdfStack=1), or numbered PCRaster
+    maps (prefix + step number, e.g., pr00001.map). The prefix in lfbinding must exactly match the file
+    na'
+  remedy: Verify forcing file naming matches lfbinding prefix and path; run_lisflood; ['Check <lfbinding>
+    entries for PrecipitationMaps, TavgMaps, etc.', 'Verify files exist at the resolved paths', 'If using
+    NetCDF stacks, ensure readNetcdfStack=1']; run_lisflood.py preflight validates forcing file paths
+  severity: fatal
+- id: dt_013
+  symptom: NaN in output or crash mid-simulation. Lake/reservoir routing fails.
+  diagnosis: Lake or reservoir ID in spatial map has no entry in lookup tables; When simulateLakes=1 or
+    simulateReservoirs=1, every unique ID in the lake/reservoir map must have corresponding entries in
+    ALL lookup tables (TabLakeArea, TabTotStorage, TabNormalStorageLimit, outflow tables, etc.). A missing
+    ID caus
+  remedy: 'Ensure all lake/reservoir IDs have lookup table entries; ; [''List unique IDs in lake/reservoir
+    spatial maps'', ''Check each lookup table (Tab*) for missing IDs'', ''Add entries or remove water
+    bodies not in tables'']; Pre-run check: compare map IDs with table entries'
+  severity: fatal
+- id: dt_014
+  symptom: No snow accumulation even in cold/mountainous basins. All precipitation becomes rain.
+  diagnosis: SnowMeltCoef too high or TempSnow threshold wrong; If SnowMeltCoef is very high (>8 mm/°C/day),
+    snow melts almost as fast as it accumulates. If temperature input is wrong (dt_002), snow thresholds
+    don't work. Also check TempSnow (temperature below which precip is snow, default ~1°C) and TempMelt
+    (te
+  remedy: 'Check SnowMeltCoef (typical: 3-6 mm/°C/day) and temperature units; ; [''Verify snowcov output
+    is non-zero in winter months'', ''Check SnowMeltCoef range: 2.8-5.8 typical for European basins'',
+    ''Ensure temperature units match TemperatureInKelvin flag'']; Compare snow dynamics to regional observations'
+  severity: silent
+- id: dt_015
+  symptom: Baseflow drops to zero during dry periods. No sustained low flow.
+  diagnosis: GwLoss drains all groundwater to deep aquifer before baseflow can sustain stream; GwLoss
+    [mm/day] represents water lost from the lower zone to deep aquifers or lateral groundwater outflow.
+    If GwLoss > GwPercValue (percolation input to lower zone), the lower zone storage depletes to zero,
+    killing bas
+  remedy: 'Reduce GwLoss (typical: 0-1 mm/day, default 0); ; [''Check lz.nc output: if lower zone goes
+    to zero, GwLoss is too high'', ''Set GwLoss=0 initially, increase only if independent evidence of
+    deep losses'', ''Check LZThreshold: baseflow stops when LZ < LZThreshold'']; Compare simulated baseflow
+    recession to'
+  severity: silent
+- id: dt_016
+  symptom: Hydrograph is extremely flashy — no baseflow component. All water runs off immediately.
+  diagnosis: b_Xinanjiang parameter near zero — saturation fraction always ~1.0; b_Xinanjiang controls
+    the shape of the saturation excess distribution. SatFraction = 1 - (1-RelSat)^b_Xinanjiang. When b
+    → 0, SatFraction → 1 for any soil moisture, meaning ALL rain becomes surface runoff. No water enters
+    the soil f
+  remedy: 'Set b_Xinanjiang to typical range (0.1-0.5); ; [''If b_Xinanjiang < 0.05: increase to at least
+    0.1'', ''Compare surface runoff (surfr.nc) vs groundwater recharge (gwperc.nc)'', ''A healthy ratio
+    is 30-70% surface vs 30-70% subsurface (basin-dependent)'']; Calibrate b_Xinanjiang against observed
+    flow durat'
   severity: silent
 - id: dt_017
-  description: Numba JIT compilation failure silently falls back to slow Python
+  symptom: LISFLOOD runs extremely slowly. Soil loop takes minutes per timestep.
+  diagnosis: Numba JIT compilation failure — falls back to slow pure-Python soil loop; LISFLOOD uses Numba
+    to JIT-compile the computationally intensive soilloop and routing calculations. If Numba or LLVM is
+    not properly installed, or there's a version incompatibility, the compilation silently fails and falls
+    bac
+  remedy: 'Fix Numba installation or set numCPUs_parallelNumba=1; ; ["Test: python -c ''import numba;
+    print(numba.__version__)''", ''Ensure llvmlite version matches numba version'', ''Set numCPUs_parallelNumba
+    = 0 for auto-detection'']; Verify Numba works before production runs'
   severity: degraded
+- id: dt_018
+  symptom: No spatial output files (*.nc) in output directory. Only TSS files exist.
+  diagnosis: 'Both writeNetcdfStack and writeNetcdf options are set to 0; LISFLOOD has two output writing
+    options: writeNetcdfStack (writes time-varying maps at each timestep) and writeNetcdf (writes aggregated
+    maps). If both are disabled, only TSS (time series) files at gauge points are written. This can mislead'
+  remedy: Enable writeNetcdfStack=1 in settings XML; ; ["Set <setoption name='writeNetcdfStack' choice='1'/>",
+    'Also enable specific report maps in lfoptions', 'Ensure PathOut directory exists and is writable'];
+    run_lisflood.py preflight warns if both options are off
+  severity: silent

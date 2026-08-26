@@ -1,147 +1,401 @@
-# format_spec.yaml — Lohmann Routing Model
-# Hand-augmented 2026-04-26 from SKILL.md (auto-extractor missed
-# the variable section). Re-run pipeline1 after edits.
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: Lohmann Routing Model
-  domain: routing
-  secondary_domains:
-  - hydrology
-  binary: rout
-  binary_path: KISSPATH_BINARIES/route_1.0/src/rout
-  language: Fortran77
-  execution: ./rout rout_global.txt
-  working_directory: routing_param/ (with vic_in/ symlink to VIC fluxes)
-  validated_tool: tools/run_lohmann_routing.py
-
+  name: Lohmann_Routing
+  language: fortran
+  implementation:
+    id: lohmann-rout-1.0
+    version: route_1.0
+    provenance: Fortran 77; standalone VIC routing post-processor (rout), Lohmann/Lettenmaier lineage,
+      distributed with VIC 4.2.d.
+  scientific_reference_version: Lohmann diffusive-wave routing (Lohmann et al. 1996 Tellus A; Lohmann
+    et al. 1998 VIC-2L coupling)
 inputs:
   forcing:
   - name: surface_runoff
-    file: vic_in/fluxes_<lat>_<lon>
-    column: 6
     unit: mm/day
-    valid_range: [0.0, 500.0]
-    format: ASCII column-aligned (preprocessed from VIC 22-col fluxes to 7-col)
-    silent_error: VIC raw fluxes_*.txt has 22 columns; routing requires 7-column preprocessed format. Failure to preprocess produces wrong column reads.
+    category: forcing
+    source_kind: forcing
+    model_input_format: 'Per-cell daily VIC flux ASCII file (7-column: year month day prec evap runoff
+      baseflow); only column 6 (runoff) is read'
+    notes: Valid model range 0-500 mm/day. Read in MAKE_CONVOLUTION; converted to m3/s via FACTOR = fraction*area/86400
+      then *1/1000 (mm->m). Feeding raw 22-column VIC flux files reads the wrong column and yields extreme/negative
+      discharge.
   - name: baseflow
-    file: vic_in/fluxes_<lat>_<lon>
-    column: 7
     unit: mm/day
-    valid_range: [0.0, 100.0]
-    format: ASCII column-aligned
-    notes: Combined with surface_runoff inside the routing module to give total runoff per cell per day.
-
-  static:
-  - name: flow_direction
-    file: flow_direction.txt
-    unit: D8_code
-    valid_range: [1, 128]
-    format: ASCII grid; D8 codes 1/2/4/8/16/32/64/128 = E/SE/S/SW/W/NW/N/NE
-    notes: Generated from DEM via skills/routing-run/s5_routing_param/run_build_routing_new.py
-  - name: fraction
-    file: fraction.txt
-    unit: fraction
-    valid_range: [0.0, 1.0]
-    format: ASCII grid; fraction of cell that drains to gauge (basin mask × area weight)
-  - name: xmask
-    file: xmask.txt
-    unit: m
-    valid_range: [0.0, 100000.0]
-    format: ASCII grid; cell length in flow direction (cell-size × cos(lat) for irregular grids)
-  - name: unit_hydrograph
-    file: uh.txt
-    unit: dimensionless
-    format: ASCII; 1-day-step UH; convolves with cell runoff to produce gauge response
-  - name: velocity
-    parameter: 1.5
+    category: forcing
+    source_kind: forcing
+    model_input_format: Per-cell daily VIC flux ASCII file; column 7 (baseflow) is read
+    notes: Valid model range 0-100 mm/day. Summed with surface_runoff inside the routing module to give
+      total per-cell channel inflow.
+  parameters:
+  - name: velocity (channel wave celerity C)
     unit: m/s
-    valid_range: [0.5, 5.0]
-    format: scalar (default 1.5 m/s) or per-cell ASCII grid
-    notes: Channel routing velocity; sensitive parameter for peak timing.
-  - name: station_location
-    file: staloc.txt
-    unit: lat,lon
-    format: ASCII; first line = station name + coordinates; second line MUST be "NONE"
-    silent_error: staloc.txt missing the "NONE" sentinel line crashes the binary with "ERROR reading station file"
-
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Scalar default 1.5 m/s (INIT_ARRAY when rout_global flag is .false.) or per-cell
+      ArcInfo ASCII grid with 6-line header
+    notes: Most-calibrated channel parameter. Documented ranges 1-3 m/s (Weser), 0.5-2.0 m/s (Columbia).
+      Used in MAKE_UHM (Lohmann eq.15). Model-side valid range 0.5-5.0 m/s.
+  - name: diffusion (channel diffusivity D)
+    unit: m2/s
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Scalar default 800 m2/s (INIT_ARRAY) or per-cell ArcInfo ASCII grid
+    notes: Controls hydrograph spreading/attenuation. Documented range 200-4000 m2/s (Weser). Used in
+      MAKE_UHM impulse-response denominator.
+  - name: unit_hydrograph (within-cell box UH)
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: ASCII UH file; exactly KE=12 daily ordinates (index 0-11 + weight), weights summing
+      to 1.0
+    notes: Within-cell hillslope impulse response. Must be exactly 12 lines or the Fortran READ fails
+      with 'End of file'.
+  - name: flow_direction (D8 network)
+    unit: D8_code
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: ArcInfo ASCII grid with 6-line header; READ_DIREC decodes SEQUENTIAL codes 1-8
+      (1=E,2=NE,3=N,4=NW,5=W,6=SW,7=S,8=SE on the left-right-flipped internal grid)
+    notes: Defines the drainage network connecting cells to the outlet. The model's sequential 1-8 decoding
+      differs from the ArcGIS power-of-two convention some docs/prep scripts assume; mismatched codes
+      silently misroute.
+  - name: fraction
+    unit: fraction
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: ArcInfo ASCII grid with 6-line header; 0-1 fraction of cell draining to gauge
+    notes: Enters FACTOR = fraction*area/86400, so it scales discharge magnitude. Supplying km2 area instead
+      of a 0-1 fraction inflates discharge by orders of magnitude.
+  - name: xmask (flow distance)
+    unit: m
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: ArcInfo ASCII grid with 6-line header; per-cell channel/flow length in metres
+      (cell-size*cos(lat) for irregular grids)
+    notes: Flow-distance numerator in the cell impulse response (MAKE_UHM).
+  initial_conditions:
+  - name: cached source-to-outlet unit hydrograph (.uh_s)
+    unit: dimensionless
+    category: initial_conditions
+    source_kind: derived
+    model_input_format: Per-station <NAME5>.uh_s cache; supplied via staloc line 2 path, or recomputed
+      when that line is 'NONE'
+    notes: Precomputed per-station impulse response. A stale cache from a prior basin (5-char NAME5 collision)
+      corrupts peak timing; STATUS='NEW' open fails if the file already exists.
+  boundary_conditions:
+  - name: station/outlet location (staloc)
+    unit: grid index + lat,lon
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: ASCII; line 1 = '1 NAME column row AREA'; line 2 = UH_STRING ('NONE' to recompute
+      UH_S, else a .uh_s cache path). Both lines mandatory.
+    notes: Selects which grid cells produce output discharge. Missing line 2 crashes 'ERROR reading station
+      file'.
+  - name: simulation and output write windows (rout_global.txt date block)
+    unit: year-month
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: rout_global.txt START/STOP and FIRST/LAST year-month fields
+    notes: First row's year/month of each per-cell VIC flux file must match START_YEAR/START_MO or MAKE_CONVOLUTION
+      STOPs.
+  - name: input-file toggles and paths (rout_global.txt)
+    unit: flags/paths
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: rout_global.txt switches for direc/velo/diff/xmask/fraction (use grid file vs
+      scalar default), inpath+coordinate precision, outpath, UH file path
+    notes: When a grid toggle is .false. the model falls back to INIT_ARRAY scalar defaults (velocity
+      1.5, diffusion 800).
 outputs:
   primary:
   - name: discharge_daily
-    canonical_id: discharge
-    file: <station_name>.day
     unit: m3/s
-    valid_range: [0.0, 50000.0]
-    format: ASCII; columns = year month day discharge_m3s
-    aggregation: daily (one row per day of simulation period)
-    notes: Primary routing output. Compare against gauge observations.
+    description: Routed daily streamflow at each defined station/outlet (FLOW).
+    validation_rank: 1
+    emitted_in: <NAME5>.day
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Gauge observations are point streamflow at the outlet; the model resolves daily flow only, so
+          sub-daily peak timing cannot be evaluated.
+        - Peak timing/magnitude depend on channel velocity and diffusivity, which are calibration parameters;
+          un-calibrated runs may bias timing by days.
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Flood-event hit/miss is sensitive to routing-parameter calibration and to upstream-runoff bias
+          from the land-surface model.
+      detrending_options:
+      - none
   - name: discharge_monthly
-    canonical_id: discharge
-    file: <station_name>.month
     unit: m3/s
-    valid_range: [0.0, 30000.0]
-    format: ASCII; columns = year month discharge_m3s
-    aggregation: monthly mean
+    description: Monthly-mean routed streamflow at each station/outlet.
+    validation_rank: 2
+    emitted_in: <NAME5>.month
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Routing-parameter effects largely vanish at monthly aggregation; monthly-mean skill is dominated
+          by upstream runoff/baseflow rather than the routing scheme.
+      detrending_options:
+      - none
   - name: discharge_yearly
-    canonical_id: discharge
-    file: <station_name>.year
     unit: m3/s
-    valid_range: [0.0, 30000.0]
-    format: ASCII; columns = month discharge_m3s (climatological yearly cycle)
-    aggregation: long-term-mean monthly cycle across all simulation years
+    description: Long-term climatological mean monthly cycle (12 values) of routed river discharge across
+      all simulation years.
+    validation_rank: 3
+    emitted_in: <NAME5>.year
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - A 12-month climatological cycle; compare against the observed mean annual regime, not an inter-annual
+          series.
+      detrending_options:
+      - none
   - name: discharge_daily_mm
-    canonical_id: discharge_mm
-    file: <station_name>.day_mm
     unit: mm/day
-    format: ASCII; columns = year month day discharge_mm
-    notes: Same as discharge_daily but normalized by basin area to mm/day.
+    description: Daily discharge normalized by basin area (FLOW/FACTOR_SUM).
+    validation_rank: 4
+    emitted_in: <NAME5>.day_mm
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Area-normalized runoff depth; observed gauge flow must be divided by the same basin area for
+          a like-for-like comparison.
+      detrending_options:
+      - none
   - name: discharge_monthly_mm
-    canonical_id: discharge_mm
-    file: <station_name>.month_mm
     unit: mm/day
-    format: ASCII; columns = year month discharge_mm
-  - name: end_of_month
-    canonical_id: discharge
-    file: <station_name>.end_of_month
-    unit: m3/s
-    format: ASCII; instantaneous discharge at end of each month
-
+    description: Monthly-mean discharge normalized by basin area.
+    validation_rank: 5
+    emitted_in: <NAME5>.month_mm
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Area-normalized; routing-parameter influence is weak at monthly scale.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- id: 1
-  description: Discharge values extremely large (tens of thousands m³/s)
-  affected_output: discharge_daily, discharge_monthly
-  detection: monthly discharge >> reasonable basin yield
-  fix: Almost always a fraction.txt unit issue (got km² instead of fraction) or VIC fluxes still in mm/timestep instead of mm/day. Run preprocess_vic_for_routing.py first.
-
-- id: 2
-  description: Negative or zero discharge values
-  affected_output: discharge_daily
-  detection: discharge < 0 in output
-  fix: Usually a flow_direction.txt error — D8 codes that point off-grid create sink loops. Re-run flow direction with `run_build_routing_new.py`.
-
-- id: 3
-  description: ERROR reading station file
-  affected_output: simulation aborts
-  detection: stdout shows "ERROR" in the first second of run
-  fix: staloc.txt MUST have exactly 2 lines — first = "name lat lon", second = "NONE" sentinel.
-
-- id: 4
-  description: Stale unit hydrograph cache produces wrong peaks
-  affected_output: discharge_daily peak timing wrong by hours-to-days
-  detection: peak shape not matching observation peaks
-  fix: Delete *.uh_s files in routing_param/ before re-running; UH gets cached and stale across basins.
-
-- id: 5
-  description: Fortran path length limit (~72 chars)
-  affected_output: simulation aborts with "STOP" or path-truncation error
-  detection: working directory path > 72 chars
-  fix: Use symlinks to shorten path; rout_global.txt uses relative paths.
-
-unit_conversions:
-- name: vic_runoff_timestep_to_daily
-  from_unit: mm/timestep
-  to_unit: mm/day
-  formula: mm_day = mm_timestep × (timesteps_per_day)
-  notes: VIC default timestep is daily (1) so this is usually 1×; check VIC global_param if different.
-- name: vic_22col_to_7col
-  description: Pre-processing step to extract just the runoff and baseflow from VIC's 22-column flux output to a 7-column format Lohmann reads
-  formula: see skills/routing-run/preprocess_vic_for_routing.py
+- id: dt_001
+  symptom: Routing model runs but no output files generated, or only a few cells are processed.
+  diagnosis: Aggregating high-resolution DEM flow directions to the coarse VIC grid can disconnect the
+    network; some cells have no valid downstream neighbor so flow cannot reach the outlet.
+  remedy: Use run_build_routing_new.py's 'calculate first, fix later' algorithm, which detects disconnected
+    cells and reroutes them to the nearest connected neighbor so all cells reach the outlet.
+  severity: high
+- id: dt_002
+  symptom: No output when running routing. Model exits immediately.
+  diagnosis: 'The staloc file must contain exactly two lines (line 1: ''1 XX column row -9999''; line
+    2: UH_S file path or NONE). Wrong format means the routing binary cannot parse the station location.'
+  remedy: 'Ensure staloc has two lines: ''1 XX column row -9999'' then ''NONE'' (NONE recalculates the
+    unit hydrograph; otherwise give the UH_S file path).'
+  severity: high
+- id: dt_003
+  symptom: '''End of file'' error during runtime; error reading UH.all.'
+  diagnosis: UH.all must be 12-line format (index 0-11 plus weight, weights summing to 1.0). Fewer than
+    12 lines or a different format makes the Fortran READ statement fail.
+  remedy: Provide the correct 12-line unit hydrograph format with indices 0-11 and weights summing to
+    1.0.
+  severity: high
+- id: dt_004
+  symptom: 'Error ''Incorrect dimensions: Reset nrow and ncol in main to X Y''.'
+  diagnosis: NROW/NCOL parameters in rout.f are smaller than the basin grid size; the statically allocated
+    Fortran arrays cannot exceed these dimensions.
+  remedy: Edit PARAMETER (NROW=..., NCOL=...) in route_1.0/src/rout.f to fit the basin, then recompile
+    with 'make clean && make'.
+  severity: high
+- id: dt_005
+  symptom: Monthly discharge reaches tens of thousands m3/s, or large negative discharge values appear.
+  diagnosis: The routing model reads incorrect columns from VIC output; preprocessing must extract the
+    correct columns (0,1,2,3,18,16,17, skipping the first 3 rows).
+  remedy: Use preprocess_vic_for_routing.py to extract the correct VIC output columns and verify discharge
+    magnitudes are physically reasonable for the basin area.
+  severity: high
+- id: dt_006
+  symptom: Files exist but reported as 'NOT FOUND'; output is all 0 or NaN.
+  diagnosis: Fortran string length is limited to 60-80 characters; absolute paths longer than this get
+    truncated, so the binary opens wrong or nonexistent files with no clear error.
+  remedy: Use symbolic links and relative paths, or work from a short-path directory like /tmp/rout_work,
+    to keep paths under the Fortran string-length limit.
+  severity: high
+- id: dt_007
+  symptom: Many 'XX.XXXX_YYY.YYYY NOT FOUND, INSERTING ZEROS' messages; output discharge is all zero.
+  diagnosis: Grid coordinates in auxiliary files (xmask, fdir) don't match VIC output filenames; wrong
+    xllcorner/yllcorner make computed filenames not match existing VIC output files.
+  remedy: Verify VIC filename coordinates against the xmask definition and set xllcorner/yllcorner so
+    grid center coordinates match VIC filenames.
+  severity: high
+- id: dt_008
+  symptom: shutil.copytree error 'Too many levels of symbolic links'; directory shows routing_param/routing_param/...
+    infinite nesting.
+  diagnosis: A symlink named routing_param was created inside the routing_param/ directory pointing back
+    to itself, causing infinite recursion; often a side effect of mishandling the Fortran path-length
+    limit (dt_006).
+  remedy: Never create a symlink named routing_param inside routing_param/. Create the routing_param symlink
+    from outside (e.g. /tmp), and inside routing_param only symlink to OTHER directories (vic_in, rout_exe).
+  severity: medium
+- id: dt_009
+  symptom: The routing binary reports Cannot open file for a .uh_s file with File exists.
+  diagnosis: MAKE_GRID_UH writes the per-station source-to-outlet unit hydrograph with Fortran OPEN STATUS='NEW';
+    s5_routing_param/run_build_routing_new.py writes staloc line 2 as NONE, so a previous <NAME5>.uh_s
+    cache prevents recomputation.
+  remedy: Delete stale *.uh_s files in the routing work directory before rerunning, or put a valid intended
+    .uh_s path on staloc line 2.
+  severity: fatal
+- id: dt_010
+  symptom: The run completes, but flood peaks are shifted by days or the hydrograph shape does not match
+    the current basin even though runoff magnitudes look plausible.
+  diagnosis: When staloc line 2 is not NONE, MAKE_GRID_UH reads the supplied .uh_s cache instead of recomputing
+    it; s5_routing_param/run_build_routing_new.py writes NONE for fresh parameter builds, and docs/format_spec.yaml
+    notes that a per-station NAME5 cache from another basin can corrupt source-to-outlet timi
+  remedy: Set staloc line 2 to NONE and remove old *.uh_s files whenever the basin, station, D8 grid,
+    xmask, velocity, diffusion, or UH.all changes.
+  severity: silent
+- id: dt_011
+  symptom: The run completes, but all m3/s discharge values are inflated by orders of magnitude while
+    timing still looks reasonable.
+  diagnosis: The fraction input must be dimensionless 0 to 1; MAKE_CONVOLUTION computes FACTOR as fraction
+    times spherical cell area divided by 86400, so supplying km2 or m2 cell area in *_frac.txt multiplies
+    the volume conversion twice.
+  remedy: Regenerate *_frac.txt with build_fraction_grid in s5_routing_param/run_build_routing_new.py
+    and verify every positive value is between 0 and 1.
+  severity: silent
+- id: dt_012
+  symptom: The run completes, but daily peaks arrive too early or too late across the basin while monthly
+    means remain similar.
+  diagnosis: xmask is consumed by MAKE_UHM as a flow length in metres; s5_routing_param/run_build_routing_new.py
+    compute_xmask writes metre distances such as 22849, 27734, and 35956 for the configured 0.25 degree
+    grid.
+  remedy: Regenerate *_xmask.txt with run_build_routing_new.py or convert any external distance grid to
+    metres before routing.
+  severity: silent
+- id: dt_013
+  symptom: Storm peaks are routed almost instantly or are delayed far beyond observed events, with no
+    parser error.
+  diagnosis: Velocity is channel wave celerity in m/s; rout_global.txt uses .false. plus scalar VELOCITY
+    from s5_routing_param/run_build_routing_new.py or .true. plus a grid, and MAKE_UHM applies it directly
+    in the diffusive-wave impulse response.
+  remedy: Use m/s values in the documented 0.5 to 5.0 model-side range, or convert any m/day or km/day
+    source before writing the scalar or velocity grid.
+  severity: silent
+- id: dt_014
+  symptom: Daily hydrographs are unrealistically sharp or over-attenuated while total routed volume remains
+    close.
+  diagnosis: Diffusion is channel diffusivity D in m2/s; s5_routing_param/run_build_routing_new.py writes
+    the scalar DIFFUSION value into rout_global.txt, docs/format_spec.yaml lists the calibrated range
+    as roughly 200 to 4000 m2/s, and MAKE_UHM uses it in the impulse-response denominator.
+  remedy: Use m2/s values near the documented calibration range or convert from m2/day before writing
+    rout_global.txt or the diffusion grid.
+  severity: silent
+- id: dt_015
+  symptom: The run completes with plausible-looking files, but catchment cells drain in the wrong directions
+    or discharge is near zero at the selected outlet.
+  diagnosis: docs/format_spec.yaml records that READ_DIREC decodes sequential codes 1 through 8 on a left-right-flipped
+    internal grid, while compute_direction_with_fix in s5_routing_param/run_build_routing_new.py uses
+    its own 1=N through 8=NW convention; external ArcGIS power-of-two D8 grids will be silently mis
+  remedy: Use the local generated *_direc.txt only after checking outlet connectivity, and convert any
+    external D8 product to the routing binary convention before replacing it.
+  severity: silent
+- id: dt_016
+  symptom: Changing a velocity, diffusion, xmask, or fraction file has no effect, or the model tries to
+    read a number as a filename.
+  diagnosis: 'rout_global.txt alternates boolean toggles and values: .false. means use the following scalar
+    for velocity or diffusion, while .true. means read the following grid path for xmask or fraction as
+    generated by write_rout_global in s5_routing_param/run_build_routing_new.py.'
+  remedy: Inspect rout_global.txt and make each toggle match the following line type, then rerun the binary
+    from the directory where relative paths resolve.
+  severity: degraded
+- id: dt_017
+  symptom: MAKE_CONVOLUTION stops near the start of routing or reports an unexpected first year and month
+    in a per-cell flux file.
+  diagnosis: The date block in rout_global.txt sets START_YEAR and START_MO, preprocess_vic_for_routing.py
+    preserves the year and month columns from VIC outputs, and docs/format_spec.yaml notes that the first
+    row of every 7-column VIC routing input must match those values.
+  remedy: Edit the two date-window lines in rout_global.txt to match the preprocessed VIC input period,
+    or regenerate the VIC routing input for the configured period.
+  severity: fatal
+- id: dt_018
+  symptom: preflight_check.py fails the binary check or the routing command cannot execute rout.
+  diagnosis: preflight_check.py requires KISSPATH_BINARIES/route_1.0/src/rout to exist,
+    be executable, and print the rout usage message when invoked with no arguments; s5_routing_param/run_build_routing_new.py
+    only builds parameter files and cannot replace the Fortran routing executable.
+  remedy: Restore or rebuild route_1.0/src/rout with gfortran and make it executable with chmod +x, then
+    rerun python preflight_check.py.
+  severity: fatal
+- id: dt_019
+  symptom: run_build_routing_new.py fails to import rasterio, geopandas, shapely, whitebox, or numpy before
+    creating routing parameter files.
+  diagnosis: The local routing parameter builder imports rasterio, geopandas, shapely.geometry, whitebox,
+    and numpy at module import time, and preflight_check.py only checks pandas in the HydroCraft Python
+    environment.
+  remedy: Install the missing geospatial package into KISSPATH_PYTHON_ENV or run s5_routing_param/run_build_routing_new.py
+    in an environment that contains rasterio, geopandas, shapely, whitebox, and numpy.
+  severity: fatal
+- id: dt_020
+  symptom: NSE, KGE, or PBIAS is poor for .day_mm or .month_mm even though .day or .month visually matches
+    observed gauge discharge.
+  diagnosis: preprocess_vic_for_routing.py prepares runoff/baseflow inputs in mm/day, WRITE_DATA emits
+    .day in m3/s and .day_mm as FLOW divided by FACTOR_SUM, and docs/validation_convention.yaml requires
+    observed gauge flow to be converted to the same basin-area-normalized mm/day basis before validating
+    *_mm out
+  remedy: Compare .day and .month directly against observed m3/s, or divide observed m3/s by the same
+    basin area normalizer before using .day_mm or .month_mm validation files.
+  severity: silent
+- id: restored_213026_00
+  symptom: The routing binary exits immediately or produces no station output when rout_global.txt points
+    to a *_staloc.txt file.
+  diagnosis: The staloc file consumed by rout_global.txt must have line 1 as the station row and column
+    and line 2 as either NONE or a .uh_s path; write_staloc in s5_routing_param/run_build_routing_new.py
+    writes both lines.
+  remedy: Regenerate the station file with write_staloc or edit it so line 1 is like 1 HF col row -9999
+    and line 2 is NONE, then rerun the routing binary.
+- id: restored_213026_01
+  symptom: Runtime prints End of file while reading UH.all or stops before writing discharge files.
+  diagnosis: READ_GRID_UH expects exactly KE=12 daily unit-hydrograph ordinates with index 0 through 11
+    plus a weight; write_uh_file in s5_routing_param/run_build_routing_new.py emits this 12-line contract.
+  remedy: Regenerate UH.all with s5_routing_param/run_build_routing_new.py or replace it with 12 indexed
+    ordinates whose weights sum to 1.0.
+- id: restored_213026_02
+  symptom: The routing binary prints Incorrect dimensions and asks to reset nrow and ncol in main.
+  diagnosis: route_1.0/src/rout uses statically allocated NROW and NCOL parameters; READ_DIREC rejects
+    ArcInfo grids whose nrows or ncols exceed those compiled limits.
+  remedy: Edit the PARAMETER values for NROW and NCOL in KISSPATH_BINARIES/route_1.0/src/rout.f
+    to cover the generated grid and rebuild with make clean && make.

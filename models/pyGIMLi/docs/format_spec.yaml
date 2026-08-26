@@ -1,167 +1,409 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: pyGIMLi
-  domain: geophysics
-  subdomain: Electrical Resistivity Tomography, Seismic Refraction, Induced Polarization,
-    Electromagnetics
-  binary_path: KISSPATH_PYTHON_ENV/bin/python
-  version: 1.5.5
   language: python
-  license: Apache 2.0
+  implementation:
+    id: pygimli
+    version: 1.5.5 (git describe v1.5.5.post2-56-ge792d84b)
+    provenance: Python frontend over a C++ numerical core (libgimli / pgcore); multi-method geophysical
+      forward + inverse modelling library by Rücker, Günther, Wagner et al.
+  scientific_reference_version: pyGIMLi generalized Gauss-Newton inversion + FEM/FVM forward framework
+    (Rücker, Günther & Wagner 2017, Computers & Geosciences 109:106-123)
 inputs:
   forcing:
-  - name: rhoa
-    unit: ohm-m
-    description: Apparent resistivity (ERT)
-    valid_range:
-    - 0.1
-    - 100000
-  - name: t
+  - name: ERT apparent resistivity (rhoa)
+    unit: Ohm·m
+    category: observed_data
+    source_kind: user_provided
+    model_input_format: DataContainer from BERT/GIMLI .dat/.ohm, Res2DInv/ABEM/Syscal exports, or generic
+      CSV (a,b,m,n,rhoa)
+    notes: The observation the inversion fits; consumed every Gauss-Newton iteration to form the data
+      residual d_obs - d_pred. Must be apparent resistivity (geometric factor k applied), not raw resistance.
+  - name: SRT first-arrival traveltime (t)
     unit: s
-    description: Travel time (SRT)
-    valid_range:
-    - 0.0
-    - 1.0
-  - name: ipa
+    category: observed_data
+    source_kind: user_provided
+    model_input_format: SEG-2 .sg2, GIMLI .sgt/.gtt, or CSV picks (sx,rx,t)
+    notes: Seconds, NOT milliseconds; ms input yields velocities 1000x too high.
+  - name: IP apparent phase (ipa)
     unit: mrad
-    description: Apparent IP phase (SIP)
-    valid_range:
-    - -1000
-    - 0
-  - name: electrode_positions
-    unit: m
-    description: Electrode/sensor x,y,z coordinates
-    valid_range:
-    - -100000
-    - 100000
+    category: observed_data
+    source_kind: user_provided
+    model_input_format: instrument export into DataContainer
+    notes: Negative (lag) sign convention expected; SIP/IP only.
+  - name: EM apparent conductivity
+    unit: S/m
+    category: observed_data
+    source_kind: user_provided
+    model_input_format: FDEM/TDEM data (in-phase / quadrature components)
+    notes: EM methods only.
   parameters:
-    critical:
-    - name: lambda
-      valid_range:
-      - 1
-      - 100
-      description: Regularization strength; controls smoothness vs data fit trade-off
-    - name: relativeError
-      valid_range:
-      - 0.01
-      - 0.1
-      description: Relative data error estimate (fraction)
-    - name: absoluteError
-      valid_range:
-      - 0.0
-      - 1.0
-      description: Absolute data error (method-dependent units)
-    - name: maxIter
-      valid_range:
-      - 5
-      - 20
-      description: Maximum Gauss-Newton iterations
-    - name: zWeight
-      valid_range:
-      - 0.2
-      - 1.0
-      description: Vertical vs horizontal smoothing weight
-    secondary:
-    - name: quality
-      valid_range:
-      - 30
-      - 34
-      description: Minimum triangle angle for mesh generation
-    - name: paraMaxCellSize
-      valid_range:
-      - 0.1
-      - 1000
-      description: Maximum cell area in parameter domain (site-dependent)
-    - name: paraDX
-      valid_range:
-      - 0.3
-      - 1.0
-      description: Horizontal cell refinement factor
-    - name: paraDepth
-      valid_range:
-      - 1
-      - 500
-      description: Investigation depth (0.3-0.5 x array spread)
-    - name: robustData
-      valid_range:
-      - 0
-      - 1
-      description: L1 (True) vs L2 (False) data misfit norm
+  - name: electrode / sensor positions
+    unit: m (local Cartesian)
+    category: geometry
+    source_kind: user_provided
+    model_input_format: positions embedded in DataContainer
+    notes: Must be unique nodes (duplicates segfault Triangle) and in metres, local origin.
+  - name: data error estimate (relative + absolute)
+    unit: fraction 0-1
+    category: error_model
+    source_kind: user_provided
+    model_input_format: per-datum error vector; default ert.estimateError() relativeError=0.03 + absolute-V
+      from assumed 0.1 A current
+    notes: Fraction, NOT percent; sets the data-weighting matrix W_d and therefore chi^2.
+  - name: FEM mesh (parameter + forward)
+    unit: m
+    category: discretization
+    source_kind: user_provided
+    model_input_format: .bms native binary, .poly PLC, .msh Gmsh v2/v4, .vtk; or auto createParaMesh from
+      geometry
+    notes: Parametric (investigation) domain ~0.2-0.5x sensor spread; boundary region 2-5x spread to avoid
+      FEM boundary leakage.
+  - name: regularization strength lambda
+    unit: dimensionless
+    category: regularization
+    source_kind: default
+    model_input_format: scalar; InversionBase default 20
+    notes: Trade-off between model smoothness and data fit; held constant per iteration unless lambdaFactor<1
+      sets a cooling schedule.
+  - name: zWeight (vertical smoothness anisotropy)
+    unit: dimensionless
+    category: regularization
+    source_kind: default
+    model_input_format: per-region scalar; default 1.0 (isotropic)
+    notes: <1 permits more vertical structure / improves depth resolution.
+  - name: physical/petrophysical model parameters & region table
+    unit: method-dependent
+    category: petrophysics
+    source_kind: dataset_lookup
+    model_input_format: per-region startModel/limits/transform; petrophysical relations (pygimli.physics.petro)
+    notes: Rock-type / borehole-log priors and phase-model constants for petrophysical joint inversion.
+  initial_conditions:
+  - name: starting model (m0)
+    unit: method-dependent
+    category: starting_state
+    source_kind: default
+    model_input_format: homogeneous or layered; default = median of apparent data (ERT exp(mean(log(rhoa)));
+      SRT vTop=500/vBottom=5000 m/s gradient)
+    notes: Gauss-Newton is locally convergent; a poor start stalls convergence (chi^2 plateau >2).
+  - name: reference model (m_ref)
+    unit: method-dependent
+    category: starting_state
+    source_kind: default
+    model_input_format: reference vector in the Tikhonov term lambda W_m (m - m_ref)
+    notes: Default equals the starting model unless a prior reference is supplied.
+  boundary_conditions:
+  - name: geophysical method
+    unit: categorical
+    category: method_selection
+    source_kind: user_provided
+    model_input_format: 'Manager choice: ERTManager / TravelTimeManager / SIP SpectrumManager / FDEM-TDEM
+      / VESManager / JointInversion'
+    notes: Selects the forward operator, units, tokens and transforms — all input/output/state semantics
+      are method-conditional.
+  - name: electrode / measurement scheme
+    unit: categorical
+    category: acquisition_scheme
+    source_kind: user_provided
+    model_input_format: Wenner | Schlumberger | Dipole-Dipole | Gradient | custom (ABMN indices)
+    notes: Determines the analytical geometric factor k; non-standard/borehole geometry requires numerical
+      createGeometricFactors().
+  - name: data & model transforms
+    unit: categorical
+    category: transform_choice
+    source_kind: default
+    model_input_format: data transform (ERT TransLogLU / SRT TransLin) and model transform (TransLog/TransLogLU/TransCotLU);
+      region default 'Log'
+    notes: Model transform must keep the inverted property positive; wrong transform diverges or yields
+      negative resistivity.
+  - name: singularity removal (sr)
+    unit: boolean
+    category: structural_switch
+    source_kind: default
+    model_input_format: ERTManager(sr=True) default
+    notes: Subtracts the analytical primary potential at current electrodes; disabling causes checkerboard
+      FEM artifacts.
+  - name: robust data norm (robustData)
+    unit: boolean
+    category: structural_switch
+    source_kind: default
+    model_input_format: InversionBase robustData default False
+    notes: True -> L1 (outlier-robust) data misfit; False -> L2.
 outputs:
   primary:
-  - name: resistivity
-    unit: ohm-m
-    description: Inverted resistivity model per mesh cell (ERT)
-    valid_range:
-    - 0.1
-    - 100000
-  - name: velocity
-    unit: m/s
-    description: Inverted velocity model per mesh cell (SRT, as 1/slowness)
-    valid_range:
-    - 100
-    - 10000
-  - name: chi2
+  - name: inverted_resistivity_model
+    unit: Ohm·m
+    description: Spatially-distributed subsurface electrical resistivity per mesh cell recovered by ERT
+      inversion (inverted in log-space)
+    validation_rank: 1
+    emitted_in: .vtk / .bms / .npy (per-mesh-cell array) + model-cells CSV
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Restrict comparison to cells with coverage above threshold; low-coverage cells are controlled
+          by regularization/start model, not data
+        - Resolution decreases with depth and away from electrodes
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Borehole/lab resistivity log compared at a sampled cell; smoothing regularization biases point
+          values toward the local mean
+      detrending_options:
+      - none
+  - name: inverted_velocity_model
+    unit: m/s (inverted as slowness s/m, reported as velocity = 1/slowness)
+    description: Seismic P-wave velocity field per mesh cell recovered by refraction traveltime inversion
+    validation_rank: 3
+    emitted_in: .vtk / .npy (per-mesh-cell array)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - SRT inverts slowness, not velocity; ensure obs and model are compared in the same space
+        - Ray coverage concentrates near refractors; deep/low-coverage zones poorly constrained
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Sonic/borehole velocity at a point; subject to smoothing bias and the slowness-vs-velocity unit
+          distinction
+      detrending_options:
+      - none
+  - name: inverted_conductivity_or_coleCole_model
+    unit: S/m (EM) or (rho0, m, tau, c) (SIP)
+    description: Subsurface electrical conductivity (EM) or subsurface Cole-Cole spectral parameters (SIP)
+      recovered by inversion
+    validation_rank: 4
+    emitted_in: .vtk / .npy
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - SIP Cole-Cole parameters are non-unique (ice/rock-matrix and tau/c ambiguity); compare with
+          petrophysical priors in mind
+      detrending_options:
+      - none
+  - name: forward_response
+    unit: Ohm·m or s (matches data token)
+    description: Predicted geophysical survey data (apparent resistivity / traveltime) from the forward
+      operator for the current subsurface model
+    validation_rank: 2
+    emitted_in: .npy + residual pseudosection
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - magnitude_accuracy
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Compared against the observed data pseudosection; structured residuals indicate systematic data
+          error not captured by the random-noise model
+      detrending_options:
+      - none
+  - name: data_fit_chi2
     unit: dimensionless
-    description: Data misfit normalized by estimated error
-    valid_range:
-    - 0.5
-    - 2.0
-  - name: rms
-    unit: percent
-    description: Relative root mean square misfit
-    valid_range:
-    - 0
-    - 20
-  - name: coverage
-    unit: dimensionless
-    description: Cumulative sensitivity per cell (Jacobian column sum)
-    valid_range:
-    - 0
-    - 1
-  - name: subsurface_resistivity
-    canonical_id: subsurface_resistivity
-    unit: ohm.m
-  - name: hydraulic_conductivity
-    canonical_id: hydraulic_conductivity
-    unit: m/s
-  - name: porosity
-    canonical_id: porosity
-    unit: fraction
-  secondary:
-  - name: mesh
-    unit: m
-    description: Unstructured FEM mesh (.bms, .vtk, .msh)
-  - name: jacobian
-    unit: mixed
-    description: Sensitivity/Jacobian matrix in CSR sparse format
-  - name: response
-    unit: same as input data
-    description: Predicted data from final model
-file_formats:
-  input:
-  - extension: .dat
-    description: BERT/GIMLI or Res2DInv ERT data
-  - extension: .ohm
-    description: ABEM Terrameter export
-  - extension: .sgt
-    description: GIMLI native travel time format
-  - extension: .sg2
-    description: SEG-2 seismograph records
-  output:
-  - extension: .vtk
-    description: VTK mesh + model for ParaView
-  - extension: .bms
-    description: pyGIMLi native binary mesh
-  - extension: .csv
-    description: Extracted model values
-  - extension: .png
-    description: Matplotlib figures
+    description: Error-weighted subsurface geophysical survey data misfit chi^2 = Phi_d/N tracked across
+      iterations; convergence target ~1.0
+    validation_rank: 5
+    emitted_in: metrics.json / chi2History
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Internal convergence diagnostic relative to the supplied error model, NOT an independent observable;
+          chi^2 meaning shifts if error units (fraction vs percent) are wrong
+      detrending_options:
+      - none
+  - name: coverage_sensitivity
+    unit: normalized 0-1
+    description: Cumulative per-cell sensitivity (sumCols of Jacobian) on the subsurface inversion mesh;
+      flags reliable vs poorly-constrained regions
+    validation_rank: 6
+    emitted_in: model-cells CSV / .vtk attribute
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Diagnostic of resolution, not a physical observable; used to mask the inverted model for fair
+          comparison
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- Geometric factor must be numerical (not analytical) when electrodes have topography
-  or are in boreholes
-- 'Slowness/velocity confusion: inversion operates in slowness space, display is in
-  velocity'
-- 'IP phase sign convention: pyGIMLi expects negative phase values (phase lag)'
-- Error estimates as fractions (0-1), not percent (0-100)
-- Chi2 << 1 indicates overfitting; Chi2 >> 1 indicates underfitting or wrong error
-  model
+- id: dt_001
+  symptom: Inverted resistivity model values are 1000x higher than expected for site geology (model range
+    10000-1e8 Ohm·m for typical sedimentary site)
+  diagnosis: Input apparent resistivity is in Ohm (resistance) instead of Ohm·m (resistivity); geometric
+    factor k was not applied to convert resistance (V/I) to apparent resistivity (k x V/I)
+  remedy: 'Apply geometric factor: rhoa = k * R, where k = 2pi / (1/AM - 1/AN - 1/BM + 1/BN); verify rhoa
+    range is 1-10000 Ohm·m before inversion'
+  severity: silent
+- id: dt_002
+  symptom: SRT inversion produces velocities 1000x too high (e.g. 500000 m/s); velocity range exceeds
+    10000 m/s for near-surface survey
+  diagnosis: Travel times are in milliseconds instead of seconds; pyGIMLi expects seconds, so 1000x-too-large
+    times give 1000x-too-small slowness and unrealistic velocities
+  remedy: 'Divide travel times by 1000: data[''t''] /= 1000.0; check that t range is 0.001-0.1 s for near-surface'
+  severity: silent
+- id: dt_003
+  symptom: Mesh generation fails with 'degenerate triangle' or nonsensical geometry; mesh covers < 1 m
+    or > 10000 km
+  diagnosis: Electrode/sensor coordinates are in lat/lon degrees instead of local metres, producing a
+    ~0.01 m wide mesh or numerical precision issues
+  remedy: Project coordinates to local Cartesian (UTM or subtract centroid); verify survey extent is 10-1000
+    m for typical surveys
+  severity: fatal
+- id: dt_004
+  symptom: IP inversion produces nonsensical Cole-Cole parameters (tau and c out of range); phase values
+    > 100 mrad or positive when should be negative
+  diagnosis: IP phase sign convention mismatch — pyGIMLi's SIP framework expects negative phase (lag convention)
+    but some instruments report positive phase
+  remedy: 'Negate phase values: data[''ipa''] = -abs(data[''ipa'']); check instrument manual for sign
+    convention'
+  severity: silent
+- id: dt_005
+  symptom: Chi-squared is either extremely high (>100) or extremely low (<0.01); inversion converges but
+    chi² never reaches ~1.0
+  diagnosis: Error estimates provided as percentage (0-100) instead of fraction (0-1); data weighting
+    is 100x wrong, errors-as-percent give chi² ~100x too small (overfitting)
+  remedy: 'Convert errors: if max(err) > 1, divide by 100; data[''err''] should be 0.01-0.20 (e.g. 3%
+    -> 0.03); use ert.estimateError() if unsure'
+  severity: degraded
+- id: dt_006
+  symptom: createParaMesh fails with segfault or 'no valid triangulation' (segmentation fault in Triangle
+    library)
+  diagnosis: Duplicate or overlapping electrode positions in DataContainer; Triangle requires unique node
+    positions or Delaunay triangulation fails
+  remedy: Remove duplicate sensors (check with 1mm tolerance), snap to grid if very close, re-number ABMN
+    indices after removing electrodes
+  severity: fatal
+- id: dt_007
+  symptom: Inversion produces edge artifacts — extreme resistivity/velocity values spike at model boundaries
+  diagnosis: Boundary region too small — the FEM zero-flux/fixed boundary condition leaks into the parametric
+    domain when the mesh boundary is too close to the sensor array
+  remedy: 'Increase boundary factor to 3-5x the electrode spread: createParaMesh(data, boundary=5); or
+    mask boundary cells where coverage < 0.1'
+  severity: degraded
+- id: dt_008
+  symptom: Inversion is very slow (hours instead of minutes) or runs out of memory; mesh.cellCount() >
+    100000
+  diagnosis: Mesh is too fine — paraMaxCellSize too small or quality too high; Jacobian is n_data x n_cells
+    and normal equations scale O(n³), so >50000 cells is excessive for 2D ERT
+  remedy: Increase paraMaxCellSize (≈electrode_spacing²); reduce quality from 34 to 30; aim for 2000-20000
+    cells in 2D; check cellCount before inversion
+  severity: degraded
+- id: dt_009
+  symptom: Model is extremely smooth — no anomalies visible despite known geology; chi² decreasing but
+    model looks flat
+  diagnosis: Regularization parameter lambda is too high, over-penalizing model roughness and producing
+    a homogeneous-half-space-like model that fits data poorly
+  remedy: Reduce lambda by factor 2-5 and re-run (lam=20->10->5->2); target chi² ≈ 1.0, do not go below
+    chi² = 0.5
+  severity: degraded
+- id: dt_010
+  symptom: 'Inversion diverges — chi² increases or NaN values appear in model (RuntimeWarning: invalid
+    value; NaN in model vector)'
+  diagnosis: Zero or negative error estimates, or data incompatible with transform; TransLogLU requires
+    strictly positive data, so zero/negative rhoa gives NaN/Inf and zero errors give infinite weights
+  remedy: Remove data where rhoa <= 0; set error floor data['err'] = max(err, 0.01); for negative rhoa
+    check electrode numbering (ABMN swap)
+  severity: fatal
+- id: dt_011
+  symptom: Checkerboard-like artifacts near current/source electrodes in ERT — regular high/low pattern
+    at electrode positions
+  diagnosis: Singularity removal (SR) is disabled in ERTModelling; the FEM point-source singularity at
+    current electrodes propagates numerical error into the Jacobian and model, looking like real structure
+  remedy: 'Enable singularity removal: ERTManager(data, sr=True) (default is True); never disable sr without
+    a specific reason'
+  severity: silent
+- id: dt_012
+  symptom: SRT inversion produces velocity-inversion artefact — slower layer above faster, velocity decreasing
+    with depth in a clearly layered setting
+  diagnosis: Velocity/slowness transform confusion — pyGIMLi inverts for slowness (s/m) not velocity;
+    applying TransLog assuming velocity parameterization produces artifacts
+  remedy: Use default TravelTimeManager(data) — do not override modelTrans; model values are slowness,
+    display velocity = 1/slowness
+  severity: silent
+- id: dt_013
+  symptom: Systematic misfit pattern — residuals are structured not random; residual pseudosection shows
+    consistent positive/negative bands
+  diagnosis: Systematic data error (electrode contact problems, cable cross-talk, instrument drift) not
+    captured by the random-noise error model, producing structured residuals that smooth regularization
+    cannot reproduce
+  remedy: Identify and remove systematic outliers (|residual/error| > 3); use reciprocal error as data
+    error; check for dead electrodes
+  severity: degraded
+- id: dt_014
+  symptom: Inversion requires many iterations (>15) and chi² plateaus above 2; chi² stalls at 2-5 after
+    10+ iterations
+  diagnosis: Starting model too far from the true model; Gauss-Newton is locally convergent, so poor linearization
+    gives slow convergence or a local minimum
+  remedy: 'Set a data-statistics starting model: ERT startModel = exp(mean(log(rhoa))); SRT from median
+    apparent velocity; or use 1D result as 2D start'
+  severity: degraded
+- id: dt_015
+  symptom: Model shows many small-scale fluctuations not matching known geology; noisy cell-to-cell variation
+    with chi² < 0.5
+  diagnosis: Overfitting — lambda too low or error estimates too large; when chi² << 1 the inversion fits
+    noise, producing spurious small-scale structure
+  remedy: Increase lambda (double and re-run if chi² < 0.5) or reduce error estimates; use robustData=True
+    for L1 norm; target chi² = 1.0 ± 0.2
+  severity: degraded
+- id: dt_016
+  symptom: Depth of investigation appears half of expected from electrode spread; model resolves only
+    shallow features, deep anomalies missed
+  diagnosis: Electrode spacing unit error — positions in decimetres/centimetres instead of metres, making
+    the mesh 100x too small so the depth axis is compressed
+  remedy: Verify and correct electrode position units to metres; check data.sensors() range matches physical
+    survey extent (1/100 of expected => cm)
+  severity: silent
+- id: dt_017
+  symptom: ERT model in borehole geometry is physically unreasonable; resistivity > 1e6 or < 0.01 near
+    borehole electrodes
+  diagnosis: Analytical geometric factor (assumes homogeneous half-space with surface electrodes) used
+    for borehole/crosshole/surface+borehole geometry, producing systematically biased apparent resistivities
+  remedy: 'Use numerical geometric factor with a mesh: k = ert.createGeometricFactors(data, mesh=createParaMesh(data));
+    always numerical k for non-standard geometries'
+  severity: silent
+- id: dt_018
+  symptom: Model looks reasonable but low-coverage regions show misleading structure; anomalies appear
+    in regions with coverage < 10%
+  diagnosis: Displaying full model without coverage masking; low cumulative-sensitivity cells are controlled
+    by regularization and starting model rather than data, so showing them at full opacity is geophysically
+    misleading
+  remedy: 'Display model with coverage mask/alpha: coverage = sumCols(jacobian)/max; pg.show(mesh, model,
+    coverage=coverage) or mask cells where coverage < 0.1'
+  severity: silent

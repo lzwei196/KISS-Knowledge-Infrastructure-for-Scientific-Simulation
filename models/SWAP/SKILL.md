@@ -1,14 +1,3 @@
----
-name: swap
-description: >-
-  SWAP version 4 (WENR Report 2780, 2017; doi:10.18174/416321) — vadose-zone Richards/MvG
-  ecohydrology spec. Covers 1-D vertical transport of water in the variably saturated
-  vadose zone (Richards equation…; Root water uptake and water/oxygen/salt stress (Feddes
-  or de Jong van Lier reduction); Potential and actual evapotranspiration and rainfall
-  interception (Penman-Monteith; reference ET +…. Use when the task involves running,
-  configuring, calibrating or interpreting SWAP.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,44 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (23 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (21 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/assemble_swap_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/assemble_swap_config.py --help` |
+| `tools/convert_forcing_to_swap.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_swap.py --help` |
+| `tools/convert_soil_to_swap.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_swap.py --help` |
+| `tools/parse_swap_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_swap_output.py --help` |
+| `tools/plot_swap_results.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/plot_swap_results.py --help` |
+| `tools/run_swap.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_swap.py --help` |
+| `tools/score_swap_point_obs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/score_swap_point_obs.py --help` |
+
+*7 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # SWAP v4.2.0 (Soil-Water-Atmosphere-Plant) — Knowledge Infrastructure
 
@@ -170,6 +197,29 @@ Input .met file:
 
 ---
 
+## Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`; this table summarizes the unit conversions
+that the SWAP KI tools apply or must preserve when preparing and parsing model files.
+
+| Variable | Source unit | SWAP / KI unit | Conversion | Notes |
+|----------|-------------|----------------|------------|-------|
+| Radiation (`Rad`) | W/m² | kJ/m²/d in `.met` | `W/m² * 86.4` for daily means, or `W/m² * period_seconds / 1000` | SWAP then converts kJ/m²/d to J/m²/d internally |
+| Temperature (`Tmin`, `Tmax`) | K | °C | `K - 273.15` | CMFD/MSWX-derived Kelvin inputs must be converted before writing `.met` |
+| Humidity (`Hum`) | kg/kg specific humidity | kPa vapor pressure | Clausius-Clapeyron / Magnus conversion | This is actual vapor pressure, not relative humidity |
+| Rainfall (`Rain`) | mm/day or mm/3hr | mm/d in `.met`; cm/d internally | CMFD daily direct; MSWX 3-hour values summed to daily; SWAP internal `* 0.1` | Do not mix daily totals and sub-daily rates |
+| Wind speed | m/s | m/s | direct | Measurement height must match `ALTW` |
+| Reference ET (`ETref`) | mm/d | mm/d | direct | Used only when `SWETR=1` |
+| Pressure head | positive depth in some databases | negative cm above water table | negate and convert to cm | Unsaturated-zone heads are negative |
+| Ksat | m/d or m/s | cm/d | `m/d * 100`; `m/s * 8.64e6` | Silent orders-of-magnitude failure if wrong |
+| Bulk density | g/cm³ or kg/m³ | mg/cm³ | `g/cm³ * 1000`; `kg/m³` direct | SWAP range check expects mg/cm³ |
+| Irrigation depth | mm | mm in `.swp` | direct | SWAP handles its internal water-depth conversion |
+| Solute concentration | mg/L | mg/cm³ | `mg/L / 1000` | Soil pore-water solute, not ocean salinity |
+| Soil depth | m | cm | `m * 100` | SWAP depths are in cm and downward from the surface |
+| `actual_soil_evaporation` | SWAP parsed output | cm | direct | Dag rank-1 output unit is `cm` |
+
+---
+
 ## Input File Reference
 
 ### .met file (Meteorological forcing)
@@ -236,6 +286,40 @@ Eight options: SWBOTB=1 (prescribed GWL), 2 (prescribed flux), 3 (aquifer head),
 | .end | End conditions (restart file) | Final h, theta, T per compartment |
 | .csv | Custom CSV output | User-selected variables via INLIST_CSV |
 | .crp | Crop growth output | DVS, LAI, biomass, rooting depth |
+
+---
+
+## Output Description
+
+This section restates the dag identity for the reader. If anything here disagrees with
+`dag.yaml`, the dag wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `actual_soil_evaporation` — Actual bare-soil evaporation from the surface compartment. (`cm`)
+
+| Dag output variable | Rank | Unit | Description |
+|---------------------|------|------|-------------|
+| `actual_soil_evaporation` | 1 | cm | Actual bare-soil evaporation from the surface compartment. |
+
+Other dag outputs are:
+`actual_transpiration`, `evapotranspiration`, `soil_water_content_profile`,
+`pressure_head_profile`, `groundwater_level`, `drainage_flux`, `bottom_flux`,
+`solute_concentration_output`, `soil_temperature_profile`, `crop_yield`, and
+`leaf_area_index`.
+
+---
+
+## Output Unit Table
+
+The dag-sourced unit that governs the headline judged output is:
+
+| Dag variable | Unit | Source |
+|--------------|------|--------|
+| `actual_soil_evaporation` | cm | `dag.yaml` |
+
+For the remaining dag outputs, read `dag.yaml` directly before binding observations or
+computing metrics; do not infer their units from variable names.
 
 ---
 
@@ -323,6 +407,65 @@ dimension and no ocean. Before accepting a validation target, check the support:
 Verified 2026-08-11: `KISSPATH_DATA/obs/en4-2-2/EN.4.2.2.analyses.g10.*.zip`,
 variable `salinity`, `standard_name = sea_water_salinity`, dims (time, depth, lat, lon),
 72.6% of surface cells wet, land = NaN.
+
+---
+
+## Validated Results
+
+### Hupselbrook, Netherlands
+
+| Property | Value |
+|----------|-------|
+| Period | 2002-2004 |
+| Representative reported year | 2002 |
+| Run evidence | Reproduced bit-for-bit 2026-08-11 through `tools/run_swap.py` and `tools/parse_swap_output.py` |
+| Runtime | 0.8 s |
+| Balance deviation | 0.00 cm |
+
+Water balance for 2002:
+
+| Quantity | Value |
+|----------|-------|
+| Rain+snow | 84.18 cm |
+| Transpiration | 38.17 cm |
+| Soil evaporation | 16.69 cm |
+| Drainage | 22.11 cm |
+
+### FLUXNET2015 US-Ne1
+
+| Property | Value |
+|----------|-------|
+| Site | US-Ne1, irrigated maize, Mead NE |
+| Location | 41.1651 N / -96.4766 E |
+| Period | 2001-2013 |
+| Inputs | NASA POWER daily forcing + HWSD soil |
+| Pipeline | Full s1-s7 through the KI tools |
+| Water balance closure | 0.0 mm over 4383 d |
+
+Uncalibrated daily ET against eddy-covariance observations:
+
+| Observation target | r | KGE | NSE | PBIAS |
+|--------------------|---|-----|-----|-------|
+| `LE_F_MDS` | 0.76 | -0.12 | -1.14 | +48% |
+| `LE_CORR` | 0.75 | 0.36 | -0.13 | +17.6% |
+
+The residual bias is over-irrigation from the shipped `maizes.crp` scheduling defaults
+(`dt_023`), not a forcing/unit error.
+
+### Performance Metrics — judged against `docs/validation_convention.yaml`
+
+The convention wins over remembered thresholds. Bands listed as null in the convention are
+reported here as `no cited threshold`.
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band | Citation key(s) |
+|--------------|--------|-----------|----------------|-----------|-------------------|-----------------|
+| `actual_soil_evaporation` | nse | maximize | no cited threshold | no cited threshold | no cited threshold | none |
+| `actual_transpiration` | nse | maximize | no cited threshold | no cited threshold | no cited threshold | none |
+| `evapotranspiration` | mre | minimize | 10 (`wang2020`) | 20 (`wang2020`) | 30 (`wang2020`) | `wang2020` |
+
+For the dag's rank-1 variable, `actual_soil_evaporation`, the convention bar is NSE with
+direction `maximize`; the convention provides no cited threshold for satisfactory, good, or
+very good performance.
 
 ---
 

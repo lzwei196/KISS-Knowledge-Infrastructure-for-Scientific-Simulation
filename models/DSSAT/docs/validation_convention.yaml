@@ -1,0 +1,736 @@
+schema_version: 1
+model_id: DSSAT
+domain: crop
+generated_by: "Step-B validation convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+# DSSAT validation conventions are keyed by dag_variable per the Step-B campaign
+# instruction. Numeric bands are cited only to fetched full texts. The main crop
+# convention is normalized RMSE/percent error: Jamieson introduced 10/20/30%
+# crop-simulation quality tiers; Chisanga 2021 and Kumar 2024 reproduce those
+# tiers in DSSAT-CERES-Maize evaluations. Spatial CSI, runoff/drainage PBIAS,
+# leaching, N fixation, and trace-gas event skill remain unresolved where no
+# fetched paper gave a numeric pass band.
+
+references:
+  jamieson1991:
+    doi: 10.1016/0378-4290(91)90040-3
+    title: "A test of the computer simulation model ARCWHEAT1 on wheat crops grown in New Zealand"
+    venue: "Field Crops Research"
+    year: 1991
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_0378-4290(91)90040-3.txt
+  chisanga2021:
+    doi: 10.3390/nitrogen2040027
+    title: "Evaluating APSIM and DSSAT-CERES-Maize Models under Rainfed Conditions Using Zambian Rainfed Maize Cultivars"
+    venue: "Nitrogen"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_nitrogen2040027.txt
+  kumar2024:
+    doi: 10.1038/s41598-024-61976-6
+    title: "Modeling maize growth and nitrogen dynamics using CERES-Maize (DSSAT) under diverse nitrogen management options"
+    venue: "Scientific Reports"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-024-61976-6.txt
+  shelia2018:
+    doi: 10.1515/johh-2017-0055
+    title: "Coupling DSSAT and HYDRUS-1D for simulations of soil water dynamics in the soil-plant-atmosphere system"
+    venue: "Journal of Hydrology and Hydromechanics"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1515_johh-2017-0055.txt
+  wallach2021:
+    doi: 10.1016/j.agrformet.2020.108289
+    title: "Multi-model evaluation of phenology prediction for wheat in Australia"
+    venue: "Agricultural and Forest Meteorology"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agrformet.2020.108289.txt
+  willmott1981:
+    doi: 10.1080/02723646.1981.10642213
+    title: "On the validation of models"
+    venue: "Physical Geography"
+    year: 1981
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1080_02723646.1981.10642213.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling and Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+  muller2017:
+    doi: 10.5194/gmd-10-1403-2017
+    title: "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications"
+    venue: "Geoscientific Model Development"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-10-1403-2017.txt
+  zhang2017:
+    doi: 10.1016/j.agsy.2017.04.006
+    title: "Maintaining rice production while mitigating methane and nitrous oxide emissions from paddy fields in China"
+    venue: "Agricultural Systems"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agsy.2017.04.006.txt
+
+validation:
+  - dag_variable: "HWAM (harvested grain yield at maturity, dry)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - &crop_pbias
+        metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Single-pair PBIAS is treated as percent prediction error; Jamieson gives 'Excellent, RMSD<10%' and poor above 30%, while DSSAT maize papers reproduce 10/20/30 percent nRMSE tiers."
+        cites: [jamieson1991, chisanga2021, kumar2024]
+    secondary_metrics:
+      - &crop_nrmse_support
+        metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Preferred multi-observation crop-model magnitude metric; Chisanga and Kumar use nRMSE tiers for DSSAT grain yield, biomass, LAI, soil nitrate, and N uptake."
+        cites: [chisanga2021, kumar2024]
+    validated_when: "|PBIAS| <= 30% for a scalar yield check; prefer nRMSE when multiple observations exist."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: "DSSAT-specific benchmark papers report grain-yield RMSE/nRMSE and classify 10-20% as good and 20-30% as fair/acceptable."
+
+  - dag_variable: "HWAM (harvested grain yield at maturity, dry)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - &crop_nrmse
+        metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Jamieson defines crop-model RMSD tiers at 10/20/30%; Chisanga and Kumar apply the same nRMSE convention in DSSAT-CERES-Maize."
+        cites: [jamieson1991, chisanga2021, kumar2024]
+    secondary_metrics:
+      - *crop_nrmse_support
+    validated_when: "nRMSE <= 30% across years or treatments; temporal correlation may be reported but does not replace magnitude skill."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: "The dag metric is PBIAS, but fetched DSSAT crop evaluations use RMSE/nRMSE and prediction error as the field convention for multi-observation yield."
+
+  - dag_variable: "HWAM (harvested grain yield at maturity, dry)"
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - *crop_nrmse
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Regional yield benchmarks use detrended time-series correlation and mean bias; technology trends should be removed before interpreting weather-driven skill."
+        cites: [muller2017]
+    validated_when: "After detrending technology/cultivar trends, nRMSE <= 30% for aggregate magnitude; report r for temporal variability."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: "Muller 2017 benchmarks global gridded crop models with time-series correlation, spatial correlation, and mean bias, but does not provide a numeric pass threshold."
+
+  - dag_variable: "HWAM (harvested grain yield at maturity, dry)"
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - *crop_pbias
+    secondary_metrics: []
+    validated_when: "|PBIAS| <= 30% for a one-year aggregate yield magnitude check."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Band is transferred from crop percent-error/nRMSE tiers; single aggregate snapshots cannot support temporal skill metrics."
+
+  - dag_variable: "HWAM (harvested grain yield at maturity, dry)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - &csi_null
+        metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched DSSAT/crop paper gives a CSI threshold for gridded crop-yield maps"
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "For continuous yield fields, nRMSE or bias can be reported alongside spatial pattern metrics."
+        cites: [jamieson1991, muller2017]
+    validated_when: "UNRESOLVED - no cited CSI pass band for DSSAT spatial yield fields."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Bennett defines CSI as hits/(hits+misses+false alarms), but gives no crop-specific pass threshold."
+
+  - dag_variable: "HWAM (harvested grain yield at maturity, dry)"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - *csi_null
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "GGCMI evaluates gridded yield by temporal and spatial correlation plus mean bias, not CSI thresholds."
+        cites: [muller2017]
+    validated_when: "UNRESOLVED - no cited CSI pass band for gridded DSSAT yield time series."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Use gridded ensemble comparisons cautiously; cultivar, management, and soil inputs must be spatially varying."
+
+  - dag_variable: "HWAH (harvested yield, dry, at harvest date)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *crop_pbias
+    secondary_metrics:
+      - *crop_nrmse_support
+    validated_when: "|PBIAS| <= 30% for harvested dry yield; if HPC is used, confirm harvest percentage is observed or defensible."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Same convention as HWAM; HWAH is HWAM adjusted by harvest percentage and remains a harvested-yield magnitude."
+
+  - dag_variable: "HWAH (harvested yield, dry, at harvest date)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - *crop_nrmse
+    secondary_metrics:
+      - *crop_nrmse_support
+    validated_when: "nRMSE <= 30% over years or treatments; inspect HPC assumptions before treating a zero HWAH as crop failure."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "DSSAT crop studies judge harvested-yield time series primarily with RMSE/nRMSE and prediction error."
+
+  - dag_variable: "HWAH (harvested yield, dry, at harvest date)"
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - *crop_nrmse
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Aggregate yield trends include technology/cultivar changes; Muller detrends before time-series correlation analysis."
+        cites: [muller2017]
+    validated_when: "Detrend non-weather yield trends, then require nRMSE <= 30%; report r for temporal variability."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Transferred from HWAM regional yield convention because HWAH is a harvested-yield variant."
+
+  - dag_variable: "HWAH (harvested yield, dry, at harvest date)"
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - *crop_pbias
+    secondary_metrics: []
+    validated_when: "|PBIAS| <= 30% for scalar aggregate harvested yield."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: "Scalar aggregate comparison only; no temporal or spatial skill is implied."
+
+  - dag_variable: "HWAH (harvested yield, dry, at harvest date)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - *csi_null
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Continuous gridded harvested yield should also be checked with magnitude error."
+        cites: [jamieson1991, muller2017]
+    validated_when: "UNRESOLVED - no cited CSI pass band for gridded harvested-yield snapshots."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Bennett supports CSI as a categorical metric, but not a numeric acceptance band for crop maps."
+
+  - dag_variable: "HWAH (harvested yield, dry, at harvest date)"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - *csi_null
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "GGCMI reports spatial/temporal correlations and bias for gridded crop-model yield evaluation."
+        cites: [muller2017]
+    validated_when: "UNRESOLVED - no cited CSI pass band for gridded harvested-yield time series."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Keep CSI ungraded until a fetched crop-map validation convention is available."
+
+  - dag_variable: "CWAM (aboveground biomass at maturity)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *crop_pbias
+    secondary_metrics:
+      - *crop_nrmse_support
+      - &d_index_support
+        metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Willmott recommends d as an agreement index; Chisanga states d >= 0.70 is acceptable in crop model evaluations."
+        cites: [willmott1981, chisanga2021]
+    validated_when: "|PBIAS| <= 30% for scalar maturity biomass."
+    evidence_strength: strong
+    confidence: 0.76
+    notes: "Kumar reports biomass nRMSE near 10.6% in DSSAT evaluation and Chisanga evaluates biomass with nRMSE and d-stat."
+
+  - dag_variable: "CWAM (aboveground biomass at maturity)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - *crop_nrmse
+      - &d_index
+        metric: d_index
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.8, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "Chisanga reports d >= 0.70 as acceptable; Willmott defines d with 1 as perfect agreement."
+        cites: [chisanga2021, willmott1981]
+    secondary_metrics: []
+    validated_when: "nRMSE <= 30% and d_index >= 0.70 for biomass time-course or multi-treatment validation."
+    evidence_strength: strong
+    confidence: 0.76
+    notes: "This supersedes dag NSE for biomass because fetched crop-model evaluations use nRMSE and d-stat."
+
+  - dag_variable: "CWAM (aboveground biomass at maturity)"
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - *crop_nrmse
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Regional biomass aggregates can include changing cultivar/management trends analogous to aggregate yields."
+        cites: [muller2017]
+    validated_when: "Detrend management/technology signal where present, then nRMSE <= 30% for aggregate biomass."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "No biomass-specific regional pass band was found; transferred from crop nRMSE convention."
+
+  - dag_variable: "CWAM (aboveground biomass at maturity)"
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - *crop_pbias
+    secondary_metrics: []
+    validated_when: "|PBIAS| <= 30% for scalar aggregate biomass."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Transferred from crop percent-error tiers; scalar aggregate cannot judge temporal pattern."
+
+  - dag_variable: "CWAM (aboveground biomass at maturity)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - *csi_null
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Continuous biomass maps should be checked with magnitude error in addition to categorical overlap."
+        cites: [jamieson1991, kumar2024]
+    validated_when: "UNRESOLVED - no cited CSI pass band for gridded biomass snapshots."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "No fetched DSSAT biomass-map paper supplies CSI acceptance tiers."
+
+  - dag_variable: "CWAM (aboveground biomass at maturity)"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - *csi_null
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Use nRMSE as a continuous-field companion metric until a crop CSI convention is fetched."
+        cites: [jamieson1991, kumar2024]
+    validated_when: "UNRESOLVED - no cited CSI pass band for gridded biomass time series."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "DSSAT is point-based; gridded biomass fields are ensembles of point simulations."
+
+  - dag_variable: "HIAM (harvest index at maturity)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *crop_pbias
+    secondary_metrics:
+      - *d_index_support
+    validated_when: "|PBIAS| <= 30% for scalar harvest index; report d_index only with multiple observations."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Chisanga reports harvest-index observations and uses the same nRMSE/d-stat model-evaluation framework, but no HI-specific threshold."
+
+  - dag_variable: "ADAT (anthesis date)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - &phen_day_bias
+        metric: day_bias
+        direction: zero_centered
+        unit: day
+        bands: {very_good: 3, good: 5, satisfactory: 10}
+        pass_band: satisfactory
+        band_note: "Chisanga calls DSSAT anthesis RMSE 2.89 days excellent; Wallach's multi-model wheat phenology MAE averaged 9 days."
+        cites: [chisanga2021, kumar2024, wallach2021]
+    secondary_metrics: []
+    validated_when: "|day_bias| <= 10 days for a single anthesis date; <= 5 days is a tighter crop-model target."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Kumar reports anthesis predictions within 5% and with 1-2 day errors in DSSAT-CERES-Maize."
+
+  - dag_variable: "ADAT (anthesis date)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - &phen_rmse_days
+        metric: rmse_days
+        direction: minimize
+        unit: day
+        bands: {very_good: 3, good: 5, satisfactory: 10}
+        pass_band: satisfactory
+        band_note: "Phenology time-series convention uses day-error RMSE/MAE; Chisanga reports DSSAT anthesis RMSE 2.89 days and Wallach reports 9-day average MAE."
+        cites: [chisanga2021, wallach2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is NSE, but fetched phenology evaluations judge date predictions by day errors."
+        cites: [chisanga2021, wallach2021]
+    validated_when: "RMSE of anthesis dates <= 10 days across seasons/sites."
+    evidence_strength: strong
+    confidence: 0.76
+    notes: "Day-error RMSE/MAE supersedes NSE for phenology date series."
+
+  - dag_variable: "MDAT (physiological maturity date)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *phen_day_bias
+    secondary_metrics: []
+    validated_when: "|day_bias| <= 10 days for a single maturity date; verify YRDOY parsing before diagnosing model error."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Chisanga reports DSSAT maturity RMSE 3.13 days and RMSEn 2.50% as excellent."
+
+  - dag_variable: "MDAT (physiological maturity date)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - *phen_rmse_days
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Use day-error RMSE/MAE as the validation metric for date series; NSE is diagnostic only."
+        cites: [chisanga2021, wallach2021]
+    validated_when: "RMSE of physiological maturity dates <= 10 days across seasons/sites."
+    evidence_strength: strong
+    confidence: 0.76
+    notes: "Day-error convention avoids treating calendar dates as unconstrained continuous hydrologic series."
+
+  - dag_variable: "EDAT (emergence date)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *phen_day_bias
+    secondary_metrics: []
+    validated_when: "|day_bias| <= 10 days for emergence, with <= 5 days preferred when sowing depth and soil temperature are observed."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: "Jamieson found emergence was harder than later phenology because air temperature can poorly represent the below-ground meristem environment."
+
+  - dag_variable: "LAIX (maximum LAI during season)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *crop_pbias
+    secondary_metrics:
+      - *crop_nrmse_support
+      - *d_index_support
+    validated_when: "|PBIAS| <= 30% for peak LAI; if multiple treatments exist, nRMSE <= 30% and d_index >= 0.70 are preferred."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "Kumar reports LAI RMSE 0.57 and nRMSE 10.33%; Chisanga evaluates mLAI with nRMSE and d-stat."
+
+  - dag_variable: "LAID / XLAI (daily leaf area index)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - *crop_nrmse
+      - *d_index
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is NSE, but fetched LAI evaluations report nRMSE and d-stat."
+        cites: [chisanga2021, kumar2024]
+    validated_when: "nRMSE <= 30% and d_index >= 0.70 for LAI trajectory or repeated-stage validation."
+    evidence_strength: strong
+    confidence: 0.74
+    notes: "Kumar says the model closely simulated LAI trend with nRMSE 10.3%; Chisanga uses the same crop-evaluation tiers."
+
+  - dag_variable: "LAID / XLAI (daily leaf area index)"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - *csi_null
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "For continuous remote-sensing LAI fields, magnitude error should accompany any event-overlap metric."
+        cites: [kumar2024, bennett2013]
+    validated_when: "UNRESOLVED - no fetched crop/DSSAT paper gives CSI pass bands for spatial LAI time series."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Remote-sensing LAI has retrieval and cloud/view-angle errors; keep CSI ungraded until a crop-map threshold source is fetched."
+
+  - dag_variable: "CWAD (daily aboveground dry weight)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - *crop_nrmse
+      - *d_index
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Biomass accumulation studies report nRMSE/d-index rather than a cited NSE threshold."
+        cites: [chisanga2021, kumar2024]
+    validated_when: "nRMSE <= 30% and d_index >= 0.70 for aboveground dry-weight accumulation."
+    evidence_strength: strong
+    confidence: 0.74
+    notes: "Jamieson judged aboveground dry matter very good below 10% RMSD; DSSAT maize studies use nRMSE and d-stat."
+
+  - dag_variable: "GWAD (daily grain dry weight)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - *crop_nrmse
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "PBIAS/percent prediction error is useful for grain-growth magnitude, but fetched crop studies tier nRMSE."
+        cites: [jamieson1991, kumar2024]
+    validated_when: "nRMSE <= 30% for grain dry-weight accumulation; inspect timing of grain filling separately."
+    evidence_strength: strong
+    confidence: 0.72
+    notes: "Jamieson rates grain growth/yield 20-30% RMSD as fair; this is the cited basis for the pass band."
+
+  - dag_variable: "ETCM (cumulative evapotranspiration)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *crop_pbias
+    secondary_metrics:
+      - metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Shelia evaluates DSSAT water balance and ET behavior with RMSE/nRMSE/d/EF, but does not provide an ET-specific pass band."
+        cites: [shelia2018]
+    validated_when: "|PBIAS| <= 30% for seasonal cumulative ET when footprint and reference ET method match."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Crop nRMSE tiers are transferred to seasonal ET; Shelia documents that DSSAT ET method choice changes actual ET rates."
+
+  - dag_variable: "ETCM (cumulative evapotranspiration)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - *crop_nrmse
+      - *d_index
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched DSSAT water-balance work reports RMSE/nRMSE/d/EF, with d high and RMSE low indicating fit."
+        cites: [shelia2018]
+    validated_when: "nRMSE <= 30% and d_index >= 0.70 for cumulative or repeated ET comparisons."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Transferred from crop/water-balance evaluation; lysimeter and eddy-covariance footprints must be matched."
+
+  - dag_variable: "ET (daily actual evapotranspiration)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - *crop_nrmse
+      - *d_index
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Daily ET is sensitive to the DSSAT evapotranspiration option and meteorological forcing; use nRMSE/d-index with method-matched observations."
+        cites: [shelia2018]
+    validated_when: "nRMSE <= 30% and d_index >= 0.70 for daily ET, after matching the observational footprint and ET reference method."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Shelia compares actual ET rates between DSSAT water-balance approaches but does not provide an ET-specific numeric pass tier."
+
+  - dag_variable: "SW (daily volumetric soil water by layer)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - *crop_nrmse
+      - *d_index
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is r, but fetched soil-water evaluations use d-index, RMSE/nRMSE, and EF to judge layer water dynamics."
+        cites: [shelia2018, chisanga2021]
+    validated_when: "nRMSE <= 30% and d_index >= 0.70 for layer-matched soil water; root-zone integrated checks are preferred when sensor depths do not align."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: "Chisanga reports soil-water RMSEn <= 20% as accurate; Shelia reports volumetric water-content d indices near 0.8-0.9."
+
+  - dag_variable: "ROCM (cumulative runoff)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - &hydro_pbias_null
+        metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched paper gives a numeric PBIAS pass band for DSSAT plot-scale cumulative runoff"
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Shelia documents DSSAT runoff via SCS curve number and water-balance diagnostics, but not a runoff validation threshold."
+        cites: [shelia2018]
+    validated_when: "UNRESOLVED - plot-scale runoff needs a fetched runoff/PBIAS convention before automatic validation."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Moriasi 2015 would likely close the hydrology threshold gap, but the DOI fetch returned closed."
+
+  - dag_variable: "DRCM (cumulative deep drainage)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *hydro_pbias_null
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Shelia describes DSSAT drainage below the profile and HYDRUS coupling, but gives no numeric drainage pass band."
+        cites: [shelia2018]
+    validated_when: "UNRESOLVED - no fetched drainage-specific PBIAS/nRMSE threshold for DSSAT."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Deep drainage is a water-balance flux; keep the band null until a fetched lysimeter/drainage benchmark is available."
+
+  - dag_variable: "NLCM (cumulative N leached)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - &nutrient_pbias_null
+        metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched DSSAT paper gives a numeric PBIAS pass band for cumulative nitrate leaching"
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Kumar discusses DSSAT nitrate leaching dynamics, but evaluates observed nitrogen status with soil nitrate and N uptake rather than leaching observations."
+        cites: [kumar2024]
+    validated_when: "UNRESOLVED - lysimeter or drainage N observations need a fetched numeric threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Kumar states leaching follows rainfall and water flux, but does not validate cumulative N leaching against observations."
+
+  - dag_variable: "NUCM (cumulative crop N uptake)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *crop_pbias
+    secondary_metrics:
+      - *crop_nrmse_support
+    validated_when: "|PBIAS| <= 30% for scalar crop N uptake; if multiple treatments exist, nRMSE <= 30% is preferred."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Kumar reports N uptake RMSE 16.21 kg/ha and nRMSE 10.82% in DSSAT evaluation, with the 10/20/30% nRMSE convention."
+
+  - dag_variable: "NFXM (cumulative N fixed)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *nutrient_pbias_null
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "General crop nRMSE tiers could be reported, but no fetched DSSAT legume N-fixation validation threshold was found."
+        cites: [jamieson1991]
+    validated_when: "UNRESOLVED - no fetched numeric threshold for symbiotic N fixation."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Only defined for legumes with N fixation enabled; do not auto-grade without legume-specific observations and threshold literature."
+
+  - dag_variable: "GNAM (grain N content at maturity)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *crop_pbias
+    secondary_metrics:
+      - *crop_nrmse_support
+    validated_when: "|PBIAS| <= 30% for scalar grain N content; prefer nRMSE across treatments."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Kumar validates crop N uptake and soil nitrate with DSSAT; grain N content uses the same crop nutrient magnitude convention but has no grain-N-specific tier."
+
+  - dag_variable: "N2OEM (cumulative N2O-N emissions)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - &gas_pbias_null
+        metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched DSSAT/DayCent or DNDC paper gives a numeric PBIAS pass band for cumulative N2O-N emissions"
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Trace-gas model papers discuss CH4/N2O emissions and occasional comparisons, but no fetched source provides an acceptance tier for DSSAT N2O."
+        cites: [zhang2017]
+    validated_when: "UNRESOLVED - cumulative N2O requires an emissions-specific fetched threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Zhang 2017 explicitly says its station study did not directly test CH4/N2O simulations because observations were unavailable."
+
+  - dag_variable: "N2OEM (cumulative N2O-N emissions)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched paper gives an NSE pass band for episodic DSSAT N2O time series"
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Seasonal cumulative bias may be more stable than event timing for chamber-based N2O, but no numeric band was fetched."
+        cites: [zhang2017]
+    validated_when: "UNRESOLVED - N2O event timing and cumulative magnitude need a fetched gas-flux validation convention."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "OpenAlex search did not return a useful OA DSSAT N2O threshold paper within the campaign cap."
+
+  - dag_variable: "CH4EM (cumulative CH4-C emissions, paddy)"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - *gas_pbias_null
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Paddy CH4 comparisons exist in linked DSSAT-DNDC literature, but fetched text gives no numeric pass band for DSSAT CH4."
+        cites: [zhang2017]
+    validated_when: "UNRESOLVED - paddy CH4 requires a fetched methane-emission threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "OpenAlex methane search returned no fetched DSSAT-specific numeric threshold within the campaign cap."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 hydrologic/water-quality model performance criteria"
+    doi: 10.13031/trans.58.10715
+    needed_for: ["ROCM (cumulative runoff)", "DRCM (cumulative deep drainage)", "NLCM (cumulative N leached)"]
+  - ref: "Moriasi et al. 2007 model evaluation guidelines for systematic quantification of watershed simulations"
+    doi: 10.13031/2013.23153
+    needed_for: ["ROCM (cumulative runoff)", "DRCM (cumulative deep drainage)", "NLCM (cumulative N leached)"]
+  - ref: "Beheydt et al. 2007 validation of DNDC for long-term N2O field emission measurements"
+    doi: unknown_not_fetched
+    needed_for: ["N2OEM (cumulative N2O-N emissions)"]

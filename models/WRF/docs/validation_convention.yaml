@@ -1,0 +1,443 @@
+schema_version: 1
+model_id: WRF
+domain: atmosphere
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+# This convention is keyed by the model's own dag.yaml output names. WRF
+# literature mostly uses NWP verification metrics (RMSE, MAE, bias,
+# correlation, categorical event scores) rather than hydrologic NSE tiers.
+# Null bands mean the fetched literature did not provide a numeric pass
+# threshold for that exact dag_variable and obs_shape.
+
+references:
+  cheng2005:
+    doi: 10.1175/WAF885.1
+    title: "Evaluation of Surface Sensible Weather Forecasts by the WRF and the Eta Models over the Western United States"
+    venue: "Weather and Forecasting"
+    year: 2005
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_waf885.1.txt
+  gilliam2010:
+    doi: 10.1175/2009JAMC2126.1
+    title: "Performance Assessment of New Land Surface and Planetary Boundary Layer Physics in the WRF-ARW"
+    venue: "Journal of Applied Meteorology and Climatology"
+    year: 2010
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_2009jamc2126.1.txt
+  wyszogrodzki2013:
+    doi: 10.1007/s00703-013-0281-5
+    title: "Analysis of the surface temperature and wind forecast errors of the NCAR-AirDat operational CONUS 4-km WRF forecasting system"
+    venue: "Meteorology and Atmospheric Physics"
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s00703-013-0281-5.txt
+  katragkou2015:
+    doi: 10.5194/gmd-8-603-2015
+    title: "Regional climate hindcast simulations within EURO-CORDEX: evaluation of a WRF multi-physics ensemble"
+    venue: "Geoscientific Model Development"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-8-603-2015.txt
+  liu2016:
+    doi: 10.1002/qj.2885
+    title: "An evaluation of parametric sensitivities of different meteorological variables simulated by the WRF model"
+    venue: "Quarterly Journal of the Royal Meteorological Society"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_qj.2885.txt
+  brown2021:
+    doi: 10.1175/BAMS-D-19-0093.1
+    title: "The Model Evaluation Tools (MET): More than a Decade of Community-Supported Forecast Verification"
+    venue: "Bulletin of the American Meteorological Society"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_bams-d-19-0093.1.txt
+  milletti2021:
+    doi: 10.1175/WAF-D-20-0195.1
+    title: "WRF Precipitation Performance and Predictability for Systematically Varied Parameterizations"
+    venue: "Weather and Forecasting"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_waf-d-20-0195.1.txt
+  acharya2019:
+    doi: 10.5194/hess-23-3387-2019
+    title: "An evaluation of daily precipitation from a regional atmospheric reanalysis over Australia"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-3387-2019.txt
+  zhuo2019:
+    doi: 10.5194/hess-23-4199-2019
+    title: "Assessment of simulated soil moisture from WRF Noah, Noah-MP, and CLM land surface schemes for landslide hazard application"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-4199-2019.txt
+
+validation:
+  - dag_variable: T2
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: K
+        bands: {very_good: 1.5, good: 2.0, satisfactory: 2.5}
+        pass_band: satisfactory
+        band_note: "Transferred WRF near-surface benchmark: Gilliam reports 2-m temperature RMSE on the order of 1.5-2.0 K; Wyszogrodzki reports peak 2-m temperature RMSE of 2.5 K."
+        cites: [gilliam2010, wyszogrodzki2013]
+    secondary_metrics:
+      - metric: mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Gilliam cites the convention that MAE of 2-m temperature below 2.0 K is reasonable and reports WRF PXACM MAE of 1.89 K in January and 1.46 K in August."
+        cites: [gilliam2010]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "WRF 2-m temperature verification commonly diagnoses diurnal warm/cold bias in addition to RMSE."
+        cites: [cheng2005, wyszogrodzki2013]
+    validated_when: "2-m air temperature RMSE <= 2.5 K against station point time series; MAE and bias should be reported as supporting diagnostics."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "The dag determining_metric nse is superseded here: fetched WRF surface-weather evaluations judge T2 mainly by RMSE, MAE, and bias, not hydrologic NSE. Quote anchors: 'RMSE errors ... order of 1.5-2.0 K' and 'maximum error in 2-m temperature reaches 2.5 K'."
+
+  - dag_variable: T2
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.99, good: 0.97, satisfactory: 0.95}
+        pass_band: satisfactory
+        band_note: "Transferred WRF regional-climate spatial/temporal benchmark: surface-temperature temporal agreement around 0.95 and spatial agreement 0.97-0.99."
+        cites: [katragkou2015]
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "WRF spatial temperature validation also maps seasonal bias and tests statistical significance."
+        cites: [katragkou2015]
+    validated_when: "Spatial or spatially averaged T2 time-series correlation >= 0.95, with mapped bias inspected."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "The dag csi metric is not the field convention for continuous gridded temperature; Taylor-diagram correlation and normalized variability are used instead. Katragkou reports temporal agreement with observations of 0.95 and spatial agreement of 0.97-0.99."
+
+  - dag_variable: RAINC+RAINNC
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched WRF precipitation paper provided a numeric NSE pass threshold for point precipitation time series."
+        cites: []
+      - metric: mae
+        direction: minimize
+        unit: mm
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fitted WRF precipitation studies report MAE, bias, correlation, MSD, and categorical scores, but the fetched text did not state a universal numeric MAE pass band."
+        cites: []
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Precipitation verification uses bias as systematic error and MAE/MSD for magnitude error."
+        cites: [milletti2021]
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Pearson correlation is used for WRF precipitation time-series verification."
+        cites: [milletti2021]
+    validated_when: "UNRESOLVED - no cited numeric point-precipitation NSE or MAE threshold was found in the fetched WRF literature."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Milletti et al. define MAE, bias, SD ratio, Pearson correlation, MSD, FAR, POD, and ETS for WRF precipitation, but do not state a numeric pass tier. Null bands prevent the gate from loosening."
+
+  - dag_variable: RAINC+RAINNC
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.8, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "Transferred WRF regional-climate precipitation spatial benchmark: winter spatial correlation about 0.7; summer spatial correlations 0.8-0.9."
+        cites: [katragkou2015]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is a categorical precipitation-event score, while gridded precipitation fields in WRF climate evaluation are commonly judged by spatial correlation, bias, and variability."
+        cites: [brown2021, katragkou2015]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "WRF regional precipitation evaluation reports wet/dry bias and overestimated spatial variability alongside correlation."
+        cites: [katragkou2015]
+    validated_when: "Gridded precipitation spatial correlation >= 0.7 against a gridded reference, with bias and variability reported."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "The dag csi metric is superseded for continuous spatial precipitation fields. Katragkou reports DJF spatial correlation about 0.7 and JJA spatial correlations 0.8-0.9; this is a transferred benchmark, not a universal tier."
+
+  - dag_variable: RAINC+RAINNC
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched WRF/MET sources define CSI/ETS/POD/FAR and event thresholds but did not state a numeric CSI pass threshold."
+        cites: []
+      - metric: far
+        direction: minimize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a universal FAR pass band for WRF precipitation exceedance events."
+        cites: []
+    secondary_metrics:
+      - metric: pod
+        direction: maximize
+        status: supportive
+        ceiling_reason: "WRF precipitation-event verification commonly reports POD with FAR, frequency bias, ETS, and CSI."
+        cites: [brown2021, milletti2021, acharya2019]
+      - metric: frequency_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Performance diagrams for precipitation events show frequency bias with POD, success ratio, and CSI."
+        cites: [brown2021]
+    validated_when: "UNRESOLVED - use CSI/FAR/POD/frequency-bias diagnostics, but no cited numeric categorical-event pass band was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "MET and WRF precipitation papers explicitly use thresholds, POD, FAR, frequency bias, ETS, and CSI; they do not provide a universal pass cutoff. Milletti notes ETS improves with longer accumulation windows and event extremity changes the score."
+
+  - dag_variable: U10/V10
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mae
+        direction: minimize
+        unit: m s-1
+        bands: {very_good: 1.2, good: 1.5, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "Gilliam cites Emery's convention that 10-m wind-speed MAE below 2.0 m s-1 is reasonable; WRF benchmark MAE values are about 1.1-1.5 m s-1."
+        cites: [gilliam2010, cheng2005]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "WRF surface-wind benchmark RMSE is also reported; WRF PXACM wind-speed RMSE was 1.64 and 1.47 m s-1."
+        cites: [gilliam2010, wyszogrodzki2013]
+      - metric: direction_mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Wind-direction MAE is preferred over RMSE because direction errors can wrap around during light winds."
+        cites: [gilliam2010]
+    validated_when: "10-m wind-speed MAE <= 2.0 m s-1 against station point time series; report RMSE and direction MAE as supporting diagnostics."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "The dag nse metric is superseded by WRF/NWP wind verification practice. Gilliam reports 'MAE for 10-m wind speed below 2.0 m s-1 is reasonable' and WRF PXACM MAE of 1.24 and 1.11 m s-1; Cheng reports WRF wind-speed MAE 1.7-1.8 m s-1."
+
+  - dag_variable: PSFC
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: Pa
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched WRF paper gave a numeric surface-pressure RMSE pass threshold."
+        cites: []
+      - metric: bias
+        direction: zero_centered
+        unit: Pa
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched WRF paper gave a numeric surface-pressure bias pass threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "WRF sensitivity evaluation includes surface atmospheric pressure among conventional observational variables and uses RMSE as the cost function."
+        cites: [liu2016]
+    validated_when: "UNRESOLVED - compare station and model pressure on a common vertical reference, but no cited numeric PSFC band was fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "OpenAlex checks for WRF surface-pressure RMSE/bias benchmarks returned no usable fetched threshold source within the cap. Bands remain null."
+
+  - dag_variable: T
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mae
+        direction: minimize
+        unit: K
+        bands: {satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Transferred PBL-profile benchmark: Gilliam reports temperature MAE below 1.0 K in parts of the PBL during August; applies after reconstructing actual temperature from perturbation potential temperature."
+        cites: [gilliam2010]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Upper-air/profile WRF evaluation compares simulated PBL wind and temperature against wind-profiler and aircraft observations."
+        cites: [gilliam2010]
+    validated_when: "After reconstructing actual temperature from WRF T, P, and PB and interpolating to observed levels, profile/level MAE <= 1.0 K is a transferred PBL benchmark."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: "This is weaker than the T2 convention: Gilliam reports PBL temperature errors below 1.0 K only in parts of the PBL during August, not a universal 3-D WRF threshold. The dag nse metric is superseded by profile MAE in the fetched evaluation."
+
+  - dag_variable: T
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a numeric CSI pass threshold for reconstructed 3-D WRF temperature fields."
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Continuous gridded temperature fields are more commonly evaluated using correlation/Taylor diagrams than CSI."
+        cites: [katragkou2015]
+    validated_when: "UNRESOLVED - reconstruct actual temperature and evaluate continuous-field correlation/bias, but no cited numeric upper-air spatial band was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The fetched spatial-temperature benchmark is for surface 2-m temperature, not WRF perturbation potential temperature aloft; no numeric band is transferred here."
+
+  - dag_variable: SWDOWN
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched WRF radiation paper gave a numeric NSE pass threshold for point shortwave-radiation time series."
+        cites: []
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched WRF radiation studies report large relative SWDOWN biases but not a pass/fail percent-bias convention."
+        cites: []
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "WRF EURO-CORDEX evaluation compares downward shortwave radiation to satellite data and reports relative bias patterns."
+        cites: [katragkou2015]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "WRF parameter-sensitivity work includes downward short-wave radiative flux among conventional variables and uses RMSE."
+        cites: [liu2016]
+    validated_when: "UNRESOLVED - evaluate SWDOWN bias/RMSE against station or satellite radiation, but no cited numeric pass band was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Katragkou reports WRF SW radiation biases of 40-60% in some summer configurations and up to 70-80% in winter regions; those are benchmark error magnitudes, not validation thresholds."
+
+  - dag_variable: TSLB
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a numeric NSE pass threshold for WRF soil-layer temperature."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: K
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The fetched surface-weather papers discuss soil-temperature initialization effects but do not validate TSLB against observed soil-temperature profiles with a numeric band."
+        cites: []
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "WRF surface-temperature errors are sensitive to soil-temperature initialization; this is a diagnostic linkage, not a TSLB validation threshold."
+        cites: [cheng2005, gilliam2010]
+    validated_when: "UNRESOLVED - match model soil-layer midpoint depth to observed soil temperature depth; no cited numeric TSLB pass band was fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Cheng reports that improved soil-temperature initialization reduced 2-m temperature bias, and Gilliam discusses soil temperature nudging; neither gives a TSLB validation threshold."
+
+  - dag_variable: SMOIS
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m3 m-3
+        bands: {very_good: 0.06, good: 0.07, satisfactory: 0.09}
+        pass_band: satisfactory
+        band_note: "Transferred WRF soil-moisture benchmark: Zhuo reports Noah-MP RMSE of 0.060, 0.070, 0.088, and 0.092 m3 m-3 across 0.10, 0.25, 0.70, and 1.50 m layers."
+        cites: [zhuo2019]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred WRF soil-moisture benchmark: Zhuo reports Noah-MP layer correlations of 0.809, 0.683, 0.738, and 0.498."
+        cites: [zhuo2019]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag nse metric is retained as a temporal skill diagnostic, but fetched WRF soil-moisture validation reports RMSE and correlation rather than NSE tiers."
+        cites: [zhuo2019]
+    validated_when: "Layer-matched SMOIS RMSE <= 0.09 m3 m-3 and correlation >= 0.5 against in situ soil-moisture time series."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "This is a transferred single-region WRF LSM benchmark, not a universal tier. Zhuo states Noah-MP had the highest correlation coefficient and lowest RMSE at most soil layers."
+
+  - dag_variable: SMOIS
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a numeric CSI pass threshold for gridded WRF soil moisture."
+        cites: []
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Zhuo reports spatial cross-correlation qualitatively, but not a numeric spatial pass band."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "For point time-series soil moisture, fetched WRF validation uses RMSE and correlation; spatial SMOIS remains a transferred/uncited threshold gap."
+        cites: [zhuo2019]
+    validated_when: "UNRESOLVED - gridded/satellite top-layer SMOIS validation should report spatial correlation/RMSE, but no cited numeric spatial band was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Depth-support mismatch with satellite top-layer observations is important. Zhuo notes a single soil-moisture sensor has high correlation with a significant proportion of the region, but the fetched text does not provide a spatial pass tier."
+
+deferred_paywalled:
+  - ref: "Cuntz et al. 2018 - A systematic evaluation of Noah-MP in simulating land-atmosphere energy, water, and carbon exchanges"
+    doi: 10.1002/2017JD027597
+    needed_for: [SMOIS, TSLB]
+  - ref: "Quan et al. 2016 - Assessing WRF model parameter sensitivity for summer precipitation in the Greater Beijing Area"
+    doi: 10.1002/2014GL061623
+    needed_for: [RAINC+RAINNC]
+  - ref: "Indian summer monsoon high-intensity precipitation WRF parameter sensitivity"
+    doi: 10.1029/2020EA001471
+    needed_for: [RAINC+RAINNC]
+  - ref: "WRF tropical-cyclone sensitivity and machine-learning evaluation in the Bay of Bengal"
+    doi: 10.5194/gmd-15-2133-2022
+    needed_for: [RAINC+RAINNC, PSFC, U10/V10]

@@ -389,7 +389,7 @@ outputs:
   - var: "minimum_factor_of_safety"
     validation_rank: 1
     unit: "dimensionless"
-    description: "Minimum computed factor of safety across all computation depths at each cell for a given elapsed time; Fs<1 predicts failure, Fs=1 limiting equilibrium, Fs>=1 stable. Clamped to a maximum of 10; cells below slomin assigned 11."
+    description: "Minimum computed factor of safety in the soil column across all computation depths at each cell for a given elapsed time; Fs<1 predicts failure, Fs=1 limiting equilibrium, Fs>=1 stable. Clamped to a maximum of 10; cells below slomin assigned 11."
     emitted_in: "TRfs_min_<suffix>_<step>.asc"
     observability:
       comparable_obs_shapes:
@@ -454,7 +454,7 @@ outputs:
   - var: "actual_infiltration_rate"
     validation_rank: 5
     unit: "m/s"
-    description: "Actual infiltration rate into the column, partitioned from rainfall with the excess (where rainfall>Ks) becoming runoff."
+    description: "Actual infiltration rate into the soil column, partitioned from rainfall with the excess (where rainfall>Ks) becoming runoff."
     emitted_in: "TRinfilratPer<period>_<suffix>.asc"
     observability:
       comparable_obs_shapes:
@@ -681,3 +681,13 @@ safety:
       scope: "temporal evolution of the slope"
       source: "USGS Open-File Report 2008-1159, Limitations"
       status: "adopted"
+
+medium_evidence:
+  - var: "minimum_factor_of_safety"
+    source: "dag.yaml"
+    quote: "Transient rainfall infiltration via 1-D vertical analytical flow, one independent soil column per grid cell"
+    note: "boundary.scope_in declares the model domain as independent soil columns; this output is the minimum factor of safety across depths in each soil column."
+  - var: "actual_infiltration_rate"
+    source: "dag.yaml"
+    quote: "Transient rainfall infiltration via 1-D vertical analytical flow, one independent soil column per grid cell"
+    note: "boundary.scope_in identifies the infiltration medium as the soil column for each grid cell."

@@ -574,7 +574,7 @@ outputs:
   - var: "peak_discharge (Q_peak)"
     validation_rank: 2
     unit: "m^3/s"
-    description: "Running maximum outlet discharge over the simulation."
+    description: "Running maximum basin-outlet channel-water discharge over the simulation."
     emitted_in: "*_report.txt"
     observability:
       comparable_obs_shapes:
@@ -865,3 +865,9 @@ safety:
       scope: "conservation / closure"
       source: "topoflow_driver mass-balance report and component structure (TopoFlow 3.6 source); CSDMS component docs"
       status: "adopted"
+
+medium_evidence:
+  - var: "peak_discharge (Q_peak)"
+    source: "dag.yaml"
+    quote: "Volume flow rate at the basin outlet pixel (basin_outlet_water_x-section__volume_flow_rate); the simulated hydrograph."
+    note: "Q_peak is the running maximum of the outlet Q monitored by the driver, so the medium is basin-outlet channel water."

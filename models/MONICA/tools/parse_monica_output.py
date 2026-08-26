@@ -137,53 +137,136 @@ def validate_outputs(parsed_data, output_dir):
 # Parser
 # ---------------------------------------------------------------------------
 
+TAB = chr(9)
+_SEPS = (";", ",", TAB)
+
+
+def _detect_sep(line):
+    """Separator of ONE block's header line (MONICA blocks may differ)."""
+    if ";" in line:
+        return ";"
+    if TAB in line:
+        return TAB
+    return ","
+
+
+def _is_section_label(line):
+    """True only for MONICA's bare section-label line.
+
+    monica-run writes every output event block under
+        '"' + origSpec-with-inner-quotes-removed + '"'
+    (src/run/monica-run-main.cpp:300/333/390), i.e. the label line is exactly
+    ONE double-quoted token ("crop", "daily", "xxxx-03-31", "while|Stage|4")
+    with no separator and no inner quote. The quotes are REQUIRED: an
+    unquoted one-cell line - the `Precip` header of a "run" block, a legacy
+    file's single-column header such as `Yield`, or a one-column data value -
+    is never a label.
+    """
+    s = line.strip()
+    if len(s) < 3 or s[0] != '"' or s[-1] != '"':
+        return False
+    inner = s[1:-1]
+    if not inner or '"' in inner or any(c in inner for c in _SEPS):
+        return False
+    return True
+
+
 def parse_monica_output(input_path):
     """
-    Parse MONICA's multi-header CSV output.
+    Parse MONICA's multi-section, multi-header CSV output.
 
-    MONICA outputs have 3-4 header rows:
-      Row 1: column names (e.g., Date, Crop, Yield, Mois/1)
-      Row 2: units (e.g., [mm], [kg ha-1])
-      Row 3: aggregation metadata or JSON refs
-      Row 4+: data
+    A MONICA out.csv holds one block per output event ("crop", "daily",
+    "yearly", ...). Each block is:
+      Row 0: quoted section label, e.g. "crop"  (absent only in very old files)
+      Row 1: column names (e.g., CM-count, Crop, Yield / Date, Mois/1 ...)
+      Row 2: units (e.g., [kgDM ha-1], [mm]) - optional
+      Row 3: aggregation metadata or JSON refs (m:/j:/c:) - optional
+      Row 4+: data rows, ended by a blank line or the next section label
+    Blocks have DIFFERENT headers and may use different separators, so the
+    separator and header are detected per block, never from line 0 (which
+    for an event file is the bare label "crop" - treating that as the header
+    silently parsed zero usable rows; triplet dt_27).
+
+    Returns (header_names, header_units, data).
+      * ONE block (labelled or legacy label-less): header_names/header_units
+        are exactly that block's columns/units and each row dict holds exactly
+        those columns - no synthetic key is added (back-compatible).
+      * MORE than one block: header_names is the union of all blocks' columns
+        (first-seen order) preceded by a synthetic "section" column,
+        header_units is aligned to it, and every row dict additionally carries
+        its block label under "section".
     """
-    with open(input_path, "r", newline="") as f:
-        lines = f.readlines()
+    # MONICA writes units like [degC d] in the platform's 8-bit encoding; never
+    # let a non-UTF-8 byte abort the parse of an otherwise valid file.
+    with open(input_path, "r", newline="", encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
 
-    if len(lines) < 3:
+    sections = []
+    i, n = 0, len(lines)
+    while i < n:
+        line = lines[i]
+        if not line.strip():
+            i += 1
+            continue
+        if _is_section_label(line):
+            name = line.strip()[1:-1]
+            i += 1
+            while i < n and not lines[i].strip():
+                i += 1
+            if i >= n:
+                break
+            header_line = lines[i]
+        else:
+            name = "default" if not sections else f"section{len(sections)}"
+            header_line = line
+        sep = _detect_sep(header_line)
+        header = [h.strip().strip('"') for h in header_line.split(sep)]
+        i += 1
+        units = [""] * len(header)
+        if i < n:
+            cand = [u.strip().strip('"') for u in lines[i].split(sep)]
+            if len(cand) == len(header) and (any(c.startswith("[") for c in cand)
+                                             or all(c == "" for c in cand)):
+                units = cand
+                i += 1
+        while (i < n and lines[i].strip()
+               and lines[i].split(sep)[0].strip().strip('"').startswith(("m:", "j:", "c:"))):
+            i += 1
+        rows = []
+        while i < n:
+            l = lines[i]
+            if not l.strip() or _is_section_label(l):
+                break
+            vals = l.split(sep)
+            i += 1
+            if len(vals) != len(header):
+                continue
+            row = {}
+            for hname, val in zip(header, vals):
+                row[hname] = val.strip().strip('"')
+            rows.append(row)
+        sections.append({"name": name, "header": header, "units": units, "rows": rows})
+
+    if not sections:
         return [], [], []
 
-    # Detect separator
-    sep = ","
-    if ";" in lines[0]:
-        sep = ";"
-    elif "\t" in lines[0]:
-        sep = "\t"
+    if len(sections) == 1:
+        sec = sections[0]
+        return list(sec["header"]), list(sec["units"]), sec["rows"]
 
-    # Parse headers
-    header_names = [h.strip().strip('"') for h in lines[0].strip().split(sep)]
-    header_units = [u.strip().strip('"') for u in lines[1].strip().split(sep)]
-
-    # Find where data starts (skip rows starting with "m:" or "j:" or containing metadata)
-    data_start = 2
-    for i in range(2, min(6, len(lines))):
-        first_cell = lines[i].strip().split(sep)[0].strip().strip('"')
-        if first_cell.startswith(("m:", "j:", "c:")):
-            data_start = i + 1
-        else:
-            break
-
-    # Parse data rows
+    header_names, header_units, seen = ["section"], [""], {"section"}
+    for sec in sections:
+        for hname, unit in zip(sec["header"], sec["units"]):
+            if hname not in seen:
+                seen.add(hname)
+                header_names.append(hname)
+                header_units.append(unit)
     data = []
-    for line in lines[data_start:]:
-        vals = line.strip().split(sep)
-        if len(vals) != len(header_names):
-            continue
-        row = {}
-        for name, val in zip(header_names, vals):
-            row[name] = val.strip().strip('"')
-        data.append(row)
-
+    for sec in sections:
+        for r in sec["rows"]:
+            tagged = {"section": sec["name"]}
+            tagged.update(r)
+            data.append(tagged)
     return header_names, header_units, data
 
 

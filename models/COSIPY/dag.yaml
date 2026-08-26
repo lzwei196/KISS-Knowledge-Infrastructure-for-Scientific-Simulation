@@ -240,7 +240,7 @@ outputs:
   - var: "H"
     validation_rank: 7
     unit: "W m^-2"
-    description: "Turbulent sensible heat flux."
+    description: "Turbulent sensible heat flux between air and the glacier snow/ice surface."
     emitted_in: "output_atm (result netCDF)"
     observability:
       comparable_obs_shapes:
@@ -253,7 +253,7 @@ outputs:
   - var: "LE"
     validation_rank: 8
     unit: "W m^-2"
-    description: "Turbulent latent heat flux (sublimation/evaporation)."
+    description: "Turbulent latent heat flux between air and the glacier snow/ice surface (sublimation/evaporation)."
     emitted_in: "output_atm (result netCDF)"
     observability:
       comparable_obs_shapes:
@@ -470,3 +470,13 @@ safety:
       scope: "Surface energy-balance numerical solution"
       source: "cosipy/modules/surfaceTemperature.py solver options and COSIPY changelog"
       status: "tentative"
+
+medium_evidence:
+  - var: "H"
+    source: "dag.yaml"
+    quote: "Surface energy balance over snow/ice (net shortwave with subsurface penetration, net longwave, sensible heat, latent heat, ground/subsurface heat flux, rain heat flux)"
+    note: "boundary.scope_in declares the surface energy-balance medium as snow/ice and includes sensible heat."
+  - var: "LE"
+    source: "dag.yaml"
+    quote: "Surface energy balance over snow/ice (net shortwave with subsurface penetration, net longwave, sensible heat, latent heat, ground/subsurface heat flux, rain heat flux)"
+    note: "boundary.scope_in declares the surface energy-balance medium as snow/ice and includes latent heat."

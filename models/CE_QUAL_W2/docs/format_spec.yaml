@@ -1,258 +1,610 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["lake"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "CE-QUAL-W2 v4.5"
-  domain: "lake"
-  secondary_domains: ["water_quality", "river"]
-  binary: "w2.exe"
-  binary_path: "KISSPATH_BINARIES/ce_qual_w2/bin/w2.exe"
-  language: "Fortran"
-  working_directory: "directory containing w2_con.npt and all referenced files"
-  notes: "2D laterally-averaged hydrodynamic and water quality model for elongated reservoirs and rivers."
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: CE_QUAL_W2
+  language: fortran
+  implementation:
+    id: ce-qual-w2-v45
+    version: 4.5.5
+    provenance: Fortran 90; CE-QUAL-W2 (USACE ERDC / Portland State, Cole & Wells) realizing the laterally-averaged
+      2D LARM->GLVHT->W2 lineage; NPT fixed-width-FORMAT I/O contract.
+  scientific_reference_version: CE-QUAL-W2 4.5.5 (PSU User Manual, Wells 2026; ERDC/EcohydrologyTeam v4.5
+    lineage)
 inputs:
-
   forcing:
-    - name: "air_temperature"
-      file: "met_wb*.npt"
-      unit: "degC"
-      valid_range: [-50.0, 55.0]
-      format: "Fixed-width 8-char fields, JDAY (decimal) + data columns"
-
-    - name: "dewpoint_temperature"
-      file: "met_wb*.npt"
-      unit: "degC"
-      valid_range: [-60.0, 40.0]
-      format: "Fixed-width 8-char fields"
-      conversion_from_cmfd: "VP (kPa) -> TDEW: TDEW = (237.3 * ln(VP/0.6108)) / (17.27 - ln(VP/0.6108))"
-      notes: "CE-QUAL-W2 expects dewpoint, NOT relative humidity or vapor pressure."
-
-    - name: "wind_speed"
-      file: "met_wb*.npt"
-      unit: "m/s"
-      valid_range: [0.0, 80.0]
-      format: "Fixed-width 8-char fields"
-
-    - name: "cloud_cover"
-      file: "met_wb*.npt"
-      unit: "tenths (0-10)"
-      valid_range: [0.0, 10.0]
-      format: "Fixed-width 8-char fields"
-      conversion_from_cmfd: "Cloud fraction (0-1) * 10 -> tenths (0-10)"
-      notes: "#1 silent error for CE-QUAL-W2. Passing 0-1 fraction makes model see near-clear sky always, water temps 3-5 C too warm."
-
-    - name: "shortwave_radiation"
-      file: "met_wb*.npt"
-      unit: "W/m2"
-      valid_range: [0.0, 1400.0]
-      format: "Fixed-width 8-char fields"
-
+  - name: air temperature (TAIR)
+    unit: deg C
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met file METFN (e.g., met_wb*.npt), TAIR column vs decimal JDAY
+  - name: dew point temperature (TDEW)
+    unit: deg C
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met file METFN, TDEW column
+    notes: dew point, not relative humidity or vapor pressure; should be <= TAIR; drives evaporative/latent
+      heat flux
+  - name: wind speed (WIND)
+    unit: m/s
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met file METFN, WIND column
+  - name: wind direction (PHI / WDIR)
+    unit: degrees (0-360) in v4.x+
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met file METFN, wind-direction column
+    notes: version-dependent units; v4.x onward expects degrees (some v3.x expected radians)
+  - name: cloud cover (CLOUD)
+    unit: tenths (0-10)
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met file METFN, CLOUD column
+    notes: cloud cover in tenths, not fraction (0-1) or percent; modulates longwave/shortwave when solar
+      not supplied directly
+  - name: shortwave solar radiation (SRO)
+    unit: W/m^2
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met file METFN, optional direct shortwave column (else internally computed from
+      solar geometry + cloud)
   parameters:
-    critical:
-      - name: "WSC"
-        file: "w2_con.npt (WNDSHLD card)"
-        description: "Wind sheltering coefficient"
-        valid_range: [0.5, 1.0]
-        default: 0.85
-        unit: "fraction"
-        sensitivity: "HIGH — controls surface mixing depth and thermocline"
-
-      - name: "EXH2O"
-        file: "w2_con.npt (EXTINC card)"
-        description: "Pure water light extinction coefficient"
-        valid_range: [0.1, 1.0]
-        default: 0.45
-        unit: "1/m"
-        sensitivity: "HIGH — controls thermocline depth"
-
-      - name: "AX"
-        file: "w2_con.npt"
-        description: "Longitudinal eddy viscosity"
-        valid_range: [0.1, 10.0]
-        default: 1.0
-        unit: "m2/s"
-        sensitivity: "MEDIUM"
-
-      - name: "CBHE"
-        file: "w2_con.npt"
-        description: "Coefficient of bottom heat exchange"
-        valid_range: [0.3, 1.5]
-        default: 0.3
-        unit: "W/m2/degC"
-        sensitivity: "MEDIUM"
-
-      - name: "TSED"
-        file: "w2_con.npt"
-        description: "Sediment temperature"
-        valid_range: [5.0, 15.0]
-        default: 10.0
-        unit: "degC"
-        sensitivity: "LOW"
-
-      - name: "segment_bottom_elevations"
-        file: "w2_con.npt (BRANCH card) / bth_wb*.npt"
-        description: "Bottom elevation of each segment"
-        unit: "m"
-        bug_history: >
-          Bottom elevations must be monotonically non-increasing downstream.
-          A downstream segment with HIGHER bottom creates a depression that
-          traps water. Model runs but produces wrong longitudinal gradients.
-          Triplet dt_013.
-
-  files:
-    required:
-      - name: "w2_con.npt"
-        description: "Master control file — ALL model configuration"
-        format: "Fortran fixed-width, 8-character fields, right-justified"
-        notes: "Off-by-one alignment shifts ALL subsequent values silently."
-
-      - name: "bth_wb*.npt"
-        description: "Bathymetry file (segment-layer grid)"
-        format: "Fixed-width, layer widths per segment"
-
-      - name: "met_wb*.npt"
-        description: "Meteorological forcing per waterbody"
-        format: "Fixed-width, JDAY (decimal) + TAIR, TDEW, WIND, CLOUD, SRO"
-
-      - name: "qin_br*.npt"
-        description: "Inflow discharge per branch"
-        format: "Fixed-width, JDAY + Q (m3/s)"
-
-      - name: "tin_br*.npt"
-        description: "Inflow temperature per branch"
-        format: "Fixed-width, JDAY + T (degC)"
-
-    optional:
-      - name: "cin_br*.npt"
-        description: "Inflow constituent concentrations"
-        format: "Fixed-width, JDAY + N constituent columns"
-        notes: "Number of columns must EXACTLY match number of active constituents."
-
-      - name: "qot_br*.npt"
-        description: "Outflow discharge per branch"
-
-      - name: "qdt_br*.npt"
-        description: "Distributed tributary flow"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: wind sheltering coefficient (WSC)
+    unit: dimensionless
+    category: surface_mixing
+    source_kind: calibrated
+    model_input_format: control file card / WSC file WSCFN; typical 0.5-1.0
+    notes: scales wind shear / surface mixing and thermal stratification
+  - name: light extinction for pure water (EXH2O)
+    unit: m^-1
+    category: light
+    source_kind: calibrated
+    model_input_format: EX COEF card; typical 0.1-1.0 (~1.7/Secchi depth)
+    notes: sets light attenuation and thermocline depth; EXINOR/EXORG add ISS/organic attenuation
+  - name: surface solar absorption fraction (BETA)
+    unit: fraction
+    category: light
+    source_kind: calibrated
+    model_input_format: EX COEF card; typical 0.3-0.6
+    notes: fraction of shortwave absorbed at the surface layer
+  - name: longitudinal momentum dispersion (AX)
+    unit: m^2/s
+    category: mixing
+    source_kind: calibrated
+    model_input_format: HYD COEF card; typical 0.1-10
+  - name: longitudinal temperature/constituent dispersion (DX)
+    unit: m^2/s
+    category: mixing
+    source_kind: calibrated
+    model_input_format: HYD COEF card; typical 0.1-100
+  - name: bottom (sediment) heat exchange coefficient (CBHE)
+    unit: W/m^2/C
+    category: heat
+    source_kind: calibrated
+    model_input_format: HYD COEF card; typical 0.3-1.5
+  - name: sediment temperature (TSED)
+    unit: deg C
+    category: heat
+    source_kind: calibrated
+    model_input_format: HYD COEF card; ~annual mean air temperature, typical 5-15
+  - name: bottom friction (Chezy / Manning n)
+    unit: Chezy or Manning n (n ~0.02-0.05)
+    category: friction
+    source_kind: calibrated
+    model_input_format: bathymetry file; friction type set by FRICC
+  - name: water-quality kinetic coefficients (>120; e.g., AG, AR, AM, AT1, ASAT, SOD, LDOMDK)
+    unit: various (1/day, gO2/m^2/day, deg C, etc.)
+    category: kinetics
+    source_kind: calibrated
+    model_input_format: control file kinetic cards; ~10 typically adjusted in calibration
+    notes: only active when the corresponding constituents are turned on
+  initial_conditions:
+  - name: initial temperature field (T2I / IT2)
+    unit: deg C
+    category: thermal
+    source_kind: user_provided
+    model_input_format: control file; uniform value, vertical profile (VPRFN), or longitudinal/vertical
+      profile (LPRFN)
+  - name: initial constituent concentrations (IC2 / C2)
+    unit: g/m^3 (mg/L)
+    category: water_quality
+    source_kind: user_provided
+    model_input_format: control file / profile files; optional
+  - name: initial water surface elevation (ELWS)
+    unit: m ASL
+    category: hydraulic
+    source_kind: user_provided
+    model_input_format: control file; must be >= bottom elevation (ELBOT) at active segments
+  - name: initial ice thickness (ICETHI / ICE)
+    unit: m
+    category: ice
+    source_kind: user_provided
+    model_input_format: control file; optional
+  - name: restart state (RSIC reading RSOC/rso.opt)
+    unit: state snapshot
+    category: restart
+    source_kind: user_provided
+    model_input_format: restart file; optional
+  boundary_conditions:
+  - name: bathymetry (segment widths per layer)
+    unit: m (width), m (elevation)
+    category: geometry
+    source_kind: dataset_lookup
+    model_input_format: bth_wb*.npt width matrix [KMX layers] x [IMX segments]; boundary segments 1 and
+      IMX zero-width; bottom elevations monotonically non-increasing downstream
+  - name: branch topology (US, DS, UHS, DHS, SLOPE)
+    unit: segment indices / slope
+    category: geometry
+    source_kind: user_provided
+    model_input_format: control file BR GEOM; DHS must reference a valid segment in the receiving branch
+  - name: branch inflow discharge (QIN)
+    unit: m^3/s
+    category: inflow
+    source_kind: forcing
+    model_input_format: qin_br*.npt vs JDAY; placement PQC (even or by density)
+  - name: branch inflow temperature (TIN)
+    unit: deg C
+    category: inflow
+    source_kind: forcing
+    model_input_format: tin_br*.npt vs JDAY
+  - name: branch inflow constituents (CIN)
+    unit: g/m^3 (mg/L), constituent-dependent
+    category: inflow
+    source_kind: forcing
+    model_input_format: cin_br*.npt; column count must equal number of constituents ON; optional
+  - name: distributed / tributary inflow (QTR/QDTR, TTR/TDTR) and precipitation (PRC)
+    unit: m^3/s; deg C
+    category: inflow
+    source_kind: forcing
+    model_input_format: qdt_*.npt / tdt_*.npt; tributary placement PTRC, distributed DTRC area-weighted
+  - name: outflow / withdrawal discharge (QOUT, QWD)
+    unit: m^3/s
+    category: outflow
+    source_kind: forcing
+    model_input_format: qot_br*.npt vs JDAY; downstream selective withdrawal and lateral withdrawals
+  - name: outlet / withdrawal elevation
+    unit: m ASL
+    category: outflow
+    source_kind: user_provided
+    model_input_format: control file structure cards; elevation in m ASL on the bathymetry datum (not
+      depth-from-surface)
+  - name: external head boundaries (EUH/EDH, TUH/TDH, CUH/CDH)
+    unit: m ASL; deg C; g/m^3
+    category: head
+    source_kind: forcing
+    model_input_format: control file UHS/DHS head BC; chiefly estuarine; optional
+  - name: simulation period (TMSTRT, TMEND, YEAR)
+    unit: decimal JDAY / year
+    category: control
+    source_kind: user_provided
+    model_input_format: control file TIME CON card; all time-series inputs must cover this span
+  - name: waterbody type (WTYPE freshwater/saltwater)
+    unit: switch
+    category: control
+    source_kind: user_provided
+    model_input_format: control file; selects density equation-of-state branch
+  - name: method / option switches (turbulence scheme, transport scheme, HEATC, SLHTC, FRICC, constituent
+      ON/OFF)
+    unit: switch
+    category: control
+    source_kind: user_provided
+    model_input_format: control file cards; e.g., transport upwind/QUICKEST/ULTIMATE, AZ scheme (k-epsilon/TKE/RNG/W2/W2N),
+      heat-exchange method
 outputs:
-
   primary:
-    - name: "temperature_curtain"
-      file: "Snapshot output (snp_wb*.opt)"
-      unit: "degC"
-      valid_range: [0.0, 40.0]
-      format: "Text or binary, 2D (segment x layer)"
-      notes: "2D longitudinal-vertical temperature field."
-
-    - name: "water_surface_elevation"
-      file: "Time series output (tsr_wb*.opt)"
-      unit: "m"
-      valid_range: null
-      format: "Text, time series at specified segments"
-
-    - name: "discharge"
-      file: "Time series or spreadsheet output"
-      unit: "m3/s"
-      valid_range: [0.0, null]
-
-    - name: "water_quality_constituents"
-      file: "Snapshot/time series output"
-      unit: "mg/L or degC"
-      valid_range: null
-      notes: "DO, nutrients, algae — only present when WQ constituents are active."
-
-  diagnostics:
-    - name: "thermal_stratification"
-      check: "Vertical temperature gradient in summer: surface-bottom > 5 degC for deep reservoirs"
-      notes: "If no stratification, check EXH2O and WSC."
-
-    - name: "water_balance"
-      check: "Inflow volume ~ outflow volume + storage change"
-      notes: "Mass conservation depends on CFL-limited timestep."
-
-    - name: "cfl_stability"
-      check: "Adaptive timestep does not drop below 1 second"
-      notes: "Very small timesteps indicate numerical instability."
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: water temperature
+    unit: deg C
+    description: 2-D laterally-averaged water temperature over the segment-layer grid; thermal stratification
+      structure
+    validation_rank: 2
+    emitted_in: snp*.opt (2-D snapshot), tsr*.opt (cell time series), prf*.opt (vertical profile)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - in-pool profile loggers map to a specific segment-layer cell; depth must align with the model
+          layer
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - single-cast profile compared at one instant; sensitive to timestep/output-frequency alignment
+      detrending_options:
+      - none
+  - name: dam release temperature
+    unit: deg C
+    description: water temperature of selective-withdrawal outflow at the outlet, controlled by withdrawal
+      elevation and stratification
+    validation_rank: 3
+    emitted_in: tsr*.opt (withdrawal cell), withdrawal/structure outflow output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - release temperature is intermediate between surface and bottom; strongly depends on correct
+          outlet elevation datum (m ASL)
+      detrending_options:
+      - none
+  - name: dissolved oxygen
+    unit: g/m^3 (mg/L)
+    description: dissolved oxygen concentration in reservoir water over the segment-layer grid; hypolimnetic
+      depletion driven by SOD, respiration, and organic decay
+    validation_rank: 4
+    emitted_in: snp*.opt, tsr*.opt, prf*.opt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - DO accuracy is contingent on SOD and algal-kinetic calibration; only valid when constituents
+          are turned on
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - vertical DO profile at a single cast; compare layer-by-layer at the matching segment
+      detrending_options:
+      - none
+  - name: water surface elevation
+    unit: m ASL
+    description: free-surface elevation evolving with the inflow/outflow water balance
+    validation_rank: 5
+    emitted_in: tsr*.opt, spr*.opt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - reservoir stage gauge; mismatch usually reflects inflow/outflow boundary errors rather than
+          hydrodynamics
+      detrending_options:
+      - none
+  - name: outflow discharge
+    unit: m^3/s
+    description: withdrawal/dam-release discharge used for downstream coupling
+    validation_rank: 1
+    emitted_in: tsr*.opt, withdrawal/structure output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - largely prescribed by the outflow boundary; useful as a water-balance closure check, not an
+          independent skill metric
+      detrending_options:
+      - none
+  - name: chlorophyll-a / algal biomass
+    unit: ug/L (chl-a) or g/m^3 (algal biomass)
+    description: phytoplankton standing biomass from algal growth/mortality kinetics
+    validation_rank: 6
+    emitted_in: snp*.opt, tsr*.opt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: pbias
+        caveats:
+        - highly sensitive to algal-kinetic parameters and nutrient loading; only valid with constituents
+          on and calibrated
+      detrending_options:
+      - none
+  - name: ice thickness
+    unit: m
+    description: ice cover onset, growth, and breakup
+    validation_rank: 7
+    emitted_in: snp*.opt, tsr*.opt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - timing_accuracy
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - ice on/off timing more diagnostic than absolute thickness
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - ice presence/absence as a binary event
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "cloud_cover_fraction_vs_tenths"
-    triplet: "dt_001"
-    description: "Cloud cover in fraction (0-1) instead of tenths (0-10) — 3-5 C warm bias"
-    affected_output: "Water temperature everywhere"
-    detection: "Systematic warm bias, no stratification breakdown"
-    fix: "Multiply cloud fraction by 10"
+- id: dt_001
+  symptom: Water temperature systematically 3-5 C too warm year-round
+  diagnosis: Cloud cover provided as fraction (0-1) instead of tenths (0-10); CE-QUAL-W2 expects cloud
+    cover in TENTHS (0-10). If cloud cover is passed as fraction (0-1), the model interprets all values
+    as near-clear sky (cloud = 0.0-1.0 out of 10). This allows excessive shortwave radiation to reach
+    the water su
+  remedy: 'Multiply cloud cover by 10 if source data is in fraction (0-1); convert_met_to_w2; [''Check
+    cloud cover values in met_wb*.npt: max should be ~8-10, not 0.8-1.0'', ''If max cloud < 2.0, data
+    is likely in fraction — multiply by 10'']; convert_met_to_w2.py auto-derives cloud from SW radiation
+    in tenths'
+  severity: silent
+- id: dt_002
+  symptom: Dewpoint temperature always near -40 C or unreasonable values
+  diagnosis: Vapor pressure units wrong in dewpoint conversion (Pa vs kPa vs hPa); The VP-to-TDEW formula
+    TDEW = (237.3*ln(VP/0.6108))/(17.27-ln(VP/0.6108)) requires VP in kPa. CMFD gives kPa directly. ERA5
+    gives Pa (divide by 1000). MSWX gives kPa. If VP is in Pa (e.g., 800 Pa instead of 0.8 kPa), the formula
+    p
+  remedy: 'Ensure VP is in kPa before dewpoint conversion; convert_met_to_w2; [''Check VP values: should
+    be 0.1-5.0 kPa (not 100-5000 Pa)'', ''If VP > 10, divide by 1000 (Pa to kPa) or by 10 (hPa to kPa)''];
+    convert_met_to_w2.py clips VP to [0.001, 10] kPa and warns if values are suspicious'
+  severity: silent
+- id: dt_003
+  symptom: Inflow discharge 1000x too large or too small, reservoir fills/drains unrealistically
+  diagnosis: 'CaMa-Flood mm/day grid-cell runoff not converted to m^3/s point discharge; CaMa-Flood output
+    may be in mm/day over a grid cell area. CE-QUAL-W2 expects m^3/s at a specific point. Conversion:
+    Q_m3s = Q_mm_day * cell_area_m2 / (86400 * 1000). Omitting this conversion results in discharge that
+    is off b'
+  remedy: 'Apply unit conversion with --convert_mm_to_m3s flag; convert_inflow_to_w2; [''Check mean inflow:
+    should be comparable to published annual mean discharge'', ''If mean Q < 0.01 m3/s for a large reservoir,
+    units are likely wrong'', ''Use --convert_mm_to_m3s --cell_area_km2 <area>'']; convert_inflow_to_w2.py '
+  severity: silent
+- id: dt_004
+  symptom: Circulation pattern wrong, surface temperatures asymmetric
+  diagnosis: Wind direction in degrees but model version expects radians (or vice versa); CE-QUAL-W2 v4.x
+    typically uses wind direction in degrees (0-360). Some v3.x versions use radians (0-2*pi). Providing
+    degrees when radians are expected (or vice versa) causes the wind-driven circulation to be in the
+    wrong di
+  remedy: Check WDIC card in w2_con.npt; v4.x uses degrees, v3.x may use radians; ; ['Check model version
+    documentation for wind direction units', 'If wind direction values are all 0-6.28, model expects degrees
+    — multiply by 180/pi']; Default to 270 degrees (westerly) when wind direction is not available
+  severity: silent
+- id: dt_005
+  symptom: Forcing data misaligned by hours or days, seasonal cycle shifted
+  diagnosis: Julian day computed as integer instead of decimal (1 instead of 1.5 for noon); CE-QUAL-W2
+    uses decimal Julian day (JDAY) where 1.0 = midnight Jan 1, 1.5 = noon Jan 1. If JDAY is computed as
+    integer day number, all sub-daily timing is lost and the diurnal cycle is shifted. This affects shortwave
+    radi
+  remedy: 'Use JDAY = DOY + hour/24 + minute/1440; convert_met_to_w2; [''Check met file: JDAY values should
+    have 3 decimal places (e.g., 1.000, 1.125)'', ''If all JDAY are integers (1.000, 2.000, ...), forcing
+    is daily only'']; convert_met_to_w2.py computes decimal JDAY from datetime'
+  severity: silent
+- id: dt_006
+  symptom: Model reads wrong parameter values, bizarre behavior (e.g., 100 branches, negative layers)
+  diagnosis: Column misalignment in w2_con.npt — 8-char fixed-width fields shifted by 1+ characters; Fortran
+    reads w2_con.npt by COLUMN POSITION (FORMAT statements), not by delimiter. If a value takes 9 characters
+    instead of 8, everything after it shifts right, and the model reads garbage values for all subseque
+  remedy: 'Verify every field in w2_con.npt is exactly 8 characters, right-justified for numbers; generate_w2_control;
+    [''Open w2_con.npt in a fixed-width editor or use cut -c to check column positions'', ''Each numeric
+    field: exactly 8 chars, right-justified'', "Use format string ''{:>8.2f}'' in Python"]; generate_'
+  severity: silent
+- id: dt_007
+  symptom: Bathymetry file rejected, or widths read as wrong values at runtime
+  diagnosis: 'bth_wb*.npt column widths do not match Fortran FORMAT statement; The bathymetry file has
+    strict column-width requirements defined by the Fortran FORMAT statement in the source code. Typically
+    8 characters per segment width. If the values overflow the field width, values are misread.
 
-  - id: "dewpoint_not_rh"
-    triplet: "dt_002"
-    description: "Passing RH or VP instead of dewpoint temperature"
-    affected_output: "Evaporation, energy balance, temperature"
-    detection: "Wrong evaporation rates"
-    fix: "Convert VP to TDEW: TDEW = (237.3 * ln(VP/0.6108)) / (17.27 - ln(VP/0.6108))"
+    ; [''build_reserv'
+  remedy: Ensure each width value in bth_wb*.npt is exactly 8 characters; build_reservoir_grid; ['Check
+    that width values do not exceed 8 characters (e.g., 99999.9 is 7 chars = OK)', 'For very wide reservoirs
+    (>9999 m), use fewer decimal places']; build_reservoir_grid.py formats widths as {:8.1f}
+  severity: fatal
+- id: dt_008
+  symptom: File not found error for input files despite files existing
+  diagnosis: File path exceeds Fortran CHARACTER*72 limit — path truncated silently; CE-QUAL-W2 Fortran
+    source declares file path variables as CHARACTER*72 (or similar). Paths longer than this limit are
+    silently truncated, causing file-not-found errors even when the files exist at the full path. The
+    error messag
+  remedy: 'Use relative paths or symlinks to keep all file paths under 72 characters; ; [''Copy/symlink
+    all input files to the run directory'', ''Use only filenames (no path) in w2_con.npt since model reads
+    from CWD'', "Check: grep -o ''.\\{73,\\}'' w2_con.npt should return nothing"]; generate_w2_control.py
+    uses os.'
+  severity: fatal
+- id: dt_009
+  symptom: Model reads past end of met/inflow file, crashes or produces partial results
+  diagnosis: Met or inflow file has fewer timesteps than the simulation period (TMSTRT to TMEND); All
+    time-series input files (met, qin, tin, qot) must cover the FULL simulation period defined by TMSTRT
+    and TMEND in w2_con.npt. If the met file ends at JDAY 300 but TMEND is 365, the model crashes when
+    it tries to
+  remedy: 'Ensure all time-series files cover TMSTRT to TMEND Julian days; ; [''Check last JDAY in each
+    input file: tail -1 met_wb1.npt'', ''Must be >= TMEND in w2_con.npt'', ''Extend input files if needed
+    (repeat last value)'']; generate_w2_control.py validates JDAY coverage of all input files'
+  severity: fatal
+- id: dt_010
+  symptom: Model crashes with 'layer error' or 'zero thickness' at startup
+  diagnosis: Active segment has zero width at all layers — no water column; Every active segment (between
+    boundary segments) must have at least one layer with non-zero width. A segment with all-zero widths
+    represents dry land and cannot participate in the hydrodynamic calculation. This typically happens
+    when the
+  remedy: 'Remove segments with no water column, or set minimum width for at least one layer; build_reservoir_grid;
+    [''Check bth_wb*.npt: every active segment column should have at least one non-zero value'', ''Remove
+    or merge segments that are entirely zero'']; build_reservoir_grid.py validates that all active se'
+  severity: fatal
+- id: dt_011
+  symptom: Unrealistic velocities, numerical instability, NaN in output
+  diagnosis: Segment length too short relative to layer thickness — CFL violation; The CFL (Courant-Friedrichs-Lewy)
+    condition requires that the timestep be small enough for information to propagate no more than one
+    cell per step. If segments are very short but layers are thick, the CFL condition forces extremel
+  remedy: 'Increase segment length or decrease layer thickness to maintain CFL < 1; build_reservoir_grid;
+    [''Rule of thumb: segment_length >= 2 * layer_thickness * sqrt(g * max_depth)'', ''Merge short segments'',
+    ''Increase --segment_length parameter'']; Check w2l.opt for minimum timestep — if dt < 1s, grid needs
+    co'
+  severity: fatal
+- id: dt_012
+  symptom: Model crashes at branch junction with segment reference error
+  diagnosis: Branch DHS (downstream head segment) points to non-existent or wrong segment; In multi-branch
+    configurations, DHS specifies which segment in the receiving branch the current branch connects to.
+    If DHS references a segment that does not exist or is not in the receiving branch, the model crashes
+    at th
+  remedy: Verify DHS references valid segments in the receiving branch; build_branch_topology; ['For each
+    branch, check that DHS is within [US, DS] of the receiving branch', 'DHS=0 means external boundary
+    (no receiving branch)', 'Main stem DHS should be 0 (or negative for the dam boundary)']; build_branch_top
+  severity: fatal
+- id: dt_013
+  symptom: Water flows upstream in some segments, unrealistic longitudinal patterns
+  diagnosis: Bottom elevation increases in the downstream direction at some segments; CE-QUAL-W2 assumes
+    gravity-driven flow from upstream to downstream. If the bottom elevation at a downstream segment is
+    HIGHER than an upstream segment, a local depression is created that traps water and disrupts the natural
+    flo
+  remedy: 'Ensure bottom elevations are monotonically non-increasing downstream; build_reservoir_grid;
+    [''Sort segments by distance and check: ELBOT[i] >= ELBOT[i+1]'', ''Smooth any uphill jumps by interpolating
+    between neighbors'']; build_reservoir_grid.py enforces monotonic bottom elevations'
+  severity: silent
+- id: dt_014
+  symptom: Model crashes immediately with 'initial water surface below bottom' error
+  diagnosis: Initial water surface elevation (ELWS) is below the bottom elevation at upstream segments;
+    If the reservoir is not at full pool, upstream segments with higher bottom elevations may be above
+    the initial water surface. CE-QUAL-W2 cannot start with dry upstream segments unless specific wetting/drying
+    o
+  remedy: 'Set ELWS >= max(ELBOT) for all active segments, or handle dry cells; build_init_conditions;
+    [''Check: ELWS in w2_con.npt must be >= highest bottom elevation of any active segment'', ''If reservoir
+    is at partial pool, only include segments below ELWS'']; build_init_conditions.py validates ELWS against
+    al'
+  severity: fatal
+- id: dt_015
+  symptom: Constituent concentration always zero despite non-zero inflow concentrations
+  diagnosis: Constituent flag OFF in w2_con.npt but concentration data provided in cin_br*.npt; The CONSTITU
+    card in w2_con.npt has ON/OFF flags for each water quality constituent. If a constituent is OFF, its
+    concentration in cin_br*.npt is ignored. Conversely, if a constituent is ON but its column is missing
+    f
+  remedy: Ensure constituent ON/OFF flags exactly match cin_br*.npt column count and order; configure_wq;
+    ['Count ON flags in CONSTITU card', 'Count data columns (excluding JDAY) in cin_br*.npt', 'They must
+    be equal, and in the same order']; generate_w2_control.py cross-validates constituent flags with inflow
+  severity: silent
+- id: dt_016
+  symptom: Dissolved oxygen drops to zero immediately (full anoxia everywhere)
+  diagnosis: SOD (sediment oxygen demand) set too high for the reservoir; A SOD value of 5 g/m^2/day (high
+    for a clean reservoir) can deplete all DO in the hypolimnion within days. For most reservoirs, SOD
+    should start at 0.3-0.5 g/m^2/day and be calibrated against observed DO profiles. High SOD without
+    sufficie
+  remedy: 'Start with SOD = 0.5 g/m^2/day; calibrate against observed DO; configure_wq; [''Check SOD in
+    w2_con.npt: typical range 0.1-2.0 g/m^2/day'', ''Clean oligotrophic reservoirs: SOD < 0.5'', ''Eutrophic
+    reservoirs: SOD 1.0-3.0'']; configure_wq.py sets SOD = 0.5 as default'
+  severity: silent
+- id: dt_017
+  symptom: Algae bloom unrealistically (chlorophyll > 1000 ug/L)
+  diagnosis: 'Algal growth rate too high and/or nutrient loading unconstrained; Maximum algal growth rates
+    above 2.5/day can cause exponential bloom growth that is not nutrient-limited if inflow nutrient concentrations
+    are also high. The result is unrealistic algal biomass that dominates the WQ simulation.
 
-  - id: "integer_jday"
-    triplet: "dt_005"
-    description: "Julian day as integer instead of decimal — shifts diurnal radiation cycle"
-    affected_output: "Diurnal temperature cycle"
-    detection: "Phase-shifted temperature compared to observations"
-    fix: "JDAY = day_of_year + hour/24 + minute/1440"
+    ; [''co'
+  remedy: 'Cap algal growth rate at 2.0/day; verify nutrient inflow concentrations; configure_wq; [''Check
+    ALG1 growth rate in w2_con.npt: max should be ~2.0/day'', ''Check nutrient loading from cin_br*.npt
+    files'', ''Reduce if algal biomass exceeds 200 ug/L chlorophyll'']; configure_wq.py caps growth rate
+    at 2.0/da'
+  severity: silent
+- id: dt_018
+  symptom: Dam release temperature wrong — too warm in winter or too cold in summer
+  diagnosis: 'Outlet elevation in wrong reference frame (depth from surface vs m ASL); CE-QUAL-W2 outlet
+    elevations must be in meters above sea level (m ASL), matching the bathymetry elevation datum. If
+    the outlet elevation is specified as depth from surface (e.g., 20 m depth), the model places the outlet
+    at the '
+  remedy: 'Convert outlet elevation to m ASL: E_outlet = E_surface - depth; configure_w2_outflow; [''Check
+    outlet elevation: should be between min(ELBOT) and ELWS'', "If E_outlet > ELWS, it''s wrong (outlet
+    above water surface)", "If E_outlet < min(ELBOT), it''s below the reservoir bottom"]; configure_w2_outflow.p'
+  severity: silent
+- id: dt_019
+  symptom: Reservoir drains unrealistically fast or water level stuck at crest
+  diagnosis: 'Outflow units wrong (L/s instead of m^3/s) or negative values; CE-QUAL-W2 expects outflow
+    in m^3/s. If outflow is in L/s (1000x too large), the reservoir drains in days. If outflow is in m^3/day
+    (divide by 86400), the outflow is negligible and the reservoir fills continuously.
 
-  - id: "fixed_width_alignment"
-    triplet: "dt_006"
-    description: "w2_con.npt field misalignment — silent value shift"
-    affected_output: "ALL model parameters (every subsequent value wrong)"
-    detection: "Bizarre model behavior, parameter values don't match input"
-    fix: "Every numeric field must be exactly 8 characters, right-justified: {:>8.2f}"
+    ; [''configure_w2_outfl'
+  remedy: Verify outflow is in m^3/s; check against published dam release records; ; ['Mean outflow should
+    be comparable to mean inflow for steady-state', 'If outflow << inflow, water level rises continuously
+    — check units', 'If outflow >> inflow, reservoir drains — check units']; configure_w2_outflow.py logs
+  severity: silent
+- id: dt_020
+  symptom: CaMa-Flood inflow arrives at wrong segment, inflow effect displaced spatially
+  diagnosis: 'Spatial mismatch between CaMa grid cell and W2 inflow segment; The CaMa-Flood outlet cell
+    for the upstream catchment must map to the correct W2 branch inflow segment. If the CaMa cell is at
+    a different location than the W2 upstream boundary, the inflow enters at the wrong point along the
+    reservoir.
 
-  - id: "path_truncation"
-    triplet: "dt_008"
-    description: "File paths > 72 characters silently truncated by Fortran"
-    affected_output: "File not found or wrong file read"
-    detection: "Missing file errors or unexpected data"
-    fix: "Use relative paths or symlinks. generate_w2_control.py uses os.path.basename()"
+    '
+  remedy: Verify CaMa outlet cell coordinates match W2 inflow segment location; ; ['Plot CaMa outlet cell
+    and W2 upstream segment on the same map', 'They should be within 1 CaMa grid cell of each other'];
+    convert_inflow_to_w2.py accepts --inflow_lat/lon for spatial indexing
+  severity: silent
+- id: dt_021
+  symptom: Total reservoir inflow 1.5-2x expected; water budget does not close
+  diagnosis: 'Double-counting: VIC distributed tributary inflow overlaps with CaMa-routed main inflow;
+    If VIC provides local runoff for the entire reservoir catchment as distributed tributary flow, AND
+    CaMa-Flood also routes the same runoff as main channel inflow, the reservoir receives double the water.
+    The dist'
+  remedy: Subtract CaMa-routed contributing area from distributed tributary area; generate_distributed_inflow;
+    ['Total local area = reservoir_catchment_area - main_inflow_catchment_area', 'Use --contributing_area_km2
+    and --main_inflow_area_km2 correctly']; generate_distributed_inflow.py requires both area par
+  severity: silent
+- id: dt_022
+  symptom: Model runs extremely slowly (hours for small reservoir)
+  diagnosis: Adaptive timestep drops below 1 second due to CFL violation in narrow segments; CE-QUAL-W2's
+    adaptive timestepping reduces dt to maintain CFL stability. Very narrow segments or sharp bathymetry
+    transitions force dt to sub-second values, making the simulation extremely slow. Check w2l.opt for
+    minimum
+  remedy: 'Increase minimum segment width, merge narrow segments, smooth bathymetry; build_reservoir_grid;
+    [''Check w2l.opt for timestep warnings'', ''Identify the segment(s) causing small timesteps'', ''Widen
+    narrow segments or increase --segment_length'']; Ensure minimum segment width >= 10m and segment_length
+    >= '
+  severity: degraded
+- id: dt_023
+  symptom: NaN values in output, model crashes mid-simulation
+  diagnosis: 'Numerical instability from sharp bathymetry gradients or extreme forcing; Sharp width transitions
+    between adjacent segments (e.g., 500m to 50m) create strong velocity gradients that destabilize the
+    numerical scheme. Also triggered by extreme meteorological forcing values (e.g., wind > 30 m/s).
 
-  - id: "bottom_elev_non_monotonic"
-    triplet: "dt_013"
-    description: "Non-monotonic bottom elevations trap water in depressions"
-    affected_output: "Longitudinal flow pattern"
-    detection: "Anomalous water accumulation in mid-reservoir segments"
-    fix: "Ensure bottom elevations decrease monotonically downstream"
+    ; [''b'
+  remedy: Smooth bathymetry transitions; clip extreme forcing values; build_reservoir_grid; ['Ensure adjacent
+    segment widths differ by < 50%', 'Clip wind speed to 25 m/s', 'Reduce DLT MAX if instability persists'];
+    Check width matrix for sharp transitions; smooth if ratio > 2:1
+  severity: fatal
+- id: dt_024
+  symptom: Model stops with NEGATIVE THICKNESS during reservoir drawdown
+  diagnosis: 'Water surface drops below a layer boundary during drawdown simulation; When the reservoir
+    water level drops significantly (drawdown for flood control or power generation), surface layers may
+    become thinner than the minimum allowed. If wetting/drying is not enabled, this crashes the model.
 
-  - id: "constituent_column_mismatch"
-    triplet: "dt_015"
-    description: "Inflow WQ columns do not match active constituent count — silent corruption"
-    affected_output: "All constituent concentrations shifted"
-    detection: "Wrong constituent values (e.g., temperature read as DO)"
-    fix: "cin_br*.npt must have exactly N data columns matching N active constituents"
-
-  - id: "double_counting_runoff"
-    triplet: "dt_021"
-    description: "Main channel + distributed tributary inflows double-count catchment area"
-    affected_output: "Reservoir receives 2x water input"
-    detection: "Water level rising too fast"
-    fix: "Subtract main inflow contributing area from distributed tributary area"
-
-# =========================================================================
-# EXPECTED RANGES (typical deep reservoir)
-# =========================================================================
-expected_ranges:
-  typical_reservoir:
-    surface_temp_summer_degC: [20, 30]
-    bottom_temp_degC: [4, 12]
-    stratification_diff_degC: ">5 in summer"
-    notes: "CE-QUAL-W2 recommended for reservoirs with length:width > 5:1"
+    ; [''genera'
+  remedy: Increase minimum layer thickness; reduce outflow during drawdown periods; ; ['Check DLT CON
+    for minimum layer thickness setting', 'Reduce outflow to prevent surface dropping below layer boundaries',
+    'Consider enabling wetting/drying if model version supports it']; Monitor water level output; warn
+    if
+  severity: fatal
+- id: dt_025
+  symptom: Model completes but no output files are generated
+  diagnosis: Output card groups missing in w2_con.npt or output intervals set to zero; CE-QUAL-W2 can
+    run to completion without writing any output if the SNP FREQ, TSR FREQ, or SPR FILE cards are missing,
+    disabled, or have zero output intervals. The model exits normally (exit code 0) but produces empty
+    or nonexi
+  remedy: Add SNP FREQ, TSR FREQ, and SPR FILE cards with non-zero intervals to w2_con.npt; generate_w2_control;
+    ['Check w2_con.npt for output control cards', 'SNP FREQ should have NSNP >= 1 and SNPD > 0', 'TSR
+    FREQ should have NTSR >= 1 and TSRD > 0']; generate_w2_control.py always includes output cards with
+  severity: silent

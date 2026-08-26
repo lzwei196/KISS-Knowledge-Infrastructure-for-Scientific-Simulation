@@ -1,363 +1,687 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: GEOtop
-  version: '3.0'
-  domain: hydrology
-  language: C++11
-  build_system: CMake 3.0+
-  binary_path: KISSPATH_BINARIES/GEOtop/source/repo/build/geotop
-  invocation: ./geotop <sim_folder>
-  time_step_default: 900
-  simulation_modes:
-  - point (1D column)
-  - distributed (3D catchment)
+  language: c++
+  implementation:
+    id: geotop-3.0
+    version: 3.0 (revised December 2024)
+    provenance: C++; GEOtop community model (geotopmodel.github.io), GPLv3 source-built distributed energy-water
+      balance solver.
+  scientific_reference_version: GEOtop 2.0 (Endrizzi et al. 2014, GMD 7, 2831-2857)
 inputs:
   forcing:
-    file_pattern: meteo/meteoXXXX.txt
-    format: CSV with header
-    date_format: DD/MM/YYYY hh:mm
-    nodata: -9999
-    variables:
-    - name: Iprec
-      unit: mm per time step
-      valid_range:
-      - 0
-      - 500
-      description: Precipitation intensity
-    - name: WindSp
-      unit: m/s
-      valid_range:
-      - 0
-      - 50
-      description: Wind speed
-    - name: WindDir
-      unit: degrees
-      valid_range:
-      - 0
-      - 360
-      description: Wind direction
-    - name: RelHum
-      unit: percent (0-100)
-      valid_range:
-      - 0
-      - 100
-      description: Relative humidity (NOT fraction 0-1)
-    - name: AirT
-      unit: degC
-      valid_range:
-      - -60
-      - 60
-      description: Air temperature
-    - name: Swglobal
-      unit: W/m2
-      valid_range:
-      - 0
-      - 1400
-      description: Incoming shortwave radiation
-    - name: CloudTrans
-      unit: fraction (0-1)
-      valid_range:
-      - 0
-      - 1
-      description: Cloud transmissivity (-9999 if unknown)
-    - name: LWin
-      unit: W/m2
-      valid_range:
-      - 50
-      - 500
-      description: Incoming longwave radiation (optional)
-  soil:
-    file_pattern: soil/soilXXXX.txt
-    format: CSV with header
-    variables:
-    - name: Dz
-      unit: mm
-      valid_range:
-      - 10
-      - 10000
-      description: Layer thickness (MUST be mm, not m)
-    - name: Kh
-      unit: m/s
-      valid_range:
-      - 1.0e-07
-      - 0.001
-      description: Horizontal hydraulic conductivity
-    - name: Kv
-      unit: m/s
-      valid_range:
-      - 1.0e-07
-      - 0.001
-      description: Vertical hydraulic conductivity
-    - name: vwc_r
-      unit: dimensionless
-      valid_range:
-      - 0.01
-      - 0.15
-      description: Residual volumetric water content
-    - name: vwc_w
-      unit: dimensionless
-      valid_range:
-      - 0.05
-      - 0.25
-      description: Wilting point water content
-    - name: vwc_fc
-      unit: dimensionless
-      valid_range:
-      - 0.1
-      - 0.45
-      description: Field capacity water content
-    - name: vwc_s
-      unit: dimensionless
-      valid_range:
-      - 0.3
-      - 0.65
-      description: Saturated water content (porosity)
-    - name: alpha
-      unit: 1/mm
-      valid_range:
-      - 0.0001
-      - 0.01
-      description: Van Genuchten alpha (MUST be 1/mm, not 1/cm)
-    - name: n
-      unit: dimensionless
-      valid_range:
-      - 1.1
-      - 3.0
-      description: Van Genuchten n
-    - name: stor
-      unit: 1/m
-      valid_range:
-      - 1.0e-05
-      - 0.01
-      description: Specific storage
+  - name: AirT
+    unit: Celsius
+    category: forcing
+    source_kind: forcing
+    model_input_format: meteoXXXX.txt CSV column, DD/MM/YYYY hh:mm dates, -9999 nodata
+    notes: Required. Kelvin input drives energy-balance non-convergence / hanging.
+  - name: Iprec
+    unit: mm per time step
+    category: forcing
+    source_kind: forcing
+    model_input_format: meteoXXXX.txt CSV column
+    notes: Accumulated depth per model time step, NOT a rate; wrong rate units scale total precipitation
+      by ~1000x.
+  - name: RelHum
+    unit: '% (0-100)'
+    category: forcing
+    source_kind: forcing
+    model_input_format: meteoXXXX.txt CSV column
+    notes: Required. Fraction (0-1) is read as 0.x% (near-zero ET).
+  - name: WindSp
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: meteoXXXX.txt CSV column
+  - name: WindDir
+    unit: degrees (0-360)
+    category: forcing
+    source_kind: forcing
+    model_input_format: meteoXXXX.txt CSV column
+    notes: Recommended; drives terrain wind redistribution and blowing snow.
+  - name: Swglobal
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: meteoXXXX.txt CSV column
+    notes: Instantaneous incoming shortwave; accumulated J/m2 (e.g. ERA5) must be deaccumulated.
+  - name: LWin
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: meteoXXXX.txt CSV column
+    notes: Optional incoming longwave; if absent, parameterized from cloudiness (Konzelmann/Angstrom).
+  - name: CloudTrans
+    unit: 0-1 or -9999
+    category: forcing
+    source_kind: forcing
+    model_input_format: meteoXXXX.txt CSV column
+    notes: Optional cloud transmissivity; supplying both LWin and CloudTrans double-parameterizes longwave.
+  - name: DewT
+    unit: Celsius
+    category: forcing
+    source_kind: forcing
+    model_input_format: meteoXXXX.txt CSV column
+    notes: Optional dew-point temperature.
+  - name: AirPress
+    unit: mbar
+    category: forcing
+    source_kind: forcing
+    model_input_format: meteoXXXX.txt CSV column
+    notes: Optional air pressure.
   parameters:
-    config_file: geotop.inpts
-    config_format: key<TAB>=<TAB>value, ! comments
-    total_keywords: 455
-    critical:
-    - name: NormalHydrConductivity
-      valid_range:
-      - 1.0e-07
-      - 0.001
-      unit: m/s
-      description: Vertical hydraulic conductivity (top priority calibration param)
-    - name: AlphaVanGenuchten
-      valid_range:
-      - 0.0001
-      - 0.01
-      unit: 1/mm
-      description: Van Genuchten alpha
-    - name: NVanGenuchten
-      valid_range:
-      - 1.1
-      - 3.0
-      unit: dimensionless
-      description: Van Genuchten n parameter
-    - name: SnowCorrFactor
-      valid_range:
-      - 0.5
-      - 2.0
-      unit: dimensionless
-      description: Precipitation undercatch correction
-    - name: ThresTempRain
-      valid_range:
-      - -5
-      - 5
-      unit: degC
-      description: Temperature threshold for rain
-    - name: ThresTempSnow
-      valid_range:
-      - -5
-      - 5
-      unit: degC
-      description: Temperature threshold for snow
-    - name: SoilRoughness
-      valid_range:
-      - 10
-      - 1000
-      unit: mm
-      description: Surface roughness length
-    - name: MinStomatalRes
-      valid_range:
-      - 10
-      - 200
-      unit: s/m
-      description: Minimum stomatal resistance
-    - name: LSAI
-      valid_range:
-      - 0.5
-      - 8.0
-      unit: m2/m2
-      description: Leaf and stem area index
-    - name: VegHeight
-      valid_range:
-      - 100
-      - 30000
-      unit: mm
-      description: Vegetation height (MUST be mm, not m)
-    - name: InitWaterTableDepth
-      valid_range:
-      - 100
-      - 5000
-      unit: mm
-      description: Initial water table depth
-  terrain:
-    format: ESRI ASCII Grid
-    required_maps:
-    - dem.txt
-    - slope.txt
-    - aspect.txt
-    - sky.txt
-    optional_maps:
-    - curvature.txt
-    - landcover.txt
+  - name: Dz
+    unit: mm
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soilXXXX.txt CSV, one row per layer top-to-bottom
+    notes: Soil layer thickness (range ~10-500 mm); m or cm input collapses sub-mm layers and diverges
+      the Richards solver.
+  - name: Kh
+    unit: m/s
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soilXXXX.txt CSV column
+    notes: Lateral saturated hydraulic conductivity (1E-7 to 1E-3 m/s).
+  - name: Kv
+    unit: m/s
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soilXXXX.txt CSV column
+    notes: Vertical (normal) saturated hydraulic conductivity (1E-7 to 1E-3 m/s).
+  - name: vwc_r
+    unit: m3/m3
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soilXXXX.txt CSV column
+    notes: Residual water content; must satisfy vwc_r < vwc_w < vwc_fc < vwc_s.
+  - name: vwc_w
+    unit: m3/m3
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soilXXXX.txt CSV column
+    notes: Wilting point.
+  - name: vwc_fc
+    unit: m3/m3
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soilXXXX.txt CSV column
+    notes: Field capacity.
+  - name: vwc_s
+    unit: m3/m3
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soilXXXX.txt CSV column
+    notes: Saturated water content.
+  - name: alpha
+    unit: 1/mm
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soilXXXX.txt CSV column
+    notes: Van Genuchten alpha (0.0001-0.01 1/mm); 1/cm input distorts the retention curve by 10x.
+  - name: n
+    unit: '-'
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soilXXXX.txt CSV column
+    notes: Van Genuchten n (1.1-3.0); n<=1.0 makes m=1-1/n non-positive (FPE).
+  - name: stor
+    unit: 1/m
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soilXXXX.txt CSV column
+    notes: Specific storativity (~5E-7).
+  - name: VegHeight
+    unit: mm
+    category: vegetation
+    source_kind: calibrated
+    model_input_format: geotop.inpts keyword
+    notes: Canopy height (meadow 300-600, shrub 1000-3000, forest 5000-30000 mm); m input treated as mm
+      (effectively bare ground).
+  - name: LSAI
+    unit: m2/m2
+    category: vegetation
+    source_kind: calibrated
+    model_input_format: geotop.inpts keyword
+    notes: Leaf+stem area index (0.5-8.0); below LSAIthres (~0.1) canopy is treated as absent.
+  - name: MinStomatalRes
+    unit: s/m
+    category: vegetation
+    source_kind: calibrated
+    model_input_format: geotop.inpts keyword
+    notes: Minimum stomatal resistance controlling transpiration demand.
+  - name: dem.txt
+    unit: m (elevation)
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: ESRI ASCII Grid (distributed mode)
+    notes: Distributed mode only; all maps must share ncols/nrows/cellsize/origin/NODATA.
+  - name: slope.txt
+    unit: degrees (0-90)
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: ESRI ASCII Grid (distributed mode)
+    notes: Percent instead of degrees distorts runoff response.
+  - name: aspect.txt
+    unit: degrees from N clockwise (0-360)
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: ESRI ASCII Grid (distributed mode)
+    notes: Radians instead of degrees flattens/reverses radiation pattern.
+  - name: sky.txt
+    unit: sky view factor (0-1)
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: ESRI ASCII Grid (distributed mode)
+  - name: curvature.txt
+    unit: plan/profile curvature
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: ESRI ASCII Grid (distributed mode)
+  - name: horizonXXXX.txt
+    unit: azimuth (deg), horizon height (deg)
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: CSV per met station, azimuths 0-360
+    notes: Required when FlagSkyViewFactor=1; missing file silently sets horizon angles to 0, over-predicting
+      direct beam.
+  - name: LapseRateTair
+    unit: C/km
+    category: lapse_rate
+    source_kind: default
+    model_input_format: geotop.inpts keyword or LapseRateFile
+    notes: Hardcoded default 6.5 C/km applied silently in meteo_distr when no LapseRateFile supplied.
+  - name: LapseRateTdew
+    unit: C/km
+    category: lapse_rate
+    source_kind: default
+    model_input_format: geotop.inpts keyword or LapseRateFile
+    notes: Hardcoded default 2.5 C/km dew-point lapse-rate fallback.
+  initial_conditions:
+  - name: InitWaterTableDepth
+    unit: mm
+    category: soil
+    source_kind: user_provided
+    model_input_format: geotop.inpts keyword
+    notes: Sets initial soil moisture profile (range 100-5000 mm); high calibration priority.
+  - name: initial soil temperature
+    unit: Celsius
+    category: soil
+    source_kind: user_provided
+    model_input_format: geotop.inpts / soil profile (Manual Ch. 18.2.3)
+    notes: Initial soil/rock temperature profile.
+  - name: snow initial state
+    unit: depth mm / SWE
+    category: snow
+    source_kind: user_provided
+    model_input_format: geotop.inpts (Manual Ch. 18.2.1)
+    notes: Initial snowpack state; defaults to no snow.
+  - name: glacier initial conditions
+    unit: mass / depth
+    category: glacier
+    source_kind: user_provided
+    model_input_format: geotop.inpts (Manual Ch. 18.2.2)
+    notes: Active only when glacier layers enabled.
+  boundary_conditions:
+  - name: PointSim
+    unit: switch (0/1)
+    category: control
+    source_kind: user_provided
+    model_input_format: geotop.inpts keyword
+    notes: 1 = point/1D column; 0 = distributed/3D catchment. Selects whether DEM/maps are required.
+  - name: InitDate / EndDate
+    unit: DD/MM/YYYY
+    category: control
+    source_kind: user_provided
+    model_input_format: geotop.inpts keyword
+    notes: Simulation period; European day-first dates.
+  - name: TimeStep
+    unit: s
+    category: control
+    source_kind: user_provided
+    model_input_format: geotop.inpts keyword
+    notes: Nominal step (default 900 s); solver sub-steps adaptively below this on non-convergence.
+  - name: FlagSkyViewFactor
+    unit: switch (0/1)
+    category: control
+    source_kind: user_provided
+    model_input_format: geotop.inpts keyword
+    notes: Enables horizon-obstruction shading; requires horizon files.
+  - name: BlowingSnow
+    unit: switch (0/1)
+    category: control
+    source_kind: user_provided
+    model_input_format: geotop.inpts keyword
+    notes: Enables PBSM blowing-snow redistribution (optional module).
+  - name: LWinParameterization
+    unit: code
+    category: control
+    source_kind: user_provided
+    model_input_format: geotop.inpts keyword
+    notes: Selects incoming-longwave parameterization when LWin not measured.
+  - name: bottom/lateral water balance BC
+    unit: head / flux
+    category: water_bc
+    source_kind: user_provided
+    model_input_format: geotop.inpts (Manual Ch. 18.1.2)
+    notes: Subsurface bottom and lateral boundary specification for the Richards solver.
+  - name: energy balance BC
+    unit: flux
+    category: energy_bc
+    source_kind: user_provided
+    model_input_format: geotop.inpts (Manual Ch. 18.1.1)
+    notes: Surface/bottom energy-balance boundary specification.
 outputs:
   primary:
-  - name: basin.txt
-    path: output-tabs/basin.txt
-    format: CSV
-    variables:
-    - name: Prain_below_canopy
-      unit: mm
-      valid_range:
-      - 0
-      - 500
-    - name: Psnow_below_canopy
-      unit: mm
-      valid_range:
-      - 0
-      - 200
-    - name: Tair
-      unit: degC
-      valid_range:
-      - -60
-      - 60
-    - name: Tsurface
-      unit: degC
-      valid_range:
-      - -60
-      - 60
-    - name: Evap_surface
-      unit: mm
-      valid_range:
-      - 0
-      - 50
-    - name: Transpiration_canopy
-      unit: mm
-      valid_range:
-      - 0
-      - 30
-    - name: LE
-      unit: W/m2
-      valid_range:
-      - -100
-      - 600
-    - name: H
-      unit: W/m2
-      valid_range:
-      - -300
-      - 600
-    - name: SW
-      unit: W/m2
-      valid_range:
-      - 0
-      - 500
-    - name: LW
-      unit: W/m2
-      valid_range:
-      - -200
-      - 100
-    - name: SWin
-      unit: W/m2
-      valid_range:
-      - 0
-      - 1400
-    - name: LWin
-      unit: W/m2
-      valid_range:
-      - 50
-      - 500
-    - name: Mass_balance_error
-      unit: mm
-      valid_range:
-      - -1
-      - 1
-    - name: Mean_Time_Step
-      unit: seconds
-      valid_range:
-      - 1
-      - 86400
-  - name: discharge.txt
-    path: output-tabs/discharge.txt
-    format: CSV
-    variables:
-    - name: Qtot
-      unit: m3/s
-      valid_range:
-      - 0
-      - 100000
-    - name: Vsup/Dt
-      unit: m3/s
-      valid_range:
-      - 0
-      - 100000
-    - name: Vsub/Dt
-      unit: m3/s
-      valid_range:
-      - 0
-      - 10000
-  - name: point0001.txt
-    path: output-tabs/pointXXXX.txt
-    format: CSV
-    description: Point-scale energy/water balance with snow and glacier
   - name: discharge
-    canonical_id: discharge
     unit: m3/s
-  - name: surface_runoff
-    canonical_id: surface_runoff
-    unit: mm/day
-  - name: evapotranspiration
-    canonical_id: evapotranspiration
-    unit: mm/day
-  - name: soil_moisture
-    canonical_id: soil_moisture
+    description: Catchment discharge at the basin outlet from the channel network.
+    validation_rank: 1
+    emitted_in: output-tabs/discharge*.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Requires a calibrated channel network; routing skill is conditional on saturated hydraulic conductivity
+          calibration.
+      detrending_options:
+      - none
+  - name: SWE
+    unit: kg/m2 (mm w.e.)
+    description: Snow water equivalent of the multi-layer snowpack.
+    validation_rank: 3
+    emitted_in: output-tabs/point*.txt, snowIce*.txt; spatial SWE maps
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - SWE accuracy is dominated by precipitation and air-temperature forcing accuracy via rain/snow
+          partitioning.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Distributed mode only; blowing-snow redistribution couples neighbouring pixels.
+      detrending_options:
+      - none
+  - name: snowDepth
+    unit: mm
+    description: Snowpack depth.
+    validation_rank: 4
+    emitted_in: output-tabs/snowDepth*.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - GEOtop systematically overestimates snow density from late winter, biasing late-season snow
+          depth.
+      detrending_options:
+      - none
+  - name: soilTz
+    unit: Celsius
+    description: Soil temperature profile by layer (including freeze/thaw).
+    validation_rank: 5
+    emitted_in: output-tabs/soilTz*.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Mean annual ground temperature is strongly sensitive to ground albedo and to vertical/temporal
+          discretization (<20 mm upper layer, <=1 h step).
+      detrending_options:
+      - none
+  - name: thetaliq
     unit: m3/m3
-  secondary:
-  - name: soilTzXXXX.txt
-    path: output-tabs/
-    description: Soil temperature profiles (C), rows=time, cols=layers
-  - name: thetaliqXXXX.txt
-    path: output-tabs/
-    description: Soil liquid water content profiles (-)
-  - name: snowDepthXXXX.txt
-    path: output-tabs/
-    description: Snow depth profiles (mm)
+    description: Liquid volumetric soil water content profile by layer.
+    validation_rank: 6
+    emitted_in: output-tabs/thetaliq*.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Governed primarily by saturated hydraulic conductivity and Van Genuchten retention parameters.
+      detrending_options:
+      - none
+  - name: thetaice
+    unit: m3/m3
+    description: Soil ice content profile by layer (permafrost/seasonal freezing).
+    validation_rank: 7
+    emitted_in: output-tabs/thetaice*.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Thaw-depth / active-layer timing is the typical comparison target for permafrost validation.
+      detrending_options:
+      - none
+  - name: LE
+    unit: W/m2
+    description: Latent heat flux (surface evapotranspiration energy).
+    validation_rank: 2
+    emitted_in: output-tabs/point*.txt, basin*.txt; spatial flux maps
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance comparison; constrained by soil-water availability (Ks, retention).
+      detrending_options:
+      - none
+  - name: H
+    unit: W/m2
+    description: Land-surface sensible heat flux exchanged with the atmosphere.
+    validation_rank: 8
+    emitted_in: output-tabs/point*.txt, basin*.txt; spatial flux maps
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance comparison; responds to energy-balance partitioning once LE is constrained.
+      detrending_options:
+      - none
+  - name: Tsurface
+    unit: Celsius
+    description: Land surface temperature.
+    validation_rank: 9
+    emitted_in: output-tabs/point*.txt, basin*.txt; spatial maps
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Distributed mode; comparable to remote-sensing LST snapshots.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: Soil layer thickness Dz must be in mm, not m. 10cm = 100mm.
+  symptom: Richards equation solver diverges within first few time steps. Model crashes or produces NaN.
+  diagnosis: Soil layer thickness Dz provided in meters instead of millimeters; GEOtop expects Dz in mm.
+    A 10cm layer should be 100, not 0.1. Sub-millimeter layers cause the solver to fail.; ['water.balance',
+    'Richards3D']
+  remedy: 'Multiply Dz values by 1000 if currently in meters, or by 10 if in centimeters; convert_soil.py;
+    [''Open soilXXXX.txt'', ''Check Dz column: values should be 10-500 (mm), not 0.01-0.5 (m)'', ''Multiply
+    all Dz values by the appropriate factor'']; convert_soil.py validates that Dz >= 1 mm'
   severity: fatal
-  silent: true
 - id: dt_002
-  description: Hydraulic conductivity Kh/Kv must be in m/s, not cm/day.
-  severity: fatal
-  silent: true
+  symptom: Unrealistically fast or slow infiltration. Soil drains instantly or stays permanently saturated.
+  diagnosis: Hydraulic conductivity Kh/Kv in cm/day instead of m/s; HWSD reports Ksat in cm/day. GEOtop
+    expects m/s. Factor is 8,640,000x. A typical sandy loam Ksat of 25 cm/day = 2.89E-06 m/s.; ['water.balance',
+    'Richards3D', 'Richards1D']
+  remedy: 'Convert Ksat from cm/day to m/s: divide by 86400 then by 100; convert_soil.py; [''Check Kh/Kv
+    values in soilXXXX.txt'', ''Should be in range 1E-7 to 1E-3'', ''If values are 1-1000, they are likely
+    in cm/day'', ''Divide by 8640000 (= 86400 * 100)'']; convert_soil.py flags Kh > 0.01 m/s as unrealistic'
+  severity: silent
 - id: dt_003
-  description: Van Genuchten alpha must be in 1/mm, not 1/cm. Divide literature values
-    by 10.
-  severity: fatal
-  silent: true
+  symptom: Soil moisture dynamics look wrong. Retention curve too flat or too steep.
+  diagnosis: 'Van Genuchten alpha in 1/cm instead of 1/mm; Literature and Rosetta report alpha in 1/cm.
+    GEOtop expects 1/mm. Factor is 10x. Typical alpha for loam: 0.011 (1/cm) = 0.0011 (1/mm).; [''water.balance'',
+    ''pedo.funct'']'
+  remedy: Divide alpha by 10 to convert from 1/cm to 1/mm; convert_soil.py; ['Check alpha column in soilXXXX.txt',
+    'Should be in range 0.0001 to 0.01 (1/mm)', 'If values are 0.001 to 0.1, they are likely in 1/cm',
+    'Divide by 10']; convert_soil.py warns if alpha > 0.1
+  severity: silent
 - id: dt_004
-  description: Precipitation Iprec is mm per time step. Convert from mm/hr if needed.
-  severity: degraded
-  silent: true
+  symptom: Total precipitation over simulation period is 1000x too high or too low.
+  diagnosis: Precipitation in wrong units (mm/hr, m/s, or mm/day instead of mm per time step); GEOtop
+    Iprec is total mm accumulated in each time step. If dt=900s and data is in mm/hr, multiply by 0.25.
+    If data is in m/s, multiply by 1000*900.; ['meteodata', 'snow', 'water.balance']
+  remedy: 'Convert precipitation to mm per model time step; convert_forcing.py; [''Determine source precipitation
+    unit'', ''Calculate conversion factor based on model time step'', ''Apply: mm_per_step = rate * (dt_seconds
+    / period_of_rate)'']; convert_forcing.py requires explicit --precip-unit flag'
+  severity: silent
 - id: dt_005
-  description: Relative humidity must be 0-100 percent, not 0-1 fraction.
-  severity: fatal
-  silent: true
+  symptom: Evapotranspiration is near zero. Latent heat flux is negligible. Sensible heat unrealistically
+    high.
+  diagnosis: Relative humidity provided as fraction (0-1) instead of percent (0-100); GEOtop expects RelHum
+    as 0-100 (percent). A value of 0.5 is interpreted as 0.5% humidity, making the atmosphere extremely
+    dry.; ['energy.balance', 'vegetation', 'meteodata']
+  remedy: Multiply RelHum by 100 to convert from fraction to percent; convert_forcing.py; ['Check RelHum
+    column in meteoXXXX.txt', 'If max value is ~1.0, it is in fraction', 'Multiply all values by 100'];
+    convert_forcing.py warns if RelHum max <= 1.0
+  severity: silent
 - id: dt_006
-  description: Date format is DD/MM/YYYY, not MM/DD/YYYY.
-  severity: fatal
-  silent: true
+  symptom: Simulation runs but results shifted in time. Seasonal patterns misaligned.
+  diagnosis: Date format is MM/DD/YYYY instead of DD/MM/YYYY; GEOtop uses European date format (day first).
+    Using American format causes months to be parsed as days and vice versa. Dates like 05/03/2009 become
+    March 5 instead of May 3.; ['meteodata', 'times']
+  remedy: 'Reformat dates to DD/MM/YYYY hh:mm; convert_forcing.py; [''Check date column in meteoXXXX.txt'',
+    ''Verify day comes before month'', "Reformat using: datetime.strftime(''%d/%m/%Y %H:%M'')"]; convert_forcing.py
+    always writes DD/MM/YYYY format'
+  severity: silent
+- id: dt_007
+  symptom: Temperature or radiation is zero when it should not be. Flat forcing curves.
+  diagnosis: Missing values encoded as NaN, -999, or blank instead of -9999; GEOtop only recognizes -9999
+    as nodata. Other missing value representations are parsed as literal values (NaN may become 0, -999
+    is treated as a real value).; ['meteodata', 'import_ascii']
+  remedy: Replace all missing values with -9999; convert_forcing.py; ['Open meteoXXXX.txt', 'Replace NaN,
+    nan, -999, empty cells with -9999', 'Ensure no blank cells in the CSV']; convert_forcing.py replaces
+    all NaN with -9999 on output
+  severity: silent
+- id: dt_008
+  symptom: Canopy interception negligible or vegetation has no effect on energy balance.
+  diagnosis: VegHeight provided in meters instead of millimeters; GEOtop expects VegHeight in mm. A 4
+    m tree should be 4000 mm. If set to 4, GEOtop treats it as 4 mm (effectively bare ground).; ['vegetation',
+    'turbulence']
+  remedy: 'Multiply VegHeight by 1000 to convert from meters to millimeters; ; [''Check VegHeight in geotop.inpts'',
+    ''Meadow: 300-600 mm, shrub: 1000-3000 mm, forest: 5000-30000 mm'', ''If values are < 10, likely in
+    meters'']; '
+  severity: silent
 - id: dt_009
-  description: geotop.inpts uses TAB separators. Spaces may cause parse failures.
+  symptom: Model fails to parse geotop.inpts. Error on first keyword or parameters have wrong values.
+  diagnosis: Tab characters in geotop.inpts replaced by spaces; GEOtop's parser expects TAB characters
+    between key, =, and value. Some text editors auto-convert tabs to spaces.; ['input', 'parameters']
+  remedy: 'Ensure geotop.inpts uses TAB characters for separation; ; [''Open geotop.inpts in editor that
+    shows whitespace'', ''Verify tabs exist between key = value'', "Use: sed -i ''s/  */ /g'' then manually
+    re-add tabs, or use a template"]; Use the test case geotop.inpts as a template'
   severity: fatal
-  silent: false
+- id: dt_010
+  symptom: Solar radiation too high. No topographic shading effects visible.
+  diagnosis: Horizon file missing or not found at configured path; When FlagSkyViewFactor=1 and HorizonMeteoStationFile
+    is set, GEOtop expects horizon files. If missing, horizon angles default to 0 (no obstruction), over-predicting
+    direct beam radiation.; ['radiation', 'energy.balance']
+  remedy: Generate horizon files or set FlagSkyViewFactor=0; ; ['Check if horizonXXXX.txt exists in sim
+    directory', 'If not needed, set FlagSkyViewFactor = 0', 'If needed, generate from DEM using r.horizon
+    in GRASS GIS']; run_geotop.py checks for horizon files when FlagSkyViewFactor=1
+  severity: silent
+- id: dt_011
+  symptom: Runoff too fast on steep slopes or too slow on gentle slopes.
+  diagnosis: Slope map in percent instead of degrees; GEOtop expects slope in degrees (0-90). A 100% slope
+    = 45 degrees. Using percent values directly overpredicts slopes for steep terrain.; ['water.balance',
+    'supflow']
+  remedy: 'Convert slope from percent to degrees: atan(percent/100) * 180/pi; ; [''Check slope.txt values'',
+    ''Degrees: 0-90 range; Percent: 0-inf range'', ''Convert: slope_deg = atan(slope_pct / 100) * 57.2958'']; '
+  severity: silent
+- id: dt_012
+  symptom: Radiation pattern completely wrong. Shadows in wrong direction.
+  diagnosis: Aspect map in radians instead of degrees; GEOtop expects aspect in degrees from north clockwise
+    (0-360). Using radians (0-2*pi) makes all aspects appear nearly flat.; ['radiation', 'energy.balance']
+  remedy: 'Convert from radians to degrees: multiply by 180/pi; ; [''Check aspect.txt values'', ''Should
+    be 0-360 (degrees)'', ''If 0-6.28, multiply by 57.2958'']; '
+  severity: silent
+- id: dt_013
+  symptom: Segmentation fault or array bounds error on startup.
+  diagnosis: Input maps have different grid dimensions (ncols, nrows, cellsize); All ESRI ASCII maps must
+    have identical grid specs. If dem.txt is 100x100 but slope.txt is 99x100, array indexing fails.; ['input',
+    'geomorphology']
+  remedy: 'Ensure all maps share identical ncols, nrows, xllcorner, yllcorner, cellsize; ; [''Compare
+    headers of all .txt map files'', ''Re-derive slope/aspect from the same DEM'', ''Use same GDAL processing
+    chain for all maps'']; '
+  severity: fatal
+- id: dt_014
+  symptom: Model crashes immediately with soil-related error.
+  diagnosis: Residual water content (vwc_r) greater than or equal to saturated content (vwc_s); Van Genuchten
+    model requires theta_r < theta_s. If values are swapped or incorrect, the retention curve is undefined.;
+    ['water.balance', 'pedo.funct']
+  remedy: Verify vwc_r < vwc_w < vwc_fc < vwc_s for all layers; convert_soil.py; ['Check soil file columns
+    are in correct order', 'Verify no copy-paste errors in parameter values']; convert_soil.py validates
+    theta ordering
+  severity: fatal
+- id: dt_015
+  symptom: Floating point exception in soil hydraulic calculations.
+  diagnosis: Van Genuchten n parameter less than 1.0; The Van Genuchten model requires n > 1. The m parameter
+    is computed as m = 1 - 1/n. If n <= 1, m is non-positive, causing division by zero or undefined behavior.;
+    ['water.balance', 'pedo.funct']
+  remedy: 'Ensure n > 1.0 for all soil layers; convert_soil.py; [''Check n column in soilXXXX.txt'', ''Typical
+    range: 1.1 to 3.0'', ''If n = 1.0 or less, use a minimum of 1.05'']; convert_soil.py enforces n >
+    1.0'
+  severity: fatal
+- id: dt_016
+  symptom: Shortwave radiation values unrealistically high (>2000 W/m2) or always zero.
+  diagnosis: Accumulated radiation (J/m2) not converted to instantaneous (W/m2); ERA5 provides radiation
+    as accumulated J/m2 over the forecast step. GEOtop expects instantaneous W/m2. Dividing by the time
+    step in seconds converts correctly.; ['radiation', 'energy.balance']
+  remedy: 'Divide accumulated radiation by time step in seconds; convert_forcing.py; [''Check if radiation
+    values exceed 1400 W/m2 (solar constant)'', ''If values are in J/m2 (e.g., millions), divide by dt_seconds'',
+    ''ERA5: divide by 3600 for hourly data'']; convert_forcing.py warns if Swglobal > 1400'
+  severity: silent
+- id: dt_017
+  symptom: Model cannot find input files despite them existing in the directory.
+  diagnosis: Simulation directory path is relative, not absolute; GEOtop resolves file paths relative
+    to the simulation directory. If the sim dir path is relative, the working directory at execution time
+    affects path resolution.; ['input', 'import_ascii']
+  remedy: 'Always use absolute paths for the simulation directory; run_geotop.py; [''Use: ./geotop /absolute/path/to/sim_dir'',
+    ''Not: ./geotop sim_dir or ./geotop ../sim_dir'']; run_geotop.py converts paths to absolute before
+    execution'
+  severity: fatal
+- id: dt_018
+  symptom: Model runs but produces no output files.
+  diagnosis: Output file paths in geotop.inpts point to non-existent directory; GEOtop does not create
+    output directories automatically. If PointOutputFile = 'output-tabs/point' but output-tabs/ doesn't
+    exist, output is silently skipped.; ['output']
+  remedy: 'Create output directories before running; run_geotop.py; [''Read geotop.inpts for all output
+    file paths'', ''Create the directories: mkdir -p output-tabs output-maps'']; run_geotop.py creates
+    output directories before execution'
+  severity: fatal
+- id: dt_019
+  symptom: Parsed output dates are wrong. Time series alignment with observations fails.
+  diagnosis: Output date parsing assumes MM/DD instead of DD/MM; GEOtop outputs dates in DD/MM/YYYY format.
+    Pandas default parse assumes MM/DD. For ambiguous dates (e.g., 05/03/2009), the wrong month is assigned.;
+    ['parse_output']
+  remedy: 'Use dayfirst=True when parsing dates with pandas; parse_output.py; ["Use pd.to_datetime(dates,
+    format=''%d/%m/%Y %H:%M'')", ''Or: pd.to_datetime(dates, dayfirst=True)'']; parse_output.py uses explicit
+    DD/MM/YYYY format string'
+  severity: silent
+- id: dt_020
+  symptom: Energy balance not closing. Large residual between Rn and H+LE+G.
+  diagnosis: Both LWin and CloudTrans provided, causing double parameterization of longwave; When LWinParameterization
+    > 0 and both LWin and CloudTrans are provided (not -9999), GEOtop may use LWin directly but also adjust
+    it via cloud transmissivity, causing inconsistency.; ['radiation', 'energy.balance', 'clou
+  remedy: Provide either LWin OR CloudTrans, set the other to -9999; convert_forcing.py; ['If measured
+    LWin is available, set CloudTrans to -9999 for all rows', 'If only CloudTrans is available, remove
+    LWin column or set to -9999', 'Set LWinParameterization = 4 for Brutsaert with Kimball correction'];
+    convert
+  severity: degraded
+- id: dt_021
+  symptom: Daytime surface/skin temperature (Tsurface) far too cold (~5-10 K) and out of phase with observed
+    LST; GEOtop internal SWin peaks several hours LATER than the meteo Swglobal column; air temperature
+    looks fine. Diurnal Tsurface amplitude badly underestimated.
+  diagnosis: 'JDfrom0 column has a non-integer fractional offset (e.g. midnight = .2500 instead of .0000),
+    shifting GEOtop''s solar clock by +6 h; GEOtop derives the solar hour from the meteo JDfrom0 column:
+    h = (JDfrom0 - floor(JDfrom0))*24 + dh (radiation.cc::SolarHeight), where dh = lon/15 - StandardTimeSimulat'
+  remedy: 'Ensure frac(JDfrom0)*24 == hour-of-day exactly: use an INTEGER day offset (366), not 365.25+1;
+    convert_forcing.py; [''Open meteoXXXX.txt and check a midnight row: JDfrom0 fractional part must be
+    .0000, and 01:00 must be .0417'', ''If midnight shows .2500, the date_to_jd_from0 helper added a quarter-day'
+  severity: silent
+- id: dt_022
+  symptom: Total simulated precipitation is an exact small-integer multiple (3x, 8x, 24x) of the true
+    amount for the period; soil stays saturated and ET is energy-limited when it should be water-limited.
+    No error is raised.
+  diagnosis: 'Iprec was linearly INTERPOLATED when the meteo record spacing was changed, instead of being
+    redistributed as an accumulated depth; Iprec is not a rate: GEOtop treats the value on the record
+    at time t as the water depth accumulated over (t-dt, t] and derives the intensity itself -- meteodata.cc::fill'
+  remedy: 'Resample Iprec depth-conservingly (split on upsample, sum on downsample); interpolate only
+    state/flux columns. Best: set --dt to the forcing''s NATIVE step so no resampling happens at all.;
+    convert_forcing.py; ["Compare the meteo file''s Iprec column sum against the source dataset total
+    for the same p'
+  severity: silent
+- id: dt_023
+  symptom: Soil profile layer 1 is a constant 1.0 at every timestep (temperature, water content and ice
+    content all exactly 1.0); the profile has one more layer than the soil file declares; depth-weighted
+    storage sums and depth-matched profile validations are wrong.
+  diagnosis: 'parse_output.read_soil_profile counted the IDpoint column as the first soil layer; GEOtop
+    point profile files (soilTz/thetaliq/thetaice/psiz) carry SIX leading metadata columns: Date12, JulianDayFromYear0,
+    TimeFromStart, Simulation_Period, Run, IDpoint. The skip filter matched only the first five, s'
+  remedy: 'Skip IDpoint/IDbasin, and carry the header depth through as depth_mm; parse_output.py; [''Check
+    the parsed profile: layer 1 must vary in time. A constant 1.0 means IDpoint was captured'', ''Cross-check
+    the layer count against the row count of soilXXXX.txt'', ''Derive layer thickness from consecutive
+    mid-'
+  severity: silent
+- id: dt_024
+  symptom: A surface/soil temperature validation reports a wildly negative PBIAS (e.g. -97%) and a poor
+    or negative KGE while NSE and r are good (0.6 / 0.97). Metrics disagree violently about the same series.
+  diagnosis: Ratio-based metrics (PBIAS, KGE) computed on a temperature series in CELSIUS whose mean sits
+    near zero; PBIAS = 100*sum(sim-obs)/sum(obs) and KGE's bias term beta = mean(sim)/mean(obs) both divide
+    by the mean of the observations. Celsius has an ARBITRARY zero, so a winter day/night LST series stradd
+  remedy: Score temperature on the ABSOLUTE scale (Kelvin) whenever a magnitude_accuracy metric (PBIAS/KGE)
+    is required; read_modis_lst.py; ['Convert both obs and sim to Kelvin before calling ki_tools_common.metrics.all_metrics',
+    'MOD11A2 LST is natively Kelvin (raw x 0.02) -- convert the MODEL to K rather th
+  severity: silent
+- id: dt_025
+  symptom: Simulated diurnal LST amplitude is much smaller than an 8-day MODIS composite (e.g. 5 K modelled
+    vs 13 K observed), day too cold and night too warm, while r stays high.
+  diagnosis: The model was averaged over ALL days of the 8-day window, but MOD11A2 is a CLEAR-SKY-ONLY
+    composite; MOD11A2 averages LST only over the days the pixel was cloud-free; the granule states how
+    many in Clear_sky_days / Clear_sky_nights. Averaging the model over all 8 days mixes in cloudy days,
+    whose diu
+  remedy: 'Match the model average to the granule''s own clear-day count, picking the clearest days of
+    each window; read_modis_lst.py; [''Read Clear_sky_days / Clear_sky_nights from the granule (read_modis_lst.py
+    emits clear_sky_count)'', ''Rank the days of the window: day = largest daily total Swglobal; night
+    = l'
+  severity: degraded

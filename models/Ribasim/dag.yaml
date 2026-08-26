@@ -163,7 +163,7 @@ outputs:
   - var: "flow_rate"
     validation_rank: 1
     unit: "m³/s"
-    description: "Flow rate on each network link (per from_node→to_node connection)."
+    description: "Water flow rate on each network link (per from_node→to_node connection)."
     emitted_in: "flow.nc"
     observability:
       comparable_obs_shapes:
@@ -189,7 +189,7 @@ outputs:
   - var: "allocated / supplied / demand"
     validation_rank: 3
     unit: "m³/s"
-    description: "Per-demand-node allocation results (requested demand, allocated and supplied volumes) when allocation is enabled."
+    description: "Per-water-demand-node allocation results (requested water demand, allocated and supplied volumes) when allocation is enabled."
     emitted_in: "allocation.nc"
     observability:
       comparable_obs_shapes:
@@ -370,3 +370,13 @@ safety:
       scope: "model identity"
       source: "ribasim.org vs oss.deltares.nl; docs lineage note"
       status: "adopted"
+
+medium_evidence:
+  - var: "flow_rate"
+    source: "docs/REFERENCES.md"
+    quote: "It models water distribution networks as directed graphs where nodes represent water system components (basins, pumps, weirs, demands) and edges represent flow connections."
+    note: "Ribasim network links carry water-system flow connections."
+  - var: "allocated / supplied / demand"
+    source: "docs/s5_control_and_allocation.md"
+    quote: "Allocation distributes available water among competing demands using linear programming (HiGHS solver)."
+    note: "Allocation outputs are water-demand allocation results."

@@ -1,278 +1,879 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["crop"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "WOFOST 7.2 via PCSE 6.0"
-  domain: "crop"
-  secondary_domains: ["soil_water"]
-  binary: null
-  package: "pcse (pip install pcse)"
-  language: "Python"
-  execution: "engine = Wofost72_WLP_FD(params, weather, agro); engine.run_till_terminate()"
-  notes: >
-    Pure-Python crop model. No compiled binary. All inputs are Python objects
-    and YAML configuration. Outputs are pandas DataFrames.
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: WOFOST
+  language: python
+  implementation:
+    id: pcse-wofost72
+    version: PCSE 6.0.12 / WOFOST 7.2
+    provenance: Python; PCSE (Allard de Wit / WUR) wraps WOFOST 7.2 numerics; engine classes Wofost72_PP
+      / Wofost72_WLP_FD / Wofost72_WLP_CWB.
+  scientific_reference_version: WOFOST 7.2 (Wageningen / WUR, PCSE 6.0 lineage)
 inputs:
-
   forcing:
-    - name: "irradiance"
-      variable: "IRRAD"
-      unit: "J/m2/day"
-      valid_range: [100000, 40000000]
-      format: "Python float or CSV column"
-      conversion_from_cmfd: "W/m2 -> J/m2/day: multiply by 86400"
-      silent_error: >
-        CRITICAL: IRRAD must be in JOULES/m2/day, NOT kJ or MJ. The PCSE documentation
-        says 'kJ' but internal DB stores JOULES. Spain example: IRRAD=15,657,000 J/m2/d
-        = 15.7 MJ. If IRRAD < 100,000, it is 1000x too low and yield will be ZERO.
-        This is the #1 cause of WOFOST zero-yield bugs (dt_v005).
-
-    - name: "temperature_max"
-      variable: "TMAX"
-      unit: "degC"
-      valid_range: [-50.0, 60.0]
-      format: "Python float or CSV column"
-      conversion_from_cmfd: "K -> degC: subtract 273.15"
-
-    - name: "temperature_min"
-      variable: "TMIN"
-      unit: "degC"
-      valid_range: [-60.0, 50.0]
-      format: "Python float or CSV column"
-      conversion_from_cmfd: "K -> degC: subtract 273.15"
-
-    - name: "precipitation"
-      variable: "RAIN"
-      unit: "cm/day"
-      valid_range: [0.0, 50.0]
-      format: "Python float or CSV column"
-      conversion_from_cmfd: "mm/day -> cm/day: divide by 10"
-      silent_error: >
-        RAIN is cm/day, NOT mm/day. If you pass mm values (e.g., 5.0 mm as 5.0 cm),
-        precipitation is 10x too high. The model runs fine but soil is permanently waterlogged.
-
-    - name: "vapor_pressure"
-      variable: "VAP"
-      unit: "kPa"
-      valid_range: [0.0, 10.0]
-      format: "Python float or CSV column"
-      silent_error: "VAP must be kPa, NOT hPa or mbar (1 kPa = 10 hPa)"
-
-    - name: "wind_speed"
-      variable: "WIND"
-      unit: "m/s"
-      valid_range: [0.0, 80.0]
-      format: "Python float or CSV column"
-
-    - name: "reference_et"
-      variable: "E0, ES0, ET0"
-      unit: "cm/day"
-      valid_range: [0.0, 1.5]
-      format: "Python float or CSV column"
-      silent_error: >
-        E0/ES0/ET0 are cm/day, NOT mm/day. Spain DB values: ET0=0.08-0.88 cm/d.
-        If Hargreaves gives mm/day, divide by 10. Values >1.5 cm/d cause extreme
-        water stress (dt_v006).
-
+  - name: IRRAD
+    unit: J m-2 day-1
+    category: forcing
+    source_kind: forcing
+    model_input_format: Daily global shortwave radiation; engine-internal unit is Joules (not kJ or MJ)
+    notes: Spring/summer values typically 1e7-3.5e7 J m-2 d-1; winter 2e6-8e6. IRRAD drives photosynthesis
+      through the Spitters 3-point Gauss integration; an order-of-magnitude unit error silently zeroes
+      yield.
+  - name: TMIN
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: Daily minimum air temperature
+  - name: TMAX
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: Daily maximum air temperature; TMIN <= TMAX required every day
+  - name: VAP
+    unit: hPa
+    category: forcing
+    source_kind: forcing
+    model_input_format: Mean daily vapour pressure (engine-internal hPa)
+  - name: WIND
+    unit: m s-1
+    category: forcing
+    source_kind: forcing
+    model_input_format: Mean daily wind speed at 2 m height
+  - name: RAIN
+    unit: cm day-1
+    category: forcing
+    source_kind: forcing
+    model_input_format: Daily precipitation, engine-internal unit cm/day (consumed by WaterbalanceFD)
+  - name: SNOWDEPTH
+    unit: cm
+    category: forcing
+    source_kind: forcing
+    model_input_format: Optional daily snow cover depth; required (non-NaN) under PCSE 6.0 when frost-damage
+      / SnowMAUS path is active; otherwise set to 0.0
+  - name: CO2
+    unit: ppm
+    category: forcing
+    source_kind: forcing
+    model_input_format: Atmospheric CO2 concentration; in PCSE 6.0 WOFOST 7.2 path it is handled via crop
+      CO2 tables rather than as a site parameter, but it is a time-varying atmospheric driver of the assimilation
+      submodel
+    notes: Acts on AMAX and on the CO2 factor in assimilation; only the CO2-aware assimilation path consumes
+      it explicitly.
   parameters:
-    critical:
-      - name: "crop_name"
-        description: "PCSE built-in crop name (case-sensitive)"
-        valid_values: ["wheat", "maize", "barley", "potato", "sugarbeet", "rapeseed", "sunflower", "soybean", "grain_maize"]
-        silent_error: >
-          Case-sensitive: 'Wheat' fails, 'wheat' works. 'winter_wheat_101' fails,
-          'Winter_wheat_101' works. Mismatch produces KeyError.
-
-      - name: "variety_name"
-        description: "Crop variety identifier within PCSE database"
-        notes: "Case-sensitive. Must match exactly (e.g., 'Winter_wheat_101')."
-
-      - name: "TSUM1"
-        description: "Temperature sum from emergence to anthesis"
-        unit: "degC days"
-        notes: "Too high for the climate means DVS never reaches 1.0 (no anthesis)."
-
-      - name: "TSUM2"
-        description: "Temperature sum from anthesis to maturity"
-        unit: "degC days"
-        notes: "Too high means DVS never reaches 2.0 (no maturity, zero yield)."
-
-      - name: "vernalization_params"
-        description: "VERNSAT, VERNBASE, VERNDVS for winter crops"
-        notes: >
-          Winter wheat/barley REQUIRE vernalization. If VERNSAT too high and winter
-          is mild, DVS stuck before anthesis - crop never matures, yield is zero,
-          NO error message. VERNDVS is safety cutoff (~0.30).
-
-    soil:
-      - name: "SMW"
-        description: "Wilting point"
-        unit: "cm3/cm3"
-        valid_range: [0.01, 0.30]
-
-      - name: "SMFCF"
-        description: "Field capacity"
-        unit: "cm3/cm3"
-        valid_range: [0.10, 0.50]
-
-      - name: "SM0"
-        description: "Saturation"
-        unit: "cm3/cm3"
-        valid_range: [0.30, 0.60]
-        notes: "Ordering constraint: SMW < SMFCF < SM0 must hold."
-
-      - name: "RDMSOL"
-        description: "Maximum rootable depth"
-        unit: "cm"
-        valid_range: [10, 300]
-
-    agromanagement:
-      - name: "crop_start_date"
-        format: "YYYY-MM-DD in YAML"
-        notes: >
-          For winter crops sown in autumn, the campaign start date must precede
-          the sowing date (e.g., campaign starts Oct 1, sowing Oct 15).
-
-      - name: "crop_start_type"
-        valid_values: ["sowing", "emergence"]
-
-  files:
-    required:
-      - name: "YAML agromanagement"
-        description: "Agromanagement schedule (crop calendar, timed events, state events)"
-        format: "YAML list of campaign dicts"
-        notes: "Generated programmatically or from template. Indentation-sensitive."
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: TSUM1
+    unit: degC d
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Crop YAML parameter (TSUM1); thermal time emergence -> anthesis
+  - name: TSUM2
+    unit: degC d
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Crop YAML parameter (TSUM2); thermal time anthesis -> maturity
+  - name: TBASEM
+    unit: degC
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Base temperature for emergence thermal-time accumulation
+  - name: TDWI
+    unit: kg ha-1
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Initial total dry-matter weight at emergence; partitioned into TWLV/TWST/TWRT
+      at init within 1e-4 tolerance
+  - name: SPAN
+    unit: d
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Maximum leaf lifespan at 35 degC; controls leaf-cohort senescence in WOFOST_Leaf_Dynamics
+  - name: AMAXTB
+    unit: kg CH2O ha-1 hr-1 vs DVS
+    category: parameter
+    source_kind: calibrated
+    model_input_format: AFGEN table; maximum leaf gross assimilation rate as a function of DVS
+  - name: EFFTB
+    unit: kg CH2O J-1 vs degC
+    category: parameter
+    source_kind: calibrated
+    model_input_format: AFGEN table; light-use efficiency of single leaves vs temperature
+  - name: SLATB
+    unit: ha kg-1 vs DVS
+    category: parameter
+    source_kind: calibrated
+    model_input_format: AFGEN table; specific leaf area vs DVS; multiplies leaf biomass to give LAI
+  - name: KDIFTB
+    unit: '- vs DVS'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: AFGEN table; extinction coefficient for diffuse PAR
+  - name: FRTB
+    unit: '- vs DVS'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: AFGEN table; fraction of total dry matter partitioned to roots
+  - name: FLTB
+    unit: '- vs DVS'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: AFGEN above-ground partitioning fraction to leaves; FRTB+(FLTB+FSTB+FOTB)(1-FRTB)=1
+      within 1e-4
+  - name: FSTB
+    unit: '- vs DVS'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: AFGEN above-ground partitioning fraction to stems
+  - name: FOTB
+    unit: '- vs DVS'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: AFGEN above-ground partitioning fraction to storage organs
+  - name: CVO
+    unit: kg DM kg-1 CH2O
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Conversion efficiency assimilates -> storage organ dry matter
+  - name: Q10
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Temperature sensitivity of maintenance respiration; TEFF = Q10**((TEMP-25)/10)
+  - name: VERNSAT
+    unit: d
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Cold-day requirement for full vernalisation; only active when IDSL>=2
+  - name: VERNBASE
+    unit: degC
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Base temperature for vernalisation accumulation
+  - name: VERNDVS
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Safety-cutoff DVS at which vernalisation is force-completed even if VERNSAT not
+      reached
+  - name: RDMSOL
+    unit: cm
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: Maximum rootable soil depth; soil-side cap on rooting
+  - name: RDMCR
+    unit: cm
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Maximum crop rooting depth; effective RDM = min(RDMSOL, RDMCR)
+  - name: SMW
+    unit: cm3 cm-3
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: Wilting point (pF 4.2)
+  - name: SMFCF
+    unit: cm3 cm-3
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: Field capacity (pF 2.0); ordering constraint SMW < SMFCF < SM0
+  - name: SM0
+    unit: cm3 cm-3
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: Soil porosity / saturation moisture; SM0 <= 0.65
+  - name: CRAIRC
+    unit: cm3 cm-3
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: Critical air content for oxygen stress; CRAIRC < SM0 - SMFCF
+  - name: K0
+    unit: cm d-1
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: Saturated hydraulic conductivity
+  - name: SOPE
+    unit: cm d-1
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: Maximum percolation rate root zone
+  - name: KSUB
+    unit: cm d-1
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: Maximum percolation rate subsoil
+  - name: DEPNR
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Crop group number for SWEAF easily-available-water curve in evapotranspiration
+  initial_conditions:
+  - name: WAV
+    unit: cm
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: Initial available soil water in the profile; >= 0
+  - name: SSI
+    unit: cm
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: Initial surface storage
+  - name: SMLIM
+    unit: cm3 cm-3
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: Maximum initial topsoil moisture for water-balance initialization
+  - name: DVS_initial
+    unit: '-'
+    category: initial_condition
+    source_kind: default
+    model_input_format: Hardcoded -0.1 at sowing (CROP_START_TYPE='sowing') so pre-emergence DVR = 0.1*DTSUME/TSUMEM
+      advances to 0 at emergence
+  boundary_conditions:
+  - name: production_level
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Selector between Wofost72_PP (potential), Wofost72_WLP_FD (water-limited, free
+      drainage), and Wofost72_WLP_CWB (water-limited, classic water balance with groundwater); choice
+      activates / bypasses the soil water balance and changes which soil parameters are required
+    notes: Misusing PP where WLP is intended silently inflates yields 2-5x; the choice is a model-form
+      switch, not a parameter.
+  - name: crop_start_type
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Enum 'sowing' | 'emergence'; controls whether the pre-emergence thermal-time submodel
+      (TSUMEM) is exercised
+  - name: crop_end_type
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Enum 'maturity' | 'harvest' | 'earliest'; controls termination criterion
+  - name: crop_start_date
+    unit: date
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Sowing or emergence date in agromanagement YAML; campaign_start_date <= crop_start_date
+  - name: max_duration
+    unit: d
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Maximum number of days the campaign is allowed to run; truncates silently if reached
+      before DVS=2
+  - name: irrigation_events
+    unit: cm event-1
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'TimedEvents ''irrigate'' in agromanagement YAML; events_table of {date: {amount:
+      cm, efficiency: 0-1}}; consumed by WaterbalanceFD via AgroManager signal'
+  - name: IFUNRN
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Infiltration flag (0 = no runoff, 1 = USDA curve-number reduction via NINFTB)
+  - name: NOTINF
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Fraction of rainfall that does not infiltrate when IFUNRN=0
+  - name: SSMAX
+    unit: cm
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Maximum surface storage
 outputs:
-
   primary:
-    - name: "grain_yield"
-      method: "engine.get_output() -> DataFrame['TWSO']"
-      unit: "kg/ha (dry matter)"
-      valid_range: [0, 15000]
-      notes: "Total weight of storage organs at maturity. Main yield output."
-
-    - name: "total_above_ground_biomass"
-      method: "engine.get_output() -> DataFrame['TAGP']"
-      unit: "kg/ha"
-      valid_range: [0, 30000]
-
-    - name: "leaf_area_index"
-      method: "engine.get_output() -> DataFrame['LAI']"
-      unit: "m2/m2"
-      valid_range: [0, 12]
-
-    - name: "development_stage"
-      method: "engine.get_output() -> DataFrame['DVS']"
-      unit: "dimensionless"
-      valid_range: [0, 2.0]
-      notes: "0=emergence, 1=anthesis, 2=maturity. If DVS < 2.0, crop did not mature."
-
-  summary:
-    - name: "summary_output"
-      method: "engine.get_summary_output()"
-      notes: "Returns list of dicts with DOE (date of emergence), DOA (anthesis), DOM (maturity), TWSO, TAGP, LAIMAX, etc."
-
-  simulation_modes:
-    - name: "Wofost72_PP"
-      description: "Potential Production — no water stress, no soil"
-      notes: "Use for theoretical maximum yield only. Silent error if used for real-world simulations."
-
-    - name: "Wofost72_WLP_FD"
-      description: "Water-Limited Production, Free Drainage — includes water balance"
-      notes: "Most common for real-world simulations."
-
-    - name: "Wofost72_WLP_CWB"
-      description: "Water-Limited, Classic Water Balance — includes groundwater"
-      notes: "Use when groundwater table is shallow."
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: DVS
+    unit: '-'
+    description: Crop development stage (0=emergence, 1=anthesis, 2=maturity)
+    validation_rank: 4
+    emitted_in: daily _saved_output (OUTPUT_VARS)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - DVS itself is rarely observed; comparison is usually via derived phenology dates (DOE/DOA/DOM)
+          below
+      detrending_options:
+      - none
+  - name: DOA
+    unit: date
+    description: Crop day of anthesis (summary)
+    validation_rank: 5
+    emitted_in: _saved_summary_output (SUMMARY_OUTPUT_VARS)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - timing_accuracy
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Best compared as DOY bias against observed heading/anthesis dates; weather quality dominates
+          skill
+      detrending_options:
+      - none
+  - name: DOM
+    unit: date
+    description: Crop day of maturity (summary)
+    validation_rank: 6
+    emitted_in: _saved_summary_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - timing_accuracy
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Sensitive to TSUM2 and to whether the campaign max_duration truncated the run before DVS=2
+      detrending_options:
+      - none
+  - name: LAI
+    unit: m2 m-2
+    description: Crop canopy leaf area index
+    validation_rank: 2
+    emitted_in: daily _saved_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare to ground LAI campaigns or satellite-retrieved LAI at the point; rise/peak/decline shape
+          is the primary signal
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Requires running the point model on a grid; satellite LAI products have their own retrieval
+          errors
+      detrending_options:
+      - none
+  - name: LAIMAX
+    unit: m2 m-2
+    description: Maximum LAI over the season (summary)
+    validation_rank: 7
+    emitted_in: _saved_summary_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - LAIMAX > 15 indicates SLATB error rather than skill
+      detrending_options:
+      - none
+  - name: TAGP
+    unit: kg ha-1
+    description: Total above-ground crop biomass dry-matter production
+    validation_rank: 8
+    emitted_in: daily _saved_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Best compared at sampled harvest dates within the season; daily values rarely observed
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Field-level end-of-season biomass weighings
+      detrending_options:
+      - none
+  - name: TWSO
+    unit: kg ha-1
+    description: Total crop storage-organ biomass (harvestable yield)
+    validation_rank: 1
+    emitted_in: daily _saved_output and _saved_summary_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Field-trial yields under known management are the cleanest comparison; PP vs WLP choice changes
+          the expected magnitude by 2-5x
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National / regional yield aggregates carry a technology trend that a weather-only WOFOST run
+          cannot reproduce; compare detrended residuals or decadal means, not raw inter-annual r
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Requires gridded ensemble runs; SPAM-style yield maps have their own disaggregation uncertainty
+      detrending_options:
+      - none
+      - first_difference
+      - linear_residual
+      - decadal_mean
+  - name: TWLV
+    unit: kg ha-1
+    description: Total crop leaf dry-matter biomass
+    validation_rank: 9
+    emitted_in: daily _saved_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Usually destructive sampling at intervals
+      detrending_options:
+      - none
+  - name: TWST
+    unit: kg ha-1
+    description: Total crop stem dry-matter biomass
+    validation_rank: 10
+    emitted_in: daily _saved_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: TWRT
+    unit: kg ha-1
+    description: Total crop root dry-matter biomass
+    validation_rank: 11
+    emitted_in: daily _saved_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Root biomass is hard to observe; comparisons are typically scarce and noisy
+      detrending_options:
+      - none
+  - name: TRA
+    unit: cm day-1
+    description: Daily actual crop transpiration
+    validation_rank: 12
+    emitted_in: daily _saved_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare to eddy-covariance latent-heat partitioning or sap-flow; canopy energy balance is not
+          closed
+      detrending_options:
+      - none
+  - name: CTRAT
+    unit: cm
+    description: Cumulative crop transpiration over the season
+    validation_rank: 13
+    emitted_in: _saved_summary_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: SM
+    unit: cm3 cm-3
+    description: Volumetric root-zone soil moisture
+    validation_rank: 3
+    emitted_in: daily _saved_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - Single-bucket / two-bucket layering cannot resolve depth-specific probes; compare to a depth-integrated
+          average over RD
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - temporal_pattern_match
+        determining_metric: r
+        caveats:
+        - Satellite root-zone soil moisture (e.g., SMAP L4) has its own retrieval / DA depth conventions
+      detrending_options:
+      - none
+  - name: RD
+    unit: cm
+    description: Crop rooting depth in the soil profile
+    validation_rank: 14
+    emitted_in: daily _saved_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: pbias
+        caveats:
+        - Rooting depth is rarely observed continuously; one or two profile observations per season is
+          typical
+      detrending_options:
+      - none
+  - name: WWLOW
+    unit: cm
+    description: Total profile water (root-zone + subsoil)
+    validation_rank: 15
+    emitted_in: daily _saved_output
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "irrad_unit_silent_error"
-    triplet: "dt_v005"
-    description: >
-      IRRAD in kJ/m2/d or MJ/m2/d instead of J/m2/d causes zero yield with no error.
-      This is the #1 cause of WOFOST zero-yield bugs. VERIFIED 2026-03-19.
-    affected_output: "TWSO = 0 or near-zero"
-    detection: "IRRAD values < 100,000 J/m2/d in weather data"
-    fix: "Ensure IRRAD = SW_W_m2 * 86400 (gives J/m2/d). If IRRAD < 100,000, it is 1000x too low."
+- id: dt_001
+  symptom: PCSE raises yaml.scanner.ScannerError or yaml.parser.ParserError when loading crop parameter
+    YAML files. The error message references a specific line and column with 'mapping values are not allowed
+    here' or 'expected <block end>'.
+  diagnosis: 'The YAML crop parameter file has an indentation error, a missing colon, or mixed tabs and
+    spaces. YAML is extremely sensitive to whitespace — a single misplaced space can silently change the
+    document structure or cause a parse error.; PCSE crop parameter YAML files use a hierarchical structure
+    with '
+  remedy: 'Fix the YAML indentation and syntax at the reported line.; ; [''Read the error message — it
+    reports the exact line and column of the error.'', ''Open the YAML file and check the reported line
+    for indentation issues.'', "Ensure ALL indentation uses spaces (not tabs). Run: cat -A file.yaml |
+    grep ''\\^I'' t'
+  severity: fatal
+- id: dt_002
+  symptom: Agromanagement YAML loads without error, but the CropCalendar or TimedEvents are None/empty
+    even though they were defined in the file. The simulation starts but no crop is planted.
+  diagnosis: 'The CropCalendar block is indented at the wrong level in the YAML file. It becomes a sibling
+    of the campaign date dict instead of a child. YAML parses successfully (it is valid YAML) but the
+    structure is semantically wrong.; PCSE agromanagement YAML has a specific nested structure: - Level
+    0: list i'
+  remedy: 'Fix the indentation so CropCalendar is nested under the campaign date.; validate_agromanagement;
+    ["Load the YAML and inspect the structure: agro = yaml.safe_load(open(''agro.yaml''))", ''Check: agro[0]
+    should be a dict with ONE key (a datetime.date)'', "The value of that key should be a dict with ''CropC'
+  severity: silent
+- id: dt_003
+  symptom: WOFOST simulation completes without error but yield (TWSO) is near zero or unreasonably low
+    (<100 kg/ha). LAI stays very low (<0.5) throughout the season. No error messages in output.
+  diagnosis: Solar radiation (IRRAD) is provided in MJ/m2/day instead of J/m2/day. Values like 15.0 (MJ)
+    should be 15000000 (J). With radiation 1e6x too low, photosynthesis produces negligible assimilates,
+    and the crop barely grows.; PCSE/WOFOST uses J/m2/day for irradiance (Joules, NOT kiloJoules — the
+    PCSE doc
+  remedy: 'Multiply all IRRAD values by 1e6 to convert from MJ/m2/day to J/m2/day.; validate_weather_data;
+    [''Check: print(max(IRRAD)). If < 100000, it is in MJ or kJ — convert to J.'', ''If converting from
+    VIC W/m2: IRRAD_J = SW_Wm2 * 86400'', ''If converting from DSSAT MJ: IRRAD_J = SRAD_MJ * 1e6'', ''If
+    using NASA'
+  severity: silent
+- id: dt_004
+  symptom: WOFOST water-limited simulation shows permanent waterlogging. Soil moisture (SM) stays near
+    saturation (SM0). Crop suffers oxygen stress. Yield is low but not zero. No error messages.
+  diagnosis: Precipitation (RAIN) is provided in mm/day instead of cm/day. Values like 5.0 (mm) are interpreted
+    as 5.0 (cm) = 50 mm. Rainfall is 10x too high, keeping the soil permanently saturated.; PCSE/WOFOST
+    uses cm/day for precipitation, which is non-standard. VIC uses mm, DSSAT uses mm, most meteorological
+  remedy: 'Divide all RAIN values by 10 to convert from mm/day to cm/day.; validate_weather_data; [''Check:
+    print(max(RAIN)). If > 30, it is likely in mm — divide by 10.'', ''If converting from VIC mm: RAIN_cm
+    = PREC_mm / 10.0'', ''If converting from DSSAT mm: RAIN_cm = RAIN_mm / 10.0'', ''Re-run the simulation
+    after'
+  severity: silent
+- id: dt_005
+  symptom: 'Winter wheat simulation runs to max_duration but DVS never exceeds 0.3-0.5. The crop never
+    reaches anthesis (DVS=1). Yield is zero or near-zero. A warning may appear in PCSE logs: ''Vernalization
+    requirements not met.'''
+  diagnosis: VERNSAT (required vernalization days) is too high for the climate, or the simulation starts
+    in spring (missing the winter cold period). The crop needs a certain number of cold days (TMIN < VERNBASE)
+    to satisfy vernalization. If the winter is too mild or too short, vernalization is never satisfied
+    an
+  remedy: 'Reduce VERNSAT to match the available cold days, or switch to a spring variety.; validate_crop_params;
+    [''Check the weather data: count days where TMIN < 8C (approximate VERNBASE)'', ''If cold days < VERNSAT:
+    reduce VERNSAT to match, or use a spring variety'', ''Ensure VERNDVS is set (default ~0.30) — th'
+  severity: silent
+- id: dt_006
+  symptom: DVS progresses very slowly but never reaches 2.0 (maturity) within the simulation period. The
+    crop flowers (DVS>1) but does not mature. Final DVS is between 1.0 and 1.9.
+  diagnosis: TSUM2 (thermal time from anthesis to maturity) is too high for the climate, or the growing
+    season is too short (max_duration too low). The crop needs more heat units to mature than the remaining
+    growing season provides.; After anthesis (DVS=1), development rate depends on daily effective temperature
+  remedy: 'Reduce TSUM2 to match the available growing season heat, or increase max_duration.; check_simulation_status;
+    [''Calculate post-anthesis thermal time: sum(max(0, Tavg - TBASE)) for days after anthesis'', ''Compare
+    with TSUM2. If available < TSUM2, reduce TSUM2 or use a shorter-season variety'', ''If max_d'
+  severity: degraded
+- id: dt_007
+  symptom: WOFOST simulation completes with exit code 0. DVS may or may not reach 2.0. But TWSO (yield)
+    is exactly 0 or very close to 0 (<10 kg/ha). No error messages. All other outputs look structurally
+    correct.
+  diagnosis: 'Multiple possible causes, in order of likelihood: (1) IRRAD in MJ instead of J — photosynthesis
+    negligible, (2) DVS never reached the storage-organ partitioning phase — FOTB table starts partitioning
+    at DVS>1 but DVS<1 due to vernalization/thermal time, (3) Severe water stress killed all leaves —
+    LA'
+  remedy: 'Diagnose by checking IRRAD units first, then DVS progression, then LAI, then temperature.;
+    check_simulation_status; [''Step 1: Check IRRAD max. If < 100000, it is in MJ or kJ → convert to J
+    (see dt_003)'', ''Step 2: Check RAIN max. If > 50, it is in mm → divide by 10 (see dt_004)'', ''Step
+    3: Check final'
+  severity: silent
+- id: dt_008
+  symptom: WOFOST yields are 2-5x higher than expected literature values or DSSAT comparison. Yields of
+    12000-20000 kg/ha for wheat or 18000-25000 kg/ha for maize. No water stress visible in output.
+  diagnosis: The simulation is running in Potential Production mode (Wofost72_PP) instead of Water-Limited
+    mode (Wofost72_WLP_FD). PP mode assumes unlimited water — no drought stress, no waterlogging. This
+    gives the theoretical maximum yield, which is much higher than actual field yields.; PCSE offers three
+    engi
+  remedy: 'Switch from Wofost72_PP to Wofost72_WLP_FD for realistic water-limited simulation.; configure_pcse_engine;
+    [''Check current engine: print(type(engine).__name__)'', "If it says ''Wofost72_PP'', switch to Wofost72_WLP_FD",
+    ''Ensure soil parameters are provided (required for WLP modes)'', ''Re-run the simulat'
+  severity: silent
+- id: dt_009
+  symptom: PCSE raises ValueError or produces physically impossible water balance results. Soil moisture
+    oscillates between extreme values. Error message may mention 'SMFCF must be > SMW' or 'SM0 must be
+    > SMFCF'.
+  diagnosis: 'Soil water limits are in wrong order: field capacity (SMFCF) is less than or equal to wilting
+    point (SMW), or saturation (SM0) is less than or equal to field capacity. This is physically impossible
+    and indicates a pedotransfer function error or unit mismatch.; WOFOST requires a strict ordering:
+    SMW '
+  remedy: 'Recalculate soil parameters ensuring SMW < SMFCF < SM0.; validate_soil_params; [''Print current
+    values: SMW, SMFCF, SM0'', ''If values > 1.0: they are in percentage, divide by 100 (should be cm3/cm3,
+    range 0-0.65)'', ''If SMW > SMFCF: swap them (or recalculate from raw texture)'', ''Ensure SM0 = 1
+    - bulk_d'
+  severity: fatal
+- id: dt_010
+  symptom: 'PCSE raises KeyError when trying to set the active crop or during engine initialization. Error
+    message shows the crop_name or variety_name but it looks correct at first glance. Example: KeyError:
+    ''Wheat'' or KeyError: ''winter_wheat_101''.'
+  diagnosis: 'crop_name and variety_name in PCSE are case-sensitive. ''Wheat'' is not ''wheat''. ''winter_wheat_101''
+    is not ''Winter_wheat_101''. The YAML crop parameter files define exact names with specific capitalization.;
+    PCSE uses Python dictionary lookups internally for crop and variety names. Dictionary keys are '
+  remedy: 'Use the exact case for crop_name and variety_name as listed by the data provider.; ; [''List
+    available crops: print(cropdata.get_crop_types())'', "List available varieties: print(cropdata.get_variety_names(''wheat''))",
+    ''Copy the exact name (case included) into your agromanagement YAML'', "Double-check: '
+  severity: fatal
+- id: dt_011
+  symptom: PCSE raises WeatherDataProviderError during simulation with message 'No weather data for date
+    YYYY-MM-DD' or similar. Simulation crashes mid-run.
+  diagnosis: The weather data has gaps (missing days) within the simulation period, or the weather data
+    period does not fully cover the agromanagement campaign dates. PCSE requests weather data daily and
+    crashes if any day is missing.; PCSE calls the weather data provider for every simulation day. If
+    a day is mi
+  remedy: 'Fill weather data gaps or extend the coverage period.; validate_weather_data; [''Check weather
+    coverage: print first and last date in the weather data'', ''Check agromanagement: campaign starts
+    on what date?'', ''Ensure weather first date <= campaign start date'', ''Ensure weather last date
+    >= expected sim'
+  severity: fatal
+- id: dt_012
+  symptom: ImportError or AttributeError when importing PCSE classes. 'cannot import name Wofost72_WLP_FD
+    from pcse.models' or 'module pcse has no attribute fileinput'. Code that worked in PCSE 5.x fails
+    in 6.0.
+  diagnosis: 'PCSE 6.0 reorganized its module structure compared to 5.x. Import paths changed: pcse.fileinput
+    → pcse.input, some model class names changed, and the weather data provider API was updated.; Key
+    PCSE 5.x → 6.0 changes: - pcse.fileinput.CSVWeatherDataProvider → pcse.input.CSVWeatherDataProvider
+    - pcse'
+  remedy: 'Update import statements to PCSE 6.0 paths.; ; ["Check PCSE version: python -c ''import pcse;
+    print(pcse.__version__)''", ''If 6.x: use pcse.input (not pcse.fileinput) for data providers'', ''If
+    5.x: use pcse.fileinput for data providers'', ''Replace old imports: pcse.fileinput.X → pcse.input.X'',
+    ''If unsur'
+  severity: fatal
+- id: dt_013
+  symptom: PCSE raises PCSEError or ValueError during engine initialization with message mentioning 'AFGEN'
+    or 'interpolation' or 'x values not monotonically increasing'. Alternatively, crop growth shows discontinuous
+    jumps.
+  diagnosis: 'An AFGEN interpolation table (e.g., AMAXTB, SLATB, FOTB) has non-monotonically increasing
+    x-values. PCSE uses piecewise linear interpolation that requires strictly increasing x-values.; WOFOST
+    uses AFGEN tables extensively for parameters that vary with development stage (DVS) or temperature.
+    Tables '
+  remedy: 'Sort AFGEN table x-values in strictly increasing order.; validate_crop_params; [''Identify
+    which table has the error (from the error message)'', "Print the table values: print(cropdata[''AMAXTB''])",
+    ''Check x-values (even indices: 0, 2, 4, ...): they must strictly increase'', ''Sort or fix duplicates.
+    Two'
+  severity: fatal
+- id: dt_014
+  symptom: Simulation terminates before crop reaches maturity (DVS < 2.0). TWSO is partial (lower than
+    expected). The simulation ran for exactly max_duration days and stopped, regardless of DVS.
+  diagnosis: max_duration in the agromanagement is too short for the crop to complete its growth cycle.
+    Winter wheat needs 250-350 days, maize needs 120-200 days. If max_duration=150 for winter wheat, the
+    simulation terminates mid-growth.; PCSE's AgroManager terminates the crop when any of three conditions
+    is me
+  remedy: 'Increase max_duration to cover the full growing season.; validate_agromanagement; [''Check
+    the agromanagement YAML: what is max_duration?'', ''Set max_duration based on crop type:'', ''  Winter
+    wheat: 300-365 days'', ''  Spring wheat: 150-200 days'', ''  Maize: 150-220 days'', ''  Rice: 120-180
+    days'', ''  Soybe'
+  severity: degraded
+- id: dt_015
+  symptom: NASAPowerWeatherDataProvider raises ConnectionError, Timeout, or returns incomplete data. Error
+    message mentions 'NASA POWER API' or 'requests.exceptions'.
+  diagnosis: The NASA POWER API is temporarily unavailable, rate-limited, or the network connection is
+    down. NASAPowerWeatherDataProvider makes HTTP requests to power.larc.nasa.gov on instantiation.; NASAPowerWeatherDataProvider
+    fetches all weather data during __init__(). If the API is slow, the request may time
+  remedy: 'Retry after delay, or switch to local CSV weather data.; create_csv_weather_file; [''Wait 30
+    seconds and retry — API may be temporarily overloaded'', ''Check internet connectivity: ping power.larc.nasa.gov'',
+    ''If persistent: download NASA POWER data manually via the web interface'', ''Convert to CSV forma'
+  severity: fatal
+- id: dt_v001
+  symptom: 'ImportError: cannot import name ''WOFOST72SiteDataProvider'' from ''pcse.util'''
+  diagnosis: 'PCSE 6.0 moved WOFOST72SiteDataProvider from pcse.util to pcse.input; Pre-6.0 code uses
+    `from pcse.util import WOFOST72SiteDataProvider`. In PCSE 6.0.12 this fails. The class is now at pcse.input.
 
-  - id: "rain_unit_mm_not_cm"
-    description: "RAIN in mm/day instead of cm/day causes 10x over-precipitation"
-    affected_output: "Soil permanently waterlogged, unrealistic water balance"
-    detection: "RAIN values > 5 cm/day for non-extreme events"
-    fix: "Divide mm/day by 10 to get cm/day"
+    ; [''s5_engine_config'']'
+  remedy: 'Change import to: from pcse.input import WOFOST72SiteDataProvider; ; [''Replace: from pcse.util
+    import WOFOST72SiteDataProvider'', ''With: from pcse.input import WOFOST72SiteDataProvider'']; Always
+    check pcse.__version__ and use pcse.input for all data providers in v6.0+'
+  severity: fatal
+- id: dt_v002
+  symptom: 'PCSEError: Unknown parameter values provided to WOFOST72SiteDataProvider: {''CO2'': 400}'
+  diagnosis: 'PCSE 6.0 removed CO2 from WOFOST72SiteDataProvider accepted parameters; In PCSE 5.x, CO2
+    was a site parameter. In 6.0, it is handled elsewhere. WOFOST72SiteDataProvider now only accepts:
+    IFUNRN, NOTINF, SSI, SSMAX, WAV, SMLIM.
 
-  - id: "et0_unit_mm_not_cm"
-    triplet: "dt_v006"
-    description: "E0/ES0/ET0 in mm/day instead of cm/day causes extreme water stress"
-    affected_output: "Severe water stress, low yield despite adequate rainfall"
-    detection: "ET0 values > 1.5 cm/d"
-    fix: "Divide Hargreaves mm/day output by 10"
+    ; [''s5_engine_config'']'
+  remedy: 'Remove CO2 from WOFOST72SiteDataProvider() call. Use WAV only.; ; [''Change: WOFOST72SiteDataProvider(WAV=20,
+    CO2=400)'', ''To: WOFOST72SiteDataProvider(WAV=20)'']; Check _defaults attribute of SiteDataProvider
+    for accepted parameters'
+  severity: fatal
+- id: dt_v003
+  symptom: 'PCSEError: Duplicate parameter found: IFUNRN (or SSMAX, SSI, WAV, NOTINF, SMLIM)'
+  diagnosis: Same parameters defined in both soildata dict and WOFOST72SiteDataProvider; In PCSE 6.0,
+    WOFOST72SiteDataProvider provides default values for IFUNRN, NOTINF, SSI, SSMAX, WAV, SMLIM. If these
+    also appear in soildata dict, ParameterProvider raises a duplicate error. In 5.x these were only in
+    soildata.
+  remedy: 'Remove IFUNRN, NOTINF, SSI, SSMAX, SMLIM from soildata dict — keep only hydraulic properties
+    (SMW, SMFCF, SM0, CRAIRC, K0, SOPE, KSUB, RDMSOL); ; [''soildata should contain ONLY: SMW, SMFCF,
+    SM0, CRAIRC, K0, SOPE, KSUB, RDMSOL'', ''WOFOST72SiteDataProvider handles: WAV, IFUNRN, NOTINF, SSI,
+    SSMAX, SMLI'
+  severity: fatal
+- id: dt_v004
+  symptom: VIC forcing column 6 (QAIR) produces vapor pressure > 100 kPa or < 0.06 kPa
+  diagnosis: VIC forcing column 6 is already vapor pressure (kPa), not specific humidity; The VIC process_forcing.py
+    pipeline converts raw CMFD specific humidity to vapor pressure in kPa before writing ASCII forcing.
+    The column header looks like QAIR but the values (0.1-4.2) are VP in kPa, not q in kg/kg. Applyi
+  remedy: 'Use VIC column 6 directly as vapor pressure in kPa. Do NOT apply specific humidity conversion.;
+    convert_vic_to_pcse_weather; [''Check VIC forcing values: if column 6 is 0.1-4.0, it is VP in kPa'',
+    ''If column 6 is 0.001-0.025, it is specific humidity in kg/kg'', ''For HydroCraft VIC forcing: always
+    VP in'
+  severity: silent
+- id: dt_v005
+  symptom: WOFOST produces zero or near-zero yield despite correct temperature and rain. LAI stays below
+    0.2.
+  diagnosis: 'IRRAD must be in J/m²/d (Joules), not kJ/m²/d. PCSE SKILL.md says kJ but DB stores J.; The
+    PCSE documentation and SKILL.md state IRRAD is in kJ/m²/d, but the internal DB (pcse.db) stores radiation
+    in J/m²/d. Spain example: IRRAD=15,657,000 J/m²/d  = 15.7 MJ/m²/d. If you pass 15,657 kJ/m²/d (same
+    num'
+  remedy: 'Convert: IRRAD_J = shortwave_W_m2 * 86400 (NOT * 86.4); convert_vic_to_pcse_weather; [''From
+    W/m² (VIC): IRRAD = SW_mean * 86400 (J/m²/d)'', ''From MJ/m²/d (DSSAT): IRRAD = SRAD * 1e6 (J/m²/d)'',
+    ''Validate: spring day should be 10-25 million J/m²/d (10-25 MJ)'', ''If IRRAD < 100,000, it is likely
+    in kJ — '
+  severity: silent
+- id: dt_v006
+  symptom: ET0 values unrealistically high (>1.5 cm/d) causing extreme water stress
+  diagnosis: 'ET0 must be in cm/day, not mm/day. Spain DB values: 0.08-0.88 cm/d.; PCSE WeatherDataContainer
+    expects E0, ES0, ET0 in cm/day. If computed in mm/day (typical output of Penman-Monteith), values
+    are 10x too high. This causes extreme water stress in WLP mode — the model thinks the atmosphere demands
+    10'
+  remedy: 'Divide ET0 by 10 if computed in mm/day: ET0_cm = ET0_mm / 10; convert_vic_to_pcse_weather;
+    [''Validate: ET0 should be 0.01-1.5 cm/day for most climates'', ''If ET0 > 2.0, it is likely in mm
+    — divide by 10'']; convert_vic_to_pcse_weather validates ET0 range 0.01-1.5 cm/d'
+  severity: silent
+- id: dt_016
+  symptom: 'WOFOST yields are low / the crop is chronically water-stressed when weather was supplied through
+    a CSVWeatherDataProvider CSV, even though older docs said RAIN is cm/day. No error is raised.
 
-  - id: "vap_unit_hpa_not_kpa"
-    description: "VAP in hPa instead of kPa causes transpiration errors"
-    affected_output: "Incorrect stomatal response and transpiration"
-    detection: "VAP values > 10"
-    fix: "Divide hPa by 10 to get kPa"
-
-  - id: "vernalization_stuck"
-    description: >
-      Winter wheat/barley with high VERNSAT in mild climate: DVS permanently stuck
-      before anthesis. Yield = 0, NO error message.
-    affected_output: "DVS never reaches 1.0, TWSO = 0"
-    detection: "Final DVS < 1.0 for winter crop"
-    fix: "Reduce VERNSAT or increase VERNDVS safety cutoff"
-
-  - id: "simulation_mode_wrong"
-    description: "Using Wofost72_PP (potential production) when water-limited is intended"
-    affected_output: "Unrealistically high yield (no water stress applied)"
-    detection: "Yield > literature maximum for the region"
-    fix: "Use Wofost72_WLP_FD for real-world simulations"
-
-  - id: "afgen_non_monotonic"
-    description: "AFGEN interpolation tables with non-monotonic x values"
-    affected_output: "Silent interpolation errors or runtime exception"
-    detection: "Check that x values in AMAXTB, SLATB, FOTB, etc. are strictly increasing"
-    fix: "Sort x values in ascending order"
-
-# =========================================================================
-# EXPECTED RANGES (from validated results)
-# =========================================================================
-expected_ranges:
-  bengbu_wheat:
-    yield_kgha: [3000, 4500]
-    reference: "3543 kg/ha (DB crop params, VIC forcing)"
-  bengbu_maize:
-    yield_kgha: [5000, 7000]
-    reference: "6102 kg/ha (DB crop params, VIC forcing)"
-    scorecard: "wofost_maize_bengbu.json (PASS, PBIAS +12%)"
-
-# =========================================================================
-# CALIBRATION REFERENCE
-# =========================================================================
-calibration_reference:
-  approach: "Crop parameter adjustment (TSUM1, TSUM2, SPAN, CVO, CVL)"
-  notes: >
-    WOFOST uses built-in PCSE crop parameter database. Calibration involves adjusting
-    TSUM1/TSUM2 (phenology), AMAXTB (max assimilation rate), SLATB (specific leaf area),
-    and allocation fractions (CVO, CVL, CVS, CVR).
-  cross_model_validation: >
-    WOFOST and DSSAT should agree within 15% for the same location and crop.
-    Bengbu validation: WOFOST wheat 3543 vs DSSAT 3217 (+10%),
-    WOFOST maize 6102 vs DSSAT 5780 (+6%).
+    '
+  diagnosis: 'The CSV RAIN column was authored in cm. PCSE 6.0 CSVWeatherDataProvider DIVIDES the RAIN
+    column by 10 to obtain the model''s internal cm/day (csvweatherdataprovider.py: RAIN -> mm_to_cm,
+    i.e. value/10). So a cm-authored column is delivered to the soil water balance 10x too low (100x if
+    mm was first d'
+  remedy: Author the CSVWeatherDataProvider RAIN column in mm/day; let the provider do the /10 -> cm.;
+    validate_weather_data; ['In convert_vic_to_pcse_weather.py write rain_mm = prec_mm (NOT rain_cm =
+    prec_mm/10.0).', 'Trust create_csv_weather_file.py docstring as ground truth (RAIN column = mm/day).',
+    'Sanit
+  severity: silent
+- id: dt_009_csv_rain_mm_not_cm
+  symptom: WOFOST yields are low / crop is chronically water-stressed when weather came through a CSVWeatherDataProvider
+    CSV, even though SKILL.md says RAIN is cm/day. No error is raised.
+  diagnosis: The CSV RAIN column was authored in cm. PCSE 6.0 CSVWeatherDataProvider divides the RAIN
+    column by 10 to get the model's internal cm/day, so a cm-authored column is delivered 10x too low
+    (100x if mm was first divided to cm per the old docs). Distinct from dt_004, which concerns a directly-built
+    Weat
+  remedy: Author the CSVWeatherDataProvider RAIN column in mm/day (provider handles /10 -> cm). Likewise
+    IRRAD in kJ (x1000 -> J), VAP in kPa (x10 -> hPa). Patch convert_vic_to_pcse_weather.py (line 196
+    rain_cm=prec_mm/10.0 -> rain_mm=prec_mm) and trust create_csv_weather_file.py's docstring as ground
+    truth.
+- id: dt_010_hwsd_adapter_missing
+  symptom: convert_hwsd_to_pcse_soil.py logs HWSD adapter failed (No module named skills, Using default
+    texture) and every location returns the SAME texture (sand=40, clay=25), regardless of lat/lon.
+  diagnosis: get_texture_from_hwsd imported skills.dssat_crop_run.hwsd_soil_adapter, which does NOT exist
+    anywhere on the KDT 5.0 server (tools were removed from data_ki/skills). The import always raised
+    ImportError and the except-branch silently returned a generic loam, so HWSD was never actually read.
+  remedy: Use ki_tools_common.soil_utils.lookup_hwsd(lat, lon, hwsd_raster=...) instead — it does the
+    rasterio MU_GLOBAL lookup -> HWSD_DATA.csv topsoil texture and returns sand/silt/clay/oc/bulk_density.
+    Already patched in canonical tool 2026-06-08.
+- id: dt_011_pp_mode_needs_soil
+  symptom: 'Running SIMULATION_MODE=PP raises pcse.exceptions.ParameterError: Value for parameter SMFCF
+    missing.'
+  diagnosis: SKILL.md / run_wofost_simulation.py assumed PP (Potential Production) needs no soil and loaded
+    soildata={} for PP. In PCSE 6.0 Wofost72_PP STILL requires the soil-hydraulic params (SMFCF, SM0,
+    K0, RDMSOL...) at construction even though water is not limiting.
+  remedy: Load the soil JSON for ALL modes (PP, WLP_FD, WLP_CWB). Pass a soil params file to run_wofost_simulation.py
+    even for PP. Already patched in canonical tool 2026-06-08.
+- id: dt_faostat_obs_shape
+  symptom: WOFOST-vs-FAOSTAT-national run reports raw NSE/r/KGE as the headline and the pre-retry gate
+    rejects the comparison as REJECT_WRONG_METRIC, OR the run loops retrying cultivar/forcing swaps trying
+    to lift a structurally-negative raw NSE.
+  diagnosis: A point or few-point WOFOST sim compared to a FAOSTAT NATIONAL yield series is the obs_shape
+    regional_aggregate_time_series (dag.yaml outputs.TWSO.observability). The ONLY valid metric_families
+    are [trend_match, magnitude_accuracy]. Raw inter-annual NSE/r/KGE are temporal_pattern_match metrics,
+    INVA
+  remedy: 'Run tools/s8_yield_analysis/validate_against_faostat.py SIM_CSV CROP COUNTRY OUT_JSON [UNITS].
+    It classifies obs_shape=regional_aggregate_time_series and reports magnitude_accuracy (pbias, decadal_mean_pbias,
+    mean_abs_pct_err) plus trend_match (detrended r, first-difference r, trend-slope ratio) as '

@@ -306,7 +306,7 @@ outputs:
   - var: "Ea"
     validation_rank: 2
     unit: "mm/d"
-    description: "Actual evapotranspiration aggregated from the model's evaporation fluxes."
+    description: "Actual evapotranspiration — catchment water flux to the atmosphere, aggregated from the model's evaporation fluxes."
     emitted_in: "fluxOutput.Ea (get_output)"
     observability:
       comparable_obs_shapes:

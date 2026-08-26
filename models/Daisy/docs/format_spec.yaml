@@ -1,211 +1,576 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: Daisy
-  version: 7.1.4
-  domain: crop
-  description: 1D mechanistic simulation of agricultural field processes (water, nitrogen,
-    carbon, crop growth)
-  origin: Agrohydrology Group, University of Copenhagen
-  binary_path: KISSPATH_BINARIES/Daisy/source/repo/build/linux-gcc-portable/daisy
-  config_language: Lisp-like (.dai files)
+  language: c++
+  implementation:
+    id: daisy-cpp
+    version: 7.1.4
+    provenance: C++; University of Copenhagen Agrohydrology group (Per Abrahamsen, Søren Hansen); 1D mechanistic
+      soil-plant-atmosphere system model.
+  scientific_reference_version: Daisy 7.1.x — open Soil-Plant-Atmosphere system model (Abrahamsen & Hansen
+    2000 lineage; University of Copenhagen Agrohydrology group)
 inputs:
   forcing:
   - name: GlobRad
     unit: W/m^2
-    description: Global radiation (daily mean)
-    valid_range:
-    - 0
-    - 500
-    source_conversion: "MJ/m^2/d \xF7 0.0864"
+    category: forcing
+    source_kind: forcing
+    model_input_format: .dwf weather-file column (daily mean global radiation)
+    notes: Daisy expects daily-mean irradiance in W/m^2; supplying daily-total MJ/m^2/d (~12x too small)
+      silently under-lights the crop.
   - name: AirTemp
     unit: dgC
-    description: Air temperature
-    valid_range:
-    - -60
-    - 60
-    source_conversion: "K \u2212 273.15"
+    category: forcing
+    source_kind: forcing
+    model_input_format: .dwf weather-file column
+    notes: Degrees Celsius, not Kelvin.
   - name: Precip
     unit: mm/d
-    description: Precipitation
-    valid_range:
-    - 0
-    - 500
-    source_conversion: "kg/m^2/s \xD7 86400"
+    category: forcing
+    source_kind: forcing
+    model_input_format: .dwf weather-file column
+    notes: Daily total; sub-daily (mm/3h, mm/h) values must be aggregated to daily before being written.
   - name: RefEvap
     unit: mm/d
-    description: Reference evapotranspiration (optional)
-    valid_range:
-    - 0
-    - 20
+    category: forcing
+    source_kind: forcing
+    model_input_format: .dwf weather-file column (optional)
+    notes: If absent, Daisy falls back to a Makkink reference-ET estimate from radiation and temperature.
   - name: Wind
     unit: m/s
-    description: Wind speed (optional)
-    valid_range:
-    - 0
-    - 50
+    category: forcing
+    source_kind: forcing
+    model_input_format: .dwf weather-file column (optional)
+    notes: Required by the PMSW and SSOC SVAT options for the energy balance.
   - name: RelHum
-    unit: '%'
-    description: Relative humidity (optional)
-    valid_range:
-    - 0
-    - 100
-  forcing_format:
-    type: DWF
-    extension: .dwf
-    separator: tab
-    header: 'keyword: value pairs'
-    required_header_fields:
-    - Station
-    - Elevation
-    - Longitude
-    - Latitude
-    - Begin
-    - End
-    - Timestep
-  soil:
-  - name: clay
-    unit: fraction (0-1)
-    valid_range:
-    - 0
-    - 1
-    description: Clay fraction
-  - name: silt
-    unit: fraction (0-1)
-    valid_range:
-    - 0
-    - 1
-    description: Silt fraction
-  - name: sand
-    unit: fraction (0-1)
-    valid_range:
-    - 0
-    - 1
-    description: Sand fraction
-  - name: humus
-    unit: fraction (0-1)
-    valid_range:
-    - 0
-    - 0.3
-    description: Humus fraction
-  - name: dry_bulk_density
-    unit: g/cm^3
-    valid_range:
-    - 0.5
-    - 2.2
-    description: Dry bulk density
+    unit: '% (0-100)'
+    category: forcing
+    source_kind: forcing
+    model_input_format: .dwf weather-file column (optional)
+    notes: Percent, not fraction; required by hourly SVAT options.
+  - name: VapPres
+    unit: Pa
+    category: forcing
+    source_kind: forcing
+    model_input_format: .dwf weather-file column (optional)
+  - name: Atmospheric N deposition (NH4/NO3 wet/dry)
+    unit: ppm / kg N/ha/year
+    category: forcing
+    source_kind: forcing
+    model_input_format: .dwf header fields (NH4WetDep, NH4DryDep, NO3WetDep, NO3DryDep)
+    notes: Deposition enters the chemistry solute pool as an N source term.
   parameters:
-    critical:
-    - name: K_sat
-      unit: cm/h
-      valid_range:
-      - 0.001
-      - 100
-      description: Saturated hydraulic conductivity
-    - name: alpha
-      unit: cm^-1
-      valid_range:
-      - 0.005
-      - 0.2
-      description: van Genuchten alpha parameter
-    - name: n
-      unit: dimensionless
-      valid_range:
-      - 1.05
-      - 5.0
-      description: van Genuchten n parameter
-    - name: Theta_sat
-      unit: dimensionless
-      valid_range:
-      - 0.2
-      - 0.7
-      description: Saturated water content
-    - name: Theta_res
-      unit: dimensionless
-      valid_range:
-      - 0.0
-      - 0.2
-      description: Residual water content
-    - name: MaxRootingDepth
-      unit: cm
-      valid_range:
-      - 10
-      - 300
-      description: Maximum rooting depth
+  - name: Soil texture (clay / silt / sand fractions)
+    unit: fraction 0-1
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: Lisp-like .dai horizon definition (USDA3 / FAO3 / ISSS4 texture systems)
+    notes: Fractions sum to ~1.0 excluding humus; percent (0-100) input causes a sum>1 startup crash.
+  - name: Humus / organic fraction
+    unit: fraction 0-1
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .dai horizon definition
+    notes: Typically 0.001-0.10 for mineral soils.
+  - name: Dry bulk density
+    unit: g/cm^3
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .dai horizon definition
+    notes: Typical 1.0-2.0 g/cm^3; kg/m^3 input yields impossibly dense soil.
+  - name: C/N ratio
+    unit: g C / g N
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .dai horizon definition
+  - name: van Genuchten-Mualem retention parameters (Theta_res, Theta_sat, alpha, n)
+    unit: dimensionless; alpha in cm^-1
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .dai hydraulic model M_vG (or default texture estimate / Cosby / HYPRES pedotransfer)
+    notes: alpha expected in cm^-1 (not m^-1).
+  - name: Saturated hydraulic conductivity K_sat
+    unit: cm/h
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .dai hydraulic definition
+    notes: Expected in cm/h; m/s input is ~360000x too high.
+  - name: Crop / vegetation parameters
+    unit: various
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: library .dai files (crop.dai etc.; day-length response, root density, photosynthetic
+      efficiency, dry-matter partitioning)
+    notes: Crop selected by name; names are case-sensitive and must match the library exactly.
+  - name: Organic-matter pool initialization (input C, root C, end depth)
+    unit: kg C/ha/y; cm
+    category: parameter
+    source_kind: user_provided
+    model_input_format: .dai column OrganicMatter init block
+  initial_conditions:
+  - name: Initial soil water content per layer
+    unit: cm^3/cm^3 (or pressure h in cm)
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: .dai column / checkpoint-*.dai restart state
+    notes: 1-3 year spinup recommended to equilibrate water and N pools.
+  - name: Initial soil mineral N pools (NH4, NO3) per layer
+    unit: kg N/ha
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: .dai column / checkpoint restart state
+  - name: Initial soil organic-matter and microbial-biomass pools
+    unit: kg C/ha; kg N/ha
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: .dai column / checkpoint restart state
+  boundary_conditions:
+  - name: Simulation period (start / stop dates)
+    unit: YYYY MM DD HH
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dai (time) / (stop) directives; .dwf Begin/End must span this range
+  - name: Groundwater lower-boundary model
+    unit: categorical
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dai column groundwater object (deep / aquitard / fixed / flux / lysimeter / file)
+  - name: SVAT / energy-balance option
+    unit: categorical (None | PMSW | SSOC)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dai parameterization selector
+    notes: PMSW and SSOC require hourly wind/humidity; 'None' holds canopy/surface at free-air temperature.
+  - name: MaxRootingDepth
+    unit: cm
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dai column definition
+  - name: Management operations (sow, fertilize, irrigate, plow, seedbed prep, harvest, tillage)
+    unit: various (kg N/ha mineral; T w.w./ha organic; mm irrigation; cm tillage)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Lisp-like .dai defaction with chronologically ordered, wait-condition-gated activities
+    notes: Each crop-stage wait condition should be paired with a date fallback or the run can produce
+      no harvest / hang indefinitely.
 outputs:
   primary:
-  - name: stem_DM
-    unit: Mg DM/ha
-    valid_range:
-    - 0
-    - 30
-    description: Harvested stem dry matter
-    file: harvest.dlf
   - name: sorg_DM
     unit: Mg DM/ha
-    valid_range:
-    - 0
-    - 15
-    description: Harvested grain (storage organ) dry matter
-    file: harvest.dlf
-  - name: sorg_N
-    unit: kg N/ha
-    valid_range:
-    - 0
-    - 300
-    description: Nitrogen in harvested grain
-    file: harvest.dlf
+    description: Harvested storage-organ (grain) dry matter — the primary crop yield output.
+    validation_rank: 1
+    emitted_in: harvest.dlf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compare grain yield against sorg_DM only, not total above-ground DM.
+        - Single-site, single-season measured yield.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Multi-season measured yields at one field; exclude 1-3 spinup years.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/regional yield aggregates carry a technology trend a weather-driven mechanistic model
+          cannot reproduce; detrend before comparing.
+      detrending_options:
+      - none
+      - linear_residual
+      - decadal_mean
   - name: harvest_index
     unit: dimensionless
-    valid_range:
-    - 0
-    - 0.6
-    description: Ratio of grain to total aboveground DM
-    file: harvest.dlf
-  - name: yield
-    canonical_id: yield
-    unit: kg/ha
-  - name: biomass
-    canonical_id: biomass
-    unit: kg/ha
-  - name: leaf_area_index
-    canonical_id: leaf_area_index
-    unit: m2/m2
-  - name: evapotranspiration
-    canonical_id: evapotranspiration
-    unit: mm/day
-  water_balance:
-  - name: Precipitation
-    unit: mm
-    file: field_water.dlf
-  - name: Evapotranspiration
-    unit: mm
-    file: field_water.dlf
-  - name: Drain
-    unit: mm
-    file: field_water.dlf
-  - name: Percolation
-    unit: mm
-    file: field_water.dlf
-  nitrogen_balance:
-  - name: Fertilizer
-    unit: kg N/ha
-    file: field_nitrogen.dlf
-  - name: Leaching
-    unit: kg N/ha
-    file: field_nitrogen.dlf
-  - name: Denitrification
-    unit: kg N/ha
-    file: field_nitrogen.dlf
+    description: Crop harvest biomass ratio of grain (storage organ) to total above-ground dry matter
+      at harvest.
+    validation_rank: 2
+    emitted_in: harvest.dlf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Typical cereal range 0.3-0.5.
+      detrending_options:
+      - none
   - name: Harvest_N
     unit: kg N/ha
-    file: field_nitrogen.dlf
-  output_format:
-    type: DLF
-    extension: .dlf
-    separator: tab
-    header: metadata + column names + units
+    description: Nitrogen removed in harvested biomass (grain + stem N).
+    validation_rank: 3
+    emitted_in: harvest.dlf / field_nitrogen.dlf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Cereal range typically 80-200 kg N/ha.
+      detrending_options:
+      - none
+  - name: Leaching
+    unit: kg N/ha
+    description: Soil-profile nitrate-nitrogen leached below the root zone.
+    validation_rank: 7
+    emitted_in: field_nitrogen.dlf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Strongly dependent on organic-matter pool initialization and spinup; exclude 1-3 spinup years.
+        - Annual leaching <50 kg N/ha well-managed; can exceed 100 on sandy soils.
+      detrending_options:
+      - none
+  - name: Denitrification
+    unit: kg N/ha
+    description: Soil mineral nitrogen lost via denitrification.
+    validation_rank: 8
+    emitted_in: field_nitrogen.dlf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Annual range typically 5-30 kg N/ha; chamber-flux measurements are sparse and noisy.
+      detrending_options:
+      - none
+  - name: Evapotranspiration
+    unit: mm
+    description: Actual evapotranspiration (water-balance flux).
+    validation_rank: 5
+    emitted_in: field_water.dlf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance LE comparison requires hourly SVAT (PMSW/SSOC) and hourly forcing.
+        - Annual ET 300-600 mm temperate continental.
+      detrending_options:
+      - none
+  - name: Drain / Percolation
+    unit: mm
+    description: Drainage to pipe drain and percolation below the profile.
+    validation_rank: 9
+    emitted_in: field_water.dlf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Annual drainage typically 50-400 mm; depends on the groundwater lower-boundary choice.
+      detrending_options:
+      - none
+  - name: Theta
+    unit: m^3/m^3
+    description: Volumetric soil water content per layer.
+    validation_rank: 6
+    emitted_in: soil_water.dlf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Compare per-depth against point soil-moisture probes; the .dlf may report layer-integrated depth
+          (mm) vs volumetric (m^3/m^3) depending on the select declaration.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Only in the distributed multi-column configuration.
+      detrending_options:
+      - none
+  - name: Soil temperature
+    unit: dgC
+    description: Soil temperature per layer.
+    validation_rank: 10
+    emitted_in: soil_temperature.dlf (user-selected)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Compare per-depth against buried thermistors.
+      detrending_options:
+      - none
+  - name: DS
+    unit: dimensionless
+    description: Crop development stage (phenology; 0=emergence, 1=flowering, 2=ripe).
+    validation_rank: 11
+    emitted_in: <crop>.dlf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - timing_accuracy
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Compare modelled stage-transition DOY (emergence/flowering/maturity) against observed phenological
+          dates.
+      detrending_options:
+      - none
+  - name: LAI
+    unit: m^2/m^2
+    description: Crop canopy leaf area index.
+    validation_rank: 4
+    emitted_in: <crop>.dlf
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against destructive-sampling or remote-sensing LAI; timing of peak matters.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- "Binary requires libboost_filesystem.so.1.83.0 \u2014 symlink from 1.85 works"
-- "1D only \u2014 no lateral flow between fields"
-- Crop models calibrated primarily for Northern European conditions
-- "No built-in calibration \u2014 requires external optimization tools"
-- 'Previous validation MARGINAL: negative NSE for soil moisture at RISMA ON2'
+- id: dt_001
+  symptom: Crops barely grow, stunted LAI, very low yield. No error messages.
+  diagnosis: Radiation in MJ/m²/d interpreted as W/m² — roughly 12x too low; Daisy expects GlobRad in
+    W/m² (daily mean). If the source provides daily total radiation in MJ/m²/d (typical for ERA5 and many
+    station datasets), the values must be divided by 0.0864 to convert. A typical summer day at 20 MJ/m²/d
+    should
+  remedy: Divide radiation by 0.0864 when converting from MJ/m²/d to W/m²; convert_weather_to_dwf; ['Check
+    max GlobRad in .dwf — summer peaks should be 200-350 W/m²', 'If max GlobRad < 40, values are likely
+    in MJ/m²/d — divide by 0.0864']; validate_outputs() checks for suspiciously low radiation values
+  severity: silent
+- id: dt_002
+  symptom: Temperature values around 270-310°C in daisy.log or .dwf. Immediate crash or extreme ET.
+  diagnosis: Temperature in Kelvin (K) not converted to degrees Celsius (°C); Daisy expects AirTemp in
+    dgC (degrees Celsius). ERA5 and many reanalysis products provide temperature in Kelvin. Forgetting
+    the K→°C conversion (−273.15) results in temperatures of ~280°C, causing extreme evapotranspiration
+    calculation
+  remedy: Subtract 273.15 from temperature values; convert_weather_to_dwf; ['Check AirTemp range in .dwf
+    — should be −30 to +40°C for temperate', 'If values are 240-320, they are in Kelvin — subtract 273.15'];
+    validate_outputs() flags temperatures > 60°C
+  severity: critical
+- id: dt_003
+  symptom: Soil waterlogged, anaerobic conditions, excessive drainage, unrealistic water balance.
+  diagnosis: Precipitation in mm/3h or mm/h used as mm/d — 8x or 24x too much rain; Daisy expects Precip
+    in mm/d. CMFD provides precipitation in mm/3h (accumulated per 3-hour period). If the daily sum is
+    not computed (multiply by 8), Daisy receives only 1/8 of the actual daily precipitation. Conversely,
+    if hourl
+  remedy: Aggregate sub-daily precipitation to daily totals before writing .dwf; convert_weather_to_dwf;
+    ['Check annual precipitation total — should be 400-1200 mm/yr for temperate', 'If annual total < 100,
+    sub-daily values not aggregated properly']; validate_outputs() checks for extreme daily precipitation
+  severity: silent
+- id: dt_004
+  symptom: 'Daisy crashes at startup: texture fractions exceed 1.0 or sum > 1.'
+  diagnosis: 'Soil texture given as percent (0-100) instead of fraction (0-1); Daisy expects clay, silt,
+    sand as fractions summing to ~1.0 (excluding humus). HWSD and many soil databases provide these as
+    percentages. Entering 10.7 for clay (meaning 10.7%) is interpreted as 1070% — an obvious impossibility.
+
+    ; [''co'
+  remedy: 'Divide all texture values by 100 when source is in percent; convert_soil_to_dai; [''Check:
+    clay + silt + sand should sum to ~1.0, not ~100'', ''If any value > 1.5, data is in percent — divide
+    by 100'']; validate_inputs() auto-detects percent vs fraction'
+  severity: critical
+- id: dt_005
+  symptom: Extremely rapid drainage, soil never holds water, crops wilt immediately.
+  diagnosis: 'Bulk density in kg/m³ (e.g., 1450) used where g/cm³ expected (1.45); Daisy expects dry_bulk_density
+    in g/cm³ (typical range 1.0–1.8). HWSD provides bulk density in kg/m³ (1000–1800). Using 1450 g/cm³
+    makes the soil appear impossibly dense, distorting porosity calculations and water retention.
+
+    ; [''co'
+  remedy: Divide bulk density by 1000 when converting from kg/m³ to g/cm³; convert_soil_to_dai; ['Check
+    dry_bulk_density values — should be 1.0–2.0 g/cm³', 'If values > 100, they are in kg/m³ — divide by
+    1000']; convert_bulk_density() auto-detects unit
+  severity: silent
+- id: dt_006
+  symptom: Horizon interpreted as above ground. Soil column has zero or negative thickness.
+  diagnosis: 'Horizon depths given as positive values instead of negative; Daisy convention: depths below
+    the soil surface are NEGATIVE. A horizon at 30 cm depth must be specified as -30 [cm]. Positive values
+    are interpreted as heights above the surface, creating an impossible soil column.
+
+    ; [''convert_soil_to_dai'
+  remedy: Negate all depth values so they are negative (below surface); convert_soil_to_dai; ['Check horizon
+    depths in .dai — all should be negative', 'First horizon should be shallowest (e.g., -25), last deepest
+    (e.g., -200)']; convert_depth() ensures negative output
+  severity: critical
+- id: dt_007
+  symptom: Water moves unrealistically fast through soil. Ponding never occurs.
+  diagnosis: 'K_sat in m/s used where cm/h expected — ~360000x too high; Daisy expects saturated hydraulic
+    conductivity (K_sat) in cm/h. Many databases and literature sources report K_sat in m/s. The conversion
+    factor is large: 1 m/s = 360000 cm/h. A typical value of 1e-5 m/s should be 3.6 cm/h.
+
+    ; [''convert_soil_'
+  remedy: Multiply K_sat by 360000 when converting from m/s to cm/h; convert_soil_to_dai; ['Check K_sat
+    values — should be 0.01–100 cm/h for most soils', 'If values are 1e-7 to 1e-3, they are likely in
+    m/s']; convert_ksat() handles unit conversion
+  severity: silent
+- id: dt_008
+  symptom: van Genuchten retention curve has wrong shape. Field capacity unrealistic.
+  diagnosis: 'Alpha parameter in m⁻¹ used where cm⁻¹ expected — 100x too high; The van Genuchten alpha
+    parameter has units of inverse length. Daisy expects cm⁻¹. If alpha is provided in m⁻¹ (common in
+    some databases), it must be divided by 100. Typical alpha for clay is 0.01–0.03 cm⁻¹, for sand 0.03–0.15
+    cm⁻¹.
+
+    ; '
+  remedy: Divide alpha by 100 when converting from m⁻¹ to cm⁻¹; convert_soil_to_dai; ['Check alpha values
+    — should be 0.005–0.2 cm⁻¹', 'If values are 0.5–20, they are in m⁻¹ — divide by 100']; Validate alpha
+    range after setting hydraulic parameters
+  severity: silent
+- id: dt_009
+  symptom: '''Unknown crop'' error at startup. Daisy refuses to run.'
+  diagnosis: 'Crop name in management does not match library definition exactly; Daisy crop names are
+    case-sensitive strings. The name in sow/harvest/wait commands must exactly match the name in the crop
+    library. "Spring Barley" is not the same as "spring barley" or "SpringBarley" or "Spring barley".
+
+    ; [''manageme'
+  remedy: 'Use exact crop name from crop.dai library; ["Check crop.dai for exact names: ''Spring Barley'',
+    ''Winter Wheat'', etc.", ''Ensure quotes match: (sow "Spring Barley") not (sow Spring Barley)''];
+    Cross-reference crop names against library before running'
+  severity: critical
+- id: dt_010
+  symptom: Simulation produces no harvest events. harvest.dlf is empty.
+  diagnosis: 'Harvest wait condition never satisfied before simulation end; The management typically waits
+    for (crop_ds_after "Crop" 2.0) (development stage 2 = ripe). If the simulation stops before the crop
+    reaches maturity, or if an (or ...) fallback date is after the stop date, no harvest occurs. Also
+    happens '
+  remedy: Add a fallback date in the wait condition or extend simulation period; ['Use (wait (or (crop_ds_after
+    "Crop" 2.0) (mm_dd 08 20)))', 'Check that fallback date is before simulation stop date', 'Ensure warmup
+    period before first sowing']; Always include (or ... (mm_dd M D)) fallback in harvest wait
+  severity: silent
+- id: dt_011
+  symptom: Simulation hangs or runs indefinitely. Never reaches stop date.
+  diagnosis: 'Management wait condition can never be satisfied; A (wait ...) action blocks the simulation
+    until the condition is true. If the condition references a crop that was never sown, or uses impossible
+    conditions, the simulation waits forever. Common cause: (wait (crop_ds_after "Crop" 2.0)) without
+    the cr'
+  remedy: 'Add timeout/fallback to all wait conditions; [''Review all (wait ...) for unreachable conditions'',
+    ''Add date-based fallback: (wait (or CONDITION (at YYYY M D H)))'', ''Use --timeout flag in run_daisy.py''];
+    Always pair crop-based waits with date-based fallbacks'
+  severity: critical
+- id: dt_012
+  symptom: '''File not found'' errors for crop.dai, tillage.dai, or fertilizer.dai.'
+  diagnosis: Daisy library files not accessible from working directory; Daisy loads library files from
+    its installed lib/ directory or from the current working directory. If running from a custom directory
+    without proper installation, the standard libraries (crop.dai, tillage.dai, fertilizer.dai, log.dai)
+    cannot
+  remedy: 'Copy or symlink library files to working directory, or install Daisy properly; [''Copy needed
+    .dai files: cp /path/to/daisy/lib/*.dai /your/work/dir/'', ''Or install Daisy system-wide so lib/
+    is in the search path'']; validate_inputs() in run_daisy.py checks for referenced files'
+  severity: critical
+- id: dt_013
+  symptom: '''Negative dt'' or convergence warnings in daisy.log. Simulation slows drastically.'
+  diagnosis: Extreme soil hydraulic conditions causing numerical instability; Daisy solves the Richards
+    equation for unsaturated water flow. Extreme K_sat values, very high irrigation rates, or highly heterogeneous
+    soil layers can cause the solver to fail or require very small time steps. This is especially comm
+  remedy: 'Reduce irrigation intensity or check soil hydraulic parameters; [''Use moderate irrigation:
+    10 mm/h for 3 hours instead of 100 mm/h for 0.3 hours'', ''Check K_sat values are in cm/h (not m/s)'',
+    ''Ensure smooth transitions between soil layers'']; Validate K_sat range and irrigation rates before
+    running'
+  severity: warning
+- id: dt_014
+  symptom: Parsed harvest data has wrong columns or misaligned values.
+  diagnosis: 'DLF parser not handling tab separators correctly; Daisy DLF files use tab characters as
+    column separators. If a parser splits on whitespace instead of tabs, columns with spaces in names
+    (e.g., crop names) will be split incorrectly, causing misalignment of all subsequent columns.
+
+    ; [''parse_daisy_outp'
+  remedy: 'Use tab-aware parsing: sep=''\t'' in pandas.read_csv; parse_daisy_output; [''Open .dlf in hex
+    editor to confirm tab characters'', "Use pd.read_csv(path, sep=''\\t'') not pd.read_csv(path)"]; parse_dlf_data()
+    detects and uses tab separators'
+  severity: warning
+- id: dt_015
+  symptom: Yield appears much higher than expected. Comparing total DM with grain DM.
+  diagnosis: 'Confusing total harvest DM with grain (sorg_DM) DM; Daisy reports harvest components separately:
+    stem_DM, leaf_DM, dead_DM, sorg_DM. The grain yield is sorg_DM (storage organ). Total DM = stem +
+    leaf + dead + sorg. When stem fraction is set to 0.70 (70% of stem removed), total_DM is much higher
+    than'
+  remedy: 'Use sorg_DM for grain yield comparison, not total_DM; [''For grain yield: use sorg_DM column'',
+    ''For total biomass: use stem_DM + leaf_DM + dead_DM + sorg_DM'', ''Check harvest_index: should be
+    0.3-0.5 for cereals'']; extract_harvest_summary() reports both sorg_DM and total_DM'
+  severity: silent
+- id: dt_016
+  symptom: Validation metrics look good for first year but poor overall.
+  diagnosis: Spinup period contaminating validation metrics; Daisy needs time to equilibrate soil water
+    and nitrogen pools. The first 1-3 years of simulation may show artifacts from initial conditions.
+    Including these in validation metrics biases the result. Standard practice is to use a warmup period
+    before the
+  remedy: Exclude first 1-3 years from metric computation; ['Start simulation 1-3 years before the validation
+    period', 'Only compute metrics for the period after warmup', 'Compare metrics with and without warmup
+    years']; Set simulation start ≥ 1 year before analysis period
+  severity: warning
+- id: dt_017
+  symptom: Organic fertilizer has no effect on crop growth. NH4 all lost to atmosphere.
+  diagnosis: Volatilization set to 100% or organic N in slow pool with very high C/N; Organic fertilizers
+    (slurry) have a volatilization parameter that determines how much NH4-N is lost to the atmosphere
+    during/after application. If set too high (or left at default for surface application without incorporation),
+  remedy: 'Set volatilization to 5-15% and incorporate with (to -1 [cm]) or deeper; [''Check volatilization
+    parameter: typically 5% for injected, 10-15% for surface applied'', ''Add (to -1 [cm]) to place fertilizer
+    in topsoil'', ''Plow or incorporate shortly after application'']; Document typical volatilization
+    rate'
+  severity: silent
+- id: dt_018
+  symptom: 'Weather file rejected: ''No weather data for requested period''.'
+  diagnosis: 'Begin/End dates in DWF header do not cover simulation period; Daisy checks that the weather
+    file covers the entire simulation period (from ''time'' to ''stop'' in the .dai file). If the DWF
+    Begin/End dates are wrong or the simulation period extends beyond weather data, Daisy refuses to run.
+    Common when '
+  remedy: 'Ensure DWF Begin/End dates match or exceed simulation time/stop; [''Check Begin: and End: lines
+    in .dwf header'', ''Check (time ...) and (stop ...) in .dai file'', ''Weather range must encompass
+    simulation range'']; validate_outputs() could cross-check with .dai file'
+  severity: critical
+- id: dt_019_discharge_wrong_variable_skip
+  symptom: Observation is basin channel discharge Q in m3/s at a river gauge (point_time_series), e.g.
+    Bengbu 51080 on the Huai River draining ~121,330 km2. All validation metrics come back null — no sim
+    series exists to pair.
+  diagnosis: Daisy is a 1-D mechanistic soil-crop-water column; dag.yaml outputs are per-area field fluxes/states
+    only (yield, ET, Drain/Percolation mm, Theta, etc.). There is NO channel-discharge output; dag.yaml
+    scope_out explicitly excludes 'Lateral flow / catchment-scale routing (1-D column; external linkage
+  remedy: 'SKIP — structurally uncomputable, no retry can rescue (no cultivar/forcing/parameter change
+    can synthesize a routed-discharge variable in a 1-D column). Route the discharge obs to a distributed/routed
+    hydrology model: VIC+Lohmann/mizuRoute, WRF-Hydro, CaMa-Flood, HYPE, or EF5. Same SKIP family as EP'

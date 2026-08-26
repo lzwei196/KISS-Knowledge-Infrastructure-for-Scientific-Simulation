@@ -1,0 +1,281 @@
+schema_version: 1
+model_id: DLBreach
+domain: hydrology
+generated_by: "step-b validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  wu2013:
+    doi: 10.1061/(ASCE)HY.1943-7900.0000741
+    title: "Simplified Physically Based Model of Earthen Embankment Breaching"
+    venue: "Journal of Hydraulic Engineering"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1061_(asce)hy.1943-7900.0000741.txt
+  zhong2016:
+    doi: 10.1007/s11069-016-2492-9
+    title: "Comparison of simplified physically based dam breach models"
+    venue: "Natural Hazards"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s11069-016-2492-9.txt
+  westoby2015:
+    doi: 10.5194/esurf-3-171-2015
+    title: "Numerical modelling of glacial lake outburst floods using physically based dam-breach models"
+    venue: "Earth Surface Dynamics"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_esurf-3-171-2015.txt
+  macchione2016:
+    doi: 10.2166/hydro.2015.250
+    title: "Dam breach modelling: influence on downstream water levels and a proposal of a probabilistic approach"
+    venue: "Journal of Hydroinformatics"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_hydro.2015.250.txt
+  bereta2020:
+    doi: 10.3311/PPci.14565
+    title: "Experimental Study of Cohesive Embankment Dam Breach Formation due to Overtopping"
+    venue: "Periodica Polytechnica Civil Engineering"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3311_ppci.14565.txt
+  riha2026:
+    doi: 10.2478/johh-2026-0007
+    title: "Backward analysis of the Bila Desna dam break outflow"
+    venue: "Journal of Hydrology and Hydromechanics"
+    year: 2026
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2478_johh-2026-0007.txt
+  potvin2024:
+    doi: 10.1007/s10230-024-01015-y
+    title: "Tailings Dam Breach Outflow Modelling: A Review"
+    venue: "Mine Water and the Environment"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10230-024-01015-y.txt
+
+validation:
+  - dag_variable: breach_discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: peak_pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Hydrograph NSE is not given a numeric dam-breach threshold in the fetched benchmark papers; field comparisons emphasize peak discharge and hydrograph form. Wu 2013 reports peak-discharge cases within 25% and Zhong 2016 reports DLBreach peak-flow performance within the same envelope."
+        cites: [wu2013, zhong2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "No fetched dam-breach benchmark defines an NSE threshold for breach hydrographs; papers describe hydrographs as generally/reasonably reproduced while tabulating peak-flow, width, and timing errors."
+        cites: [wu2013, zhong2016, bereta2020]
+      - metric: hydrograph_volume_pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Westoby 2015 found percentile hydrographs could have mass-conservation and shape issues, so hydrograph volume is informative but not used as a pass gate here."
+        cites: [westoby2015]
+    validated_when: "|peak_pbias| <= 25% and the hydrograph shape/timing are checked qualitatively; the dag nse metric is superseded because fetched DLBreach literature does not define an NSE pass threshold."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Wu 2013 reports that 98% of peak-discharge cases had less than 25% errors and root-mean-square
+      relative error was 12.2%; Zhong 2016 reports DLBreach peak breach flow had 100% of cases within
+      +/-25% and +/-50% error ranges. Bereta 2020 says measured and computed hydrographs were
+      "plausible" or "well proportionated" but also reports case-specific peak errors rather than NSE.
+
+  - dag_variable: breach_discharge
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Snapshot comparisons usually mean peak breach discharge. Fetched DLBreach papers report +/-25% as the main benchmark envelope."
+        cites: [wu2013, zhong2016]
+    secondary_metrics:
+      - metric: factor_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Probabilistic breach-hydrograph literature often discusses broad factor-scale uncertainty, but the fetched peer-reviewed DLBreach benchmark gives a tighter 25% peak-discharge envelope."
+        cites: [wu2013, zhong2016]
+    validated_when: "|PBIAS| of peak breach discharge <= 25%."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Wu 2013: 41 of 42 peak-discharge cases deviated within 25% and Erms was 12.2%. Zhong 2016:
+      DLBreach had 100% of 12 peak-flow cases within +/-25% and log(Erms) 0.057.
+
+  - dag_variable: breach_bottom_width
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: final_width_pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Intermediate breach-width time series are rarely observed; fetched papers use final/average width and selected width-development plots rather than an NSE threshold."
+        cites: [wu2013, zhong2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched benchmarks compare breach-width evolution in representative plots but tabulate final-width relative errors; no width-time-series NSE threshold was found."
+        cites: [wu2013, zhong2016, bereta2020]
+    validated_when: "|final_width_pbias| <= 25%; width-time-series NSE is not auto-gated without a cited threshold."
+    evidence_strength: strong
+    confidence: 0.7
+    notes: >-
+      Wu 2013 reports 80% of breach-width cases within 25% and Erms 19.3%. Zhong 2016 reports
+      DLBreach final width had 81.8% of cases within +/-25% and 100% within +/-50%. Bereta 2020
+      provides lab width-development plots and says simulated values agreed well with observed data,
+      but does not define an NSE band.
+
+  - dag_variable: breach_bottom_width
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "For final breach bottom/average width, DLBreach benchmark papers use percent relative error envelopes."
+        cites: [wu2013, zhong2016]
+    secondary_metrics: []
+    validated_when: "|PBIAS| of final breach bottom/average width <= 25%."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Wu 2013 says final top width or average width was used where available and 80% of width cases
+      were within 25%. Zhong 2016 reports DLBreach final breach width within +/-25% for 81.8% of
+      cases and within +/-50% for all cases.
+
+  - dag_variable: breach_top_width
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Fetched papers often compare final top width or average width; use the same 25% final-width envelope, checking the observation definition."
+        cites: [wu2013, zhong2016]
+    secondary_metrics: []
+    validated_when: "|PBIAS| of final breach top width <= 25%, after confirming whether the observation is top width or average/bottom width."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Wu 2013 explicitly notes final top width or average width is used if available. Zhong 2016 carries
+      the same convention and reports DLBreach width cases within the 25% and 50% envelopes.
+
+  - dag_variable: breach_bottom_elevation
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: final_depth_error
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for breach-bottom-elevation time series. Westoby 2015 used observed final breach depth 16 +/- 2 m as a likelihood measure; this is transferred to final invert/depth checking."
+        cites: [westoby2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Breach-bed time histories are seldom observed directly; fetched papers use final depth, thalweg RSS, or qualitative profile comparison instead of a time-series NSE threshold."
+        cites: [westoby2015, wu2013]
+    validated_when: "Final breach depth/invert error <= 2 m when a surveyed final geometry exists; time-series NSE remains unresolved."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Westoby 2015 used an observed final upstream breach depth of 16 +/- 2 m as the first likelihood
+      measure and an observed-versus-modelled thalweg RSS as another performance measure. This is
+      a transferred end-state geometry convention, not a true time-series threshold.
+
+  - dag_variable: reservoir_water_level
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DLBreach/dam-breach paper defines a reservoir-stage time-series NSE threshold."
+        cites: []
+    secondary_metrics:
+      - metric: absolute_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Macchione 2016 reports maximum-water-level absolute errors of roughly 0.5-0.6 m for downstream high-water marks, but this is transferred flood-routing evidence and not an upstream reservoir-stage gate."
+        cites: [macchione2016]
+      - metric: drawdown_trend
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Wu 2013 says the general trends of breach discharge and reservoir water level varying in time were reasonably reproduced, without a numeric pass band."
+        cites: [wu2013]
+    validated_when: "UNRESOLVED - compare drawdown timing/trend and any observed levels, but do not auto-validate on NSE until a reservoir-stage threshold is fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Wu 2013 includes reservoir water-level plots and qualitative agreement statements. Macchione 2016
+      provides absolute-error statistics for flood water levels/HWM, but not a reservoir-stage time-series
+      convention. Bands are null per no-fabrication rule.
+
+  - dag_variable: cumulative_breach_volume
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric pass threshold for total released breach volume. Westoby 2015 reports modelled Qvol deviations and warns percentile hydrographs can be unsuitable for hydrodynamic input, so those values are not used as validation bands."
+        cites: []
+    secondary_metrics:
+      - metric: mass_balance_check
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Total release is constrained by reservoir storage and breach-hydrograph construction; fetched evidence treats it as consistency/likelihood information, not a stand-alone validation threshold."
+        cites: [westoby2015, potvin2024]
+    validated_when: "UNRESOLVED - use as a mass-balance sanity check against reservoir storage, not as an auto-validation gate."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      OpenAlex search found no usable DLBreach cumulative-volume benchmark. Westoby 2015 reports
+      median Qvol deviations in the range -41% to -6% and notes percentile hydrographs may not mirror
+      behavioural hydrographs; that is evidence of a gap, not a pass criterion.
+
+  - dag_variable: time_to_peak_discharge
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: relative_time_error
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "The dag metric day_bias is superseded by fetched dam-breach benchmarks, which report time-to-peak or failure-time relative error percentages."
+        cites: [wu2013, zhong2016]
+    secondary_metrics:
+      - metric: day_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Absolute timing in days/hours is case-scale dependent; fetched benchmarks normalize timing by percent relative error and note breach time is difficult to observe/model."
+        cites: [wu2013, zhong2016]
+    validated_when: "|relative_time_error| <= 25% for time to peak or documented breach characteristic time."
+    evidence_strength: strong
+    confidence: 0.7
+    notes: >-
+      Wu 2013 reports 69% of breach characteristic times within 25% and Erms 37.4%, explicitly noting
+      breach time is more difficult to measure and model. Zhong 2016 reports DLBreach time-to-peak or
+      failure time within +/-25% for 80% of cases and within +/-50% for 80% of cases.
+
+deferred_paywalled:
+  - ref: "Development of Probabilistic Dam Breach Model Using Bayesian Inference"
+    doi: 10.1029/2017WR021176
+    needed_for: [breach_discharge, cumulative_breach_volume, time_to_peak_discharge]
+  - ref: "Wahl 2004 - Uncertainty of predictions of embankment dam breach parameters"
+    doi: 10.1061/(ASCE)0733-9429(2004)130:5(389)
+    needed_for: [breach_discharge, breach_bottom_width, breach_top_width, time_to_peak_discharge]

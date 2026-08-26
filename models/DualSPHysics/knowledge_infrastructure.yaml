@@ -1,77 +1,105 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:01:24.111989'
-  domain: ocean
   name: DualSPHysics
-  version: auto-generated
+  language: c++
+  implementation:
+    id: dualsphysics-5.4
+    version: v5.4.355
+    provenance: C++/CUDA (OpenMP CPU + CUDA GPU); DualSPHysics group (EPHYSLAB Vigo / Univ. Manchester);
+      WCSPH solver built on the SPHysics lineage.
+  scientific_reference_version: Weakly-compressible SPH (WCSPH) per Crespo et al. 2015 / Dominguez et
+    al. 2022; DualSPHysics v5.4 formulation
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DualSPHysics/source/repo/bin/linux/DualSPHysics5.4CPU_linux64
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_case_definition
+  - s2_case_generation
+  - s3_forcing_setup
+  - s4_execution
+  - s5_output_analysis
+tools:
+  count: 5
+  files:
+  - tools/convert_forcing_to_dsph.py
+  - tools/convert_parameters.py
+  - tools/generate_case_xml.py
+  - tools/parse_dsph_output.py
+  - tools/run_dualsphysics.py
+inputs:
+  forcing:
+  - name: wave kinematics (significant height Hs, peak period Tp / spectrum)
+    unit: m, s
+  - name: inlet velocity / current
+    unit: m/s
+  - name: water level / tide
+    unit: m
+  parameters:
+  - name: reference fluid density (rhop0)
+    unit: kg/m^3
+  - name: gravitational acceleration (gravity)
+    unit: m/s^2
+  - name: polytropic constant (gamma)
+    unit: dimensionless
+  - name: speed-of-sound coefficient (coefsound)
+    unit: dimensionless
+  - name: smoothing-length coefficient (coefh)
+    unit: dimensionless
+  - name: particle spacing (dp)
+    unit: m
+  - name: artificial viscosity coefficient / kinematic viscosity (Visco)
+    unit: dimensionless (artificial 0.01-0.1) OR m^2/s (laminar ~1e-6)
+  - name: density-diffusion coefficient (DensityDTvalue)
+    unit: dimensionless
+  initial_conditions:
+  - name: initial particle distribution (Case.bi4)
+    unit: m
+  - name: initial particle density / velocity
+    unit: kg/m^3, m/s
+  boundary_conditions:
+  - name: 'boundary method (Boundary: DBC vs mDBC)'
+    unit: '-'
+  - name: time integration scheme (StepAlgorithm)
+    unit: '-'
+  - name: SPH kernel (Kernel)
+    unit: '-'
+  - name: viscosity treatment (ViscoTreatment)
+    unit: '-'
+  - name: density diffusion method (DensityDT)
+    unit: '-'
+  - name: particle shifting mode (Shifting)
+    unit: '-'
+  - name: CFL number (cflnumber)
+    unit: dimensionless
+  - name: density exclusion thresholds (RhopOutMin/Max)
+    unit: kg/m^3
+  - name: simulation end / output interval (TimeMax, TimeOut)
+    unit: s
+  - name: wave paddle / relaxation-zone & AWAS absorption
+    unit: '-'
+  - name: rigid/floating-body coupling (RigidAlgorithm; Chrono/DEM)
+    unit: '-'
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - pressure
+  - water_surface_elevation
+  - force_on_structure
+  - velocity
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.898, KGE=0.799, R=0.999, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.898076
+    best_kge: 0.798866
+    best_r: 0.999
+summary:
+  total_tools: 5
+  total_stage_docs: 5
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

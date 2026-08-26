@@ -1,14 +1,3 @@
----
-name: fsm2
-description: >-
-  FSM2 (Flexible Snow Model) 2.1.x lineage; Essery et al. 2025 (GMD 18, 3583-3605)
-  forest-canopy extension of FSM 1.0. Covers Multi-layer snowpack energy and mass balance
-  (accumulation and melt) on the ground; Snow in forest canopies: interception, unloading,
-  melt drip, sub-canopy radiation/wind; Multi-layer soil heat conduction with freeze/thaw
-  under the snow. Use when the task involves running, configuring, calibrating or
-  interpreting FSM2.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -32,6 +21,40 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-23 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_fsm2.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_fsm2.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/parse_fsm2_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_fsm2_output.py --help` |
+| `tools/run_fsm2.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_fsm2.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # FSM2 v2.1.2 (Flexible Snow Model) — Knowledge Infrastructure
 
 **Package**: `hydrocraft-fsm2-snow` v1.0.0
@@ -48,12 +71,37 @@ description: >-
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+**Data Sources**: FSM2 is an energy-balance model and needs SUB-DAILY forcing, so
+use `from ki_tools_common.load_forcing import load_hourly_forcing`, not the daily
+loader:
 
-**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
-See `data_ki/SNOTEL/SKILL.md` for snow observations.
-See `data_ki/BedMachine/SKILL.md` for ice topography.
-See `data_ki/MEaSUREs/SKILL.md` for ice velocity.
+```python
+from ki_tools_common.load_forcing import load_hourly_forcing
+d = load_hourly_forcing("nasa_power", lat, lon, 2001, 2019)   # hourly, global
+# d: dates, srad_wm2, lrad_wm2, precip_mm (mm per step), temp_c, shum_kgkg,
+#    wind_ms (10 m), wind2_ms (2 m), wind_height_m, pres_pa, timestep_seconds
+```
+
+- `nasa_power` — hourly, global, **starts 2001-01-01**. The only practical point
+  source for a multi-year FSM2 run outside China. Set the namelist `zU` to the
+  returned `wind_height_m` (see triplet T21 for why WS2M is not usable).
+- `cmfd` / `mswx` — 3-hourly gridded (set `dt = 10800`). Extracting ONE point out
+  of MSWX is impractically slow: the annual files are chunked `(1, 1800, 3600)`
+  with gzip, so a single cell-year forces ~76 GB of decompression. Use them only
+  when you need whole fields, and read them with `engine='h5netcdf'` (triplet T23).
+
+Neither source gives FSM2 what DRIV1D=1 asks for directly — all of them publish
+specific humidity rather than RH, and total precipitation rather than separate
+snowfall and rainfall. `tools/convert_forcing_to_fsm2.py --shum-col --precip-col`
+closes both gaps using FSM2's own formulas (triplets T19, T20). **FSM2 does not
+partition precipitation itself.**
+
+**Observations**: the rank-1 binding is `snowcci_swe_nh` (ESA CCI Snow L3C daily
+SWE v2.0) at `KISSPATH_DATA/benchmarks/snowcci_swe/` — 0.1° global lat/lon,
+variable `swe` in **mm, which is kg m-2 1:1 with FSM2 `snw`**. Read triplet T24
+before using it: negative values are flags, `0` is a real no-snow observation,
+and the product only exists for the snow season (~215 files per year, no summer).
+Point SWE records: `snotel` (US), `canswe_canada`, `canadian_snow_survey_historical`.
 
 
 ## Overview
@@ -207,39 +255,96 @@ DRIV1D=2, specific humidity is read directly but RH is also read.
 
 ### Namelist File
 
-Read from stdin. Contains 6 Fortran namelist blocks in order:
+Read from stdin. Contains 7 Fortran namelist blocks, in this fixed order
+(`&params`, `&gridpnts`, `&gridlevs`, `&drive`, `&veg`, `&initial`,
+`&outputs`). An unwanted block is still written, empty — see triplet T06.
 
 ```fortran
-&params       ! Model parameters (override defaults)
+&params       ! Model parameters (override the FSM2_PARAMS defaults)
   acn0 = 0.06
   avg0 = 0.142
+  fcly = 0.04        ! soil clay fraction — from tools/convert_soil_params.py
+  fsnd = 0.87        ! soil sand fraction
 /
 &gridpnts     ! Grid dimensions
   Npnts = 2   ! Number of simulation points
+  Nsmax = 3   ! Max snow layers   (default 3; Dzsnow must match if changed)
+  Nsoil = 4   ! Soil layers       (default 4; Dzsoil must match if changed)
 /
 &gridlevs     ! Layer configuration (usually defaults are fine)
+  Dzsnow = 0.1, 0.2, 0.4              ! Nsmax min snow-layer thicknesses (m)
+  Dzsoil = 0.1, 0.2, 0.4, 0.8         ! Nsoil soil-layer thicknesses (m)
+  fvg1 = 0.5                          ! fraction of VAI in the upper canopy layer
+  zsub = 1.5                          ! subcanopy diagnostic height (m)
 /
 &drive        ! Driving data configuration
   met_file = 'met_Alptal_0405.txt'
+  dt = 3600          ! Timestep (s). Default 3600; MUST equal the forcing interval.
   lat = 47.05        ! Latitude (degrees, converted to radians internally)
+  noon = 12          ! Hour of SOLAR noon, in the met file's OWN time base.
+                     ! Only used when SWPART=1. For a met file stamped in UTC
+                     ! this is 12 - lon/15, NOT 12 (e.g. 10.224 at 26.63 E).
   zT = 35            ! Temperature measurement height (m)
-  zU = 35            ! Wind measurement height (m)
+  zU = 35            ! Wind measurement height (m) — must match the height the
+                     ! wind in the met file was actually measured/derived at
 /
 &veg          ! Vegetation characteristics (per point)
   alb0 = 0.15, 0.15  ! Snow-free ground albedo
   vegh = 0.00, 25.0  ! Canopy height (m)
   VAI  = 0.00, 3.96  ! Vegetation area index
+  ! alb0_file / vegh_file / VAI_file read the same per-point arrays from a file
 /
 &initial      ! Initial conditions
+  fsat = 0.5, 0.5, 0.5, 0.5           ! Nsoil initial soil moisture, FRACTION of Vsat
+  Tprf = 285, 285, 285, 285           ! Nsoil initial soil temperatures (K).
+                                      ! The 285 K default is a temperate value —
+                                      ! set it near the site's annual mean ground
+                                      ! temperature for cold-region runs.
+  start_file = 'none'                 ! restart from a previous run's dump file
 /
 &outputs      ! Output configuration
   runid = 'Alptal_'  ! Prefix for output files
+  dump_file = 'dump' ! End-of-run state dump, written as <runid><dump_file>.
+                     ! Feed it back through &initial start_file to chain a
+                     ! spin-up run into the evaluation run.
 /
 ```
+
+**70-character limit (triplet T22).** `met_file`, `runid`, `dump_file`,
+`alb0_file`, `vegh_file` and `VAI_file` are all `character(len=70)`. A longer
+absolute path is silently truncated and FSM2 then fails to open a file that
+plainly exists. Keep the met file in the run directory and use a short relative
+name.
+
+**FSM2 writes output EVERY timestep** — there is no output-frequency control.
+Aggregate to the observation's frequency yourself (e.g. daily mean `snw`)
+after `parse_fsm2_output.py`.
 
 ---
 
 ## Output Format
+
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. If this section and `dag.yaml` ever disagree,
+the dag wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `snw` — Snow water equivalent (SWE) (`kg m-2`)
+
+The dag's rank-1 output is `var='snw'`, `unit='kg m-2'`,
+`description='Snow water equivalent (SWE)'`.
+
+| Output variable (dag `var`) | Rank | Unit | Description / role |
+|-----------------------------|------|------|--------------------|
+| `snw` | 1 | `kg m-2` | Snow water equivalent (SWE) |
+
+Other dag outputs listed by `dag.yaml`: `snd`, `svg`, `Tsrf`, `Tsoil`, `Tveg`,
+`Melt`, `Roff`, `subl`, `H`, `LE`, `LWout`, `SWout`, `LWsub`, `SWsub`, `Tsub`,
+`Usub`.
+
+The ASCII file layout below documents the model output files used by the parser.
 
 ### ASCII Output (PROFNC=0)
 
@@ -285,6 +390,43 @@ year month day hour  LWsub  SWsub  Tsub  Usub
 - Data columns: exponential notation (e14.6), space-separated
 
 ---
+
+## 8. Unit Conversion Table
+
+Exact input and output shapes live in `docs/format_spec.yaml`, projected from the
+dag and diagnostics. The model-ready units below restate this KI's documented
+FSM2 ASCII interface and the unit traps already called out for this pipeline.
+
+| Variable | Source / interface unit | Model unit | Conversion | Type |
+|----------|-------------------------|------------|------------|------|
+| `SW` | `W/m²` | `W/m²` | `x1` | multiplicative |
+| `LW` | `W/m²` | `W/m²` | `x1` | multiplicative |
+| `Sf` | `kg/m²/s` | `kg/m²/s` | `x1` | multiplicative |
+| `Rf` | `kg/m²/s` | `kg/m²/s` | `x1` | multiplicative |
+| `Ta` | `K` | `K` | `x1` | multiplicative |
+| `RH` (`DRIV1D=1`) | `%` | `%` | `x1` | multiplicative |
+| `Qa` (`DRIV1D=2`) | `kg/kg` | `kg/kg` | `x1` | multiplicative |
+| `Ua` | `m/s` | `m/s` | `x1` | multiplicative |
+| `Ps` | `Pa` | `Pa` | `x1` | multiplicative |
+| `lat` in namelist | degrees | degrees | converted internally to radians | angular |
+| `dt` | `s` | `s` | `x1` | multiplicative |
+| `Dzsnow` | `m` | `m` | `x1` | multiplicative |
+| `Dzsoil` | `m` | `m` | `x1` | multiplicative |
+| `fcly`, `fsnd` | fraction `0-1` | fraction `0-1` | `x1` | multiplicative |
+
+### 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| `H` | `W/m²`, sensible heat flux positive upward | opposite sign convention | Energy-balance metrics can be sign-flipped |
+| `LE` | `W/m²`, latent heat flux positive upward | opposite sign convention | Latent heat and sublimation interpretation can be reversed |
+| `Melt` | `kg/m²/s`, surface melt rate | accumulated depth per timestep | Magnitude error if treated as an accumulation |
+| `Roff` | `kg/m²/s`, runoff from snow | accumulated depth per timestep | Magnitude error if treated as an accumulation |
+| `subl` | `kg/m²/s`, sublimation rate | accumulated depth per timestep | Magnitude error if treated as an accumulation |
+| `LWout`, `SWout` | `W/m²`, outgoing radiation | incoming radiation sign convention | Radiation balance can be inverted |
+| `snw` | `kg m-2`, snow water equivalent (SWE) | depth in m or mm without density conversion | Rank-1 validation target becomes incomparable |
+| `snd` | `m`, snow depth | SWE mass loading | Snow-depth validation target becomes incomparable |
+| `svg` | `kg/m²`, snow mass on vegetation | canopy water depth in mm | Canopy snow-storage comparison can be mis-scaled |
 
 ## Unit Trap Table
 
@@ -332,14 +474,66 @@ year month day hour  LWsub  SWsub  Tsub  Usub
 
 ---
 
+## 11. Validated Results
+
+### Test Site: Alptal, Switzerland
+
+| Property | Value |
+|----------|-------|
+| Validation status | `example_validated` |
+| Site | Alptal, Switzerland |
+| Period | 2004-2005 |
+| Headline dag variable | `snw` |
+| Headline unit | `kg m-2` |
+| Headline description | Snow water equivalent (SWE) |
+
+### Performance Metrics -- judged against the field's bar, not intuition
+
+**Source of truth**: `docs/validation_convention.yaml`. Null convention bands are
+reported as `no cited threshold`; no threshold is inferred or substituted.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Citation keys |
+|--------------|--------|-----------|-------------------|-----------|----------------|---------------|
+| `snw` | `nse` | maximize | `0.0` | `0.64` | no cited threshold | `krinner2018`, `bams2021` |
+| `snw` | `nrmse` | minimize | `1.0` | `0.6` | no cited threshold | `krinner2018`, `bams2021` |
+| `snd` | `rmse` | minimize | `0.21` | `0.14` | no cited threshold | `mazzotti2020` |
+| `snd` | `kge` | maximize | `0.54` | `0.54` | `0.8` | `mazzotti2020` |
+| `svg` | `nse` | maximize | no cited threshold | no cited threshold | no cited threshold | none listed in convention |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | documented | `convert_forcing_to_fsm2.py` prepares FSM2 ASCII meteorological forcing |
+| Soil | Pipeline | documented | `convert_soil_params.py` derives FSM2 soil parameters from HWSD clay/sand inputs |
+| Output parsing | Pipeline | documented | `parse_fsm2_output.py` parses ASCII output to CSV with headers |
+
 ## Tool Reference
 
 | Tool | Purpose | Input | Output |
 |------|---------|-------|--------|
-| `convert_forcing_to_fsm2.py` | Convert ERA5/MSWX/generic CSV → FSM2 met file | CSV with met variables | FSM2 ASCII met file |
-| `convert_soil_params.py` | Derive FSM2 soil params from HWSD clay/sand | HWSD lookup or manual | Namelist &params block |
+| `convert_forcing_to_fsm2.py` | Convert ERA5/MSWX/NASA POWER/generic CSV → FSM2 met file | CSV with met variables | FSM2 ASCII met file |
+| `convert_soil_params.py` | Derive FSM2 soil params from HWSD clay/sand | `--latlon LAT LON` (HWSD raster), `--fractions`, or `--texture` | Namelist &params block |
 | `run_fsm2.py` | Compile and execute FSM2 | Source dir + namelist | Output files + binary |
 | `parse_fsm2_output.py` | Parse ASCII output → CSV | FSM2 output files | CSV with headers |
+
+**`convert_forcing_to_fsm2.py` derivations** (added 2026-08-21; without them the
+documented "reanalysis → FSM2" recipe cannot be completed with KI tools alone):
+
+```bash
+python tools/convert_forcing_to_fsm2.py forcing.csv run/met.txt \
+    --shum-col Qa      # RH derived from SPECIFIC humidity with FSM2's own
+                       # saturation formula, so q -> RH -> q is EXACT (T20)
+    --precip-col Pr    # Sf/Rf split from TOTAL precipitation with FSM2's own
+                       # ramp: all snow <= 0 degC, all rain >= +2 degC (T19)
+```
+The `hour` column is written with 3 decimals, not rounded, so a half-hour
+interval centre (0.5, 1.5, …) survives into `SOLARPOS` when `SWPART=1`.
+
+**`run_fsm2.compile_fsm2` mutates the source tree** — it overwrites `src/OPTS.h`
+and drops the binary in the repo root. Copy `source/repo/src` into the run's own
+work directory and compile there, or every other FSM2 run on the machine silently
+inherits your physics options.
 
 ---
 
@@ -364,3 +558,14 @@ bash compil.sh
 # 3. View results
 # Output files: Alptal_flux.txt, Alptal_stat.txt, Alptal_subc.txt
 ```
+
+
+## Forcing a point column from a reanalysis grid cell (PROPOSED protocol)
+
+This protocol was MOVED to the waiting room pending validation — see
+`docs/proposed_protocols.yaml` (id: pp_fsm2_esm_snowmip_forcing). Status: PROPOSED,
+not validated by a clean run. The supporting tools (`--precip-scale`,
+`--phase-logistic` on `tools/convert_forcing_to_fsm2.py`) are reviewer-approved and
+inert by default; using them means following an UNPROVEN protocol — say so in your
+report. Graduates back into this SKILL on one route='accept' run at a point-support
+obs, or a second independent witness.

@@ -1,971 +1,1222 @@
+# ========================================================================
+# ParFlow Diagnostic Triplets
+# ========================================================================
+# 36 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+
+# Comments preserved from the previous file:
 # ParFlow Diagnostic Triplets
 # Created by: Jianyun Zhang Research Group, Hohai University
 # Date: 2026-03-22
 # Total: 36 triplets across 9 failure domains
-
-triplets:
-
   # ============================================================
   # UNIT CONVERSION TRAPS (silent errors -- HIGHEST PRIORITY)
   # ============================================================
-
-  - id: dt_pf_001
-    severity: silent
-    failure_domain: unit_conversion
-    stage: s2_subsurface
-    symptom:
-      description: "Flow rates are 24x too high or low compared to expected"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "ParFlow permeability (K) units are m/hr, not m/day (MODFLOW) or m/s (SI)"
-      explanation: |
-        ParFlow default permeability unit is meters per hour. MODFLOW uses m/day (24x larger),
-        SI convention uses m/s (3600x smaller). Using m/day values directly in ParFlow gives
-        24x too much flow. Using m/s values gives 3600x too little.
-        Conversion: K_m_hr = K_m_day / 24 = K_m_s * 3600
-      affected_components: [permeability_x, permeability_y, permeability_z]
-    remedy:
-      action: "Convert K values to m/hr before writing PFB files"
-      tool_to_run: build_subsurface_properties.py
-      manual_steps:
-        - "Verify K units in input data (m/day from MODFLOW, m/s from literature)"
-        - "Apply conversion: K_m_hr = K_m_day / 24.0"
-        - "Check: typical K_m_hr range is 1e-6 (clay) to 0.03 (sand)"
-      prevention: "build_subsurface_properties.py includes hardcoded Rosetta values in m/hr"
-    cross_references: [dt_pf_005]
-
-  - id: dt_pf_002
-    severity: silent
-    failure_domain: unit_conversion
-    stage: s5_forcing
-    symptom:
-      description: "Precipitation floods the model instantly or produces no runoff"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "CLM precipitation must be in mm/s (= kg/m2/s), not mm/hr or mm/3hr"
-      explanation: |
-        CLM expects precipitation rate in mm/s. CMFD stores mm/hr, MSWX may have mm/3hr.
-        Using mm/hr directly in CLM gives 3600x too much precipitation.
-        Using mm/3hr gives 10800x too much.
-        Conversion: mm/s = mm/hr / 3600.0 = mm/3hr / 10800.0
-      affected_components: [APCP_forcing]
-    remedy:
-      action: "Divide precipitation by 3600 when converting from mm/hr"
-      tool_to_run: convert_forcing_to_pfb.py
-      manual_steps:
-        - "Identify source precipitation units (mm/hr for CMFD, mm/3hr for MSWX)"
-        - "Apply: precip_mm_s = precip_mm_hr / 3600.0"
-        - "Sanity check: typical precip rate 0-0.01 mm/s (0-36 mm/hr)"
-      prevention: "convert_forcing_to_pfb.py applies CMFD_VAR_MAP scale factors"
-
-  - id: dt_pf_003
-    severity: silent
-    failure_domain: unit_conversion
-    stage: s5_forcing
-    symptom:
-      description: "ET unreasonably high or low, thermal regime wrong"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "CLM radiation units are W/m2, not kJ/m2/day or MJ/m2/day"
-      explanation: |
-        CLM DSWR and DLWR must be in W/m2. WOFOST uses kJ/m2/day (factor of 86.4).
-        Some climate datasets use MJ/m2/day (factor of 86400).
-        Wrong units cause systematic temperature and ET bias.
-      affected_components: [DSWR_forcing, DLWR_forcing]
-    remedy:
-      action: "Verify radiation is in W/m2 before writing forcing PFB"
-      manual_steps:
-        - "CMFD radiation is in W/m2 -- no conversion needed"
-        - "If converting from kJ/m2/day: divide by 86.4"
-        - "Sanity check: DSWR 0-1200 W/m2, DLWR 100-500 W/m2"
-      prevention: "Check CMFD units documentation before processing"
-
-  - id: dt_pf_004
-    severity: silent
-    failure_domain: unit_conversion
-    stage: s6_ic_bc
-    symptom:
-      description: "Pressure head values make no physical sense"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Pressure head units are meters of water, not Pa or kPa"
-      explanation: |
-        ParFlow solves for pressure head h in meters of water.
-        Negative h = unsaturated (suction/tension).
-        Positive h = saturated (positive pore pressure).
-        h = 0 is the water table.
-        Do NOT use Pa (h_m = P_Pa / 9810) or kPa (h_m = P_kPa / 9.81).
-      affected_components: [initial_pressure, boundary_conditions]
-    remedy:
-      action: "Ensure all pressure values are in meters of water"
-      manual_steps:
-        - "If input is Pa: divide by 9810 (rho_w * g)"
-        - "If input is kPa: divide by 9.81"
-        - "Typical range: -100m (very dry) to +50m (deep saturated)"
-      prevention: "generate_initial_conditions.py works in meters natively"
-
-  - id: dt_pf_005
-    severity: silent
-    failure_domain: unit_conversion
-    stage: s2_subsurface
-    symptom:
-      description: "Soil retention curve is completely wrong, saturation responds incorrectly"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "van Genuchten alpha units are 1/m in ParFlow, not 1/cm as in many databases"
-      explanation: |
-        ParFlow uses alpha in 1/m. Many soil databases (Rosetta raw output, Carsel & Parrish)
-        report alpha in 1/cm. Factor of 100 difference.
-        Example: sandy loam alpha = 0.075 (1/cm) = 7.5 (1/m).
-        Using 1/cm values directly makes soil appear much more retentive (100x).
-      affected_components: [vangenuchten_alpha]
-    remedy:
-      action: "Multiply alpha by 100 if converting from 1/cm to 1/m"
-      manual_steps:
-        - "Check source database units for alpha"
-        - "If 1/cm: multiply by 100 to get 1/m"
-        - "Typical 1/m values: 0.5 (clay) to 15 (sand)"
-      prevention: "build_subsurface_properties.py uses pre-converted 1/m values"
-    cross_references: [dt_pf_001]
-
-  - id: dt_pf_006
-    severity: silent
-    failure_domain: unit_conversion
-    stage: s5_forcing
-    symptom:
-      description: "CLM temperature calculations all wrong, freezing in summer"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "CLM temperature must be in Kelvin (K), not degrees Celsius"
-      explanation: |
-        CLM expects air temperature in Kelvin. Passing Celsius values (e.g., 25)
-        makes CLM think it is 25K = -248C. The model may still run (CLM handles cold)
-        but produces physically meaningless results.
-        Conversion: K = C + 273.15
-        CMFD already stores temperature in K -- no conversion needed.
-      affected_components: [Tmp_forcing]
-    remedy:
-      action: "Verify temperature is in Kelvin"
-      manual_steps:
-        - "CMFD: already in K, no conversion"
-        - "If input is C: add 273.15"
-        - "Sanity check: 230-320 K is reasonable range"
-
-  - id: dt_pf_007
-    severity: silent
-    failure_domain: unit_conversion
-    stage: s5_forcing
-    symptom:
-      description: "Surface pressure seems fine but humidity calculations are wrong"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "CLM pressure must be in Pa, not hPa or kPa"
-      explanation: |
-        CLM expects surface pressure in Pa. hPa (mbar) is 100x smaller,
-        kPa is 1000x smaller. Wrong pressure affects humidity mixing ratio,
-        vapor pressure deficit, and ET calculations.
-        CMFD stores Pa -- no conversion needed.
-      affected_components: [Press_forcing]
-    remedy:
-      action: "Verify pressure is in Pa"
-      manual_steps:
-        - "If hPa: multiply by 100"
-        - "If kPa: multiply by 1000"
-        - "Sanity check: 50000-110000 Pa is reasonable"
-
   # ============================================================
   # DOMAIN SETUP ERRORS
   # ============================================================
-
-  - id: dt_pf_010
-    severity: fatal
-    failure_domain: domain_setup
-    stage: s3_topography
-    symptom:
-      description: "Model crashes with negative saturation or NaN pressure"
-      error_pattern: "negative saturation|NaN|nan"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Unfilled DEM sinks create extreme pressure gradients"
-      explanation: |
-        DEM depressions (sinks) cause water to accumulate in artificial ponds.
-        The steep pressure gradients at sink edges cause the nonlinear solver to
-        diverge, producing NaN values. Always fill sinks before computing slopes.
-      affected_components: [elevation, slope_x, slope_y]
-    remedy:
-      action: "Fill DEM sinks before computing slopes"
-      tool_to_run: build_slopes.py
-      manual_steps:
-        - "Run build_slopes.py with fill_sinks=True (default)"
-        - "Check sinks_filled count in output"
-        - "If still crashing, increase smoothing (--smooth 3)"
-      prevention: "build_slopes.py fills sinks by default"
-
-  - id: dt_pf_011
-    severity: silent
-    failure_domain: domain_setup
-    stage: s3_topography
-    symptom:
-      description: "Overland flow goes in wrong direction, water accumulates uphill"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Slope sign convention inverted"
-      explanation: |
-        ParFlow expects positive slope in the positive coordinate direction.
-        slope_x[j,i] = (elev[j,i+1] - elev[j,i]) / dx.
-        If signs are flipped, water flows uphill.
-      affected_components: [slope_x, slope_y]
-    remedy:
-      action: "Verify slope sign convention matches ParFlow expectations"
-      manual_steps:
-        - "Check that water flows from high to low elevation"
-        - "Positive slope_x means elevation increases in +x direction"
-        - "If flow is reversed, negate all slope values"
-
-  - id: dt_pf_012
-    severity: degraded
-    failure_domain: domain_setup
-    stage: s3_topography
-    symptom:
-      description: "Water ponds everywhere, no drainage to outlet"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "All slopes are zero or below minimum threshold"
-      explanation: |
-        Zero slopes produce zero overland flow velocity (Manning's equation).
-        This happens with coarse DEMs in flat terrain, or when resampling
-        smooths out all topographic gradients.
-      affected_components: [slope_x, slope_y]
-    remedy:
-      action: "Set minimum slope ~0.0001 for flat terrain"
-      tool_to_run: build_slopes.py
-      manual_steps:
-        - "Run with --min_slope 0.0001"
-        - "Check flat_cells_adjusted count"
-        - "For very flat basins, consider 0.001"
-
-  - id: dt_pf_013
-    severity: fatal
-    failure_domain: domain_setup
-    stage: s1_domain
-    symptom:
-      description: "Grid domain is offset from basin, cells don't align with real geography"
-      error_pattern: null
-      detection_method: file_check
-    diagnosis:
-      root_cause: "CRS mismatch: grid origin in meters (UTM) but coordinates in degrees"
-      explanation: |
-        ParFlow uses Cartesian (meter) coordinates. The basin shapefile must be
-        projected to UTM before computing grid extent. If lat/lon values are used
-        as the origin (e.g., origin_x=116.8), the domain is centered at 116.8 meters
-        from the equator, not 116.8 degrees East.
-      affected_components: [origin_x, origin_y, utm_epsg]
-    remedy:
-      action: "Always project shapefile to UTM before computing domain"
-      tool_to_run: define_parflow_domain.py
-      manual_steps:
-        - "Check that origin_x and origin_y are in meters (> 100000 for UTM)"
-        - "Verify UTM zone matches basin location"
-
-  - id: dt_pf_014
-    severity: fatal
-    failure_domain: domain_setup
-    stage: s7_solver
-    symptom:
-      description: "Terrain-following grid crashes with zero or negative cell volume"
-      error_pattern: "zero volume|negative|cell size"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "TFG dz values should be fractions summing to 1.0, not absolute thicknesses"
-      explanation: |
-        When TerrainFollowingGrid=True, ParFlow interprets dz values as fractions
-        of the total column depth (DZ in ComputationalGrid). If you pass absolute
-        thicknesses (e.g., 20m, 10m) as fractions, cells will have enormous or
-        incorrect volumes. Fractions must sum to approximately 1.0.
-      affected_components: [dz_fractions, ComputationalGrid.DZ]
-    remedy:
-      action: "Convert absolute dz to fractions: frac_k = dz_k / total_depth"
-      tool_to_run: generate_parflow_script.py
-      manual_steps:
-        - "Check sum of dz fractions == 1.0"
-        - "Each fraction = layer_thickness / total_depth"
-
   # ============================================================
   # SOLVER / RUNTIME ERRORS
   # ============================================================
-
-  - id: dt_pf_020
-    severity: fatal
-    failure_domain: solver
-    stage: s8_execution
-    symptom:
-      description: "Nonlinear solver fails to converge, MaxIter reached"
-      error_pattern: "KINSol.*MaxIter|nonlinear.*fail|convergence.*fail"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Timestep too large for sharp wetting fronts or intense rainfall"
-      explanation: |
-        Richards equation is highly nonlinear across saturation fronts.
-        Large timesteps during intense rainfall or rapid infiltration cause
-        the Newton solver to diverge. The kinsol.log shows increasing
-        iteration counts approaching MaxIter.
-      affected_components: [TimeStep.Value, Nonlinear.MaxIter]
-    remedy:
-      action: "Reduce timestep or increase MaxIter"
-      manual_steps:
-        - "Reduce TimeStep.Value (e.g., 1.0 -> 0.5 -> 0.1 hours)"
-        - "Or increase Nonlinear.MaxIter (300 -> 1000)"
-        - "Check kinsol.log for the timestep where convergence fails"
-        - "Consider adaptive timestepping if available"
-
-  - id: dt_pf_021
-    severity: degraded
-    failure_domain: solver
-    stage: s8_execution
-    symptom:
-      description: "Simulation extremely slow, >100 nonlinear iterations per timestep"
-      error_pattern: "nni [1-9][0-9]{2,}"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Poor initial condition far from equilibrium"
-      explanation: |
-        If the initial pressure field is far from the equilibrium state,
-        the solver must work very hard at each timestep to reach convergence.
-        This is especially common with uniform initial conditions (e.g., -5m everywhere)
-        in complex terrain. Spinup (10-100 years) is recommended.
-      affected_components: [initial_pressure, ICPressure]
-    remedy:
-      action: "Improve initial conditions or run spinup"
-      manual_steps:
-        - "Use hydrostatic IC from Reinecke water table depth"
-        - "Or run a 10-year spinup with recycled forcing"
-        - "Or use MODFLOW steady-state results as initial pressure"
-
-  - id: dt_pf_022
-    severity: fatal
-    failure_domain: solver
-    stage: s8_execution
-    symptom:
-      description: "PFMG convergence failure in HYPRE preconditioner"
-      error_pattern: "PFMG.*convergence|PFMG.*fail|hypre.*error"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Extreme K contrasts (>6 orders of magnitude) cause ill-conditioning"
-      explanation: |
-        HYPRE's PFMG multigrid preconditioner struggles with extreme permeability
-        contrasts (e.g., clay K=1e-7 next to sand K=0.03 m/hr). The linear system
-        becomes ill-conditioned, and PFMG cannot reduce the residual sufficiently.
-      affected_components: [permeability, Linear.Preconditioner]
-    remedy:
-      action: "Reduce K contrast or switch preconditioner"
-      manual_steps:
-        - "Cap minimum K at 1e-5 m/hr (accept less accuracy in tight clays)"
-        - "Or switch to MGSemi preconditioner"
-        - "Or increase PFMG.MaxIter to 5-10"
-
-  - id: dt_pf_023
-    severity: fatal
-    failure_domain: solver
-    stage: s8_execution
-    symptom:
-      description: "MPI error: wrong number of processes"
-      error_pattern: "P\\*Q\\*R|topology|mismatch|MPI_COMM"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Number of MPI processes must exactly equal P*Q*R topology"
-      explanation: |
-        ParFlow requires mpirun -np N where N = P*Q*R exactly.
-        Also, NX must be divisible by P, NY by Q, NZ by R.
-        ParFlow does NOT auto-detect or redistribute.
-      affected_components: [Process.Topology.P, Q, R]
-    remedy:
-      action: "Set nprocs = P*Q*R and verify NX/P, NY/Q, NZ/R are integers"
-      manual_steps:
-        - "Choose P, Q, R such that NX%P==0 and NY%Q==0 and NZ%R==0"
-        - "Run: mpirun -np P*Q*R parflow run_name"
-        - "Use R=1 unless NZ is large (>20)"
-
   # ============================================================
   # CLM COUPLING ERRORS
   # ============================================================
-
-  - id: dt_pf_030
-    severity: silent
-    failure_domain: clm_coupling
-    stage: s4_clm
-    symptom:
-      description: "CLM produces zero ET everywhere, soil stays saturated"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Vegetation type map is all zeros (bare soil/water)"
-      explanation: |
-        If drv_vegm.dat has all cells set to IGBP type 16 (barren) or 17 (water),
-        CLM computes no transpiration. Only bare soil evaporation occurs,
-        which is much smaller than potential ET. Soil stays wet.
-      affected_components: [drv_vegm.dat, vegetation_type]
-    remedy:
-      action: "Verify vegetation types are correctly mapped from AVHRR/MODIS"
-      tool_to_run: setup_clm_driver.py
-      manual_steps:
-        - "Check drv_vegm.dat for vegetation type distribution"
-        - "Verify IGBP types 1-14 are present (not all 16/17)"
-
-  - id: dt_pf_031
-    severity: fatal
-    failure_domain: clm_coupling
-    stage: s5_forcing
-    symptom:
-      description: "CLM reads wrong forcing timestep, variables scrambled"
-      error_pattern: "forcing.*error|NLDAS.*not found"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "CLM forcing file naming convention mismatch"
-      explanation: |
-        CLM expects forcing files named NLDAS.<run_name>.NNNNNN.pfb with
-        sequential timestep numbers starting from IstepStart.
-        If numbering is wrong (starting from 0 instead of 1, or gaps),
-        CLM reads the wrong file or crashes.
-      affected_components: [forcing_files, MetFileName, IstepStart]
-    remedy:
-      action: "Verify forcing file naming matches CLM expectations"
-      manual_steps:
-        - "Files must be: NLDAS.<run>.000001.pfb, NLDAS.<run>.000002.pfb, ..."
-        - "IstepStart must match the first file number"
-        - "No gaps in numbering"
-
   # ============================================================
   # OUTPUT / POST-PROCESSING ERRORS
   # ============================================================
-
-  - id: dt_pf_040
-    severity: fatal
-    failure_domain: output
-    stage: s9_output
-    symptom:
-      description: "PFB files unreadable, corrupted data or wrong dimensions"
-      error_pattern: "read.*error|dimension.*mismatch|struct.*error"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Distributed PFB files (one per MPI rank) not combined"
-      explanation: |
-        When running with MPI, ParFlow writes one PFB file per MPI rank by default.
-        These must be combined using pfdist before reading, or read with
-        dist=True in pftools Python API. Reading a partial file gives wrong dimensions.
-      affected_components: [pressure_output, saturation_output]
-    remedy:
-      action: "Combine distributed PFB files or read with dist=True"
-      manual_steps:
-        - "Run: pfdist run_name.out.press.NNNNN.pfb"
-        - "Or in Python: read_pfb(path, dist=True)"
-        - "Or set Solver.WritePfbManuscript = False for single-file output"
-
-  - id: dt_pf_041
-    severity: silent
-    failure_domain: output
-    stage: s9_output
-    symptom:
-      description: "Water table depth computed incorrectly, values inconsistent with saturation"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Using pressure head = 0 contour instead of saturation >= 0.99 threshold"
-      explanation: |
-        In coarse grids, the pressure head = 0 surface may not align with cell centers.
-        Interpolating between cells can give spurious water table positions.
-        Using saturation >= 0.99 threshold on actual cell values is more robust.
-      affected_components: [water_table_depth]
-    remedy:
-      action: "Use saturation >= 0.99 threshold, not pressure = 0"
-      tool_to_run: parse_parflow_output.py
-      manual_steps:
-        - "For each column, search from top down"
-        - "Water table = depth of first cell where saturation >= 0.99"
-      prevention: "parse_parflow_output.py uses saturation-based method"
-
-  - id: dt_pf_042
-    severity: degraded
-    failure_domain: output
-    stage: s9_output
-    symptom:
-      description: "Discharge at outlet is zero despite visible runoff in other cells"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Outlet cell not on overland flow path"
-      explanation: |
-        The outlet cell must be identified from the slope field (where overland flow
-        exits the domain), not from the shapefile pour point. The pour point might
-        not align exactly with a ParFlow grid cell on the flow path.
-      affected_components: [outlet_cell, discharge_extraction]
-    remedy:
-      action: "Identify outlet from slope fields (lowest active boundary cell)"
-      manual_steps:
-        - "Find boundary cells where slope points outward"
-        - "Select the one with lowest elevation"
-        - "Or use the outlet cell from domain mask computation"
-
   # ============================================================
   # COUPLING TRAPS (ParFlow <-> HydroCraft)
   # ============================================================
-
-  - id: dt_pf_050
-    severity: silent
-    failure_domain: coupling
-    stage: s10_coupling
-    symptom:
-      description: "CaMa-Flood discharge is 2x too high for ParFlow basin"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Double-counting surface runoff from both ParFlow and VIC"
-      explanation: |
-        If ParFlow handles overland flow internally (which it does by default),
-        CaMa-Flood must NOT also receive VIC surface runoff for the same basin.
-        Only one model should route surface water. Using both gives ~2x discharge.
-      affected_components: [cama_input, vic_runoff]
-    remedy:
-      action: "Use ONLY ParFlow runoff for CaMa-Flood, disable VIC for this basin"
-      manual_steps:
-        - "Remove VIC runoff files from CaMa-Flood input for ParFlow basins"
-        - "Use parflow_to_cama.py output exclusively"
-        - "Document which model provides runoff for each sub-basin"
-
-  - id: dt_pf_051
-    severity: degraded
-    failure_domain: coupling
-    stage: s10_coupling
-    symptom:
-      description: "DSSAT soil moisture from ParFlow doesn't match grid"
-      error_pattern: null
-      detection_method: file_check
-    diagnosis:
-      root_cause: "ParFlow grid is UTM (meters), DSSAT grid is lat/lon"
-      explanation: |
-        ParFlow operates on a UTM-projected Cartesian grid.
-        DSSAT uses lat/lon grid cells. Direct array index mapping will be wrong.
-        Need area-weighted interpolation between the two grids.
-      affected_components: [soil_moisture, grid_mapping]
-    remedy:
-      action: "Use area-weighted spatial interpolation from UTM to lat/lon"
-      manual_steps:
-        - "Reproject ParFlow output to WGS84"
-        - "Use conservative (area-weighted) remapping"
-        - "NOT bilinear interpolation (doesn't conserve mass)"
-
-  - id: dt_pf_052
-    severity: silent
-    failure_domain: coupling
-    stage: s10_coupling
-    symptom:
-      description: "Daily aggregated values from hourly ParFlow output are wrong"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Temporal aggregation method wrong: using SUM instead of MEAN for fluxes"
-      explanation: |
-        ParFlow outputs hourly values. CaMa-Flood expects daily values.
-        For flux variables (runoff rate in mm/hr): take MEAN to get daily rate.
-        For state variables (pressure, saturation): take instantaneous snapshot.
-        Using SUM instead of MEAN for hourly rates gives 24x too much runoff.
-      affected_components: [runoff_aggregation, temporal_resolution]
-    remedy:
-      action: "Use MEAN for flux aggregation, instantaneous for state"
-      manual_steps:
-        - "Daily runoff rate = mean(hourly runoff rates)"
-        - "Daily water table = snapshot at end of day"
-        - "Daily storage = snapshot at end of day"
-
   # ============================================================
   # VALIDATED ERRORS FROM CHAOHE TEST (2026-03-22)
   # Promoted from error_log err_001 through err_006
   # ============================================================
-
-  - id: dt_pf_v001
-    severity: fatal
-    failure_domain: api_usage
-    stage: s7_solver
-    symptom:
-      description: "pftools KeyError _value_ when setting p.Solver.OverlandKinematic = True"
-      error_pattern: "KeyError.*_value_|OverlandKinematic"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "OverlandKinematic is a sub-object in pftools, not a boolean. Setting it = True triggers value-object-assignment which fails validation."
-      explanation: |
-        In the pftools Python API, p.Solver.OverlandKinematic is a namespace object
-        (with only an Epsilon sub-attribute), NOT a boolean flag. Writing
-        p.Solver.OverlandKinematic = True attempts to assign a value to an object
-        that has no _value_ in _details_, causing a KeyError during validation.
-        The correct way to enable overland kinematic flow is via the top patch
-        boundary condition type: p.Patch.top.BCPressure.Type = "OverlandKinematic".
-        Many ParFlow tutorials and older TCL examples use a different syntax, which
-        misleads agents into the wrong pftools pattern.
-      affected_components: [Solver.OverlandKinematic, Patch.top.BCPressure.Type]
-    remedy:
-      action: "Use p.Patch.top.BCPressure.Type = 'OverlandKinematic' instead of p.Solver.OverlandKinematic = True"
-      manual_steps:
-        - "Remove: p.Solver.OverlandKinematic = True"
-        - "Add: p.Patch.top.BCPressure.Type = 'OverlandKinematic'"
-        - "Set rainfall flux: p.Patch.top.BCPressure.alltime.Value = -0.001 (negative = inflow)"
-      prevention: "generate_parflow_script.py must use BCPressure.Type, never Solver.OverlandKinematic"
-    cross_references: [dt_pf_v004]
-    validated_in: chaohe_parflow_test
-
-  - id: dt_pf_v005
-    severity: fatal
-    failure_domain: domain_setup
-    stage: s7_solver
-    symptom:
-      description: "Variable dz (dzScale nzList) with Box geometry only activates bottom layer; layers 1-NZ have fill values (-3.4e38)"
-      error_pattern: null
-      detection_method: file_check
-    diagnosis:
-      root_cause: "Box geometry combined with dzScale.Type='nzList' creates a mask that is active=1 only in layer 0 (bottom). ParFlow solves Richards equation only for layer 0."
-      explanation: |
-        When using GeomInput.InputType = "Box" (the simplest domain setup) together
-        with dzScale.Type = "nzList" for variable-thickness vertical layers, ParFlow
-        v3.13 only activates the bottom layer in the 3D mask. Layers 1 through NZ-1
-        have mask=0 and output fill values (-3.4028e38). The model runs without any
-        error or warning, but silently produces a single-layer simulation regardless
-        of NZ setting. This was confirmed in the Chaohe basin test: 5-layer runs with
-        nzList showed valid data only in layer 0, while uniform DZ correctly activated
-        all 5 layers. The fix is to use uniform DZ (same thickness for all layers)
-        with Box geometry, or to use indicator file geometry for variable-thickness layers.
-      affected_components: [dzScale, nzList, Box_geometry, domain_mask]
-    remedy:
-      action: "Use uniform DZ with Box geometry, or use indicator file geometry for variable dz"
-      manual_steps:
-        - "Remove: p.dzScale.Type = 'nzList' and p.dzScale.nzListNumber"
-        - "Remove: p.Cell._N.dzScale.Value for each layer"
-        - "Set: p.ComputationalGrid.DZ = desired_uniform_layer_thickness"
-        - "Example: 5 layers x 2m = 10m total depth"
-        - "Alternative: use indicator file (.pfb) to define 3D geometry instead of Box"
-      prevention: "generate_parflow_script.py must not combine Box geometry with dzScale nzList"
-    cross_references: [dt_pf_014]
-    validated_in: chaohe_cmfd_july2005
-
-  - id: dt_pf_v002
-    severity: fatal
-    failure_domain: missing_key
-    stage: s7_solver
-    symptom:
-      description: "ParFlow crashes: Cant find required key PhaseSources.water.Type"
-      error_pattern: "Cant find required key.*PhaseSources.water.Type"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "PhaseSources.water.Type is a mandatory ParFlow input key that is easily omitted when writing scripts by hand or with incomplete generators."
-      explanation: |
-        ParFlow requires explicit phase source definition even when there are no
-        internal water sources (wells, injection). The keys PhaseSources.water.Type,
-        PhaseSources.water.GeomNames, and PhaseSources.water.Geom.<geom>.Value must
-        all be set. Setting Type = "Constant" and Value = 0.0 is the standard no-source
-        configuration. Without these keys, ParFlow aborts before any computation.
-      affected_components: [PhaseSources.water.Type, PhaseSources.water.GeomNames, PhaseSources.water.Geom.domain.Value]
-    remedy:
-      action: "Add PhaseSources keys to run script"
-      manual_steps:
-        - "p.PhaseSources.water.Type = 'Constant'"
-        - "p.PhaseSources.water.GeomNames = 'domain'"
-        - "p.PhaseSources.water.Geom.domain.Value = 0.0"
-      prevention: "generate_parflow_script.py must include PhaseSources block. Also add KnownSolution = NoKnownSolution."
-    cross_references: [dt_pf_v003]
-    validated_in: chaohe_parflow_test
-
-  - id: dt_pf_v003
-    severity: fatal
-    failure_domain: api_usage
-    stage: s7_solver
-    symptom:
-      description: "pftools AttributeError: BCPressure object has no attribute 'alltime' when Cycle is defined AFTER BCPressure"
-      error_pattern: "AttributeError.*alltime|has no attribute.*alltime"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "pftools dynamically creates BCPressureIntervalItem children from Cycle Names. The Cycle must be defined BEFORE any BCPressure that references it."
-      explanation: |
-        In pftools, when you write p.Cycle.constant.Names = "alltime", it dynamically
-        creates an 'alltime' attribute on all BCPressure objects that reference the
-        'constant' cycle. If you try to set p.Patch.top.BCPressure.alltime.Value BEFORE
-        defining the Cycle, the 'alltime' attribute does not exist yet and you get an
-        AttributeError. This is a Python API ordering dependency that does not exist
-        in the older TCL interface. Key ordering in pftools scripts is NOT arbitrary.
-      affected_components: [Cycle.Names, Cycle.constant.Names, BCPressure.alltime]
-    remedy:
-      action: "Always define Cycle (Names, Length, Repeat) BEFORE setting any BCPressure values"
-      manual_steps:
-        - "Step 1: p.Cycle.Names = 'constant'"
-        - "Step 2: p.Cycle.constant.Names = 'alltime'"
-        - "Step 3: p.Cycle.constant.alltime.Length = 1"
-        - "Step 4: p.Cycle.constant.Repeat = -1"
-        - "Step 5 (only now): p.Patch.top.BCPressure.alltime.Value = -0.001"
-      prevention: "generate_parflow_script.py must output Cycle block before BCPressure block"
-    cross_references: [dt_pf_v004]
-    validated_in: chaohe_parflow_test
-
-  - id: dt_pf_v004
-    severity: degraded
-    failure_domain: api_usage
-    stage: s7_solver
-    symptom:
-      description: "Solver sub-keys (TerrainFollowingGrid, Nonlinear.*, Linear.*) silently reset when p.Solver = 'Richards' is set after them"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "In pftools, assigning p.Solver = 'Richards' replaces the Solver object value and may reset previously set sub-attributes depending on version."
-      explanation: |
-        The pftools Python API treats p.Solver = "Richards" as a value assignment to the
-        Solver namespace. In some pftools versions, this can clear or reset sub-keys
-        that were previously set (e.g., TerrainFollowingGrid, Nonlinear.MaxIter).
-        The safe pattern is ALWAYS set p.Solver = "Richards" first, then set all
-        Solver sub-keys afterward. This is a silent error because no warning is
-        printed — the sub-keys simply revert to defaults, causing degraded
-        convergence or unexpected solver behavior.
-      affected_components: [Solver, Solver.TerrainFollowingGrid, Solver.Nonlinear, Solver.Linear]
-    remedy:
-      action: "Set p.Solver = 'Richards' BEFORE any Solver sub-keys"
-      manual_steps:
-        - "Line order: p.Solver = 'Richards'"
-        - "Then: p.Solver.TerrainFollowingGrid = True/False"
-        - "Then: p.Solver.Nonlinear.MaxIter = 300"
-        - "Then: p.Solver.Linear.Preconditioner = 'PFMG'"
-        - "Never set p.Solver = 'Richards' after sub-keys"
-      prevention: "generate_parflow_script.py must place Solver assignment first in solver block"
-    cross_references: [dt_pf_v001, dt_pf_v003]
-    validated_in: chaohe_parflow_test
-
   # ============================================================
   # BENGBU VALIDATION TRIPLETS (discovered 2026-03-22)
   # ============================================================
 
-  - id: dt_pf_v006
-    severity: silent
-    failure_domain: scale_mismatch
-    stage: s1_domain
-    symptom:
-      description: "Overland flow velocity O(0.05 mm/s) at basin-scale cells (25km), water never reaches outlet within simulation period"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Basin-scale DX (25km) produces negligible Manning overland flow velocity due to tiny depth/width ratio"
-      explanation: |
-        ParFlow overland kinematic routing uses Manning's equation: v = (1/n) * S^0.5 * h^(2/3).
-        With 25km cells and ~100mm ponding depth, velocity = ~0.05 mm/s. Travel time across
-        a 600km basin = ~380 years. ParFlow overland flow is designed for hillslope scale
-        (dx=10-1000m) where h/dx ratios are physically meaningful.
+- id: dt_pf_001
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s2_subsurface
+  symptom:
+    description: Flow rates are 24x too high or low compared to expected
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: ParFlow permeability (K) units are m/hr, not m/day (MODFLOW) or m/s (SI)
+    explanation: 'ParFlow default permeability unit is meters per hour. MODFLOW uses m/day (24x larger),
 
-        Solution: Use hillslope-scale domain (dx=100m, 5km x 5km) and scale results to basin
-        area, OR use CLM for evapotranspiration to reduce water volumes at basin scale.
-      affected_components: [ComputationalGrid.DX, ComputationalGrid.DY, NX, NY]
-    remedy:
-      action: "Use dx=100-1000m for overland flow studies; for basin-scale, couple with routing model"
-      manual_steps:
-        - "Set DX/DY to 100-1000m for hillslope simulations"
-        - "For basin studies, run representative hillslope and scale by area"
-        - "Or use ParFlow+CLM at basin scale (CLM removes ET, reducing surface ponding)"
-      prevention: "define_parflow_domain.py should warn when DX > 5000m for overland flow runs"
-    cross_references: [dt_pf_012]
-    validated_in: bengbu_parflow_test_v1_v2_v3
+      SI convention uses m/s (3600x smaller). Using m/day values directly in ParFlow gives
 
-  - id: dt_pf_v007
-    severity: silent
-    failure_domain: unit_conversion
-    stage: s2_subsurface
-    symptom:
-      description: "Using VIC Ksat directly in ParFlow gives 100-500x too high K, no infiltration-excess runoff possible"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "VIC Ksat includes macropore effects and calibration adjustments, not physical matrix conductivity"
-      explanation: |
-        VIC soil parameters include calibrated Ksat values (176-501 mm/hr for Bengbu)
-        that implicitly account for macroporosity, preferential flow, and catchment-scale
-        heterogeneity. These are 100-500x higher than physical matrix Ksat.
+      24x too much flow. Using m/s values gives 3600x too little.
 
-        ParFlow solves Darcy's law with matrix K. Physical K for clay loam = 0.1-1 mm/hr,
-        for clay = 0.01-0.1 mm/hr. Using VIC Ksat directly ensures rainfall never exceeds
-        infiltration capacity, producing zero surface runoff.
+      Conversion: K_m_hr = K_m_day / 24 = K_m_s * 3600
 
-        Use Carsel & Parrish (1988) or Rawls (1982) pedotransfer functions with soil
-        texture class, NOT VIC's inflated Ksat. VIC indicators: exponent ~11 and field
-        capacity ~0.6 both indicate clay loam → K ~ 0.1-1 mm/hr physical.
-      affected_components: [Geom.domain.Perm.Value]
-    remedy:
-      action: "Use physical Ksat from soil texture tables (Carsel & Parrish, Rawls, Rosetta)"
-      manual_steps:
-        - "Check VIC exponent (col 9): >10 = clay loam, >12 = clay"
-        - "Use Carsel & Parrish: clay K=0.06 mm/hr, clay loam=0.26, silt loam=4.5, sandy loam=10.6 mm/hr"
-        - "Convert to m/hr: K_m_hr = K_mm_hr / 1000"
-        - "NEVER use VIC Ksat (col 12-14) directly for ParFlow"
-      prevention: "build_subsurface_properties.py should use Rosetta/Carsel, flag VIC Ksat as incompatible"
-    cross_references: [dt_pf_001]
-    validated_in: bengbu_parflow_test_v1
+      '
+    affected_components:
+    - permeability_x
+    - permeability_y
+    - permeability_z
+  remedy:
+    action: Convert K values to m/hr before writing PFB files
+    tool_to_run: build_subsurface_properties.py
+    manual_steps:
+    - Verify K units in input data (m/day from MODFLOW, m/s from literature)
+    - 'Apply conversion: K_m_hr = K_m_day / 24.0'
+    - 'Check: typical K_m_hr range is 1e-6 (clay) to 0.03 (sand)'
+    prevention: build_subsurface_properties.py includes hardcoded Rosetta values in m/hr
+  cross_references:
+  - dt_pf_005
+- id: dt_pf_002
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s5_forcing
+  symptom:
+    description: Precipitation floods the model instantly or produces no runoff
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: CLM precipitation must be in mm/s (= kg/m2/s), not mm/hr or mm/3hr
+    explanation: 'CLM expects precipitation rate in mm/s. CMFD stores mm/hr, MSWX may have mm/3hr.
 
-  - id: dt_pf_v008
-    severity: silent
-    failure_domain: ic_setup
-    stage: s6_ic_bc
-    symptom:
-      description: "Initial surface pressure much more negative than intended (e.g., -10.5m instead of -0.5m)"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "HydroStaticPatch IC with bottom RefPatch: Value sets pressure at BOTTOM, not surface"
-      explanation: |
-        When using ICPressure.Type = "HydroStaticPatch" with RefPatch = "bottom":
-        - The Value is applied at the BOTTOM of the domain
-        - Pressure at the TOP = Value - (total_depth * density * gravity)
-        - For Value = -0.5m and total_depth = 10m: top = -0.5 - 10 = -10.5m (very dry!)
+      Using mm/hr directly in CLM gives 3600x too much precipitation.
 
-        This is counter-intuitive. Most users intend -0.5m at the surface.
+      Using mm/3hr gives 10800x too much.
 
-        Fix: Use ICPressure.Type = "Constant" for uniform initial pressure throughout,
-        or use HydroStaticPatch with Value = +9.5 to get -0.5m at surface in a 10m domain.
-      affected_components: [ICPressure.Type, Geom.domain.ICPressure.Value, ICPressure.RefPatch]
-    remedy:
-      action: "Use Constant IC type for uniform pressure, or add total_depth to desired surface pressure"
-      manual_steps:
-        - "For uniform IC: p.ICPressure.Type = 'Constant'"
-        - "For hydrostatic: Value = desired_surface_pressure + total_depth"
-        - "Always verify: check press.00000.pfb top layer after first output"
-      prevention: "generate_initial_conditions.py should auto-adjust Value for bottom RefPatch"
-    cross_references: [dt_pf_004]
-    validated_in: bengbu_parflow_test_v1_v2
+      Conversion: mm/s = mm/hr / 3600.0 = mm/3hr / 10800.0
 
-  - id: dt_pf_v009
-    severity: silent
-    failure_domain: boundary_setup
-    stage: s6_ic_bc
-    symptom:
-      description: "Water ponds on surface but never exits domain, runoff ratio = 0"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "FluxConst=0 on all lateral boundaries creates a closed hydrological box"
-      explanation: |
-        With FluxConst=0 on all side patches (left, right, front, back), no water can
-        exit the domain through lateral boundaries. Overland flow (OverlandKinematic on
-        top) routes water across the surface, but at domain edges water has nowhere to go.
+      '
+    affected_components:
+    - APCP_forcing
+  remedy:
+    action: Divide precipitation by 3600 when converting from mm/hr
+    tool_to_run: convert_forcing_to_pfb.py
+    manual_steps:
+    - Identify source precipitation units (mm/hr for CMFD, mm/3hr for MSWX)
+    - 'Apply: precip_mm_s = precip_mm_hr / 3600.0'
+    - 'Sanity check: typical precip rate 0-0.01 mm/s (0-36 mm/hr)'
+    prevention: convert_forcing_to_pfb.py applies CMFD_VAR_MAP scale factors
+- id: dt_pf_003
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s5_forcing
+  symptom:
+    description: ET unreasonably high or low, thermal regime wrong
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: CLM radiation units are W/m2, not kJ/m2/day or MJ/m2/day
+    explanation: 'CLM DSWR and DLWR must be in W/m2. WOFOST uses kJ/m2/day (factor of 86.4).
 
-        All precipitation becomes storage (subsurface + surface ponding).
-        Water balance: Rain = Delta_Storage, Runoff = 0.
+      Some climate datasets use MJ/m2/day (factor of 86400).
 
-        Fix: Set the downstream boundary patch to DirEquilRefPatch (Dirichlet) with
-        a negative pressure value to create a seepage face where water drains.
-        The upstream boundary should remain FluxConst=0 (no inflow).
-      affected_components: [Patch.right.BCPressure.Type, Patch.front.BCPressure.Type]
-    remedy:
-      action: "Set downstream patch BC to DirEquilRefPatch with negative pressure value"
-      manual_steps:
-        - "Identify downstream boundary (where river exits basin)"
-        - "Set: p.Patch.right.BCPressure.Type = 'DirEquilRefPatch'"
-        - "Set: p.Patch.right.BCPressure.RefGeom = 'domain'"
-        - "Set: p.Patch.right.BCPressure.RefPatch = 'bottom'"
-        - "Set: p.Patch.right.BCPressure[interval].Value = -1.0 to -2.0"
-        - "Keep upstream patches as FluxConst=0"
-      prevention: "generate_parflow_script.py should auto-detect outlet direction from slope"
-    cross_references: [dt_pf_012]
-    validated_in: bengbu_parflow_test_v2_v3
+      Wrong units cause systematic temperature and ET bias.
 
-  - id: dt_pf_v010
-    severity: degraded
-    failure_domain: parameter_choice
-    stage: s2_subsurface
-    symptom:
-      description: "All rainfall infiltrates even with near-saturated IC, no saturation-excess runoff"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Deep soil column (>5m) provides too much storage capacity for rainfall to fill"
-      explanation: |
-        With 10m soil depth and porosity 0.45, available storage = 10 * 0.45 * (1-0.87) = 0.585 m = 585mm
-        (at 87% initial saturation). Even 291mm of heavy July rain cannot saturate the full column.
+      '
+    affected_components:
+    - DSWR_forcing
+    - DLWR_forcing
+  remedy:
+    action: Verify radiation is in W/m2 before writing forcing PFB
+    manual_steps:
+    - CMFD radiation is in W/m2 -- no conversion needed
+    - 'If converting from kJ/m2/day: divide by 86.4'
+    - 'Sanity check: DSWR 0-1200 W/m2, DLWR 100-500 W/m2'
+    prevention: Check CMFD units documentation before processing
+- id: dt_pf_004
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s6_ic_bc
+  symptom:
+    description: Pressure head values make no physical sense
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Pressure head units are meters of water, not Pa or kPa
+    explanation: 'ParFlow solves for pressure head h in meters of water.
 
-        With 2m soil depth: available storage = 2 * 0.45 * (1-0.99) = 0.009m = 9mm (at 99% IC).
-        Rain quickly exceeds capacity → saturation-excess runoff.
+      Negative h = unsaturated (suction/tension).
 
-        For clay soils with shallow weathering profiles (typical in Huai River plain),
-        2-3m soil depth is physically appropriate. Deep columns are for mountain/aquifer systems.
-      affected_components: [NZ, DZ, ComputationalGrid.NZ, ComputationalGrid.DZ]
-    remedy:
-      action: "Use 2-3m soil depth for alluvial plains and clay soils; 5-10m for mountain basins"
-      manual_steps:
-        - "Match soil depth to pedological data (HWSD soil depth, field surveys)"
-        - "Clay soils: NZ=2, DZ=1m (2m total)"
-        - "Loam/mountain: NZ=5, DZ=2m (10m total)"
-        - "Aquifer studies: NZ=10-20, DZ=5-10m (50-200m total)"
-      prevention: "build_subsurface_properties.py should recommend depth based on soil texture"
-    cross_references: [dt_pf_v007]
-    validated_in: bengbu_parflow_test_v4_v5
+      Positive h = saturated (positive pore pressure).
 
-  - id: dt_pf_v011
-    severity: silent
-    failure_domain: pedotransfer
-    stage: s2_subsurface
-    symptom:
-      description: "Cosby (1984) pedotransfer from VIC Brooks-Corey exponent gives sandy K for clay soils"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "VIC exponent = 2b+3 (not b); incorrect b extraction gives wrong clay% estimate"
-      explanation: |
-        VIC Brooks-Corey exponent = 2*b + 3 where b is the Brooks-Corey pore-size distribution index.
-        Extracting b = (expt-3)/2 gives b=3.68-4.49 for Bengbu (expt ~10.4-12.0).
-        Cosby (1984): clay% = (b - 2.91) / 0.159 → gives clay% = 5-10%.
-        But the soil is actually clay loam (40-50% clay) based on field capacity ~0.6 and bulk density ~1500.
+      h = 0 is the water table.
 
-        The Cosby equation was calibrated for b values from direct soil analysis,
-        not from VIC's modified exponent. The VIC exponent has different meaning.
+      Do NOT use Pa (h_m = P_Pa / 9810) or kPa (h_m = P_kPa / 9.81).
 
-        Solution: Use soil texture class directly from HWSD, not derived from VIC parameters.
-        Carsel & Parrish (1988) lookup table is more reliable.
-      affected_components: [permeability]
-    remedy:
-      action: "Use HWSD soil texture class with Carsel & Parrish lookup, not Cosby from VIC exponent"
-      manual_steps:
-        - "Read HWSD texture class (via hwsd_soil_adapter.py or direct HWSD MDB query)"
-        - "Look up Ksat from Carsel & Parrish (1988) table by USDA texture class"
-        - "Do NOT derive texture from VIC Brooks-Corey exponent"
-      prevention: "build_subsurface_properties.py should use HWSD texture directly"
-    cross_references: [dt_pf_v007, dt_pf_001]
-    validated_in: bengbu_parflow_test_v1
+      '
+    affected_components:
+    - initial_pressure
+    - boundary_conditions
+  remedy:
+    action: Ensure all pressure values are in meters of water
+    manual_steps:
+    - 'If input is Pa: divide by 9810 (rho_w * g)'
+    - 'If input is kPa: divide by 9.81'
+    - 'Typical range: -100m (very dry) to +50m (deep saturated)'
+    prevention: generate_initial_conditions.py works in meters natively
+- id: dt_pf_005
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s2_subsurface
+  symptom:
+    description: Soil retention curve is completely wrong, saturation responds incorrectly
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: van Genuchten alpha units are 1/m in ParFlow, not 1/cm as in many databases
+    explanation: 'ParFlow uses alpha in 1/m. Many soil databases (Rosetta raw output, Carsel & Parrish)
 
-  - id: dt_pf_v012
-    severity: degraded
-    failure_domain: domain_setup
-    stage: s2_subsurface
-    symptom:
-      description: "All cells show identical pressure, ponding, saturation at every timestep"
-      error_pattern: null
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Uniform K + uniform slope + uniform forcing + uniform IC = spatially invariant solution"
-      explanation: |
-        When all cells have identical properties (K, porosity, vG params), identical slope,
-        identical rainfall, and identical initial conditions, the Richards equation gives
-        identical solutions at every cell. The only spatial gradient comes from boundary
-        effects (e.g., DirEquilRefPatch on one side).
+      report alpha in 1/cm. Factor of 100 difference.
 
-        This is mathematically correct but physically unrealistic for heterogeneous basins.
-        The lack of spatial variability means overland flow routing has no effect — each cell
-        sends exactly as much water to its neighbor as the neighbor sends back.
+      Example: sandy loam alpha = 0.075 (1/cm) = 7.5 (1/m).
 
-        For realistic spatial patterns, use spatially variable K (from HWSD per-cell),
-        spatially variable slope (from DEM), or spatially variable forcing (per-cell CMFD).
-      affected_components: [Geom.domain.Perm.Value, TopoSlopesX, TopoSlopesY]
-    remedy:
-      action: "Use PFB files with spatially variable K, slopes, and forcing for realistic simulations"
-      manual_steps:
-        - "Use PFB slope files from build_slopes.py (per-cell DEM gradients)"
-        - "Use PFB K files from build_subsurface_properties.py (per-cell HWSD)"
-        - "Use PFB forcing files with per-cell precipitation (from CMFD grid)"
-      prevention: "Pipeline should default to spatially variable properties; uniform only for testing"
-    cross_references: [dt_pf_012]
-    validated_in: bengbu_parflow_test_v2_v3
+      Using 1/cm values directly makes soil appear much more retentive (100x).
+
+      '
+    affected_components:
+    - vangenuchten_alpha
+  remedy:
+    action: Multiply alpha by 100 if converting from 1/cm to 1/m
+    manual_steps:
+    - Check source database units for alpha
+    - 'If 1/cm: multiply by 100 to get 1/m'
+    - 'Typical 1/m values: 0.5 (clay) to 15 (sand)'
+    prevention: build_subsurface_properties.py uses pre-converted 1/m values
+  cross_references:
+  - dt_pf_001
+- id: dt_pf_006
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s5_forcing
+  symptom:
+    description: CLM temperature calculations all wrong, freezing in summer
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: CLM temperature must be in Kelvin (K), not degrees Celsius
+    explanation: 'CLM expects air temperature in Kelvin. Passing Celsius values (e.g., 25)
+
+      makes CLM think it is 25K = -248C. The model may still run (CLM handles cold)
+
+      but produces physically meaningless results.
+
+      Conversion: K = C + 273.15
+
+      CMFD already stores temperature in K -- no conversion needed.
+
+      '
+    affected_components:
+    - Tmp_forcing
+  remedy:
+    action: Verify temperature is in Kelvin
+    manual_steps:
+    - 'CMFD: already in K, no conversion'
+    - 'If input is C: add 273.15'
+    - 'Sanity check: 230-320 K is reasonable range'
+- id: dt_pf_007
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s5_forcing
+  symptom:
+    description: Surface pressure seems fine but humidity calculations are wrong
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: CLM pressure must be in Pa, not hPa or kPa
+    explanation: 'CLM expects surface pressure in Pa. hPa (mbar) is 100x smaller,
+
+      kPa is 1000x smaller. Wrong pressure affects humidity mixing ratio,
+
+      vapor pressure deficit, and ET calculations.
+
+      CMFD stores Pa -- no conversion needed.
+
+      '
+    affected_components:
+    - Press_forcing
+  remedy:
+    action: Verify pressure is in Pa
+    manual_steps:
+    - 'If hPa: multiply by 100'
+    - 'If kPa: multiply by 1000'
+    - 'Sanity check: 50000-110000 Pa is reasonable'
+- id: dt_pf_010
+  severity: fatal
+  failure_domain: domain_setup
+  stage: s3_topography
+  symptom:
+    description: Model crashes with negative saturation or NaN pressure
+    error_pattern: negative saturation|NaN|nan
+    detection_method: log_match
+  diagnosis:
+    root_cause: Unfilled DEM sinks create extreme pressure gradients
+    explanation: 'DEM depressions (sinks) cause water to accumulate in artificial ponds.
+
+      The steep pressure gradients at sink edges cause the nonlinear solver to
+
+      diverge, producing NaN values. Always fill sinks before computing slopes.
+
+      '
+    affected_components:
+    - elevation
+    - slope_x
+    - slope_y
+  remedy:
+    action: Fill DEM sinks before computing slopes
+    tool_to_run: build_slopes.py
+    manual_steps:
+    - Run build_slopes.py with fill_sinks=True (default)
+    - Check sinks_filled count in output
+    - If still crashing, increase smoothing (--smooth 3)
+    prevention: build_slopes.py fills sinks by default
+- id: dt_pf_011
+  severity: silent
+  failure_domain: domain_setup
+  stage: s3_topography
+  symptom:
+    description: Overland flow goes in wrong direction, water accumulates uphill
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Slope sign convention inverted
+    explanation: 'ParFlow expects positive slope in the positive coordinate direction.
+
+      slope_x[j,i] = (elev[j,i+1] - elev[j,i]) / dx.
+
+      If signs are flipped, water flows uphill.
+
+      '
+    affected_components:
+    - slope_x
+    - slope_y
+  remedy:
+    action: Verify slope sign convention matches ParFlow expectations
+    manual_steps:
+    - Check that water flows from high to low elevation
+    - Positive slope_x means elevation increases in +x direction
+    - If flow is reversed, negate all slope values
+- id: dt_pf_012
+  severity: degraded
+  failure_domain: domain_setup
+  stage: s3_topography
+  symptom:
+    description: Water ponds everywhere, no drainage to outlet
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: All slopes are zero or below minimum threshold
+    explanation: 'Zero slopes produce zero overland flow velocity (Manning''s equation).
+
+      This happens with coarse DEMs in flat terrain, or when resampling
+
+      smooths out all topographic gradients.
+
+      '
+    affected_components:
+    - slope_x
+    - slope_y
+  remedy:
+    action: Set minimum slope ~0.0001 for flat terrain
+    tool_to_run: build_slopes.py
+    manual_steps:
+    - Run with --min_slope 0.0001
+    - Check flat_cells_adjusted count
+    - For very flat basins, consider 0.001
+- id: dt_pf_013
+  severity: fatal
+  failure_domain: domain_setup
+  stage: s1_domain
+  symptom:
+    description: Grid domain is offset from basin, cells don't align with real geography
+    error_pattern: null
+    detection_method: file_check
+  diagnosis:
+    root_cause: 'CRS mismatch: grid origin in meters (UTM) but coordinates in degrees'
+    explanation: 'ParFlow uses Cartesian (meter) coordinates. The basin shapefile must be
+
+      projected to UTM before computing grid extent. If lat/lon values are used
+
+      as the origin (e.g., origin_x=116.8), the domain is centered at 116.8 meters
+
+      from the equator, not 116.8 degrees East.
+
+      '
+    affected_components:
+    - origin_x
+    - origin_y
+    - utm_epsg
+  remedy:
+    action: Always project shapefile to UTM before computing domain
+    tool_to_run: define_parflow_domain.py
+    manual_steps:
+    - Check that origin_x and origin_y are in meters (> 100000 for UTM)
+    - Verify UTM zone matches basin location
+- id: dt_pf_014
+  severity: fatal
+  failure_domain: domain_setup
+  stage: s7_solver
+  symptom:
+    description: Terrain-following grid crashes with zero or negative cell volume
+    error_pattern: zero volume|negative|cell size
+    detection_method: log_match
+  diagnosis:
+    root_cause: TFG dz values should be fractions summing to 1.0, not absolute thicknesses
+    explanation: 'When TerrainFollowingGrid=True, ParFlow interprets dz values as fractions
+
+      of the total column depth (DZ in ComputationalGrid). If you pass absolute
+
+      thicknesses (e.g., 20m, 10m) as fractions, cells will have enormous or
+
+      incorrect volumes. Fractions must sum to approximately 1.0.
+
+      '
+    affected_components:
+    - dz_fractions
+    - ComputationalGrid.DZ
+  remedy:
+    action: 'Convert absolute dz to fractions: frac_k = dz_k / total_depth'
+    tool_to_run: generate_parflow_script.py
+    manual_steps:
+    - Check sum of dz fractions == 1.0
+    - Each fraction = layer_thickness / total_depth
+- id: dt_pf_020
+  severity: fatal
+  failure_domain: solver
+  stage: s8_execution
+  symptom:
+    description: Nonlinear solver fails to converge, MaxIter reached
+    error_pattern: KINSol.*MaxIter|nonlinear.*fail|convergence.*fail
+    detection_method: log_match
+  diagnosis:
+    root_cause: Timestep too large for sharp wetting fronts or intense rainfall
+    explanation: 'Richards equation is highly nonlinear across saturation fronts.
+
+      Large timesteps during intense rainfall or rapid infiltration cause
+
+      the Newton solver to diverge. The kinsol.log shows increasing
+
+      iteration counts approaching MaxIter.
+
+      '
+    affected_components:
+    - TimeStep.Value
+    - Nonlinear.MaxIter
+  remedy:
+    action: Reduce timestep or increase MaxIter
+    manual_steps:
+    - Reduce TimeStep.Value (e.g., 1.0 -> 0.5 -> 0.1 hours)
+    - Or increase Nonlinear.MaxIter (300 -> 1000)
+    - Check kinsol.log for the timestep where convergence fails
+    - Consider adaptive timestepping if available
+- id: dt_pf_021
+  severity: degraded
+  failure_domain: solver
+  stage: s8_execution
+  symptom:
+    description: Simulation extremely slow, >100 nonlinear iterations per timestep
+    error_pattern: nni [1-9][0-9]{2,}
+    detection_method: log_match
+  diagnosis:
+    root_cause: Poor initial condition far from equilibrium
+    explanation: 'If the initial pressure field is far from the equilibrium state,
+
+      the solver must work very hard at each timestep to reach convergence.
+
+      This is especially common with uniform initial conditions (e.g., -5m everywhere)
+
+      in complex terrain. Spinup (10-100 years) is recommended.
+
+      '
+    affected_components:
+    - initial_pressure
+    - ICPressure
+  remedy:
+    action: Improve initial conditions or run spinup
+    manual_steps:
+    - Use hydrostatic IC from Reinecke water table depth
+    - Or run a 10-year spinup with recycled forcing
+    - Or use MODFLOW steady-state results as initial pressure
+- id: dt_pf_022
+  severity: fatal
+  failure_domain: solver
+  stage: s8_execution
+  symptom:
+    description: PFMG convergence failure in HYPRE preconditioner
+    error_pattern: PFMG.*convergence|PFMG.*fail|hypre.*error
+    detection_method: log_match
+  diagnosis:
+    root_cause: Extreme K contrasts (>6 orders of magnitude) cause ill-conditioning
+    explanation: 'HYPRE''s PFMG multigrid preconditioner struggles with extreme permeability
+
+      contrasts (e.g., clay K=1e-7 next to sand K=0.03 m/hr). The linear system
+
+      becomes ill-conditioned, and PFMG cannot reduce the residual sufficiently.
+
+      '
+    affected_components:
+    - permeability
+    - Linear.Preconditioner
+  remedy:
+    action: Reduce K contrast or switch preconditioner
+    manual_steps:
+    - Cap minimum K at 1e-5 m/hr (accept less accuracy in tight clays)
+    - Or switch to MGSemi preconditioner
+    - Or increase PFMG.MaxIter to 5-10
+- id: dt_pf_023
+  severity: fatal
+  failure_domain: solver
+  stage: s8_execution
+  symptom:
+    description: 'MPI error: wrong number of processes'
+    error_pattern: P\*Q\*R|topology|mismatch|MPI_COMM
+    detection_method: log_match
+  diagnosis:
+    root_cause: Number of MPI processes must exactly equal P*Q*R topology
+    explanation: 'ParFlow requires mpirun -np N where N = P*Q*R exactly.
+
+      Also, NX must be divisible by P, NY by Q, NZ by R.
+
+      ParFlow does NOT auto-detect or redistribute.
+
+      '
+    affected_components:
+    - Process.Topology.P
+    - Q
+    - R
+  remedy:
+    action: Set nprocs = P*Q*R and verify NX/P, NY/Q, NZ/R are integers
+    manual_steps:
+    - Choose P, Q, R such that NX%P==0 and NY%Q==0 and NZ%R==0
+    - 'Run: mpirun -np P*Q*R parflow run_name'
+    - Use R=1 unless NZ is large (>20)
+- id: dt_pf_030
+  severity: silent
+  failure_domain: clm_coupling
+  stage: s4_clm
+  symptom:
+    description: CLM produces zero ET everywhere, soil stays saturated
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Vegetation type map is all zeros (bare soil/water)
+    explanation: 'If drv_vegm.dat has all cells set to IGBP type 16 (barren) or 17 (water),
+
+      CLM computes no transpiration. Only bare soil evaporation occurs,
+
+      which is much smaller than potential ET. Soil stays wet.
+
+      '
+    affected_components:
+    - drv_vegm.dat
+    - vegetation_type
+  remedy:
+    action: Verify vegetation types are correctly mapped from AVHRR/MODIS
+    tool_to_run: setup_clm_driver.py
+    manual_steps:
+    - Check drv_vegm.dat for vegetation type distribution
+    - Verify IGBP types 1-14 are present (not all 16/17)
+- id: dt_pf_031
+  severity: fatal
+  failure_domain: clm_coupling
+  stage: s5_forcing
+  symptom:
+    description: CLM reads wrong forcing timestep, variables scrambled
+    error_pattern: forcing.*error|NLDAS.*not found
+    detection_method: log_match
+  diagnosis:
+    root_cause: CLM forcing file naming convention mismatch
+    explanation: 'CLM expects forcing files named NLDAS.<run_name>.NNNNNN.pfb with
+
+      sequential timestep numbers starting from IstepStart.
+
+      If numbering is wrong (starting from 0 instead of 1, or gaps),
+
+      CLM reads the wrong file or crashes.
+
+      '
+    affected_components:
+    - forcing_files
+    - MetFileName
+    - IstepStart
+  remedy:
+    action: Verify forcing file naming matches CLM expectations
+    manual_steps:
+    - 'Files must be: NLDAS.<run>.000001.pfb, NLDAS.<run>.000002.pfb, ...'
+    - IstepStart must match the first file number
+    - No gaps in numbering
+- id: dt_pf_040
+  severity: fatal
+  failure_domain: output
+  stage: s9_output
+  symptom:
+    description: PFB files unreadable, corrupted data or wrong dimensions
+    error_pattern: read.*error|dimension.*mismatch|struct.*error
+    detection_method: log_match
+  diagnosis:
+    root_cause: Distributed PFB files (one per MPI rank) not combined
+    explanation: 'When running with MPI, ParFlow writes one PFB file per MPI rank by default.
+
+      These must be combined using pfdist before reading, or read with
+
+      dist=True in pftools Python API. Reading a partial file gives wrong dimensions.
+
+      '
+    affected_components:
+    - pressure_output
+    - saturation_output
+  remedy:
+    action: Combine distributed PFB files or read with dist=True
+    manual_steps:
+    - 'Run: pfdist run_name.out.press.NNNNN.pfb'
+    - 'Or in Python: read_pfb(path, dist=True)'
+    - Or set Solver.WritePfbManuscript = False for single-file output
+- id: dt_pf_041
+  severity: silent
+  failure_domain: output
+  stage: s9_output
+  symptom:
+    description: Water table depth computed incorrectly, values inconsistent with saturation
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Using pressure head = 0 contour instead of saturation >= 0.99 threshold
+    explanation: 'In coarse grids, the pressure head = 0 surface may not align with cell centers.
+
+      Interpolating between cells can give spurious water table positions.
+
+      Using saturation >= 0.99 threshold on actual cell values is more robust.
+
+      '
+    affected_components:
+    - water_table_depth
+  remedy:
+    action: Use saturation >= 0.99 threshold, not pressure = 0
+    tool_to_run: parse_parflow_output.py
+    manual_steps:
+    - For each column, search from top down
+    - Water table = depth of first cell where saturation >= 0.99
+    prevention: parse_parflow_output.py uses saturation-based method
+- id: dt_pf_042
+  severity: degraded
+  failure_domain: output
+  stage: s9_output
+  symptom:
+    description: Discharge at outlet is zero despite visible runoff in other cells
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Outlet cell not on overland flow path
+    explanation: 'The outlet cell must be identified from the slope field (where overland flow
+
+      exits the domain), not from the shapefile pour point. The pour point might
+
+      not align exactly with a ParFlow grid cell on the flow path.
+
+      '
+    affected_components:
+    - outlet_cell
+    - discharge_extraction
+  remedy:
+    action: Identify outlet from slope fields (lowest active boundary cell)
+    manual_steps:
+    - Find boundary cells where slope points outward
+    - Select the one with lowest elevation
+    - Or use the outlet cell from domain mask computation
+- id: dt_pf_050
+  severity: silent
+  failure_domain: coupling
+  stage: s10_coupling
+  symptom:
+    description: CaMa-Flood discharge is 2x too high for ParFlow basin
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Double-counting surface runoff from both ParFlow and VIC
+    explanation: 'If ParFlow handles overland flow internally (which it does by default),
+
+      CaMa-Flood must NOT also receive VIC surface runoff for the same basin.
+
+      Only one model should route surface water. Using both gives ~2x discharge.
+
+      '
+    affected_components:
+    - cama_input
+    - vic_runoff
+  remedy:
+    action: Use ONLY ParFlow runoff for CaMa-Flood, disable VIC for this basin
+    manual_steps:
+    - Remove VIC runoff files from CaMa-Flood input for ParFlow basins
+    - Use parflow_to_cama.py output exclusively
+    - Document which model provides runoff for each sub-basin
+- id: dt_pf_051
+  severity: degraded
+  failure_domain: coupling
+  stage: s10_coupling
+  symptom:
+    description: DSSAT soil moisture from ParFlow doesn't match grid
+    error_pattern: null
+    detection_method: file_check
+  diagnosis:
+    root_cause: ParFlow grid is UTM (meters), DSSAT grid is lat/lon
+    explanation: 'ParFlow operates on a UTM-projected Cartesian grid.
+
+      DSSAT uses lat/lon grid cells. Direct array index mapping will be wrong.
+
+      Need area-weighted interpolation between the two grids.
+
+      '
+    affected_components:
+    - soil_moisture
+    - grid_mapping
+  remedy:
+    action: Use area-weighted spatial interpolation from UTM to lat/lon
+    manual_steps:
+    - Reproject ParFlow output to WGS84
+    - Use conservative (area-weighted) remapping
+    - NOT bilinear interpolation (doesn't conserve mass)
+- id: dt_pf_052
+  severity: silent
+  failure_domain: coupling
+  stage: s10_coupling
+  symptom:
+    description: Daily aggregated values from hourly ParFlow output are wrong
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: 'Temporal aggregation method wrong: using SUM instead of MEAN for fluxes'
+    explanation: 'ParFlow outputs hourly values. CaMa-Flood expects daily values.
+
+      For flux variables (runoff rate in mm/hr): take MEAN to get daily rate.
+
+      For state variables (pressure, saturation): take instantaneous snapshot.
+
+      Using SUM instead of MEAN for hourly rates gives 24x too much runoff.
+
+      '
+    affected_components:
+    - runoff_aggregation
+    - temporal_resolution
+  remedy:
+    action: Use MEAN for flux aggregation, instantaneous for state
+    manual_steps:
+    - Daily runoff rate = mean(hourly runoff rates)
+    - Daily water table = snapshot at end of day
+    - Daily storage = snapshot at end of day
+- id: dt_pf_v001
+  severity: fatal
+  failure_domain: api_usage
+  stage: s7_solver
+  symptom:
+    description: pftools KeyError _value_ when setting p.Solver.OverlandKinematic = True
+    error_pattern: KeyError.*_value_|OverlandKinematic
+    detection_method: log_match
+  diagnosis:
+    root_cause: OverlandKinematic is a sub-object in pftools, not a boolean. Setting it = True triggers
+      value-object-assignment which fails validation.
+    explanation: 'In the pftools Python API, p.Solver.OverlandKinematic is a namespace object
+
+      (with only an Epsilon sub-attribute), NOT a boolean flag. Writing
+
+      p.Solver.OverlandKinematic = True attempts to assign a value to an object
+
+      that has no _value_ in _details_, causing a KeyError during validation.
+
+      The correct way to enable overland kinematic flow is via the top patch
+
+      boundary condition type: p.Patch.top.BCPressure.Type = "OverlandKinematic".
+
+      Many ParFlow tutorials and older TCL examples use a different syntax, which
+
+      misleads agents into the wrong pftools pattern.
+
+      '
+    affected_components:
+    - Solver.OverlandKinematic
+    - Patch.top.BCPressure.Type
+  remedy:
+    action: Use p.Patch.top.BCPressure.Type = 'OverlandKinematic' instead of p.Solver.OverlandKinematic
+      = True
+    manual_steps:
+    - 'Remove: p.Solver.OverlandKinematic = True'
+    - 'Add: p.Patch.top.BCPressure.Type = ''OverlandKinematic'''
+    - 'Set rainfall flux: p.Patch.top.BCPressure.alltime.Value = -0.001 (negative = inflow)'
+    prevention: generate_parflow_script.py must use BCPressure.Type, never Solver.OverlandKinematic
+  cross_references:
+  - dt_pf_v004
+  validated_in: chaohe_parflow_test
+- id: dt_pf_v005
+  severity: fatal
+  failure_domain: domain_setup
+  stage: s7_solver
+  symptom:
+    description: Variable dz (dzScale nzList) with Box geometry only activates bottom layer; layers 1-NZ
+      have fill values (-3.4e38)
+    error_pattern: null
+    detection_method: file_check
+  diagnosis:
+    root_cause: Box geometry combined with dzScale.Type='nzList' creates a mask that is active=1 only
+      in layer 0 (bottom). ParFlow solves Richards equation only for layer 0.
+    explanation: 'When using GeomInput.InputType = "Box" (the simplest domain setup) together
+
+      with dzScale.Type = "nzList" for variable-thickness vertical layers, ParFlow
+
+      v3.13 only activates the bottom layer in the 3D mask. Layers 1 through NZ-1
+
+      have mask=0 and output fill values (-3.4028e38). The model runs without any
+
+      error or warning, but silently produces a single-layer simulation regardless
+
+      of NZ setting. This was confirmed in the Chaohe basin test: 5-layer runs with
+
+      nzList showed valid data only in layer 0, while uniform DZ correctly activated
+
+      all 5 layers. The fix is to use uniform DZ (same thickness for all layers)
+
+      with Box geometry, or to use indicator file geometry for variable-thickness layers.
+
+      '
+    affected_components:
+    - dzScale
+    - nzList
+    - Box_geometry
+    - domain_mask
+  remedy:
+    action: Use uniform DZ with Box geometry, or use indicator file geometry for variable dz
+    manual_steps:
+    - 'Remove: p.dzScale.Type = ''nzList'' and p.dzScale.nzListNumber'
+    - 'Remove: p.Cell._N.dzScale.Value for each layer'
+    - 'Set: p.ComputationalGrid.DZ = desired_uniform_layer_thickness'
+    - 'Example: 5 layers x 2m = 10m total depth'
+    - 'Alternative: use indicator file (.pfb) to define 3D geometry instead of Box'
+    prevention: generate_parflow_script.py must not combine Box geometry with dzScale nzList
+  cross_references:
+  - dt_pf_014
+  validated_in: chaohe_cmfd_july2005
+- id: dt_pf_v002
+  severity: fatal
+  failure_domain: missing_key
+  stage: s7_solver
+  symptom:
+    description: 'ParFlow crashes: Cant find required key PhaseSources.water.Type'
+    error_pattern: Cant find required key.*PhaseSources.water.Type
+    detection_method: log_match
+  diagnosis:
+    root_cause: PhaseSources.water.Type is a mandatory ParFlow input key that is easily omitted when writing
+      scripts by hand or with incomplete generators.
+    explanation: 'ParFlow requires explicit phase source definition even when there are no
+
+      internal water sources (wells, injection). The keys PhaseSources.water.Type,
+
+      PhaseSources.water.GeomNames, and PhaseSources.water.Geom.<geom>.Value must
+
+      all be set. Setting Type = "Constant" and Value = 0.0 is the standard no-source
+
+      configuration. Without these keys, ParFlow aborts before any computation.
+
+      '
+    affected_components:
+    - PhaseSources.water.Type
+    - PhaseSources.water.GeomNames
+    - PhaseSources.water.Geom.domain.Value
+  remedy:
+    action: Add PhaseSources keys to run script
+    manual_steps:
+    - p.PhaseSources.water.Type = 'Constant'
+    - p.PhaseSources.water.GeomNames = 'domain'
+    - p.PhaseSources.water.Geom.domain.Value = 0.0
+    prevention: generate_parflow_script.py must include PhaseSources block. Also add KnownSolution = NoKnownSolution.
+  cross_references:
+  - dt_pf_v003
+  validated_in: chaohe_parflow_test
+- id: dt_pf_v003
+  severity: fatal
+  failure_domain: api_usage
+  stage: s7_solver
+  symptom:
+    description: 'pftools AttributeError: BCPressure object has no attribute ''alltime'' when Cycle is
+      defined AFTER BCPressure'
+    error_pattern: AttributeError.*alltime|has no attribute.*alltime
+    detection_method: log_match
+  diagnosis:
+    root_cause: pftools dynamically creates BCPressureIntervalItem children from Cycle Names. The Cycle
+      must be defined BEFORE any BCPressure that references it.
+    explanation: 'In pftools, when you write p.Cycle.constant.Names = "alltime", it dynamically
+
+      creates an ''alltime'' attribute on all BCPressure objects that reference the
+
+      ''constant'' cycle. If you try to set p.Patch.top.BCPressure.alltime.Value BEFORE
+
+      defining the Cycle, the ''alltime'' attribute does not exist yet and you get an
+
+      AttributeError. This is a Python API ordering dependency that does not exist
+
+      in the older TCL interface. Key ordering in pftools scripts is NOT arbitrary.
+
+      '
+    affected_components:
+    - Cycle.Names
+    - Cycle.constant.Names
+    - BCPressure.alltime
+  remedy:
+    action: Always define Cycle (Names, Length, Repeat) BEFORE setting any BCPressure values
+    manual_steps:
+    - 'Step 1: p.Cycle.Names = ''constant'''
+    - 'Step 2: p.Cycle.constant.Names = ''alltime'''
+    - 'Step 3: p.Cycle.constant.alltime.Length = 1'
+    - 'Step 4: p.Cycle.constant.Repeat = -1'
+    - 'Step 5 (only now): p.Patch.top.BCPressure.alltime.Value = -0.001'
+    prevention: generate_parflow_script.py must output Cycle block before BCPressure block
+  cross_references:
+  - dt_pf_v004
+  validated_in: chaohe_parflow_test
+- id: dt_pf_v004
+  severity: degraded
+  failure_domain: api_usage
+  stage: s7_solver
+  symptom:
+    description: Solver sub-keys (TerrainFollowingGrid, Nonlinear.*, Linear.*) silently reset when p.Solver
+      = 'Richards' is set after them
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: In pftools, assigning p.Solver = 'Richards' replaces the Solver object value and may reset
+      previously set sub-attributes depending on version.
+    explanation: 'The pftools Python API treats p.Solver = "Richards" as a value assignment to the
+
+      Solver namespace. In some pftools versions, this can clear or reset sub-keys
+
+      that were previously set (e.g., TerrainFollowingGrid, Nonlinear.MaxIter).
+
+      The safe pattern is ALWAYS set p.Solver = "Richards" first, then set all
+
+      Solver sub-keys afterward. This is a silent error because no warning is
+
+      printed — the sub-keys simply revert to defaults, causing degraded
+
+      convergence or unexpected solver behavior.
+
+      '
+    affected_components:
+    - Solver
+    - Solver.TerrainFollowingGrid
+    - Solver.Nonlinear
+    - Solver.Linear
+  remedy:
+    action: Set p.Solver = 'Richards' BEFORE any Solver sub-keys
+    manual_steps:
+    - 'Line order: p.Solver = ''Richards'''
+    - 'Then: p.Solver.TerrainFollowingGrid = True/False'
+    - 'Then: p.Solver.Nonlinear.MaxIter = 300'
+    - 'Then: p.Solver.Linear.Preconditioner = ''PFMG'''
+    - Never set p.Solver = 'Richards' after sub-keys
+    prevention: generate_parflow_script.py must place Solver assignment first in solver block
+  cross_references:
+  - dt_pf_v001
+  - dt_pf_v003
+  validated_in: chaohe_parflow_test
+- id: dt_pf_v006
+  severity: silent
+  failure_domain: scale_mismatch
+  stage: s1_domain
+  symptom:
+    description: Overland flow velocity O(0.05 mm/s) at basin-scale cells (25km), water never reaches
+      outlet within simulation period
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Basin-scale DX (25km) produces negligible Manning overland flow velocity due to tiny depth/width
+      ratio
+    explanation: 'ParFlow overland kinematic routing uses Manning''s equation: v = (1/n) * S^0.5 * h^(2/3).
+
+      With 25km cells and ~100mm ponding depth, velocity = ~0.05 mm/s. Travel time across
+
+      a 600km basin = ~380 years. ParFlow overland flow is designed for hillslope scale
+
+      (dx=10-1000m) where h/dx ratios are physically meaningful.
+
+
+      Solution: Use hillslope-scale domain (dx=100m, 5km x 5km) and scale results to basin
+
+      area, OR use CLM for evapotranspiration to reduce water volumes at basin scale.
+
+      '
+    affected_components:
+    - ComputationalGrid.DX
+    - ComputationalGrid.DY
+    - NX
+    - NY
+  remedy:
+    action: Use dx=100-1000m for overland flow studies; for basin-scale, couple with routing model
+    manual_steps:
+    - Set DX/DY to 100-1000m for hillslope simulations
+    - For basin studies, run representative hillslope and scale by area
+    - Or use ParFlow+CLM at basin scale (CLM removes ET, reducing surface ponding)
+    prevention: define_parflow_domain.py should warn when DX > 5000m for overland flow runs
+  cross_references:
+  - dt_pf_012
+  validated_in: bengbu_parflow_test_v1_v2_v3
+- id: dt_pf_v007
+  severity: silent
+  failure_domain: unit_conversion
+  stage: s2_subsurface
+  symptom:
+    description: Using VIC Ksat directly in ParFlow gives 100-500x too high K, no infiltration-excess
+      runoff possible
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: VIC Ksat includes macropore effects and calibration adjustments, not physical matrix conductivity
+    explanation: 'VIC soil parameters include calibrated Ksat values (176-501 mm/hr for Bengbu)
+
+      that implicitly account for macroporosity, preferential flow, and catchment-scale
+
+      heterogeneity. These are 100-500x higher than physical matrix Ksat.
+
+
+      ParFlow solves Darcy''s law with matrix K. Physical K for clay loam = 0.1-1 mm/hr,
+
+      for clay = 0.01-0.1 mm/hr. Using VIC Ksat directly ensures rainfall never exceeds
+
+      infiltration capacity, producing zero surface runoff.
+
+
+      Use Carsel & Parrish (1988) or Rawls (1982) pedotransfer functions with soil
+
+      texture class, NOT VIC''s inflated Ksat. VIC indicators: exponent ~11 and field
+
+      capacity ~0.6 both indicate clay loam → K ~ 0.1-1 mm/hr physical.
+
+      '
+    affected_components:
+    - Geom.domain.Perm.Value
+  remedy:
+    action: Use physical Ksat from soil texture tables (Carsel & Parrish, Rawls, Rosetta)
+    manual_steps:
+    - 'Check VIC exponent (col 9): >10 = clay loam, >12 = clay'
+    - 'Use Carsel & Parrish: clay K=0.06 mm/hr, clay loam=0.26, silt loam=4.5, sandy loam=10.6 mm/hr'
+    - 'Convert to m/hr: K_m_hr = K_mm_hr / 1000'
+    - NEVER use VIC Ksat (col 12-14) directly for ParFlow
+    prevention: build_subsurface_properties.py should use Rosetta/Carsel, flag VIC Ksat as incompatible
+  cross_references:
+  - dt_pf_001
+  validated_in: bengbu_parflow_test_v1
+- id: dt_pf_v008
+  severity: silent
+  failure_domain: ic_setup
+  stage: s6_ic_bc
+  symptom:
+    description: Initial surface pressure much more negative than intended (e.g., -10.5m instead of -0.5m)
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: 'HydroStaticPatch IC with bottom RefPatch: Value sets pressure at BOTTOM, not surface'
+    explanation: 'When using ICPressure.Type = "HydroStaticPatch" with RefPatch = "bottom":
+
+      - The Value is applied at the BOTTOM of the domain
+
+      - Pressure at the TOP = Value - (total_depth * density * gravity)
+
+      - For Value = -0.5m and total_depth = 10m: top = -0.5 - 10 = -10.5m (very dry!)
+
+
+      This is counter-intuitive. Most users intend -0.5m at the surface.
+
+
+      Fix: Use ICPressure.Type = "Constant" for uniform initial pressure throughout,
+
+      or use HydroStaticPatch with Value = +9.5 to get -0.5m at surface in a 10m domain.
+
+      '
+    affected_components:
+    - ICPressure.Type
+    - Geom.domain.ICPressure.Value
+    - ICPressure.RefPatch
+  remedy:
+    action: Use Constant IC type for uniform pressure, or add total_depth to desired surface pressure
+    manual_steps:
+    - 'For uniform IC: p.ICPressure.Type = ''Constant'''
+    - 'For hydrostatic: Value = desired_surface_pressure + total_depth'
+    - 'Always verify: check press.00000.pfb top layer after first output'
+    prevention: generate_initial_conditions.py should auto-adjust Value for bottom RefPatch
+  cross_references:
+  - dt_pf_004
+  validated_in: bengbu_parflow_test_v1_v2
+- id: dt_pf_v009
+  severity: silent
+  failure_domain: boundary_setup
+  stage: s6_ic_bc
+  symptom:
+    description: Water ponds on surface but never exits domain, runoff ratio = 0
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: FluxConst=0 on all lateral boundaries creates a closed hydrological box
+    explanation: 'With FluxConst=0 on all side patches (left, right, front, back), no water can
+
+      exit the domain through lateral boundaries. Overland flow (OverlandKinematic on
+
+      top) routes water across the surface, but at domain edges water has nowhere to go.
+
+
+      All precipitation becomes storage (subsurface + surface ponding).
+
+      Water balance: Rain = Delta_Storage, Runoff = 0.
+
+
+      Fix: Set the downstream boundary patch to DirEquilRefPatch (Dirichlet) with
+
+      a negative pressure value to create a seepage face where water drains.
+
+      The upstream boundary should remain FluxConst=0 (no inflow).
+
+      '
+    affected_components:
+    - Patch.right.BCPressure.Type
+    - Patch.front.BCPressure.Type
+  remedy:
+    action: Set downstream patch BC to DirEquilRefPatch with negative pressure value
+    manual_steps:
+    - Identify downstream boundary (where river exits basin)
+    - 'Set: p.Patch.right.BCPressure.Type = ''DirEquilRefPatch'''
+    - 'Set: p.Patch.right.BCPressure.RefGeom = ''domain'''
+    - 'Set: p.Patch.right.BCPressure.RefPatch = ''bottom'''
+    - 'Set: p.Patch.right.BCPressure[interval].Value = -1.0 to -2.0'
+    - Keep upstream patches as FluxConst=0
+    prevention: generate_parflow_script.py should auto-detect outlet direction from slope
+  cross_references:
+  - dt_pf_012
+  validated_in: bengbu_parflow_test_v2_v3
+- id: dt_pf_v010
+  severity: degraded
+  failure_domain: parameter_choice
+  stage: s2_subsurface
+  symptom:
+    description: All rainfall infiltrates even with near-saturated IC, no saturation-excess runoff
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Deep soil column (>5m) provides too much storage capacity for rainfall to fill
+    explanation: 'With 10m soil depth and porosity 0.45, available storage = 10 * 0.45 * (1-0.87) = 0.585
+      m = 585mm
+
+      (at 87% initial saturation). Even 291mm of heavy July rain cannot saturate the full column.
+
+
+      With 2m soil depth: available storage = 2 * 0.45 * (1-0.99) = 0.009m = 9mm (at 99% IC).
+
+      Rain quickly exceeds capacity → saturation-excess runoff.
+
+
+      For clay soils with shallow weathering profiles (typical in Huai River plain),
+
+      2-3m soil depth is physically appropriate. Deep columns are for mountain/aquifer systems.
+
+      '
+    affected_components:
+    - NZ
+    - DZ
+    - ComputationalGrid.NZ
+    - ComputationalGrid.DZ
+  remedy:
+    action: Use 2-3m soil depth for alluvial plains and clay soils; 5-10m for mountain basins
+    manual_steps:
+    - Match soil depth to pedological data (HWSD soil depth, field surveys)
+    - 'Clay soils: NZ=2, DZ=1m (2m total)'
+    - 'Loam/mountain: NZ=5, DZ=2m (10m total)'
+    - 'Aquifer studies: NZ=10-20, DZ=5-10m (50-200m total)'
+    prevention: build_subsurface_properties.py should recommend depth based on soil texture
+  cross_references:
+  - dt_pf_v007
+  validated_in: bengbu_parflow_test_v4_v5
+- id: dt_pf_v011
+  severity: silent
+  failure_domain: pedotransfer
+  stage: s2_subsurface
+  symptom:
+    description: Cosby (1984) pedotransfer from VIC Brooks-Corey exponent gives sandy K for clay soils
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: VIC exponent = 2b+3 (not b); incorrect b extraction gives wrong clay% estimate
+    explanation: 'VIC Brooks-Corey exponent = 2*b + 3 where b is the Brooks-Corey pore-size distribution
+      index.
+
+      Extracting b = (expt-3)/2 gives b=3.68-4.49 for Bengbu (expt ~10.4-12.0).
+
+      Cosby (1984): clay% = (b - 2.91) / 0.159 → gives clay% = 5-10%.
+
+      But the soil is actually clay loam (40-50% clay) based on field capacity ~0.6 and bulk density ~1500.
+
+
+      The Cosby equation was calibrated for b values from direct soil analysis,
+
+      not from VIC''s modified exponent. The VIC exponent has different meaning.
+
+
+      Solution: Use soil texture class directly from HWSD, not derived from VIC parameters.
+
+      Carsel & Parrish (1988) lookup table is more reliable.
+
+      '
+    affected_components:
+    - permeability
+  remedy:
+    action: Use HWSD soil texture class with Carsel & Parrish lookup, not Cosby from VIC exponent
+    manual_steps:
+    - Read HWSD texture class (via hwsd_soil_adapter.py or direct HWSD MDB query)
+    - Look up Ksat from Carsel & Parrish (1988) table by USDA texture class
+    - Do NOT derive texture from VIC Brooks-Corey exponent
+    prevention: build_subsurface_properties.py should use HWSD texture directly
+  cross_references:
+  - dt_pf_v007
+  - dt_pf_001
+  validated_in: bengbu_parflow_test_v1
+- id: dt_pf_v012
+  severity: degraded
+  failure_domain: domain_setup
+  stage: s2_subsurface
+  symptom:
+    description: All cells show identical pressure, ponding, saturation at every timestep
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Uniform K + uniform slope + uniform forcing + uniform IC = spatially invariant solution
+    explanation: 'When all cells have identical properties (K, porosity, vG params), identical slope,
+
+      identical rainfall, and identical initial conditions, the Richards equation gives
+
+      identical solutions at every cell. The only spatial gradient comes from boundary
+
+      effects (e.g., DirEquilRefPatch on one side).
+
+
+      This is mathematically correct but physically unrealistic for heterogeneous basins.
+
+      The lack of spatial variability means overland flow routing has no effect — each cell
+
+      sends exactly as much water to its neighbor as the neighbor sends back.
+
+
+      For realistic spatial patterns, use spatially variable K (from HWSD per-cell),
+
+      spatially variable slope (from DEM), or spatially variable forcing (per-cell CMFD).
+
+      '
+    affected_components:
+    - Geom.domain.Perm.Value
+    - TopoSlopesX
+    - TopoSlopesY
+  remedy:
+    action: Use PFB files with spatially variable K, slopes, and forcing for realistic simulations
+    manual_steps:
+    - Use PFB slope files from build_slopes.py (per-cell DEM gradients)
+    - Use PFB K files from build_subsurface_properties.py (per-cell HWSD)
+    - Use PFB forcing files with per-cell precipitation (from CMFD grid)
+    prevention: Pipeline should default to spatially variable properties; uniform only for testing
+  cross_references:
+  - dt_pf_012
+  validated_in: bengbu_parflow_test_v2_v3

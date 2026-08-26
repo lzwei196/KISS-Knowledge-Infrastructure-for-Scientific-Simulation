@@ -1,133 +1,535 @@
-model:
-  name: "Landlab"
-  version: "2.10.1"
-  domain: "geomorphology, hydrology, stratigraphy, glaciology"
-  type: "Python component-based framework"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  execution: "Python API — simulations are Python scripts, not CLI binaries"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: Landlab
+  language: python
+  implementation:
+    id: landlab
+    version: 2.10.1
+    provenance: Python with Cython kernels; CSDMS / CU Boulder, U. Washington, Tulane (Landlab Development
+      Team); composable process components on a shared model grid.
+  scientific_reference_version: Landlab 2.x component-based Earth-surface-dynamics framework (Hobley et
+    al. 2017 ESurf 5:21-46; Barnhart et al. 2020 Landlab v2.0 ESurf 8:379-397)
 inputs:
   forcing:
-    - name: "water__unit_flux_in"
-      unit: "m/s"
-      valid_range: [0.0, 1.0e-4]
-      description: "Rainfall rate (depth per time), typical 2.8e-7 to 2.8e-5 m/s"
-    - name: "topographic__elevation"
-      unit: "m"
-      valid_range: [-500.0, 9000.0]
-      description: "Land surface elevation at nodes"
-    - name: "rainfall__daily_depth"
-      unit: "mm"
-      valid_range: [0.0, 500.0]
-      description: "Daily precipitation depth"
-
+  - name: initial topography / DEM (topographic__elevation)
+    unit: m
+    category: forcing
+    source_kind: dataset_lookup
+    model_input_format: node field topographic__elevation on the model grid (read from gridded elevation;
+      must be projected to a metric CRS)
+    notes: Bottom-to-top node ordering; NoData must be masked and set to a closed boundary; elevation
+      in meters (feet inflates slopes ~3.28x).
+  - name: rainfall / runoff (water__unit_flux_in)
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: node field water__unit_flux_in consumed by FlowAccumulator (scalar or time series)
+    notes: Must be m/s; mm/hr or mm/day inflate discharge by ~3.6e6x. For landscape-evolution runs commonly
+      a uniform runoff_rate.
   parameters:
-    critical:
-      - name: "K_sp"
-        valid_range: [1.0e-8, 1.0e-2]
-        description: "Stream power erodibility coefficient; units depend on m_sp and n_sp exponents"
-      - name: "m_sp"
-        valid_range: [0.2, 1.0]
-        description: "Drainage area exponent in stream power law"
-      - name: "n_sp"
-        valid_range: [0.5, 2.0]
-        description: "Slope exponent in stream power law"
-      - name: "linear_diffusivity"
-        valid_range: [1.0e-4, 10.0]
-        unit: "m^2/yr"
-        description: "Hillslope diffusion coefficient; must share time units with dt"
-      - name: "xy_spacing"
-        valid_range: [1.0, 100000.0]
-        unit: "m"
-        description: "Grid cell spacing; must be in meters (not degrees or km)"
-      - name: "dt"
-        valid_range: [0.1, 100000.0]
-        unit: "yr"
-        description: "Timestep; must be consistent with K_sp and diffusivity units"
-      - name: "uplift_rate"
-        valid_range: [0.0, 0.1]
-        unit: "m/yr"
-        description: "Tectonic uplift rate"
-
-  grid:
-    types:
-      - "RasterModelGrid"
-      - "HexModelGrid"
-      - "VoronoiDelaunayGrid"
-      - "FramedVoronoiGrid"
-      - "RadialModelGrid"
-      - "NetworkModelGrid"
-      - "IcosphereGlobalGrid"
-    field_locations: ["node", "link", "patch", "cell", "corner", "face", "grid"]
-
+  - name: K_sp (stream-power erodibility)
+    unit: length^(1-2*m_sp) / time (e.g. 1/yr at m_sp=0.5, n_sp=1.0)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: StreamPowerEroder coefficient in E = K A^m S^n
+    notes: Units depend on m_sp,n_sp; a K calibrated for one exponent set is dimensionally invalid for
+      another. Default 0.001 is dimensionally ambiguous and application-specific.
+  - name: m_sp (drainage-area exponent)
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: StreamPowerEroder area exponent in E = K A^m S^n
+    notes: Typical 0.3-0.7; m_sp/n_sp ratio sets steady-state concavity (theta = m/n). Default 0.5.
+  - name: n_sp (slope exponent)
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: StreamPowerEroder slope exponent in E = K A^m S^n
+    notes: Typical 0.7-2.0. Default 1.0.
+  - name: linear_diffusivity (D)
+    unit: m^2/yr (when dt in yr)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: LinearDiffuser hillslope transport coefficient q = -D grad(z)
+    notes: Must share time units with dt; literature m^2/s values need conversion. Default 0.01.
+  - name: v_s (effective settling velocity)
+    unit: m/yr (landscape-evolution timescale)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: ErosionDeposition/SPACE deposition term controlling transport-vs-detachment regime
+    notes: Sets deposition length scale; b->0.5 (detachment-limited) at high v_s, b->1.0 (transport-limited)
+      at low v_s. Default 1.0.
+  - name: K_sed / K_br (SPACE alluvium / bedrock erodibility)
+    unit: length^(1-2*m) / time
+    category: parameter
+    source_kind: calibrated
+    model_input_format: SPACE two-layer erodibility coefficients
+    notes: Bedrock vs alluvium erodibility in the SPACE bedrock-alluvium law.
+  - name: H_star (alluvial cover decay depth)
+    unit: m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: SPACE bedrock-cover effect via exp(-H/H*)
+    notes: Sets how alluvial thickness shields bedrock from erosion.
+  - name: soil_production_maximum_rate (P0)
+    unit: m/yr
+    category: parameter
+    source_kind: calibrated
+    model_input_format: ExponentialWeatherer maximum production in P = P0 exp(-H/H*)
+  - name: soil_production_decay_depth (H*)
+    unit: m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: ExponentialWeatherer weathering decay depth
+  - name: mannings_n (overland-flow roughness)
+    unit: s/m^(1/3)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: OverlandFlow / KinwaveOverlandFlowModel Manning roughness
+    notes: Manning n (0.01-0.1), NOT Chezy C; confusing the two inverts/rescales velocity. Default 0.03.
+  initial_conditions:
+  - name: soil__depth (initial regolith thickness)
+    unit: m
+    category: initial_condition
+    source_kind: dataset_lookup
+    model_input_format: node field soil__depth at simulation start
+    notes: Must be meters (HWSD cm read as m collapses weathering and SPACE). For SPACE concavity tests
+      initialize > 0 (e.g. 2 m) or SPACE falls back to bedrock-only mode.
+  - name: bedrock__elevation
+    unit: m
+    category: initial_condition
+    source_kind: derived
+    model_input_format: node field bedrock__elevation = topographic__elevation - soil__depth
+    notes: SPACE/ErosionDeposition auto-create this if absent and maintain the topo = bedrock + soil invariant.
+  boundary_conditions:
+  - name: grid type and geometry
+    unit: n/a
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: grid class (RasterModelGrid/HexModelGrid/VoronoiDelaunayGrid/NetworkModelGrid/IcosphereGlobalGrid)
+      with shape and xy_spacing in meters
+    notes: xy_spacing must be meters; degrees (unreprojected WGS84) inflate slopes ~1e5x.
+  - name: timestep dt
+    unit: yr (landscape evolution) | s (overland flow)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: dt argument to each component's run_one_step(dt)
+    notes: Must share time units with all rate parameters; mismatch (s vs yr) rescales all rates by ~3.15e7.
+  - name: boundary-node status (status_at_node)
+    unit: n/a (NodeStatus code)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'per-node BC: CORE / FIXED_VALUE / FIXED_GRADIENT / LOOPED / CLOSED, set before
+      component instantiation'
+    notes: At least one open (FIXED_VALUE) outlet required or drainage_area=0. closed_all_but_outlet for
+      watershed sediment-yield; open_all for DEM slope-area clips.
+  - name: uplift_rate (tectonic forcing)
+    unit: m/yr
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: applied in the user time loop as z[core_nodes] += uplift_rate * dt before flow
+      routing
+    notes: Only core nodes uplifted; never fixed-value boundary nodes.
+  - name: runoff_rate (steady-state discharge scaling)
+    unit: m/yr (or m/s)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'FlowAccumulator multiplier: steady-state Q = drainage_area * runoff_rate'
+    notes: Must be consistent with the basin (e.g. Q_mean*3.156e7/(A_basin*1e6)) or SPACE SSC-Q rating
+      curves are wrong.
+  - name: flow-routing / depression-handling method
+    unit: n/a
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: FlowAccumulator flow_director choice (D8/Dinf/MFD) and optional depression_finder
+      (DepressionFinderAndRouter / PriorityFloodFlowRouter)
+    notes: Depression routing is not automatic; real DEMs need it or flow stalls at pits.
 outputs:
   primary:
-    - name: "topographic__elevation"
-      unit: "m"
-      valid_range: [-500.0, 9000.0]
-      description: "Evolved land surface elevation"
-    - name: "drainage_area"
-      unit: "m^2"
-      valid_range: [0.0, 1.0e12]
-      description: "Contributing upstream drainage area"
-    - name: "surface_water__discharge"
-      unit: "m^3/s"
-      valid_range: [0.0, 1.0e6]
-      description: "Volumetric water discharge"
-    - name: "topographic__steepest_slope"
-      unit: "-"
-      valid_range: [0.0, 10.0]
-      description: "Maximum downhill gradient at each node"
-    - name: "soil__depth"
-      unit: "m"
-      valid_range: [0.0, 100.0]
-      description: "Regolith/soil thickness"
-    - name: "sediment__influx"
-      unit: "m^3/s"
-      valid_range: [0.0, 1.0e4]
-      description: "Incoming sediment transport rate"
-    - name: "sediment__outflux"
-      unit: "m^3/s"
-      valid_range: [0.0, 1.0e4]
-      description: "Outgoing sediment transport rate"
-
-  formats:
-    - type: "ESRI ASCII"
-      extension: ".asc"
-    - type: "NetCDF"
-      extension: ".nc"
-    - type: "VTK Legacy"
-      extension: ".vtk"
-    - type: "NumPy compressed"
-      extension: ".npz"
-
-  validation_metrics:
-    - name: "slope_area_r2"
-      description: "R-squared of log-log slope-area regression"
-      expected_range: [0.95, 1.0]
-    - name: "concavity_index"
-      description: "Concavity (theta) from slope-area scaling"
-      expected_range: [0.3, 0.7]
-    - name: "relief"
-      unit: "m"
-      description: "Total topographic relief"
-
+  - name: topographic__elevation
+    unit: m
+    description: Final land-surface elevation of the evolved landscape (node field).
+    validation_rank: 4
+    emitted_in: Landlab grid field at_node; written to ESRI ASCII (.asc) / NetCDF (.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against a DEM in the same metric CRS and vertical unit; Landlab stores nodes bottom-to-top.
+        - Absolute elevation match is rarely meaningful; topographic-derivative metrics (slope-area, hypsometry)
+          are the defensible targets.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: concavity (theta)
+    unit: dimensionless
+    description: Land-surface/channel-topography slope-area concavity index theta = -d(logS)/d(logA);
+      at steady state expected to approach m_sp/n_sp.
+    validation_rank: 5
+    emitted_in: derived metric from slope-area regression on the grid
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Use a 2-D spatial gradient |grad z| (not D8 receiver slope on a depression-filled DEM) and bin
+          in log-spaced area bins.
+        - Single-outlet boundary on a DEM clip depresses theta; use open_all boundaries for slope-area
+          on clips.
+      detrending_options:
+      - none
+  - name: steepness (ks)
+    unit: dimensionless (channel steepness index)
+    description: Channel steepness index from the slope-area regression.
+    validation_rank: 6
+    emitted_in: derived metric from slope-area regression
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Sensitive to grid cell width unless K*v0^m is held constant; report with the reference drainage
+          area.
+      detrending_options:
+      - none
+  - name: relief
+    unit: m
+    description: Max-minus-min elevation over core nodes; landscape relief at steady state.
+    validation_rank: 7
+    emitted_in: derived metric over core nodes
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compare against relief computed over the same domain extent and resolution.
+      detrending_options:
+      - none
+  - name: sediment_yield
+    unit: t/km^2/yr
+    description: Annual catchment sediment yield via detachment-limited stream power (E = K_sp A^m S^n
+      converted by bulk density).
+    validation_rank: 1
+    emitted_in: derived metric (detachment-limited stream-power export)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Use detachment-limited stream power, NOT SPACE, for annual sediment yield on real DEMs (SPACE
+          transport-limited export is ~2.7% of gross erosion).
+        - Requires consistent bulk density and runoff_rate calibrated to the basin.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Multi-year yield records carry land-use and reservoir-trapping signals a process model cannot
+          reproduce; compare decadal means / trends, not inter-annual r.
+      detrending_options:
+      - none
+      - decadal_mean
+  - name: sediment__outflux (SPACE Qs)
+    unit: m^3/s (or kg/s)
+    description: Sediment flux out of a node; the Qs in the SPACE Qs-Q rating relationship.
+    validation_rank: 2
+    emitted_in: Landlab grid field at_node (SPACE / ErosionDeposition)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Fit log(Qs) vs log(Q) directly (Qs ~ Q^b); do NOT fit SSC = Qs/Q vs Q, which is always negatively
+          sloped.
+        - Defensible exponent range b in [0.35, 1.20] reflects detachment-limited (b~0.5) to transport-limited
+          (b~1.0) regimes.
+      detrending_options:
+      - none
+  - name: soil__depth
+    unit: m
+    description: Regolith/soil thickness above bedrock (node field).
+    validation_rank: 8
+    emitted_in: Landlab grid field at_node
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Soil-depth observations must be in meters; ensure HWSD-style cm inputs were converted.
+      detrending_options:
+      - none
+  - name: surface_water__discharge (steady-state)
+    unit: m^3/s
+    description: Steady-state discharge Q = drainage_area * runoff_rate from FlowAccumulator; NOT a hydrograph
+      time series.
+    validation_rank: 3
+    emitted_in: Landlab grid field at_node (FlowAccumulator)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - This is a steady-state spatial field, not a gauge hydrograph; do not compare against a daily
+          discharge time series.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    description: "Rainfall in mm/hr instead of m/s causes discharge 3.6M× too high"
-    severity: "silent"
-  - id: "dt_002"
-    description: "Diffusivity in m^2/s with dt in years flattens hillslopes instantly"
-    severity: "silent"
-  - id: "dt_003"
-    description: "K_sp copied from paper with different m/n exponents gives wrong erosion"
-    severity: "silent"
-  - id: "dt_004"
-    description: "Grid spacing in degrees instead of meters makes slopes wrong"
-    severity: "silent"
-  - id: "dt_010"
-    description: "DEM nodata=0 or NaN causes flow routing into nodata cells"
-    severity: "silent"
-  - id: "dt_011"
-    description: "All boundaries closed = zero drainage area everywhere"
-    severity: "fatal"
+- id: dt_001
+  symptom: Discharge values are millions of m³/s for a small catchment; channels erode to bedrock in a
+    few timesteps
+  diagnosis: Rainfall rate (water__unit_flux_in) passed in mm/hr or mm/day instead of m/s; Landlab expects
+    water__unit_flux_in in m/s. Passing mm/hr directly gives values 3,600,000× too large (1 mm/hr = 2.78e-7
+    m/s). FlowAccumulator multiplies this by drainage area to get discharge. With discharge millions of
+    ti
+  remedy: 'Convert rainfall to m/s before adding to grid; convert_dem_to_grid.py; [''If mm/hr: divide
+    by 3,600,000 (1000 mm/m × 3600 s/hr)'', ''If mm/day: divide by 86,400,000'', ''If m/yr: divide by
+    31,557,600'', ''Verify: typical rainfall 1–100 mm/hr → 2.8e-7 to 2.8e-5 m/s'']; validate_outputs checks
+    water__unit_flu'
+  severity: silent
+- id: dt_002
+  symptom: Hillslopes become perfectly flat within a single timestep; all topographic detail erased
+  diagnosis: Linear diffusivity given in m²/s when timestep is in years; LinearDiffuser diffusivity D
+    and timestep dt must share time units. If D=0.01 m²/s and dt=500 yr, the effective diffusion per step
+    is D×dt = 0.01 × 500×3.15e7 = 1.58e8 m² — the entire landscape diffuses flat instantly. Typical D
+    is 0.001–1.
+  remedy: 'Ensure D and dt share time units (both in years or both in seconds); convert_soil_params.py;
+    [''If D is from literature in m²/s, convert to m²/yr: multiply by 3.156e7'', ''Or convert dt to seconds'',
+    ''Check: D×dt/dx² should be << 1 for stability'']; LinearDiffuser has internal CFL sub-stepping, but
+    the e'
+  severity: silent
+- id: dt_003
+  symptom: Erosion rate is orders of magnitude too high or too low despite 'correct' K value from literature
+  diagnosis: K_sp value copied from paper with different m_sp/n_sp exponents; In the stream power law
+    E = K A^m S^n, the units of K depend on m and n. For m=0.5, n=1.0, K has units 1/time. For m=0.3,
+    n=0.7, K has different units. Copying K=1e-5 from a paper using m=0.5 and applying it with m=0.3 changes
+    the eros
+  remedy: 'Recalculate K for your specific m and n exponents; convert_soil_params.py; [''Identify the
+    m, n used in the source paper'', ''If m differs, convert: K_new = K_old × A_ref^(m_old - m_new)'',
+    ''Calibrate K independently if exponents differ significantly'']; Always document m, n alongside K
+    in parameter file'
+  severity: silent
+- id: dt_004
+  symptom: Slopes are ~100,000 instead of ~0.01; erosion is extreme; landscape flattens immediately
+  diagnosis: 'Grid spacing (xy_spacing) is in degrees instead of meters; If a DEM in geographic coordinates
+    (WGS84) is loaded without reprojection, xy_spacing will be ~0.0003 degrees (~30m). Slope = dz/dx,
+    so if dx is 0.0003 instead of 30, slopes are 100,000× too steep. All downstream calculations (stream
+    power, '
+  remedy: 'Reproject DEM to a metric CRS (e.g., UTM) before loading; convert_dem_to_grid.py; [''Use gdalwarp
+    -t_srs EPSG:32650 input.tif output_utm.tif'', ''Or override spacing: RasterModelGrid(shape, xy_spacing=30.0)'',
+    ''Verify: slopes should be 0.001–1.0 for typical terrain'']; convert_dem_to_grid.py warns if spa'
+  severity: silent
+- id: dt_005
+  symptom: All rates (erosion, diffusion, uplift) are wrong by factor of ~3.15e7
+  diagnosis: 'Timestep dt in seconds but parameters (K, D, uplift) in /yr; Landlab is unit-agnostic. If
+    uplift_rate=1e-3 m/yr and dt=500 (intended as years), but K_sp is calibrated for seconds, the uplift
+    adds 0.5 m/step while erosion removes a completely different amount. All parameters and dt must use
+    the SAME '
+  remedy: 'Verify all parameters and dt share the same time unit; run_landlab.py; [''List all time-dependent
+    parameters: K_sp, D, uplift, v_s, dt'', ''Confirm they all use the same unit (years recommended)'',
+    ''If mixing sources, convert explicitly'']; Document time unit in config YAML header'
+  severity: silent
+- id: dt_006
+  symptom: ExponentialWeatherer produces negligible soil production (< 1e-20 m/yr)
+  diagnosis: 'Soil depth passed in cm instead of m; HWSD reports T_REF_DEPTH in centimeters. If depth=150
+    (cm) is used directly as meters, soil__depth=150 m. ExponentialWeatherer computes P = P0 × exp(-H/H*)
+    = 1e-4 × exp(-150/0.5) ≈ 0. With essentially zero soil production, the soil layer never changes and
+    SPACE '
+  remedy: 'Divide HWSD depth by 100 to convert cm → m; convert_soil_params.py; [''depth_m = depth_cm /
+    100.0'', ''Verify: typical soil depth 0.1–5 m; >10 m is suspicious'']; convert_soil_params.py applies
+    conversion automatically from HWSD'
+  severity: silent
+- id: dt_007
+  symptom: Slopes are ~3× too steep; erosion rate ~3× too high
+  diagnosis: Elevation in feet instead of meters; US-sourced DEMs sometimes report elevation in feet.
+    Since slope = dz/dx, and Landlab computes dx in meters (from xy_spacing), foot-elevation with meter-spacing
+    yields slopes 3.28× too steep. Stream power E = K A^m S^n with n=1 gives erosion 3.28× too fast. The
+    ef
+  remedy: Convert elevation from feet to meters (× 0.3048); convert_dem_to_grid.py --feet-to-meters; ['z
+    *= 0.3048', 'Check DEM metadata for vertical units', 'USGS NED DEMs are typically in meters; some
+    older formats use feet']; convert_dem_to_grid.py --feet-to-meters flag
+  severity: silent
+- id: dt_008
+  symptom: SoilMoisture component shows perpetual saturation or soil_moisture__saturation_fraction always
+    1.0
+  diagnosis: Rainfall in m instead of mm for SoilMoisture component; SoilMoisture expects rainfall__daily_depth
+    in mm (at cell level). If rainfall is provided in meters (e.g., 0.01 m = 10 mm), it reads as 0.01
+    mm which is negligible — OR if converted incorrectly in the other direction, 1000 mm/day floods the
+    soi
+  remedy: 'Ensure rainfall__daily_depth is in mm at cell location; convert_soil_params.py; [''If source
+    is in m: multiply by 1000 to get mm'', ''If source is in m/s: multiply by 86400000 to get mm/day'',
+    ''Verify: 0.1–50 mm/day is typical'']; Check component _info dict for expected units'
+  severity: silent
+- id: dt_009
+  symptom: Overland flow velocity is inverted — slow where it should be fast
+  diagnosis: 'Manning roughness n confused with Chezy C (or 1/n); KinwaveOverlandFlowModel uses Manning
+    equation: v = (1/n) h^(2/3) S^(1/2). If the user passes Chezy C (which is already 1/n-like), velocity
+    is proportional to C instead of 1/C. Manning n for channels is 0.01–0.1; Chezy C is 10–100. Passing
+    C=50 as '
+  remedy: 'Use Manning roughness n (0.01–0.1 s/m^1/3), not Chezy C; None; [''Typical Manning n: smooth
+    concrete=0.012, natural channel=0.03–0.05, floodplain=0.05–0.15'', ''If you have Chezy C, convert:
+    n ≈ h^(1/6) / C'']; Validate that roughness is in range 0.005–0.2'
+  severity: silent
+- id: dt_010
+  symptom: Flow routes through nodata regions; artificial channels appear at DEM edges
+  diagnosis: DEM nodata values not identified and masked as closed boundary; If nodata cells (typically
+    -9999) are not masked, Landlab treats them as extremely low elevation. D8 flow routing directs all
+    flow toward these -9999 cells, creating artificial drainage that converges at nodata regions. The
+    landscape de
+  remedy: Identify nodata values and set those nodes to BC_NODE_IS_CLOSED; convert_dem_to_grid.py; ['nodata_mask
+    = np.isclose(z, -9999, atol=0.1)', 'z[nodata_mask] = np.nan', 'mg.status_at_node[nodata_mask] = mg.BC_NODE_IS_CLOSED'];
+    convert_dem_to_grid.py handles --nodata flag
+  severity: degraded
+- id: dt_011
+  symptom: drainage_area is zero everywhere; erosion does not occur
+  diagnosis: All grid boundaries are closed — no outlet for flow; FlowAccumulator routes water downhill
+    to fixed-value boundary nodes. If all boundary nodes are closed (BC_NODE_IS_CLOSED), water has nowhere
+    to exit. Drainage area remains zero because no flow path reaches an outlet. Without drainage area,
+    StreamP
+  remedy: 'Set at least one boundary node to BC_NODE_IS_FIXED_VALUE; None; [''mg.set_closed_boundaries_at_grid_edges(True,
+    False, True, True)  # open south'', ''Or: mg.status_at_node[outlet_id] = mg.BC_NODE_IS_FIXED_VALUE'',
+    ''Verify: np.sum(mg.status_at_node == 1) > 0'']; validate_outputs checks for open boundary n'
+  severity: fatal
+- id: dt_012
+  symptom: Flat plateaus develop in landscape interior; channels stop at pits
+  diagnosis: No depression routing (DepressionFinder or PriorityFlood) on a DEM with pits; Real DEMs contain
+    numerous small pits (artifact or real depressions). D8 flow routing stops at these pits — flow accumulates
+    but cannot continue downstream. This creates artificial local drainage basins with zero erosion d
+  remedy: 'Add DepressionFinderAndRouter or use PriorityFloodFlowRouter; None; ["fa = FlowAccumulator(mg,
+    depression_finder=''DepressionFinderAndRouter'')", "Or: pfr = PriorityFloodFlowRouter(mg, flow_metric=''D8'')",
+    ''PriorityFlood is faster for large grids (>200×200)'']; Always use depression routing with real DE'
+  severity: degraded
+- id: dt_013
+  symptom: Elevation oscillates wildly or develops checkerboard pattern
+  diagnosis: CFL condition violated in explicit diffusion scheme; LinearDiffuser uses explicit time-stepping
+    with internal sub-stepping to maintain CFL stability (alpha = D×dt/dx² < 0.15). However, if the user
+    wraps the component in their own sub-stepping loop with a smaller dt than intended, or if diffusivity
+    i
+  remedy: Let LinearDiffuser handle its own sub-stepping; reduce D if needed; None; ['Do not sub-step
+    LinearDiffuser externally', 'If D is spatially variable, check max(D)×dt/dx² < 0.15', 'Reduce D or
+    increase dx if oscillations occur']; Monitor elevation range each step; NaN = stop immediately
+  severity: degraded
+- id: dt_014
+  symptom: StreamPowerEroder produces zero erosion; drainage_area is all zeros
+  diagnosis: Erosion component called before FlowAccumulator in time loop; StreamPowerEroder, ErosionDeposition,
+    and Space all require drainage_area, flow__receiver_node, and flow__upstream_node_order to be populated.
+    These fields are computed by FlowAccumulator.run_one_step(). If erosion runs first, these field
+  remedy: 'Call FlowAccumulator.run_one_step() BEFORE erosion each timestep; run_landlab.py; [''Correct
+    loop order: fa.run_one_step() → sp.run_one_step(dt) → ld.run_one_step(dt)'', ''FlowAccumulator must
+    also re-run after erosion changes topography'']; run_landlab.py validates component order in config'
+  severity: fatal
+- id: dt_015
+  symptom: Component raises FieldError or silently reads an all-zero field
+  diagnosis: Field added at wrong grid element location (e.g., at_cell instead of at_node); Each Landlab
+    variable has a specific location defined in the component's _info dictionary (node, link, cell, etc.).
+    Adding topographic__elevation at 'cell' instead of 'node' means FlowDirector cannot find it at 'node'
+    and
+  remedy: Check component._info[field_name]['mapping'] for correct location; None; ["Most fields are at
+    'node' (elevation, area, soil depth)", "Flux fields are often at 'link' (sediment flux, gradient)",
+    "SoilMoisture fields are at 'cell'", "Use mg.add_field(name, data, at='node') with correct 'at' argument"]
+  severity: fatal
+- id: dt_016
+  symptom: SSC-Q log-space correlation r < 0.5 despite matched discharge and SSC records
+  diagnosis: 'SPACE K_sed or m_sp tuned for geomorphology timescales; SSC magnitude decoupled from observed
+    discharge range; The analytical SPACE approximation SSC ∝ Q^m_sp relies on self-similar drainage-area
+    scaling (A = Q / runoff_rate). For very large alluvial rivers (Atchafalaya: 243,000 km²) this approximat'
+  remedy: Calibrate runoff_rate = Q_mean / A_basin to the actual basin value before running SSC prediction;
+    tools/dissect_atchafalaya_ssc_q_surrogate.py; ['Compute long-term mean Q from RDB file (Atchafalaya
+    mean ≈ 6700 m³/s)', 'Compute A_basin from drainage_area_km2 in STATIONS dict', 'runoff_rate = Q_mean
+    *
+  severity: silent
+- id: dt_017
+  symptom: SPACE concavity θ < 0.40 or > 0.55 in steady-state slope-area test
+  diagnosis: SpaceLargeScaleEroder m_sp/n_sp exponents inconsistent with standard stream-power theory
+    (m=0.5, n=1.0); The steady-state concavity index θ = m_sp / n_sp for detachment-limited stream power.
+    With m_sp=0.5, n_sp=1.0, expected θ = 0.5. Grid discretization on a 50×50 RasterModelGrid with dx=200m
+    introd
+  remedy: Verify m_sp=0.5, n_sp=1.0, and initialize soil__depth = 2.0 m before SPACE construction; tools/dissect_atchafalaya_ssc_q_surrogate.py;
+    ["grid.add_field('soil__depth', np.full(n_nodes, 2.0), at='node')  BEFORE SpaceLargeScaleEroder()",
+    'SpaceLargeScaleEroder(grid, K_sed=2.5e-5, K_br=1e-6, m_sp=0.5, n
+  severity: silent
+- id: dt_018
+  symptom: Slope-area concavity θ is near 0 or negative; R² < 0.1 despite many channel nodes
+  diagnosis: Using topographic__steepest_slope (D8 receiver slope) for slope-area on depression-filled
+    real DEM; After DepressionFinderAndRouter fills depressions, the outlet cells of filled depressions
+    receive artificially flat slopes (near zero) because the receiver is at the same filled elevation.
+    These near-
+  remedy: 'Use 2D spatial gradient |∇z| for slope and bin the slope-area data in log-spaced area bins;
+    tools/dissect_loess_plateau_slope_area.py; [''dz_dr, dz_dc = np.gradient(z.reshape(mg.shape), mg.dx,
+    mg.dx)'', ''slope = np.sqrt(dz_dr**2 + dz_dc**2).flatten()'', ''Bin into 20-30 log-spaced area bins;
+    fit median '
+  severity: silent
+- id: dt_019
+  symptom: Slope-area θ is anomalously low (< 0.15) despite clean R² (> 0.6)
+  diagnosis: Single-outlet boundary condition funnels all flow to one corner, compressing slopes near
+    outlet; With closed_all_but_outlet boundary, the entire grid drains to one boundary node. Near this
+    node, flows converge and the channel slope approaches zero as water from many upstream paths merges
+    — this is p
+  remedy: 'Use open_all boundary conditions for slope-area analysis on DEM clips; tools/dissect_loess_plateau_slope_area.py;
+    [''In convert_dem_to_grid.py call: --boundary open_all'', ''Water exits naturally at all low-elevation
+    edges'', ''For genuine single-basin analysis, use a DEM that fully contains the basin''];'
+  severity: silent
+- id: dt_020
+  symptom: SPACE Qs-Q exponent b_sim ≈ -0.5 (negative), or SSC-Q fit gives strong negative trend
+  diagnosis: Fitting SSC = Qs/Q vs Q instead of fitting Qs vs Q directly; By SPACE physics, Qs ∝ Q^m (m=0.5),
+    so SSC = Qs/Q ∝ Q^(m-1) = Q^(-0.5). The SSC-Q exponent is ALWAYS negative regardless of whether SPACE
+    is working correctly. This causes the test to fail even for perfect SPACE output. The correct test
+    fi
+  remedy: 'Fit log(Qs_kg_s) vs log(Q_m3s) — do NOT divide by Q before fitting; tools/dissect_atchafalaya_ssc_q_surrogate.py;
+    [''Qs_kg_s = net_vol_m3 * rho_sed / yr_to_s'', ''lq_m, lqs_m = log10(Q_model), log10(Qs_model)'',
+    ''b_sim, _, r_sim, _, _ = linregress(lq_m, lqs_m)'', ''Pass if b_sim in [0.35, 1.20] and r_sim '
+  severity: silent
+- id: dt_021
+  symptom: SPACE Qs-Q exponent b_sim outside [0.35, 1.20] even though r > 0.95
+  diagnosis: "SPACE running in wrong regime (expected DL but got TL, or vice versa); SPACE has two limiting\
+    \ regimes:\n  Detachment-limited (DL): b → m_sp = 0.5. Requires bare bedrock (H→0) or\n    very high\
+    \ v_s (fast settling → sediment doesn't travel far).\n  Transport-limited (TL): b → ~1.0. Requires\
+    \ deep soil (H "
+  remedy: 'Check H, H_star, v_s ratio and grid dimensions against expected regime; tools/dissect_atchafalaya_ssc_q_surrogate.py;
+    [''DL regime: set soil__depth = 0.01 (bare bedrock) OR v_s = 1000 m/yr'', ''TL regime (default): soil__depth
+    = 2.0, v_s = 5.0, H_star = 1.0'', ''Check: bedrock_factor = exp(-H/H_star) — i'
+  severity: silent
+- id: dt_022
+  symptom: SPACE gives near-zero annual sediment yield (SY < 1 t/km²/yr) for a real DEM despite physically
+    reasonable K_sed values
+  diagnosis: SPACE was designed for geological timescale (ka–Ma) landscape evolution, not for computing
+    annual sediment yield from a real DEM; SPACE operates in transport-limited (TL) regime by default
+    (soil_depth >> H_star). In TL regime, erosion ≈ deposition at every node, so net mass export from
+    the watershed
+  remedy: 'Use detachment-limited stream power law (E = K_sp × A^m × S^n) for annual SY from real DEMs;
+    tools/dissect_loess_plateau_sediment_yield.py; [''Calibrate K_sp so mean(E × ρ_bulk) / watershed_area
+    = target SY'', ''Formula: K_sp = SY_target / (mean(A^m × S^n) × ρ_bulk × unit_conversion)'', ''For
+    Loess Plate'
+  severity: silent

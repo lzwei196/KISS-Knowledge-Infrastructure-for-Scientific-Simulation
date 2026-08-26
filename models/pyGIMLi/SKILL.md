@@ -1,14 +1,3 @@
----
-name: pygimli
-description: >-
-  pyGIMLi generalized Gauss-Newton inversion + FEM/FVM forward framework. Covers
-  Geophysical forward modelling (FEM/FVM PDE solve) of synthetic data from a subsurface
-  property model; Regularized Gauss-Newton inversion to recover spatially-distributed
-  physical properties from field…; Electrical Resistivity Tomography (ERT); Seismic
-  Refraction / first-arrival Traveltime Tomography (SRT). Use when the task involves
-  running, configuring, calibrating or interpreting pyGIMLi.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (8 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_data_to_gimli.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_data_to_gimli.py --help` |
+| `tools/convert_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters.py --help` |
+| `tools/parse_gimli_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_gimli_output.py --help` |
+| `tools/run_pygimli.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_pygimli.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # pyGIMLi Knowledge Infrastructure — SKILL.md
 
@@ -209,7 +232,31 @@ These are the most common unit-related errors in pyGIMLi workflows:
 
 ---
 
-## 6. Data File Formats
+## 6. Output Description
+
+**Source**: `dag.yaml`. This section restates the dag's output identity for
+agents reading only this file. If this section and `dag.yaml` ever disagree,
+`dag.yaml` wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `inverted_resistivity_model` — Spatially-distributed subsurface electrical resistivity per mesh cell recovered by ERT inversion (inverted in log-space) (Ohm·m)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `inverted_resistivity_model` | 1 | Ohm·m | Spatially-distributed subsurface electrical resistivity per mesh cell recovered by ERT inversion (inverted in log-space) |
+
+Other dag outputs named by this KI:
+
+- `inverted_velocity_model`
+- `inverted_conductivity_or_coleCole_model`
+- `forward_response`
+- `data_fit_chi2`
+- `coverage_sensitivity`
+
+---
+
+## 7. Data File Formats
 
 ### Input Formats
 | Format      | Extension        | Method | Description                        |
@@ -234,7 +281,7 @@ These are the most common unit-related errors in pyGIMLi workflows:
 
 ---
 
-## 7. Tools Reference
+## 8. Tools Reference
 
 | Tool                        | Lines | Stage | Purpose                                    |
 |-----------------------------|-------|-------|--------------------------------------------|
@@ -245,57 +292,57 @@ These are the most common unit-related errors in pyGIMLi workflows:
 
 ---
 
-## 8. Critical Domain Knowledge
+## 9. Critical Domain Knowledge
 
-### 8.1 Geometric Factor (ERT)
+### 9.1 Geometric Factor (ERT)
 The geometric factor `k` converts measured resistance (V/I in Ω) to apparent
 resistivity (ρₐ in Ω·m). If electrodes are in non-standard positions (topography,
 boreholes), analytical `k` is invalid — use numerical `k` via `createGeometricFactors()`.
 Failure to do so produces systematically biased apparent resistivities.
 
-### 8.2 Singularity Removal (ERT)
+### 9.2 Singularity Removal (ERT)
 The FEM solution has a singularity at current injection electrodes. pyGIMLi uses
 singularity removal (`sr=True` by default in ERTManager) to subtract the analytical
 primary potential. Disabling this on coarse meshes produces electrode-proximity
 artifacts that look like real anomalies.
 
-### 8.3 Slowness vs. Velocity (SRT)
+### 9.3 Slowness vs. Velocity (SRT)
 pyGIMLi inverts for **slowness** (s/m), not velocity (m/s). The inversion operates
 in slowness space because the travel time forward problem is linear in slowness.
 Results displayed as velocity are the reciprocal: `v = 1/slowness`. Applying
 log-transform to velocity instead of slowness breaks the linear forward operator.
 
-### 8.4 Data Transformations
+### 9.4 Data Transformations
 - ERT: `TransLogLU` on data (apparent resistivity is always positive)
 - SRT: `TransLin` on data (travel times are already well-behaved)
 - Wrong transform → inversion diverges or produces artifacts
 
-### 8.5 Regularization Strength (Lambda)
+### 9.5 Regularization Strength (Lambda)
 Lambda controls the trade-off between data fit and model smoothness.
 - Too high → over-smoothed model, misses anomalies
 - Too low → rough model with artifacts, overfitting noise
 - Default: lambda=20, reduce by factor 2-5 per iteration
 - Target: chi² ≈ 1 (data fit matches noise level)
 
-### 8.6 Error Estimation
+### 9.6 Error Estimation
 If field data lacks error estimates, use `estimateError()`:
 - ERT: `estimateError(data, relativeError=0.03, absoluteUError=5e-5)`
   - 3% relative + 50 µV absolute is typical for modern instruments
 - SRT: absolute error of 0.001 s (1 ms) is typical for hammer sources
 - Under-estimated error → overfitting (artifacts); over-estimated → under-fitting
 
-### 8.7 Mesh Quality
+### 9.7 Mesh Quality
 - Minimum angle > 20° for triangles (quality parameter q=34 in Triangle)
 - Maximum area constraint prevents over-refinement
 - Boundary cells should extend 2-5× the investigation depth
 - Too few cells → resolution loss; too many → slow computation, memory issues
 
-### 8.8 Coverage / Sensitivity
+### 9.8 Coverage / Sensitivity
 Model cells with low coverage (cumulative sensitivity) are poorly constrained.
 Displaying them at full opacity is misleading — always mask or fade low-coverage
 regions using `pg.show(mesh, model, coverage=sens/sens.max())`.
 
-### 8.9 Sign Convention (IP)
+### 9.9 Sign Convention (IP)
 IP phase can be reported as positive or negative depending on convention.
 pyGIMLi expects **negative** phase values (phase lag). If data has positive
 phases, negate them before inversion. Mixing conventions produces nonsensical
@@ -303,7 +350,30 @@ Cole-Cole parameters.
 
 ---
 
-## 9. Validation Results
+## 10. Coupling Interfaces
+
+Consult `dag.yaml` before binding pyGIMLi outputs into another model. The dag
+outputs currently named in this KI are `inverted_resistivity_model`,
+`inverted_velocity_model`, `inverted_conductivity_or_coleCole_model`,
+`forward_response`, `data_fit_chi2`, and `coverage_sensitivity`.
+
+---
+
+## 11. Validated Results
+
+### Performance Metrics — judged against the field's bar, not intuition
+
+**Source**: `docs/validation_convention.yaml`. Null convention bands are written
+as `no cited threshold`; no pass/fail verdict should be inferred from these bars.
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation keys |
+|--------------|--------|-----------|-----------|------|--------------|---------------|
+| `inverted_resistivity_model` | csi | maximize | no cited threshold | no cited threshold | no cited threshold | [] |
+| `inverted_resistivity_model` | pbias | zero_centered | no cited threshold | no cited threshold | no cited threshold | [] |
+| `inverted_velocity_model` | csi | maximize | no cited threshold | no cited threshold | no cited threshold | [] |
+
+No calibration, validation, or full-period achieved metric values were included
+in the extracted convention facts for this edit.
 
 ### Synthetic ERT Test
 - **Setup**: 2D Wenner array, 41 electrodes at 1 m spacing
@@ -320,7 +390,7 @@ Cole-Cole parameters.
 
 ---
 
-## 10. Calibration / Tuning Parameters
+## 12. Calibration / Tuning Parameters
 
 | Priority | Parameter              | Typical Range     | Effect                          |
 |----------|------------------------|-------------------|---------------------------------|
@@ -337,7 +407,7 @@ Cole-Cole parameters.
 
 ---
 
-## 11. Common Workflows
+## 13. Common Workflows
 
 ### ERT 2D Inversion (Minimal)
 ```python
@@ -373,7 +443,7 @@ data = ert.simulate(mesh, res=100, scheme=scheme, noiseLevel=0.03)
 
 ---
 
-## 12. File Structure
+## 14. File Structure
 
 ```
 ki/
@@ -398,7 +468,7 @@ ki/
 
 ---
 
-## 13. Physical Constants (pygimli.physics.constants)
+## 15. Physical Constants (pygimli.physics.constants)
 
 | Constant | Symbol | Value                  | Unit    |
 |----------|--------|------------------------|---------|
@@ -410,7 +480,7 @@ ki/
 
 ---
 
-## 14. Troubleshooting Quick Reference
+## 16. Troubleshooting Quick Reference
 
 | Symptom                        | Likely Cause                    | Fix                              |
 |--------------------------------|---------------------------------|----------------------------------|

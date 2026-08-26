@@ -205,6 +205,171 @@ CROP_SCHEDULES = {
 # Built dynamically by combining wheat + maize schedules (remove terminal skip from wheat)
 
 
+# ========================================================================
+# region == "global": data-driven schedule for ANY basin on Earth
+# ------------------------------------------------------------------------
+# The four tables above are China-only (Chinese crop calendars AND Chinese
+# rates), so they silently mis-fertilise and mis-time every non-Chinese basin
+# — a winter-wheat October planting is simply wrong south of the tropics or in
+# a summer-rainfall Mexican basin.  `--region global --lat --lon` instead
+# derives BOTH from the server's curated global datasets via ki_tools_common:
+#   * rates    -> NPKGRIDS v1.08          (ki_tools_common.fertilizer)
+#   * calendar -> GGCMI Phase 3 calendar  (ki_tools_common.crop_calendar)
+# Added 2026-08-20 for the Río San Pedro Mezquital (Mexico) run; the China
+# tables remain the default for Chinese basins.
+# ========================================================================
+
+# SWAT+ plants.plt code per crop (verified against the shipped rev59 demo's
+# plants.plt — an unknown plant name is NOT rejected by the reader, it just
+# never grows, so this mapping must stay inside the shipped list).
+CROP_TO_PLT = {
+    "maize": "corn",
+    "rice": "rice",
+    "wheat": "wwht",          # replaced by swht below when the calendar is spring
+    "sorghum": "grsg",
+    "soybean": "soyb",
+    "cotton": "cots",
+    "sugarcane": "sugc",
+}
+
+# ki_tools_common.crop_calendar crop key per our crop name
+CROP_TO_CALENDAR = {
+    "maize": "maize",
+    "rice": "ri1",
+    "wheat": "spring_wheat",
+    "sorghum": "sorghum",
+    "soybean": "soybean",
+    "cotton": "cotton",
+    "sugarcane": "sugarcane",
+}
+
+
+def _doy_to_month_day(doy, ref_year=2001):
+    from datetime import date, timedelta
+    d = date(ref_year, 1, 1) + timedelta(days=int(doy) - 1)
+    return d.month, d.day
+
+
+def build_global_schedule(crop, lat, lon):
+    """Build a fertiliser/crop schedule for ANY lat/lon from global datasets.
+
+    Returns (schedule_name, ops, provenance_dict).
+    """
+    from ki_tools_common.fertilizer import get_fertilizer_rates, get_split_schedule
+    from ki_tools_common.crop_calendar import get_planting_harvest
+
+    cal_crop = CROP_TO_CALENDAR.get(crop, crop)
+    cal = get_planting_harvest(lat, lon, crop=cal_crop)
+    fert = get_fertilizer_rates(lat, lon, crop=crop)
+
+    plant_doy = int(cal["plant_doy"])
+    harvest_doy = int(cal["harvest_doy"])
+
+    plt_code = CROP_TO_PLT.get(crop, "corn")
+    if crop == "wheat":
+        # A wheat calendar whose harvest DOY is BEFORE its planting DOY wraps the
+        # new year => winter wheat; otherwise spring wheat.
+        plt_code = "wwht" if harvest_doy < plant_doy else "swht"
+
+    n_total = float(fert["n_kgha"])
+    p_total = float(fert["p_kgha"])
+    splits = get_split_schedule(n_total, crop=crop, plant_doy=plant_doy)
+
+    # Tillage 15 d before planting; P applied entirely at planting (SWAT+ P is
+    # not mobile enough for a split to matter).
+    till_doy = plant_doy - 15
+    till_year_offset_note = None
+    if till_doy < 1:
+        till_doy += 365
+        till_year_offset_note = "tillage wraps to the previous calendar year"
+
+    ops = []
+    tm, td = _doy_to_month_day(till_doy)
+    ops.append(("till", tm, td, 0.0, "fldcult", "null", 0.0))
+
+    pm, pd = _doy_to_month_day(plant_doy)
+    ops.append(("fert", pm, pd, 0.0, "elem_p", "broadcast", round(p_total, 1)))
+    for sp in splits:
+        sm, sd = _doy_to_month_day(sp["doy"])
+        ops.append(("fert", sm, sd, 0.0, "elem_n", "broadcast",
+                    round(float(sp["n_kgha"]), 1)))
+    # planting goes after the at-planting fertiliser so the nutrients are in the
+    # soil when the crop starts taking up
+    ops.append(("plnt", pm, pd, 0.0, plt_code, "null", 0.0))
+    hm, hd = _doy_to_month_day(harvest_doy)
+    # hvkl (harvest AND kill), NOT harv. SWAT+ performs a `plnt` operation only
+    # when no land cover is growing, and the previous cover has to be removed by a
+    # kill or a harvest-and-kill operation. A bare `harv` takes the grain but
+    # leaves the crop ALIVE, so this schedule's terminal `skip` rolls into the next
+    # year with cover still standing and the year-2 `plnt` is silently ignored —
+    # the crop is never re-established, growth/uptake decay, and N/P export drifts
+    # with no error anywhere. Every one of these schedules is an annual crop
+    # replanted each cycle, so the cover must be killed at harvest.
+    # (The shipped rev59 demo deck test_ames/management.sch uses `hvkl corn grain`
+    # in exactly this position.)
+    ops.append(("hvkl", hm, hd, 0.0, plt_code, "grain", 0.0))
+    ops.append(("skip", 0, 0, 0.0, "null", "null", 0.0))
+
+    # SWAT+ reads the operations in the listed order within a year, so sort the
+    # dated ops by (month, day) and keep `skip` last.
+    dated = [o for o in ops if o[0] != "skip"]
+    dated.sort(key=lambda o: (o[1], o[2]))
+    ops = dated + [o for o in ops if o[0] == "skip"]
+
+    name = f"{crop[:5]}_glob"
+    prov = {
+        "lat": lat, "lon": lon,
+        "plant_doy": plant_doy, "harvest_doy": harvest_doy,
+        "plant_code": plt_code,
+        "calendar_source": cal.get("source"),
+        "fertilizer_source": fert.get("source"),
+        "n_total_kgha": n_total, "p_total_kgha": p_total,
+        "note": till_year_offset_note,
+    }
+    return name, ops, prov
+
+
+AG_LUM_NAMES = ("agrl_lum", "agrr_lum", "agrc_lum", "rice_lum")
+
+
+def wire_schedule_into_landuse_lum(lum_path, sched_name, lum_names=AG_LUM_NAMES):
+    """Point the `mgt` column of the agricultural landuse.lum rows at sched_name.
+
+    WITHOUT this step configure_fertilizer.py is a NO-OP on a deck built by
+    tools/s2/generate_hru_from_global.py: that generator hard-codes
+    `mgt = no_mgt` for every land use, so the schedule written into
+    management.sch is never referenced by any HRU and no fertiliser is ever
+    applied.  The model still runs, still prints basin_ls, and simply reports
+    the unfertilised N export — silently.  (See dt_v004 for the segfault that
+    made no_mgt the default; always run the deck once after wiring and fall
+    back to no_mgt if the binary dies in mgt_operatn_.)
+    """
+    lum_path = Path(lum_path)
+    lines = lum_path.read_text().split("\n")
+    if len(lines) < 2:
+        raise ValueError(f"{lum_path} is too short to be a landuse.lum")
+    header = lines[1].split()
+    try:
+        mgt_idx = header.index("mgt")
+    except ValueError:
+        raise ValueError(f"{lum_path} header has no 'mgt' column: {header}")
+
+    width = 28
+    changed = []
+    for i, line in enumerate(lines[2:], start=2):
+        if not line.strip():
+            continue
+        fields = line.split()
+        if not fields or fields[0] not in lum_names:
+            continue
+        fields[mgt_idx] = sched_name
+        lines[i] = "".join(f"{v:<{width}}" for v in fields).rstrip() + "  "
+        changed.append(fields[0])
+
+    lum_path.write_text("\n".join(lines))
+    return changed
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Configure fertilizer and crop management schedules for SWAT+"
@@ -215,13 +380,26 @@ def parse_args():
     )
     parser.add_argument(
         "--crop", required=True,
-        choices=["wheat", "maize", "rice", "wheat_maize"],
-        help="Crop system to configure"
+        choices=["wheat", "maize", "rice", "wheat_maize",
+                 "sorghum", "soybean", "cotton", "sugarcane"],
+        help="Crop system to configure (the non-China crops require --region global)"
     )
     parser.add_argument(
         "--region", required=True,
-        choices=["huai_river", "north_china", "northeast", "south_china"],
-        help="Agricultural region for fertilizer rates"
+        choices=["huai_river", "north_china", "northeast", "south_china", "global"],
+        help="Agricultural region for fertilizer rates. 'global' derives rates from "
+             "NPKGRIDS and planting/harvest dates from the GGCMI calendar at "
+             "--lat/--lon; use it for ANY basin outside China."
+    )
+    parser.add_argument("--lat", type=float, default=None,
+                        help="Basin latitude (REQUIRED for --region global)")
+    parser.add_argument("--lon", type=float, default=None,
+                        help="Basin longitude (REQUIRED for --region global)")
+    parser.add_argument(
+        "--landuse_lum", default=None,
+        help="Path to landuse.lum. If given, the agricultural rows' `mgt` column is "
+             "repointed at the new schedule. WITHOUT this the schedule is inert on a "
+             "deck from tools/s2/generate_hru_from_global.py (it writes mgt=no_mgt)."
     )
     parser.add_argument(
         "--append", action="store_true",
@@ -232,6 +410,20 @@ def parse_args():
 
 def validate_inputs(args):
     errors = []
+    if args.region == "global":
+        if args.lat is None or args.lon is None:
+            errors.append("--region global requires --lat and --lon")
+        if args.crop == "wheat_maize":
+            errors.append("--crop wheat_maize is a China double-crop rotation; "
+                          "with --region global pass a single crop")
+        if errors:
+            for e in errors:
+                logger.error(e)
+            sys.exit(1)
+        logger.info("Input validation passed (global, data-driven).")
+        return
+    if args.crop in ("sorghum", "soybean", "cotton", "sugarcane"):
+        errors.append(f"crop={args.crop} is only available with --region global")
     if args.crop == "wheat_maize":
         if args.region not in CROP_SCHEDULES["wheat"]:
             errors.append(f"Wheat schedule not available for region: {args.region}")
@@ -290,7 +482,15 @@ def process(args):
     sch_path = Path(args.management_sch)
 
     # Build schedule(s)
-    if args.crop == "wheat_maize":
+    provenance = None
+    if args.region == "global":
+        sched_name, ops, provenance = build_global_schedule(args.crop, args.lat, args.lon)
+        logger.info(f"global schedule from {provenance['calendar_source']} calendar + "
+                    f"{provenance['fertilizer_source']} rates: plant DOY "
+                    f"{provenance['plant_doy']} ({provenance['plant_code']}), harvest DOY "
+                    f"{provenance['harvest_doy']}, N={provenance['n_total_kgha']:.0f} "
+                    f"kgN/ha, P={provenance['p_total_kgha']:.0f} kgP/ha")
+    elif args.crop == "wheat_maize":
         sched_name, ops = build_double_crop_schedule(args.region)
     else:
         sched_name, ops = build_schedule(args.crop, args.region)
@@ -331,12 +531,24 @@ def process(args):
                 f.write(line + "\n")
         logger.info(f"Wrote management.sch with schedule '{sched_name}' to {sch_path}")
 
+    wired = None
+    if args.landuse_lum:
+        wired = wire_schedule_into_landuse_lum(args.landuse_lum, sched_name)
+        if wired:
+            logger.info(f"landuse.lum: repointed mgt -> '{sched_name}' for {wired}")
+        else:
+            logger.warning(
+                f"landuse.lum has none of {AG_LUM_NAMES} — the schedule is INERT. "
+                "No HRU references it, so no fertilizer will be applied.")
+
     return {
         "status": "success",
         "management_sch": str(sch_path),
         "schedule_name": sched_name,
         "crop": args.crop,
         "region": args.region,
+        "provenance": provenance,
+        "landuse_lum_wired": wired,
         "n_operations": n_ops,
         "total_n_kg_ha": total_n,
         "total_p_kg_ha": total_p,

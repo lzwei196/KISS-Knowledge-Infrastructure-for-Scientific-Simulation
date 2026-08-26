@@ -1,77 +1,133 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:02:08.569960'
-  domain: geomorphology
   name: PyDeltaRCM
-  version: auto-generated
+  language: python
+  implementation:
+    id: pydeltarcm
+    version: 2.2.0
+    provenance: Python; pyDeltaRCM package (Moodie, Hariharan, Barefoot, Passalacqua / UT Austin), numba
+      JIT-compiled routing kernels.
+  scientific_reference_version: DeltaRCM reduced-complexity delta morphodynamics (Liang, Voller & Paola
+    2015 Part 1 + Liang, Geleynse, Edmonds & Passalacqua 2015 Part 2), as realized by pyDeltaRCM 2.x
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyDeltaRCM/venv/bin/python
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s0_configuration
+  - s1_initialization
+  - s2_water_routing
+  - s3_sediment_routing
+  - s4_subsidence_sealevel
+  - s5_output_analysis
+tools:
+  count: 4
+  files:
+  - tools/convert_parameters.py
+  - tools/generate_yaml_config.py
+  - tools/parse_output.py
+  - tools/run_pydeltarcm.py
+inputs:
+  forcing: []
+  parameters:
+  - name: Length
+    unit: m
+  - name: Width
+    unit: m
+  - name: dx
+    unit: m
+  - name: L0_meters
+    unit: m
+  - name: N0_meters
+    unit: m
+  - name: S0
+    unit: '-'
+  - name: u0
+    unit: m/s
+  - name: h0
+    unit: m
+  - name: hb
+    unit: m
+  - name: C0_percent
+    unit: '%'
+  - name: f_bedload
+    unit: fraction (0-1)
+  - name: Np_water
+    unit: count
+  - name: Np_sed
+    unit: count
+  - name: itermax
+    unit: count
+  - name: theta_water
+    unit: '-'
+  - name: coeff_theta_sand
+    unit: '-'
+  - name: coeff_theta_mud
+    unit: '-'
+  - name: beta
+    unit: '-'
+  - name: coeff_U_ero_sand
+    unit: '-'
+  - name: coeff_U_ero_mud
+    unit: '-'
+  - name: coeff_U_dep_mud
+    unit: '-'
+  - name: alpha
+    unit: '-'
+  - name: sed_lag
+    unit: '-'
+  - name: Csmooth / omega_sfc / omega_flow / Nsmooth
+    unit: '-'
+  - name: stepmax
+    unit: cells
+  initial_conditions:
+  - name: eta (initial bed)
+    unit: m
+  - name: H_SL
+    unit: m
+  - name: seed
+    unit: integer
+  - name: resume_checkpoint state
+    unit: '-'
+  boundary_conditions:
+  - name: SLR
+    unit: m/s (model time)
+  - name: toggle_subsidence
+    unit: boolean
+  - name: subsidence_rate
+    unit: m/s (model time)
+  - name: start_subsidence
+    unit: s (model time)
+  - name: timesteps / target model time
+    unit: count or s
+  - name: save_dt
+    unit: s (model time)
+  - name: save_<var>_grids flags
+    unit: boolean
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - eta
+  - stage
+  - depth
+  - velocity
+  - discharge
+  - sedflux
+  - sandfrac
+  - strata_sand_frac
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=1.000, KGE=0.999, R=1.000, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.99999
+    best_kge: 0.999
+    best_r: 0.99999
+summary:
+  total_tools: 4
+  total_stage_docs: 6
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

@@ -1,0 +1,331 @@
+schema_version: 1
+model_id: LPJ-GUESS
+domain: biogeochem
+generated_by: "Step-B validation convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+references:
+  walker2014:
+    doi: 10.1002/2013JG002553
+    title: "Comprehensive ecosystem model-data synthesis using multiple data sets at two temporal scales"
+    venue: "Journal of Geophysical Research: Biogeosciences"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2013jg002553.txt
+  williams2009:
+    doi: 10.5194/bg-6-1341-2009
+    title: "Improving land surface models with FLUXNET data"
+    venue: "Biogeosciences"
+    year: 2009
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-6-1341-2009.txt
+  collier2018:
+    doi: 10.1029/2018MS001354
+    title: "The International Land Model Benchmarking (ILAMB) System: Design, Theory, and Implementation"
+    venue: "Journal of Advances in Modeling Earth Systems"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018ms001354.txt
+  hantson2020:
+    doi: 10.5194/gmd-13-3299-2020
+    title: "Quantitative assessment of fire and vegetation properties in simulations with fire-enabled vegetation models"
+    venue: "Geoscientific Model Development"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-3299-2020.txt
+  piao2013:
+    doi: 10.1111/gcb.12187
+    title: "Evaluation of terrestrial carbon cycle models for their response to climate variability and to CO2 trends"
+    venue: "Global Change Biology"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1111_gcb.12187.txt
+  xia2017:
+    doi: 10.1002/2016JG003384
+    title: "Terrestrial ecosystem model performance in simulating productivity and its vulnerability to climate change"
+    venue: "Journal of Geophysical Research: Biogeosciences"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2016jg003384.txt
+  lienert2018:
+    doi: 10.5194/bg-15-2909-2018
+    title: "A Bayesian ensemble data assimilation to constrain model parameters and land-use carbon in LPJ-GUESS"
+    venue: "Biogeosciences"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-15-2909-2018.txt
+  zhu2020:
+    doi: 10.5194/essd-12-2725-2020
+    title: "Improved estimate of global gross primary production for reproducing its long-term variation, 1982-2017"
+    venue: "Earth System Science Data"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_essd-12-2725-2020.txt
+
+validation:
+  - dag_variable: GPP
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: >-
+          Minimal skill floor only: Walker et al. define model efficiency and state that EF above zero is
+          better than using the observed mean; no fetched paper gives a stronger terrestrial-GPP NSE tier.
+        cites: [walker2014]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [zhu2020, collier2018]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [zhu2020, collier2018]
+      - metric: nme
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [hantson2020]
+    validated_when: >-
+      NSE/EF must be above zero, meaning the modeled GPP time series beats the observed-mean benchmark;
+      RMSE, bias, ILAMB scores, and NME should be reported because land-model papers use them for
+      diagnosis, but no fetched GPP paper supplies a stronger numeric pass tier.
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The dag determining_metric nse is retained. Walker et al. write that "EF above zero indicates" model
+      predictions beat the observed mean. Zhu et al. evaluate GPP with R2, RMSE, bias, and Kendall tau, with
+      site mean R2 0.81 and RMSE 2.13 g C m-2 d-1, but they do not prescribe these as validation gates.
+      Piao et al. caution that global GPP is not directly observed and is inferred from eddy-flux NEE
+      partitioning plus upscaling, so this is a minimal skill convention, not a high-confidence pass tier.
+
+  - dag_variable: Ra
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: >-
+          Minimal EF/NSE skill floor transferred from ecosystem model-data synthesis; no fetched paper gives
+          an autotrophic-respiration-specific NSE, RMSE, or bias tier.
+        cites: [walker2014]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [walker2014, xia2017]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [walker2014, xia2017]
+    validated_when: >-
+      Ra has only a weak transferred convention: NSE/EF > 0 against a defensible partitioned or biometric
+      Ra estimate; report RMSE and bias but do not auto-tighten them without a fetched respiration benchmark.
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Ra is not directly measured by eddy covariance. Xia et al. describe CUE as collectively determined by
+      GPP and autotrophic respiration, including maintenance and growth respiration, and note that
+      respiration simulations vary greatly among models. Treat Ra validation as partitioning-dependent.
+
+  - dag_variable: Rh
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: >-
+          Minimal EF/NSE skill floor transferred from ecosystem model-data synthesis; no fetched paper gives
+          a heterotrophic-respiration-specific validation tier.
+        cites: [walker2014]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [walker2014, xia2017]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [walker2014, xia2017]
+    validated_when: >-
+      Rh has only a weak transferred convention: NSE/EF > 0 against chamber-derived or partitioned Rh, with
+      RMSE and bias reported as diagnostics rather than pass bands.
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The fetched LPJ-GUESS/productivity literature discusses respiration as a modeled component and an
+      uncertainty source, not a variable with accepted pass tiers. Xia et al. call for better quantification of
+      CUE and respiration dynamics; keep the dag nse headline but do not infer stricter bands.
+
+  - dag_variable: Reco
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: >-
+          Minimal EF/NSE skill floor; Reco-specific tower partitioning papers in the fetched set do not provide
+          a numeric validation tier beyond general goodness-of-fit metrics.
+        cites: [walker2014]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [williams2009, collier2018]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [williams2009, collier2018]
+      - metric: wavelet_coherence
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [williams2009]
+    validated_when: >-
+      NSE/EF > 0 is the only cited numeric floor. Field practice should also inspect RMSE, bias, and temporal
+      coherence because tower Reco is partitioned and time-scale dependent.
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      Williams et al. list RMSE, residual plots, R2, and model efficiency as common evaluation metrics and
+      emphasize time/frequency-domain checks for flux data. Their wavelet example uses coherence >0.7 as
+      a 95% relationship indicator, but that is not a Reco validation pass band.
+
+  - dag_variable: NEE
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: >-
+          Minimal EF/NSE skill floor: EF above zero beats the observed-mean benchmark. No fetched NEE paper
+          gives a stronger universal NSE tier for terrestrial carbon fluxes.
+        cites: [walker2014]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [williams2009, collier2018]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [williams2009, collier2018]
+      - metric: wavelet_coherence
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [williams2009]
+    validated_when: >-
+      NEE is validated only at the minimal cited level when NSE/EF > 0 with the correct flux sign convention;
+      RMSE, bias, and timing/coherence diagnostics should be reviewed before claiming robust site skill.
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      NEE is the most direct eddy-covariance carbon flux among the LPJ-GUESS outputs, but it is a residual
+      flux. Williams et al. warn that conventional scatterplots and goodness-of-fit statistics alone may miss
+      time-scale errors, so a pass on EF is not a substitute for seasonal and event diagnostics.
+
+  - dag_variable: NPP
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: >-
+          Minimal EF/NSE skill floor transferred from ecosystem model-data synthesis; fetched NPP papers
+          emphasize biometric/FACE/site synthesis rather than a universal tower-time-series NSE tier.
+        cites: [walker2014]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [walker2014, piao2013, xia2017]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [piao2013, xia2017]
+    validated_when: >-
+      For point time series, NPP only has a weak transferred floor: NSE/EF > 0 against an appropriate biometric
+      or synthesized NPP estimate, with RMSE and bias reported but not thresholded.
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      Piao et al. evaluate NPP response using warming and FACE experiments rather than a universal time-
+      series threshold. Xia et al. state that long-term flux-tower GPP seasonality and interannual variability
+      are useful for diagnosing modeled NPP but that more long-term observations are needed, especially in
+      permafrost regions.
+
+  - dag_variable: NPP
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: >-
+          The dag determining_metric is retained, but no fetched terrestrial-NPP paper gives a percent-bias
+          tier for regional aggregate NPP time series.
+        cites: []
+      - metric: mse_rel
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 5.0}
+        pass_band: satisfactory
+        band_note: >-
+          Transferred land-model ensemble constraint: Lienert and Joos require MSErel lower than 5 for each
+          observational data set, otherwise the skill score is set to zero.
+        cites: [lienert2018]
+    secondary_metrics:
+      - metric: ilamb_score
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [collier2018]
+      - metric: nme
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [hantson2020]
+    validated_when: >-
+      Regional NPP is unresolved on percent bias; use the cited MSErel <= 5 land-model constraint as a
+      transferred minimum skill check, and report ILAMB/NME diagnostics. The null pbias band means this
+      block must not auto-loosen a failed regional NPP case.
+    evidence_strength: moderate
+    confidence: 0.45
+    notes: >-
+      Collier et al. explicitly say most systematic land-model benchmarking strategies do not depend on a
+      pre-defined expected level of performance, and that ILAMB scores are not determinants of good or bad
+      models. Hantson et al. use NME because it allows comparison across variables and interpret NME by
+      comparison with null models; the mean null model has NME 1.0, but that paper reports global spatial
+      vegetation benchmarks, not a regional NPP pbias tier.
+
+deferred_paywalled:
+  - ref: "Bennett et al. 2013 — Characterising performance of environmental models"
+    doi: 10.1016/j.envsoft.2012.09.011
+    needed_for: [GPP, Ra, Rh, Reco, NEE, NPP]

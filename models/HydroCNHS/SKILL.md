@@ -1,13 +1,3 @@
----
-name: hydrocnhs
-description: >-
-  HydroCNHS (Lin, Yang & Wi 2022) — semi-distributed daily CNHS hydrology: GWLF/ABCD
-  rainfall-runoff + Lohmann routing + four ABM coupling APIs. Covers Semi-distributed
-  daily rainfall-runoff at the subbasin level (GWLF, ABCD, or user-supplied 'Other');
-  Routing of subbasin runoff to routing outlets (within-subbasin gamma unit hydrograph +….
-  Use when the task involves running, configuring, calibrating or interpreting HydroCNHS.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (10 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_model_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_model_config.py --help` |
+| `tools/convert_climate_inputs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_climate_inputs.py --help` |
+| `tools/convert_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_hydrocnhs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_hydrocnhs.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # HydroCNHS Knowledge Infrastructure
 
@@ -150,6 +175,38 @@ units first. This is the #1 cause of failed HydroCNHS runs.
 
 ---
 
+## 8. Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`; unit traps and remedies live in
+`diagnostics/triplets.yaml`. This unit table documents the model-facing conversions used by
+the pipeline and keeps trap ids only where the KI has a corresponding diagnostic.
+
+| Variable | Source unit (verified) | Model unit | Factor / conversion | Type | Trap ID |
+|----------|------------------------|------------|---------------------|------|---------|
+| Precipitation | `mm/day` | `cm/day` | divide by 10 | multiplicative | `dt_001` |
+| Precipitation | `kg/m^2/s` | `cm/day` | multiply by 86400, then divide by 10 | multiplicative | `dt_002` |
+| Temperature | `K` | `degC` | subtract 273.15 | additive | `dt_003` |
+| PET | `mm/day` | `cm/day` | divide by 10 | multiplicative | `dt_004` |
+| Subbasin area | `km^2` | `ha` | multiply by 100 | multiplicative | `dt_005` |
+| Subbasin area | `m^2` | `ha` | divide by 10000 | multiplicative | `dt_006` |
+| Flow length | `km` | `m` | multiply by 1000 | multiplicative | `dt_007` |
+| Date strings | `YYYY-MM-DD` | `YYYY/M/D` | replace hyphens with slashes | format | `dt_008` |
+| Soil water capacity (`Ur`) | `mm` | `cm` | divide by 10 | multiplicative | `dt_009` |
+| Snowmelt coefficient (`Df`) | `mm/degC` | `cm/degC` | divide by 10 | multiplicative | `dt_010` |
+| Wave velocity (`Velo`) | `km/h` | `m/s` | multiply by 1000/3600 | multiplicative | `dt_011` |
+| Discharge output (`Q_routed`) | native model output | `cms (m^3/s)` | no conversion | native | — |
+| Local runoff output (`Q_runoff`) | native model output | `cms (m^3/s)` | no conversion | native | — |
+| Hamon PET output (`pet`) | native model output | `cm/day` | no conversion | native | — |
+| Monthly sediment output (`TSS_monthly`) | native model output | `Mg` | no conversion | native | — |
+
+**Output unit verification checklist**:
+- Read the dag before post-processing: `Q_routed` is `cms (m^3/s)`.
+- Print the first 10 output values and confirm the expected order of magnitude.
+- For discharge, compare absolute flow in `m^3/s`, not depth per subbasin.
+- For PET and runoff-generation diagnostics, confirm whether values are forcing inputs or model outputs.
+
+---
+
 ## 5. Tools Reference
 
 | Tool | Stage | Script | Purpose |
@@ -169,7 +226,33 @@ All tools follow the **validate → process → validate** pattern:
 
 ---
 
-## 6. Critical Domain Knowledge
+## 6. Output Description (sourced from `dag.yaml`)
+
+The source of truth for model outputs is `dag.yaml`. This section restates the dag; if
+this section and the dag disagree, the dag wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `Q_routed` — Daily routed streamflow at routing/gauged outlets (and dam-agent inflow outlets); the primary return of Model.run(). (`cms (m^3/s)`)
+
+Other dag outputs: `Q_runoff`, `pet`, `TSS_monthly`, `ABM_agent_records`.
+
+| Output variable (dag `var`) | Rank | Emitted in | Unit | Description |
+|-----------------------------|------|------------|------|-------------|
+| `Q_routed` | 1 | `model.dc.Q_routed[outlet]` (data collector) | `cms (m^3/s)` | Daily routed streamflow at routing/gauged outlets (and dam-agent inflow outlets); the primary return of Model.run(). |
+| `Q_runoff` | 2 | `model.dc.Q_runoff[outlet]` (data collector) | `cms (m^3/s)` | Local unrouted subbasin runoff (also exposed as Q_local) before Lohmann routing. |
+| `pet` | 3 | `model.dc.pet[outlet]` (data collector) | `cm/day` | Hamon-computed potential evapotranspiration (atmospheric water demand) when PET is not supplied as input. |
+| `TSS_monthly` | 4 | `model.dc TSS field` (data collector, sediment mode) | `Mg` | Monthly routed total suspended sediment (sediment mode only). |
+| `ABM_agent_records` | 5 | `model.dc.<user-defined field>` (data collector) | `varies (storage volume, diversion volume)` | Agent-specific water-management outputs (e.g., reservoir storage, diversion volume; bookkeeping records, not a single field observable) recorded by user-defined ABM modules via the shared data collector. |
+
+**Scoring caveats for `Q_routed` from the dag**:
+- Exclude a 1-2 yr warm-up before scoring so soil/groundwater/snow stores equilibrate.
+- Align simulated and observed on the date index, not array position; a 1-day offset destroys correlation in flashy basins.
+- Regulated reaches require the corresponding ABM agents configured or the comparison conflates natural and human signals.
+
+---
+
+## 6b. Critical Domain Knowledge
 
 These facts are non-obvious and cause **silent failures** if violated:
 
@@ -248,14 +331,27 @@ These facts are non-obvious and cause **silent failures** if violated:
 
 ---
 
-## 10. Validation Results
+## 11. Validated Results
 
 **Basin**: Tualatin River Basin (TRB), Oregon, USA
 **Period**: 1981/1/1 – 2013/12/31 (33 years, 12,053 days)
 **Subbasins**: 7 (HaggIn, TRTR, DLLO, TRGC, DAIRY, RCTV, WSLO)
 **Model**: GWLF + Lohmann routing + ABM (reservoir + diversion + pipe)
 
-Calibrated performance at WSLO outlet (monthly):
+### Performance Metrics — judged against `docs/validation_convention.yaml`
+
+No new body-campaign achieved values are asserted in this edit. Calibration,
+validation, and full-period achieved values remain pending unless produced by a
+model run and scored against the bars below.
+
+| Dag variable | Obs shape | Metric | Direction | Convention bar (cited per band) | Calibration | Validation | Full period |
+|--------------|-----------|--------|-----------|----------------------------------|-------------|------------|-------------|
+| `Q_routed` | `point_time_series` | `nse` | maximize | satisfactory >= 0.5 [`moriasi_repro_nh2017`, `arnold2012`, `mikeswat2014`]; good >= 0.65 [`moriasi_repro_nh2017`, `arnold2012`, `mikeswat2014`]; very_good >= 0.75 [`moriasi_repro_nh2017`, `arnold2012`, `mikeswat2014`] | pending body campaign | pending body campaign | pending body campaign |
+| `Q_routed` | `point_time_series` | `pbias` | zero_centered | very_good \|PBIAS\| <= 10 [`moriasi_repro_nh2017`, `mikeswat2014`]; good \|PBIAS\| <= 15 [`moriasi_repro_nh2017`, `mikeswat2014`]; satisfactory \|PBIAS\| <= 25 [`moriasi_repro_nh2017`, `mikeswat2014`] | pending body campaign | pending body campaign | pending body campaign |
+| `Q_routed` | `point_snapshot` | `pbias` | zero_centered | very_good \|PBIAS\| <= 10 [`moriasi_repro_nh2017`]; good \|PBIAS\| <= 15 [`moriasi_repro_nh2017`]; satisfactory \|PBIAS\| <= 25 [`moriasi_repro_nh2017`] | pending body campaign | pending body campaign | pending body campaign |
+| `Q_runoff` | `point_time_series` | `nse` | maximize | satisfactory >= 0.5 [`moriasi_repro_nh2017`, `arnold2012`]; good >= 0.65 [`moriasi_repro_nh2017`, `arnold2012`]; very_good >= 0.75 [`moriasi_repro_nh2017`, `arnold2012`] | pending body campaign | pending body campaign | pending body campaign |
+
+**Legacy body note already present in this SKILL**: calibrated performance at WSLO outlet (monthly):
 - KGE ≈ 0.80–0.90
 - NSE ≈ 0.75–0.85
 - r ≈ 0.90–0.95
@@ -328,13 +424,32 @@ hydrocnhs.Visual().plot.timeseries(
 
 ## Output Description
 
-HydroCNHS stores simulation results in the `model.dc` (data collector) object after `model.run()`. The primary output is `model.dc.Q_routed`, a dictionary keyed by gauge/subbasin name containing daily routed streamflow arrays in m^3/s (cms). Additional outputs include `model.dc.Q_local` (local runoff per subbasin), actual evapotranspiration, and soil moisture states. Use `parse_output.py` to export `Q_routed` to CSV with columns `date, Q_sim (cms)` and compute performance indicators (NSE, KGE, RMSE, r) against observed streamflow. ABM agent records (reservoir storage, diversion volumes) are accessible via the agent objects after the run.
+HydroCNHS stores simulation results in the `model.dc` (data collector) object after
+`model.run()`. The dag headline output is `model.dc.Q_routed[outlet]`, keyed by
+gauge/subbasin name, containing daily routed streamflow arrays in `cms (m^3/s)`.
+Use `parse_output.py` to export `Q_routed` to CSV with columns `date, Q_sim (cms)`
+and compute performance indicators (NSE, KGE, RMSE, r) against observed streamflow.
+
+The dag output list is `Q_routed`, `Q_runoff`, `pet`, `TSS_monthly`, and
+`ABM_agent_records`. `Q_runoff` is local unrouted subbasin runoff before Lohmann
+routing, `pet` is Hamon-computed potential evapotranspiration when PET is not supplied
+as input, `TSS_monthly` is sediment-mode monthly routed total suspended sediment, and
+`ABM_agent_records` are user-defined water-management bookkeeping records.
 
 ---
 
-## 14. Diagnostic Triplets Summary
+## 9. Diagnostic Triplets (Top 5)
 
 See `diagnostics/triplets.yaml` for 18 symptom → diagnosis → remedy entries.
+Do not duplicate the full corpus here; read the YAML first on any error.
+
+| # | Triplet ID | Error / symptom | Diagnosis | Remedy |
+|---|------------|-----------------|-----------|--------|
+| 1 | `dt_001` | Simulated discharge is exactly 10× higher than observed | Precipitation data is in mm/day instead of cm/day | Divide all precipitation values by 10 before passing to `model.run()` |
+| 2 | `dt_002` | Simulated discharge is orders of magnitude wrong (100× or more) | CMIP precipitation in kg/m²/s not converted to cm/day | Use `prec_cm = prec_kgm2s * 86400.0 / 10.0` |
+| 3 | `dt_003` | PET calculation returns unrealistic values; seasonal cycle is muted | Temperature data is in Kelvin instead of Celsius | Subtract 273.15 from all temperature values |
+| 4 | `dt_004` | Discharge consistently too low; evaporation excessive | PET provided in mm/day instead of cm/day | Divide PET values by 10 |
+| 5 | `dt_005` | Simulated discharge is exactly 100× lower than observed | Subbasin area specified in km² instead of hectares (ha) | Multiply all area values by 100 |
 
 Key failure domains:
 - **unit_conversion** (7 triplets): Silent errors from wrong input units

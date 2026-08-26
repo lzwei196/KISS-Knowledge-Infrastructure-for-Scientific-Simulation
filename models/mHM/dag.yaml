@@ -445,7 +445,7 @@ outputs:
   - var: "total_runoff (Q)"
     validation_rank: 2
     unit: "mm/timestep"
-    description: "Total runoff (direct + fast interflow + slow interflow + baseflow) generated per L1 cell before routing."
+    description: "Total water runoff depth (direct + fast interflow + slow interflow + baseflow) generated per L1 cell before routing."
     emitted_in: "mHM_Fluxes_States.nc"
     observability:
       comparable_obs_shapes:
@@ -462,7 +462,7 @@ outputs:
   - var: "baseflow (QB)"
     validation_rank: 5
     unit: "mm/timestep"
-    description: "Saturated-zone baseflow generated per cell, governed by geology-class recession (GeoParam)."
+    description: "Saturated-zone groundwater baseflow generated per cell, governed by geology-class recession (GeoParam)."
     emitted_in: "mHM_Fluxes_States.nc"
     observability:
       comparable_obs_shapes:

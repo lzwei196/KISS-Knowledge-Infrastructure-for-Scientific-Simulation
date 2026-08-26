@@ -1,77 +1,117 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:59:39.813775'
-  domain: groundwater
   name: OpenGeoSys
-  version: auto-generated
+  language: c++
+  implementation:
+    id: opengeosys-6
+    version: 6.5.7
+    provenance: C++23; UFZ/OpenGeoSys community FEM multiphysics solver (git a5c00a5, 2026-03), optional
+      Python bindings.
+  scientific_reference_version: OpenGeoSys 6 (OGS-6) THMC finite-element multiphysics; doxygen-stable
+    6.5.7 lineage
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenGeoSys/venv/bin/ogs
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s0_configuration
+  - s1_domain_setup
+  - s2_forcing_input
+  - s3_parameters
+  - s4_execution
+  - s5_output_parsing
+  - s6_coupled_processes
+  - s7_diagnostics_guide
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_ogs.py
+  - tools/convert_soil_to_ogs.py
+  - tools/parse_ogs_output.py
+  - tools/run_ogs.py
+inputs:
+  forcing:
+  - name: recharge / surface flux
+    unit: m/s
+  - name: prescribed head / pressure boundary
+    unit: Pa
+  - name: prescribed temperature boundary
+    unit: K
+  - name: well pumping / injection rate
+    unit: m^3/s
+  parameters:
+  - name: intrinsic permeability
+    unit: m^2
+  - name: porosity
+    unit: '-'
+  - name: specific storage
+    unit: 1/Pa
+  - name: liquid density
+    unit: kg/m^3
+  - name: liquid dynamic viscosity
+    unit: Pa*s
+  - name: solid density
+    unit: kg/m^3
+  - name: thermal conductivity
+    unit: W/(m*K)
+  - name: specific heat capacity
+    unit: J/(kg*K)
+  - name: van Genuchten entry pressure
+    unit: Pa
+  - name: van Genuchten exponent
+    unit: '-'
+  - name: residual liquid saturation
+    unit: '-'
+  - name: Biot coefficient
+    unit: '-'
+  - name: Young's modulus
+    unit: Pa
+  - name: Poisson's ratio
+    unit: '-'
+  - name: thermal expansivity
+    unit: 1/K
+  initial_conditions:
+  - name: initial primary-variable fields
+    unit: process-dependent (Pa, K, m, mol/m^3)
+  boundary_conditions:
+  - name: specific body force (gravity)
+    unit: m/s^2
+  - name: process type
+    unit: '-'
+  - name: coupling scheme
+    unit: '-'
+  - name: time-stepping scheme and window
+    unit: s
+  - name: nonlinear solver type
+    unit: '-'
+  - name: convergence criterion and tolerance
+    unit: '-'
+  - name: linear solver
+    unit: '-'
+  - name: FE element order
+    unit: '-'
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - pressure
+  - temperature
+  - displacement
+  - darcy_velocity
+  - stress
+  - saturation
+  - concentration
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=1.000, R=1.000, 2 scorecard(s)'
+  metrics:
+    best_nse: 1.0
+    best_r: 1.0
+summary:
+  total_tools: 4
+  total_stage_docs: 8
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

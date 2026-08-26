@@ -1,13 +1,3 @@
----
-name: mom6
-description: >-
-  MOM6. Covers Ocean general circulation (horizontal velocity u, v); Ocean thermodynamics
-  (temperature, salinity transport: advection + diffusion); Free-surface / sea surface
-  height evolution (split barotropic mode); Layer thickness evolution under the
-  generalized ALE vertical coordinate; Mixed-layer and boundary-layer dynamics (ePBL /
-  KPP). Use when the task involves running, configuring, calibrating or interpreting MOM6.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,39 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (16 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/forcing_converter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/forcing_converter.py --help` |
+| `tools/output_parser.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/output_parser.py --help` |
+| `tools/run_mom6.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_mom6.py --help` |
+| `tools/topography_converter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/topography_converter.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # MOM6 Ocean Model — Knowledge Infrastructure
 
@@ -180,7 +203,14 @@ Extract and analyze model diagnostics.
 
 ---
 
-## 4. Unit Trap Table
+## 4. Unit Conversion Table
+
+This unit table documents the common conversions and sign conventions that must
+be checked before building MOM6 inputs or judging diagnostic outputs. Exact I/O
+shapes live in `docs/format_spec.yaml`; regenerate that projected spec after dag
+or triplet changes rather than hand-editing it.
+
+### 4.1 Unit Trap Table
 
 Units are the most common source of silent errors. MOM6 uses SI internally but
 input data often arrives in different units.
@@ -309,9 +339,31 @@ SAVE_INITIAL_CONDS = True  ! Save IC file
 
 ---
 
-## 6. Key Variables and Diagnostics
+## 6. Output Description
 
-### 6.1 Prognostic Variables (State)
+This section restates `dag.yaml` for the reader. The dag is the model identity:
+if this section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1` in `dag.yaml`):
+
+> `SSH` — Sea surface height / dynamic free surface. (`m`)
+
+Other dag outputs: `SST`, `thetao`, `SSS`, `MLD_003`, `u`,
+`ocean_heat_content`.
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `SSH` | 1 | `m` | Sea surface height / dynamic free surface. |
+| `SST` | dag output | see `dag.yaml` | listed in dag outputs |
+| `thetao` | dag output | see `dag.yaml` | listed in dag outputs |
+| `SSS` | dag output | see `dag.yaml` | listed in dag outputs |
+| `MLD_003` | dag output | see `dag.yaml` | listed in dag outputs |
+| `u` | dag output | see `dag.yaml` | listed in dag outputs |
+| `ocean_heat_content` | dag output | see `dag.yaml` | listed in dag outputs |
+
+### 6.1 Key Variables and Diagnostics
+
+#### 6.1.1 Prognostic Variables (State)
 
 | Variable | Symbol | Units      | Grid Point | Description                    |
 |----------|--------|------------|------------|--------------------------------|
@@ -321,7 +373,7 @@ SAVE_INITIAL_CONDS = True  ! Save IC file
 | u        | u      | m/s        | u-point    | Zonal velocity                 |
 | v        | v      | m/s        | v-point    | Meridional velocity            |
 
-### 6.2 Key Diagnostic Variables
+#### 6.1.2 Key Diagnostic Variables
 
 | Variable   | Units   | Description                            |
 |------------|---------|----------------------------------------|
@@ -336,7 +388,7 @@ SAVE_INITIAL_CONDS = True  ! Save IC file
 | e          | m       | Interface heights (layer boundaries)   |
 | Kd_itides  | m²/s    | Internal-tide driven diffusivity       |
 
-### 6.3 ocean.stats Format
+#### 6.1.3 ocean.stats Format
 
 ```
   Step, Day, Truncs, Energy/Mass, Maximum CFL, Mean Sea Level, ...
@@ -422,7 +474,9 @@ All tools follow the **validate → process → validate** pattern:
 
 ---
 
-## 11. Physical Bounds for Validation
+## 11. Validated Results
+
+### 11.1 Physical Bounds for Validation
 
 | Variable        | Valid Range           | Alarm Threshold       |
 |-----------------|------------------------|-----------------------|
@@ -434,6 +488,40 @@ All tools follow the **validate → process → validate** pattern:
 | MLD             | 0.0 to 5000.0 m      | MLD > depth           |
 | KE              | 0.0 to 10.0 m²/s²    | KE > 20 m²/s²        |
 | Bottom drag     | 0.001 to 0.01 nondim  | > 0.05               |
+
+### 11.2 Convention Bars and Pending Results
+
+Validated run metrics are pending for this KI body campaign. Until a run table
+is generated, judge MOM6 outputs against the cited field convention in
+`docs/validation_convention.yaml`, not against intuition or uncited thresholds.
+
+#### Performance Metrics -- Convention Bars
+
+The dag rank-1 output is `SSH`. These bars restate the convention entries and
+their citation keys exactly as supplied for this KI.
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation keys |
+|--------------|--------|-----------|-----------|------|--------------|---------------|
+| `SSH` | `rmse` | minimize | 7.0 (`lellouche2013`, `ross2023`, `tsujino2020`) | 8.0 (`lellouche2013`, `ross2023`, `tsujino2020`) | 8.67 (`lellouche2013`, `ross2023`, `tsujino2020`) | `lellouche2013`, `ross2023`, `tsujino2020` |
+| `SSH` | `corr` | maximize | 0.97 (`ross2023`) | 0.9 (`ross2023`) | 0.5 (`ross2023`) | `ross2023` |
+| `SSH` | `mss` | maximize | 1.0 (`lellouche2013`) | 0.5 (`lellouche2013`) | 0.0 (`lellouche2013`) | `lellouche2013` |
+| `SST` | `rmse` | minimize | 0.4 (`seelanki2025`, `tsujino2020`, `lellouche2013`) | 0.467 (`seelanki2025`, `tsujino2020`, `lellouche2013`) | 0.6 (`seelanki2025`, `tsujino2020`, `lellouche2013`) | `seelanki2025`, `tsujino2020`, `lellouche2013` |
+| `SST` | `bias` | zero_centered | 0.23 (`ross2023`, `tsujino2020`) | 0.4 (`ross2023`, `tsujino2020`) | 0.5 (`ross2023`, `tsujino2020`) | `ross2023`, `tsujino2020` |
+
+| Dag variable | Achieved metric values | Status |
+|--------------|------------------------|--------|
+| `SSH` | no validated run metrics stated in this SKILL body | pending |
+| `SST` | no validated run metrics stated in this SKILL body | pending |
+
+#### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending | Use `ki_tools_common.load_forcing` and the referenced data KIs before running. |
+| Grid/topography | Pipeline | Pending | Validate `INPUT/ocean_hgrid.nc`, `INPUT/vcoord.nc`, and `INPUT/topog.nc`. |
+| Initial conditions | Pipeline | Pending | Validate `INPUT/MOM_IC.nc` or restart source fields. |
+| Open boundaries | Pipeline, optional | Pending | Required only for regional domains with OBC segments. |
+| Diagnostics | MOM6 output parser | Pending | Bind outputs through `dag.yaml`; rank-1 validation target is `SSH`. |
 
 ---
 

@@ -1,83 +1,114 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:01:19.762657'
-  domain: geomorphology
   name: pyBadlands
-  version: auto-generated
-  last_updated: '2026-05-01'
-  validated_sites: 2
-  validation_tier: real
-  best_r: 0.71
-  best_nse: 0.48
-  best_kge: 0.51
+  language: python
+  implementation:
+    id: pybadlands
+    version: hydrocraft-badlands-geomorph v1.0.0 (Badlands 2.x lineage)
+    provenance: Python driver over Fortran90 + C surface-process kernels; Tristan Salles / University
+      of Sydney (badlands-model/badlands).
+  scientific_reference_version: Badlands landscape evolution model (Salles, Ding & Brocard 2018, PLOS
+    ONE 10.1371/journal.pone.0195557; detachment-limited stream-power + diffusion formulation)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/venv/bin/python
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_domain_setup
+  - s2_dem_preparation
+  - s3_forcing_preparation
+  - s4_parameter_calibration
+  - s5_execution
+  - s6_output_analysis
+tools:
+  count: 4
+  files:
+  - tools/s3_forcing/convert_forcing_to_badlands.py
+  - tools/s4_parameters/convert_soil_params.py
+  - tools/s5_run/run_badlands.py
+  - tools/s6_output/parse_badlands_output.py
+inputs:
+  forcing:
+  - name: uniform rainfall rate (rval)
+    unit: m/year
+  - name: spatial rainfall map
+    unit: m/year
+  - name: orographic rainfall parameters (ortime, rbgd, rmin, rmax, windx, windy)
+    unit: m/year, m
+  - name: sea-level curve
+    unit: years, m
+  - name: tectonic vertical (uplift/subsidence) displacement map (ufile)
+    unit: m (total over event)
+  - name: tectonic horizontal (3D) displacement map (dfile)
+    unit: m (total over event)
+  - name: river point input (rQw discharge, rQs sediment load, rposX/rposY)
+    unit: m^3/s; Mt/year; m
+  parameters:
+  - name: SPL discharge/area exponent m (SPLm)
+    unit: dimensionless
+  - name: SPL slope exponent n (SPLn)
+    unit: dimensionless
+  - name: SPL erodibility coefficient Kd (SPLero)
+    unit: m^(1-2m)/year
+  - name: precipitation exponent l
+    unit: dimensionless
+  - name: aerial (subaerial) hillslope diffusion coefficient (caerial)
+    unit: m^2/year
+  - name: marine (submarine) hillslope diffusion coefficient (cmarine)
+    unit: m^2/year
+  - name: critical slope Sc (non-linear diffusion threshold, cslp)
+    unit: m/m
+  - name: river sediment diffusion coefficient (criver)
+    unit: m^2/year
+  - name: mass-failure threshold slope (sfail) and failure diffusion coefficient (cfail)
+    unit: m/m; m^2/year
+  - name: transport-capacity coefficients (kt, mt, nt, modeltype)
+    unit: variable
+  - name: flexural isostasy parameters (dmantle, dsediment, youngMod, poisson, elasticH)
+    unit: kg/m^3, Pa, m
+  - name: sediment porosity / compaction (poro0, poroC) and grain density (rhoS)
+    unit: dimensionless, /km; kg/m^3
+  - name: wave parameters (wbase, d50, hs, dir, wEro)
+    unit: m; m; m; degrees; m/year
+  - name: carbonate growth rates (growth_sp1, growth_sp2) and depth/sediment/wave control curves
+    unit: m/year
+  - name: multi-lithology erodibility layers (erocst/eromap, thcst/thmap, actlay)
+    unit: Kd m^(1-2m)/year; thickness m
+  initial_conditions:
+  - name: initial topography (DEM)
+    unit: m
+  - name: initial erodibility/thickness layers
+    unit: m thickness
+  - name: restart checkpoint (rfolder, rstep)
+    unit: dimensionless
+  boundary_conditions:
+  - name: domain boundary type
+    unit: category
+  - name: flexure edge boundary conditions (boundary_W/E/S/N)
+    unit: category
+  - name: resolution factor (resfactor)
+    unit: dimensionless
+  - name: simulation time window and adaptive timestep bounds (start, end, display, mindt, maxdt)
+    unit: years
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - elevation
+  - cumdiff
+  - stratigraphy
+  - discharge
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.994, R=0.999, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.994112
+    best_r: 0.999235
+summary:
+  total_tools: 4
+  total_stage_docs: 6
+  total_diagnostic_triplets: 22
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

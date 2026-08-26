@@ -1,202 +1,460 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: icepack
-  version: 1.1.0
-  domain: cryosphere
-  subdomain: glacier and ice sheet flow modeling
-  binary_path: KISSPATH_PYTHON_ENV/bin/python
-  interface: python_library
-  description: 'Python library for modeling the flow of ice sheets and glaciers using
-    the finite element method (FEM), built on Firedrake/PETSc.
-
-    '
-  unit_system: non-SI (MPa, meters, years)
+  language: python
+  implementation:
+    id: icepack-firedrake
+    version: 1.1.0
+    provenance: Python; Daniel Shapero (University of Washington) finite-element glacier-flow library
+      built on Firedrake/PETSc/UFL with pyadjoint/ROL for inverse problems.
+  scientific_reference_version: icepack glacier-flow package (Shapero et al. 2021, GMD 14, 4593-4616,
+    doi:10.5194/gmd-14-4593-2021), version 1.x
 inputs:
   forcing:
-  - name: velocity
-    unit: m/yr
-    valid_range:
-    - 0
-    - 15000
-    description: Ice velocity field (vx, vy components); satellite-derived from MEaSUREs
-  - name: thickness
-    unit: m
-    valid_range:
-    - 0
-    - 5000
-    description: Ice thickness from BedMachine or similar; must be > 0 on mesh
-  - name: surface
-    unit: m
-    valid_range:
-    - -500
-    - 5000
-    description: Surface elevation (m above sea level); required for ice stream/shallow
-      ice
-  - name: bed
-    unit: m
-    valid_range:
-    - -6000
-    - 5000
-    description: Bed elevation (m above sea level)
   - name: accumulation
-    unit: m_ice/yr
-    valid_range:
-    - -10
-    - 10
-    description: Net surface mass balance; convert from m w.e./yr by multiplying rho_w/rho_i
-  - name: temperature
-    unit: K
-    valid_range:
-    - 200
-    - 273.15
-    description: Ice temperature in Kelvin; used to compute rate factor A
+    unit: m ice/yr
+    category: surface_mass_balance
+    source_kind: forcing
+    model_input_format: firedrake.Function (scalar CG) on the mesh
+    notes: Surface mass-balance source term in the mass-continuity equation; positive = accumulation.
+      If supplied as m w.e./yr it must be scaled by rho_w/rho_i ~= 1.09 to m ice/yr.
   parameters:
-    critical:
-    - name: fluidity_A
-      unit: MPa^-3 yr^-1
-      valid_range:
-      - 1
-      - 100
-      description: Glen's flow law rate factor; compute via icepack.rate_factor(T)
-        from temperature
-    - name: friction_C
-      unit: MPa yr^(1/m) m^(-1/m)
-      valid_range:
-      - 0.001
-      - 1.0
-      description: Weertman friction coefficient for ice stream; must be calibrated
-        per site
-    - name: glen_exponent_n
-      unit: dimensionless
-      valid_range:
-      - 3
-      - 3
-      description: Power-law exponent in Glen's flow law; always 3
-    - name: weertman_exponent_m
-      unit: dimensionless
-      valid_range:
-      - 3
-      - 3
-      description: Sliding law exponent; default 3
-    - name: dt
-      unit: years
-      valid_range:
-      - 0.001
-      - 10
-      description: Timestep for prognostic solve; typical range 0.01-1.0 yr
-    - name: num_steps
-      unit: count
-      valid_range:
-      - 1
-      - 100000
-      description: Number of time steps for prognostic simulation
-    mesh:
-    - name: mesh_type
-      valid_values:
-      - rectangle
-      - geojson
-      description: 'Mesh source: rectangle for idealized, geojson for real glacier
-        outline'
-    - name: lcar
-      unit: m
-      valid_range:
-      - 100
-      - 50000
-      description: Characteristic mesh element size for gmsh
-    solver:
-    - name: model_type
-      valid_values:
-      - ice_shelf
-      - ice_stream
-      - shallow_ice
-      - hybrid
-      description: Physics model selection
-    - name: diagnostic_solver_type
-      valid_values:
-      - petsc
-      - icepack
-      description: Solver backend; petsc is default and recommended
-    - name: prognostic_solver_type
-      valid_values:
-      - lax-wendroff
-      - implicit-euler
-      description: Time integration scheme; lax-wendroff is 2nd-order default
+  - name: fluidity (A)
+    unit: MPa^-3 yr^-1
+    category: rheology
+    source_kind: derived
+    model_input_format: firedrake.Function or Constant
+    notes: Glen's-law rate factor; normally computed from temperature via icepack.rate_factor(T). Typical
+      1-100 over T in [-30,0] degC. Can instead be inferred via the inverse problem.
+  - name: temperature (T)
+    unit: K
+    category: rheology
+    source_kind: dataset_lookup
+    model_input_format: firedrake.Function or Constant
+    notes: Bulk ice temperature, converted to fluidity A; valid 243-273 K. rate_factor switches Arrhenius
+      branch at 263.15 K (cold Q=60 kJ/mol vs warm Q=139 kJ/mol).
+  - name: friction (C)
+    unit: MPa yr^(1/m) m^(-1/m)
+    category: basal_boundary
+    source_kind: calibrated
+    model_input_format: firedrake.Function or Constant
+    notes: Weertman basal friction coefficient for grounded models; must be non-negative, typical 0.01-0.1.
+      Can be inferred via the inverse problem. m = Weertman exponent (default 3).
+  - name: bed (b)
+    unit: m
+    category: geometry
+    source_kind: dataset_lookup
+    model_input_format: firedrake.Function (scalar CG)
+    notes: Bed elevation (negative below sea level); used to compute hydrostatic surface for grounded
+      models.
+  - name: Glen flow-law exponent (n)
+    unit: dimensionless
+    category: rheology
+    source_kind: default
+    model_input_format: constant (constants.py)
+    notes: Default n = 3.0.
+  - name: Weertman sliding exponent (m)
+    unit: dimensionless
+    category: basal_boundary
+    source_kind: default
+    model_input_format: constant (constants.py)
+    notes: Default m = 3.0.
+  initial_conditions:
+  - name: thickness (h)
+    unit: m
+    category: geometry
+    source_kind: dataset_lookup
+    model_input_format: firedrake.Function (scalar CG)
+    notes: Primary prognostic state; must be > 0 everywhere (min_thickness default 10 m). Negative thickness
+      makes the action functional ill-defined and crashes the Newton solve.
+  - name: velocity initial guess (u)
+    unit: m/yr
+    category: velocity
+    source_kind: dataset_lookup
+    model_input_format: firedrake.Function (VectorFunctionSpace CG)
+    notes: Initial guess for the diagnostic solve; using observed velocity as the guess greatly improves
+      Newton convergence.
+  boundary_conditions:
+  - name: model_type
+    unit: categorical
+    category: model_selector
+    source_kind: user_provided
+    model_input_format: selection of IceShelf | IceStream | ShallowIce | HybridModel
+    notes: Selects the momentum-balance physics (floating SSA, grounded SSA+friction, SIA, or 3D hybrid).
+  - name: dirichlet_ids
+    unit: boundary-id list
+    category: mesh_boundary
+    source_kind: user_provided
+    model_input_format: list of mesh boundary segment IDs
+    notes: Boundary segments where velocity is prescribed (Dirichlet). Must be inflow only; assigning
+      all boundaries forces u=0 everywhere.
+  - name: side_wall_ids
+    unit: boundary-id list
+    category: mesh_boundary
+    source_kind: user_provided
+    model_input_format: list of mesh boundary segment IDs
+    notes: Boundary segments with zero normal flow (fjord side walls).
+  - name: timestep (dt)
+    unit: yr
+    category: numerics
+    source_kind: user_provided
+    model_input_format: float passed to prognostic_solve
+    notes: Prognostic timestep, typically 0.01-0.5 yr; CFL-constrained (Courant < 1, dt < dx/max|u|) for
+      Lax-Wendroff stability.
+  - name: glacier_outline
+    unit: GeoJSON
+    category: mesh
+    source_kind: user_provided
+    model_input_format: GeoJSON FeatureCollection of LineString/MultiLineString with labeled boundary
+      segments
+    notes: Mesh-generation input; must form a single orientable closed loop with inner features as holes.
+  - name: mesh_resolution (lcar)
+    unit: m
+    category: mesh
+    source_kind: user_provided
+    model_input_format: characteristic element length passed to the mesher
+    notes: ~500 m local to ~10 km continental; too small a value explodes element count and OOM-kills
+      meshing.
 outputs:
   primary:
   - name: velocity
     unit: m/yr
-    valid_range:
-    - 0
-    - 15000
-    description: Solved ice velocity field on FEM mesh
+    description: Solved depth-averaged (or 3D) ice velocity field satisfying the momentum balance; typical
+      0-4000 m/yr for Antarctic ice streams.
+    validation_rank: 1
+    emitted_in: diagnostic_solve return (firedrake.Function); time series exported to CSV by post-processing
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against gridded surface-velocity products (e.g. InSAR-derived) reprojected to the model
+          CRS; remap FEM field to the obs grid first.
+        - Diagnostic velocity reflects the prescribed geometry/material fields; mismatch may indicate
+          fluidity/friction error rather than dynamics error.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - At GPS/station points; transient signal arises only through the coupled prognostic loop.
+      detrending_options:
+      - none
   - name: thickness
     unit: m
-    valid_range:
-    - 0
-    - 5000
-    description: Evolved ice thickness after prognostic time stepping
-  - name: snow_water_equivalent
-    canonical_id: snow_water_equivalent
-    unit: mm
-  - name: glacier_volume
-    canonical_id: glacier_volume
-    unit: km3
-  - name: snowmelt
-    canonical_id: snowmelt
-    unit: mm/day
-  - name: ice_thickness
-    canonical_id: ice_thickness
+    description: Ice thickness after a prognostic time step, evolved by mass continuity; must remain >
+      0.
+    validation_rank: 2
+    emitted_in: prognostic_solve return (firedrake.Function); time series exported to CSV
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against radar/altimetry thickness products (e.g. BedMachine) on the model footprint.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Thickness-change time series; sensitive to dt/CFL stability and the accumulation forcing.
+      detrending_options:
+      - none
+      - first_difference
+  - name: surface
     unit: m
-  derived:
-  - name: strain_rate
-    unit: yr^-1
-    valid_range:
-    - 0
-    - 1
-    description: Strain rate tensor; regularized by strain_rate_min = 1e-5
-  - name: stress
-    unit: MPa
-    valid_range:
-    - 0
-    - 1
-    description: Deviatoric stress tensor
-  - name: mass_flux
-    unit: m^2/yr
-    valid_range:
-    - 0
-    - 1e8
-    description: Ice flux = thickness * velocity
-physical_constants:
-  seconds_per_year: 3.15576e7
-  gravity_icepack: 9.75e15
-  rho_ice: 917.0
-  rho_water: 1024.0
-  glen_n: 3.0
-  weertman_m: 3.0
-  melting_temp: 273.15
-unit_traps:
-- variable: velocity
-  source_unit: m/s
-  target_unit: m/yr
-  conversion: multiply by 3.15576e7
-  trap: Velocities ~0 if left in m/s
-- variable: temperature
-  source_unit: degC
-  target_unit: K
-  conversion: add 273.15
-  trap: rate_factor() expects K; wrong T gives wrong A
-- variable: rate_factor_A
-  source_unit: Pa^-3 s^-1
-  target_unit: MPa^-3 yr^-1
-  conversion: use icepack.rate_factor(T)
-  trap: Complex conversion; always use built-in function
-- variable: accumulation
-  source_unit: m_we/yr
-  target_unit: m_ice/yr
-  conversion: multiply by rho_w/rho_i (~1.09)
-  trap: Slight bias if not converted
+    description: Hydrostatic-consistent surface elevation recomputed from updated thickness and bed for
+      grounded models.
+    validation_rank: 3
+    emitted_in: compute_surface return (firedrake.Function)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against surface DEMs; derived deterministically from thickness+bed, so it inherits those
+          fields' errors.
+      detrending_options:
+      - none
+  - name: optimized_control
+    unit: varies (A in MPa^-3 yr^-1, or C in Weertman units)
+    description: Best-fit ice fluidity or ice-bed basal-friction field inferred from observed ice velocity
+      via the inverse problem.
+    validation_rank: 4
+    emitted_in: icepack.statistics MaximumProbabilityEstimator result
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - An inferred (not directly observed) field; verify via the simulated-velocity misfit, not by
+          direct comparison to a control 'truth'.
+        - 'Regularization weight controls smoothness: too large yields a near-uniform field, too small
+          overfits noise.'
+      detrending_options:
+      - none
+  - name: simulated_velocity
+    unit: m/yr
+    description: Model ice velocity at the inverse-problem optimum, for comparison against the observed
+      ice velocity used in inversion.
+    validation_rank: 5
+    emitted_in: icepack.statistics simulation at optimum
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Misfit here is the inverse-problem objective itself; near-zero misfit can indicate overfitting
+          if regularization is too weak.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- Firedrake dependency must be installed separately via its own installer
-- icepack uses non-SI units internally; all inputs must be converted
-- Mesh coordinates must be in projected CRS (not lat/lon)
-- Ice thickness must be > 0 everywhere on mesh
-- Requires NASA EarthData account for NSIDC dataset access
+- id: dt_001
+  symptom: Velocity field near zero everywhere (~1e-8 m/yr). Solver converges but flow is negligible.
+  diagnosis: 'Velocity data left in m/s instead of converted to m/yr; icepack expects velocity in meters
+    per year (m/yr). MEaSUREs Antarctic data is typically already in m/yr, but some sources provide m/s.
+    If m/s values are used directly, velocities are ~3.16e7 times too small, yielding effectively zero
+    flow.
+
+    ; ['
+  remedy: Multiply velocity by 3.15576e7 (seconds per year); convert_velocity_to_icepack; ['Check max
+    velocity magnitude — should be 1–4000 m/yr for Antarctic ice streams', 'If max velocity < 0.01 m/yr,
+    likely still in m/s — multiply by 3.15576e7']; validate_outputs() in convert_velocity_to_icepack checks
+    for
+  severity: silent
+- id: dt_002
+  symptom: Velocity field enormous (>1e8 m/yr). Solver diverges immediately with ConvergenceError.
+  diagnosis: 'Velocity data in m/yr double-converted (multiplied by year factor twice); If data is already
+    in m/yr and the conversion factor is applied again, velocities become ~3.16e7 times too large. The
+    nonlinear solver cannot find a physical solution at these extreme strain rates.
+
+    ; [''convert_velocity_to_icep'
+  remedy: Check source data units before applying conversion; skip conversion if already m/yr; convert_velocity_to_icepack;
+    ['Verify source data documentation for native velocity unit', 'Check if max velocity > 15000 m/yr
+    — if so, likely double-converted']; validate_outputs() checks for unrealistically high v
+  severity: crash
+- id: dt_003
+  symptom: Rate factor A is extremely small or large. Ice behaves as rigid solid or inviscid fluid.
+  diagnosis: 'Temperature passed in Celsius instead of Kelvin to rate_factor(); icepack.rate_factor(T)
+    expects temperature in Kelvin. Passing -19°C as -19 (negative Kelvin) will produce nonsensical A values.
+    Passing 254 (correct K) gives A ≈ 3.5 MPa^-3 yr^-1 which is physically reasonable.
+
+    ; [''rate_factor'', ''visc'
+  remedy: 'Convert temperature to Kelvin: T_K = T_C + 273.15; None; [''Check T value — must be 200–273.15
+    K for glacier ice'', ''A(254 K) ≈ 3.5, A(263 K) ≈ 21, A(273 K) ≈ 100 MPa^-3 yr^-1'']; Add assertion:
+    assert 200 < T < 274, ''Temperature must be in Kelvin'''
+  severity: silent
+- id: dt_004
+  symptom: Ice thickness appears as fraction of a meter where it should be hundreds of meters.
+  diagnosis: 'Thickness data in km instead of meters; Some datasets store ice thickness in kilometers.
+    icepack expects meters. Using km directly gives thickness of 0.5 where it should be 500 m, causing
+    the solver to compute unrealistically thin ice behavior.
+
+    ; [''convert_thickness_to_icepack'']'
+  remedy: Multiply thickness by 1000 to convert km → m; convert_thickness_to_icepack; ['Check max thickness
+    — Antarctic ice sheet max ~4700 m, Greenland ~3400 m', 'If max thickness < 10, likely in km — multiply
+    by 1000']; validate_outputs() warns if max thickness < 1 m
+  severity: silent
+- id: dt_005
+  symptom: 'ConvergenceError: ''Minimization solver has invalid search direction'''
+  diagnosis: 'Negative thickness or friction coefficient in input fields; The Newton solver computes a
+    search direction from the Hessian. If thickness is negative anywhere, the action functional becomes
+    ill-defined (negative viscous energy), and the search direction points uphill instead of downhill.
+
+    ; [''FlowSolv'
+  remedy: 'Enforce h > 0 everywhere: h.interpolate(firedrake.max_value(h, 10.0)); None; [''Check h.dat.data.min()
+    — must be strictly positive'', ''Check friction C: must be non-negative'', ''Clamp: h = max(h, min_thickness)
+    with min_thickness = 10 m'']; Always validate fields before passing to diagnostic_solve()'
+  severity: crash
+- id: dt_006
+  symptom: 'ConvergenceError: ''Newton search did not converge after 50 iterations!'''
+  diagnosis: 'Poor initial velocity guess or ill-conditioned problem; The Newton solver requires a reasonable
+    initial guess. If the initial velocity is far from the solution (e.g., zero everywhere for a fast-flowing
+    glacier), convergence may take more than 50 iterations or fail entirely.
+
+    ; [''FlowSolver'', ''NewtonS'
+  remedy: 'Use observed velocity as initial guess; or start from low-resolution solve; None; [''Set initial
+    velocity to observed: u0 = icepack.interpolate((vx, vy), V)'', "Increase max_iterations: solver_params[''max_iterations'']
+    = 200", "Try icepack solver instead of PETSc: diagnostic_solver_type=''icepack''"]; Al'
+  severity: crash
+- id: dt_007
+  symptom: PETSc SNES diverges with negative line search step
+  diagnosis: Inconsistent boundary conditions or input fields; The PETSc nonlinear solver failed to find
+    a decreasing step direction. This typically happens when Dirichlet boundary conditions conflict with
+    the physics (e.g., prescribing inflow on an outflow boundary) or when fluidity/friction fields have
+    extreme
+  remedy: 'Check boundary IDs and BCs; verify A and C are physically reasonable; None; [''Print mesh.exterior_facets.unique_markers
+    to verify boundary IDs'', ''Ensure dirichlet_ids are on inflow boundaries only'', ''Check A and C
+    ranges: A should be 1–100, C should be 0.001–1.0'']; Plot velocity and boundary IDs bef'
+  severity: crash
+- id: dt_008
+  symptom: 'ValueError: ''Input collection is not orientable!'''
+  diagnosis: 'GeoJSON features cannot be arranged in a consistent head-to-tail orientation; icepack.meshing.normalize()
+    tries all possible feature orientations but none produce a valid loop. This usually means the features
+    are disconnected or have inconsistent topology.
+
+    ; [''icepack.meshing._reorient'']'
+  remedy: 'Verify GeoJSON features form a single closed loop with consistent connectivity; None; [''Open
+    GeoJSON in QGIS/geojson.io and visually check connectivity'', ''Ensure all endpoints are within snapping
+    distance'', ''Simplify: use a single Polygon feature instead of multiple LineStrings'']; Use icepack.datase'
+  severity: crash
+- id: dt_009
+  symptom: 'ValueError: ''No polygon contains all other polygons!'''
+  diagnosis: 'Multiple loops in GeoJSON but none fully encloses the others; icepack.meshing._find_bounding_feature()
+    requires one outer loop that contains all inner loops (holes). If the loops are separate regions rather
+    than outer/inner, this check fails.
+
+    ; [''icepack.meshing._reorder'']'
+  remedy: Ensure GeoJSON has one outer boundary and inner features are holes/islands; None; ['Check that
+    the largest polygon fully contains all smaller polygons', 'If modeling separate regions, create separate
+    meshes for each']; Validate GeoJSON topology before mesh generation
+  severity: crash
+- id: dt_010
+  symptom: Out of memory during mesh generation. System kills process.
+  diagnosis: 'lcar (characteristic element length) too small for domain size; A glacier domain of 100
+    km × 100 km with lcar=100 m would generate ~1 million triangles. The Firedrake FEM assembly can require
+    10–100× the mesh memory.
+
+    ; [''gmsh'', ''firedrake'']'
+  remedy: 'Increase lcar — start with lcar = domain_size / 100; None; [''For 50 km domain: start with
+    lcar=1000 (50 elements per side)'', ''For testing: use lcar=5000–10000'', ''For publication: lcar=500–2000
+    depending on RAM'']; Estimate element count: n ≈ (L/lcar)² before meshing'
+  severity: crash
+- id: dt_011
+  symptom: NaN values in interpolated FEM field. Solver crashes with 'nan in residual'.
+  diagnosis: 'Raster data does not fully cover the mesh domain; icepack.interpolate uses scipy RegularGridInterpolator
+    which returns NaN for mesh nodes outside the raster extent. Any NaN in thickness or velocity will
+    propagate through the solver and cause failure.
+
+    ; [''icepack.interpolate'']'
+  remedy: 'Ensure raster extent fully covers mesh; or fill gaps before interpolation; None; [''Compare
+    raster bounds vs mesh bounds'', ''If raster is smaller, either clip mesh or pad raster'', ''Check
+    for NaN: np.any(np.isnan(h.dat.data))'']; Always check for NaN after interpolation'
+  severity: crash
+- id: dt_012
+  symptom: Interpolated fields are all zero or constant, ignoring spatial variation.
+  diagnosis: CRS mismatch between raster and mesh — mesh coordinates don't overlap raster; If the mesh
+    is in EPSG:3031 (Antarctic stereographic) but the raster is in EPSG:4326 (lat/lon), the mesh coordinates
+    (e.g., x=500000, y=-1000000) will be far outside the raster's [-180, 180] × [-90, 90] range, and the
+    inte
+  remedy: 'Reproject raster to match mesh CRS using rasterio.warp; None; [''Check raster CRS: rasterio.open(path).crs'',
+    ''Check mesh coordinate range: mesh.coordinates.dat.data.min/max()'', ''Reproject: rasterio.warp.reproject()
+    to target CRS'']; Always verify CRS consistency between data and mesh'
+  severity: silent
+- id: dt_013
+  symptom: IceStream model produces zero velocity on grounded ice even with realistic inputs.
+  diagnosis: 'Missing ''surface'' argument — gravity term is zero; IceStream.gravity() requires the surface
+    elevation field. If ''surface'' is not passed, the driving stress ρ_I·g·h·∇s is zero, and the only
+    non-trivial solution is u=0. IceShelf does not need surface (buoyancy is computed from h).
+
+    ; [''IceStream.gravit'
+  remedy: 'Compute and pass surface: s = icepack.compute_surface(thickness=h, bed=b); None; ["Check that
+    ''surface'' kwarg is passed to diagnostic_solve()", ''Verify s.dat.data is not all zero'']; Always
+    include surface for IceStream and ShallowIce models'
+  severity: silent
+- id: dt_014
+  symptom: Thickness goes negative after a few time steps. Mass conservation violated.
+  diagnosis: 'Timestep dt too large for mesh resolution and velocity magnitude; The Lax-Wendroff scheme
+    is conditionally stable. If the Courant number C = u·dt/dx exceeds ~1, the scheme becomes unstable
+    and produces oscillations that drive thickness negative. For |u|=1000 m/yr and dx=1000 m, dt must
+    be < 1 yr.
+
+    ; '
+  remedy: 'Reduce dt so that Courant number < 1: dt < dx / max(|u|); None; [''Compute Courant: C = max_velocity
+    * dt / min_element_size'', ''If C > 1, reduce dt accordingly'', ''Typical safe values: dt = 0.01–0.5
+    yr'']; Compute CFL condition before starting time stepping'
+  severity: silent
+- id: dt_015
+  symptom: IceShelf velocity unrealistically high (>10000 m/yr) or low (<1 m/yr).
+  diagnosis: 'Fluidity A in wrong units — not in icepack''s MPa-yr system; If A is computed manually in
+    SI units (Pa^-3 s^-1) instead of using icepack.rate_factor(), the value will be off by a factor of
+    ~10^60 (year^4 × Pa^3/MPa^3). This produces completely unphysical velocities.
+
+    ; [''viscosity_depth_averaged'']'
+  remedy: 'Always use icepack.rate_factor(T) to compute A; None; [''Check A value: icepack.rate_factor(254.15)
+    ≈ 3.5'', ''Valid A range: 0.1–200 MPa^-3 yr^-1 for T in [230, 273] K'', ''If A << 0.01 or A >> 1000,
+    units are wrong'']; Never compute A manually; always use icepack.rate_factor()'
+  severity: silent
+- id: dt_016
+  symptom: 'ImportError: No module named ''firedrake'''
+  diagnosis: 'Firedrake not installed or not in current Python environment; Firedrake is icepack''s core
+    dependency but is not a standard pip package. It requires its own installation script and creates
+    a dedicated virtual environment. icepack must be installed inside the Firedrake venv.
+
+    ; [''all'']'
+  remedy: Install Firedrake, then install icepack inside the Firedrake venv; None; ['curl -O https://raw.githubusercontent.com/firedrakeproject/firedrake/master/scripts/firedrake-install',
+    'python3 firedrake-install', 'source firedrake/bin/activate', 'cd /path/to/icepack && pip install
+    -e .']; Always activate
+  severity: crash
+- id: dt_017
+  symptom: 'ImportError: No module named ''petsc4py'' or ''ufl'''
+  diagnosis: 'icepack installed outside the Firedrake virtual environment; PETSc, UFL, and other Firedrake
+    components are only available inside the Firedrake venv. Installing icepack in a separate venv or
+    system Python will satisfy its requirements but not Firedrake''s internal dependencies.
+
+    ; [''all'']'
+  remedy: 'Activate the Firedrake venv before installing/running icepack; None; [''source /path/to/firedrake/bin/activate'',
+    ''which python  # should point to firedrake venv'', ''pip install -e /path/to/icepack'']; Always work
+    inside the Firedrake venv'
+  severity: crash
+- id: dt_018
+  symptom: Velocity is zero everywhere including where flow should occur.
+  diagnosis: 'All boundary IDs assigned to dirichlet_ids with zero velocity BC; If all boundaries are
+    Dirichlet with u=0, the only solution is u=0 everywhere. Ice shelves need at least one free (Neumann)
+    boundary — the ice front — where terminus stress drives the flow.
+
+    ; [''FlowSolver'']'
+  remedy: 'Only assign dirichlet_ids to inflow boundaries; leave ice front as free; None; [''Check mesh.exterior_facets.unique_markers
+    for available IDs'', ''Typically: ID 1 = inflow (Dirichlet), ID 2 = ice front (free)'', ''For IceStream
+    with side walls: side_wall_ids for no-normal-flow'']; Always verify boundary I'
+  severity: silent
+- id: dt_019
+  symptom: Flow direction is reversed — ice flows inward instead of toward calving front.
+  diagnosis: 'Dirichlet boundary applied to wrong boundary segment; In a rectangle mesh, boundary IDs
+    are typically 1=left, 2=right, 3=bottom, 4=top. If the inflow is on the left (ID 1) but dirichlet_ids=[2],
+    the solver prescribes velocity on the outflow boundary, forcing reversed flow.
+
+    ; [''FlowSolver'']'
+  remedy: 'Verify which boundary ID corresponds to the physical inflow; None; [''For RectangleMesh: ID
+    1=left (x=0), 2=right (x=Lx), 3=bottom, 4=top'', ''Plot mesh with boundary markers to visually verify'',
+    ''Inflow = where velocity is prescribed; ice front = free boundary'']; Always plot mesh with labeled
+    boundari'
+  severity: silent
+- id: dt_020
+  symptom: Inverse problem returns nearly uniform parameter field with poor data fit.
+  diagnosis: 'Regularization weight (alpha) too large, suppressing spatial variability; The regularization
+    term penalizes gradients in the control field. If alpha is too large relative to the misfit term,
+    the optimizer returns a nearly constant field to minimize regularization, ignoring the data.
+
+    ; [''StatisticsPr'
+  remedy: 'Reduce regularization weight alpha by factors of 10 until spatial structure appears; None;
+    [''Try alpha values: 1e-1, 1e-2, 1e-3, 1e-4'', ''L-curve method: plot misfit vs regularization for
+    different alpha'', ''Good alpha balances smooth field with low misfit'']; Always perform L-curve analysis
+    when setti'
+  severity: silent

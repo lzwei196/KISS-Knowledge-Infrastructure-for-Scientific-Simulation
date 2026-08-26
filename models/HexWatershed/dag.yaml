@@ -376,7 +376,7 @@ outputs:
   - var: "lCellID_downslope_dominant (flow direction)"
     validation_rank: 2
     unit: "-"
-    description: "Dominant steepest-descent downslope neighbor per cell (single flow direction); -1 marks outlet/edge cells."
+    description: "Dominant steepest-descent downslope neighbor for each land-surface topographic polygonal-mesh cell (single flow direction); -1 marks outlet/edge cells."
     emitted_in: "watershed_NNNNN.json"
     observability:
       comparable_obs_shapes:
@@ -658,3 +658,9 @@ safety:
       scope: "closure / conservation"
       source: "HexWatershed source hexagon.h accumulation field and algorithm docs (Flow Accumulation / drainage area)"
       status: "adopted"
+
+medium_evidence:
+  - var: "lCellID_downslope_dominant (flow direction)"
+    source: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.advwatres.2021.104099.txt
+    quote: "This strategy was developed to minimize modification to the land mesh cell surface elevations (Lindsay, 2016)."
+    note: "HexWatershed flow direction is defined over land mesh-cell surface elevations."

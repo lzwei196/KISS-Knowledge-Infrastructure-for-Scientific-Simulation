@@ -848,7 +848,7 @@ outputs:
   - var: "OUT_GPP"
     validation_rank: 14
     unit: "g C/m^2/day"
-    description: "Gross primary production from the optional CARBON module."
+    description: "Vegetation gross primary production from the optional CARBON module."
     emitted_in: "per-cell ASCII flux file (CARBON mode)"
     observability:
       comparable_obs_shapes:

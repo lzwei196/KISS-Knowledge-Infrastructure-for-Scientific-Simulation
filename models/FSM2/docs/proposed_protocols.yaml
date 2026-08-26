@@ -1,0 +1,59 @@
+proposed_protocols:
+- id: pp_fsm2_esm_snowmip_forcing
+  status: proposed
+  title: ESM-SnowMIP site forcing bias-correction protocol (point column from reanalysis cell)
+  procedure_full_text: "## Forcing a point column from a reanalysis grid cell (MANDATORY check)\n\nFSM2\
+    \ retains essentially ALL cold-season snowfall at a cold open site (<10% lost\nto sublimation + midwinter\
+    \ melt), so simulated peak SWE inherits the driving\nreanalysis's snowfall bias at roughly 1:1 and\
+    \ that bias lands directly on the\nrank-1 `snw` headline metric. Measured at Sodankyla (2003-2019,\
+    \ NASA POWER\nhourly): Oct-Apr cumulative Sf ~271-294 mm -> simulated peak SWE 281 kg m-2.\nThere\
+    \ is NO FSM2 parameter that removes 25% of incoming snowfall at an open\nsubarctic clearing.\n\n1.\
+    \ **Always print** the forcing's annual precipitation AND cold-season snowfall\n   before scoring,\
+    \ and compare against a site climatology.\n\n2. **A site mean-bias correction is the field standard,\
+    \ not an optional extra.**\n   Menard et al. 2019 (ESSD 11, 865-880, Sect. 3) applied a site-specific\n\
+    \   multiplier to precipitation at ALL TEN ESM-SnowMIP reference sites --\n   including the low-relief\
+    \ boreal/Arctic sites (SAP, OAS, OBS, OJP, SOD) that\n   sit at their grid-cell elevation. Sitting\
+    \ at grid elevation is NOT a reason\n   to skip it. FSM2 is benchmarked against that bias-corrected\
+    \ forcing.\n\n3. **Correct against an UNDERCATCH-CORRECTED reference, never a raw gauge\n   normal.**\
+    \ Solid-precipitation gauge undercatch is 20-50%; Menard et al.\n   Sect. 4 name undercatch correction\
+    \ as the subjective, hard step. Worked\n   example: NASA POWER gives 777 mm/yr at Sodankyla and the\
+    \ raw FMI normal is\n   527 mm/yr, which LOOKS like a +47% wet bias -- but the multiplier that\n \
+    \  actually lands peak SWE on the observation is 0.80 (~622 mm/yr, the\n   undercatch-corrected range).\
+    \ The real bias is ~+25%. Scaling by\n   527/777 = 0.678 overshoots to about -15%.\n\n4. **Then pick\
+    \ one and say which.** Either (a) apply the correction with\n   `tools/convert_forcing_to_fsm2.py\
+    \ --precip-scale <m>` and record the\n   multiplier and its source, or (b) leave the forcing raw and\
+    \ report the\n   resulting PBIAS explicitly as a FORCING bias. Judge the run on the actual\n   band\
+    \ in `docs/validation_convention.yaml` for snw/point_time_series --\n   `NSE >= 0 and nRMSE <= 1.0`,\
+    \ nRMSE <= 0.6 being good -- not on PBIAS.\n   Do NOT route a residual PBIAS of this kind to parameter\
+    \ calibration:\n   tuning rhof/asmn/tmlt to absorb a forcing surplus is compensating-error\n   tuning\
+    \ and will not transfer to another site or period.\n\n> **SCOPE OF THIS SECTION (typed at promotion,\
+    \ 2026-08-23).** This section was\n> promoted as a PROCEDURE, not a validated result. What it establishes:\
+    \ the\n> ESM-SnowMIP practice of site-correcting forcing before scoring, sourced to\n> Ménard et al.\
+    \ 2019 (Sect. 3 protocol + Table 4 constants) — a SINGLE source;\n> treat scope as ESM-SnowMIP-style\
+    \ point sites until independently corroborated.\n> What it does NOT establish: any improvement in\
+    \ FSM2 skill (the originating\n> run's comparison was point-vs-areal and its metrics remain provisional),\
+    \ and\n> none of the numeric values in the worked example above (0.80, ~+25%, 0.678)\n> are calibrated\
+    \ facts — they derive from that confounded comparison and are\n> ILLUSTRATION ONLY. Derive the multiplier\
+    \ fresh, per site, per forcing product,\n> against an undercatch-corrected reference, every time.\n\
+    \n5. **At an ESM-SnowMIP reference site, use its published phase factors** via\n   `--phase-logistic\
+    \ T0 T1` instead of FSM2's generic 0-2 degC ramp\n   (Menard et al. Table 4, degC): CDP 3.08/1.13,\
+    \ OAS -1.73/1.63,\n   OBS -1.14/1.81, OJP -1.32/1.76, RME -2.00/1.48, SAP 3.72/1.48,\n   SNB and SWA\
+    \ -3.01/2.05, SOD 2.52/1.16, WFJ 0.39/1.47.\n\n6. **Do not reach for the canopy to explain over-accumulation\
+    \ at an open site.**\n   Menard et al. Table 2 records SOD as \"Clearing (short heather)\", so\n \
+    \  `vegh = 0.0, VAI = 0.0` is CORRECT there and matches the shipped\n   `source/repo/nlst_Alptal.txt`\
+    \ convention for its open point. Triplet T08\n   applies only where the site really is forested.\n"
+  born_of_run: FSM2_retry2
+  born_route: insufficient
+  staged_at: '2026-08-24T03:22:35Z'
+  obs_invariance: 'PASSES the one test: the procedure (correct forcing against an undercatch-corrected
+    site reference before scoring) is identical under point or areal obs; no obs-derived number is stored'
+  lineage: 'model''s own: Menard et al. 2019 = ESM-SnowMIP reference dataset, co-authored by FSM2''s developer
+    (Essery); FSM2 is developed and benchmarked on that corrected forcing'
+  evidence_width: single source (Menard 2019); zero clean runs
+  history: promoted to SKILL.md 2026-08-23 by human override BEFORE the waiting-room rule existed; MOVED
+    here 2026-08-24 for rule consistency (owner decision)
+  does_not_establish: any skill improvement — originating run point-vs-areal, metrics provisional; worked-example
+    numbers are illustration only
+  graduates_when: route='accept' run at point-support obs, or second independent witness
+_doc: WAITING ROOM for case-generalized procedures born of provisional runs. Entries are PROPOSED, not
+  validated. An agent MAY use one, but must treat it as a hypothesis and say so in its report.

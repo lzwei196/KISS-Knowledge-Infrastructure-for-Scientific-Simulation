@@ -573,3 +573,170 @@
     prevention: "Pre-validate IC and soil parameters before execution"
   severity: fatal
   cross_references: [dt_015, dt_007]
+
+# ---------------------------------------------------------------------------
+# Triplets added by self-improve runs after the original corpus was published.
+# Recovered 2026-08-12 and merged back; the block above is the published base,
+# byte-for-byte. See REPORT.md.
+# ---------------------------------------------------------------------------
+- id: dt_021_obs_station_type_and_newbasin_mesh_block
+  symptom:
+    description: PIHM verifier called with metrics all null (r=null) and ki_usable=false; orchestrator
+      r<0.5 retry trigger misfires on a run that never produced discharge. Target is a HYDAT station with
+      DATA_TYPE='H' (water level) / MEASUREMENT_CODE='R' (reservoir), and/or a new basin with no shipped
+      .mesh/.att.
+  diagnosis:
+    root_cause: 'Two structural blockers: (1) requested discharge obs does not exist — station is a regulated
+      reservoir STAGE gauge with zero DLY_FLOWS records, so NSE/r/KGE are uncomputable; (2) PIHM TIN mesh
+      + .att attribute assignment require PIHMgis (external GUI, not installed, not headless), and no
+      mesh tool ships in tools/.'
+  remedy:
+    action: Before launching PIHM at a HYDAT site, REQUIRE DATA_TYPE='Q' (natural streamflow) AND a pre-built/validated
+      mesh (only ShaleHills validates). Do not synthesize a mesh or fabricate discharge. If the station
+      is reservoir/level-only, classify requires_data and re-target. New-basin mesh authoring is requires_human_engineering.
+  format_spec_violated: none (target-selection + missing-tool gap, not a format-spec rule)
+  canonical_intent: ki_local_if_pass
+  added_by_run: PIHM_retry1
+- id: dt_021
+  symptom:
+    description: 'Pipeline blocked at S1 for a new basin: no .mesh/.att can be produced; metrics null
+      though preflight passes and ShaleHills dev example reproduces.'
+  diagnosis:
+    root_cause: No headless TIN+attribute generator in the KI; PIHMgis is an external QGIS GUI, not installed;
+      terrain_ops emits no PIHM .mesh/.att; source repo has only the mesh reader.
+  remedy:
+    action: Pin PIHM verification to basins with prebuilt validated meshes (ShaleHills/Chimborazo); document
+      the new-basin domain constraint in SKILL.md; a headless mesh generator is a multi-day build (out
+      of scope).
+  format_spec_violated: none
+  canonical_intent: ki_local_if_pass
+  added_by_run: PIHM_retry1
+- id: dt_022_china_gw_yearbook_water_table_domain_skip
+  symptom:
+    description: PIHM targeted at the China Geological Environment Monitoring Groundwater Level Yearbook
+      (中国地质环境监测地下水位年鉴, 2005-2021), obs variable daily_water_table_depth_m at a monitoring well (Huai/North-China-Plain
+      subset). All metrics null, ki_usable=false; r<0.5 retry trigger may misfire on a run that cannot
+      produce a comparable series.
+  diagnosis:
+    root_cause: 'Three independent structural blockers, none fixable by parameter/forcing retry: (1) MESH
+      BLOCK (same as dt_021) — the yearbook region has no shipped real TIN; only synthetic 2-triangle
+      placeholder meshes exist for Huai sites (Wangjiaba/Bengbu, NUMELE=2), whose lumped GW head is explicitly
+      ''not interpretable as model skill'' per the capability scorecard. (2) MODEL-DOMAIN MISMATCH — core
+      PIHM hydrology has NO groundwater pumping/abstraction module; the dominant signal in NCP/Huai yearbook
+      wells is pumping-driven multi-decadal water-table decline (GRACE NCP ~-22 mm/yr), which an unconfined
+      surface-subsurface watershed model physically cannot reproduce. (3) VARIABLE/DATUM MISMATCH — PIHM
+      .gw.dat is groundwater HEAD above the aquifer bottom (m), while the yearbook reports DEPTH-to-water
+      below land surface (m); conversion needs per-element ground elevation that a lumped placeholder
+      mesh cannot supply per well. Additionally the only shipped Huai forcing (Wangjiaba.meteo) is 1975-1991,
+      with zero temporal overlap with the 2005-2021 yearbook.'
+  remedy:
+    action: Classify as domain-validity SKIP (requires_human_engineering), not a calibration failure —
+      do NOT enter the retry loop. The GW variable's obs_shape here is point_time_series (metric family
+      is valid in principle), so the gate will NOT emit REJECT_WRONG_METRIC; the block is structural,
+      upstream of metric choice. To make this target runnable a future build needs BOTH a headless TIN/.att
+      generator for the well's catchment AND a confined-aquifer pumping sink (out of scope for core MM-PIHM).
+      Until then, validate water-table dynamics only on basins with a real mesh and negligible abstraction.
+  format_spec_violated: none (domain-validity + missing-capability gap)
+  canonical_intent: ki_skip_structural
+  added_by_run: PIHM_real_case_20260623
+- id: dt_023_headless_tin_fragmented_river_network_no_routed_outlet
+  symptom:
+    description: PIHM run on a large NEW basin (e.g. 唐乃亥/Tangnaihai Yellow-source ~132,000 km², or Bengbu/Wangjiaba
+      Huai) with an AD-HOC headless-built TIN (NUMELE in the hundreds–thousands, real geometry, dev example
+      reproduces). Simulated discharge is ~1–2 orders of magnitude BELOW observed (Bengbu real run 2026-07-04
+      sim mean 23 vs obs 970 m3/s, ~40x undershoot), NSE_val negative (-0.68), PBIAS ~-99%, r low (~0.30).
+      Water balance may still "close" (P≈ET+Q+dS) — the deficit is a routing/accumulation gap, not a mass-conservation
+      bug.
+  diagnosis:
+    root_cause: 'Overcoming the dt_021 mesh-generation block with meshpy/ad-hoc triangulation is NECESSARY
+      BUT NOT SUFFICIENT for discharge validation. The ad-hoc river network is FRAGMENTED: many segments
+      (Bengbu 132/174) carry DOWN=-3 and exit the domain independently, so NO single segment carries the
+      basin-integrated flow and there is no routed outlet co-located with the gauge. Summing RIVFLX1 over
+      all boundary-exit segments is a proxy that lacks channel routing/accumulation to the gauge, so it
+      systematically undershoots basin discharge by ~1-2 orders of magnitude (each fragment drains only
+      its local contributing area). This is the same lumped-collapse failure dt_021/s1_domain.md warns
+      about, now confirmed on a REAL non-placeholder TIN. Independently verified by the run_validity critic:
+      verdict fix_setup / capability_to_build, attribution workflow_incomplete — all metrics provisional,
+      nothing attributable to model physics until the mesh routes to a genuine single outlet.'
+  remedy:
+    action: Do NOT launch a multi-hour PIHM discharge run on a new large basin expecting a valid NSE —
+      the ad-hoc TIN cannot route to the gauge and NSE>=0.5 is structurally unreachable. Classify requires_human_engineering
+      (same class as dt_021). A valid discharge target needs a CONNECTED river network draining to ONE
+      outlet segment co-located with the gauge (accumulating the full contributing area) — i.e. a real
+      PIHMgis-equivalent delineation+meshing pipeline, not raw Delaunay + fragmented boundary exits. Until
+      that ships, pin PIHM discharge validation to ShaleHills (small single-outlet basin) and treat Bengbu_v3/Wangjiaba_v2
+      large-basin runs as capability tests, not skill scores. Do not re-enter the r<0.5 / NSE retry loop.
+  format_spec_violated: none (missing routing/accumulation capability, not a format-spec rule)
+  canonical_intent: ki_skip_structural
+  added_by_run: PIHM_real_case_20260713
+- id: dt_024_pihm_input_header_conventions
+  symptom:
+    description: 'flux-pihm / pihm exits immediately with ''Expected header: ...'' + ''Error: input file
+      format error in input/<proj>/<proj>.att at Line 1'' (or the same for .meteo / .soil), rc=1, before
+      any timestep. Happens with decks written by the KI tools forcing_converter.py / soil_converter.py,
+      or by following SKILL.md sections 4.2/4.4 literally.'
+  diagnosis:
+    root_cause: Three reader conventions that the KI docs got wrong. (1) src/read_att.c CheckHeaders the
+      FIRST line of .att against 'INDEX SOIL GEOL LC METEO LAI BC1 BC2 BC3' and sizes the table from nelem
+      in the .mesh -- there is NO 'NUMATT <n>' record, but SKILL.md section 4.2 showed one. (2) src/read_forc.c
+      parses METEO_TS with sscanf("%s %d %s %lf") requiring match==4, i.e. 'METEO_TS 1 WIND_LVL 10.0'
+      on ONE line, then CheckHeader(8, TIME PRCP SFCTMP RH SFCSPD SOLAR LONGWV PRES); forcing_converter.py
+      wrote METEO_TS and WIND_LVL on two lines and no column header. (3) src/read_soil.c calls CheckHeader(16,
+      INDEX SILT CLAY OM BD KINF KSATV KSATH MAXSMC MINSMC ALPHA BETA MACHF MACVF DMAC QTZ) right after
+      NUMSOIL; soil_converter.py wrote data rows directly.
+  remedy:
+    action: Use tools/mesh_builder.py (.att), the patched forcing_converter.py (.meteo) and the patched
+      soil_converter.py (.soil) -- all three now emit the reader-exact headers. When hand-checking a deck,
+      diff it against input/ShaleHills, which is the ONLY authoritative format reference; SKILL.md sections
+      4.2/4.4 were wrong until 2026-08-02. Comment lines beginning '#' are skipped by NextLine, so a '#TS
+      <units>' line under the header is safe.
+  format_spec_violated: input header records (read_att.c / read_forc.c / read_soil.c CheckHeader)
+  canonical_intent: ki_local_if_pass
+  added_by_run: PIHM_real_case_20260802
+- id: dt_025_headless_tin_conventions_ccw_nabr_outlet
+  symptom:
+    description: 'A headlessly generated PIHM TIN loads but the run is wrong or dies: negative/zero element
+      storage, hillslope fluxes going to the wrong neighbour, the river never exchanging with the aquifer,
+      or CVODE failing on the very first step with NaN discharge at the outlet segment.'
+  diagnosis:
+    root_cause: 'Four geometric contracts MM-PIHM enforces implicitly. (a) InitTopo computes a SIGNED
+      element area 0.5*((x1-x0)(y2-y0)-(y1-y0)(x2-x0)); clockwise node order gives a NEGATIVE area (verified:
+      0/535 ShaleHills elements are clockwise). (b) NABR[j] is the neighbour across the edge OPPOSITE
+      node j -- verified empirically on all 1544 ShaleHills neighbour records (0/1544 match the ''node
+      j -> node j+1'' alternative). 0 means no neighbour. (c) InitRiver sets nabr_river by scanning for
+      elem[left-1].nabr[j] == right, so the LEFT and RIGHT elements of a river segment MUST share the
+      segment''s edge in the mesh -- a river reach that is not a mesh edge silently decouples the channel
+      from the hillslope. (d) the outlet DOWN code -3 is ZERO_DPTH_GRAD, whose OutletFlux computes sqrt((zbed
+      - (node_zmax(to) - depth))/dist); if the segment''s `to` node is not LOWER than the segment mean
+      the gradient is negative and the discharge is NaN.'
+  remedy:
+    action: Generate the mesh with tools/mesh_builder.py, which (a) flips any clockwise triangle, (b)
+      builds NABR from an edge->element map using the opposite-node rule, (c) inserts the river centreline
+      as CONSTRAINED Triangle segments and then recovers the river reaches as actual mesh edges (both
+      endpoints AND the midpoint within tolerance of the centreline, interior edges only), and (d) forces
+      node elevations to decrease monotonically downstream. Do not hand-write a TIN.
+  format_spec_violated: mesh geometry contract (init_topo.c / init_river.c / river_flow.c)
+  canonical_intent: ki_local_if_pass
+  added_by_run: PIHM_real_case_20260802
+- id: dt_026_gw_head_to_piezometric_level
+  symptom:
+    description: PIHM .gw.dat compared against a piezometer gives an absurd bias (tens of metres) or an
+      NSE far below zero even though the seasonal shape looks right. Typical with obs reported as a LEVEL
+      in a national datum (French ADES piezometric level m NGF, US NGWMN depth-to-water, China GW yearbook
+      depth).
+  diagnosis:
+    root_cause: 'GW is the head ABOVE THE ELEMENT''S AQUIFER BOTTOM: lat_flow.c uses (elem.ws.gw + elem.topo.zmin)
+      as the head elevation, and topo.zmin is the MEAN of the three node ZMIN values. So GW is neither
+      a datum elevation nor a depth below ground. A second, separate error is using the element''s mean
+      ZMAX as the wellhead elevation: a ~0.1 km2 triangle on a slope can average several metres away from
+      the well''s surveyed ground level, injecting a pure elevation bias into the head comparison.'
+  remedy:
+    action: 'Convert in DEPTH space, then re-datum with the WELL''s own surveyed elevation: sim_depth_to_water
+      = elem_zmax - (elem_zmin + GW); sim_level_datum = well_ground_elev - sim_depth_to_water. NSE/r/KGE
+      are identical whether scored on depth or on level, but the depth-space route removes the element-averaging
+      elevation bias. Also make sure the mesh''s aquifer thickness (zmax - zmin) EXCEEDS the observed
+      depth to water, otherwise the modelled water table cannot physically reach the observed level and
+      the metric is capped by construction.'
+  format_spec_violated: none (variable-semantics + datum conversion)
+  canonical_intent: ki_local_if_pass
+  added_by_run: PIHM_real_case_20260802

@@ -119,36 +119,16 @@ The cross-domain corpus supports the paper's central premise that operational ex
 - Domain failure profiles were similar, with median pairwise **Spearman's ρ = 0.75**.
 - **3,478 decision points** clustered into 11 categories. Parameter selection, physics-option configuration, and unit-system specification appeared in every domain and accounted for **55%** of all decisions.
 
-## Quick start
-
-The repository is a collection of KI packages rather than a single installable Python distribution.
+## Quick start — using a KI with an agent
 
 ```bash
 git clone https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation.git
 cd KISS---Knowledge-Infrastructure-for-Scientific-Simulation
 
-# Browse the available model packages
-ls models/
-
-# Start with a package's operational entry point
-sed -n '1,160p' models/VIC/SKILL_en.md
-
-# Inspect its operators, protocols, and diagnostic knowledge
-find models/VIC -maxdepth 2 -type f | sort
+pip install -e ki_tools_common/     # the shared library, and the KI harness
 ```
 
-Then point an agent at the package with a task such as:
-
-> Read `models/VIC/SKILL_en.md`. Resolve the required binary, data, and environment paths; follow the staged protocol; use the validated operators rather than regenerating them; and consult the diagnostic recovery mechanisms if a check fails. Run VIC for **[site and period]** and report every validation gate.
-
-Model binaries and large forcing or observational datasets are not bundled uniformly with every KI package. Read the package's operational reference and provenance files before execution, and connect the referenced dependencies to your environment.
-
-## Driving a KI with your own agent — the KI harness
-
-The prompt above is written by hand. The **KI harness** generates it, so that
-any agent — a coding CLI, an API client, your own loop — receives the same
-obligations for any of the packages, instead of whatever the person wiring it
-up remembered to type.
+Then hand any of the packages to your agent:
 
 ```python
 from pathlib import Path
@@ -157,7 +137,39 @@ from ki_tools_common import harness
 contract = harness.contract(Path("models/VIC").resolve(), execute=True)
 ```
 
-Place `contract` in the agent's system prompt. That is the integration.
+Put `contract` in the agent's system prompt. That is the integration — the
+same call works for every package in `models/`, and the agent receives the
+model's staged protocol, its operators as absolute commands, its diagnostic
+knowledge, and the obligations that govern how it may report a result.
+
+> **Without installing anything.** The harness itself imports only the standard
+> library; the `numpy` requirement comes from the rest of the shared library.
+> To skip the install, load the module directly:
+>
+> ```python
+> import sys; sys.path.insert(0, "ki_tools_common/ki_tools_common/harness")
+> import ki_harness
+> contract = ki_harness.contract(Path("models/VIC").resolve(), execute=True)
+> ```
+
+Model binaries and large forcing or observational datasets are not bundled
+uniformly with every package. `harness.run_preflight(ki)` reports what is
+missing before a run rather than during one.
+
+### Reading a package by hand
+
+The same knowledge is plain files, if you would rather look first:
+
+```bash
+ls models/                                  # the available packages
+sed -n '1,160p' models/VIC/SKILL_en.md      # the operational entry point
+find models/VIC -maxdepth 2 -type f | sort  # operators, protocols, diagnostics
+```
+
+## Driving a KI with your own agent — the KI harness
+
+`contract()` is the whole entry point, shown above. The rest of this section
+is what it puts in front of the agent, and the calls that surround it.
 
 ### Why a shared contract
 

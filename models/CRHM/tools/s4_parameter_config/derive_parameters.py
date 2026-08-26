@@ -44,7 +44,7 @@ import os
 import warnings
 import numpy as np
 
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 
 # CRHM SetSoilproperties from GlobalDll.h: [avail, wilt, field, pore] in mm per 1m depth
 CRHM_SOIL = {

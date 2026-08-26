@@ -4,11 +4,11 @@ model:
   domain: "subsurface_hydrology"
   subdomain: "discrete_fracture_network"
   description: "Computational suite for modeling flow and transport in 3D discrete fracture networks"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/venv/bin/python"
+  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
   native_binaries:
-    DFNGen: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/DFNGen/DFNGen"
-    DFNTrans: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/DFNTrans/DFNTrans"
-    correct_volume: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/CPP_correct_volumes/correct_volume"
+    DFNGen: "KISSPATH_BINARIES/dfnWorks/source/repo/DFNGen/DFNGen"
+    DFNTrans: "KISSPATH_BINARIES/dfnWorks/source/repo/DFNTrans/DFNTrans"
+    correct_volume: "KISSPATH_BINARIES/dfnWorks/source/repo/CPP_correct_volumes/correct_volume"
   modes:
     - name: "graph"
       description: "Graph-based flow and transport (no external dependencies)"

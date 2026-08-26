@@ -75,7 +75,7 @@ All dependencies are already available on the HydroCraft server (used by WRF-Hyd
 
 ```bash
 # 1. Clone repository
-cd /mnt/disk1/Hydrocraft_server/model
+cd KISSPATH_BINARIES
 git clone https://github.com/ESCOMP/mizuRoute.git mizuRoute
 cd mizuRoute
 

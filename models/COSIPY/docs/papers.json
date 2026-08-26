@@ -1,0 +1,202 @@
+{
+  "model": "COSIPY",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-13-5645-2020",
+      "title": "COSIPY v1.3 – an open-source coupled snowpack and ice surface energy and mass balance model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "temperature",
+        "evapotranspiration",
+        "SNOWHEIGHT",
+        "ALBEDO",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2021.56",
+      "title": "Surface mass balance and energy balance of the 79N Glacier (Nioghalvfjerdsfjorden, NE Greenland) modeled by linking COSIPY and Polar WRF",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "temperature",
+        "evapotranspiration",
+        "SNOWHEIGHT",
+        "ALBEDO"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2023.46",
+      "title": "Spatial pattern of glacier mass balance sensitivity to atmospheric forcing in High Mountain Asia",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-17-2811-2023",
+      "title": "Modelling point mass balance for the glaciers of the Central European Alps using machine learning techniques",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "SNOWHEIGHT"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2016.110",
+      "title": "Which empirical model is best suited to simulate glacier mass balances?",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2024.42",
+      "title": "Surface energy and mass balance of Mera Glacier (Nepal, Central Himalaya) and their sensitivity to temperature and precipitation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "temperature",
+        "evapotranspiration",
+        "SNOWHEIGHT",
+        "ALBEDO"
+      ]
+    },
+    {
+      "doi": "10.1038/s41612-022-00230-0",
+      "title": "Mt. Everest’s highest glacier is a sentinel for accelerating ice loss",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "temperature",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-17-2343-2023",
+      "title": "Strategies for regional modeling of surface mass balance at the Monte Sarmiento Massif, Tierra del Fuego",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.1017/aog.2024.46",
+      "title": "Distributed energy balance, mass balance and climate sensitivity of upper Chandra basin glaciers, western Himalaya",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "temperature",
+        "evapotranspiration",
+        "ALBEDO"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change",
+        "temperature",
+        "evapotranspiration",
+        "SNOWHEIGHT",
+        "ALBEDO",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1657/aaar0014-073",
+      "title": "Evaluation of a Coupled Snow and Energy Balance Model for Zhadang Glacier, Tibetan Plateau, Using Glaciological Measurements and Time-Lapse Photography",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "SNOWHEIGHT",
+        "ALBEDO",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3189/172756407782871224",
+      "title": "Energy-balance model validation on the top of Kilimanjaro, Tanzania, using eddy covariance data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "evapotranspiration",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.3189/2013jog12j152",
+      "title": "Energy and mass balance of Zhadang glacier surface, central Tibetan Plateau",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "temperature",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3189/2013aog63a604",
+      "title": "Constraining turbulent heat flux parameterization over a temperate maritime glacier",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3189/172756506781828746",
+      "title": "Measurement and parameterization of aerodynamic roughness length variations at Haut Glacier d'Arolla, Switzerland",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3189/172756402781817662",
+      "title": "Development and validation of a snow albedo algorithm for the MODIS instrument",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "ALBEDO"
+      ]
+    },
+    {
+      "doi": "10.1029/2010jd015183",
+      "title": "Summertime surface energy budget and ablation modeling in the ablation zone of a maritime Tibetan glacier",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "temperature",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/egusphere-2025-6249",
+      "title": "Towards the Bayesian calibration of a glacier surface energy balance model",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

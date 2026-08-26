@@ -3,7 +3,7 @@ model:
   version: "2.10.1"
   domain: "geomorphology, hydrology, stratigraphy, glaciology"
   type: "Python component-based framework"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Landlab/venv/bin/python"
+  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
   execution: "Python API — simulations are Python scripts, not CLI binaries"
 
 inputs:

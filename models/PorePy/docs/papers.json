@@ -1,0 +1,195 @@
+{
+  "model": "PorePy",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 11,
+  "papers": [
+    {
+      "doi": "10.1007/s12665-016-6061-z",
+      "title": "Real-case benchmark for flow and tracer transport in the fractured rock",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "darcy_flux"
+      ]
+    },
+    {
+      "doi": "10.5194/se-8-921-2017",
+      "title": "Flexible parallel implicit modelling of coupled thermal-hydraulic-mechanical processes in fractured rocks",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "pressure",
+        "displacement"
+      ]
+    },
+    {
+      "doi": "10.1007/s11242-023-01946-0",
+      "title": "Simulation of Reactive Transport in Fractured Porous Media",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "darcy_flux",
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.2516/ogst/2019008",
+      "title": "Dual Virtual Element Methods for Discrete Fracture Matrix models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "darcy_flux"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.1905.13513",
+      "title": "Block Preconditioners for Mixed-dimensional Discretization of Flow in Fractured Porous Media",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2018.02.001",
+      "title": "Groundwater flow and heat transport for systems undergoing freeze-thaw: Intercomparison of numerical simulators",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2017.10.036",
+      "title": "Benchmarks for single-phase flow in fractured porous media",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "pressure",
+        "darcy_flux"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-020-10002-5",
+      "title": "PorePy: an open-source software for simulation of multiphysics processes in fractured porous media",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "temperature",
+        "displacement",
+        "darcy_flux",
+        "stress",
+        "fracture_aperture",
+        "contact_traction"
+      ]
+    },
+    {
+      "doi": "10.1007/s11242-018-1171-6",
+      "title": "Flow in Fractured Porous Media: A Review of Conceptual Models and Discretization Approaches",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "pressure",
+        "darcy_flux"
+      ]
+    },
+    {
+      "doi": "10.1007/s00366-024-02089-6",
+      "title": "Estimation of uncertainties in the density driven flow in fractured porous media using MLMC",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.1007/s13137-023-00231-y",
+      "title": "Uncertainty quantification for mineral precipitation and dissolution in fractured porous media",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "darcy_flux"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2020.103759",
+      "title": "Verification benchmarks for single-phase flow in three-dimensional fractured porous media",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "darcy_flux"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ijrmms.2023.105530",
+      "title": "Comparative verification of hydro-mechanical fracture behavior: Task G of the international research project DECOVALEX-2023",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "displacement",
+        "stress",
+        "fracture_aperture",
+        "contact_traction"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-018-9778-9",
+      "title": "Unified approach to discretization of flow in fractured porous media",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "darcy_flux"
+      ]
+    },
+    {
+      "doi": "10.1002/nme.6238",
+      "title": "Finite volume discretization for poroelastic media with fractures modeled by contact mechanics",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "displacement",
+        "contact_traction",
+        "fracture_aperture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.cma.2021.114122",
+      "title": "A fully coupled numerical model of thermo-hydro-mechanical processes and fracture contact mechanics in porous media",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "displacement",
+        "contact_traction"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr015179",
+      "title": "Finite volume hydromechanical simulation in porous media (MPSA)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "displacement",
+        "stress"
+      ]
+    },
+    {
+      "doi": "10.1155/2021/6235441",
+      "title": "Iteratively Coupled Flow and Geomechanics in Fractured Poroelastic Reservoirs",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "displacement"
+      ]
+    }
+  ]
+}

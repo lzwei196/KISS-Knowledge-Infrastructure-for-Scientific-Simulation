@@ -2,7 +2,7 @@ model:
   name: "PyDeltaRCM"
   version: "2.2.0"
   domain: "Geomorphology / Delta Evolution / Sediment Transport"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyDeltaRCM/venv/bin/python"
+  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
   binary_type: "python_package"
   cli_command: "pyDeltaRCM --config <config.yml>"
   python_api: "pyDeltaRCM.DeltaModel"

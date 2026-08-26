@@ -1,3 +1,14 @@
+---
+name: roms
+description: >-
+  ROMS free-surface, hydrostatic, Boussinesq primitive-equation kernel (Rutgers ROMS,
+  Nonlinear forward model; develop branch ~roms-4.2 lineage). Covers Free-surface,
+  hydrostatic, Boussinesq primitive-equation ocean circulation over variable bathymetry;
+  3D momentum (u, v) and free-surface (zeta) on a split-explicit barotropic/baroclinic
+  mode split. Use when the task involves running, configuring, calibrating or interpreting
+  ROMS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

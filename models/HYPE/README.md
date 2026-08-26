@@ -31,9 +31,9 @@ validation_status: production_validated
 
 **HYPE (HYdrological Predictions for the Environment)** is a semi-distributed, process-based hydrological and nutrient transport model developed at SMHI (Swedish Meteorological and Hydrological Institute). It operates on a subbasin-SLC (Soil-Land use Class) structure where the landscape is divided into subbasins, each containing fractional areas of soil-landcover combinations.
 
-**Binary**: `/mnt/disk1/Hydrocraft_server/model/hype/hype` (v5.35.0, compiled from source)
-**Source**: `/mnt/disk1/Hydrocraft_server/model/hype/hype_5_35_0_src/` (38 Fortran 90 files, 93,622 lines)
-**Demo**: `/mnt/disk1/Hydrocraft_server/model/hype/demo/` (3-subbasin test case, validated)
+**Binary**: `KISSPATH_BINARIES/hype/hype` (v5.35.0, compiled from source)
+**Source**: `KISSPATH_BINARIES/hype/hype_5_35_0_src/` (38 Fortran 90 files, 93,622 lines)
+**Demo**: `KISSPATH_BINARIES/hype/demo/` (3-subbasin test case, validated)
 
 ### What Makes HYPE Unique in HydroCraft
 
@@ -266,10 +266,10 @@ s8_output_analysis        Parse timeCOUT.txt/mapCOUT.txt, compute metrics, compa
 
 ```bash
 # From the directory containing info.txt:
-/mnt/disk1/Hydrocraft_server/model/hype/hype ./
+KISSPATH_BINARIES/hype/hype ./
 
 # Or specify a different info directory:
-/mnt/disk1/Hydrocraft_server/model/hype/hype /path/to/run/directory/
+KISSPATH_BINARIES/hype/hype /path/to/run/directory/
 
 # CRITICAL: The argument MUST end with a slash (/)
 # Without slash: looks for info.txt at wrong path

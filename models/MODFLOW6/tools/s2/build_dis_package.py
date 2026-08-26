@@ -31,7 +31,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"             # Simulation workspace directory
+SIM_PATH = "KISSPATH_OUTPUTS/qinghai_lake_1951_2024/modflow6/workspace"             # Simulation workspace directory
 MODEL_NAME = "gwf"        # GWF model name
 SIM_NAME = "mf6sim"       # Simulation name
 NLAY = 2

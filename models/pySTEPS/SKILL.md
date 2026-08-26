@@ -1,8 +1,15 @@
 ---
-model: pySTEPS
+name: pysteps
+description: >-
+  STEPS cascade-based stochastic nowcasting scheme (Bowler et al. 2006 / Seed 2003 S-PROG
+  lineage) as realized in pysteps 1.20.0. Covers Short-term probabilistic / deterministic
+  nowcasting of 2-D radar precipitation intensity fields; Motion (advection) field
+  estimation from a past radar frame sequence via optical flow. Use when the task involves
+  running, configuring, calibrating or interpreting pySTEPS.
 version: 1.20.0
+model: pySTEPS
 domain: precipitation_nowcasting
-not_a_hydrological_model: true
+not_a_hydrological_model: True
 ---
 
 # pySTEPS — Knowledge Infrastructure
@@ -13,7 +20,7 @@ pySTEPS is a Python library (not a standalone binary) for **probabilistic precip
 nowcasting** from radar QPE sequences. It is NOT a hydrological model and cannot be
 validated directly against hydrocraft.db station discharge or water-quality observations.
 
-- Install path: `/home/server/.local/lib/python3.12/site-packages/pysteps/`
+- Install path: `KISSPATH_HOME/.local/lib/python3.12/site-packages/pysteps/`
 - Config file: `pystepsrc` (same dir)
 - Version: 1.20.0 (via `importlib.metadata`; module itself has no `__version__` attr)
 
@@ -52,7 +59,7 @@ mean FSS > 0.99.
 ## Execution
 
 ```bash
-cd /mnt/disk1/Hydrocraft_server/models/pySTEPS/knowledge_infrastructure
+cd KISSPATH_KI_ROOT/pySTEPS/knowledge_infrastructure
 python3 preflight_check.py           # verify environment
 python3 diagnostics/run_synthetic_advection.py   # run test, writes diagnostics/last_run.json
 ```

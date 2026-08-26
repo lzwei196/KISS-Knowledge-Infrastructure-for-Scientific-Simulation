@@ -64,8 +64,8 @@ tar xzf sfincs.tar.gz
 cd SFINCS-main/source
 # Install autotools if needed: sudo apt install autoconf automake libtool
 bash build_gfortran_cpu.sh
-cp src/sfincs /mnt/disk1/Hydrocraft_server/model/sfincs/bin/sfincs
-chmod +x /mnt/disk1/Hydrocraft_server/model/sfincs/bin/sfincs
+cp src/sfincs KISSPATH_BINARIES/sfincs/bin/sfincs
+chmod +x KISSPATH_BINARIES/sfincs/bin/sfincs
 ```
 
 ### Python dependencies (all in HydroCraft venv)
@@ -270,7 +270,7 @@ The config generator must write `precipfile = sfincs.precip` (ASCII format: `tim
 | China DEM 90m | Local | Available | `data/dem/china_dem_90m/` |
 | Copernicus GLO-30 | AWS (auto-download) | Available | Auto-downloaded by hydrobasin |
 | CMFD forcing | Local | Available | `data/forcing/Data_forcing_03hr_010deg/` |
-| MSWX forcing | Local | Available | `/mnt/disk3/msxw/` |
+| MSWX forcing | Local | Available | `KISSPATH_FORCING/` |
 | CaMa-Flood output | From pipeline | Available | `model/cmf_v420_pkg/out/` |
 | AVHRR land cover | Local | Available | `data/forcing/AVHRR/` |
 
@@ -280,7 +280,7 @@ The config generator must write `precipfile = sfincs.precip` (ASCII format: `tim
 
 ```bash
 # Activate venv
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 
 # 1. Define domain (from existing basin shapefile)
 python tools/s1_domain/setup_sfincs_domain.py \

@@ -11,7 +11,7 @@ model:
   name: "VIC 5.1.0"
   domain: "hydrology"
   binary: "vic_classic.exe"
-  binary_path: "/mnt/disk1/Hydrocraft_server/model/VIC-5.1.0/vic/drivers/classic/vic_classic.exe"
+  binary_path: "KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/classic/vic_classic.exe"
   language: "C"
   working_directory: "./"
   invocation: "vic_classic.exe -g global_param.txt"

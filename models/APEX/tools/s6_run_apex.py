@@ -1,13 +1,13 @@
-"""s6_run_apex.py — Invoke the apex1501 binary inside a workspace and collect outputs.
+"""s6_run_apex.py — Invoke APEX0806 inside a workspace and collect outputs.
 
 The binary always reads from and writes to the *current working directory*, so
-we ``chdir`` into the workspace before invoking it. Because apex1501 returns
+we ``chdir`` into the workspace before invoking it. Because APEX0806 can return
 exit code 0 even on Fortran severe errors (Known Trap #10), we cannot trust
 ``returncode`` — instead we check that the run produced *some* primary output
 file (``.OUT``/``.ACY``/``.SAD``/``.MSW``) and that ``EPICERR.DAT`` is clean.
 
 RUN1501.SUM trap: this file is the **multi-run** summary and is legitimately
-empty when APEXRUN.DAT defines a single run (apex1501 only populates it when
+empty when APEXRUN.DAT defines a single run (APEX only populates it when
 there are ≥2 runs to summarise). Treating an empty SUM as a failure is a
 false positive — the per-run outputs ``001RUN.OUT`` and ``001RUN.ACY`` are
 the real success signal. We therefore only require that the run produced
@@ -165,7 +165,7 @@ def run(workspace, *, timeout: int = 600) -> dict:
     run_outputs = _collect_run_outputs(ws)
     if not run_outputs:
         raise RuntimeError(
-            f"apex1501 produced no per-run output files in {ws} "
+            f"APEX0806 produced no per-run output files in {ws} "
             f"(rc={proc.returncode}).\nstderr:\n{proc.stderr}\n"
             f"EPICERR.DAT:\n{err_text}"
         )
@@ -175,7 +175,7 @@ def run(workspace, *, timeout: int = 600) -> dict:
         ok, why = _terminal_fault_only(ws, proc.stderr or "", err_text)
         if not ok:
             raise RuntimeError(
-                f"apex1501 reported errors (rc={proc.returncode}).\n"
+                f"APEX0806 reported errors (rc={proc.returncode}).\n"
                 f"stderr:\n{proc.stderr}\nEPICERR.DAT:\n{err_text}"
             )
         terminal_fault = True
@@ -207,7 +207,7 @@ def run(workspace, *, timeout: int = 600) -> dict:
 
 def validate_outputs(ws: Path, run_outputs: list[str]) -> None:
     if not run_outputs:
-        raise RuntimeError(f"apex1501 wrote no per-run output files in {ws}")
+        raise RuntimeError(f"APEX0806 wrote no per-run output files in {ws}")
 
 
 if __name__ == "__main__":

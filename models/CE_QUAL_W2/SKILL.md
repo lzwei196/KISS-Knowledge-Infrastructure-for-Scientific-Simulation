@@ -1,3 +1,14 @@
+---
+name: ce-qual-w2
+description: >-
+  CE-QUAL-W2 4.5.5. Covers 2D laterally-averaged hydrodynamics (longitudinal + vertical
+  velocities, free-surface); water temperature and density-driven thermal stratification;
+  density-driven inflow placement (plunging / interflow / overflow); selective withdrawal
+  from outlets at specified elevations; multi-branch / multi-waterbody topology with
+  branch junctions and head boundaries. Use when the task involves running, configuring,
+  calibrating or interpreting CE_QUAL_W2.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -73,7 +84,7 @@ This knowledge infrastructure enables autonomous 2D reservoir simulation using C
 ### Binary
 
 ```
-CE-QUAL-W2:  /mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2_v5
+CE-QUAL-W2:  KISSPATH_BINARIES/ce_qual_w2/bin/w2_v5
 Source:      model/ce_qual_w2/src/            (TO BE CLONED from GitHub)
 Repository:  https://github.com/EnvironmentalSystems/CE-QUAL-W2
 ```
@@ -252,8 +263,8 @@ else:
 ## Quick Start (Idealized Reservoir)
 
 ```bash
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
-cd /mnt/disk1/Hydrocraft_server/models/CE_QUAL_W2/knowledge_infrastructure
+source KISSPATH_PYTHON_ENV/bin/activate
+cd KISSPATH_KI_ROOT/CE_QUAL_W2/knowledge_infrastructure
 
 # 1. Build idealized grid (no DEM needed)
 python tools/s1_bathymetry/build_reservoir_grid.py \

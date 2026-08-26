@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 
 # ── Paths ──────────────────────────────────────────────────────────────────
-PROJECT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+PROJECT_ROOT = Path("KISSPATH_ROOT")
 LDNDC_BASE = PROJECT_ROOT / "model" / "ldndc" / "ldndc-1.37.linux64"
 LDNDC_BIN = LDNDC_BASE / "bin" / "ldndc"
 PROJECTS_DIR = LDNDC_BASE / "projects"

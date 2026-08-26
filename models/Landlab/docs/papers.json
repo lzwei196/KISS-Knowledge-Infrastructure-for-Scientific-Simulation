@@ -1,0 +1,226 @@
+{
+  "model": "Landlab",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 22,
+  "open_access": 14,
+  "papers": [
+    {
+      "doi": "10.5194/esurf-13-277-2025",
+      "title": "Hillslope diffusion and channel steepness in landscape evolution models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-5-21-2017",
+      "title": "Creative computing with Landlab: an open-source toolkit for building, coupling, and exploring two-dimensional numerical models of Earth-surface dynamics",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-8-379-2020",
+      "title": "Short communication: Landlab v2.0: a software package for Earth surface dynamics",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-10-4577-2017",
+      "title": "The SPACE 1.0 model: a Landlab component for 2-D calculation of sediment transport, bedrock erosion, and landscape evolution",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-4873-2018",
+      "title": "Global sensitivity analysis of parameter uncertainty in landscape evolution models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-1267-2019",
+      "title": "Terrainbento 1.0: a Python package for multi-model analysis in long-term drainage basin evolution",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "soil_moisture",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-6-505-2018",
+      "title": "How concave are river channels?",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-5-145-2017",
+      "title": "Coupling slope-area analysis, integral approach and statistic tests to steady-state bedrock river profile analysis",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-7-87-2019",
+      "title": "Short communication: The Topographic Analysis Kit (TAK) for TopoToolbox",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_level",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-8-447-2020",
+      "title": "Parameterization of river incision models requires accounting for environmental stochasticity",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-2959-2020",
+      "title": "Surrogate-assisted Bayesian inversion for landscape and basin evolution models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-12-1295-2024",
+      "title": "GraphFlood 1.0: an efficient algorithm to approximate 2D hydrodynamics for landscape evolution models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-807-2011",
+      "title": "Sediment management modelling in the Blue Nile Basin using SWAT model",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "sediment",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.geomorph.2016.05.035",
+      "title": "Global analysis of the stream power law parameters based on worldwide 10Be denudation rates",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "sediment",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "sediment",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2018jf004963",
+      "title": "Inverting Topography for Landscape Evolution Model Process Representation: 2. Calibration and Validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "soil_moisture",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1029/2018jf004961",
+      "title": "Inverting Topography for Landscape Evolution Model Process Representation: 1. Conceptualization and Sensitivity Analysis",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2019jf005287",
+      "title": "Inverting Topography for Landscape Evolution Model Process Representation: 3. Determining Parameter Ranges and Model Adequacy",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2019gl083305",
+      "title": "Extreme Memory of Initial Conditions in Numerical Landscape Evolution Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1002/2013jf002981",
+      "title": "A statistical framework to quantify spatial variation in channel gradients using the integral method of channel profile analysis",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/land12071396",
+      "title": "Erosion and Sediment Transport Modeling: A Systematic Review",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "sediment"
+      ]
+    }
+  ]
+}

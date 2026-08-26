@@ -1,0 +1,65 @@
+{
+  "model": "SimPEG",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 7,
+  "open_access": 5,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-12-1-2019",
+      "title": "GemPy 1.0: open-source stochastic geological modeling and inversion",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "unknown"
+      ]
+    },
+    {
+      "doi": "10.1007/s10712-022-09731-2",
+      "title": "A Review on Applications of Time-Lapse Electrical Resistivity Tomography Over th",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "unknown"
+      ]
+    },
+    {
+      "doi": "10.1186/s40562-022-00214-1",
+      "title": "A review of open software resources in python for electrical resistivity modelli",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "unknown"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2022.884075",
+      "title": "Automated Hierarchical 3D Modeling of Quaternary Aquifers: The ArchPy Approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "unknown"
+      ]
+    },
+    {
+      "doi": "10.62329/qkkf6675",
+      "title": "Agriculture and geophysics: Illuminating the subsurface",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "unknown"
+      ]
+    },
+    {
+      "doi": "10.1016/j.cageo.2017.06.018",
+      "title": "A framework for simulation and inversion in electromagnetics",
+      "access": "subscription",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.1016/j.cageo.2015.09.015",
+      "title": "SimPEG: An open source framework for simulation and gradient based parameter estimation in geophysical applications",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

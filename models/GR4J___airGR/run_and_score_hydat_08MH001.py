@@ -19,17 +19,17 @@ import os, sys, json, subprocess, sqlite3, calendar
 import numpy as np, pandas as pd
 from datetime import datetime
 
-KI = '/mnt/disk1/Hydrocraft_server/models/GR4J___airGR/knowledge_infrastructure'
+KI = 'KISSPATH_KI_ROOT/GR4J___airGR/knowledge_infrastructure'
 TOOLS = KI + '/tools'
-COMMON = '/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent'
+COMMON = 'KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent'
 sys.path.insert(0, TOOLS)
 sys.path.insert(0, COMMON)
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 from ki_tools_common.load_forcing import load_daily_forcing
 
-WD = '/mnt/disk1/Hydrocraft_server/outputs/gr4j_hydat_08MH001'
-OUT = '/mnt/disk1/Hydrocraft_server/models/GR4J___airGR/detached/verify_2'
+WD = 'KISSPATH_OUTPUTS/gr4j_hydat_08MH001'
+OUT = 'KISSPATH_KI_ROOT/GR4J___airGR/detached/verify_2'
 MSWX_CACHE = WD + '/mswx_years'
 os.makedirs(WD, exist_ok=True); os.makedirs(OUT, exist_ok=True)
 os.makedirs(MSWX_CACHE, exist_ok=True)
@@ -37,7 +37,7 @@ os.makedirs(MSWX_CACHE, exist_ok=True)
 # --- Station / period configuration ---
 STN = '08MH001'
 LAT, LON, AREA = 49.09738, -121.96748, 1230.0
-HYDAT = ('/mnt/datasets/observed_data/dischargeandwatershed/'
+HYDAT = ('KISSPATH_DATA/observed_data/dischargeandwatershed/'
          'National Water Data Archive HYDAT/Hydat.sqlite3')
 FORC_SY, FORC_EY = 1989, 2020           # 1989 = warmup year
 EVAL_START, EVAL_END = '1990-01-01', '2020-12-31'
@@ -54,7 +54,7 @@ def sh(cmd):
 # --- Input availability record (all local) ---
 ia = {"all_required_reachable": True, "required": [], "optional": [],
       "unreachable_required": []}
-for p in [HYDAT, '/mnt/disk3/msxw/P', '/mnt/disk3/msxw/Tair']:
+for p in [HYDAT, 'KISSPATH_FORCING/P', 'KISSPATH_FORCING/Tair']:
     ia["required"].append({"path": p, "reachable": os.path.exists(p)})
 if not all(r["reachable"] for r in ia["required"]):
     ia["all_required_reachable"] = False

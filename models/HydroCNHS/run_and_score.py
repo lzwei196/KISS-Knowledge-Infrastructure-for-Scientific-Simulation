@@ -50,7 +50,7 @@ import sys
 import traceback
 from datetime import datetime
 
-MODEL_ROOT = "/mnt/disk1/Hydrocraft_server/models/HydroCNHS"
+MODEL_ROOT = "KISSPATH_KI_ROOT/HydroCNHS"
 KI_TOOLS = f"{MODEL_ROOT}/knowledge_infrastructure/tools"
 HCNHS_SRC = f"{MODEL_ROOT}/source/repo/src"
 STATE_DIR = f"{MODEL_ROOT}/detached/verify_4"
@@ -58,10 +58,10 @@ WORK = f"{STATE_DIR}/work"
 FORC_CACHE = f"{WORK}/forcing"
 RESULT_JSON = f"{STATE_DIR}/result.json"
 
-MSWX_DIR = "/mnt/disk3/msxw"
-HYDAT_DB = ("/mnt/datasets/observed_data/dischargeandwatershed/"
+MSWX_DIR = "KISSPATH_FORCING"
+HYDAT_DB = ("KISSPATH_DATA/observed_data/dischargeandwatershed/"
             "National Water Data Archive HYDAT/Hydat.sqlite3")
-BASIN_GPKG = ("/mnt/datasets/observed_data/dischargeandwatershed/"
+BASIN_GPKG = ("KISSPATH_DATA/observed_data/dischargeandwatershed/"
               "National Water Data Archive HYDAT/HydrometricNetworkBasinPolygons/"
               "gpkg/MDA_ADP_01.gpkg")
 BASIN_LAYER = "DrainageBasin_BassinDeDrainage"
@@ -76,7 +76,7 @@ CAL0, CAL1 = "2002-01-01", "2011-12-31"
 VAL0, VAL1 = "2012-01-01", "2019-12-31"
 GA_POP, GA_GEN, GA_SEED = 48, 60, 42
 
-sys.path.append("/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.append("KISSPATH_KI_TOOLS_COMMON")
 sys.path.append(HCNHS_SRC)  # sim_results.pickle holds a hydrocnhs dc object
 
 ENV = dict(os.environ)
@@ -333,8 +333,7 @@ def stage_score(ndays, q_full, p_ann, t_mean, n_cells):
 
     spec = importlib.util.spec_from_file_location(
         "standard_calval",
-        "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/"
-        "validators/standard_calval.py")
+        "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/validators/standard_calval.py")
     scv = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(scv)
 

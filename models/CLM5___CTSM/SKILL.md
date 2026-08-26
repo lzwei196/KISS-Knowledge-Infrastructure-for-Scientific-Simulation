@@ -1,3 +1,14 @@
+---
+name: clm5-ctsm
+description: >-
+  CLM5/CTSM (CTSM 5.4 framework; CLM4.5/CLM5.0/CLM6.0 selectable physics). Covers
+  Terrestrial biogeophysics: surface radiation, surface energy balance, canopy and ground
+  turbulent…; Soil and snow thermal dynamics (25 soil layers to ~8.5 m; up to 12 snow
+  layers); Soil and snow hydrology: infiltration, soil moisture, surface/subsurface
+  runoff, drainage. Use when the task involves running, configuring, calibrating or
+  interpreting CLM5___CTSM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -42,9 +53,9 @@ For a FLUXNET tower site, drive the model with the tower's own meteorology via
 
 **Data Validation Reference**: `data_ki/CMFD/SKILL.md` and `data_ki/FLUXNET/SKILL.md`
 **DO NOT EXIST** — KDT 5.0 removed tools and docs from `data_ki/`. The live
-sources are `ki_tools_common` (`/mnt/disk1/Hydrocraft_server/models/ki_tools_common/`)
+sources are `ki_tools_common` (`KISSPATH_KI_TOOLS_COMMON/`)
 and this KI's own `tools/`. FLUXNET2015 layout: one directory per site under
-`/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/<SITE_ID>/`, holding
+`KISSPATH_OBS/fluxnet/sites/<SITE_ID>/`, holding
 `FULLSET_{HH|HR}.csv` (sub-daily), `FULLSET_DD.csv` (daily), `FULLSET_YY.csv`,
 `AUXMETEO.csv`, `AUXNEE.csv`. Site coordinates / IGBP class / canopy height are
 NOT in `site_catalog.csv` — they are in the BIF workbook
@@ -481,7 +492,7 @@ ki/
 
 ## 14b. WHICH CLM INSTALLATION TO USE  *(read before anything else)*
 
-`preflight_check.py` pins `/home/server/cesm/scratch/test_clm5/bld/cesm.exe`.
+`preflight_check.py` pins `KISSPATH_HOME/cesm/scratch/test_clm5/bld/cesm.exe`.
 That binary **cannot initialise**: it is a CTSM-5.4 / NUOPC build whose ESMF was
 compiled without PIO, so `ESMCI_mesh_create_from_file()` aborts in
 `atm_comp_nuopc.F90` a second after launch (dt_022). `mksurfdata_esmf` is dead
@@ -492,11 +503,11 @@ recorded `model execution success` (case `B1850_test`, 2026-05-02):
 
 | Item | Path |
 |---|---|
-| CESM root (`--ctsm-root`) | `/home/server/cesm/src/cesm-2.2.2` |
-| Machine | `hydrocraft_server` (config in `/home/server/.cime/`) |
-| `DIN_LOC_ROOT` | `/home/server/cesm/inputdata` |
-| `DIN_LOC_ROOT_CLMFORC` | `/home/server/cesm/inputdata/atm/datm7` |
-| Cases / scratch | `/home/server/cesm/cases`, `/home/server/cesm/scratch` |
+| CESM root (`--ctsm-root`) | `KISSPATH_HOME/cesm/src/cesm-2.2.2` |
+| Machine | `hydrocraft_server` (config in `KISSPATH_HOME/.cime/`) |
+| `DIN_LOC_ROOT` | `KISSPATH_HOME/cesm/inputdata` |
+| `DIN_LOC_ROOT_CLMFORC` | `KISSPATH_HOME/cesm/inputdata/atm/datm7` |
+| Cases / scratch | `KISSPATH_HOME/cesm/cases`, `KISSPATH_HOME/cesm/scratch` |
 | Batch system | none — `./case.submit` runs the model synchronously |
 
 Missing inputdata files can be fetched from

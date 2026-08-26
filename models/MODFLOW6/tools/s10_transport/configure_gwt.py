@@ -249,7 +249,7 @@ def build_coupled_gwt(
     _distcoef = distcoef if distcoef is not None else preset.get("distcoef")
 
     if mf6_exe is None:
-        mf6_exe = "/mnt/disk1/Hydrocraft_server/model/modflow6/mf6.6.1_linux/bin/mf6"
+        mf6_exe = "KISSPATH_BINARIES/modflow6/mf6.6.1_linux/bin/mf6"
 
     # --- Load existing GWF simulation ---
     if not os.path.exists(os.path.join(gwf_sim_ws, "mfsim.nam")):
@@ -655,7 +655,7 @@ def build_standalone_gwt(
     _distcoef = distcoef if distcoef is not None else preset.get("distcoef")
 
     if mf6_exe is None:
-        mf6_exe = "/mnt/disk1/Hydrocraft_server/model/modflow6/mf6.6.1_linux/bin/mf6"
+        mf6_exe = "KISSPATH_BINARIES/modflow6/mf6.6.1_linux/bin/mf6"
 
     os.makedirs(gwt_ws, exist_ok=True)
 

@@ -4,7 +4,7 @@ model:
   domain: "crop"
   language: "C# (.NET 8.0)"
   build_system: "dotnet (MSBuild, ApsimX.sln)"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/APSIM/source/repo/bin/Release/net8.0/apsim"
+  binary_path: "KISSPATH_BINARIES/APSIM/source/repo/bin/Release/net8.0/apsim"
   timestep: "daily"
   spatial_scale: "point/field (zone-based, area in ha)"
   repository: "https://github.com/APSIMInitiative/ApsimX"

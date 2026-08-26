@@ -1,3 +1,13 @@
+---
+name: daycent
+description: >-
+  DayCent (Daily Century) ecosystem/biogeochemistry model, DDcentEVI lineage with
+  methanogenesis; CSU/NREL User Manual & Scientific Basis. Covers Long-term C, N, P, S
+  dynamics for point-scale plant-soil systems; Plant production / NPP and above- and
+  below-ground allocation (grassland/crop, forest, savanna…. Use when the task involves
+  running, configuring, calibrating or interpreting DayCent.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -158,7 +168,7 @@ history. The minimum-edit path is:
    every FLUXNET2015 site CSV carries `TA_F`, `P_F`, `SW_IN_F` — the exact
    variables the `.wth` needs — and it works offline.
    ```bash
-   python tools/convert_forcing_to_daycent.py      --source fluxnet      --fluxnet-csv /mnt/disk1/.../sites/DE-Tha/FULLSET_DD.csv      --year-start 1996 --year-end 2014      --out workdir/de_tha/de_tha.wth
+   python tools/convert_forcing_to_daycent.py      --source fluxnet      --fluxnet-csv KISSPATH_ROOT/.../sites/DE-Tha/FULLSET_DD.csv      --year-start 1996 --year-end 2014      --out workdir/de_tha/de_tha.wth
    ```
 
 3. **Edit `<site>.100`** (rename `wooster_site.100` → `de_tha_site.100`):

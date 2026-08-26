@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Preflight check for VIC + CaMa-Flood — verifies environment before simulation.
+Software preflight for VIC + CaMa-Flood.
 
-Run this BEFORE attempting any model execution. It checks that all required
-binaries, packages, and data paths are available.
+This check answers one question: is the scientific software installed on this
+machine?  Input data belongs to an individual GeoForge project and is checked
+in that chat's dynamic data panel, not while installing the shared software.
 
 Usage:
     python preflight_check.py
@@ -37,21 +38,20 @@ def check_file(path, label, executable=False):
         FAIL += 1
 
 
-def check_dir(path, label):
-    global PASS, FAIL
+def report_project_data(path, label):
+    """Report reusable reference data without making it an install blocker."""
     if os.path.isdir(path):
         n = len(os.listdir(path))
-        print(f"  OK    {label}: {path} ({n} items)")
-        PASS += 1
+        print(f"  INFO  Project data already available — {label}: {path} ({n} items)")
     else:
-        print(f"  FAIL  {label}: directory NOT FOUND at {path}")
-        FAIL += 1
+        print(f"  INFO  Project data not installed globally — {label}")
+        print(f"        GeoForge will prepare or request it inside the active chat.")
 
 
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -74,8 +74,8 @@ def check_binary_search(name, label):
         return
     # Search common locations
     search_dirs = [
-        "/mnt/disk1/Hydrocraft_server/model",
-        "/home/server",
+        "KISSPATH_BINARIES",
+        "KISSPATH_HOME",
         "/usr/local/bin",
     ]
     for d in search_dirs:
@@ -98,10 +98,10 @@ def check_common_data():
     """Check common HydroCraft data paths."""
     global PASS, FAIL
     common = [
-        ("/mnt/disk1/Hydrocraft_server/data/obs", "Observation data"),
-        ("/media/server/hc_ssd/forcing", "Forcing data"),
-        ("/mnt/disk1/Hydrocraft_server/data/dem", "DEM data"),
-        ("/mnt/disk1/Hydrocraft_server/data/soil", "Soil data"),
+        ("KISSPATH_OBS", "Observation data"),
+        ("KISSPATH_FORCING", "Forcing data"),
+        ("KISSPATH_STATIC", "DEM data"),
+        ("KISSPATH_STATIC", "Soil data"),
     ]
     for path, label in common:
         if os.path.isdir(path):
@@ -113,19 +113,20 @@ def check_common_data():
 def main():
     global PASS, FAIL
     print(f"=" * 60)
-    print(f"  PREFLIGHT CHECK: VIC + CaMa-Flood")
+    print(f"  SOFTWARE PREFLIGHT: VIC + CaMa-Flood")
     print(f"=" * 60)
     print()
 
     # Model-specific checks
     # Binary: VIC 5.1.0 classic driver
-    check_file("/mnt/disk1/Hydrocraft_server/model/VIC-5.1.0/vic/drivers/classic/vic_classic.exe", "VIC 5.1.0 classic driver", executable=True)
+    check_file("KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/classic/vic_classic.exe", "VIC 5.1.0 classic driver", executable=True)
     # Binary: CaMa-Flood 4.20
-    check_file("/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/src/MAIN_cmf", "CaMa-Flood 4.20", executable=True)
-    # Directory: CMFD daily forcing
-    check_dir("/media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg", "CMFD daily forcing")
-    # Directory: DEM 90m
-    check_dir("/mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m", "DEM 90m")
+    check_file("KISSPATH_BINARIES/cmf_v420_pkg/src/MAIN_cmf", "CaMa-Flood 4.20", executable=True)
+    # These are project inputs, not software installation requirements.  Keep
+    # the familiar reference paths visible for existing users, but do not make
+    # every new Mac download a China-wide archive before VIC can be verified.
+    report_project_data("KISSPATH_FORCING/huai/Data_forcing_01dy_025deg", "CMFD daily forcing")
+    report_project_data("KISSPATH_STATIC/china_dem_90m", "DEM 90m")
 
     print()
 
@@ -145,7 +146,8 @@ def main():
         print(f"  STATUS: PREFLIGHT FAILED — fix the issues above before running")
         sys.exit(1)
     else:
-        print(f"  STATUS: PREFLIGHT PASSED — safe to proceed with model execution")
+        print(f"  STATUS: SOFTWARE PREFLIGHT PASSED")
+        print(f"          Project inputs will be checked before a model run.")
         sys.exit(0)
 
 

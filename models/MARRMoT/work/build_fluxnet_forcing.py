@@ -1,5 +1,5 @@
 import csv, math, datetime, statistics as st
-SRC="/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/CA-Oas/FULLSET_DD.csv"
+SRC="KISSPATH_OBS/fluxnet/sites/CA-Oas/FULLSET_DD.csv"
 LAMBDA=2.45e6; LAMBDA_MJ=2.45
 GAMMA=0.0633  # kPa/C at ~530m
 def delta(T):

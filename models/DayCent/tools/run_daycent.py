@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 
 DEFAULT_BIN_DIR = Path(
-    "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/"
+    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/"
     "_work_v2/DayCent/source/repo/Linux_Version_491"
 )
 DDCENT = "DDcentEVI_rev491"

@@ -1,3 +1,13 @@
+---
+name: dart
+description: >-
+  DART Manhattan release — ensemble data-assimilation framework (EAKF / EnKF / QCEFF),
+  Anderson/DAReS lineage. Covers Combining observations with an ensemble of host-model
+  states to estimate system state (sequential…; Generating initial conditions for
+  forecasts; Producing retrospective state estimates (reanalysis). Use when the task
+  involves running, configuring, calibrating or interpreting DART.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

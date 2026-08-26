@@ -54,7 +54,7 @@ couplings:
       variable: "Temperature, precipitation, solar radiation, humidity, wind speed, pressure"
       format: "NetCDF"
       unit: "K, mm/3hr, W/m2, kg/kg, m/s, Pa"
-      path: "data/forcing/Data_forcing_03hr_010deg/ (CMFD) or /mnt/disk3/msxw/ (MSWX)"
+      path: "data/forcing/Data_forcing_03hr_010deg/ (CMFD) or KISSPATH_FORCING/ (MSWX)"
     target:
       model: "SWAT+"
       variable: "Daily weather station files"

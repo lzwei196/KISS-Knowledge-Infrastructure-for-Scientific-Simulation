@@ -43,7 +43,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dssat_workdir_setup import create_workdir, run_dssat, parse_summary
 
 # ── 固定路径 ─────────────────────────────────────────────────────
-DSSAT_GEN  = Path("/home/server/DSSAT/Data/Genotype")
+DSSAT_GEN  = Path("KISSPATH_HOME/DSSAT/Data/Genotype")
 ORIG_CUL   = DSSAT_GEN / "RICER048.CUL"
 KI_DIR     = Path(__file__).parent
 DEFAULT_GRID_CSV   = KI_DIR / "../../../outputs/songliao_dssat_2000_2020/grid_cells_all_unified.csv"
@@ -251,7 +251,7 @@ def main():
 
     # ── 读年鉴产量（kg/ha）────────────────────────────────────────
     import sqlite3
-    DB = '/mnt/disk1/Hydrocraft_server/outputs/yearbook_catalog/yearbook.db'
+    DB = 'KISSPATH_OUTPUTS/yearbook_catalog/yearbook.db'
     conn = sqlite3.connect(DB)
     df_yk = pd.read_sql("SELECT * FROM 综合统计_国家局分省长面板", conn)
     conn.close()

@@ -2,8 +2,8 @@
 # Install Wflow.jl from Deltares GitHub (monorepo - package is in Wflow/ subdir)
 set -e
 
-JULIA=/mnt/disk1/Hydrocraft_server/model/julia-1.10.7/bin/julia
-JULIA_ENV=/mnt/disk1/Hydrocraft_server/models/wflow/knowledge_infrastructure/julia
+JULIA=KISSPATH_BINARIES/julia-1.10.7/bin/julia
+JULIA_ENV=KISSPATH_KI_ROOT/wflow/knowledge_infrastructure/julia
 
 echo "Julia version:"
 $JULIA --version

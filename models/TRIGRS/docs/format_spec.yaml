@@ -4,7 +4,7 @@ model:
   full_name: "Transient Rainfall Infiltration and Grid-Based Regional Slope-Stability Analysis"
   domain: "landslide"
   subdomain: "rainfall-induced shallow landslide susceptibility"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/TRIGRS/source/trigrs_full/src/TRIGRS/trg"
+  binary_path: "KISSPATH_BINARIES/TRIGRS/source/trigrs_full/src/TRIGRS/trg"
   source: "USGS (Rex L. Baum & Massimiliano Alvioli)"
   method: "Analytical 1D vertical infiltration + infinite-slope factor-of-safety"
 

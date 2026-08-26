@@ -23,7 +23,7 @@ references:
     venue: "Transactions of the ASABE"
     year: 2015
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_trans.58.10715.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
   pcrglobwb2:
     doi: 10.5194/gmd-11-2429-2018
     title: "PCR-GLOBWB 2: a 5 arcmin global hydrological and water resources model"
@@ -58,7 +58,7 @@ references:
     venue: "Geophysical Research Letters"
     year: 2019
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1029_2018gl081836.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018gl081836.txt
   lopez2017:
     doi: 10.5194/hess-21-3125-2017
     title: "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products"

@@ -4,7 +4,7 @@
 Convert soil texture/property data from HWSD or other databases to SWAP Mualem-van Genuchten (MvG) hydraulic parameters and profile discretization.
 
 ## Inputs
-- **HWSD raster**: /mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img
+- **HWSD raster**: KISSPATH_STATIC/HWSD_China_Geo.img
 - **Site coordinates**: lat, lon
 - **OR manual texture**: Sand%, Silt%, Clay% per layer
 - **Profile depth**: Total soil column depth (cm)

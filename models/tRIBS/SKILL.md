@@ -1,3 +1,14 @@
+---
+name: tribs
+description: >-
+  tRIBS 5.3.x. Covers Rainfall and snow interception by vegetation (Gray or Rutter
+  schemes); Infiltration and vertical unsaturated-zone soil-moisture redistribution;
+  Saturated-zone / groundwater water-table dynamics and topography-driven lateral
+  subsurface flow; Surface runoff generation by multiple mechanisms (infiltration-excess,
+  saturation-excess, perched…. Use when the task involves running, configuring,
+  calibrating or interpreting tRIBS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

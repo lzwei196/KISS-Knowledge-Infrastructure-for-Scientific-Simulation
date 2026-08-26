@@ -23,7 +23,7 @@ import sys
 import time
 
 
-GLM_BINARY_DEFAULT = "/mnt/disk1/Hydrocraft_server/model/glm/bin/glm"
+GLM_BINARY_DEFAULT = "KISSPATH_BINARIES/glm/bin/glm"
 
 
 def validate_inputs(args):

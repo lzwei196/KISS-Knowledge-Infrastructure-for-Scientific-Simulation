@@ -13,7 +13,7 @@ TARGET CASE (PINNED -- this driver scores this gauge and no other)
   case_id      : OBS:hydat
   obs          : HYDAT:08NH120  MOYIE RIVER ABOVE NEGRO CREEK (BC, 239 km2)
   source       : Environment and Climate Change Canada HYDAT national archive
-                 /mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3  (DLY_FLOWS)
+                 KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3  (DLY_FLOWS)
   target var   : scalarTotalRunoff (dag.outputs, point_time_series) ->
                  SUMMA's own sub-grid time-delay routing of it,
                  averageRoutedRunoff (subRouting = timeDlay), x basin area
@@ -66,25 +66,25 @@ from pathlib import Path
 import numpy as np
 import netCDF4 as nc
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 from ki_tools_common.metrics import all_metrics  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # PINNED case + validated-run recipe (all constants, no env overrides)
 # ---------------------------------------------------------------------------
-KI = Path("/mnt/disk1/Hydrocraft_server/models/SUMMA/knowledge_infrastructure")
+KI = Path("KISSPATH_KI_ROOT/SUMMA/knowledge_infrastructure")
 TOOLS = KI / "tools"
-SUMMA_EXE = "/mnt/disk1/Hydrocraft_server/model/summa/bin/summa.exe"
-BASE_SETTINGS = Path("/mnt/disk1/Hydrocraft_server/model/summa/case_study/base_settings")
+SUMMA_EXE = "KISSPATH_BINARIES/summa/bin/summa.exe"
+BASE_SETTINGS = Path("KISSPATH_BINARIES/summa/case_study/base_settings")
 
 # Staged upstream inputs of the VALIDATED run (forcing + domain + decisions +
 # cold state + the trialParams.nc the NSE-0.611 run consumed).
-CASE_DIR = Path("/mnt/disk1/Hydrocraft_server/outputs/moyie_08nh120_summa")
+CASE_DIR = Path("KISSPATH_OUTPUTS/moyie_08nh120_summa")
 CASE_SETTINGS = CASE_DIR / "site_settings"
 CASE_FORCING = CASE_DIR / "forcing"
 FORCING_NC = "forcing_moyie.nc"
 
-HYDAT_DB = "/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3"
+HYDAT_DB = "KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3"
 
 CASE_ID = "OBS:hydat"
 STATION_NUMBER = "08NH120"

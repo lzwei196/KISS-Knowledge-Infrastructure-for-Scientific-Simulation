@@ -9,8 +9,8 @@ import os, sys, json
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/AquaCrop/knowledge_infrastructure"
-OUT = "/mnt/disk1/Hydrocraft_server/models/AquaCrop/detached/verify_1"
+KI = "KISSPATH_KI_ROOT/AquaCrop/knowledge_infrastructure"
+OUT = "KISSPATH_KI_ROOT/AquaCrop/detached/verify_1"
 sys.path.insert(0, KI)
 os.makedirs(OUT, exist_ok=True)
 RESULT = os.path.join(OUT, "result.json")

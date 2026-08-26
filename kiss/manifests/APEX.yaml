@@ -1,0 +1,37 @@
+kiss_manifest_version: 1
+model: APEX
+binary_type: PE32_wine
+verified: manual
+install_dir: APEX
+
+# APEX0806.exe is a Windows executable. It is NOT redistributed in this
+# repository (licence), so it cannot be fetched automatically.
+acquire:
+  strategy: manual
+  exe: APEX0806.exe
+
+system_deps: [wine]
+python_deps: [numpy, pandas]
+
+data:
+  - role: static
+    name: APEX project directory (subarea, soil, weather, management)
+    why: APEX is driven by a directory of fixed-width text files alongside the exe.
+
+reference_case: wine APEX0806.exe
+
+notes: >-
+  Deliberately manual. APEX0806.exe is present on the authoring machine but is
+  not shipped in the public repository, so no automated path can exist without
+  redistributing a binary we do not have the right to redistribute.
+
+agent_hint: >-
+  Obtain APEX0806.exe from the Texas A&M AgriLife BREC APEX distribution page,
+  and obtain the ex1_RiselTX reference template. GeoForge keeps these protected
+  assets in the shared APEX KI and automatically reuses them in each session;
+  do not ask the user to download or copy them again when they are already
+  present there. If this is a first install, place them at
+  ki/reference/APEX0806.exe and ki/examples/ex1_RiselTX/. Ensure `wine` is installed.
+  APEX writes output next to the exe, so the whole project directory must be
+  writable. Check diagnostics/ for the fixed-width column traps before parsing
+  any output — they are the most common source of silently wrong results.

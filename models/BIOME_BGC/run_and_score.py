@@ -25,14 +25,14 @@ RESUMABLE: skips spinup/normal whose output files already exist.
 import os, sys, json, subprocess, calendar, csv, math
 from datetime import date
 
-KI = "/mnt/disk1/Hydrocraft_server/models/BIOME_BGC/knowledge_infrastructure"
-BGC = "/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc"
+KI = "KISSPATH_KI_ROOT/BIOME_BGC/knowledge_infrastructure"
+BGC = "KISSPATH_BINARIES/biome-bgc/bgc-src/bgc"
 TOOLS = os.path.join(KI, "tools")
-OBSDIR = "/mnt/disk1/Hydrocraft_server/data/obs/risma_on2"
+OBSDIR = "KISSPATH_OBS/risma_on2"
 WX = os.path.join(OBSDIR, "weather_complete.csv")
 OBS_VWC = os.path.join(OBSDIR, "obs_vwc_by_depth.csv")
 OBS_SM = os.path.join(OBSDIR, "obs_soil_moisture.csv")
-OUT = "/mnt/disk1/Hydrocraft_server/models/BIOME_BGC/detached/verify_2"
+OUT = "KISSPATH_KI_ROOT/BIOME_BGC/detached/verify_2"
 RESULT = os.path.join(OUT, "result.json")
 
 # --- Site: RISMA ON2, South Nation watershed, Eastern Ontario clay plain ---

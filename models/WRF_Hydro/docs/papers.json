@@ -1,0 +1,213 @@
+{
+  "model": "WRF_Hydro",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 21,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.5194/hess-28-2871-2024",
+      "title": "A national-scale hybrid model for enhanced streamflow estimation - consolidating a physically based hydrological model with a machine learning approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-4391-2016",
+      "title": "A pre-calibration approach to select optimum inputs for hydrological models in data-scarce regions",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-20-2791-2020",
+      "title": "Simulation of extreme rainfall and streamflow events in small Mediterranean watersheds with a one-way coupled atmospheric-hydrological modelling system (WRF-Hydro)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "groundwater_storage"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-2457-2020",
+      "title": "High-resolution fully coupled atmospheric-hydrological modeling: a cross-compartment regional water and energy cycle evaluation (WRF-Hydro)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-4199-2019",
+      "title": "Assessment of simulated soil moisture from WRF Noah, Noah-MP, and CLM land surface schemes",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2023.1106621",
+      "title": "Intercomparison of snow water equivalent products in the Sierra Nevada, California",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-24-3155-2024",
+      "title": "Coupling WRF with HEC-HMS and WRF-Hydro for flood forecasting in typical mountainous catchments",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "swe",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2023jd039780",
+      "title": "Evaluating Noah-MP Simulated Runoff and Snowpack in Heavily Burned Pacific-Northwest Watersheds",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-515-2019",
+      "title": "Using phase lags to evaluate model biases in simulating the diurnal cycle of evapotranspiration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1007/s13143-020-00205-2",
+      "title": "Parameter Sensitivity Analysis of the WRF-Hydro Modeling System for Streamflow Simulation: a Case Study in Semi-Humid and Semi-Arid Catchments of Northern China",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "groundwater_storage"
+      ]
+    },
+    {
+      "doi": "10.1029/2021wr029867",
+      "title": "Assimilation of NASA's Airborne Snow Observatory Snow Measurements for Improved Hydrological Modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2022.128991",
+      "title": "Grid-based calibration of the WRF-Hydro with Noah-MP model with improved groundwater dynamics",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "groundwater_storage",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.14510",
+      "title": "Lateral terrestrial water fluxes in the LSM of WRF-Hydro: Benefits of a 2D groundwater representation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "groundwater_storage",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/w15132319",
+      "title": "Assessing the National Water Model's Streamflow Estimates Using a Multi-Decade Retrospective Dataset across the Contiguous United States",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1111/1752-1688.13134",
+      "title": "Development and evaluation of the channel routing model and parameters within the National Hydrologic Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1111/1752-1688.13076",
+      "title": "Process-based calibration of WRF-Hydro in a mountainous basin in southwestern U.S.",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2024wr038928",
+      "title": "High-Resolution National-Scale Water Modeling Is Enhanced by Multiscale Differentiable Physics-Informed Machine Learning",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-24-0096.1",
+      "title": "Optimizing WRF-Hydro Calibration in the Himalayan Basin: Precipitation Influence and Parameter Sensitivity Analysis",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w17202950",
+      "title": "Evaluating the Performance of the National Water Model: A Spatiotemporal Analysis",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    }
+  ]
+}

@@ -1,3 +1,13 @@
+---
+name: dumux
+description: >-
+  DuMux 3.10. Covers Darcy-scale flow and transport in porous media (single-phase
+  saturated, variably-saturated…; Passive/reactive tracer advection-diffusion driven by
+  the flow solution; Pressure / saturation / composition fields on a structured or
+  unstructured finite-volume grid; Optional non-isothermal heat transport coupled to flow.
+  Use when the task involves running, configuring, calibrating or interpreting DuMux.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

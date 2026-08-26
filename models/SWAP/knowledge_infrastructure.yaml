@@ -116,7 +116,7 @@ tools:
       - name: forcing_dir
         type: file
         required: true
-        example: "/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg/"
+        example: "KISSPATH_FORCING/Data_forcing_01dy_010deg/"
       - name: lat
         type: number
         required: true
@@ -160,7 +160,7 @@ tools:
       - name: hwsd
         type: file
         required: false
-        example: "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img"
+        example: "KISSPATH_STATIC/HWSD_China_Geo.img"
       - name: lat
         type: number
         required: true

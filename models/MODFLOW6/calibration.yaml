@@ -616,7 +616,7 @@ constraints:
 # calib/cmfd_monthly_360681210141.json — keyed by station, so a sibling site's cache can
 # never be mistaken for this one; that one-time read costs a few minutes.
 # cwd defaults to ki_path so "tools/calib_run.py" resolves. Use /usr/bin/python3: the
-# KI's /home/server/.local/bin/python has a broken numpy (see the run's skill_md_issues).
+# KI's KISSPATH_HOME/.local/bin/python has a broken numpy (see the run's skill_md_issues).
 runner:
   kind: subprocess
   command: ["/usr/bin/python3", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]

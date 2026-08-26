@@ -1,0 +1,201 @@
+{
+  "model": "MODFLOW6",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 21,
+  "open_access": 13,
+  "papers": [
+    {
+      "doi": "10.5194/hess-23-4561-2019",
+      "title": "Spatially distributed sensitivity of simulated global groundwater heads and flows to hydraulic conductivity, groundwater recharge, and surface water body parameterization",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-020-60698-9",
+      "title": "A comparative study among machine learning and numerical models for simulating groundwater dynamics in the Heihe River Basin, northwestern China",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-3875-2015",
+      "title": "Performance evaluation of groundwater model hydrostratigraphy from airborne electromagnetic data and lithological borehole logs",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-1645-2023",
+      "title": "Impact of urban geology on model simulations of shallow groundwater levels and flow paths",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-5107-2024",
+      "title": "The impact of future changes in climate variables and groundwater abstraction on shallow groundwater levels",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.3389/frwa.2023.1334022",
+      "title": "Translating pumping test data into groundwater model parameters: a workflow to reduce non-uniqueness",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-3759-2013",
+      "title": "Integrated hydrological modeling of the North China Plain and implications for sustainable water management",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-1727-2015",
+      "title": "Uncertainty reduction and parameter estimation of a distributed hydrological model with ground and remote-sensing data",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-024-83892-5",
+      "title": "Evaluation of coupled SWAT-MODFLOW-NWT model for conjunctive use of surface water and groundwater resources",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-022-16134-1",
+      "title": "Assessing the effect of urbanization on regional-scale surface water-groundwater interaction and nitrate transport",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-2679-2019",
+      "title": "Distributive rainfall-runoff modelling to understand runoff-to-baseflow proportioning and its impact on stream-aquifer exchange",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-018-24122-7",
+      "title": "Using nested discretization for a detailed yet computationally efficient simulation of local hydrology in a distributed hydrologic model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-021-92920-7",
+      "title": "Modelling groundwater quality of the Athabasca River Basin in the subarctic region using a modified SWAT model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3133/tm6a55",
+      "title": "Documentation for the MODFLOW 6 Groundwater Flow Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1029/2020wr029500",
+      "title": "Global Groundwater Modeling and Monitoring: Opportunities and Challenges",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ejrh.2023.101585",
+      "title": "Quantifying aquifer interaction using a numerical groundwater flow model evaluated by earth observation and in-situ data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3133/ofr20221112",
+      "title": "Simulation of regional groundwater flow and advective transport of per- and polyfluoroalkyl substances (MODFLOW 6)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "solute_concentration"
+      ]
+    },
+    {
+      "doi": "10.1029/2024wr037707",
+      "title": "Modeling PFAS Subsurface Transport in the Presence of Groundwater Table Fluctuations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "solute_concentration"
+      ]
+    },
+    {
+      "doi": "10.3390/w14040611",
+      "title": "Assessment of Groundwater Flow Dynamics Using MODFLOW in Shallow Aquifer System",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    }
+  ]
+}

@@ -3,7 +3,7 @@ model:
   version: "3.2"
   domain: "Distributed watershed hydrology"
   language: "C"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM"
+  binary_path: "KISSPATH_BINARIES/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM"
   description: >
     Physically-based, spatially distributed hydrological model for mountainous
     watersheds. Simulates energy and water balance at each grid cell including

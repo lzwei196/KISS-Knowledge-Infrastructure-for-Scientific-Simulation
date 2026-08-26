@@ -9,7 +9,7 @@ Usage:
     python run_raven.py \
         --run_dir outputs/chaohe_raven/ \
         --basin_name chaohe \
-        --raven_exe /mnt/disk1/Hydrocraft_server/model/raven/Raven.exe
+        --raven_exe KISSPATH_BINARIES/raven/Raven.exe
 """
 
 import argparse
@@ -21,7 +21,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-RAVEN_EXE_DEFAULT = "/mnt/disk1/Hydrocraft_server/model/raven/Raven.exe"
+RAVEN_EXE_DEFAULT = "KISSPATH_BINARIES/raven/Raven.exe"
 
 REQUIRED_FILES = [".rvi", ".rvh", ".rvp", ".rvt"]
 OPTIONAL_FILES = [".rvc", ".rve", ".rvm"]

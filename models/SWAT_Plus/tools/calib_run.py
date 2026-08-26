@@ -18,7 +18,7 @@ scores the outlet series against the Xixian gauge with the KI's s9 tool.
 TARGET CASE (pinned — see PIN below, and __kdt__.case_id in the output):
     case_id     SITE:xixian
     gauge       xixian_50225601 息县, upper Huai River (china_gaugeflux stcd 50225601)
-    obs         /mnt/datasets/china_water_level/淮河txt/息县.txt
+    obs         KISSPATH_DATA/china_water_level/淮河txt/息县.txt
     quantity    discharge  ->  dag var "streamflow at channel outlet (flo_out)"
     metric      nse (dag determining_metric for point_time_series)
     provenance  SWAT+_20260719T235310Z_630596   (validated NSE 0.6417)
@@ -77,16 +77,16 @@ CASE_ID = "SITE:xixian"
 GAUGE_ID = "xixian_50225601"
 GAUGE_NAME = "息县"
 OBS_STCD = "50225601"
-OBS_FILE = Path("/mnt/datasets/china_water_level/淮河txt/息县.txt")
+OBS_FILE = Path("KISSPATH_DATA/china_water_level/淮河txt/息县.txt")
 OBS_SOURCE = "china_gaugeflux"
 TARGET_VAR = "streamflow at channel outlet (flo_out)"
 
 KI = Path(__file__).resolve().parent.parent
 TOOLS = KI / "tools"
-BIN = Path("/mnt/disk1/Hydrocraft_server/models/SWAT+/bin/swatplus_rev59")
+BIN = Path("KISSPATH_KI_ROOT/SWAT+/bin/swatplus_rev59")
 
 # The validated Xixian deck (33-station CMFD forcing, 78 HRUs, 33 channels).
-CASE_ROOT = Path("/mnt/disk1/Hydrocraft_server/outputs/swatplus_xixian_multista")
+CASE_ROOT = Path("KISSPATH_OUTPUTS/swatplus_xixian_multista")
 BASE_DECK = CASE_ROOT / "TxtInOut"
 PRISTINE_ROOT = CASE_ROOT / "_calib_pristine"
 PRISTINE_DECK = PRISTINE_ROOT / "TxtInOut"

@@ -45,7 +45,7 @@ if not logger.handlers:
 # =========================================================================
 # Chinese Soybean Cultivar Library
 # =========================================================================
-# Source: /home/server/DSSAT/Data/Genotype/China/SBGRO048_China.CUL
+# Source: KISSPATH_HOME/DSSAT/Data/Genotype/China/SBGRO048_China.CUL
 # These cultivar codes exist in the main SBGRO048.CUL file (appended as
 # CN03xx entries). Model is CRGRO048 (CROPGRO).
 
@@ -218,7 +218,7 @@ def get_fertilizer_rate(lat: float, lon: float) -> float:
         N application rate in kg/ha (typically 0-30 for soybean).
     """
     try:
-        npk_tool = "/mnt/disk1/Hydrocraft_server/data_ki/NPKGRIDS/tools/get_fertilizer.py"
+        npk_tool = "KISSPATH_DATA_KI/NPKGRIDS/tools/get_fertilizer.py"
         if os.path.isfile(npk_tool):
             npk_dir = os.path.dirname(npk_tool)
             if npk_dir not in sys.path:

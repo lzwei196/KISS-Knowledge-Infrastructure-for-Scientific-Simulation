@@ -33,15 +33,15 @@ import sys
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
-KTC = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
-WORK = "/mnt/disk1/Hydrocraft_server/models/MARRMoT"
+KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
+KTC = "KISSPATH_KI_TOOLS_COMMON"
+WORK = "KISSPATH_KI_ROOT/MARRMoT"
 MARRMOT_SRC = os.path.join(WORK, "source/repo/MARRMoT")
 STATE = os.path.join(WORK, "detached/verify_2")
-VALIDATORS = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"
-CMFD_DIR = "/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg"
-HYBAS = "/mnt/disk1/Hydrocraft_server/data/awd_paper/hydrobasins/asia/hybas_as_lev07_v1c.shp"
-OBS_TXT = "/mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt"
+VALIDATORS = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
+CMFD_DIR = "KISSPATH_FORCING/Data_forcing_01dy_010deg"
+HYBAS = "KISSPATH_DATA/awd_paper/hydrobasins/asia/hybas_as_lev07_v1c.shp"
+OBS_TXT = "KISSPATH_OBS/BB/51080_bengbu.txt"
 
 LOCATION = "Bengbu"
 GAUGE_LAT, GAUGE_LON = 32.9, 117.4

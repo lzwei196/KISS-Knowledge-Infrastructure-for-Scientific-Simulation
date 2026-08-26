@@ -7,14 +7,14 @@ and parses error messages if the run fails.
 
 Usage:
     python run_hype.py \
-        --hype_binary /mnt/disk1/Hydrocraft_server/model/hype/hype \
+        --hype_binary KISSPATH_BINARIES/hype/hype \
         --run_dir outputs/hype_run/ \
         --timeout 3600
 
 CRITICAL:
     - Run directory must contain info.txt
     - The directory path argument to HYPE MUST end with /
-    - HYPE binary is at /mnt/disk1/Hydrocraft_server/model/hype/hype
+    - HYPE binary is at KISSPATH_BINARIES/hype/hype
 """
 
 import argparse
@@ -27,7 +27,7 @@ from pathlib import Path
 
 
 HYPE_BINARY = os.environ.get('HYPE_BINARY', os.path.join(
-    os.environ.get('HYDROCRAFT_ROOT', '/mnt/disk1/Hydrocraft_server'),
+    os.environ.get('HYDROCRAFT_ROOT', 'KISSPATH_ROOT'),
     'model', 'hype', 'hype'))
 
 

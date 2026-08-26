@@ -1,3 +1,14 @@
+---
+name: swap
+description: >-
+  SWAP version 4 (WENR Report 2780, 2017; doi:10.18174/416321) — vadose-zone Richards/MvG
+  ecohydrology spec. Covers 1-D vertical transport of water in the variably saturated
+  vadose zone (Richards equation…; Root water uptake and water/oxygen/salt stress (Feddes
+  or de Jong van Lier reduction); Potential and actual evapotranspiration and rainfall
+  interception (Penman-Monteith; reference ET +…. Use when the task involves running,
+  configuring, calibrating or interpreting SWAP.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -309,7 +320,7 @@ dimension and no ocean. Before accepting a validation target, check the support:
 | **Gridded / regional field (any variable)** | **no** | there is no gridded or batch-of-columns runner in this KI |
 | **Ocean salinity (EN4, WOA23, `sea_water_salinity` in psu)** | **NO — structural** | EN4.2.2 is a 1°×1° monthly ocean analysis on 42 sub-sea depth levels (5 m … 5350 m) with land masked. SWAP has no ocean compartment and its solute state is soil pore-water concentration in mg/cm³ on a land column. There is no unit, no support and no domain in common — do NOT construct a metric from it. |
 
-Verified 2026-08-11: `/mnt/datasets/obs/en4-2-2/EN.4.2.2.analyses.g10.*.zip`,
+Verified 2026-08-11: `KISSPATH_DATA/obs/en4-2-2/EN.4.2.2.analyses.g10.*.zip`,
 variable `salinity`, `standard_name = sea_water_salinity`, dims (time, depth, lat, lon),
 72.6% of surface cells wet, land = NaN.
 

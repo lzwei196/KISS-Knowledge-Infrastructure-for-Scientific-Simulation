@@ -1,3 +1,14 @@
+---
+name: crest
+description: >-
+  CREST distributed water balance (Wang et al. 2011, HSJ 56:84-98) as realized in EF5
+  v1.2.3. Covers Grid-distributed surface water balance (variable-infiltration-curve
+  runoff generation…; Sub-grid soil-moisture storage-capacity variability via the
+  Xinanjiang/VIC infiltration curve; Runoff separation into overland (fast) and interflow
+  (slow) components; Impervious-area direct runoff. Use when the task involves running,
+  configuring, calibrating or interpreting CREST.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

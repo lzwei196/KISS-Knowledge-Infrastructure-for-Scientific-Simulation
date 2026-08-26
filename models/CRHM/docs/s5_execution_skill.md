@@ -29,21 +29,21 @@ Run the CRHM executable with the configured .prj file, capture output, and parse
 ### Step 1: Verify executable
 
 ```bash
-ls -la /mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm
+ls -la KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm
 ```
 
 If not built, run `install_crhm.sh` first.
 
 Verify it works:
 ```bash
-/mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm --help
+KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm --help
 ```
 
 ### Step 2: Run CRHM
 
 ```bash
 python tools/s5_execution/run_crhm.py \
-  --crhm_exe /mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm \
+  --crhm_exe KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm \
   --prj_path outputs/<run>/crhm/basin.prj \
   --output_path outputs/<run>/crhm/crhm_output.txt \
   --obs_dir outputs/<run>/crhm/obs \

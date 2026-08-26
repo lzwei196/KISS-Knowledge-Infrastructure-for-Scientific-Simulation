@@ -1,0 +1,42 @@
+kiss_manifest_version: 1
+model: SWAT_Plus
+binary_type: ELF
+verified: unverified
+install_dir: swatplus
+
+acquire:
+  strategy: build
+  repo: https://github.com/swat-model/swatplus
+  ref: master
+  commands:
+    - cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+    - cmake --build build --parallel
+  produces: build/swatplus
+  system_deps: [gfortran, cmake, make]
+
+system_deps: [gfortran, cmake, make]
+python_deps: [numpy, pandas]
+
+data:
+  - role: static
+    name: TxtInOut project directory
+    why: >-
+      SWAT+ runs against a prepared TxtInOut directory (HRUs, soils, weather,
+      management). Build it with QSWAT+ or the tools under tools/s1..s5 in this KI.
+  - role: forcing
+    name: Daily weather (pcp, tmp, slr, hmd, wnd)
+    why: SWAT+ reads its own station text format; tools/s3 converts common sources.
+    variables: [pcp, tmp, slr, hmd, wnd]
+
+reference_case: swatplus
+
+notes: >-
+  UNVERIFIED BUILD RECIPE. The authoring machine carries only a prebuilt
+  swatplus_rev59 binary with no source tree, so the cmake sequence below is the
+  documented upstream procedure, not one observed to work here. Expect to fix it.
+
+agent_hint: >-
+  Verify the produced binary name — upstream has shipped it as both `swatplus`
+  and `swatplus_rev<N>`; correct `produces:` once you see the real artefact.
+  A SWAT+ run needs a complete TxtInOut; running the binary in an empty
+  directory exits immediately and that is not a build failure.

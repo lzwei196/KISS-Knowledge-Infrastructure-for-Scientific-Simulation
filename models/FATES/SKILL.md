@@ -1,3 +1,14 @@
+---
+name: fates
+description: >-
+  FATES (Functionally Assembled Terrestrial Ecosystem Simulator), NGEE-Tropics/DOE; size-
+  and age-structured cohort demographic DGVM of the ED/PPA…. Covers vegetation
+  demographics (recruitment, growth, mortality of size-structured cohorts); plant carbon
+  allocation among organs (PARTEH); leaf photosynthesis and autotrophic respiration;
+  canopy radiative transfer / light competition (PPA). Use when the task involves running,
+  configuring, calibrating or interpreting FATES.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

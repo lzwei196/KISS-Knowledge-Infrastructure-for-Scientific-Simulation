@@ -31,7 +31,7 @@ import sys
 import tempfile
 from datetime import datetime
 
-RAVEN_EXE_DEFAULT = "/mnt/disk1/Hydrocraft_server/model/raven/Raven.exe"
+RAVEN_EXE_DEFAULT = "KISSPATH_BINARIES/raven/Raven.exe"
 
 # Default soil properties by texture class (fallback if HWSD unavailable)
 # Source: Clapp & Hornberger (1978), Cosby et al. (1984)

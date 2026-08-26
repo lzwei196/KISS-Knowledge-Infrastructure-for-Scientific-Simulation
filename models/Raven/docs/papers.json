@@ -1,0 +1,272 @@
+{
+  "model": "Raven",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 27,
+  "open_access": 17,
+  "papers": [
+    {
+      "doi": "10.5194/hess-26-3537-2022",
+      "title": "The Great Lakes Runoff Intercomparison Project Phase 4: the Great Lakes (GRIP-GL)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1038/s41597-025-04409-x",
+      "title": "Hydrologic outputs generated over the Great Lakes with a calibrated version of the Raven-based model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-29-5005-2025",
+      "title": "How well do process-based and data-driven hydrological models learn from limited discharge data?",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.22215/etd/2023-15657",
+      "title": "The effects of landscape discretization and snowpack initialization on the performance of the Raven hydrological model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-15-7017-2022",
+      "title": "RavenR v2.1.4: an open-source R package to support flexible hydrologic modelling",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-4323-2019",
+      "title": "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-2601-2019",
+      "title": "On the choice of calibration metrics for high-flow estimation using hydrologic models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s13201-019-1013-x",
+      "title": "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-26-505-2022",
+      "title": "Regionalization of hydrological model parameters using gradient boosting machine",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-7-725-2014",
+      "title": "Snow water equivalent modeling components in NewAge-JGrass",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-2109-2021",
+      "title": "Learning about precipitation lapse rates from snow course data improves water balance modeling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-635-2017",
+      "title": "Evaluation of snow data assimilation using the ensemble Kalman filter for seasonal streamflow prediction",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-1113-2019",
+      "title": "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-10-1903-2017",
+      "title": "GLEAM v3: satellite-based land evaporation and root-zone soil moisture",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-13-115-2009",
+      "title": "An evaluation of ASCAT surface soil moisture products with in-situ observations",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1038/s41467-022-28010-7",
+      "title": "The sensitivity of simulated streamflow to individual hydrologic processes across North America",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-5835-2020",
+      "title": "Simultaneously determining global sensitivities of model parameters and model structure",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2013.11.008",
+      "title": "Multi-site evaluation of terrestrial evaporation models using FLUXNET data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.rse.2017.01.021",
+      "title": "Validation of SMAP surface soil moisture products with core validation sites",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2020.104728",
+      "title": "Flexible watershed simulation with the Raven hydrological modelling framework",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2020wr029229",
+      "title": "Simultaneous Calibration of Hydrologic Model Structure and Parameters Using a Blended Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2023wr036199",
+      "title": "Investigating the Model Hypothesis Space: Benchmarking Automatic Model Structure Identification With a Large Model Ensemble",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.15075",
+      "title": "Assessing the impact of distributed snow water equivalent calibration and assimilation on streamflow",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)he.1943-5584.0002097",
+      "title": "Great Lakes Runoff Intercomparison Project Phase 3: Lake Erie (GRIP-E)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    }
+  ]
+}

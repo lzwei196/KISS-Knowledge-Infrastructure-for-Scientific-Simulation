@@ -590,7 +590,7 @@
     action: "Preload libstdc++"
     manual_steps:
       - "export LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6"
-      - "Use /mnt/disk1/Hydrocraft_server/python_env/bin/python"
+      - "Use KISSPATH_PYTHON_ENV/bin/python"
     prevention: "Set LD_PRELOAD in the runner's env dict, not interactively."
   severity: fatal
   cross_references: []
@@ -697,7 +697,7 @@
     manual_steps:
       - "Water demand needs domestic/industrial/livestock demand NetCDFs; none are on this server as of 2026-07-10."
       - "Water bodies need lakesResID/lakesResType/lakesResDis/lakesResArea NetCDFs derived from HydroLAKES."
-      - "HydroLAKES_polys_v10.shp IS on disk at /mnt/disk1/Hydrocraft_server/data/lakes/ but NO KI tool builds the 4 NetCDFs."
+      - "HydroLAKES_polys_v10.shp IS on disk at KISSPATH_DATA/lakes/ but NO KI tool builds the 4 NetCDFs."
     prevention: >-
       Before calibrating, list which of the 11 parameters are actually live under the current
       option switches. Do not report an inert parameter as calibrated.

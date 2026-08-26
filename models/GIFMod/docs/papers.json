@@ -1,0 +1,184 @@
+{
+  "model": "GIFMod",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 16,
+  "open_access": 5,
+  "papers": [
+    {
+      "doi": "10.14796/jwmm.c474",
+      "title": "Modeling a Bioretention Basin and Vegetated Swale with a Trapezoidal Cross Section using SWMM LID Controls",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flow",
+        "water_table",
+        "runoff",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-5839-2021",
+      "title": "Modeling and interpreting hydrological responses of sustainable urban drainage systems with explainable machine learning",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flow",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jenvman.2014.11.007",
+      "title": "Performance characterisation of a stormwater treatment bioretention basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "nutrient",
+        "flow"
+      ]
+    },
+    {
+      "doi": "10.3389/fbuil.2018.00071",
+      "title": "Assessing Variability and Uncertainty in Green Infrastructure Planning Using a High-Resolution Surface-Subsurface Hydrological Model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "flow",
+        "moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-807-2011",
+      "title": "Sediment management modelling in the Blue Nile Basin using SWAT model",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "flow",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "flow",
+        "runoff",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "flow",
+        "nutrient",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2017.02.013",
+      "title": "A flexible modeling framework for hydraulic and water quality performance assessment of stormwater green infrastructure",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow",
+        "water_table",
+        "moisture",
+        "nutrient",
+        "runoff",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3390/su14031086",
+      "title": "Efficient Urban Runoff Quantity and Quality Modelling Using SWMM Model and Field Data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow",
+        "runoff",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2021.105146",
+      "title": "Modeling bioretention stormwater systems: Current models and future research needs",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow",
+        "runoff",
+        "nutrient",
+        "moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jclepro.2021.127636",
+      "title": "Field validation of a physically-based model for bioretention systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow",
+        "runoff",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.3390/w15050913",
+      "title": "Evaluating the Effectiveness of Bioretention Cells for Urban Stormwater Management",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "flow",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.14871",
+      "title": "Hydrologic and water quality modelling of bioretention columns in cold regions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow",
+        "moisture",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1155/2014/521047",
+      "title": "Modelling Hydrology of a Single Bioretention System with HYDRUS-1D",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "moisture",
+        "flow"
+      ]
+    },
+    {
+      "doi": "10.1039/c6ew00285d",
+      "title": "Evaluation of pollutant removal efficiency of a bioretention basin and implications for stormwater management",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.3390/w12030921",
+      "title": "Hydrologic and Pollutant Removal Performance of Media Layers in Bioretention",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "nutrient",
+        "flow",
+        "runoff"
+      ]
+    }
+  ]
+}

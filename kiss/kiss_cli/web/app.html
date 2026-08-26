@@ -1,0 +1,1575 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GeoForge Desktop</title>
+<style>
+/* Sessions-first shell. Palette follows the DeepSeek Harness design platform:
+   neutral-bluish ramp, one brand blue, hairline borders, 14/22 body type. */
+:root{
+  --n00:#fff; --n60:#f5f6f7; --n100:#ebeef2; --n400:#adb2b8; --n600:#81858c;
+  --n700:#61666b; --n850:#2c2c2e; --n875:#232324; --n900:#1b1b1c; --n1000:#0f1115;
+  --brand:#4176e6; --brand-400:#679efe; --brand-50:#edf3fe;
+  --bg:var(--n00); --surface:var(--n60); --raised:var(--n00);
+  --fg:var(--n1000); --fg-2:var(--n700); --fg-3:var(--n400);
+  --line:rgba(0,0,0,.1); --line-1:rgba(0,0,0,.04);
+  --hover:rgba(38,49,72,.06); --active:rgba(38,49,72,.1);
+  --ok:#1a7f4b; --warn:#a8620a; --block:#b3261e;
+}
+body[data-dark]{
+  --bg:var(--n900); --surface:var(--n875); --raised:var(--n850);
+  --fg:#eceae8; --fg-2:var(--n400); --fg-3:var(--n600);
+  --line:rgba(255,255,255,.12); --line-1:rgba(255,255,255,.06);
+  --hover:rgba(255,255,255,.06); --active:rgba(255,255,255,.1);
+  --brand:var(--brand-400); --brand-50:rgba(103,158,254,.12);
+  --ok:#4ec98a; --warn:#e0a34d; --block:#f2836f;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:14px/22px ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:grid;grid-template-columns:270px minmax(0,1fr)}
+@media(max-width:760px){body{grid-template-columns:1fr}aside{display:none}}
+aside{background:var(--surface);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0}
+.brand{display:flex;align-items:center;gap:8px;padding:14px 14px 10px;font-weight:600}
+.brandlogo{width:25px;height:25px;border-radius:7px;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.hero-logo{width:62px;height:60px;margin-bottom:13px;filter:drop-shadow(0 7px 16px rgba(20,45,90,.18))}
+.mark{width:24px;height:24px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 auto;background:var(--brand-50);color:var(--brand);font-size:10px;font-weight:800;letter-spacing:-.3px}
+.mark.verify{background:color-mix(in srgb,var(--ok) 13%,transparent);color:var(--ok)}
+.mark.import{background:color-mix(in srgb,var(--warn) 13%,transparent);color:var(--warn)}
+.newbtn{margin:0 12px 10px;padding:8px 12px;border-radius:10px;border:1px solid var(--brand);
+  background:var(--brand);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.slist{flex:1;overflow-y:auto;padding:0 8px;min-height:0}
+.sess{padding:8px 10px;border-radius:10px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
+.sess:hover{background:var(--hover)}
+.sess.sel{background:var(--active)}
+.sess .t{font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess .m{color:var(--fg-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess .del{display:none;color:var(--fg-3);border:0;background:none;cursor:pointer;float:right}
+.sess:hover .del{display:inline}
+.sidefoot{border-top:1px solid var(--line-1);padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.sidefoot button,.sidefoot a{flex:1;text-align:center;padding:7px 8px;border-radius:9px;
+  border:1px solid var(--line);background:var(--raised);color:var(--fg);font:inherit;
+  font-size:12.5px;cursor:pointer;text-decoration:none}
+main{display:flex;flex-direction:column;min-height:0;min-width:0}
+header{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:14.5px;margin:0;font-weight:600;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ki-control{display:inline-flex;align-items:center;gap:7px;font-weight:600}
+.statuspill{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:99px;
+  font-size:11.5px;border:1px solid var(--line);color:var(--fg-2);white-space:nowrap}
+.statuspill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent);background:color-mix(in srgb,var(--ok) 8%,transparent)}
+.statuspill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent);background:color-mix(in srgb,var(--warn) 8%,transparent)}
+.statuspill.block{color:var(--block);border-color:color-mix(in srgb,var(--block) 45%,transparent);background:color-mix(in srgb,var(--block) 8%,transparent)}
+.agenttools{display:flex;align-items:center;gap:7px;padding-left:9px;border-left:1px solid var(--line)}
+.projectbtn{white-space:nowrap;color:var(--fg-2);font-size:12.5px}
+.agentlabel{font-size:10px;font-weight:750;color:var(--fg-3);letter-spacing:.07em}
+select,button{font:inherit;border-radius:9px;border:1px solid var(--line);
+  background:var(--raised);color:var(--fg);padding:6px 10px;cursor:pointer}
+button.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex:0 0 auto}
+.seg button{border:0;border-radius:0;padding:6px 12px;background:transparent;color:var(--fg-2);font-size:12.5px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--brand);color:#fff;font-weight:600}
+.seg button.none{opacity:.5}
+button:disabled{opacity:.45;cursor:not-allowed}
+.mchip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:99px;
+  border:1px solid var(--line);background:var(--surface);font-size:12px}
+.mchip.auto{border-style:dashed;color:var(--fg-2)}
+#chat{flex:1;overflow-y:auto;padding:20px 18px;min-height:0}
+.turn{max-width:800px;margin:0 auto 16px}
+.who{font-size:11.5px;color:var(--fg-3);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.who img{width:18px;height:18px;border-radius:6px}
+.bubble{border-radius:14px;padding:11px 14px;border:1px solid var(--line-1)}
+.bubble{user-select:text;-webkit-user-select:text}
+.turncopy{margin-left:auto;border:0;background:transparent;padding:1px 6px;color:var(--fg-3);font-size:11px;opacity:0;transition:opacity .12s}
+.turn:hover .turncopy,.turncopy:focus{opacity:1}
+.user .bubble{background:var(--brand-50);border-color:transparent}
+.agent .bubble{background:var(--surface)}
+.bubble pre{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;
+  overflow-x:auto;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;margin:7px 0}
+.bubble code{font:12px/1.4 ui-monospace,Menlo,monospace;background:var(--bg);
+  border:1px solid var(--line-1);border-radius:5px;padding:1px 5px}
+.bubble pre code{border:0;background:none;padding:0}
+.bubble h3{font-size:14px;margin:10px 0 4px}
+.bubble hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+.bubble p{margin:5px 0}
+.bubble ul,.bubble ol{margin:6px 0;padding-left:22px}.bubble li{margin:2px 0}
+.md-table{max-width:100%;overflow-x:auto;margin:9px 0;border:1px solid var(--line);border-radius:9px}
+.bubble table{width:100%;border-collapse:collapse;font-size:12px;background:var(--surface)}
+.bubble th,.bubble td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;min-width:110px}
+.bubble th{background:var(--raised);font-weight:600}.bubble tr:last-child td{border-bottom:0}
+.worklog{margin:2px 0 9px;border:1px solid var(--line);border-radius:9px;background:var(--raised);color:var(--fg-2);font-size:11.5px}
+.worklog summary{cursor:pointer;padding:6px 9px;list-style:none}.worklog summary::-webkit-details-marker{display:none}.worklog summary:before{content:"›";display:inline-block;margin-right:6px;color:var(--fg-3);transition:transform .12s}.worklog[open] summary:before{transform:rotate(90deg)}
+.worksteps{padding:0 10px 7px 26px;color:var(--fg-3)}.worksteps div{padding:1px 0}
+.chat-artifact{margin:10px 0 5px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--raised)}
+.chat-artifact a{display:block;background:#fff}.chat-artifact img{display:block;width:100%;height:auto;max-height:560px;object-fit:contain}
+.chat-artifact figcaption{padding:7px 10px;color:var(--fg-2);font-size:11.5px;border-top:1px solid var(--line)}
+.empty{max-width:680px;margin:7vh auto;text-align:center;color:var(--fg-3)}
+.empty h2{font-size:21px;line-height:28px;color:var(--fg);margin:0 0 7px}
+.starter{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:22px;text-align:left}
+.starter button{padding:13px;border-radius:13px;display:flex;gap:10px;align-items:flex-start;background:var(--raised)}
+.starter button:hover{background:var(--hover)}
+.starter b{display:block;color:var(--fg);font-size:12.5px;margin-bottom:2px}
+.starter small{display:block;color:var(--fg-3);line-height:16px}
+@media(max-width:900px){.starter{grid-template-columns:1fr}.agentlabel{display:none}}
+footer{border-top:1px solid var(--line);padding:11px 18px}
+.composerbox{max-width:800px;margin:0 auto;position:relative;border-radius:14px}
+.composerbox.dragging{outline:2px dashed var(--brand);outline-offset:5px;background:var(--brand-50)}
+.composer{display:flex;gap:8px;align-items:flex-end;position:relative}
+.composer-tool{height:42px;min-width:42px;padding:0 10px;border-radius:12px;color:var(--fg-2);white-space:nowrap}
+.composer-tool.active{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line));background:var(--brand-50)}
+.attachlist{display:none;gap:6px;flex-wrap:wrap;margin:0 0 7px 50px}
+.attachlist.has-files{display:flex}
+.attachchip{display:flex;align-items:center;gap:6px;max-width:260px;padding:5px 7px 5px 9px;border:1px solid var(--line);border-radius:9px;background:var(--raised);font-size:11.5px;color:var(--fg-2)}
+.attachchip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachchip small{color:var(--fg-3);white-space:nowrap}.attachchip button{border:0;padding:0 2px;background:transparent;color:var(--fg-3)}
+.message-files{display:flex;gap:5px;flex-wrap:wrap;margin:7px 0 2px}.message-file{padding:4px 7px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-size:11px;color:var(--fg-2)}
+.sessionworking{color:var(--brand);font-weight:700}.sessionworking:before{content:"";display:inline-block;width:6px;height:6px;border-radius:99px;background:var(--brand);margin-right:4px;vertical-align:1px}
+.activitynote{display:none;max-width:800px;margin:7px auto 0;padding:7px 9px;border-radius:10px;background:var(--brand-50);color:var(--fg-2);font-size:11.5px;align-items:center;gap:8px}
+.activitynote.show{display:flex}.activitynote span:nth-child(2){flex:1}.activitynote button{padding:3px 7px;font-size:11px;background:var(--raised)}
+.activitypulse{width:8px;height:8px;border-radius:99px;background:var(--brand);box-shadow:0 0 0 0 color-mix(in srgb,var(--brand) 35%,transparent);animation:pulse 1.6s infinite}
+.livewaiting{display:grid;grid-template-columns:18px 1fr;align-items:center;gap:2px 7px;color:var(--fg-2)}.livewaiting .spin{grid-row:1/3}.livewaiting small{color:var(--fg-3)}
+@keyframes pulse{70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+#slashmenu{display:none;position:absolute;left:0;right:70px;bottom:50px;max-height:280px;
+  overflow-y:auto;background:var(--raised);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 8px 30px rgba(0,0,0,.14);padding:6px;z-index:12}
+#slashmenu.open{display:block}
+.slashrow{display:flex;gap:9px;padding:7px 9px;border-radius:8px;cursor:pointer;align-items:flex-start}
+.slashrow:hover{background:var(--hover)}
+.slashrow small{display:block;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+textarea{flex:1;resize:none;min-height:42px;max-height:180px;padding:10px 13px;
+  border:1px solid var(--line);border-radius:13px;background:var(--raised);color:var(--fg);font:inherit}
+textarea:focus{outline:none;border-color:var(--brand)}
+.hint{max-width:800px;margin:6px auto 0;color:var(--fg-3);font-size:11px}
+.banner{max-width:800px;margin:10px auto;border:1px solid var(--warn);color:var(--warn);
+  border-radius:10px;padding:8px 12px;font-size:13px}
+.banner a{color:inherit;font-weight:700}
+.banner button{margin-left:8px;padding:3px 8px;color:inherit;border-color:currentColor;background:transparent}
+.localagent{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-top:1px solid var(--line-1)}
+.localagent:first-child{border-top:0}.localagent b{display:block;font-size:12.5px}.localagent small{display:block;color:var(--fg-3)}
+#modal,#mpick,#skillpick,#connections,#guide,#actionpick,#sessionpick{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;
+  align-items:center;justify-content:center;z-index:20}
+#modal.open,#mpick.open,#skillpick.open,#connections.open,#guide.open,#actionpick.open,#sessionpick.open{display:flex}
+.card2{background:var(--bg);border:1px solid var(--line);border-radius:16px;
+  width:min(500px,92vw);max-height:86vh;overflow-y:auto;padding:18px 20px}
+.card2 h2{font-size:15px;margin:0 0 12px}
+.card2 label{display:block;font-size:12px;color:var(--fg-2);margin:10px 0 4px}
+.card2 input,.card2 select,.card2 textarea{width:100%;padding:7px 10px;border:1px solid var(--line);
+  border-radius:8px;background:var(--raised);color:var(--fg);font:inherit}
+.actionoption{display:flex;width:100%;text-align:left;gap:9px;align-items:flex-start;padding:10px 11px;margin-top:7px;border-radius:11px}.actionoption:hover{background:var(--hover)}.actionoption.selected{border-color:var(--brand);background:var(--brand-50)}
+.actionradio{width:17px;height:17px;border:1.5px solid var(--fg-3);border-radius:99px;flex:0 0 auto;margin-top:2px}.actionoption.selected .actionradio{border:5px solid var(--brand)}.actionoption b{display:block}.actionoption small{display:block;color:var(--fg-3);line-height:16px;margin-top:2px}
+.pickrow{display:flex;align-items:center;gap:9px;padding:6px 4px;border-radius:8px;cursor:pointer}
+.pickrow:hover{background:var(--hover)}
+.pickrow .tick{width:15px;height:15px;border:1.5px solid var(--fg-3);border-radius:5px;
+  display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;flex:0 0 auto}
+.pickrow.on .tick{background:var(--brand);border-color:var(--brand)}
+.pickrow.on .tick::after{content:"✓"}
+.dot{width:7px;height:7px;border-radius:99px;flex:0 0 auto}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.block{background:var(--block)}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);
+  border-top-color:var(--brand);border-radius:99px;animation:s .7s linear infinite;
+  vertical-align:-1px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+.inspector{position:fixed;right:0;top:0;bottom:0;width:min(560px,94vw);background:var(--surface);
+  border-left:1px solid var(--line);box-shadow:-12px 0 36px rgba(0,0,0,.12);z-index:18;
+  transform:translateX(102%);transition:transform .2s ease;display:flex;flex-direction:column}
+.inspector.open{transform:translateX(0)}
+.inspecthead{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.inspecthead h2{font-size:15px;margin:0;flex:1}.inspectbody{padding:14px 16px;overflow-y:auto;min-height:0}
+.project-view-intro{padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(135deg,var(--brand-50),var(--raised) 70%);margin-bottom:10px}
+.project-view-intro h3{font-size:14px;margin:0 0 4px}.project-view-intro p{font-size:11.5px;color:var(--fg-2);line-height:17px;margin:0}
+.view-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.view-tag{padding:2px 7px;border:1px solid var(--line);border-radius:99px;color:var(--fg-2);font-size:10.5px;background:var(--surface)}
+.view-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.view-grid.single{grid-template-columns:1fr}
+.view-card{min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--raised);overflow:hidden}.view-card-head{display:flex;align-items:flex-start;gap:7px;padding:9px 10px;border-bottom:1px solid var(--line-1)}.view-card-head b{font-size:12.5px;flex:1}.view-card-head small{font-size:9.5px;color:var(--fg-3);text-transform:uppercase;letter-spacing:.04em}
+.view-media{display:block;width:100%;max-height:410px;object-fit:contain;background:#fff}.view-video{width:100%;max-height:410px;display:block;background:#111}.view-caption{padding:7px 10px;color:var(--fg-3);font-size:10.5px;line-height:15px;border-top:1px solid var(--line-1)}
+.view-metric{padding:17px 12px 15px}.view-metric strong{font-size:27px;line-height:30px;letter-spacing:-.02em}.view-metric span{color:var(--fg-2);font-size:12px;margin-left:4px}.view-metric small{display:block;color:var(--fg-3);margin-top:5px}
+.view-table-wrap{overflow:auto;max-height:330px}.view-table{width:100%;border-collapse:collapse;font-size:10px}.view-table th,.view-table td{padding:5px 7px;border-bottom:1px solid var(--line-1);text-align:left;white-space:nowrap}.view-table th{position:sticky;top:0;background:var(--surface);z-index:1}
+.view-file{display:flex;gap:9px;align-items:center;padding:13px 11px;color:var(--fg);text-decoration:none}.view-file .mark{flex:0 0 auto}.view-file span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.view-empty{padding:24px 16px;text-align:center;color:var(--fg-3)}.view-empty b{display:block;color:var(--fg);font-size:14px;margin-bottom:5px}
+@media(max-width:620px){.view-grid{grid-template-columns:1fr}}
+.datacard{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:10px}
+.datacard h3{font-size:13.5px;margin:0 0 6px}.dataitem{padding:7px 0;border-top:1px solid var(--line-1)}
+.dataitem:first-child{border-top:0}.dataitem small{display:block;color:var(--fg-3);line-height:16px}
+.filetable{width:100%;border-collapse:collapse;font-size:11.5px}.filetable td{padding:5px 0;border-top:1px solid var(--line-1)}
+.prep-summary{background:linear-gradient(135deg,var(--brand-50),var(--raised) 65%);border-color:color-mix(in srgb,var(--brand) 25%,var(--line))}
+.prep-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:9px}
+.prep-metric{border:1px solid var(--line-1);background:var(--bg);border-radius:9px;padding:8px 9px}
+.prep-metric b{display:block;font-size:15px}.prep-metric small{color:var(--fg-3)}
+.data-overview-head{display:flex;align-items:flex-start;gap:8px;margin-bottom:4px}
+.data-overview-head h3{flex:1;margin:0}.data-overview{display:grid;margin-top:8px}
+.data-ready-group{border-top:1px solid var(--line-1)}.data-ready-group:first-of-type{border-top:0}
+.data-ready-group>summary{list-style:none;cursor:pointer}.data-ready-group>summary::-webkit-details-marker{display:none}
+.data-ready-row{display:grid;grid-template-columns:25px minmax(0,1fr) auto 16px;align-items:center;gap:9px;padding:11px 0}
+.data-ready-mark{width:23px;height:23px;border-radius:99px;display:grid;place-items:center;background:var(--surface);color:var(--fg-3);font-size:10px;font-weight:750}
+.data-ready-row.ok .data-ready-mark{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
+.data-ready-row.active .data-ready-mark{background:var(--brand-50);color:var(--brand)}
+.data-ready-row.block .data-ready-mark{background:color-mix(in srgb,var(--block) 10%,transparent);color:var(--block)}
+.data-ready-row b{display:block;font-size:12.5px}.data-ready-row small{display:block;color:var(--fg-3);line-height:16px;margin-top:1px}
+.data-ready-chevron{color:var(--fg-3);font-size:18px;line-height:1;transform:rotate(0);transition:transform .15s}.data-ready-group[open] .data-ready-chevron{transform:rotate(90deg)}
+.data-state{font-size:10.5px;white-space:nowrap;color:var(--fg-2);border:1px solid var(--line);border-radius:99px;padding:2px 7px}
+.data-ready-row.ok .data-state{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
+.data-ready-row.active .data-state{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 35%,var(--line))}
+.data-ready-row.block .data-state{color:var(--block);border-color:color-mix(in srgb,var(--block) 35%,var(--line))}
+.data-ready-group-body{margin:0 0 10px 34px;border:1px solid var(--line-1);border-radius:10px;background:var(--surface);overflow:hidden}
+.data-group-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 9px;border-bottom:1px solid var(--line-1)}
+.data-group-actions .hint{flex:1;min-width:150px;margin:0}.data-row-actions{display:flex;align-items:flex-end;gap:5px;flex-direction:column}.data-resolve{padding:4px 8px;font-size:10.5px;color:var(--brand);border-color:color-mix(in srgb,var(--brand) 30%,var(--line));white-space:nowrap}
+.data-requirement-preview{color:var(--fg-2)!important;font-weight:620}.data-location-note{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px!important;word-break:break-all}
+.data-folder{padding:4px 8px;font-size:10.5px;color:var(--fg-2);white-space:nowrap}.data-empty{padding:14px 4px 10px}.data-empty b{display:block;font-size:13px;margin-bottom:4px}.data-model-strip{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0 1px}.data-overview-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.data-overview-tools button{padding:4px 8px;font-size:10.5px}
+.data-overview-note{font-size:11px;color:var(--fg-3);padding-top:7px;border-top:1px solid var(--line-1)}
+.data-requirement-card{border-top:1px solid var(--line-1);background:var(--raised)}.data-requirement-card:first-of-type{border-top:0}
+.data-requirement-card>summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto 14px;align-items:center;gap:7px;padding:9px 10px}
+.data-requirement-card>summary::-webkit-details-marker{display:none}.data-requirement-card>summary b{display:block;font-size:11.8px;line-height:16px}.data-requirement-card>summary small{display:block;color:var(--fg-3);font-size:10px;margin-top:1px}
+.requirement-chevron{color:var(--fg-3);font-size:16px;transform:rotate(0);transition:transform .15s}.data-requirement-card[open] .requirement-chevron{transform:rotate(90deg)}
+.requirement-detail{padding:0 10px 10px;border-top:1px solid var(--line-1)}.requirement-fields{display:grid;grid-template-columns:82px minmax(0,1fr);gap:4px 9px;padding:8px 0 5px;font-size:10.8px}.requirement-fields dt{color:var(--fg-3)}.requirement-fields dd{margin:0;color:var(--fg-2);word-break:break-word}.requirement-fields code{font-size:10px;white-space:normal}
+.requirement-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px}.requirement-explain,.requirement-resolve{padding:4px 8px;font-size:10.5px}.requirement-explain{color:var(--fg-2)}.requirement-resolve{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 30%,var(--line))}
+@media(max-width:620px){.data-ready-row{grid-template-columns:25px minmax(0,1fr) 14px}.data-ready-row .data-state{grid-column:2;justify-self:start}.data-ready-chevron{grid-column:3;grid-row:1/3}.data-ready-group-body{margin-left:0}.data-requirement-card>summary{grid-template-columns:minmax(0,1fr) 14px}.data-requirement-card>summary .actiontag{grid-column:1;justify-self:start}.requirement-fields{grid-template-columns:1fr}.requirement-fields dd{margin-bottom:3px}}
+.lane{background:var(--raised);border:1px solid var(--line);border-radius:12px;margin-bottom:9px;overflow:hidden}
+.lane>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:pointer}
+.lane>summary::-webkit-details-marker{display:none}.lane>summary:after{content:"›";color:var(--fg-3);font-size:18px;transition:transform .15s}.lane[open]>summary:after{transform:rotate(90deg)}
+.lane-body{padding:0 12px 9px;border-top:1px solid var(--line-1)}
+.actiontag{display:inline-flex;font-size:10.5px;border-radius:99px;padding:1px 7px;border:1px solid var(--line);color:var(--fg-2);margin-top:3px}
+.actiontag.ok{color:var(--ok)}.actiontag.warn{color:var(--warn)}.actiontag.block{color:var(--block)}
+.requirement-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px}.requirement-resolve{padding:3px 7px;font-size:10.5px;color:var(--brand)}
+.paperlink{display:block;color:var(--fg);text-decoration:none;padding:7px 0;border-top:1px solid var(--line-1)}
+.paperlink:hover{color:var(--brand)}.paperlink small{display:block;color:var(--fg-3)}
+.autolist{display:grid;gap:8px;margin-top:9px}.autorow{display:flex;gap:9px;align-items:flex-start}
+.autorow .mark{width:21px;height:21px;border-radius:99px}.autorow b{display:block;font-size:12.5px}.autorow small{display:block;color:var(--fg-3);line-height:16px}
+.advanced{background:transparent}.advanced>summary{cursor:pointer;color:var(--fg-2);font-size:12.5px;list-style:none}.advanced>summary::-webkit-details-marker{display:none}
+.advanced>summary:after{content:"  ›"}.advanced[open]>summary:after{content:"  ⌄"}.advanced-body{margin-top:10px}
+.runsteps{display:grid;gap:6px}.runstep{display:flex;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--line-1)}
+.runstep:first-child{border-top:0}.runstep .stepdot{width:21px;height:21px;border-radius:99px;border:1px solid var(--line);display:grid;place-items:center;font-size:11px;color:var(--fg-3);flex:0 0 auto}
+.runstep.done .stepdot{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}.runstep.active .stepdot{background:var(--brand-50);border-color:var(--brand);color:var(--brand)}
+.runstep b{font-size:12.5px}.runstep small{display:block;color:var(--fg-3)}
+.projectbtn.run-working{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}.projectbtn.run-waiting{color:var(--warn);border-color:var(--warn)}
+.projectbtn.run-complete{color:var(--ok);border-color:var(--ok)}.projectbtn.run-failed{color:var(--block);border-color:var(--block)}
+</style></head>
+<body>
+<aside>
+  <div class="brand"><img class="brandlogo" src="/logo.svg" alt="GeoForge"><b>GeoForge</b><span id="nprov" style="color:var(--fg-3);font-weight:400;font-size:11.5px"></span></div>
+  <button class="newbtn" id="newsess" disabled>＋ New chat</button>
+  <div class="slist" id="slist"></div>
+  <div class="sidefoot">
+    <a href="/library">KI Library</a>
+    <a href="/studio">KI Studio</a>
+    <button id="connect">⌁ Connections</button>
+    <button id="help">Guide</button>
+    <button id="settings">AI Settings</button>
+    <button data-language-toggle>简体中文</button>
+    <button id="theme" title="theme" style="flex:0 0 auto">◐</button>
+  </div>
+</aside>
+<main>
+  <header>
+    <h1 id="title">GeoForge Desktop</h1>
+    <button class="ki-control" id="pickmodels" disabled><span class="mark">KI</span><span id="mlabel">Auto KI</span></button>
+    <span id="kistatus" class="statuspill">Chooses for each task</span>
+    <button class="projectbtn" id="openproject" disabled title="Open this chat's local project folder in Finder">▣ Folder</button>
+    <button class="projectbtn" id="opendata" disabled title="See what GeoForge is doing in this project">◇ <span id="runlabel">Project status</span></button>
+    <button class="projectbtn" id="openview" disabled title="Open this chat's dynamic Project View">▤ <span id="viewlabel">Project view</span></button>
+    <div class="agenttools">
+      <span class="agentlabel">AI CONNECTION</span>
+      <div class="seg" id="kindtog" title="Use an installed agent or a direct API key">
+        <button data-k="cli" disabled>Local</button><button data-k="api" disabled>API</button>
+      </div>
+      <select id="prov" title="AI provider" disabled></select>
+      <select id="llm" title="AI model" disabled></select>
+    </div>
+  </header>
+  <div id="chat"></div>
+  <footer>
+    <div class="composerbox" id="dropzone">
+      <div class="attachlist" id="attachlist"></div>
+      <div class="composer">
+        <div id="slashmenu"></div>
+        <button id="attach" class="composer-tool" title="Add files or drag them here">＋ Files</button>
+        <input type="file" id="chatfiles" multiple style="display:none">
+        <button id="skills" class="composer-tool" title="Choose skills for this chat">✦ Skills</button>
+        <textarea id="msg" rows="1" placeholder="Ask a scientific question or describe a modelling task…"></textarea>
+        <button class="primary" id="send" disabled>Send</button>
+      </div>
+    </div>
+    <div class="activitynote" id="activitynote"><span class="activitypulse"></span><span id="activitytext"></span><button id="activity-new">＋ New chat</button></div>
+    <div class="hint" id="hint"></div>
+  </footer>
+  <div id="modal"><div class="card2">
+    <h2>AI connections</h2>
+    <label>Local agent CLIs</label><div id="s-local"></div>
+    <div style="display:flex;gap:8px;margin:6px 0 12px"><button id="s-recheck">Recheck local CLIs</button><span class="hint" id="s-local-msg" style="align-self:center;margin:0"></span></div>
+    <label>Default provider</label><select id="s-def"></select>
+    <div class="datacard" style="margin-top:12px;padding:14px">
+      <label for="s-kimi-security" style="margin-top:0">Kimi Code file access</label>
+      <select id="s-kimi-security">
+        <option value="scoped">Project scoped (recommended)</option>
+        <option value="full">Full computer access</option>
+      </select>
+      <div class="hint" id="s-kimi-security-note" style="margin:7px 0 0">Project scoped lets Kimi use this project, its KI, approved data, and its own login state. Other personal files are blocked by macOS.</div>
+    </div>
+    <label>Anthropic API key</label><input id="s-anthropic" autocomplete="off">
+    <label>DeepSeek API key</label><input id="s-deepseek" autocomplete="off">
+    <label>OpenAI API key</label><input id="s-openai" autocomplete="off">
+    <label>OpenRouter API key</label><input id="s-openrouter" autocomplete="off">
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="primary" id="s-save">Save</button>
+      <button id="s-close">Close</button>
+      <span class="hint" id="s-msg" style="align-self:center"></span>
+    </div>
+  </div></div>
+  <div id="sessionpick"><div class="card2" style="width:min(560px,92vw)">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span class="mark">▣</span><h2 style="margin:0">New project chat</h2></div>
+    <div style="color:var(--fg-2)">Each chat has its own project folder for memory, inputs, model runs, outputs, and plots.</div>
+    <label for="project-parent">Create the project inside</label>
+    <div style="display:flex;gap:7px"><input id="project-parent" autocomplete="off" spellcheck="false" style="flex:1"><button id="project-browse">Choose…</button></div>
+    <div class="hint" id="project-location-note" style="margin:6px 0 0">You may type a new folder path. GeoForge creates it, then creates this chat's named project folder inside it. Existing files are not changed.</div>
+    <div class="hint" id="project-location-error" style="margin:7px 0 0;color:var(--block)"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+      <button class="primary" id="project-create">Create chat</button>
+      <button id="project-default">Use default location</button>
+      <button id="project-cancel">Cancel</button>
+    </div>
+  </div></div>
+  <div id="mpick"><div class="card2">
+    <h2>Knowledge Infrastructures for this chat</h2>
+    <div class="hint" style="margin:0 0 8px">Leave empty for <b>Auto KI</b>. A green badge means the scientific software passed its check on this machine. You can still discuss KIs that need setup.</div>
+    <input id="mq" placeholder="Search KIs…" autocomplete="off" style="margin-bottom:8px">
+    <div id="mrows" style="max-height:46vh;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="primary" id="m-apply">Apply</button>
+      <button id="m-clear">Use Auto KI</button>
+      <button id="m-close">Close</button>
+    </div>
+  </div></div>
+  <div id="skillpick"><div class="card2">
+    <h2>Skills for this chat</h2>
+    <div class="hint" style="margin:0 0 8px">GeoForge can choose skills automatically. Pin one here when you want that procedure used throughout this chat, or type <b>/skill-name</b>.</div>
+    <input id="skillq" placeholder="Search skills…" autocomplete="off" style="margin-bottom:8px">
+    <div id="skillrows" style="max-height:50vh;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="primary" id="skill-apply">Apply</button>
+      <button id="skill-clear">Clear</button>
+      <button id="skill-close">Close</button>
+    </div>
+  </div></div>
+  <div id="connections"><div class="card2">
+    <h2>MCP connections</h2>
+    <div class="hint" style="margin:0 0 10px">Local agents inherit MCP servers already configured for them. Select which ones this chat should use.</div>
+    <div id="connrows"></div>
+    <div id="githubcard" class="datacard" style="margin-top:12px"></div>
+    <div class="hint" id="connnote" style="margin:8px 0"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="primary" id="conn-apply">Apply</button>
+      <button id="conn-close">Close</button>
+    </div>
+  </div></div>
+  <div id="actionpick"><div class="card2" style="width:min(560px,92vw)">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="mark">?</span><h2 id="action-title" style="margin:0;flex:1">Choose how to continue</h2><span class="statuspill warn">Needs you</span></div>
+    <div id="action-message" style="color:var(--fg-2);white-space:pre-wrap"></div>
+    <div id="action-options" style="margin-top:10px"></div>
+    <label id="action-note-label" for="action-note">Optional note for the agent</label>
+    <textarea id="action-note" rows="2" placeholder="Add context only if needed…"></textarea>
+    <div class="hint" id="action-error" style="margin:6px 0 0;color:var(--block)"></div>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="primary" id="action-continue">Continue with this choice</button>
+      <button id="action-ask">Ask about these choices</button>
+      <button id="action-later">Not now</button>
+    </div>
+  </div></div>
+  <div id="guide"><div class="card2">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><img class="brandlogo" src="/logo.svg" alt="GeoForge"><div><h2 style="margin:0">How GeoForge works</h2><div class="hint" style="margin:0">Chat first. KIs provide the scientific capability.</div></div></div>
+    <div class="starter" style="grid-template-columns:1fr">
+      <button><span class="mark">1</span><span><b>Describe the task</b><small>Start with the scientific question, not software setup.</small></span></button>
+      <button><span class="mark">KI</span><span><b>Use Auto KI or choose one</b><small>GeoForge announces which KI it uses and whether it is verified here.</small></span></button>
+      <button><span class="mark verify">✓</span><span><b>Let the agent set it up</b><small>The agent uses the KI and KDT diagnostics until preflight passes, pausing only when it genuinely needs you.</small></span></button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px"><a href="/library" style="text-decoration:none"><button class="primary">Open KI Library</button></a><button id="guide-close">Close</button></div>
+  </div></div>
+  <section class="inspector" id="datapanel">
+    <div class="inspecthead"><span class="mark">◇</span><h2>Project status</h2><button id="data-close">✕</button></div>
+    <div class="inspectbody" id="databody"></div>
+    <div style="padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap">
+      <button class="primary" id="data-agent">Continue in chat</button>
+      <button id="data-upload">Add source data</button>
+      <input type="file" id="datafile" multiple style="display:none">
+      <input type="file" id="paperfile" accept="application/pdf,.pdf" multiple style="display:none">
+      <span class="hint" id="data-msg" style="align-self:center;margin:0"></span>
+    </div>
+  </section>
+  <section class="inspector" id="viewpanel">
+    <div class="inspecthead"><span class="mark">▤</span><h2>Project view</h2><button id="view-close">✕</button></div>
+    <div class="inspectbody" id="viewbody"></div>
+    <div style="padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap">
+      <button class="primary" id="view-agent">Build or update with Agent</button>
+      <button id="view-folder">Open project folder</button>
+      <button id="view-refresh">Refresh</button>
+      <span class="hint" id="view-msg" style="align-self:center;margin:0"></span>
+    </div>
+  </section>
+</main>
+<script src="/clipboard.js"></script>
+<script src="/i18n.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function artifactImage(alt,raw,sid){
+  const rel=String(raw||"").trim().replace(/^&lt;|&gt;$/g,"");
+  const parts=rel.split("/");
+  if(!sid||parts[0]!=="artifacts"||parts.some(p=>!p||p===".."||p===".")||!/^.*\.(png|jpe?g|gif|webp|svg)$/i.test(rel))return null;
+  const src=`/api/session/${encodeURIComponent(sid)}/artifact?path=${encodeURIComponent(rel)}`;
+  const caption=alt||parts[parts.length-1];
+  return `<figure class="chat-artifact"><a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="${alt}" loading="lazy"></a><figcaption>${caption}</figcaption></figure>`;
+}
+const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",publish_project_view:"Updated Project View",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command"};
+const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",publish_project_view:"已更新项目视图",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令"};
+const chineseUI=()=>window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
+function workLabel(name){if(chineseUI()&&TOOL_LABELS_ZH[name])return TOOL_LABELS_ZH[name];if(TOOL_LABELS[name])return TOOL_LABELS[name];const words=String(name).replace(/([a-z])([A-Z])/g,"$1 $2").replace(/[_.-]+/g," ");return chineseUI()?"已使用 "+words:"Used "+words.toLowerCase();}
+function extractWork(t,streaming){const tools=[];let body=String(t??"");
+  let invalidToolText=false;
+  // A few OpenAI-compatible providers print an XML-looking request instead
+  // of making a real structured call. It is not work, and must never be
+  // presented as if the tool ran. New turns are retried server-side; this also
+  // cleans up older saved conversations.
+  body=body.replace(/\[\[GEOF_TOOL:[A-Za-z0-9_.-]+\]\]"?>\s*(?=<invoke)/g,()=>{invalidToolText=true;return "";});
+  body=body.replace(/<invoke\s+name=["'][A-Za-z0-9_.-]+["'][^>]*>[\s\S]*?<\/invoke>/gi,()=>{invalidToolText=true;return "";});
+  if(streaming&&/<invoke\s+name=/i.test(body))body=body.replace(/<invoke\s+name=[\s\S]*$/i,()=>{invalidToolText=true;return "";});
+  body=body.replace(/\[\[GEOF_TOOL:([A-Za-z0-9_.-]+)\]\]/g,(m,n)=>{tools.push(n);return "";});
+  // Fold the raw tool syntax used by older saved chats as well.
+  body=body.replace(/^\s*`?>\s*([A-Za-z_][\w.-]*)\([^`\n]*\)`?\s*$/gm,(m,n)=>{tools.push(n);return "";});
+  if(invalidToolText&&!streaming)body=body.trim()+"\n\n"+(chineseUI()?"[AI 把工具请求作为普通文本返回，因此这些操作并未运行。请重试这条消息。]":"[The AI returned a tool request as plain text, so those actions did not run. Please retry this message.]");
+  const compact=tools.filter((n,i)=>i===0||n!==tools[i-1]);
+  if(!compact.length)return {body,html:""};
+  const label=chineseUI()?(streaming?`正在处理 · ${compact.length} 步`:`工作详情 · ${compact.length} 步`):(streaming?`Working · ${compact.length} step${compact.length===1?"":"s"}`:`Work details · ${compact.length} step${compact.length===1?"":"s"}`);
+  return {body,html:`<details class="worklog"><summary>${label}</summary><div class="worksteps">${compact.map(n=>`<div>${esc(workLabel(n))}</div>`).join("")}</div></details>`};}
+function renderMarkdownTables(source){
+  const lines=source.split("\n"),out=[];
+  const row=line=>line.trim().slice(1,-1).split("|").map(cell=>cell.trim());
+  const tableLine=line=>/^\s*\|.*\|\s*$/.test(line);
+  const separator=line=>tableLine(line)&&row(line).length>0&&row(line).every(cell=>/^:?-{3,}:?$/.test(cell));
+  for(let i=0;i<lines.length;){
+    if(tableLine(lines[i])&&i+1<lines.length&&separator(lines[i+1])){
+      const header=row(lines[i]);i+=2;const rows=[];
+      while(i<lines.length&&tableLine(lines[i])){rows.push(row(lines[i]));i++;}
+      out.push(`<div class="md-table"><table><thead><tr>${header.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${header.map((_,n)=>`<td>${r[n]||""}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+      continue;
+    }
+    out.push(lines[i]);i++;
+  }
+  return out.join("\n");
+}
+function md(t,sid=CUR&&CUR.id,streaming=false){const work=extractWork(t,streaming);let h=esc(work.body);
+  // Some providers double-escape Markdown identifiers and table pipes. They
+  // are presentation escapes, not scientific content.
+  h=h.replace(/\\+([_|])/g,"$1");
+  h=h.replace(/```(\w*)\n([\s\S]*?)```/g,(m,l,c)=>`<pre><code>${c}</code></pre>`);
+  h=h.replace(/!\[([^\]\n]*)\]\(([^)\n]+)\)/g,(m,a,p)=>artifactImage(a,p,sid)||m);
+  h=h.replace(/`([^`\n]+)`/g,"<code>$1</code>");
+  h=h.replace(/^\s*---\s*$/gm,"<hr>");
+  h=h.replace(/^###?\s+(.+)$/gm,"<h3>$1</h3>");
+  h=h.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
+  h=renderMarkdownTables(h);
+  h=h.replace(/(^|\n)((?:\s*[-*]\s+[^\n]+(?:\n|$))+)/g,(m,lead,block)=>lead+`<ul>${block.trim().split("\n").map(line=>`<li>${line.replace(/^\s*[-*]\s+/,"")}</li>`).join("")}</ul>`);
+  h=h.replace(/(^|\n)((?:\s*\d+[.)]\s+[^\n]+(?:\n|$))+)/g,(m,lead,block)=>lead+`<ol>${block.trim().split("\n").map(line=>`<li>${line.replace(/^\s*\d+[.)]\s+/,"")}</li>`).join("")}</ol>`);
+  return work.html+h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr|figure|ul|ol|div\b)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");}
+
+let SESSIONS=[], CUR=null, MODELS=[], SKILLS=[], MCP={connections:[],github:{}}, STATUS={}, LAST_PREP=null, RUN=null, VIEW=null,
+    PROJECT_LOCATION={default_parent:""},
+    PROV={providers:[],any_usable:false}, PICK=new Set(), SKPICK=new Set(), MCPPICK=new Set();
+const PENDING_ACTIONS=new Map();
+let VIEW_RENDERED_KEY="";
+// Work is isolated by chat. A slow model in one project must never freeze
+// navigation or prevent a second conversation from starting.
+const INFLIGHT=new Map(), PENDING_ATTACHMENTS=new Map(), UPLOADING=new Map(), DRAFTS=new Map();
+const SEEN_ACTIONS=new Set();
+let OPEN_SEQ=0,ACTION_REQUEST=null,ACTION_SESSION=null,ACTION_INDEX=-1;
+const sessionBusy=(id=CUR&&CUR.id)=>!!id&&INFLIGHT.has(id);
+const sessionUploading=(id=CUR&&CUR.id)=>(UPLOADING.get(id)||0)>0;
+// CLI or API. Remembered, because it is a fact about this machine's setup
+// rather than a per-question choice.
+let KIND=localStorage.getItem("kiss.kind")||"cli";
+// Which session KIND was last synced from; null means "not yet".
+let KIND_SYNCED_FOR;
+let STATUS_REFRESHING=null,LAST_STATUS_CHECK=0;
+
+function stateClass(n){
+  const s=(STATUS[n]||{}).state;
+  return s==="verified"?"ok":s==="failed"?"block":"warn";}
+function stateLabel(n){
+  const s=STATUS[n]||{};
+  return s.label||(s.state==="verified"?"Verified on this machine":"Setup needed");}
+
+async function refreshMachineStatus(redraw=true,force=false){
+  // Verification belongs to this Mac, not to one chat. It may change in the
+  // setup window while the chat page remains open, so a once-per-launch cache
+  // can incorrectly keep showing "Setup needed" after preflight has passed.
+  if(!force&&Date.now()-LAST_STATUS_CHECK<1500)return STATUS;
+  if(STATUS_REFRESHING)return STATUS_REFRESHING;
+  STATUS_REFRESHING=(async()=>{
+    try{
+      const r=await fetch("/api/status",{cache:"no-store"});
+      if(!r.ok)throw new Error(`status ${r.status}`);
+      const fresh=await r.json();
+      if(fresh&&typeof fresh==="object"&&!Array.isArray(fresh))STATUS=fresh;
+      LAST_STATUS_CHECK=Date.now();
+      if(redraw&&CUR)drawModelLabel();
+      return STATUS;
+    }catch(_error){return STATUS;}
+    finally{STATUS_REFRESHING=null;}
+  })();
+  return STATUS_REFRESHING;
+}
+
+async function loadAll(){
+  try{
+    [SESSIONS,MODELS,SKILLS,MCP,STATUS,PROV,PROJECT_LOCATION]=await Promise.all([
+      fetch("/api/sessions").then(r=>r.json()),
+      fetch("/api/models").then(r=>r.json()),
+      fetch("/api/skills").then(r=>r.json()),
+      fetch("/api/mcp").then(r=>r.json()),
+      fetch("/api/status").then(r=>r.json()),
+      fetch("/api/providers").then(r=>r.json()),
+      fetch("/api/project-location").then(r=>r.json())]);
+    LAST_STATUS_CHECK=Date.now();
+    drawSessions(); drawProviders();
+    const requested=new URLSearchParams(location.search).get("session");
+    if(requested&&SESSIONS.some(s=>s.id===requested)){
+      await openSession(requested);
+      const draft=sessionStorage.getItem(`kiss.draft.${requested}`);
+      if(draft){$("#msg").value=draft;sessionStorage.removeItem(`kiss.draft.${requested}`);$("#msg").focus();}
+      history.replaceState({},"","/");
+    }
+    else if(!CUR && SESSIONS.length) await openSession(SESSIONS[0].id);
+    else if(!CUR) drawEmpty();
+    setControls(true);
+  }catch(e){
+    $("#chat").innerHTML=`<div class="banner"><b>GeoForge could not start.</b> ${esc(e)}<br>Reload the app; if it repeats, open the KI Library and AI Settings.</div>`;
+  }
+}
+let SESSION_REFRESHING=false;
+async function refreshSessionList(){
+  if(SESSION_REFRESHING||document.hidden)return;
+  SESSION_REFRESHING=true;
+  try{
+    const r=await fetch("/api/sessions");if(!r.ok)return;
+    const fresh=await r.json();if(!Array.isArray(fresh))return;
+    // Conversations may be created by another GeoForge window or by a test
+    // through the local API. Keep the sidebar live without replacing the
+    // conversation currently being read or its unsent draft.
+    SESSIONS=fresh;drawSessions();
+  }catch(_error){}finally{SESSION_REFRESHING=false;}
+}
+const RUN_GROUPS=[
+  {name:"Understand",stages:["understanding","choosing_ki"],detail:"Understand the goal and choose a general KI"},
+  {name:"Prepare",stages:["software","researching","preparing"],detail:"Check software and prepare suitable data"},
+  {name:"Validate",stages:["validating"],detail:"Check the prepared model inputs"},
+  {name:"Run",stages:["running"],detail:"Run the real scientific model"},
+  {name:"Results",stages:["results"],detail:"Save and explain the results"},
+];
+function runGroupIndex(stage){const i=RUN_GROUPS.findIndex(g=>g.stages.includes(stage));return i<0?0:i;}
+function runButtonLabel(run){
+  if(!run||!run.goal)return "Project status";
+  if(run.status==="working")return "Working";
+  if(run.status==="waiting_for_user")return "Needs you";
+  if(run.status==="complete")return "Complete";
+  if(run.status==="failed")return "Needs attention";
+  return "Ready";
+}
+function drawRunStatus(run=RUN){
+  RUN=run||null;const b=$("#opendata"),label=$("#runlabel");if(!b||!label)return;
+  label.textContent=runButtonLabel(RUN);
+  b.classList.remove("run-working","run-waiting","run-complete","run-failed");
+  if(RUN&&RUN.status==="working")b.classList.add("run-working");
+  if(RUN&&RUN.status==="waiting_for_user")b.classList.add("run-waiting");
+  if(RUN&&RUN.status==="complete")b.classList.add("run-complete");
+  if(RUN&&RUN.status==="failed")b.classList.add("run-failed");
+  b.title=RUN&&RUN.summary?RUN.summary:"See what GeoForge is doing in this project";
+}
+async function refreshRun(id=CUR&&CUR.id){
+  if(!id)return null;
+  const r=await fetch(`/api/session/${id}/run`);if(!r.ok)return null;
+  const run=await r.json();if(CUR&&CUR.id===id)drawRunStatus(run);return run;
+}
+function drawViewStatus(view=VIEW){
+  VIEW=view||null;const button=$("#openview"),label=$("#viewlabel");if(!button||!label)return;
+  const count=VIEW&&Array.isArray(VIEW.panels)?VIEW.panels.length:0;
+  label.textContent=count?`${chineseUI()?"项目视图":"Project view"} · ${count}`:(chineseUI()?"项目视图":"Project view");
+  button.classList.toggle("run-complete",count>0);
+  button.title=count?(chineseUI()?`本对话已有 ${count} 个动态展示面板`:`${count} dynamic panels are ready for this chat`):(chineseUI()?"为本对话创建动态项目界面":"Create a dynamic Project View for this chat");
+}
+async function refreshViewStatus(id=CUR&&CUR.id){
+  if(!id)return null;
+  const r=await fetch(`/api/session/${id}/view`);if(!r.ok)return null;
+  const view=await r.json();if(CUR&&CUR.id===id)drawViewStatus(view);return view;
+}
+function drawSessions(){
+  $("#slist").innerHTML=SESSIONS.map(s=>`
+    <div class="sess ${CUR&&CUR.id===s.id?'sel':''} ${INFLIGHT.has(s.id)?'running':''}" data-id="${esc(s.id)}">
+      <div class="t">${esc(s.title)}<button class="del" data-id="${esc(s.id)}" title="Archive chat; project files are kept" ${INFLIGHT.has(s.id)?"disabled":""}>✕</button></div>
+      <div class="m">${s.models.length?esc(s.models.join(", ")):"Auto KI"} · ${s.n} messages${s.skills&&s.skills.length?` · ${s.skills.length} skill${s.skills.length===1?"":"s"}`:""}${s.mcps&&s.mcps.length?` · ${s.mcps.length} MCP`:""}${INFLIGHT.has(s.id)?' · <span class="sessionworking">Working</span>':''}</div>
+    </div>`).join("");
+  document.querySelectorAll(".sess").forEach(e=>e.onclick=ev=>{
+    if(ev.target.classList.contains("del")) return; openSession(e.dataset.id);});
+  document.querySelectorAll(".sess .del").forEach(b=>b.onclick=async ev=>{
+    ev.stopPropagation();
+    if(!confirm("Archive this chat? Its local project files will be kept.")) return;
+    await fetch(`/api/session/${b.dataset.id}/delete`,{method:"POST",body:"{}"});
+    if(CUR&&CUR.id===b.dataset.id) CUR=null;
+    await loadAll();});
+}
+function drawLLM(){
+  const p=PROV.providers.find(x=>x.name===$("#prov").value)||{};
+  const ms=p.models||[];
+  const cur=(CUR&&CUR.llm_model)||"";
+  const nativeDefault=p.kind==="cli"?`<option value="" ${cur?"":"selected"}>CLI default</option>`:"";
+  $("#llm").innerHTML=nativeDefault+ms.map(m=>
+    `<option value="${esc(m)}" ${m===(cur||(p.kind==="api"?p.default_model:""))?"selected":""}>${esc(m)}</option>`).join("")
+    ||'<option value="">default</option>';
+  $("#llm").style.display=(ms.length||p.kind==="cli")?"":"none";
+}
+function kindOf(n){const p=PROV.providers.find(x=>x.name===n);return p?p.kind:"";}
+function providerIssue(p){
+  if(!p.installed)return "not installed";
+  if(p.compatible===false)return "update needed";
+  if(p.authenticated===false)return "sign-in needed";
+  return "check needed";
+}
+function providerOptionLabel(p){
+  if(!p.usable)return `${p.label} — ${providerIssue(p)}`;
+  if(p.kind==="cli"&&p.authenticated==null)return `${p.label} — login checked on first use`;
+  return p.label;
+}
+function currentProviderReady(){
+  const name=$("#prov").value;
+  return PROV.providers.some(p=>p.name===name&&p.usable);
+}
+function drawProviders(){
+  const sel=$("#prov");
+  // Adopt the session's own kind when the session CHANGES, so reopening one
+  // shows how it actually runs. Doing this on every redraw meant the click
+  // that switched to API was immediately overruled by the session still
+  // holding a CLI provider — the switch snapped back and looked broken.
+  const cur=CUR&&CUR.provider;
+  const sid=CUR&&CUR.id;
+  if(sid!==KIND_SYNCED_FOR){
+    KIND_SYNCED_FOR=sid;
+    if(cur&&kindOf(cur)) KIND=kindOf(cur);
+  }
+  const mine=PROV.providers.filter(p=>p.kind===KIND);
+  const usableHere=mine.filter(p=>p.usable);
+  document.querySelectorAll("#kindtog button").forEach(b=>{
+    const candidates=PROV.providers.filter(p=>p.kind===b.dataset.k);
+    const n=candidates.filter(p=>p.usable).length;
+    const installed=b.dataset.k==="cli"?candidates.filter(p=>p.installed).length:n;
+    b.classList.toggle("on",b.dataset.k===KIND);
+    b.classList.toggle("none",installed===0);
+    b.title=n?`${n} ready`:installed?`${installed} installed — sign-in or recheck needed`
+      :(b.dataset.k==="api"?"No API key yet — add one in Settings":"No agent CLI installed on this machine");});
+  sel.innerHTML=mine.map(p=>
+    `<option value="${esc(p.name)}" ${p.usable?"":"disabled"}>${esc(providerOptionLabel(p))}</option>`).join("")
+    ||'<option value="">(none)</option>';
+  const usable=PROV.providers.filter(p=>p.usable);
+  sel.value = (cur&&mine.find(p=>p.name===cur&&p.usable))?cur:
+              (PROV.default&&mine.find(p=>p.name===PROV.default&&p.usable))?PROV.default:
+              (usableHere[0]||mine.find(p=>p.installed)||mine[0]||{}).name||"";
+  $("#nprov").textContent=usable.length?`${usable.length} AI ready`:"AI setup needed";
+  const gap=$("#kindgap");
+  if(gap) gap.remove();
+  if(!usableHere.length){
+    const installed=mine.filter(p=>p.installed);
+    const states=installed.map(p=>`${esc(p.label)}: ${providerIssue(p)}`).join("; ");
+    const what = KIND==="api"
+      ? `No API connection yet. Open <b>AI Settings</b> and add a key.`
+      : installed.length
+        ? `Local CLIs are installed but not ready — <b>${states}</b>. ${esc(installed[0].fix||installed[0].auth_command||"Check them in Terminal")}.`
+        : `No local agent CLI is installed. Open <b>AI Settings</b> for setup details.`;
+    $("#chat").insertAdjacentHTML("beforebegin",
+      `<div class="banner" id="kindgap">${what}${KIND==="cli"?'<button id="quick-recheck">Recheck</button>':""}</div>`);
+    const quick=$("#quick-recheck");if(quick)quick.onclick=()=>refreshProviders(true);
+  }
+  const old=$("#gatebanner"); if(old) old.remove();
+  if(!PROV.any_usable){
+    $("#chat").insertAdjacentHTML("beforebegin",
+      `<div class="banner" id="gatebanner"><b>Connect an AI to begin.</b> Open AI Settings to add a key or configure a local agent.</div>`);}
+  setControls(true);
+  drawLLM();
+}
+function drawEmpty(){
+  RUN=null;drawRunStatus(null);
+  VIEW=null;drawViewStatus(null);
+  const old=$("#kibanner"); if(old) old.remove();
+  $("#openproject").disabled=true;
+  $("#opendata").disabled=true;
+  $("#openview").disabled=true;
+  $("#title").textContent="GeoForge Desktop";
+  $("#mlabel").textContent="Auto KI";
+  $("#kistatus").className="statuspill";
+  $("#kistatus").textContent="Chooses for each task";
+  drawSkillButton();
+  $("#chat").innerHTML=`<div class="empty"><img class="hero-logo" src="/logo.svg" alt="GeoForge">
+    <h2>What would you like to model?</h2>
+    <div>Describe the scientific task. GeoForge can choose a KI automatically, or you can pin one for this chat.</div>
+    <div class="starter">
+      <button data-action="focus"><span class="mark">AI</span><span><b>Start chatting</b><small>Ask a question or describe a simulation.</small></span></button>
+      <button data-action="kis"><span class="mark">KI</span><span><b>Choose a KI</b><small>Pin scientific software to this chat.</small></span></button>
+      <button data-action="library"><span class="mark verify">✓</span><span><b>Browse & verify</b><small>Import KIs and check what can run.</small></span></button>
+      <button data-action="studio"><span class="mark">KI+</span><span><b>Create a KI</b><small>Turn your own model workflow into a checked KI.</small></span></button>
+    </div></div>`;
+  document.querySelector('[data-action="focus"]').onclick=()=>$("#msg").focus();
+  document.querySelector('[data-action="kis"]').onclick=()=>$("#pickmodels").click();
+  document.querySelector('[data-action="library"]').onclick=()=>location.href="/library";
+  document.querySelector('[data-action="studio"]').onclick=()=>location.href="/studio";
+}
+async function openSession(id){
+  const seq=++OPEN_SEQ, leaving=CUR&&CUR.id;
+  if(ACTION_SESSION&&ACTION_SESSION!==id)closeActionPicker();
+  if(leaving&&leaving!==id)DRAFTS.set(leaving,$("#msg").value);
+  const [next]=await Promise.all([
+    fetch("/api/session/"+id).then(r=>r.json()),
+    refreshMachineStatus(false),
+  ]);
+  if(seq!==OPEN_SEQ)return;
+  CUR=next;
+  drawSessions();
+  $("#title").textContent=CUR.title;
+  drawModelLabel();
+  drawSkillButton();
+  const c=$("#chat"); c.innerHTML="";
+  for(const m of CUR.messages) addTurn(m.role==="user"?"You":"GeoForge", m.role==="user"?"user":"agent").innerHTML=messageHtml(m,CUR.id);
+  renderLiveTurn(id);
+  c.scrollTop=c.scrollHeight;
+  $("#msg").value=DRAFTS.get(id)||"";
+  $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
+  renderAttachments();
+  drawProviders();
+  await refreshRun(id);
+  await refreshViewStatus(id);
+  if($("#viewpanel").classList.contains("open"))await refreshProjectView(false);
+  setControls(true);
+  await maybeShowAction(id);
+}
+function drawModelLabel(){
+  const ms=CUR?CUR.models:[];
+  $("#mlabel").textContent=ms.length?(ms.length===1?ms[0]:`${ms.length} KIs`):"Auto KI";
+  const badge=$("#kistatus");
+  if(!ms.length){badge.className="statuspill";badge.textContent="Chooses for each task";}
+  else{
+    const verified=ms.filter(n=>(STATUS[n]||{}).state==="verified").length;
+    const failed=ms.some(n=>(STATUS[n]||{}).state==="failed");
+    badge.className=`statuspill ${verified===ms.length?"ok":failed?"block":"warn"}`;
+    badge.textContent=ms.length===1?stateLabel(ms[0]):`${verified}/${ms.length} verified on this machine`;
+  }
+  const old=$("#kibanner"); if(old) old.remove();
+  const pending=ms.filter(n=>!(STATUS[n]||{}).can_run);
+  if(pending.length){
+    const href=pending.length===1?`/setup?model=${encodeURIComponent(pending[0])}`:"/library";
+    $("#chat").insertAdjacentHTML("beforebegin",`<div class="banner" id="kibanner"><b>${esc(pending.join(", "))}</b> ${pending.length===1?"is":"are"} not verified on this machine. You can keep chatting, but the scientific software must pass before it runs. <a href="${href}">${pending.length===1?"Let the agent set it up":"Open KI Library"}</a></div>`);
+  }
+}
+function addTurn(who,cls){
+  const d=document.createElement("div"); d.className="turn "+cls;
+  d.innerHTML=`<div class="who">${cls==="agent"?'<img src="/logo.svg" alt="">':''}${who}<button class="turncopy" title="Copy this message">Copy</button></div><div class="bubble"></div>`;
+  d.querySelector(".turncopy").onclick=async e=>{
+    const button=e.currentTarget,text=d.querySelector(".bubble").innerText;
+    const ok=window.GeoForgeClipboard?await window.GeoForgeClipboard.write(text):false;
+    button.textContent=ok?"Copied":"Copy failed";setTimeout(()=>button.textContent="Copy",1200);
+  };
+  const c=$("#chat"); if(c.querySelector(".empty")) c.innerHTML="";
+  c.appendChild(d); c.scrollTop=c.scrollHeight;
+  return d.querySelector(".bubble");
+}
+function messageHtml(message,sid){
+  const paths=(message&&Array.isArray(message.attachments)?message.attachments:[]).filter(x=>typeof x==="string");
+  const files=paths.length?`<div class="message-files">${paths.map(path=>`<span class="message-file">▧ ${esc(path.split("/").pop()||path)}</span>`).join("")}</div>`:"";
+  return md(message&&message.text||"",sid)+files;
+}
+function renderLiveTurn(id){
+  const flight=INFLIGHT.get(id);if(!flight)return;
+  const out=addTurn("GeoForge","agent");
+  out.closest(".turn").dataset.flight=id;
+  out.innerHTML=flight.raw.trim()?md(flight.raw,id,true):liveWaitingHtml(flight);
+}
+function liveBubble(id){return document.querySelector(`.turn[data-flight="${id}"] .bubble`);}
+function providerDisplay(name){const p=PROV.providers.find(item=>item.name===name);return p&&p.label||String(name||"AI").replace(/^(api|cli):/,"");}
+function elapsedTime(started){const seconds=Math.max(0,Math.floor((Date.now()-started)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
+function liveWaitingHtml(flight){
+  const label=providerDisplay(flight.provider),elapsed=elapsedTime(flight.started);
+  return chineseUI()?`<div class="livewaiting"><span class="spin"></span><b>${esc(label)} 正在处理 · ${elapsed}</b><small>连接仍然正常；正在等待下一段结果。</small></div>`:`<div class="livewaiting"><span class="spin"></span><b>${esc(label)} is working · ${elapsed}</b><small>The connection is active; waiting for the next result.</small></div>`;
+}
+function updateActivityUI(){
+  const flight=CUR&&INFLIGHT.get(CUR.id),note=$("#activitynote"),sendButton=$("#send");
+  note.classList.toggle("show",!!flight);
+  if(flight){
+    const label=providerDisplay(flight.provider),elapsed=elapsedTime(flight.started);
+    $("#activitytext").textContent=chineseUI()?`${label} 已运行 ${elapsed}。你可以新建对话；本对话会在后台继续。`:`${label} has been working for ${elapsed}. You can start another chat; this one will continue in the background.`;
+    sendButton.textContent=chineseUI()?"处理中…":"Working…";
+    if(!flight.raw.trim()){const out=liveBubble(CUR.id);if(out)out.innerHTML=liveWaitingHtml(flight);}
+  }else sendButton.textContent=chineseUI()?"发送":"Send";
+}
+function closeActionPicker(){
+  $("#actionpick").classList.remove("open");ACTION_REQUEST=null;ACTION_SESSION=null;ACTION_INDEX=-1;
+}
+function showActionPicker(request,sid){
+  const options=Array.isArray(request.options)?request.options:[];if(!options.length)return false;
+  ACTION_REQUEST=request;ACTION_SESSION=sid;ACTION_INDEX=-1;
+  $("#action-title").textContent=request.title||"Choose how to continue";
+  $("#action-message").textContent=request.message||"Select one option so GeoForge can continue.";
+  $("#action-options").innerHTML=options.map((option,index)=>`<button class="actionoption" data-index="${index}"><span class="actionradio"></span><span><b>${esc(option.label||`Option ${index+1}`)}</b>${option.description?`<small>${esc(option.description)}</small>`:""}</span></button>`).join("");
+  $("#action-options").querySelectorAll(".actionoption").forEach(button=>button.onclick=()=>{
+    ACTION_INDEX=Number(button.dataset.index);$("#action-error").textContent="";
+    $("#action-options").querySelectorAll(".actionoption").forEach(item=>item.classList.toggle("selected",item===button));
+  });
+  const allow=request.allow_note!==false;
+  $("#action-note-label").style.display=allow?"block":"none";$("#action-note").style.display=allow?"block":"none";$("#action-note").value="";
+  $("#action-error").textContent="";$("#actionpick").classList.add("open");
+  return true;
+}
+async function maybeShowAction(id){
+  if(!id||!CUR||CUR.id!==id||sessionBusy(id))return;
+  const r=await fetch(`/api/session/${id}/request`);if(!r.ok)return;
+  const data=await r.json(),request=data.request;
+  if(!request||request.status!=="waiting"||!Array.isArray(request.options)||!request.options.length)return;
+  const key=`${id}:${request.id||request.created_at||request.title}`;if(SEEN_ACTIONS.has(key))return;
+  if(showActionPicker(request,id))SEEN_ACTIONS.add(key);
+}
+let PROJECT_PICK_RESOLVE=null,LAST_PROJECT_ERROR="";
+function finishProjectPicker(value){
+  $("#sessionpick").classList.remove("open");
+  const resolve=PROJECT_PICK_RESOLVE;PROJECT_PICK_RESOLVE=null;
+  if(resolve)resolve(value);
+}
+function chooseProjectLocation(){
+  if(PROJECT_PICK_RESOLVE)return Promise.resolve(null);
+  $("#project-parent").value=PROJECT_LOCATION.default_parent||"";
+  $("#project-location-error").textContent=LAST_PROJECT_ERROR;LAST_PROJECT_ERROR="";
+  $("#project-location-note").textContent=chineseUI()?"可以直接输入尚不存在的文件夹路径。GeoForge 会先创建该路径，再在其中新建本次对话的项目文件夹；不会更改已有文件。":"You may type a new folder path. GeoForge creates it, then creates this chat's named project folder inside it. Existing files are not changed.";
+  $("#sessionpick").classList.add("open");
+  return new Promise(resolve=>{PROJECT_PICK_RESOLVE=resolve;setTimeout(()=>$("#project-parent").focus(),0);});
+}
+async function createSessionAt(projectParent){
+  const r0=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({provider:$("#prov").value,project_parent:projectParent})});
+  const created=await r0.json().catch(()=>({}));
+  if(!r0.ok){
+    LAST_PROJECT_ERROR=created.error||`Could not create the project (${r0.status})`;
+    return null;
+  }
+  SESSIONS.unshift({id:created.id,title:created.title,models:[],skills:[],mcps:[],n:0,created:created.created,
+                    project_path:created.project_path});
+  return created;
+}
+async function ensureSession(){
+  if(CUR) return CUR;
+  while(!CUR){
+    const parent=await chooseProjectLocation();if(parent===null)return null;
+    const created=await createSessionAt(parent);if(!created)continue;
+    CUR=created;drawSessions();
+  }
+  return CUR;
+}
+function pendingFor(id=CUR&&CUR.id){return id?(PENDING_ATTACHMENTS.get(id)||[]):[];}
+function renderAttachments(){
+  const list=pendingFor(), box=$("#attachlist");
+  box.classList.toggle("has-files",!!list.length);
+  box.innerHTML=list.map((file,i)=>`<div class="attachchip"><span title="${esc(file.path)}">▧ ${esc(file.name)}</span><small>${sizeLabel(file.size)}</small><button data-i="${i}" title="Remove from this message; the file remains in the project">✕</button></div>`).join("");
+  box.querySelectorAll("button").forEach(button=>button.onclick=()=>{
+    const current=pendingFor();current.splice(Number(button.dataset.i),1);
+    if(CUR)PENDING_ATTACHMENTS.set(CUR.id,current);renderAttachments();setControls(true);
+  });
+}
+async function addChatFiles(fileList){
+  const files=[...fileList].filter(file=>file&&file.name);if(!files.length)return;
+  if(!await ensureSession())return;const target=CUR.id;
+  if(sessionBusy(target)){$("#hint").textContent="This chat is working. Add the files to a new chat, or wait for this turn to finish.";return;}
+  UPLOADING.set(target,(UPLOADING.get(target)||0)+1);setControls(true);
+  if(CUR&&CUR.id===target)$("#hint").textContent=`Uploading ${files.length} file${files.length===1?"":"s"}…`;
+  let added=0;
+  try{
+    for(const file of files){
+      const r=await fetch(`/api/session/${target}/upload?name=${encodeURIComponent(file.name)}`,{method:"POST",body:file});
+      const data=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(data.error||`Could not add ${file.name}`);
+      const list=PENDING_ATTACHMENTS.get(target)||[];
+      list.push({name:file.name,path:data.relative_path,size:file.size});PENDING_ATTACHMENTS.set(target,list);added++;
+      if(CUR&&CUR.id===target)renderAttachments();
+    }
+    if(CUR&&CUR.id===target)$("#hint").textContent=`${added} file${added===1?"":"s"} ready to send`;
+  }catch(error){if(CUR&&CUR.id===target)$("#hint").textContent=error.message||String(error);}
+  finally{
+    const left=(UPLOADING.get(target)||1)-1;if(left>0)UPLOADING.set(target,left);else UPLOADING.delete(target);
+    if(CUR&&CUR.id===target)setControls(true);
+  }
+}
+async function send(){
+  let text=$("#msg").value.trim();
+  if(!await ensureSession())return;
+  const target=CUR.id, attachments=[...pendingFor(target)];
+  const action=PENDING_ACTIONS.get(target)||null;
+  if(sessionBusy(target)||sessionUploading(target)||(!text&&!attachments.length))return;
+  if(!text&&attachments.length)text=chineseUI()?"请检查我附上的文件。":"Please inspect the attached files.";
+  const slash=text.match(/^\/([^\s]+)(?:\s+([\s\S]+))?$/);
+  if(slash){
+    if(slash[1].toLowerCase()==="skills"&&!slash[2]){
+      $("#msg").value=""; drawSlash(); openSkills(); return;
+    }
+    const skill=SKILLS.find(item=>item.name.toLowerCase()===slash[1].toLowerCase());
+    if(skill){
+      await attachSkill(skill.name);
+      if(!slash[2]) return;
+      text=slash[2].trim();
+      if(!text) return;
+    }
+  }
+  if(window.GeoForgeI18n&&GeoForgeI18n.isChineseText(text))
+    GeoForgeI18n.setLanguage("zh-CN");
+  const provider=$("#prov").value,llm=$("#llm").value;
+  const flight={raw:"",started:Date.now(),provider};INFLIGHT.set(target,flight);drawSessions();setControls(true);
+  $("#msg").value="";DRAFTS.delete(target);
+  drawSlash();
+  let runPoll=setInterval(()=>refreshRun(target).catch(()=>{}),1000);
+  try{
+    const up=await fetch(`/api/session/${target}/update`,{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({provider,llm_model:llm})});
+    if(!up.ok){const d=await up.json().catch(()=>({}));
+      $("#hint").textContent=d.error||("update failed "+up.status);
+      throw new Error(d.error||`update failed ${up.status}`);}
+    if(CUR&&CUR.id===target){
+      addTurn("You","user").innerHTML=messageHtml({text,attachments:attachments.map(file=>file.path)},target);
+      renderLiveTurn(target);
+    }
+    const r=await fetch(`/api/session/${target}/chat`,{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,attachments:attachments.map(file=>file.path),action})});
+    if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`request failed ${r.status}`);}
+    PENDING_ACTIONS.delete(target);
+    PENDING_ATTACHMENTS.delete(target);if(CUR&&CUR.id===target)renderAttachments();
+    const rd=r.body.getReader(), dec=new TextDecoder();
+    for(;;){const{done,value}=await rd.read(); if(done)break;
+      flight.raw+=dec.decode(value,{stream:true});
+      if(CUR&&CUR.id===target){const out=liveBubble(target),visible=flight.raw.replaceAll("\u200b","");if(out){out.innerHTML=visible.trim()?md(visible,target,true):liveWaitingHtml(flight);$("#chat").scrollTop=$("#chat").scrollHeight;}}}
+    flight.raw=flight.raw.replaceAll("\u200b","");
+    if(CUR&&CUR.id===target){const out=liveBubble(target);if(out)out.innerHTML=flight.raw.trim()?md(flight.raw,target,false):'<p style="color:var(--fg-3)">(no output)</p>';}
+  }catch(e){
+    flight.raw=flight.raw.replaceAll("\u200b","");
+    const detail=String(e&&e.message||e||"");
+    const disconnected=/Load failed|Failed to fetch|network connection was lost/i.test(detail);
+    if(!flight.raw)flight.raw=disconnected
+      ?(chineseUI()?"与 GeoForge 的响应连接中断了。后台任务可能仍在结束并保存状态；你可以切换到其他对话，稍后回来查看。若再次发生，请检查 AI 设置和所选服务商的网络连接。":"The live response connection was interrupted. The background task may still be finishing and saving its state; you can use another chat and return shortly. If it happens again, check AI Settings and the selected provider's network connection.")
+      :`${chineseUI()?"请求未完成":"The request did not finish"}: ${detail}`;
+    if(CUR&&CUR.id===target){const out=liveBubble(target);if(out)out.innerHTML=md(flight.raw,target,false);$("#hint").textContent=chineseUI()?"本对话的实时连接已停止；可稍后返回查看后台保存的结果。":"This chat's live connection stopped; return shortly to check the saved result.";}
+  }
+  clearInterval(runPoll);
+  INFLIGHT.delete(target);
+  if(CUR&&CUR.id===target)setControls(true);
+  drawSessions();
+  const s=await (await fetch("/api/session/"+target)).json();
+  const i=SESSIONS.findIndex(x=>x.id===target);
+  if(i>=0){SESSIONS[i].title=s.title;SESSIONS[i].n=s.message_count??s.messages.length;
+           SESSIONS[i].models=s.models;SESSIONS[i].skills=s.skills||[];
+           SESSIONS[i].mcps=s.mcps||[];
+           SESSIONS[i].project_path=s.project_path;}
+  if(CUR&&CUR.id===target){CUR=s;$("#title").textContent=s.title;const turn=document.querySelector(`.turn[data-flight="${target}"]`);if(turn)delete turn.dataset.flight;setControls(true);}
+  await refreshRun(target);
+  await refreshViewStatus(target);
+  drawSessions();
+  if(CUR&&CUR.id===target)await maybeShowAction(target);
+}
+function setControls(on){
+  const active=sessionBusy(),uploading=sessionUploading(),available=on!==false;
+  $("#send").disabled=!available||active||uploading||!currentProviderReady();
+  // The agent binding is also frozen for the life of a chat once it has
+  // started: the CLI keeps that conversation in its own session store and no
+  // other CLI can read it, so switching would silently lose the history. The
+  // server rejects it too — this only stops the user reaching a dead end.
+  const bound=!!(CUR&&CUR.binding_locked);
+  $("#prov").disabled=!available||active||bound; $("#llm").disabled=!available||active||bound;
+  $("#prov").title=bound?"Fixed for this chat — start a new chat to switch AI"
+                        :"AI provider";
+  $("#llm").title=bound?"Fixed for this chat — start a new chat to switch model"
+                       :"AI model";
+  document.querySelectorAll("#kindtog button").forEach(b=>b.disabled=!available||active||bound);
+  $("#pickmodels").disabled=!available||active||bound;
+  $("#newsess").disabled=false; // a different chat can always start in parallel
+  $("#openproject").disabled=!CUR;
+  $("#opendata").disabled=!CUR;
+  $("#openview").disabled=!CUR;
+  $("#skills").disabled=!available||active;
+  $("#attach").disabled=!available||active||uploading;
+  $("#connect").disabled=!available;
+  updateActivityUI();
+}
+$("#send").onclick=send;
+$("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
+$("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";if(CUR)DRAFTS.set(CUR.id,e.target.value);drawSlash();});
+$("#attach").onclick=()=>$("#chatfiles").click();
+$("#chatfiles").onchange=async e=>{await addChatFiles(e.target.files);e.target.value="";};
+let dragDepth=0;
+$("#dropzone").addEventListener("dragenter",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files")){e.preventDefault();dragDepth++;e.currentTarget.classList.add("dragging");}});
+$("#dropzone").addEventListener("dragover",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files")){e.preventDefault();e.dataTransfer.dropEffect="copy";}});
+$("#dropzone").addEventListener("dragleave",e=>{dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)e.currentTarget.classList.remove("dragging");});
+$("#dropzone").addEventListener("drop",async e=>{e.preventDefault();dragDepth=0;e.currentTarget.classList.remove("dragging");await addChatFiles(e.dataTransfer.files);});
+// Never let the embedded browser navigate away when a file misses the small
+// drop target by a few pixels.
+document.addEventListener("dragover",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files"))e.preventDefault();});
+document.addEventListener("drop",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files"))e.preventDefault();});
+$("#prov").addEventListener("change",drawLLM);
+document.querySelectorAll("#kindtog button").forEach(b=>b.onclick=()=>{
+  KIND=b.dataset.k; localStorage.setItem("kiss.kind",KIND); drawProviders();});
+$("#newsess").onclick=async()=>{
+  let created=null;
+  while(!created){const parent=await chooseProjectLocation();if(parent===null)return;created=await createSessionAt(parent);}
+  if(CUR)DRAFTS.set(CUR.id,$("#msg").value);
+  CUR=created;$("#msg").value="";renderAttachments();await openSession(created.id);
+};
+$("#activity-new").onclick=()=>$("#newsess").click();
+$("#project-create").onclick=()=>{
+  const value=$("#project-parent").value.trim();
+  if(!value){$("#project-location-error").textContent=chineseUI()?"请选择或输入一个文件夹。":"Choose or enter a folder.";return;}
+  finishProjectPicker(value);
+};
+$("#project-default").onclick=()=>{$("#project-parent").value=PROJECT_LOCATION.default_parent||"";$("#project-location-error").textContent="";};
+$("#project-cancel").onclick=()=>finishProjectPicker(null);
+$("#project-browse").onclick=async()=>{
+  $("#project-location-error").textContent="";
+  const nativeApi=window.pywebview&&window.pywebview.api;
+  if(!nativeApi||!nativeApi.choose_project_parent){
+    $("#project-location-note").textContent=chineseUI()?"当前在浏览器模式。请直接输入文件夹路径；桌面版会打开系统文件夹选择器。":"Browser mode: type the folder path here. The desktop build opens the system folder picker.";
+    $("#project-parent").focus();return;
+  }
+  try{
+    const picked=await nativeApi.choose_project_parent($("#project-parent").value||PROJECT_LOCATION.default_parent||"");
+    if(picked)$("#project-parent").value=picked;
+  }catch(error){$("#project-location-error").textContent=chineseUI()?"无法打开文件夹选择器，请直接输入路径。":"Could not open the folder picker; enter the path directly.";}
+};
+$("#action-later").onclick=closeActionPicker;
+$("#action-continue").onclick=async()=>{
+  if(!ACTION_REQUEST||!ACTION_SESSION||ACTION_INDEX<0){$("#action-error").textContent=chineseUI()?"请先选择一项。":"Choose one option first.";return;}
+  if(!CUR||CUR.id!==ACTION_SESSION){$("#action-error").textContent=chineseUI()?"请返回提出此问题的对话。":"Return to the chat that asked this question.";return;}
+  const option=ACTION_REQUEST.options[ACTION_INDEX],note=$("#action-note").value.trim();
+  PENDING_ACTIONS.set(ACTION_SESSION,{request_id:ACTION_REQUEST.id,option_id:option.id,note});
+  const text=chineseUI()?`关于“${ACTION_REQUEST.title}”，我的选择是：${option.label}。\n决定：${option.response||option.label}${note?`\n补充说明：${note}`:""}\n请根据这个选择继续。`:`For “${ACTION_REQUEST.title}”, I choose: ${option.label}.\nDecision: ${option.response||option.label}${note?`\nAdditional note: ${note}`:""}\nPlease continue using this choice.`;
+  closeActionPicker();$("#msg").value=text;DRAFTS.set(CUR.id,text);await send();
+};
+$("#action-ask").onclick=async()=>{
+  if(!ACTION_REQUEST||!ACTION_SESSION||!CUR||CUR.id!==ACTION_SESSION)return;
+  const text=chineseUI()?`我还不能决定“${ACTION_REQUEST.title}”。请用简单的话比较这些选项、风险和影响，然后再让我选择。`:`I cannot decide “${ACTION_REQUEST.title}” yet. Compare these options, their risks, and their effects in simple words, then ask me again.`;
+  closeActionPicker();$("#msg").value=text;DRAFTS.set(CUR.id,text);await send();
+};
+$("#openproject").onclick=async()=>{
+  if(!CUR) return;
+  const r=await fetch(`/api/session/${CUR.id}/open`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+  const d=await r.json().catch(()=>({}));
+  $("#hint").textContent=r.ok?`Opened ${d.project_path}`:(d.error||"Could not open the project folder");
+};
+
+/* per-chat dynamic Project View: agent-authored data, GeoForge-owned renderer */
+function viewAsset(path){return `/api/session/${encodeURIComponent(CUR.id)}/view-asset?path=${encodeURIComponent(path)}`;}
+function viewTable(panel){
+  const table=panel.table||{},columns=Array.isArray(table.columns)?table.columns:[],rows=Array.isArray(table.rows)?table.rows:[];
+  if(table.error)return `<div class="view-caption">${esc(table.error)}</div>`;
+  if(!columns.length)return `<div class="view-caption">${chineseUI()?"这个表格目前没有可显示的行。":"This table has no displayable rows yet."}</div>`;
+  return `<div class="view-table-wrap"><table class="view-table"><thead><tr>${columns.map(item=>`<th>${esc(item)}</th>`).join("")}</tr></thead><tbody>${rows.map(row=>`<tr>${columns.map((_,index)=>`<td>${esc(row[index]??"")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>${table.truncated?`<div class="view-caption">${chineseUI()?"这里只显示预览；完整数据保留在项目文件夹中。":"Preview only; the complete table remains in the project folder."}</div>`:""}`;
+}
+function viewPanel(panel){
+  const kind=panel.kind||"file",url=panel.path?viewAsset(panel.path):"";
+  let body="";
+  if(kind==="metric")body=`<div class="view-metric"><strong>${esc(panel.value)}</strong>${panel.unit?`<span>${esc(panel.unit)}</span>`:""}${panel.status?`<small>${esc(panel.status)}</small>`:""}</div>`;
+  else if(kind==="table")body=viewTable(panel);
+  else if(panel.mime==="video/mp4"||panel.mime==="video/webm")body=`<video class="view-video" src="${esc(url)}" controls autoplay muted loop playsinline preload="metadata"></video>`;
+  else if((panel.mime||"").startsWith("image/"))body=`<a href="${esc(url)}" target="_blank" rel="noreferrer"><img class="view-media" src="${esc(url)}" alt="${esc(panel.title)}" loading="lazy"></a>`;
+  else body=`<a class="view-file" href="${esc(url)}" target="_blank" rel="noreferrer"><span class="mark">${kind==="model3d"?"3D":"↗"}</span><span>${esc(panel.path||panel.title)}</span></a>`;
+  return `<article class="view-card" data-panel-id="${esc(panel.id||"")}" data-panel-revision="${esc(panel.revision||"")}"><div class="view-card-head"><b>${esc(panel.title||kind)}</b><small>${esc(kind)}</small></div>${body}${panel.caption?`<div class="view-caption">${esc(panel.caption)}</div>`:""}</article>`;
+}
+function renderProjectView(view){
+  const panels=Array.isArray(view&&view.panels)?view.panels:[],tags=[...(view.kis||[]).map(item=>`KI · ${item}`),...(view.skills||[]).map(item=>`Skill · ${item}`)];
+  const error=view&&view.error?`<div class="banner" style="margin:0 0 10px">${esc(view.error)}</div>`:"";
+  const intro=`<div class="project-view-intro"><h3>${esc(view&&view.title||(chineseUI()?"项目视图":"Project view"))}</h3><p>${esc(view&&view.summary||(chineseUI()?"这个界面只显示本对话项目中真实存在的结果文件。":"This view only displays real result files in this chat project."))}</p>${tags.length?`<div class="view-tags">${tags.map(item=>`<span class="view-tag">${esc(item)}</span>`).join("")}</div>`:""}</div>`;
+  if(!panels.length)return error+intro+`<div class="view-empty"><b>${chineseUI()?"这个对话还没有项目视图":"This chat has no Project View yet"}</b>${chineseUI()?"继续运行模型或让 Agent 根据当前结果创建一个。已有图、视频和表格会自动出现。":"Run the model or ask the Agent to build one from current results. Existing plots, videos, and tables appear automatically."}</div>`;
+  return error+intro+`<div class="view-grid ${view.layout==="single"?"single":""}">${panels.map(viewPanel).join("")}</div>`;
+}
+function patchProjectView(view){
+  const body=$("#viewbody"),next=document.createElement("div");next.innerHTML=renderProjectView(view);
+  const existing=new Map([...body.querySelectorAll("[data-panel-id]")].map(card=>[card.dataset.panelId,card]));
+  next.querySelectorAll("[data-panel-id]").forEach(card=>{
+    const previous=existing.get(card.dataset.panelId);
+    if(previous&&previous.dataset.panelRevision===card.dataset.panelRevision){card.replaceWith(previous);existing.delete(card.dataset.panelId);}
+  });
+  existing.forEach(card=>card.querySelectorAll("video").forEach(video=>video.pause()));
+  body.replaceChildren(...next.childNodes);
+}
+async function refreshProjectView(open=true){
+  if(!CUR)return;
+  const id=CUR.id;
+  if(open&&!VIEW_RENDERED_KEY.startsWith(`${id}:`))$("#viewbody").innerHTML=`<span class="spin"></span>${chineseUI()?"正在加载项目视图…":"Loading Project View…"}`;
+  const r=await fetch(`/api/session/${id}/view`),view=await r.json().catch(()=>({}));
+  if(!CUR||CUR.id!==id)return;
+  if(r.ok){
+    const key=`${id}:${view.revision||"unversioned"}`;drawViewStatus(view);
+    if(VIEW_RENDERED_KEY!==key){patchProjectView(view);VIEW_RENDERED_KEY=key;}
+  }
+  else $("#viewbody").innerHTML=`<div class="banner">${esc(view.error||(chineseUI()?"无法加载项目视图":"Could not load Project View"))}</div>`;
+}
+function pauseProjectMedia(){$("#viewbody").querySelectorAll("video").forEach(video=>video.pause());}
+function resumeProjectMedia(){$("#viewbody").querySelectorAll("video").forEach(video=>video.play().catch(()=>{}));}
+function projectViewPrompt(){
+  if(chineseUI())return `请根据这个对话的科学目标、当前所选 KI、已经使用或适合使用的 skills，以及项目中真实存在的 outputs 和 artifacts，创建或更新本对话的 Project View。先检查文件，不能虚构指标或结果。选择最能解释本次模型运行的少量面板：关键指标、结果图、CSV 表格，以及存在时的地图或动画。二维水动力过程优先生成真实的 GIF/WebP/MP4/WebM；BIM/三维结果提供 GLB/GLTF 文件并同时生成安全的图片或视频预览。把所有展示文件放在 artifacts/。如果有 publish_project_view 工具就调用它；否则按照 GeoForge 提示中的 version-1 规范写入 artifacts/project-view.json。不要生成或执行任意 HTML/JavaScript。完成后用简单中文说明界面展示了什么。`;
+  return `Create or update this chat's Project View from the scientific goal, selected KIs, relevant skills, and real files already present in outputs and artifacts. Inspect the files first and never invent metrics or results. Choose a small set of panels that best explains this run: key metrics, result figures, CSV tables, and maps or animations when present. For time-varying 2D hydrodynamics, prefer a real GIF, WebP, MP4, or WebM. For BIM/3D, include the GLB/GLTF and also create a safe image or video preview. Put all display files under artifacts/. Call publish_project_view when available; otherwise write artifacts/project-view.json using GeoForge's version-1 contract. Do not generate or execute arbitrary HTML or JavaScript. Briefly explain the finished view.`;
+}
+$("#openview").onclick=async()=>{$("#datapanel").classList.remove("open");$("#viewpanel").classList.add("open");await refreshProjectView(true);resumeProjectMedia();};
+$("#view-close").onclick=()=>{pauseProjectMedia();$("#viewpanel").classList.remove("open");};
+$("#view-refresh").onclick=()=>refreshProjectView(true);
+$("#view-folder").onclick=()=>$("#openproject").click();
+$("#view-agent").onclick=async()=>{
+  pauseProjectMedia();$("#viewpanel").classList.remove("open");$("#msg").value=projectViewPrompt();
+  if(CUR)DRAFTS.set(CUR.id,$("#msg").value);
+  $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
+  if(sessionBusy()){$("#hint").textContent=chineseUI()?"本对话仍在运行。项目视图请求已放入输入框，本轮结束后即可发送。":"This chat is still working. The Project View request is ready in the composer.";$("#msg").focus();return;}
+  await send();
+};
+
+/* per-chat data requirements and local input files */
+const sizeLabel=n=>n<1024?`${n} B`:n<1048576?`${(n/1024).toFixed(1)} KB`:`${(n/1048576).toFixed(1)} MB`;
+const displayValue=value=>{
+  if(value==null||value==="")return "";
+  if(typeof value==="string"||typeof value==="number"||typeof value==="boolean")return String(value);
+  try{return JSON.stringify(value);}catch(_error){return String(value);}
+};
+const prepClass=s=>s==="ready"||s==="validate_sources"?"ok":s==="software_needed"?"block":"warn";
+const actionClass=a=>a==="needs_decision"?"block":a==="provide_or_find"?"warn":"ok";
+function renderData(data){
+  const files=data.files||[];
+  const referenceFiles=data.reference_files||[];
+  const provenance=data.provenance||[];
+  const plans=data.plans||[];
+  const prep=data.preparation||{}, sw=prep.software_summary||{}, run=data.project_run||RUN||{}, calibration=data.calibration||{};
+  const models=prep.models||[], lanes=prep.lanes||[], papers=prep.literature||[], missingPapers=prep.literature_missing||[];
+  const request=(run.blocker&&run.status==="waiting_for_user")?run.blocker:data.human_request;
+  const waiting=request&&(request.status==="waiting"||run.status==="waiting_for_user");
+  drawRunStatus(run);
+  const runModels=(run.selected_kis||[]).length?run.selected_kis:models.map(m=>m.name);
+  const activeData=Boolean(prep.active&&runModels.length);
+  const modelchips=runModels.length?runModels.map(name=>`<span class="mchip">General KI: ${esc(name)}</span>`).join(" "):"";
+  const softwareLabel=sw.total?`${sw.ready||0} / ${sw.total} software verified`:'Auto KI';
+  const stateLabel=run.status==="working"?"GeoForge is working":run.status==="waiting_for_user"?"One thing needs you":run.status==="complete"?"Project complete":run.status==="failed"?"Project needs attention":run.goal?"Ready to continue":"Ready when you are";
+  const stateClass=run.status==="complete"?"ok":run.status==="waiting_for_user"?"warn":run.status==="failed"?"block":"";
+  const summary=`<div class="datacard prep-summary"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${esc(stateLabel)}</h3><span class="statuspill ${stateClass}">${esc(softwareLabel)}</span></div>
+    <div class="hint" style="margin:0 0 8px">${esc(run.summary||(run.goal?"GeoForge will continue from the project files and conversation.":"Describe the scientific goal in chat to begin."))}</div>${run.goal?`<div class="dataitem"><b>Goal</b><small>${esc(run.goal)}</small></div>`:""}${modelchips?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px">${modelchips}</div>`:""}</div>`;
+  const current=runGroupIndex(run.stage), allDone=run.status==="complete";
+  const progress=`<div class="datacard"><h3>Project progress</h3><div class="runsteps">${RUN_GROUPS.map((group,i)=>{
+    const done=allDone||i<current,active=Boolean(run.goal)&&!allDone&&i===current;
+    return `<div class="runstep ${done?'done':active?'active':''}"><span class="stepdot">${done?'✓':active?'•':i+1}</span><span><b>${esc(group.name)}</b><small>${esc(group.detail)}</small></span></div>`;
+  }).join("")}</div></div>`;
+  const sourceFiles=files.filter(f=>!/(^|\/)README(?:\.[^/]*)?$/i.test(f.relative_path||f.name||""));
+  const datasetChecks=plans.flatMap(plan=>(plan.datasets||[]).map(item=>({...item,model:plan.model||"KI"})));
+  const requiredChecks=datasetChecks.filter(item=>!item.optional);
+  const readyChecks=requiredChecks.filter(item=>item.present);
+  const missingChecks=requiredChecks.filter(item=>!item.present);
+  const dataReached=run.status==="complete"||["running","results"].includes(run.stage);
+  const dataChecking=run.stage==="validating";
+  const dataWorking=run.status==="working"&&["researching","preparing"].includes(run.stage);
+  const dataFailed=run.status==="failed"&&["researching","preparing","validating"].includes(run.stage);
+  const checkedConflict=dataReached&&missingChecks.length>0;
+  const dataOverall=dataFailed||checkedConflict?"Review needed":waiting?"One thing needs you":missingChecks.length?"Agent is preparing":dataReached?"Ready to use":dataChecking?"Being checked":dataWorking?"Agent is preparing":"Agent will prepare";
+  const dataOverallClass=dataFailed||checkedConflict?"block":waiting?"warn":dataReached&&!missingChecks.length?"ok":"";
+  const laneStatus=lane=>{
+    if(lane.id==="source_data"&&requiredChecks.length){
+      const note=chineseUI()?`${readyChecks.length} / ${requiredChecks.length} 个必需数据路径已经就绪。`:`${readyChecks.length} / ${requiredChecks.length} required data paths are ready.`;
+      if(missingChecks.length)return {label:chineseUI()?`${missingChecks.length} 个尚未就绪`:`${missingChecks.length} not ready yet`,cls:checkedConflict?"block":"active",mark:checkedConflict?"!":"•",note};
+      return {label:"Ready to use",cls:"ok",mark:"✓",note};
+    }
+    return dataFailed?{label:"Review needed",cls:"block",mark:"!"}:dataReached?{label:"Ready to use",cls:"ok",mark:"✓"}:dataChecking?{label:"Being checked",cls:"active",mark:"✓"}:dataWorking?{label:"Agent is preparing",cls:"active",mark:"•"}:{label:"Agent will prepare",cls:"",mark:"AI"};
+  };
+  const visibleLanes=activeData?lanes.filter(l=>l.count):[];
+  const totalDeclared=visibleLanes.reduce((total,lane)=>total+(lane.count||0),0);
+  const dataRows=visibleLanes.map(lane=>{
+    const status=laneStatus(lane);
+    const examples=(lane.items||[]).slice(0,4).map(item=>item.name).filter(Boolean),more=Math.max(0,(lane.count||0)-examples.length);
+    const preview=examples.length
+      ?`${examples.join(" · ")}${more?` · +${more} ${chineseUI()?"项":"more"}`:""}`
+      :"";
+    const locations=Array.isArray(lane.locations)?lane.locations:[],location=locations[0]||lane.input_root||null;
+    const fileCount=Number(lane.local_file_count||0);
+    const fileNote=fileCount?(chineseUI()?`这个类别有 ${fileCount} 个本地文件。`:`${fileCount} local file${fileCount===1?'':'s'} in this group.`):"No local files in this category yet.";
+    const paths=locations.slice(0,2).map(item=>item.relative_path).filter(Boolean);
+    const locationNote=paths.length?`${paths.join(" · ")}${locations.length>2?` · +${locations.length-2} ${chineseUI()?"处":"more"}`:""}`:"";
+    const folderButton=location?`<button class="data-folder" data-open-path="${esc(location.relative_path)}" title="${esc(location.relative_path)}">Open folder</button>`:"";
+    const requirementItems=(lane.items||[]).map((item,itemIndex)=>{
+      const models=(item.models||[]).join(" + ")||runModels.join(" + ")||"KI";
+      const detail=item.description||item.notes||item.format||item.source_kind||(chineseUI()?"由 KI 声明的模型输入要求":"Model input declared by the KI");
+      const fields=[
+        [chineseUI()?"说明":"Purpose",item.description||item.notes],
+        [chineseUI()?"所属 KI":"KI",models],
+        [chineseUI()?"数据组":"Group",item.group_label||lane.label],
+        [chineseUI()?"单位":"Unit",item.unit],
+        [chineseUI()?"目标文件":"Expected file",item.file],
+        [chineseUI()?"格式":"Format",item.format||item.model_input_format],
+        [chineseUI()?"来源类型":"Source type",item.source_kind],
+        [chineseUI()?"准备方式":"Preparation",chineseUI()?(item.action==="needs_decision"?"需要你做科学决定；Agent 会先解释选项":item.action==="provide_or_find"?"添加你的数据，或让 Agent 查找合适来源":"Agent 可以按 KI 获取、转换或生成"):item.action_label],
+        [chineseUI()?"KI 默认值":"KI default",displayValue(item.default)],
+        [chineseUI()?"有效范围":"Valid range",displayValue(item.valid_range)],
+        [chineseUI()?"敏感度":"Sensitivity",item.sensitivity],
+      ].filter(([,value])=>value!=null&&value!=="");
+      const variants=(item.variants||[]).map(variant=>[variant.model,variant.unit,variant.file,variant.format].filter(Boolean).map(displayValue).join(" · ")).filter(Boolean);
+      if(variants.length>1)fields.push([chineseUI()?"不同 KI 定义":"KI variants",variants.join(" | ")]);
+      const fieldHtml=fields.length?`<dl class="requirement-fields">${fields.map(([label,value])=>`<dt>${esc(label)}</dt><dd>${item.file&&value===item.file?`<code>${esc(displayValue(value))}</code>`:esc(displayValue(value))}</dd>`).join("")}</dl>`:`<div class="hint" style="margin:8px 0">${chineseUI()?"KI 暂未提供更多字段说明，可以直接询问 Agent。":"The KI does not provide more field detail yet; ask the agent directly."}</div>`;
+      const resolveLabel=item.action==="needs_decision"?(chineseUI()?"与 Agent 一起决定":"Decide with agent"):item.action==="provide_or_find"?(chineseUI()?"让 Agent 查找":"Find with agent"):(chineseUI()?"让 Agent 准备":"Prepare with agent");
+      const itemStatusLabel=item.action==="needs_decision"?(chineseUI()?"需要你决定":"Needs a decision"):item.action==="provide_or_find"?(chineseUI()?"需要数据来源":"Needs a source"):(chineseUI()?"Agent 可处理":"Agent can handle");
+      return `<details class="data-requirement-card" data-data-lane="${esc(lane.id)}" data-data-item="${itemIndex}"><summary><span><b>${esc(item.name)}</b><small>${esc(detail)}</small></span><span class="actiontag ${actionClass(item.action)}">${esc(itemStatusLabel)}</span><span class="requirement-chevron">›</span></summary><div class="requirement-detail">${fieldHtml}<div class="requirement-actions"><button class="requirement-explain" data-data-lane="${esc(lane.id)}" data-data-item="${itemIndex}">${chineseUI()?"问 Agent：这是什么？":"Ask agent: what is this?"}</button><button class="requirement-resolve" data-data-lane="${esc(lane.id)}" data-data-item="${itemIndex}">${resolveLabel}</button></div></div></details>`;
+    }).join("");
+    const groupHint=chineseUI()?`${lane.count} 项要求 · 点击每一项查看说明，或单独询问 Agent`:`${lane.count} requirements · open any item for details or ask the agent separately`;
+    return `<details class="data-ready-group ${status.cls}"><summary class="data-ready-row ${status.cls}"><span class="data-ready-mark">${status.mark}</span><span><b>${esc(lane.label)}</b>${preview?`<small class="data-requirement-preview">${esc(preview)}</small>`:""}<small>${esc(lane.description||"")}</small>${status.note?`<small>${esc(status.note)}</small>`:""}<small>${esc(groupHint)}</small><small>${esc(fileNote)}</small>${locationNote?`<small class="data-location-note">${esc(locationNote)}</small>`:""}</span><span class="data-state">${esc(status.label)}</span><span class="data-ready-chevron">›</span></summary><div class="data-ready-group-body"><div class="data-group-actions"><span class="hint">${chineseUI()?"整组操作":"Actions for this group"}</span>${folderButton}<button class="data-resolve" data-data-lane="${esc(lane.id)}">${chineseUI()?"让 Agent 解决整组":"Resolve group with agent"}</button></div>${requirementItems}</div></details>`;
+  }).join("");
+  const inputRoot=visibleLanes.map(lane=>lane.input_root).find(Boolean)||{relative_path:"inputs"};
+  const activeCopy=chineseUI()?`根据 ${runModels.join("、")} KI 动态生成 · ${totalDeclared} 项要求`:`Built dynamically from ${runModels.join(", ")} KI · ${totalDeclared} requirements`;
+  const emptyCopy=chineseUI()?"先在对话中描述你要模拟什么。Agent 选择 KI 后，这里会自动按该模型重建。":"Describe what you want to simulate in chat. After the agent chooses a KI, this view rebuilds itself for that model.";
+  const dataBody=activeData?`<div class="data-model-strip">${runModels.map(name=>`<span class="mchip">${esc(name)}</span>`).join("")}</div><div class="hint" style="margin:4px 0 2px">${esc(activeCopy)}</div>${dataRows}`:`<div class="data-empty"><b>Model data appears after the conversation chooses a KI.</b><div class="hint" style="margin:0">${esc(emptyCopy)}</div></div>`;
+  const overviewTools=activeData?`<div class="data-overview-tools"><span class="statuspill ${dataOverallClass}">${esc(dataOverall)}</span><button class="data-folder" data-open-path="${esc(inputRoot.relative_path)}">Open all inputs</button></div>`:`<span class="statuspill">Auto KI</span>`;
+  const dataOverview=`<div class="datacard"><div class="data-overview-head"><div><h3>Data for this run</h3><div class="hint" style="margin:1px 0 0">Data categories are rebuilt from the active KI as the conversation changes.</div></div>${overviewTools}</div><div class="data-overview">${dataBody}</div>${activeData?'<div class="data-overview-note">Only confirmed gaps appear as “Needs you.” The complete KI data contract is still available below.</div>':''}</div>`;
+  const dataSources=provenance.length?`<div class="datacard"><div class="data-overview-head"><div><h3>Data sources & download record</h3><div class="hint" style="margin:1px 0 0">What the agent downloaded, copied, or reused—and the record that makes it reproducible.</div></div><span class="statuspill ok">${provenance.length} recorded</span></div>${provenance.map(record=>{
+    const listed=(record.files||[]).slice(0,12);
+    const fileDetails=listed.length?`<details style="margin-top:5px"><summary>${listed.length} source file${listed.length===1?'':'s'}${record.checksum_count?` · ${record.checksum_count} checksum${record.checksum_count===1?'':'s'}`:''}</summary><div class="hint" style="margin:4px 0 0">${listed.map(file=>`${esc(file.name)}${Number.isFinite(file.size)?` · ${sizeLabel(file.size)}`:''}${file.sha256?` · SHA-256 ${esc(file.sha256.slice(0,12))}…`:''}`).join('<br>')}</div></details>`:'';
+    return `<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:7px"><b style="flex:1">${esc(record.title||'Recorded data source')}</b><span class="actiontag ok">Recorded</span></div><small>${esc(record.method||'Saved for reproducibility')}</small>${record.version?`<small>Version or commit: <code>${esc(record.version)}</code></small>`:''}${record.note?`<small>${esc(record.note)}</small>`:''}${record.url?`<small><a href="${esc(record.url)}" target="_blank" rel="noreferrer">Open public source ↗</a></small>`:''}${fileDetails}<small>Audit record: <code>${esc(record.relative_path||'')}</code></small></div>`;
+  }).join('')}</div>`:"";
+  const calibrationAdapters=Array.isArray(calibration.adapters)?calibration.adapters:[];
+  const readyCalibration=calibrationAdapters.filter(item=>item.status==="ready");
+  const latestCalibration=calibration.latest_run||null;
+  let calibrationLabel="Choose a KI first",calibrationClass="",calibrationHint="Choose a model in chat. GeoForge will then connect its calibration adapter when one is available.";
+  if(!calibration.ready){calibrationLabel="Engine unavailable";calibrationClass="block";calibrationHint="This build cannot load the shared calibration engine. The agent can inspect the problem, but must not claim that optimization ran.";}
+  else if(calibrationAdapters.length){
+    if(!readyCalibration.length){calibrationLabel="Adapter needed";calibrationClass="warn";calibrationHint="The model is selected, but its project calibration adapter still needs to be prepared.";}
+    else if(latestCalibration&&latestCalibration.promotable){calibrationLabel="Holdout passed";calibrationClass="ok";calibrationHint="The latest real-model calibration passed its held-out validation gate.";}
+    else if(latestCalibration){calibrationLabel=latestCalibration.status==="completed"?"Holdout not passed":"Run needs review";calibrationClass="warn";calibrationHint="The latest attempt is saved, but GeoForge does not treat it as a validated calibration.";}
+    else if(Number(calibration.case_count||0)>0){calibrationLabel="Workflow prepared";calibrationClass="ok";calibrationHint="A project case is saved. The agent must still verify that its observations, target, and holdout match this run before starting the optimizer.";}
+    else{calibrationLabel="Project case needed";calibrationClass="warn";calibrationHint="A reusable model adapter exists, but it may describe a different site or target. Create a project case with observations and a holdout before running calibration.";}
+  }
+  const calibrationLoss=latestCalibration&&latestCalibration.best_loss!=null?(Array.isArray(latestCalibration.best_loss)?latestCalibration.best_loss.join(", "):String(latestCalibration.best_loss)):"";
+  const calibrationLatest=latestCalibration?`<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:7px"><b style="flex:1">Latest calibration · ${esc(latestCalibration.ki||'KI')}</b><span class="actiontag ${latestCalibration.promotable?'ok':'warn'}">${latestCalibration.promotable?'Validated':'Not promoted'}</span></div><small>${esc(latestCalibration.algorithm||'optimizer')} · ${esc(latestCalibration.status||'unknown status')}${calibrationLoss?` · best loss ${esc(calibrationLoss)}`:''}</small>${latestCalibration.reason?`<small>${esc(latestCalibration.reason)}</small>`:''}<small>Report: <code>${esc(latestCalibration.report_path||'')}</code></small></div>`:"";
+  const calibrationModels=calibrationAdapters.length?calibrationAdapters.map(item=>`${esc(item.ki)} · ${item.status==='ready'?'adapter ready':'adapter needed'}`).join('<br>'):(runModels.length?runModels.map(esc).join(', '):'No KI selected yet');
+  const calibrationCard=`<div class="datacard"><div class="data-overview-head"><div><h3>Calibration</h3><div class="hint" style="margin:1px 0 0">GeoForge uses the real KI model, keeps observations and runs in this project, and accepts a result only after held-out validation.</div></div><span class="statuspill ${calibrationClass}">${esc(calibrationLabel)}</span></div><div class="dataitem"><b>${esc(calibration.ready_adapter_count||0)} ready adapter${Number(calibration.ready_adapter_count||0)===1?'':'s'} · ${esc(calibration.case_count||0)} case file${Number(calibration.case_count||0)===1?'':'s'} · ${esc(calibration.run_count||0)} run${Number(calibration.run_count||0)===1?'':'s'}</b><small>${calibrationModels}</small><small>${esc(calibrationHint)}</small></div>${calibrationLatest}<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px"><button id="calibration-agent" class="primary">${latestCalibration?'Continue calibration':'Calibrate with agent'}</button><button id="calibration-files">Add observations</button></div></div>`;
+  const human=waiting?`<div class="datacard" style="border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">One thing needs you</h3><span class="statuspill warn">${esc(request.kind||'action')}</span></div><b>${esc(request.title||'Help needed')}</b><div class="hint" style="margin:4px 0">${esc(request.message||'')}</div>${request.url?`<a href="${esc(request.url)}" target="_blank" rel="noreferrer"><button style="margin-top:7px">Open official page</button></a>`:''}</div>`:
+    `<div class="datacard"><h3>No action needed from you</h3><div class="hint" style="margin:0">Keep working in chat. GeoForge will interrupt only for an important decision, private data, a login, licence, or system permission.</div></div>`;
+  const filecard=`<div class="datacard"><h3>Project files · ${files.length}</h3>
+    ${files.length?`<table class="filetable">${files.map(f=>`<tr><td><b>${esc(f.name)}</b><br><span style="color:var(--fg-3)">${esc(f.relative_path)}</span></td><td style="text-align:right">${sizeLabel(f.size)}</td></tr>`).join("")}</table>`:
+    '<div class="hint" style="margin:0">No local source files yet. This is not an error—the agent can begin by checking documented public sources.</div>'}</div>`;
+  const checkedPaths=datasetChecks.length?`<div class="datacard"><h3>Checked data paths · ${datasetChecks.length}</h3><div class="hint" style="margin:0 0 6px">These marks come from real paths declared by the KI setup manifest, not from an AI guess.</div>${datasetChecks.map(item=>`<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:6px"><b style="flex:1">${esc(item.name)}</b><span class="actiontag ${item.present?'ok':'warn'}">${item.present?'Present':'Not ready'}</span></div><small>${esc(item.model)}${item.optional?' · Optional':''}</small>${item.why?`<small>${esc(item.why)}</small>`:''}<small><code>${esc(item.expected_path||'Path not configured')}</code></small></div>`).join('')}</div>`:"";
+  const literature=papers.length||missingPapers.length?`<div class="datacard"><div style="display:flex;align-items:center;gap:7px"><h3 style="flex:1">Optional model reading</h3><button id="paper-add" style="padding:4px 8px">Add paper PDF</button></div>
+    <div class="hint" style="margin:0 0 6px">The KI ships paper metadata, not copyrighted PDFs. These are recommendations for this model; they do not block a run.</div>${referenceFiles.length?`<div class="dataitem"><b>Added to this project · ${referenceFiles.length}</b><small>${referenceFiles.map(f=>esc(f.name)).join(', ')}</small></div>`:''}${papers.map(lib=>`<details><summary><b>${esc(lib.model)}</b> · ${lib.count} papers · ${lib.open_access} open access</summary>${(lib.recommended||[]).map(p=>`<a class="paperlink" href="${esc(p.url)}" target="_blank" rel="noreferrer">${esc(p.title||p.doi)}<small>${esc(p.role||'reference')} · ${p.access==='open'?'open access':'use your own access'}</small></a>`).join('')}</details>`).join('')}${missingPapers.length?`<div class="hint" style="margin:7px 0">No paper metadata yet for: ${missingPapers.map(esc).join(', ')}.</div>`:''}
+    <div class="hint" style="margin:8px 0 0">If you legally download a paper, add it here so the agent can use it inside this project. GeoForge never republishes it.</div></div>`:"";
+  const totalInternal=lanes.reduce((n,l)=>n+(l.count||0),0);
+  const advanced=`<details class="datacard advanced"><summary>See technical data details</summary><div class="advanced-body"><div class="hint" style="margin:0 0 9px">Full KI contract · ${totalInternal} declared fields and files. Every declared requirement can now be opened and questioned in the main data card above. This section keeps file-path checks, project files, and optional literature for audit and debugging.</div><div class="hint" style="margin:0 0 9px">Project: <code>${esc(data.project_path)}</code></div>${checkedPaths}${filecard}${literature}</div></details>`;
+  return `${summary}${progress}${dataOverview}${dataSources}${calibrationCard}${human}${advanced}`;
+}
+function calibrationAgentPrompt(data){
+  const calibration=data&&data.calibration||{},adapters=Array.isArray(calibration.adapters)?calibration.adapters:[];
+  const names=adapters.map(item=>item.ki).filter(Boolean),ready=adapters.filter(item=>item.status==="ready");
+  if(chineseUI()){
+    if(!names.length)return "请先根据我的科学目标选择一个支持校准的 KI，并固定用于本项目。然后检查真实模型、观测数据和留出验证要求。先用简单的话告诉我还缺哪一项；只有确实需要我的私有数据或科学决定时再询问我。";
+    return `请为本项目继续真实模型校准（KI：${names.join("、")}）。先检查 KI 的 calibration.yaml、项目已有文件和以前的运行记录。不要因为存在通用适配器就假设它属于当前项目：必须核对 case_id、地点、目标变量、观测数据和时间范围；不一致时，在项目 calibration/kis 和 calibration/cases 中建立本项目的适配器与案例，不要修改共享引擎或原始 KI。${ready.length?"确认项目绑定一致后，使用 GeoForge 内置的校准引擎运行真实科学模型；":"先在项目 calibration/kis 中完成缺失的项目适配器；"}复用项目已有数据，只在缺少观测数据或重要科学决定时询问我。必须设置独立的留出验证，保存来源与运行记录，并生成诚实的结果图。除非真实模型已经运行且留出验证通过，否则不要称为已校准或可推广。`;
+  }
+  if(!names.length)return "First choose and pin a calibration-supported KI for my scientific goal. Then inspect the real model, observations, and holdout requirements. Explain the one next gap in simple words, and ask me only for private data or a scientific decision you cannot safely make.";
+  return `Continue a real-model calibration for this project (KI: ${names.join(", ")}). First inspect the KI calibration contract, existing project files, and earlier calibration runs. Do not assume a reusable adapter belongs to this project merely because it exists: verify its case_id, site, target variable, observations, and time range. If they differ, create this project's adapter and case under calibration/kis and calibration/cases without editing the shared engine or curated KI. ${ready.length?"After the project binding matches, use GeoForge's bundled calibration engine to run the real scientific model;":"First complete the missing project adapter under calibration/kis;"} reuse data already in this project, and ask me only for missing observations or an important scientific decision. Define an independent holdout, save provenance and run records, and create an honest result plot. Do not call the result calibrated or promotable unless the real model ran and the holdout gate passed.`;
+}
+function dataAgentPrompt(data,lane,item=null){
+  const prep=data&&data.preparation||{},run=data&&data.project_run||{},models=(run.selected_kis||[]).length?run.selected_kis:(prep.models||[]).map(model=>model.name).filter(Boolean);
+  const requirements=Array.isArray(lane&&lane.items)?lane.items:[];
+  const names=requirements.slice(0,12).map(requirement=>requirement.name).filter(Boolean);
+  const remaining=Math.max(0,requirements.length-names.length);
+  if(item){
+    const facts=[
+      `name: ${item.name||"unnamed requirement"}`,
+      `KI: ${(item.models||models).join(", ")||"selected KI"}`,
+      item.description&&`description: ${item.description}`,
+      item.file&&`expected file: ${item.file}`,
+      item.format&&`format: ${item.format}`,
+      item.unit&&`unit: ${item.unit}`,
+      item.default!=null&&`KI default: ${item.default}`,
+      item.valid_range&&`valid range: ${item.valid_range}`,
+      item.notes&&`notes: ${item.notes}`
+    ].filter(Boolean).join("\n");
+    if(chineseUI())return `请根据 KI 解决本项目的这一项输入要求。\n${facts}\n先读取 KI 合同和配套工具，再检查项目里已经存在的文件；能复用就复用并验证。按 KI 允许的方式查找公开数据、转换、推导或生成，并把输入、来源记录和验证结果保存在项目文件夹中。${item.action==="needs_decision"?"这是一项科学决定：请用简单的话给我 2–3 个可选项及影响，不要替我静默决定。":item.action==="provide_or_find"?"优先寻找合适的公开来源；只有确实需要私有或受许可数据时才向我要文件。":"如果 KI 有安全默认值或自动准备方法，请直接使用并说明。"}只有真实的 KI 输入检查通过后，才可以把这一项标为就绪。`;
+    return `Resolve this project input from the KI contract.\n${facts}\nFirst read the KI contract and its supplied tools, then inspect files already in this project; reuse and validate them when possible. Find public data, convert, derive, or generate the input only as the KI allows, and save the input, provenance, and validation result in the project folder. ${item.action==="needs_decision"?"This is a scientific decision: explain 2–3 choices and their effects in simple words; do not decide silently for me.":item.action==="provide_or_find"?"Look for a suitable public source first; ask me for a file only when private or licensed data is genuinely required.":"Use a safe KI default or automatic preparation method when the KI provides one, and report it."} Mark this input ready only after its real KI validation passes.`;
+  }
+  const scope=names.length?`${names.join(", ")}${remaining?` (+${remaining} more in the KI contract)`:""}`:"read all requirements directly from the KI contract";
+  if(chineseUI())return `请根据所选 KI（${models.join("、")||"自动 KI"}）解决本项目的“${lane&&lane.label||"输入数据"}”。该组由 KI 声明的要求包括：${scope}。先检查项目中已经存在的数据并验证，避免重复下载；然后严格使用 KI 的工具和规则，查找公开数据、转换、推导或生成仍缺少的内容。把所有文件、来源、版本、校验和及处理步骤保存在项目文件夹中。只有遇到私有/受许可数据或我必须做出的科学决定时才暂停，并给我一个简短的选择弹窗。完成后运行真实的 KI 输入检查，用简单的话报告已解决、仍缺少和下一步。`;
+  return `Resolve the “${lane&&lane.label||"input data"}” group for this project using the selected KI (${models.join(", ")||"Auto KI"}). KI-declared requirements in this group include: ${scope}. First inspect and validate data already in the project so it is not downloaded twice. Then use the KI's own tools and rules to find public data, convert, derive, or generate what is still missing. Save every file plus source, version, checksums, and transformation steps in the project folder. Pause only for private/licensed data or a scientific decision I must make, and present that as one short structured choice. Finally run the real KI input checks and report in simple words what was resolved, what remains, and the next step.`;
+}
+function dataExplainPrompt(data,lane,item){
+  const prep=data&&data.preparation||{},run=data&&data.project_run||{};
+  const candidates=item&&Array.isArray(item.models)&&item.models.length?item.models:Array.isArray(run.selected_kis)&&run.selected_kis.length?run.selected_kis:(prep.models||[]).map(model=>model.name);
+  const models=candidates.filter(Boolean);
+  const facts=[
+    `name: ${item&&item.name||"unnamed requirement"}`,
+    `KI: ${models.join(", ")||"selected KI"}`,
+    `category: ${lane&&lane.label||"input data"}`,
+    item&&item.description&&`description: ${item.description}`,
+    item&&item.unit&&`unit: ${item.unit}`,
+    item&&item.file&&`expected file: ${item.file}`,
+    item&&(item.format||item.model_input_format)&&`format: ${item.format||item.model_input_format}`,
+    item&&item.source_kind&&`source type: ${item.source_kind}`,
+    item&&item.default!=null&&`KI default: ${displayValue(item.default)}`,
+    item&&item.valid_range!=null&&`valid range: ${displayValue(item.valid_range)}`,
+    item&&item.notes&&`notes: ${item.notes}`,
+  ].filter(Boolean).join("\n");
+  if(chineseUI())return `请用简单中文解释本项目中的这一项 KI 输入要求：\n${facts}\n先读取所选 KI 中与这项要求直接相关的文档，再检查当前项目文件，但这次只解释，不要下载、生成、移动或修改任何文件。请依次说明：1）它是什么；2）模型为什么需要它；3）常见单位、格式和项目内位置；4）GeoForge 通常如何获得或生成它；5）什么时候必须由我提供数据或做科学决定；6）当前项目里它是否已经有可验证的依据。不要把所属类别“已就绪”误说成这一单项已经单独验证；如果无法单项确认，请明确说只能确认到类别级别。最后用一句话告诉我下一步是否需要操作。`;
+  return `Explain this KI input requirement in plain language for the current project:\n${facts}\nFirst read only the directly relevant selected-KI documentation and inspect current project files, but for this question do not download, generate, move, or modify anything. Explain: 1) what it is; 2) why the model needs it; 3) common units, format, and project location; 4) how GeoForge normally obtains or creates it; 5) when I must provide data or make a scientific decision; and 6) whether this project has verifiable evidence for this item. Do not turn category-level readiness into a claim that this individual item was separately validated; say so if only category-level evidence exists. End with one sentence stating whether I need to act next.`;
+}
+async function sendDataPanelPrompt(prompt,kind="data"){
+  $("#datapanel").classList.remove("open");$("#msg").value=prompt;
+  if(CUR)DRAFTS.set(CUR.id,prompt);
+  $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
+  if(sessionBusy()){
+    $("#hint").textContent=chineseUI()?(kind==="explain"?"本对话仍在处理。解释问题已放入输入框，本轮完成后即可发送。":"本对话仍在处理。数据请求已放入输入框，本轮完成后即可发送。"):(kind==="explain"?"This chat is still working. The explanation question is in the composer and can be sent when it finishes.":"This chat is still working. The data request is in the composer and can be sent when it finishes.");
+    $("#msg").focus();return;
+  }
+  await send();
+}
+async function startDataAgent(data,lane,item=null){
+  await sendDataPanelPrompt(dataAgentPrompt(data,lane,item),"data");
+}
+async function explainDataItem(data,lane,item){
+  await sendDataPanelPrompt(dataExplainPrompt(data,lane,item),"explain");
+}
+async function refreshData(){
+  if(!CUR)return;
+  $("#databody").innerHTML='<span class="spin"></span>reading project status…';
+  const r=await fetch(`/api/session/${CUR.id}/data`), data=await r.json();
+  LAST_PREP=r.ok?data:null;
+  $("#databody").innerHTML=r.ok?renderData(data):`<div class="banner">${esc(data.error||"Could not read data requirements")}</div>`;
+  document.querySelectorAll("#databody .data-resolve").forEach(button=>button.onclick=async()=>{
+    const lane=(data.preparation&&data.preparation.lanes||[]).find(item=>item.id===button.dataset.dataLane);if(lane)await startDataAgent(data,lane);
+  });
+  document.querySelectorAll("#databody .requirement-resolve").forEach(button=>button.onclick=async()=>{
+    const lane=(data.preparation&&data.preparation.lanes||[]).find(item=>item.id===button.dataset.dataLane),item=lane&&(lane.items||[])[Number(button.dataset.dataItem)];if(lane&&item)await startDataAgent(data,lane,item);
+  });
+  document.querySelectorAll("#databody .requirement-explain").forEach(button=>button.onclick=async()=>{
+    const lane=(data.preparation&&data.preparation.lanes||[]).find(item=>item.id===button.dataset.dataLane),item=lane&&(lane.items||[])[Number(button.dataset.dataItem)];if(lane&&item)await explainDataItem(data,lane,item);
+  });
+  document.querySelectorAll("#databody .data-folder").forEach(button=>button.onclick=async()=>{
+    const path=button.dataset.openPath||"";
+    const response=await fetch(`/api/session/${CUR.id}/open`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path})});
+    const opened=await response.json().catch(()=>({}));
+    $("#hint").textContent=response.ok?`${chineseUI()?"已打开":"Opened"} ${opened.target_path||opened.project_path}`:(opened.error||(chineseUI()?"无法打开数据文件夹":"Could not open data folder"));
+  });
+  const paperButton=$("#paper-add");if(paperButton)paperButton.onclick=()=>$("#paperfile").click();
+  const calibrationButton=$("#calibration-agent");if(calibrationButton)calibrationButton.onclick=async()=>{
+    $("#datapanel").classList.remove("open");
+    const prompt=calibrationAgentPrompt(data);$("#msg").value=prompt;
+    if(CUR)DRAFTS.set(CUR.id,prompt);
+    $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
+    if(sessionBusy()){$("#hint").textContent=chineseUI()?"本对话仍在处理。校准请求已放入输入框，完成后即可发送。":"This chat is still working. The calibration request is in the composer and can be sent when it finishes.";$("#msg").focus();return;}
+    await send();
+  };
+  const calibrationFiles=$("#calibration-files");if(calibrationFiles)calibrationFiles.onclick=()=>{$("#datapanel").classList.remove("open");$("#chatfiles").click();};
+}
+$("#opendata").onclick=async()=>{pauseProjectMedia();$("#viewpanel").classList.remove("open");$("#datapanel").classList.add("open");await refreshData();};
+$("#data-close").onclick=()=>$("#datapanel").classList.remove("open");
+$("#data-agent").onclick=async()=>{
+  $("#datapanel").classList.remove("open");$("#msg").focus();
+};
+$("#data-upload").onclick=()=>$("#datafile").click();
+$("#datafile").onchange=async e=>{
+  if(!CUR||!e.target.files.length)return;
+  let done=0;$("#data-msg").textContent="uploading…";
+  for(const file of e.target.files){
+    const r=await fetch(`/api/session/${CUR.id}/upload?name=${encodeURIComponent(file.name)}`,{method:"POST",body:file});
+    if(r.ok)done++;else{$("#data-msg").textContent=`Could not add ${file.name}`;return;}
+  }
+  $("#data-msg").textContent=`${done} file${done===1?'':'s'} added`;e.target.value="";await refreshData();
+};
+$("#paperfile").onchange=async e=>{
+  if(!CUR||!e.target.files.length)return;
+  let done=0;$("#data-msg").textContent="adding paper…";
+  for(const file of e.target.files){
+    const r=await fetch(`/api/session/${CUR.id}/paper-upload?name=${encodeURIComponent(file.name)}`,{method:"POST",body:file});
+    if(r.ok)done++;else{const d=await r.json().catch(()=>({}));$("#data-msg").textContent=d.error||`Could not add ${file.name}`;return;}
+  }
+  $("#data-msg").textContent=`${done} paper${done===1?'':'s'} added to this project`;e.target.value="";await refreshData();
+};
+
+/* model picker */
+function drawPick(){
+  const q=($("#mq").value||"").toLowerCase();
+  $("#mrows").innerHTML=MODELS
+    .filter(m=>!q||(m.name+" "+(m.reference||"")).toLowerCase().includes(q))
+    .map(m=>`<div class="pickrow ${PICK.has(m.name)?'on':''}" data-n="${esc(m.name)}">
+      <span class="tick"></span><span class="dot ${stateClass(m.name)}"></span>
+      <span style="flex:1;min-width:0"><b>${esc(m.name)}</b>
+      <span style="color:var(--fg-3);font-size:12px"> ${esc((m.reference||"").slice(0,48))}</span></span>
+      <span style="color:var(--fg-3);font-size:11px">${esc(stateLabel(m.name))}</span></div>`).join("");
+  document.querySelectorAll(".pickrow").forEach(e=>e.onclick=()=>{
+    const n=e.dataset.n; PICK.has(n)?PICK.delete(n):PICK.add(n); drawPick();});
+}
+$("#pickmodels").onclick=()=>{PICK=new Set(CUR?CUR.models:[]); drawPick(); $("#mpick").classList.add("open");};
+$("#mq").addEventListener("input",drawPick);
+$("#m-close").onclick=()=>$("#mpick").classList.remove("open");
+$("#m-clear").onclick=()=>{PICK.clear(); drawPick();};
+$("#m-apply").onclick=async()=>{
+  if(!await ensureSession())return;
+  CUR=await (await fetch(`/api/session/${CUR.id}/update`,{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[...PICK]})})).json();
+  drawModelLabel(); drawSessions(); $("#mpick").classList.remove("open");
+  if($("#datapanel").classList.contains("open")) refreshData();
+};
+
+/* skills: chat-composer picker and /skill-name commands */
+function drawSkillButton(){
+  const n=(CUR&&CUR.skills||[]).length;
+  $("#skills").textContent=n?`✦ ${n}`:"✦ Skills";
+  $("#skills").classList.toggle("active",n>0);
+  $("#skills").title=n?`${n} skill${n===1?"":"s"} pinned to this chat · the agent may also choose others automatically`:"Choose skills for this chat · optional, the agent can choose automatically";
+}
+function drawSkills(){
+  const q=($("#skillq").value||"").toLowerCase();
+  $("#skillrows").innerHTML=SKILLS
+    .filter(s=>!q||(s.name+" "+s.description).toLowerCase().includes(q))
+    .map(s=>`<div class="pickrow ${SKPICK.has(s.name)?'on':''}" data-skill="${esc(s.name)}">
+      <span class="tick"></span><span style="min-width:0"><b>/${esc(s.name)}</b>
+      <span style="display:block;color:var(--fg-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.description||"Reusable agent procedure")}</span></span></div>`).join("")
+    ||'<div class="hint">No matching skills found.</div>';
+  document.querySelectorAll("#skillrows .pickrow").forEach(row=>row.onclick=()=>{
+    const name=row.dataset.skill;SKPICK.has(name)?SKPICK.delete(name):SKPICK.add(name);drawSkills();});
+}
+function openSkills(){
+  SKPICK=new Set(CUR&&CUR.skills||[]);$("#skillq").value="";drawSkills();
+  $("#skillpick").classList.add("open");
+}
+async function setSessionSkills(names){
+  if(!await ensureSession())return null;
+  const r=await fetch(`/api/session/${CUR.id}/update`,{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({skills:names})});
+  const updated=await r.json();
+  if(!r.ok) throw new Error(updated.error||"Could not update skills");
+  CUR=updated;
+  const listed=SESSIONS.find(s=>s.id===CUR.id);if(listed) listed.skills=CUR.skills||[];
+  drawSkillButton();drawSessions();return CUR;
+}
+async function attachSkill(name){
+  const names=new Set(CUR&&CUR.skills||[]);names.add(name);
+  if(!await setSessionSkills([...names]))return;
+  $("#msg").value="";drawSlash();
+  $("#hint").textContent=`/${name} is active for this chat`;
+}
+function drawSlash(){
+  const match=$("#msg").value.match(/^\/([^\s]*)$/), menu=$("#slashmenu");
+  if(!match){menu.classList.remove("open");menu.innerHTML="";return;}
+  const q=match[1].toLowerCase();
+  const hits=SKILLS.filter(s=>!q||s.name.toLowerCase().includes(q)).slice(0,8);
+  menu.innerHTML=`<div class="slashrow" data-all="1"><span class="mark">✦</span><span><b>/skills</b><small>Browse all installed skills</small></span></div>`+
+    hits.map(s=>`<div class="slashrow" data-skill="${esc(s.name)}"><span class="mark">/</span><span style="min-width:0"><b>/${esc(s.name)}</b><small>${esc(s.description||"Reusable agent procedure")}</small></span></div>`).join("");
+  menu.classList.add("open");
+  menu.querySelector('[data-all="1"]').onclick=()=>{$("#msg").value="";drawSlash();openSkills();};
+  menu.querySelectorAll("[data-skill]").forEach(row=>row.onclick=()=>attachSkill(row.dataset.skill));
+}
+$("#skills").onclick=openSkills;
+$("#skillq").addEventListener("input",drawSkills);
+$("#skill-close").onclick=()=>$("#skillpick").classList.remove("open");
+$("#skill-clear").onclick=()=>{SKPICK.clear();drawSkills();};
+$("#skill-apply").onclick=async()=>{await setSessionSkills([...SKPICK]);$("#skillpick").classList.remove("open");};
+
+/* MCP connections; the explicit GitHub setup button is the only mutating action */
+function drawConnections(){
+  $("#connrows").innerHTML=(MCP.connections||[]).map(c=>`<div class="pickrow ${MCPPICK.has(c.name)?'on':''}" data-mcp="${esc(c.name)}">
+    <span class="tick"></span><span style="flex:1"><b>${esc(c.name)}</b><span style="display:block;color:var(--fg-3);font-size:11.5px">Configured for ${esc(c.clients.join(", "))} · ${esc(c.transports.join(", "))}</span></span></div>`).join("")
+    ||'<div class="hint">No MCP servers are configured for the local agents yet.</div>';
+  document.querySelectorAll("#connrows [data-mcp]").forEach(row=>row.onclick=()=>{
+    const name=row.dataset.mcp;MCPPICK.has(name)?MCPPICK.delete(name):MCPPICK.add(name);drawConnections();});
+  const gh=MCP.github||{};
+  $("#githubcard").innerHTML=`<h3>GitHub MCP</h3><div class="hint" style="margin:0 0 8px">${gh.configured?`Configured for ${esc((gh.clients||[]).join(", "))}.`:
+    'Use GitHub’s official MCP server for repositories, issues, and pull requests.'}</div>`+
+    (gh.can_configure_codex&&!((gh.clients||[]).includes("codex"))?'<button id="github-configure" class="primary">Configure for Codex</button>':
+     `<a href="${esc(gh.setup_url||"https://github.com/github/github-mcp-server")}" target="_blank" rel="noreferrer">Official setup guide</a>`);
+  const setup=$("#github-configure");if(setup)setup.onclick=configureGitHub;
+  $("#connnote").textContent=MCP.note||"";
+}
+function openConnections(){MCPPICK=new Set(CUR&&CUR.mcps||[]);drawConnections();$("#connections").classList.add("open");}
+async function configureGitHub(){
+  const button=$("#github-configure");button.disabled=true;button.textContent="Configuring…";
+  const r=await fetch("/api/mcp/github/configure-codex",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+  const result=await r.json();
+  if(!r.ok){button.disabled=false;button.textContent="Try again";$("#connnote").textContent=result.error||"Could not configure GitHub";return;}
+  MCP=await (await fetch("/api/mcp")).json();
+  const github=(MCP.connections||[]).find(c=>c.name.toLowerCase().includes("github"));if(github)MCPPICK.add(github.name);
+  drawConnections();$("#connnote").textContent=result.message||"GitHub MCP configured";
+}
+$("#connect").onclick=openConnections;
+$("#conn-close").onclick=()=>$("#connections").classList.remove("open");
+$("#conn-apply").onclick=async()=>{
+  if(!await ensureSession())return;
+  const r=await fetch(`/api/session/${CUR.id}/update`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mcps:[...MCPPICK]})});
+  const updated=await r.json();if(!r.ok){$("#connnote").textContent=updated.error||"Could not update connections";return;}
+  CUR=updated;const listed=SESSIONS.find(s=>s.id===CUR.id);if(listed)listed.mcps=CUR.mcps||[];
+  drawSessions();$("#connections").classList.remove("open");
+};
+
+/* settings */
+function drawLocalSettings(){
+  const box=$("#s-local");if(!box)return;
+  const local=PROV.providers.filter(p=>p.kind==="cli"&&p.installed);
+  box.innerHTML=local.length?local.map(p=>{const state=p.usable?(p.authenticated==null?'Available':'Ready'):providerIssue(p).replace(/^./,c=>c.toUpperCase());return `<div class="localagent"><span class="dot ${p.usable&&p.authenticated!=null?'ok':'warn'}" style="margin-top:7px"></span><span><b>${esc(p.label)} · ${state}</b><small>${esc(p.status||'Installed')}${p.usable?'':` · ${esc(p.fix||p.auth_command||'Check this CLI in Terminal')}`}</small></span></div>`}).join("")
+    :'<div class="hint" style="margin:0">No local agent CLI found. Install Claude Code, Codex, Gemini, Kimi, or Qwen, then recheck.</div>';
+}
+let LAST_PROVIDER_CHECK=0;
+async function refreshProviders(showStatus=false){
+  const note=$("#s-local-msg");if(showStatus&&note)note.textContent="checking…";
+  try{
+    PROV=await (await fetch("/api/providers?refresh=1")).json();
+    LAST_PROVIDER_CHECK=Date.now();drawProviders();drawLocalSettings();
+    if(showStatus&&note)note.textContent="checked";
+  }catch(e){if(showStatus&&note)note.textContent="could not recheck";}
+}
+async function openSettings(){
+  const s=await (await fetch("/api/settings")).json();
+  $("#s-def").innerHTML='<option value="">(first usable)</option>'+PROV.providers.map(p=>
+    `<option value="${esc(p.name)}" ${p.name===s.default_provider?"selected":""}>${esc(p.label)}</option>`).join("");
+  for(const [id,k] of [["s-anthropic","ANTHROPIC_API_KEY"],["s-deepseek","DEEPSEEK_API_KEY"],
+                       ["s-openai","OPENAI_API_KEY"],["s-openrouter","OPENROUTER_API_KEY"]])
+    $("#"+id).value=s.api_keys[k]||"";
+  $("#s-kimi-security").value=s.kimi_security_mode||"scoped";
+  drawKimiSecurityNote();
+  drawLocalSettings();
+  $("#modal").classList.add("open");
+}
+$("#settings").onclick=openSettings;
+$("#s-recheck").onclick=()=>refreshProviders(true);
+function drawKimiSecurityNote(){
+  const full=$("#s-kimi-security").value==="full";
+  $("#s-kimi-security-note").textContent=full
+    ?"Kimi can read and change any file your macOS account can access. Use this only for a task that cannot run in project-scoped mode."
+    :"Project scoped lets Kimi use this project, its KI, approved data, and its own login state. Other personal files are blocked by macOS.";
+}
+$("#s-kimi-security").onchange=drawKimiSecurityNote;
+$("#help").onclick=()=>$("#guide").classList.add("open");
+$("#guide-close").onclick=()=>$("#guide").classList.remove("open");
+$("#s-close").onclick=()=>$("#modal").classList.remove("open");
+$("#s-save").onclick=async()=>{
+  const body={default_provider:$("#s-def").value,kimi_security_mode:$("#s-kimi-security").value,api_keys:{
+    ANTHROPIC_API_KEY:$("#s-anthropic").value,DEEPSEEK_API_KEY:$("#s-deepseek").value,
+    OPENAI_API_KEY:$("#s-openai").value,OPENROUTER_API_KEY:$("#s-openrouter").value}};
+  const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)});
+  $("#s-msg").textContent=r.ok?"saved":"error";
+  PROV=await (await fetch("/api/providers")).json(); drawProviders();
+  setTimeout(()=>{$("#s-msg").textContent="";},1500);
+};
+window.addEventListener("focus",()=>{
+  refreshSessionList();
+  refreshMachineStatus(true,true);
+  const waiting=PROV.providers.some(p=>p.kind==="cli"&&p.installed&&!p.usable);
+  if(waiting&&Date.now()-LAST_PROVIDER_CHECK>3000)refreshProviders(false);
+});
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden)pauseProjectMedia();
+  else{
+    refreshMachineStatus(true,true);
+    if($("#viewpanel").classList.contains("open"))resumeProjectMedia();
+  }
+});
+$("#theme").onclick=()=>{
+  const d=document.body.hasAttribute("data-dark");
+  d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");
+  localStorage.setItem("kiss-dark",d?"0":"1");};
+if(localStorage.getItem("kiss-dark")==="1"||
+   (localStorage.getItem("kiss-dark")===null&&matchMedia("(prefers-color-scheme:dark)").matches))
+  document.body.setAttribute("data-dark","");
+setInterval(updateActivityUI,1000);
+setInterval(refreshSessionList,5000);
+setInterval(()=>{if(CUR&&$("#viewpanel").classList.contains("open"))refreshProjectView(false).catch(()=>{});},5000);
+loadAll();
+</script></body></html>

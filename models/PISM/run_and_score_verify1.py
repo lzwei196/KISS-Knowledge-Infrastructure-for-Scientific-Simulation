@@ -22,18 +22,18 @@ a new ice sheet and reports a genuine PISM diagnostic field.
 """
 import os, sys, json, subprocess
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages")
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models")
+sys.path.insert(0, "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages")
+sys.path.insert(0, "KISSPATH_KI_ROOT")
 import numpy as np
 from netCDF4 import Dataset
 
-KI    = "/mnt/disk1/Hydrocraft_server/models/PISM/knowledge_infrastructure"
+KI    = "KISSPATH_KI_ROOT/PISM/knowledge_infrastructure"
 TOOLS = os.path.join(KI, "tools")
-PISM  = "/mnt/disk1/Hydrocraft_server/models/PISM/build/pism"
-BEDM  = "/mnt/disk1/Hydrocraft_server/data/obs/ice_sheets/bedmachine/BedMachineGreenland-v6.nc"
+PISM  = "KISSPATH_KI_ROOT/PISM/build/pism"
+BEDM  = "KISSPATH_OBS/ice_sheets/bedmachine/BedMachineGreenland-v6.nc"
 PROJ  = "+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
 
-WORK   = "/mnt/disk1/Hydrocraft_server/models/PISM/detached/verify_1"
+WORK   = "KISSPATH_KI_ROOT/PISM/detached/verify_1"
 RESULT = os.path.join(WORK, "result.json")
 BOOT   = os.path.join(WORK, "greenland_bootstrap.nc")
 OUT    = os.path.join(WORK, "greenland_out.nc")

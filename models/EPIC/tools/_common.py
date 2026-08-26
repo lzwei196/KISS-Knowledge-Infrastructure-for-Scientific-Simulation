@@ -17,7 +17,7 @@ BINARY_CANDIDATES = [
     os.path.join(MODEL_DIR, "bin", "epic1102-official_release.exe"),
     os.path.join(MODEL_DIR, "source", "repo", "epic1102-official_release.exe"),
     os.path.join(KI_DIR, "bin", "epic1102-official_release.exe"),
-    "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/"
+    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/"
     "_work_v2/EPIC/epic_workspace/epic1102-official_release.exe",
 ]
 
@@ -76,8 +76,8 @@ def write_text_crlf(path, text):
 
 def add_kdt_common_to_path():
     candidates = [
-        "/home/server/knowledge-dissection-toolkit/ki_tools_common",
-        "/home/server/knowledge-dissection-toolkit/kdt-release/ki_tools_common",
+        "KISSPATH_INTERNAL_NOT_SHIPPED/ki_tools_common",
+        "KISSPATH_INTERNAL_NOT_SHIPPED/kdt-release/ki_tools_common",
     ]
     for c in candidates:
         if os.path.isdir(c):

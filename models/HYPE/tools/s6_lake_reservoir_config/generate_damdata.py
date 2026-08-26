@@ -40,7 +40,7 @@ import os
 import sys
 
 GRAND_CSV = (
-    "/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/map/data/"
+    "KISSPATH_BINARIES/cmf_v420_pkg/map/data/"
     "GRanD_allocated.csv"
 )
 

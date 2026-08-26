@@ -5,7 +5,7 @@ model:
   - surface_hydrology
   - land_surface
   binary: parflow
-  binary_path: /mnt/disk1/Hydrocraft_server/model/parflow/install/bin/parflow
+  binary_path: KISSPATH_BINARIES/parflow/install/bin/parflow
   language: C/C++ with Fortran CLM
   python_interface: pftools >= 1.3.14
   working_directory: user-specified run directory

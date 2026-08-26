@@ -8,13 +8,13 @@ import os, sys, subprocess, json
 import numpy as np
 import pandas as pd
 
-ROOT = "/mnt/disk1/Hydrocraft_server/models/BIOME_BGC"
+ROOT = "KISSPATH_KI_ROOT/BIOME_BGC"
 KI = f"{ROOT}/knowledge_infrastructure"
 TOOLS = f"{KI}/tools"
-BGC = "/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc"
+BGC = "KISSPATH_BINARIES/biome-bgc/bgc-src/bgc"
 WORK = f"{ROOT}/detached/verify_2"
 SITE = "DE-Tha"
-FLUX = f"/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/{SITE}/FULLSET_DD.csv"
+FLUX = f"KISSPATH_OBS/fluxnet/sites/{SITE}/FULLSET_DD.csv"
 
 # DE-Tha site constants (Tharandt, Germany — Norway spruce, temperate ENF)
 LAT, LON, ELEV = 50.9636, 13.5669, 385.0

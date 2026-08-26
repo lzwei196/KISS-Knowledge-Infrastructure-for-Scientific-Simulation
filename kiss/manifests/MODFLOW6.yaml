@@ -1,0 +1,32 @@
+kiss_manifest_version: 1
+model: MODFLOW6
+binary_type: ELF
+verified: observed
+install_dir: modflow6
+
+# USGS publishes prebuilt Linux binaries, so no compiler is required.
+acquire:
+  strategy: download
+  url: https://github.com/MODFLOW-USGS/modflow6/releases/download/6.6.1/mf6.6.1_linux.zip
+  produces: mf6.6.1_linux/bin/mf6
+
+python_deps: [flopy, numpy, pandas]
+system_deps: []
+
+data:
+  - role: static
+    name: Model-specific grid and boundary inputs
+    why: MODFLOW 6 is driven entirely by its own text input files; build them with FloPy.
+    optional: true
+
+reference_case: mf6 --version
+
+notes: >-
+  OBSERVED on 2026-08-17: kiss init downloaded this exact URL, extracted it,
+  and the KI's own preflight_check.py passed with the binary reached through
+  its authoring path. mf6 --version reports 6.6.1 02/10/2025.
+
+agent_hint: >-
+  If the download 404s, list the releases at github.com/MODFLOW-USGS/modflow6
+  and pick the current Linux asset, then update produces/ to match the archive
+  layout. FloPy is the supported way to write the input files.

@@ -766,15 +766,15 @@
   diagnosis:
     root_cause: "The linked ESMF was built without PIO, so NUOPC cannot read mesh files"
     explanation: >
-      /home/server/cesm/scratch/test_clm5/bld/cesm.exe (the binary
+      KISSPATH_HOME/cesm/scratch/test_clm5/bld/cesm.exe (the binary
       preflight_check.py pins) is a CTSM-5.4 NUOPC build. Its ESMF is
       statically linked and was built without ESMF_PIO, so
       ESMCI_mesh_create_from_file() fails in dshr_mod.F90 ->
       atm_comp_nuopc.F90 and the driver aborts. The ESMF build tree is gone,
       so relinking would mean rebuilding ESMF from source.
       A COMPLETE, WORKING alternative is installed: CESM 2.2.2 with the MCT
-      driver at /home/server/cesm/src/cesm-2.2.2 (machine hydrocraft_server,
-      inputdata /home/server/cesm/inputdata). It contains clm5.0, needs no
+      driver at KISSPATH_HOME/cesm/src/cesm-2.2.2 (machine hydrocraft_server,
+      inputdata KISSPATH_HOME/cesm/inputdata). It contains clm5.0, needs no
       ESMF mesh files, and has a recorded successful run (case B1850_test,
       "model execution success" 2026-05-02).
     affected_components:
@@ -786,7 +786,7 @@
     action: "Run CLM5 through CESM 2.2.2 (MCT), not the CTSM-5.4 NUOPC build"
     tool_to_run: run_clm.py
     manual_steps:
-      - "run_clm.py --action create --ctsm-root /home/server/cesm/src/cesm-2.2.2"
+      - "run_clm.py --action create --ctsm-root KISSPATH_HOME/cesm/src/cesm-2.2.2"
       - "Single point: --compset I1PtClm50SpRsGs --res CLM_USRDAT"
       - "mksurfdata_esmf is unusable for the same reason; use make_site_dataset.py"
     prevention: >

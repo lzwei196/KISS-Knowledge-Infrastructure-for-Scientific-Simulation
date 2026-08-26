@@ -42,7 +42,7 @@ FlowDir = 0 if abs(r_ew) > abs(r_ns) else 2   # 0=E-W, 2=N-S
 ### Stage 1: Domain Setup (`s1_domain`)
 
 1. Set domain bounds with 0.2–0.3° buffer around well cluster
-2. Check SRTM tile availability (`ls /mnt/disk4/SRTMGL1/N{lat}E{lon}.SRTMGL1.hgt.zip`)
+2. Check SRTM tile availability (`ls KISSPATH_DATA/SRTMGL1/N{lat}E{lon}.SRTMGL1.hgt.zip`)
 3. Build SRTM mosaic → resample to 50×50 grid
 4. Check: `np.nanmin(elev_g)` should be > −10m for flat plain
 
@@ -69,7 +69,7 @@ If > 2.0 m/km: check for mountain influence.
 
 ```python
 import geopandas as gpd
-glhymps = gpd.read_file("/mnt/disk1/Hydrocraft_server/data/groundwater/glhymps/GLHYMPS.shp")
+glhymps = gpd.read_file("KISSPATH_DATA/groundwater/glhymps/GLHYMPS.shp")
 clip = gpd.clip(glhymps, domain_bbox.to_crs(glhymps.crs))
 # logK_Ferr_ = log10(k [m²]) × 100 (integer)
 k_raw = clip["logK_Ferr_"].dropna(); k_raw = k_raw[(k_raw > -3000) & (k_raw < 0)]
@@ -127,7 +127,7 @@ Tolerance = 1e-12
 ### Stage 4: Build & Execute (`s4_build`)
 
 ```bash
-DUMUX_BIN=/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer
+DUMUX_BIN=KISSPATH_BINARIES/DuMux/dumux/dumux/build-cmake/examples/1ptracer/example_1ptracer
 # The binary uses the MODIFIED problem_1p.hh (supports FlowDirection=0,2)
 # Source: auto_dissect/_work/DuMux/dumux/dumux/examples/1ptracer/problem_1p.hh
 

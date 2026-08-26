@@ -1,0 +1,242 @@
+{
+  "model": "icepack",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 24,
+  "open_access": 11,
+  "papers": [
+    {
+      "doi": "10.5194/tc-5-989-2011",
+      "title": "The multiphase physics of sea ice: a review for model developers",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "ice_temperature",
+        "ice_salinity",
+        "ice_thickness"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-13-2325-2019",
+      "title": "Intercomparison and improvement of two-stream shortwave radiative transfer schemes in Earth system models for a unified treatment of cryospheric surfaces",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "shortwave_albedo",
+        "melt_pond_fraction"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.2304.05407",
+      "title": "Parameter sensitivity analysis of a sea ice melt pond parametrisation and its emulation using neural networks",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "melt_pond_fraction",
+        "ice_thickness"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-19-6207-2025",
+      "title": "Regime-dependence when constraining a sea ice model with observations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness",
+        "ice_concentration"
+      ]
+    },
+    {
+      "doi": "10.1007/s40641-020-00162-y",
+      "title": "Should Sea-Ice Modeling Tools Designed for Climate Research Be Used for Short-Term Forecasting?",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness",
+        "ice_concentration"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-15-951-2021",
+      "title": "An inter-comparison of the mass budget of the Arctic sea ice in CMIP6 models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-15-345-2021",
+      "title": "Inter-comparison of snow depth over Arctic sea ice from reanalysis reconstructions and satellite retrieval",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-17-7067-2024",
+      "title": "Development of a total variation diminishing (TVD) sea ice transport scheme and its application in an ocean-sea-ice model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "ice_thickness",
+        "ice_concentration"
+      ]
+    },
+    {
+      "doi": "10.1017/aog.2020.7",
+      "title": "Investigating controls on sea ice algal production using E3SMv1.1-BGC",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "ice_thickness"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.2006.12977",
+      "title": "Surrogate sea ice model enables efficient tuning",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "ice_thickness",
+        "ice_concentration"
+      ]
+    },
+    {
+      "doi": "10.1002/2015jc011558",
+      "title": "Uncertainty quantification and global sensitivity analysis of the Los Alamos sea ice model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness",
+        "ice_concentration"
+      ]
+    },
+    {
+      "doi": "10.1029/1999jc900100",
+      "title": "An energy-conserving thermodynamic model of sea ice",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "ice_temperature",
+        "ice_thickness",
+        "ice_salinity"
+      ]
+    },
+    {
+      "doi": "10.1175/1520-0426(2000)017<0525:artlsi>2.0.co;2",
+      "title": "A Reformulated Three-Layer Sea Ice Model",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "ice_temperature",
+        "ice_thickness"
+      ]
+    },
+    {
+      "doi": "10.1175/1520-0493(2003)131<0845:mgsiwa>2.0.co;2",
+      "title": "Modeling Global Sea Ice with a Thickness and Enthalpy Distribution Model in Generalized Curvilinear Coordinates",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "ice_thickness"
+      ]
+    },
+    {
+      "doi": "10.1002/jame.20039",
+      "title": "On the formulation of snow thermal conductivity in large-scale sea ice models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "snow_depth",
+        "ice_temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2009jc005568",
+      "title": "Incorporation of a physically based melt pond scheme into the sea ice component of a climate model",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "melt_pond_fraction",
+        "shortwave_albedo"
+      ]
+    },
+    {
+      "doi": "10.1175/1520-0477(2002)083<0255:shbota>2.3.co;2",
+      "title": "Surface Heat Budget of the Arctic Ocean (SHEBA)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness",
+        "ice_temperature",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.3189/172756406781811727",
+      "title": "Ice mass-balance buoys: a tool for measuring and attributing changes in the thickness of Arctic sea ice",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness",
+        "ice_temperature",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.1525/elementa.2023.00040",
+      "title": "Sea ice mass balance during the MOSAiC drift experiment: Results from manual ice and snow thickness gauges",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.1525/elementa.2021.00074",
+      "title": "Thermodynamic and dynamic contributions to seasonal Arctic sea ice thickness distributions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-2021-134",
+      "title": "The sensitivity of landfast sea ice to atmospheric forcing in single-column model simulations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness",
+        "ice_temperature"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2010.05.004",
+      "title": "Thickness sensitivities in the CICE sea ice model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2021.101872",
+      "title": "Sensitivity of Arctic sea ice to melt pond processes and atmospheric forcing: A model study",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "melt_pond_fraction",
+        "ice_thickness"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2024.51",
+      "title": "Reduced basal motion responsible for 50 years of declining ice velocities on Athabasca Glacier",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

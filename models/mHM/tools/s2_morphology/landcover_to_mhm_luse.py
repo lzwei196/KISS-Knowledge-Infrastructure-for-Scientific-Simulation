@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 
 CONFIG_PATH = ""
 DOMAIN_INFO_PATH = ""
-AVHRR_PATH = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"),
+AVHRR_PATH = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"),
                           "data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif")
 LEGEND = "umd"
 

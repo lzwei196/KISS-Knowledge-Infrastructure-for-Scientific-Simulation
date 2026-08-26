@@ -24,15 +24,15 @@ simulation period, forcing data source, and output options.
 ## Procedure
 
 1. **Select basin**: Identify the catchment boundary shapefile. For HydroCraft basins,
-   use the provided shapefiles under `/mnt/disk1/Hydrocraft_server/data/shp/`.
+   use the provided shapefiles under `KISSPATH_DATA/shp/`.
 
 2. **Set period**: Choose simulation start/end dates.
    - Allow 1 year spinup (e.g., start 1 year before validation period).
    - Verify forcing data covers the full period.
 
 3. **Choose forcing**: Select CMFD (China) or MSWX (global).
-   - CMFD daily 0.25°: `/media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg/`
-   - MSWX 3-hourly: `/mnt/disk3/msxw/`
+   - CMFD daily 0.25°: `KISSPATH_FORCING/huai/Data_forcing_01dy_025deg/`
+   - MSWX 3-hourly: `KISSPATH_FORCING/`
 
 4. **Set time step**: TOPMODEL uses hours. Typically dt=1 for hourly, dt=24 for daily.
    All forcing must match this time step.
@@ -60,14 +60,14 @@ simulation period, forcing data source, and output options.
 config = {
     'basin_name': 'Bengbu',
     'basin_area_km2': 121330,
-    'shapefile': '/mnt/disk1/Hydrocraft_server/data/shp/bengbu_shp/bengbu_clip.shp',
+    'shapefile': 'KISSPATH_DATA/shp/bengbu_shp/bengbu_clip.shp',
     'start_date': '1980-01-01',
     'end_date': '1990-12-31',
     'spinup_years': 1,
     'dt_hours': 24,
     'forcing_source': 'CMFD',
-    'forcing_dir': '/media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg/',
-    'obs_file': '/mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt',
+    'forcing_dir': 'KISSPATH_FORCING/huai/Data_forcing_01dy_025deg/',
+    'obs_file': 'KISSPATH_OBS/BB/51080_bengbu.txt',
     'obs_station': '51080',
 }
 ```

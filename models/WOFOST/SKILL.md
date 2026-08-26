@@ -1,3 +1,14 @@
+---
+name: wofost
+description: >-
+  WOFOST 7.2 (Wageningen / WUR, PCSE 6.0 lineage). Covers Daily crop growth and
+  development from sowing/emergence to maturity at field/point scale; Phenological
+  development on a DVS scale 0 (emergence) - 1 (anthesis) - 2 (maturity), including…;
+  Daily gross CO2 assimilation (Spitters 3-point Gauss integration over daytime and canopy
+  depth); Maintenance and growth respiration. Use when the task involves running,
+  configuring, calibrating or interpreting WOFOST.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -348,6 +359,6 @@ knowledge_infrastructure/
 | South | <28°N | — | — | Mar-Jul, Jul-Nov |
 
 **Data sources on server:**
-- GGCMI Crop Calendar: `/home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
-- China Phenology GeoTIFF: `/home/server/Crop_model_dataset/8313530/`
-- SPAM crop distribution: `/home/server/Crop_model_dataset/dataverse_files/`
+- GGCMI Crop Calendar: `KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
+- China Phenology GeoTIFF: `KISSPATH_HOME/Crop_model_dataset/8313530/`
+- SPAM crop distribution: `KISSPATH_HOME/Crop_model_dataset/dataverse_files/`

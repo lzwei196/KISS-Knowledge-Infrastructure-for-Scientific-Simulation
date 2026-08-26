@@ -1,3 +1,14 @@
+---
+name: epic
+description: >-
+  EPIC 1102. Covers Crop/plant growth and yield (~80-150 crop types, one growth model with
+  per-crop parameters); Field hydrology (NRCS curve-number runoff, percolation, lateral
+  flow, ET); Water erosion (MUSLE/USLE/MUSS/MUST/RUSLE family) and wind erosion; Nutrient
+  cycling (N, P, K) with leaching, volatilization, denitrification; Soil organic carbon
+  dynamics (CENTURY sub-model). Use when the task involves running, configuring,
+  calibrating or interpreting EPIC.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual EPIC1102 binary** (`epic1102-official_release.exe`)
@@ -62,7 +73,7 @@ adapter, and output parsers for the model's annual/daily text files.
 | Binary                 | `epic1102-official_release.exe`                   |
 
 Working workspace used for this KI:
-`/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace`
+`KISSPATH_BINARIES/EPIC/epic_workspace`
 
 ## Installation / environment
 
@@ -71,7 +82,7 @@ HydroCraft server it is launched under Wine.
 
 ```bash
 which wine                                                      # must resolve
-ls /home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace/epic1102-official_release.exe
+ls KISSPATH_BINARIES/EPIC/epic_workspace/epic1102-official_release.exe
 wine /path/to/epic1102-official_release.exe                     # runs in CWD
 ```
 
@@ -177,7 +188,7 @@ silently changes which metric is the verdict.
 Run this BEFORE scoring anything, and record its output in the run notes:
 
 ```bash
-python /mnt/disk1/Hydrocraft_server/models/EPIC/knowledge_infrastructure/tools/resolve_obs_shape.py \
+python KISSPATH_KI_ROOT/EPIC/knowledge_infrastructure/tools/resolve_obs_shape.py \
     --var YLDG --granularity grid --geometry "0.5deg grid cell" \
     --dataset-id gdhy_v1_2_v1_3 --n-steps 20
 ```
@@ -352,7 +363,7 @@ parse) from nothing but lat/lon/crop/years. Use it instead of driving the nine
 stage tools by hand:
 
 ```bash
-cd /mnt/disk1/Hydrocraft_server/models/EPIC/knowledge_infrastructure/tools
+cd KISSPATH_KI_ROOT/EPIC/knowledge_infrastructure/tools
 python3 quickstart.py --lat 44.25 --lon 125.25 --crop corn \
         --start 1995 --end 2016 --source cmfd --irrigation dryland
 ```
@@ -441,7 +452,7 @@ furrow irrigation moves 1984 maize from 7.70 to 10.25 t/ha dry (IRGA 200 mm).
 ### Non-China sites: terrain and forcing
 
 - `_lookup_terrain` resolves elevation/slope from the China DEM, then the
-  **global MERIT DEM** (`/mnt/datasets/MERIT_DEM`, 5°×5° tiles). Before
+  **global MERIT DEM** (`KISSPATH_DATA/MERIT_DEM`, 5°×5° tiles). Before
   2026-08-10 the MERIT step did not exist and every non-China `.SIT` silently
   carried 100 m / 1% slope (triplet **EPIC_031**).
 - `--source nasa_power` is the practical global forcing (~3 s/simulated year vs
@@ -485,7 +496,7 @@ scratch path. Do not hard-code the scratch path — it is transient.
 ## Quick validation (fastest path — use this for KI testing)
 
 ```bash
-cd /mnt/disk1/Hydrocraft_server/models/EPIC/knowledge_infrastructure
+cd KISSPATH_KI_ROOT/EPIC/knowledge_infrastructure
 python3 quick_validate.py          # uses existing umstead outputs
 python3 quick_validate.py --rerun  # force a fresh Wine execution
 ```
@@ -499,7 +510,7 @@ outputs or ~30 seconds with `--rerun`.
 
 ```bash
 # copy the shipped template workspace somewhere writable, then:
-cp /mnt/disk1/Hydrocraft_server/models/EPIC/bin/epic1102-official_release.exe .
+cp KISSPATH_KI_ROOT/EPIC/bin/epic1102-official_release.exe .
 wine ./epic1102-official_release.exe
 ls umstead_0.*        # .OUT .ACY .ANN .DGN .DCN ...
 ```
@@ -521,14 +532,14 @@ are negative or zero.
 
 ## Reference KIs
 
-- `/mnt/disk1/Hydrocraft_server/models/GLM/knowledge_infrastructure/` —
+- `KISSPATH_KI_ROOT/GLM/knowledge_infrastructure/` —
   similar "closed-binary + fixed-format input" pattern
 - Data KIs (unit verification):
   (dataset KI dir names are UPPER-CASE on disk; the lower-case paths in
   earlier revisions of this file do not resolve)
-  - `/mnt/disk1/Hydrocraft_server/data_ki/CMFD/SKILL.md`
-  - `/mnt/disk1/Hydrocraft_server/data_ki/NASA_POWER/SKILL.md`
-  - `/mnt/disk1/Hydrocraft_server/data_ki/HWSD/SKILL.md`
+  - `KISSPATH_DATA_KI/CMFD/SKILL.md`
+  - `KISSPATH_DATA_KI/NASA_POWER/SKILL.md`
+  - `KISSPATH_DATA_KI/HWSD/SKILL.md`
 
   Forcing/soil/terrain LOADERS live in `ki_tools_common`
   (`load_forcing`, `soil_utils`, `terrain`), not under `data_ki/*/tools/`.

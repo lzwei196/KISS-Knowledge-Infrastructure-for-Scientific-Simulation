@@ -1,0 +1,164 @@
+{
+  "model": "WASP",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 16,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "dissolved_oxygen",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42265",
+      "title": "Hydrologic and Water Quality Models: Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "dissolved_oxygen",
+        "temperature",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.22515/sustinere.jes.v9i2.487",
+      "title": "Comparative analysis of water quality models for the Cibarani Irrigation Channel",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-021-92453-z",
+      "title": "Applying EFDC Explorer model in the Gallinas River, Mexico to estimate its assimilative capacity",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0068104",
+      "title": "ECO: A Generic Eutrophication Model Including Comprehensive Sediment-Water Interaction",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "chlorophyll",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.18174/196593",
+      "title": "The role of eutrophication models in water management",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "dissolved_oxygen",
+        "temperature",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.2166/wpt.2023.173",
+      "title": "Water quality simulation using the WASP model for eutrophication control in a South ... reservoir",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "chlorophyll",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.3390/w12051398",
+      "title": "WASP 8: The Next Generation in the 50-year Evolution of USEPA's Water Quality Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen",
+        "temperature",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.3390/w13172408",
+      "title": "Impact of Global Warming on Dissolved Oxygen and BOD Assimilative Capacity (QUAL2Kw)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1111/jfr3.12747",
+      "title": "A coupled hydrodynamic (HEC-RAS 2D) and water quality model (WASP) ...",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1111/lre.12256",
+      "title": "Application of WASP model for assessment of water quality for eutrophication",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "chlorophyll",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jglr.2011.01.003",
+      "title": "Application of a eutrophication model for assessing water quality in Lake Winnipeg",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "chlorophyll",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-3323-2013",
+      "title": "A simple lumped model to convert air temperature into surface water temperature in lakes",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1155/2013/231768",
+      "title": "A Review of Surface Water Quality Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.3390/w13202819",
+      "title": "Research on Water Quality Simulation and Water Environmental Capacity in Lushui River using WASP",
+      "access": "subscription",
+      "role": "sensitivity"
+    }
+  ]
+}

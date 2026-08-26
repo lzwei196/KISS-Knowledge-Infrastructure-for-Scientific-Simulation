@@ -18,7 +18,7 @@ package:
 
 binary:
   type: "PE/WINE (Windows x64 Intel-Fortran, run under WINE 9.0)"
-  path: "/home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe"
+  path: "KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe"
   solvers:
     steady: "x64/RasSteady.exe"              # validated end-to-end
     unsteady: "x64/RasUnsteady.exe"          # loads; needs Ras.exe (Wine Mono)
@@ -26,7 +26,7 @@ binary:
     unsteady_sediment: "x64/RasUnsteadySediment.exe"
     quasi_sediment: "x64/RasQuasiSediment.exe"
     water_quality: "x64/RasWaterQuality.exe"
-  invocation: "env -u LD_PRELOAD WINEPREFIX=/home/server/.wine WINEDEBUG=-all wine RasSteady.exe <prj>.rNN"
+  invocation: "env -u LD_PRELOAD WINEPREFIX=KISSPATH_HOME/.wine WINEDEBUG=-all wine RasSteady.exe <prj>.rNN"
   build: "prebuilt (proprietary closed-source; no compilation)"
   notes: >
     Headless steady runs work by seeding <prj>.pNN.tmp.hdf from <prj>.gNN.hdf

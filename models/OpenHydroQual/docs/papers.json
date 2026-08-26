@@ -1,0 +1,131 @@
+{
+  "model": "OpenHydroQual",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 12,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "flow",
+        "trace_gas",
+        "water_table",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-1113-2019",
+      "title": "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "flow"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-5583-2017",
+      "title": "Assessment of integrated watershed health based on the natural environment, hydrology, water quality, and aquatic ecology",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flow",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-16-4315-2023",
+      "title": "Recalibration of a three-dimensional water quality model with a newly developed autocalibration tool",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.3808/jei.201900407",
+      "title": "Water Quality Management of a Cold Climate Region Watershed in Changing Climate",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "trace_gas",
+        "flow"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-5839-2021",
+      "title": "Modeling and interpreting hydrological responses of sustainable urban drainage systems",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flow",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2021.127103",
+      "title": "Representing a dense network of ponds and reservoirs in a semi-distributed dryland catchment model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "flow"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "flow",
+        "trace_gas",
+        "water_table",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "flow",
+        "water_table",
+        "evapotranspiration",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "trace_gas",
+        "flow"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2017.02.013",
+      "title": "A flexible modeling framework for hydraulic and water quality performance assessment of stormwater green infrastructure",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow",
+        "trace_gas",
+        "water_table",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1002/2016wr019715",
+      "title": "A new process sensitivity index to identify important system processes under process model and parametric uncertainty",
+      "access": "subscription",
+      "role": "sensitivity"
+    }
+  ]
+}

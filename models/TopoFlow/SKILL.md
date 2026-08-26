@@ -1,3 +1,13 @@
+---
+name: topoflow
+description: >-
+  TopoFlow 3.6. Covers Spatially-distributed watershed hydrologic response to climatic
+  forcing over a D8 raster; Channel routing (kinematic / diffusive / dynamic wave) with
+  Manning or Law-of-Wall friction; Infiltration and runoff partitioning (Green-Ampt,
+  Smith-Parlange, 1-D Richards, Beven); Snowmelt (degree-day or energy balance). Use when
+  the task involves running, configuring, calibrating or interpreting TopoFlow.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

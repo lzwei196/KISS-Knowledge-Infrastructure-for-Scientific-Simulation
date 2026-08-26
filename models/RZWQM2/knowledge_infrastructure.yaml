@@ -1050,7 +1050,7 @@ tools:
         type: "file"
         description: "Path to CROPGRIDSv1.08_NC_maps.zip"
         required: false
-        example: "/home/server/Crop_model_dataset/22491997/CROPGRIDSv1.08_NC_maps.zip"
+        example: "KISSPATH_HOME/Crop_model_dataset/22491997/CROPGRIDSv1.08_NC_maps.zip"
     outputs:
       - name: "dominant_crop"
         type: "value"

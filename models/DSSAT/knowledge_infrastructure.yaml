@@ -23,7 +23,7 @@ package:
   related_packages:
     - id: "dssat-crop-run"
       name: "HydroCraft DSSAT Coupling Layer"
-      path: "/mnt/disk1/Hydrocraft_server/skills/dssat-crop-run/"
+      path: "KISSPATH_ROOT/skills/dssat-crop-run/"
       relationship: "This standalone package handles 'how to run DSSAT'. The coupling layer handles 'how to feed VIC/CaMa data into DSSAT and run across a basin grid'. Bridge tools: vic_forcing_to_wth.py (C1), vic_soil_to_dssat_sol.py (C2), initialize_from_vic.py (C3)."
 
 # --- Pipeline definition ---

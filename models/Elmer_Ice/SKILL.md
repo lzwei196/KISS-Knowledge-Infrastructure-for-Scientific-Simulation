@@ -1,3 +1,13 @@
+---
+name: elmer-ice
+description: >-
+  Elmer/Ice 9.0 (Gagliardini et al. 2013 full-Stokes baseline; ReleaseNotes 9.0); SSA
+  marine-ice-sheet configuration. Covers Ice flow velocity and pressure (Full-Stokes
+  momentum balance, Glen's flow law rheology); Shallow Shelf/Stream Approximation (SSA)
+  and Shallow Ice Approximation (SIA) asymptotic flow. Use when the task involves running,
+  configuring, calibrating or interpreting Elmer_Ice.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

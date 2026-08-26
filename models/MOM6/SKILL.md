@@ -1,3 +1,13 @@
+---
+name: mom6
+description: >-
+  MOM6. Covers Ocean general circulation (horizontal velocity u, v); Ocean thermodynamics
+  (temperature, salinity transport: advection + diffusion); Free-surface / sea surface
+  height evolution (split barotropic mode); Layer thickness evolution under the
+  generalized ALE vertical coordinate; Mixed-layer and boundary-layer dynamics (ePBL /
+  KPP). Use when the task involves running, configuring, calibrating or interpreting MOM6.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

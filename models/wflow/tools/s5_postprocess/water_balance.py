@@ -50,7 +50,7 @@ _PRECIP_NAMES = ("precip", "P", "precipitation")
 _STORAGE_VARS = ("satwaterdepth", "ustorelayerdepth", "snow", "snowwater",
                  "canopystorage")
 # the package really lives here; see references[1] of the tool summary
-_KI_TOOLS_COMMON_PARENT = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
+_KI_TOOLS_COMMON_PARENT = "KISSPATH_KI_TOOLS_COMMON"
 # docs/s5_output_skill.md line 43: "Acceptable closure error: < 5% of total
 # precipitation" -- this KI's documented band, and the one this tool enforces
 _CLOSURE_PCT = 5.0
@@ -190,7 +190,7 @@ def _validate(P, ET, Q, dS, days, tolerance_pct=_CLOSURE_PCT):
 def _open(path):
     """xr.open_dataset with an h5netcdf fallback.
 
-    /mnt/disk1/Hydrocraft_server/python_env's netCDF4/libhdf5 pairing raises
+    KISSPATH_PYTHON_ENV's netCDF4/libhdf5 pairing raises
     `OSError: [Errno -101] NetCDF: HDF error` under xarray on files that
     engine="h5netcdf" -- and a bare netCDF4.Dataset -- open without complaint
     (reproduced 2026-08-06 on this project's staticmaps.nc / forcing.nc /

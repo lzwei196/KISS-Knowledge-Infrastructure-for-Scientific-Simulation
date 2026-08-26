@@ -119,7 +119,7 @@ np.save('climate/max_temp.npy', max_temp)  # shape (H, W, 12) or (H, W, 365)
 ```bash
 python ki/tools/convert_forcing.py \
     --source cmfd \
-    --input-dir /media/server/hc_ssd/forcing/Data_forcing_01dy_010deg/ \
+    --input-dir KISSPATH_FORCING/Data_forcing_01dy_010deg/ \
     --lat-min 13.87 --lat-max 22.59 --lon-min 100.0 --lon-max 108.0 \
     --year 2010 --output-dir ./data_input/climate
 ```

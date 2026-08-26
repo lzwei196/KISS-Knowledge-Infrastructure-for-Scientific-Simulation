@@ -1,0 +1,210 @@
+{
+  "model": "EPIC",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-10-1403-2017",
+      "title": "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-261-2015",
+      "title": "The Global Gridded Crop Model Intercomparison: data and modeling protocols for Phase 1 (v1.0)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3389/fpls.2016.01630",
+      "title": "Modeling Long-Term Corn Yield Response to Nitrogen Rate and Crop Rotation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42265",
+      "title": "Hydrologic and Water Quality Models: Use, Calibration, and Validation (Moriasi et al. 2012)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "sediment",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-1113-2019",
+      "title": "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-1047-2023",
+      "title": "Machine-learning- and deep-learning-based streamflow prediction in a hilly catchment",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.scitotenv.2017.03.208",
+      "title": "Review and analysis of strengths and weaknesses of agro-ecosystem models for simulating C and N cycling",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "nutrient",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2011.05.001",
+      "title": "Simulation of winter wheat yield and its variability in different climates of Europe",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/10/12/123004",
+      "title": "Current developments in soil organic matter modeling and the expansion of model applications",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.22004/ag.econ.18399",
+      "title": "Validation of EPIC for Two Watersheds in Southwest Iowa",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "discharge",
+        "sediment",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.9922",
+      "title": "Evaluation of EPIC for Assessing Tile Flow and Nitrogen Losses for Alternative Agricultural Management Systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "nutrient",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.17074",
+      "title": "Historical Development and Applications of the EPIC and APEX Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "evapotranspiration",
+        "discharge",
+        "sediment",
+        "nutrient",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42253",
+      "title": "EPIC and APEX: Model Use, Calibration, and Validation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "discharge",
+        "sediment",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.2134/agronj1987.00021962007900040030x",
+      "title": "Evaluation of the EPIC Simulation Model Using a Dryland Wheat-Sorghum-Fallow Crop Rotation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agsy.2013.05.008",
+      "title": "Pan-European crop modelling with EPIC: Implementation, up-scaling and regional crop yield validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1002/2016ms000625",
+      "title": "Calibration-induced uncertainty of the EPIC model to estimate climate change impact on global maize yield",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ecolmodel.2018.10.021",
+      "title": "Scale dependence and parameter sensitivity of the EPIC model in the agro-pastoral transitional zone of north China",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5897/ajar2014.9423",
+      "title": "Sensitive parameters for EPIC model evaluation and validity under soil water and nutrients limited conditions with NERICA cropping in West Africa",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.2134/agronj2000.924679x",
+      "title": "Simulation of Maize Yield under Water Stress with the EPICphase and CROPWAT Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2017ms001270",
+      "title": "Modeling Sediment Yield in Land Surface and Earth System Models: Model Comparison, Development, and Evaluation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment"
+      ]
+    }
+  ]
+}

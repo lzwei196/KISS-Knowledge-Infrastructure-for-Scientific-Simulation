@@ -15,7 +15,7 @@ import os, sys, shutil, subprocess, csv
 from pathlib import Path
 from datetime import datetime, timedelta
 
-HC = Path("/mnt/disk1/Hydrocraft_server")
+HC = Path("KISSPATH_ROOT")
 KI = HC / "models/SHAW/knowledge_infrastructure"
 sys.path.insert(0, str(KI))
 sys.path.insert(0, str(KI / "tools/s1_site_setup"))

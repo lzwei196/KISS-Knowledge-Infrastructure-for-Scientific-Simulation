@@ -1,3 +1,14 @@
+---
+name: simpeg
+description: >-
+  SimPEG gradient-based geophysical simulation/inversion framework. Covers Forward
+  simulation of geophysical responses (gravity, magnetics, DC resistivity, IP/SIP…;
+  Gradient-based deterministic inversion / parameter estimation for subsurface physical
+  properties…; Computation of sensitivities (Jvec/Jtvec) driving the inverse problem;
+  Joint / multiphysics inversion. Use when the task involves running, configuring,
+  calibrating or interpreting SimPEG.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

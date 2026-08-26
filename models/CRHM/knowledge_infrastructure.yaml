@@ -383,7 +383,7 @@ tools:
         type: "file"
         description: "Path to CRHM executable"
         required: true
-        example: "/mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm"
+        example: "KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm"
       - name: "prj_path"
         type: "file"
         description: "Path to .prj project file"

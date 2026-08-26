@@ -1,0 +1,226 @@
+{
+  "model": "ELM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 22,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.5194/bg-20-2813-2023",
+      "title": "Global evaluation of terrestrial biogeochemistry in the Energy Exascale Earth System Model (E3SM) and the role of the phosphorus cycle in the historical terrestrial carbon balance",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-4085-2018",
+      "title": "Development and evaluation of a variably saturated flow model in the global E3SM Land Model (ELM) version 1.0",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-3857-2012",
+      "title": "A framework for benchmarking land models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "runoff",
+        "soil_moisture",
+        "tws"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-13-4291-2016",
+      "title": "Predicting carbon dioxide and energy fluxes across global FLUXNET sites with regression algorithms",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-1341-2009",
+      "title": "Improving land surface models with FLUXNET data",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "evapotranspiration",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation (Arnold et al. 2012; reproduces Moriasi NSE/PBIAS/RSR satisfactory-good-very-good tiers for streamflow)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-2735-2013",
+      "title": "The effect of watershed scale on HEC-HMS calibrated parameters: a case study in the Clear Creek watershed in Iowa, US",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-3593-2015",
+      "title": "Taking off the training wheels: the properties of a dynamic vegetation model without climate envelopes, CLM4.5(ED)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001583",
+      "title": "The Community Land Model Version 5 (CLM5): Description of New Features, Benchmarking, and Impact of Forcing Uncertainty",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "runoff",
+        "gpp",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001354",
+      "title": "The International Land Model Benchmarking (ILAMB) System: Design, Theory, and Implementation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "runoff",
+        "soil_moisture",
+        "tws",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1029/2019ms001766",
+      "title": "The DOE E3SM v1.1 Biogeochemistry Configuration: Description and Simulated Ecosystem-Climate Responses to Historical Changes in Forcing",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1029/2021ms002772",
+      "title": "Development of Land-River Two-Way Hydrologic Coupling for Floodplain Inundation in E3SM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1029/2022ms003156",
+      "title": "The DOE E3SM Model Version 2: Overview of the Physical Model and Initial Model Evaluation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1175/2010jhm1223.1",
+      "title": "Performance Metrics for Soil Moisture Retrievals and Application Requirements",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-1377-2018",
+      "title": "LPJmL4 - a dynamic global vegetation model with managed land - Part 2: Model evaluation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001571",
+      "title": "Representing Nitrogen, Phosphorus, and Carbon Interactions in the E3SM Land Model: Development and Global Benchmarking",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1002/2017ms000962",
+      "title": "The Impact of Parametric Uncertainties on Biogeochemistry in the E3SM Land Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001603",
+      "title": "The DOE E3SM Coupled Model Version 1: Overview and Evaluation at Standard Resolution",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-15-4163-2022",
+      "title": "Evaluating a reservoir parametrization in the vector-based global routing model MOSART for ELM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-2021-401",
+      "title": "Using an Uncertainty Quantification Framework to Calibrate the Runoff Generation Scheme in the E3SM Land Model (ELM) v1",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-17-673-2023",
+      "title": "Evaluation of E3SM land model snow simulations over the western United States",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "soil_moisture"
+      ]
+    }
+  ]
+}

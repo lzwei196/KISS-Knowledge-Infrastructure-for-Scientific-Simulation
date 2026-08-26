@@ -21,9 +21,9 @@ import json, os, subprocess, sys
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
-KTC = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
-BASE = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/detached/verify_2"
+KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
+KTC = "KISSPATH_KI_TOOLS_COMMON"
+BASE = "KISSPATH_KI_ROOT/MARRMoT/detached/verify_2"
 sys.path.insert(0, KI)
 sys.path.insert(0, KTC)
 from ki_tools_common.metrics import all_metrics
@@ -34,8 +34,8 @@ os.makedirs(BASE, exist_ok=True)
 
 MODEL = "m_07_gr4j_4p_2s"
 AREA_KM2 = 121330.0
-CMFD_DIR = "/media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg"
-OBS_TXT = "/mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt"
+CMFD_DIR = "KISSPATH_FORCING/huai/Data_forcing_01dy_025deg"
+OBS_TXT = "KISSPATH_OBS/BB/51080_bengbu.txt"
 CENTROID_LAT = 33.0
 START_Y, END_Y = 1979, 1990
 

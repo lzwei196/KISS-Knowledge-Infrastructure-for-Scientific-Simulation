@@ -35,7 +35,7 @@ from glob import glob
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-SUMMA_EXE = "/mnt/disk1/Hydrocraft_server/model/summa/bin/summa.exe"
+SUMMA_EXE = "KISSPATH_BINARIES/summa/bin/summa.exe"
 FILE_MANAGER = ""
 SPINUP_YEARS = 1          # Number of spinup years with presTemp
 PHASE2_DECISIONS = {}     # Override decisions for production phase

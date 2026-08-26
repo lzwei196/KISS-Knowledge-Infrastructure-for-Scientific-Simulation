@@ -1,0 +1,208 @@
+{
+  "model": "FSM2",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 19,
+  "open_access": 11,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-18-3583-2025",
+      "title": "A Flexible Snow Model (FSM 2.1.1) including a forest canopy",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-3867-2015",
+      "title": "A factorial snowpack model (FSM 1.0)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-24-245-2024",
+      "title": "Rain-on-snow responses to warmer Pyrenees: a sensitivity analysis using a physically based snow hydrological model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-5027-2018",
+      "title": "ESM-SnowMIP: assessing snow models and quantifying snow-related climate feedbacks",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-11-865-2019",
+      "title": "Meteorological and evaluation datasets for snow modelling at 10 reference sites: description of in situ and bias-corrected reanalysis data",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "temperature",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-11-1173-2017",
+      "title": "A multiphysical ensemble system of numerical snow modelling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2023.1228158",
+      "title": "Operational snow-hydrological modeling for Switzerland",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-14-925-2010",
+      "title": "Simulation of snow accumulation and melt in needleleaf forest environments",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3189/172756404781814825",
+      "title": "Validation of the energy budget of an alpine snowpack simulated by several snow models (SnowMIP)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "temperature",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-2099-2023",
+      "title": "Canopy structure, topography, and weather are equally important drivers of small-scale snow cover dynamics in sub-alpine forests",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "snow_depth",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1002/2014wr016498",
+      "title": "Evaluating snow models with varying process representations for hydrological applications",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2012.07.013",
+      "title": "A comparison of 1701 snow models using observations from an alpine site",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2018wr023403",
+      "title": "Uncertainties in Snowpack Simulations - Assessing the Impact of Model Structure, Parameter Choice, and Forcing Data Error on Point-Scale Energy Balance Snow Model Performance",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.1175/bams-d-19-0329.1",
+      "title": "Scientific and Human Errors in a Snow Model Intercomparison",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2021wr030563",
+      "title": "The Challenges of Simulating SWE Beneath Forest Canopies are Reduced by Data Assimilation of Snow Depth",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.1029/2019wr026129",
+      "title": "Resolving Small-Scale Forest Snow Patterns Using an Energy Balance Snow Model With a One-Layer Canopy",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "snow_depth",
+        "swe",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2008jd011063",
+      "title": "Evaluation of forest snow processes models (SnowMIP2)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2009jf001444",
+      "title": "A review of snow and ice albedo and the development of a new physically based broadband albedo parameterization",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-1225-2020",
+      "title": "Multi-physics ensemble snow modelling in the western Himalaya",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

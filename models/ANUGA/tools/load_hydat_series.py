@@ -25,7 +25,7 @@ Layout traps this tool handles (do NOT hand-roll these again):
      comparison is only meaningful when the datum is geodetic. The sidecar
      JSON reports the datum name and every STN_DATUM_CONVERSION offset so the
      caller can check this instead of silently comparing incompatible heights.
-  3. The Hydat.sqlite3 shipped on /mnt/disk4 is opened read-only via
+  3. The Hydat.sqlite3 shipped on KISSPATH_DATA is opened read-only via
      `immutable=1`; `mode=ro` alone fails on read-only media for WAL files.
 
 Output CSV (consumed by build_inflow_hydrograph.py --gauge_csv, and directly
@@ -57,7 +57,7 @@ import sys
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-DEFAULT_DB = "/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3"
+DEFAULT_DB = "KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3"
 
 VARIABLES = {
     # variable -> (table, value column prefix, symbol column prefix, unit)

@@ -32,15 +32,15 @@ RESUMABLE: each season writes season_Y.grain; a relaunch skips completed seasons
 import os, sys, json, csv, subprocess, traceback
 import numpy as np
 
-ROOT = "/mnt/disk1/Hydrocraft_server/models/APSIM"
+ROOT = "KISSPATH_KI_ROOT/APSIM"
 KI   = os.path.join(ROOT, "knowledge_infrastructure")
 TOOLS= os.path.join(KI, "tools")
-BIN  = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/APSIM/source/repo/bin/Release/net8.0/apsim"
+BIN  = "KISSPATH_BINARIES/APSIM/source/repo/bin/Release/net8.0/apsim"
 STATE= os.path.join(ROOT, "detached", "verify_1")
 WORK = os.path.join(STATE, "work")
 RESULT = os.path.join(STATE, "result.json")
 
-FAOSTAT = ("/mnt/disk1/Hydrocraft_server/data/obs/faostat/"
+FAOSTAT = ("KISSPATH_OBS/faostat/"
            "Production_Crops_Livestock_E_All_Data/Production_Crops_Livestock_E_All_Data_NOFLAG.csv")
 COUNTRY = "Argentina"
 ITEM    = "Wheat"
@@ -59,7 +59,7 @@ SOW_START, SOW_END = "20-May", "31-Jul"
 
 SMOKE = os.environ.get("SMOKE")       # if set, run only the first N seasons (inline smoke test)
 
-ENV = dict(os.environ, DOTNET_ROOT="/home/server/.dotnet")
+ENV = dict(os.environ, DOTNET_ROOT="KISSPATH_HOME/.dotnet")
 os.makedirs(WORK, exist_ok=True)
 
 

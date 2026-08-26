@@ -95,7 +95,7 @@ tools:
         type: "directory"
         description: "Root directory of Cmip6BaisCorrect_for_China"
         required: true
-        example: "/mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China"
+        example: "KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China"
       - name: "GRID_NC"
         type: "file"
         description: "VIC basin grid file"

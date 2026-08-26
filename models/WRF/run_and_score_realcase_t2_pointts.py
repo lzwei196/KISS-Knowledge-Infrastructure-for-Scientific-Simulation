@@ -37,13 +37,13 @@ import os, sys, json, glob, importlib.util
 from datetime import datetime, timedelta
 import numpy as np
 
-MODEL_ROOT = "/mnt/disk1/Hydrocraft_server/models/WRF"
+MODEL_ROOT = "KISSPATH_KI_ROOT/WRF"
 KI         = os.path.join(MODEL_ROOT, "knowledge_infrastructure")
 DETACHED   = os.path.join(MODEL_ROOT, "detached", "real_case")
 RESULT     = os.path.join(DETACHED, "result.json")
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
+sys.path.insert(0, "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages")
 
 # ---- import the proven, UNCHANGED WPS->WRF chain from the model-root runner ----
 _spec = importlib.util.spec_from_file_location(

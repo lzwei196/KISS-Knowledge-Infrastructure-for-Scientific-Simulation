@@ -1,0 +1,520 @@
+# Build the kiss desktop binary for macOS and attach it to a GitHub Release.
+#
+# Built on GitHub's macOS runners because a Mach-O binary cannot be
+# cross-compiled from the Linux dev box: PyInstaller freezes the interpreter it
+# runs under, full stop. Two jobs, one per architecture — macos-14 runners are
+# Apple Silicon, macos-13 are the last Intel ones.
+#
+# The binary is the engine + local web UI only. The KI packages travel as a
+# separate tarball asset: they are content, they change on a different cadence
+# than the code, and baking 127 model packages into an executable would make
+# every KI fix a re-release of the app.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  # Names that are legal on Linux and fatal elsewhere have broken a release
+  # twice: macOS collapsed case-duplicate APEX inputs, and a Windows checkout
+  # died on filenames containing backslashes. Cheap to check, so check first.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test
+        run: |
+          python -m pip install --quiet pyyaml pytest
+          python -m pytest kiss/tests -q
+
+  # Apple Silicon builds in about a minute and gates the release. Intel is a
+  # separate best-effort job: `needs` waits for a job to COMPLETE, and a queued
+  # macos-13 never completes, so keeping both architectures in one matrix meant
+  # the release waited on a runner that had not appeared in six hours. Splitting
+  # them lets arm64 ship on time and lets Intel catch up when capacity exists.
+  build:
+    needs: checks
+    strategy:
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: |
+          python -m pip install --quiet pyinstaller pyyaml pywebview truststore certifi \
+            -r kiss/requirements-calibration.txt
+          # gui.py resolves web/app.html relative to __file__; --add-data keeps
+          # that path valid inside the frozen bundle.
+          pyinstaller --onefile --name kiss \
+            --collect-all truststore \
+            --collect-data certifi \
+            --add-data "kiss/kiss_cli/web:kiss_cli/web" \
+            --paths kiss \
+            kiss/kiss_entry.py
+          ./dist/kiss --help
+          # The double-clickable application: same engine, its own window and
+          # Dock icon. --windowed on macOS produces KISS.app; pywebview gives
+          # it a native WKWebView instead of shipping a browser.
+          # Self-contained: the 127 KI packages, the shared library and the
+          # verified manifests travel INSIDE the app. One download, no sidecar
+          # tarball, no first-run network. The bundle is read-only, which is
+          # fine — installing a model materialises a copy into the workdir.
+          pyinstaller --windowed --name "GeoForge Desktop" \
+            --icon assets/logo.icns \
+            --osx-bundle-identifier com.geoforge.desktop \
+            --collect-all truststore \
+            --collect-data certifi \
+            --hidden-import spotpy \
+            --hidden-import pymoo.core.problem --hidden-import pymoo.optimize \
+            --hidden-import pymoo.algorithms.moo.nsga2 \
+            --hidden-import pymoo.algorithms.moo.nsga3 \
+            --hidden-import pymoo.algorithms.moo.moead \
+            --hidden-import pymoo.util.ref_dirs \
+            --collect-binaries pymoo \
+            --copy-metadata numpy --copy-metadata PyYAML \
+            --copy-metadata spotpy --copy-metadata pymoo --copy-metadata moocore \
+            --exclude-module torch --exclude-module pandas \
+            --exclude-module matplotlib --exclude-module pyarrow \
+            --add-data "kiss/kiss_cli/web:kiss_cli/web" \
+            --add-data "models:models" \
+            --add-data "ki_tools_common:ki_tools_common" \
+            --add-data "kiss/vendor/agent-calibration-framework:agent-calibration-framework" \
+            --add-data "kiss/manifests:kiss/manifests" \
+            --paths kiss \
+            kiss/kiss_entry.py
+          APP_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("kiss/pyproject.toml", "rb"))["project"]["version"])')"
+          plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "dist/GeoForge Desktop.app/Contents/Info.plist"
+          plutil -replace CFBundleVersion -string "$APP_VERSION" "dist/GeoForge Desktop.app/Contents/Info.plist"
+          # Updating Info.plist invalidates PyInstaller's ad-hoc signature.
+          codesign --force --deep --sign - "dist/GeoForge Desktop.app"
+          # Windowed apps swallow stdout; smoke-test through the inner binary.
+          # No --models flag: the point of the bundle is that it finds its own.
+          "./dist/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop" list | tail -2
+          "./dist/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop" calibration-status \
+            | grep -q '"ready": true'
+          test -f "dist/GeoForge Desktop.app/Contents/Resources/kiss_cli/web/library.html"
+          test "$(plutil -extract CFBundleShortVersionString raw "dist/GeoForge Desktop.app/Contents/Info.plist")" = "$APP_VERSION"
+
+      - name: Smoke test the frozen HTTPS stack
+        run: |
+          DEEPSEEK_API_KEY=definitely-invalid \
+            "./dist/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop" \
+            gui --no-browser -p 18777 -w "$RUNNER_TEMP/geoforge-smoke" \
+            > "$RUNNER_TEMP/geoforge-smoke.log" 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+          for _ in {1..40}; do
+            curl -fsS http://127.0.0.1:18777/api/providers >/dev/null && break
+            sleep 0.25
+          done
+          # The KI usage contract must survive freezing. ki_tools_common is
+          # bundled as a data folder, so the importable package sits one level
+          # deeper than its name, and ki_tools_common/__init__ pulls numpy —
+          # neither is in the app. Both failures are caught by prompt.py and
+          # replaced with a weaker fallback, so the only way to know the ten
+          # obligations still reach the agent is to read a real prompt.
+          PROMPT="$(curl -fsS http://127.0.0.1:18777/api/prompt/MODFLOW6)"
+          grep -q 'KI HARNESS v1' <<< "$PROMPT" \
+            || { echo "::error::the frozen build lost the KI usage contract"; \
+                 grep -A1 'CONTRACT UNAVAILABLE' <<< "$PROMPT"; exit 1; }
+          REPORT="$(curl -fsS 'http://127.0.0.1:18777/api/selfcheck?provider=api%3Adeepseek')"
+          ! grep -q CERTIFICATE_VERIFY_FAILED <<< "$REPORT"
+          grep -Eq 'HTTP (401|403)' <<< "$REPORT"
+          kill "$APP_PID"
+          trap - EXIT
+
+      - name: Smoke test against the real KI tree
+        run: |
+          ./dist/kiss --models models list | tail -3
+          ./dist/kiss --models models doctor Landlab || true
+
+      - name: Package
+        run: |
+          mv dist/kiss "kiss-macos-${{ matrix.arch }}"
+          tar -czf "kiss-macos-${{ matrix.arch }}.tar.gz" "kiss-macos-${{ matrix.arch }}"
+          ditto -c -k --keepParent "dist/GeoForge Desktop.app" "GeoForge-Desktop-macos-${{ matrix.arch }}.app.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kiss-macos-${{ matrix.arch }}
+          path: |
+            kiss-macos-${{ matrix.arch }}.tar.gz
+            GeoForge-Desktop-macos-${{ matrix.arch }}.app.zip
+
+  build-intel:
+    needs: checks
+    strategy:
+      matrix:
+        include:
+          - runner: macos-13
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    # Never blocks a release; Intel capacity is not ours to schedule.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: |
+          python -m pip install --quiet pyinstaller pyyaml pywebview truststore certifi \
+            -r kiss/requirements-calibration.txt
+          # gui.py resolves web/app.html relative to __file__; --add-data keeps
+          # that path valid inside the frozen bundle.
+          pyinstaller --onefile --name kiss \
+            --collect-all truststore \
+            --collect-data certifi \
+            --add-data "kiss/kiss_cli/web:kiss_cli/web" \
+            --paths kiss \
+            kiss/kiss_entry.py
+          ./dist/kiss --help
+          # The double-clickable application: same engine, its own window and
+          # Dock icon. --windowed on macOS produces KISS.app; pywebview gives
+          # it a native WKWebView instead of shipping a browser.
+          # Self-contained: the 127 KI packages, the shared library and the
+          # verified manifests travel INSIDE the app. One download, no sidecar
+          # tarball, no first-run network. The bundle is read-only, which is
+          # fine — installing a model materialises a copy into the workdir.
+          pyinstaller --windowed --name "GeoForge Desktop" \
+            --icon assets/logo.icns \
+            --osx-bundle-identifier com.geoforge.desktop \
+            --collect-all truststore \
+            --collect-data certifi \
+            --hidden-import spotpy \
+            --hidden-import pymoo.core.problem --hidden-import pymoo.optimize \
+            --hidden-import pymoo.algorithms.moo.nsga2 \
+            --hidden-import pymoo.algorithms.moo.nsga3 \
+            --hidden-import pymoo.algorithms.moo.moead \
+            --hidden-import pymoo.util.ref_dirs \
+            --collect-binaries pymoo \
+            --copy-metadata numpy --copy-metadata PyYAML \
+            --copy-metadata spotpy --copy-metadata pymoo --copy-metadata moocore \
+            --exclude-module torch --exclude-module pandas \
+            --exclude-module matplotlib --exclude-module pyarrow \
+            --add-data "kiss/kiss_cli/web:kiss_cli/web" \
+            --add-data "models:models" \
+            --add-data "ki_tools_common:ki_tools_common" \
+            --add-data "kiss/vendor/agent-calibration-framework:agent-calibration-framework" \
+            --add-data "kiss/manifests:kiss/manifests" \
+            --paths kiss \
+            kiss/kiss_entry.py
+          APP_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("kiss/pyproject.toml", "rb"))["project"]["version"])')"
+          plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "dist/GeoForge Desktop.app/Contents/Info.plist"
+          plutil -replace CFBundleVersion -string "$APP_VERSION" "dist/GeoForge Desktop.app/Contents/Info.plist"
+          codesign --force --deep --sign - "dist/GeoForge Desktop.app"
+          # Windowed apps swallow stdout; smoke-test through the inner binary.
+          # No --models flag: the point of the bundle is that it finds its own.
+          "./dist/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop" list | tail -2
+          "./dist/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop" calibration-status \
+            | grep -q '"ready": true'
+          test -f "dist/GeoForge Desktop.app/Contents/Resources/kiss_cli/web/library.html"
+          test "$(plutil -extract CFBundleShortVersionString raw "dist/GeoForge Desktop.app/Contents/Info.plist")" = "$APP_VERSION"
+
+      - name: Smoke test against the real KI tree
+        run: |
+          ./dist/kiss --models models list | tail -3
+          ./dist/kiss --models models doctor Landlab || true
+
+      - name: Package
+        run: |
+          mv dist/kiss "kiss-macos-${{ matrix.arch }}"
+          tar -czf "kiss-macos-${{ matrix.arch }}.tar.gz" "kiss-macos-${{ matrix.arch }}"
+          ditto -c -k --keepParent "dist/GeoForge Desktop.app" "GeoForge-Desktop-macos-${{ matrix.arch }}.app.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kiss-macos-${{ matrix.arch }}
+          path: |
+            kiss-macos-${{ matrix.arch }}.tar.gz
+            GeoForge-Desktop-macos-${{ matrix.arch }}.app.zip
+
+  # ---------------------------------------------------------------- Linux
+  # Built on 22.04, not latest: a binary linked against a newer glibc refuses
+  # to start on older distros, and scientific workstations are rarely current.
+  # No pywebview here — its Linux backend needs WebKit2GTK and PyGObject from
+  # the system, which PyInstaller cannot fold into a portable binary. app.py
+  # already falls back to the default browser when pywebview is absent, so the
+  # Linux build serves the same UI without pretending to be a native window.
+  build-linux:
+    needs: checks
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: |
+          python -m pip install --quiet pyinstaller pyyaml truststore certifi \
+            -r kiss/requirements-calibration.txt
+          pyinstaller --onefile --name kiss \
+            --collect-all truststore \
+            --collect-data certifi \
+            --add-data "kiss/kiss_cli/web:kiss_cli/web" \
+            --paths kiss \
+            kiss/kiss_entry.py
+          ./dist/kiss --help
+          # The self-contained desktop build: KI packages travel inside it, as
+          # on macOS, so one download is the whole product.
+          pyinstaller --onefile --name "GeoForge-Desktop" \
+            --collect-all truststore \
+            --collect-data certifi \
+            --hidden-import spotpy \
+            --hidden-import pymoo.core.problem --hidden-import pymoo.optimize \
+            --hidden-import pymoo.algorithms.moo.nsga2 \
+            --hidden-import pymoo.algorithms.moo.nsga3 \
+            --hidden-import pymoo.algorithms.moo.moead \
+            --hidden-import pymoo.util.ref_dirs \
+            --collect-binaries pymoo \
+            --copy-metadata numpy --copy-metadata PyYAML \
+            --copy-metadata spotpy --copy-metadata pymoo --copy-metadata moocore \
+            --exclude-module torch --exclude-module pandas \
+            --exclude-module matplotlib --exclude-module pyarrow \
+            --add-data "kiss/kiss_cli/web:kiss_cli/web" \
+            --add-data "models:models" \
+            --add-data "ki_tools_common:ki_tools_common" \
+            --add-data "kiss/vendor/agent-calibration-framework:agent-calibration-framework" \
+            --add-data "kiss/manifests:kiss/manifests" \
+            --paths kiss \
+            kiss/kiss_entry.py
+          ./dist/GeoForge-Desktop list | tail -2
+          ./dist/GeoForge-Desktop calibration-status | grep -q '"ready": true'
+
+      - name: Smoke test the frozen HTTPS stack
+        run: |
+          DEEPSEEK_API_KEY=definitely-invalid \
+            ./dist/GeoForge-Desktop gui --no-browser -p 18777 \
+            -w "$RUNNER_TEMP/geoforge-smoke" \
+            > "$RUNNER_TEMP/geoforge-smoke.log" 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+          for _ in {1..40}; do
+            curl -fsS http://127.0.0.1:18777/api/providers >/dev/null && break
+            sleep 0.25
+          done
+          # Every page the app can navigate to must exist in the bundle. A
+          # missing library.html shipped once and answered the Library button
+          # with a dead connection.
+          for page in / /setup /library /i18n.js /clipboard.js; do
+            curl -fsS "http://127.0.0.1:18777$page" >/dev/null
+          done
+          # The KI usage contract must survive freezing. ki_tools_common is
+          # bundled as a data folder, so the importable package sits one level
+          # deeper than its name, and ki_tools_common/__init__ pulls numpy —
+          # neither is in the app. Both failures are caught by prompt.py and
+          # replaced with a weaker fallback, so the only way to know the ten
+          # obligations still reach the agent is to read a real prompt.
+          PROMPT="$(curl -fsS http://127.0.0.1:18777/api/prompt/MODFLOW6)"
+          grep -q 'KI HARNESS v1' <<< "$PROMPT" \
+            || { echo "::error::the frozen build lost the KI usage contract"; \
+                 grep -A1 'CONTRACT UNAVAILABLE' <<< "$PROMPT"; exit 1; }
+          REPORT="$(curl -fsS 'http://127.0.0.1:18777/api/selfcheck?provider=api%3Adeepseek')"
+          ! grep -q CERTIFICATE_VERIFY_FAILED <<< "$REPORT"
+          grep -Eq 'HTTP (401|403)' <<< "$REPORT"
+          kill "$APP_PID"
+          trap - EXIT
+
+      - name: Smoke test against the real KI tree
+        run: |
+          ./dist/kiss --models models list | tail -3
+          ./dist/kiss --models models doctor Landlab || true
+
+      - name: Package
+        run: |
+          mv dist/kiss kiss-linux-x86_64
+          tar -czf kiss-linux-x86_64.tar.gz kiss-linux-x86_64
+          tar -czf GeoForge-Desktop-linux-x86_64.tar.gz -C dist GeoForge-Desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kiss-linux-x86_64
+          path: |
+            kiss-linux-x86_64.tar.gz
+            GeoForge-Desktop-linux-x86_64.tar.gz
+
+  # ---------------------------------------------------------------- Windows
+  # --add-data uses ';' as its separator here, not ':'. A path written the
+  # POSIX way silently bundles nothing, which is exactly how library.html went
+  # missing from a macOS build, so the smoke test fetches every page.
+  build-windows:
+    needs: checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        shell: bash
+        run: |
+          python -m pip install --quiet pyinstaller pyyaml pywebview truststore certifi \
+            -r kiss/requirements-calibration.txt
+          pyinstaller --onefile --name kiss \
+            --collect-all truststore \
+            --collect-data certifi \
+            --add-data "kiss/kiss_cli/web;kiss_cli/web" \
+            --paths kiss \
+            kiss/kiss_entry.py
+          ./dist/kiss.exe --help
+          # --windowed gives it no console; pywebview drives the WebView2
+          # runtime that ships with Windows 10 and 11. If that runtime is
+          # missing on a user's machine, app.py falls back to the browser.
+          pyinstaller --onefile --windowed --name "GeoForge Desktop" \
+            --icon assets/logo.ico \
+            --collect-all truststore \
+            --collect-data certifi \
+            --hidden-import spotpy \
+            --hidden-import pymoo.core.problem --hidden-import pymoo.optimize \
+            --hidden-import pymoo.algorithms.moo.nsga2 \
+            --hidden-import pymoo.algorithms.moo.nsga3 \
+            --hidden-import pymoo.algorithms.moo.moead \
+            --hidden-import pymoo.util.ref_dirs \
+            --collect-binaries pymoo \
+            --copy-metadata numpy --copy-metadata PyYAML \
+            --copy-metadata spotpy --copy-metadata pymoo --copy-metadata moocore \
+            --exclude-module torch --exclude-module pandas \
+            --exclude-module matplotlib --exclude-module pyarrow \
+            --add-data "kiss/kiss_cli/web;kiss_cli/web" \
+            --add-data "models;models" \
+            --add-data "ki_tools_common;ki_tools_common" \
+            --add-data "kiss/vendor/agent-calibration-framework;agent-calibration-framework" \
+            --add-data "kiss/manifests;kiss/manifests" \
+            --paths kiss \
+            kiss/kiss_entry.py
+          test -f "dist/GeoForge Desktop.exe"
+
+      - name: Smoke test the frozen HTTPS stack
+        shell: bash
+        run: |
+          DEEPSEEK_API_KEY=definitely-invalid \
+            ./dist/kiss.exe gui --no-browser -p 18777 \
+            -w "$RUNNER_TEMP/geoforge-smoke" \
+            > "$RUNNER_TEMP/geoforge-smoke.log" 2>&1 &
+          APP_PID=$!
+          for _ in {1..60}; do
+            curl -fsS http://127.0.0.1:18777/api/providers >/dev/null && break
+            sleep 0.5
+          done
+          for page in / /setup /library /i18n.js /clipboard.js; do
+            curl -fsS "http://127.0.0.1:18777$page" >/dev/null
+          done
+          # The KI usage contract must survive freezing. ki_tools_common is
+          # bundled as a data folder, so the importable package sits one level
+          # deeper than its name, and ki_tools_common/__init__ pulls numpy —
+          # neither is in the app. Both failures are caught by prompt.py and
+          # replaced with a weaker fallback, so the only way to know the ten
+          # obligations still reach the agent is to read a real prompt.
+          PROMPT="$(curl -fsS http://127.0.0.1:18777/api/prompt/MODFLOW6)"
+          grep -q 'KI HARNESS v1' <<< "$PROMPT" \
+            || { echo "::error::the frozen build lost the KI usage contract"; \
+                 grep -A1 'CONTRACT UNAVAILABLE' <<< "$PROMPT"; exit 1; }
+          REPORT="$(curl -fsS 'http://127.0.0.1:18777/api/selfcheck?provider=api%3Adeepseek')"
+          ! grep -q CERTIFICATE_VERIFY_FAILED <<< "$REPORT"
+          grep -Eq 'HTTP (401|403)' <<< "$REPORT"
+          kill "$APP_PID" 2>/dev/null || true
+
+      - name: Smoke test against the real KI tree
+        shell: bash
+        run: |
+          ./dist/kiss.exe --models models list | tail -3
+
+      - name: Package
+        shell: bash
+        run: |
+          mv dist/kiss.exe kiss-windows-x86_64.exe
+          7z a -tzip GeoForge-Desktop-windows-x86_64.zip "./dist/GeoForge Desktop.exe"
+          7z a -tzip kiss-windows-x86_64.zip kiss-windows-x86_64.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kiss-windows-x86_64
+          path: |
+            kiss-windows-x86_64.zip
+            GeoForge-Desktop-windows-x86_64.zip
+
+
+  release:
+    needs: [build, build-linux, build-windows]
+    # Publish whatever actually built. GitHub's Intel runners (macos-13) are
+    # scarce enough that the x86_64 job sat queued for six hours while arm64
+    # finished in one minute, and a strict `needs` held every release hostage
+    # to a machine that never arrived. Apple Silicon users should not wait on
+    # an Intel runner; the missing architecture is reported, not pretended away.
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pack the KI content
+        run: |
+          tar -czf kiss-ki-packages.tar.gz models ki_tools_common kiss/manifests
+
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          case "$TAG" in
+            v*) : ;;
+            *)  TAG="preview-${GITHUB_SHA::7}"
+                git tag "$TAG" || true
+                git push origin "$TAG" || true ;;
+          esac
+          shopt -s nullglob
+          ASSETS=(GeoForge-Desktop-* kiss-macos-*.tar.gz kiss-linux-*.tar.gz
+                  kiss-windows-*.zip kiss-ki-packages.tar.gz)
+          APPS=(GeoForge-Desktop-*)
+          if [ ${#APPS[@]} -eq 0 ]; then
+            echo "::error::no .app was built — refusing to publish a release with no application"
+            exit 1
+          fi
+          # A release whose tag was deleted and re-pushed survives as a DRAFT,
+          # invisible to everyone but the repository owner and easily mistaken
+          # for "the build never shipped". Clear any draft on this tag first.
+          DRAFTS="$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+            --jq ".[] | select(.tag_name==\"$TAG\" and .draft==true) | .id" || true)"
+          for id in $DRAFTS; do
+            echo "removing stale draft release $id for $TAG"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id" || true
+          done
+          echo "publishing: ${ASSETS[*]}"
+          for a in "macos-arm64.app.zip" "macos-x86_64.app.zip" \
+                   "linux-x86_64.tar.gz" "windows-x86_64.zip"; do
+            [ -f "GeoForge-Desktop-$a" ] \
+              || echo "::warning::${a%%.*} did not build — this release ships without it"
+          done
+          gh release create "$TAG" \
+            --title "GeoForge Desktop $TAG — macOS, Windows, Linux" \
+            --notes-file .github/RELEASE_NOTES_MACOS.md \
+            --repo "$GITHUB_REPOSITORY" \
+            "${ASSETS[@]}" \
+          || gh release upload "$TAG" "${ASSETS[@]}" \
+            --clobber --repo "$GITHUB_REPOSITORY"

@@ -1,3 +1,13 @@
+---
+name: hec-ras
+description: >-
+  HEC-RAS Hydraulic Reference Manual v6.1/6.5 (1-D Saint-Venant + standard-step energy
+  equation; 2-D shallow-water equations). Covers 1-D steady-flow water-surface profile
+  computations in gradually varied open-channel flow…; 1-D unsteady-flow hydrodynamics via
+  Saint-Venant equations (continuity + momentum, implicit…. Use when the task involves
+  running, configuring, calibrating or interpreting HEC_RAS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -17,7 +27,7 @@
 > 0.93.0 lives ONLY in the python_env venv site-packages, which is NOT on
 > /usr/bin/python3's path. For ANY new-river / authoring step that imports
 > `ras_commander` (§10/§11), invoke it with the venv interpreter
-> `/mnt/disk1/Hydrocraft_server/python_env/bin/python3` (verified 2026-06-04: it
+> `KISSPATH_PYTHON_ENV/bin/python3` (verified 2026-06-04: it
 > imports h5py 3.15.1 + ras_commander 0.93.0 + ki_tools_common together).
 >
 > **DEBUGGING PROTOCOL** — When something goes wrong (model crashes, wrong output,
@@ -37,7 +47,7 @@
 **Package**: `hydrocraft-hec-ras` v2.0.0
 **Model**: HEC-RAS 6.7 Beta 5 (USACE Hydrologic Engineering Center) — **real Intel-Fortran solvers under WINE**
 **Domain**: River / open-channel hydraulics (1-D & 2-D)
-**Binary**: `/home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe`
+**Binary**: `KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe`
 **Last updated**: 2026-06-03
 **Stats**: 10 tools | 6 docs | ≥15 diagnostic triplets
 **Validation status**: `real` — computed vs **observed** water-surface elevations
@@ -77,7 +87,7 @@ HEC-RAS is **proprietary, closed-source USACE Windows software**. There is no
 buildable source. A pre-built install (6.7 Beta 5) is staged under **WINE 9.0**:
 
 ```
-Install:  /home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5
+Install:  KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5
 Solvers:  x64/RasSteady.exe            (steady — VALIDATED here)
           x64/RasUnsteady.exe          (unsteady — loads; needs orchestration)
           x64/RasGeomPreprocess.exe    (geometry property tables)
@@ -89,7 +99,7 @@ Solvers:  x64/RasSteady.exe            (steady — VALIDATED here)
 Invoke a solver under wine (the tools do this for you):
 
 ```bash
-env -u LD_PRELOAD WINEPREFIX=/home/server/.wine WINEDEBUG=-all \
+env -u LD_PRELOAD WINEPREFIX=KISSPATH_HOME/.wine WINEDEBUG=-all \
   wine ".../6.7 Beta 5/x64/RasSteady.exe" MIXED.r01
 ```
 
@@ -309,7 +319,7 @@ upstream reach, < 1 downstream.
 > installed\" verdict was a FALSE NEGATIVE — it ran `import ras_commander` under
 > `/usr/bin/python3`. `ras_commander` **0.93.0 IS installed** in the python_env
 > venv and imports cleanly from
-> `/mnt/disk1/Hydrocraft_server/python_env/bin/python3`, exposing the full
+> `KISSPATH_PYTHON_ENV/bin/python3`, exposing the full
 > authoring stack: `GeomCrossSection.set_station_elevation`, `GeomPreprocessor`,
 > `RasGeo`, `RasCmdr.compute_plan_linux`, `HdfResultsXsec`. The ONLY remaining gap
 > is that **no tool in `tools/` yet wraps these into a DEM→cross-section authoring +
@@ -380,7 +390,7 @@ error→remedy catalogue (HDF seeding, LD_PRELOAD, unit traps, Wine Mono, etc.).
 > 2026-06-04).** This recipe depends on `ras_commander` (`RasExamples`, `RasGeo`,
 > `GeomCrossSection`, `RasUnsteady`, `RasCmdr.compute_plan_linux`) and a
 > DEM→cross-section authoring step. `ras_commander` 0.93.0 **IS installed** — import
-> it via `/mnt/disk1/Hydrocraft_server/python_env/bin/python3`; the only missing
+> it via `KISSPATH_PYTHON_ENV/bin/python3`; the only missing
 > piece is a `tools/` wrapper that authors geometry from a DEM. Every Bengbu run to date has therefore been
 > **structurally blocked at the authoring stage** — the Bengbu Q/stage metrics
 > are *uncomputable*, not poor. The recipe is kept as the design target for when
@@ -393,9 +403,9 @@ which is the natural validation for HEC-RAS (the model consumes upstream Q and
 routes it downstream — it does not produce Q de novo).
 
 **Reach.** Huai River, China. Upstream gage **Wangjiaba** (id `wangjiaba_51030`,
-32.43 N, 115.60 E, `/mnt/disk1/Hydrocraft_server/data/obs/WJB/HUAIH-51030-wangjiaba.txt`)
+32.43 N, 115.60 E, `KISSPATH_OBS/WJB/HUAIH-51030-wangjiaba.txt`)
 → downstream gage **Bengbu** (id `bengbu_51080`, 32.93 N, 117.38 E,
-`/mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt`). ~200 km reach.
+`KISSPATH_OBS/BB/51080_bengbu.txt`). ~200 km reach.
 Both files share period 1952-05-30 to 1997-12-31, daily resolution, columns
 include `discharge_m3s` and `water_level_m`.
 
@@ -404,7 +414,7 @@ include `discharge_m3s` and `water_level_m`.
    - Start from a bundled template via `RasExamples.extract_project('MixedFlowSteady')`
      (or any project shipping `.gNN.hdf` + a plan file).
    - Use `RasGeo` / `GeomCrossSection` to overwrite station-elevation tables
-     with cross sections sampled from MERIT-Hydro DEM (`/mnt/disk3/MERIT_Hydro/`,
+     with cross sections sampled from MERIT-Hydro DEM (`KISSPATH_DATA/MERIT_Hydro/`,
      3-arcsec tiles) along the Wangjiaba→Bengbu centerline. Δx ≈ 200-500 m.
    - Use `RasUnsteady` to set:
      * Upstream BC = Wangjiaba `discharge_m3s` time series (read with

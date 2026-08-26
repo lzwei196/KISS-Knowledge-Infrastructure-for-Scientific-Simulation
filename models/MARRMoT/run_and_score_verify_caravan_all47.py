@@ -55,19 +55,19 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
-KTC = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
-MARRMOT_SRC = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/source/repo/MARRMoT"
+KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
+KTC = "KISSPATH_KI_TOOLS_COMMON"
+MARRMOT_SRC = "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
 MODEL_DIR = os.path.join(MARRMOT_SRC, "Models", "Model files")
-STATE = ("/mnt/disk1/Hydrocraft_server/models/MARRMoT/detached/"
+STATE = ("KISSPATH_KI_ROOT/MARRMoT/detached/"
          "verify_1_552cdb7920214f599b09b21a44396f70")
-VALIDATORS = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"
+VALIDATORS = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
 
 GAUGE = "GRDC_3275140"
 GAUGE_NAME = "Rio de los Patos at La Plateada, San Juan, Argentina (Andes)"
 GAUGE_LAT, GAUGE_LON = -31.8813, -69.6896
 AREA_KM2 = 8460.835471
-NC = ("/mnt/datasets/observed_data/dischargeandwatershed/"
+NC = ("KISSPATH_DATA/observed_data/dischargeandwatershed/"
       f"GRDC-Caravan-extension-nc/timeseries/netcdf/grdc/{GAUGE}.nc")
 
 WIN = ("1990-01-01", "2020-12-31")

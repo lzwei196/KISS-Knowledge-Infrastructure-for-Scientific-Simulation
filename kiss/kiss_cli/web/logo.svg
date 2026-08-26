@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="188" height="180" viewBox="0 0 188 180">
+  <title>Concentric target icon</title>
+  <desc>Vector reconstruction of a dark circular target with three light concentric rings and a blue center.</desc>
+  <circle cx="90.8" cy="87.2" r="83.2" fill="#111215"/>
+  <g fill="none" stroke="#EEF0F2" stroke-width="3.6" stroke-linecap="round">
+    <circle cx="90.8" cy="87.2" r="17.2"/>
+    <circle cx="90.8" cy="87.2" r="29.8"/>
+    <circle cx="90.8" cy="87.2" r="42.0"/>
+  </g>
+  <circle cx="90.8" cy="87.2" r="8.2" fill="#416FD8" opacity="0.16"/>
+  <circle cx="90.8" cy="87.2" r="6.0" fill="#416FD8"/>
+</svg>

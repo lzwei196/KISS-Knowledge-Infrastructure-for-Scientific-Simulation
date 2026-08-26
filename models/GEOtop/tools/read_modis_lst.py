@@ -41,7 +41,7 @@ WHY THIS IS NOT TRIVIAL (each of these silently corrupts the comparison):
      daily-mean. Use the emitted window_start/window_end to aggregate.
 
 Usage:
-    python read_modis_lst.py --dir /mnt/datasets/obs/nasa/modis_lst \
+    python read_modis_lst.py --dir KISSPATH_DATA/obs/nasa/modis_lst \
         --tile h27v05 --lat 36.0 --lon 116.0 \
         --start 2018-01-01 --end 2018-01-31 \
         --output /path/to/modis_lst_point.csv

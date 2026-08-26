@@ -19,7 +19,7 @@ case:
   gauge_lat: 32.4275
   gauge_lon: 115.595
   obs_dataset: china_gaugeflux
-  obs_file: "/mnt/datasets/china_water_level/淮河txt/王家坝.txt"
+  obs_file: "KISSPATH_DATA/china_water_level/淮河txt/王家坝.txt"
   obs_shape: point_time_series
   determining_metric: nse
   provenance: "WRF_Hydro_20260719T082141Z_172227"

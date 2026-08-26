@@ -1,0 +1,157 @@
+{
+  "model": "DHSVM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 14,
+  "open_access": 4,
+  "papers": [
+    {
+      "doi": "10.5194/hess-13-1897-2009",
+      "title": "A snowmelt runoff forecasting model coupling WRF and DHSVM",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-18-787-2014",
+      "title": "Modeling the effect of glacier recession on streamflow response using a coupled glacio-hydrological (DHSVM) model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-3325-2017",
+      "title": "Characterizing and reducing equifinality by constraining a distributed catchment model (DHSVM) with SWE, ET, soil moisture and water table observations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration",
+        "soil_moisture",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1007/s13201-019-1013-x",
+      "title": "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.3390/rs12223768",
+      "title": "Hydrological Model Calibration with Streamflow and Remote Sensing Based Evapotranspiration (DHSVM)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.10110",
+      "title": "Validation and sensitivity test of the distributed hydrology soil-vegetation model (DHSVM) in a forested mountain watershed",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2003wr002414",
+      "title": "Diagnosing a distributed hydrologic model for two high-elevation forested catchments",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1175/1525-7541(2001)002<0161:aeoahr>2.0.co;2",
+      "title": "An Evaluation of a High-Resolution Hydrometeorological Modeling System for Predicting Snowpack and Streamflow (DHSVM)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.3390/w10121841",
+      "title": "Integration of Remote Sensing Evapotranspiration into Multi-Objective Calibration of DHSVM in a Humid Region of China",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/rs12030428",
+      "title": "Satellite-Based Evapotranspiration in Hydrological Model Calibration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3390/w13152032",
+      "title": "Sensitivity and Performance Analyses of the DHSVM Using Geomorphons for Landform Mapping",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.13150",
+      "title": "Evaluating the functionality and streamflow impacts of explicitly modelling forest-snow interactions and canopy gaps in a distributed hydrologic model (DHSVM)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1029/94wr00436",
+      "title": "A distributed hydrology-vegetation model for complex terrain (original DHSVM description)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration",
+        "soil_moisture",
+        "water_table"
+      ]
+    }
+  ]
+}

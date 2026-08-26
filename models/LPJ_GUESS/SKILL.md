@@ -1,3 +1,14 @@
+---
+name: lpj-guess
+description: >-
+  LPJ-GUESS core flux physics (Smith et al. 2001/2014; Sitch et al. 2003; Monteith 1972
+  LUE) — analytic reimplementation of GPP/Ra/Rh/NEE. Covers Gross Primary Production via
+  radiation-driven Light Use Efficiency; Autotrophic respiration (maintenance via Q10,
+  growth as fixed NPP fraction); Heterotrophic respiration (Q10 decomposition of
+  soil/litter organic carbon). Use when the task involves running, configuring,
+  calibrating or interpreting LPJ_GUESS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

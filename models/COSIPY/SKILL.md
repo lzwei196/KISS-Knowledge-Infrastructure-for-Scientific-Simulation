@@ -1,3 +1,14 @@
+---
+name: cosipy
+description: >-
+  COSIPY v1.3 (Sauter, Arndt & Schneider 2020, GMD) science spec, as realized by the
+  v2.0.2 codebase. Covers Surface energy balance over snow/ice (net shortwave with
+  subsurface penetration, net longwave…; Iterative surface skin temperature solution
+  constrained to the melting point; Surface mass fluxes: melt, sublimation, evaporation,
+  deposition, condensation. Use when the task involves running, configuring, calibrating
+  or interpreting COSIPY.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -391,7 +402,7 @@ KGE=0.76, PBIAS=4.7%). Encode them so they are not rediscovered.
     datasets via an engine-fallback helper (default -> h5netcdf -> netcdf4).
   - If the python_env netCDF4 backend is ever repaired, the shim becomes a
     no-op automatically (it only activates when `COSIPY_FORCE_H5NETCDF=1`).
-- COSIPY source dir on this host: `/mnt/disk1/Hydrocraft_server/models/COSIPY/source/repo`
+- COSIPY source dir on this host: `KISSPATH_KI_ROOT/COSIPY/source/repo`
   (pass it as `run_cosipy.py --source-dir`). COSIPY reads input from
   `<data_path>/input/<input_netcdf>` and writes to `<data_path>/output/`.
 
@@ -426,7 +437,7 @@ obs cm -> m. dag variable = `SNOWHEIGHT`, obs_shape = `point_time_series`
 (NSE/KGE/r/PBIAS all valid per dag).
 
 ### Canadian Historical Daily Snow Depth Database (no obs-reader tool exists)
-- Path: `/home/server/桌面/数据/Canadian Historical Daily Snow Depth Database/Canadian-Historical-Snow-Depth-Dataset-2019-Update.nc`
+- Path: `KISSPATH_HOME/桌面/数据/Canadian Historical Daily Snow Depth Database/Canadian-Historical-Snow-Depth-Dataset-2019-Update.nc`
   (5719 stations, daily `snd` in **cm**, dims (time, station_id); read with
   `engine='h5netcdf'` — the netcdf4 backend is broken, see dt_022).
 - There is NO obs-reader tool in this KI; extract one station's `snd` to a

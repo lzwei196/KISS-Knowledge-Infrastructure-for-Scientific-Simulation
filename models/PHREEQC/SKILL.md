@@ -1,3 +1,13 @@
+---
+name: phreeqc
+description: >-
+  PHREEQC version 3. Covers Aqueous speciation (saturation indices, species distribution,
+  density, specific conductance); Batch-reaction whole-system equilibrium with minerals,
+  gases, ion exchange, surface complexation…; 1-D advection-dispersion-diffusion reactive
+  transport (operator-splitting, column geometry…. Use when the task involves running,
+  configuring, calibrating or interpreting PHREEQC.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

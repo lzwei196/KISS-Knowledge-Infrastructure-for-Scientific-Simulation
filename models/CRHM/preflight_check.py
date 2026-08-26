@@ -17,6 +17,7 @@ import os
 import sys
 import shutil
 import subprocess
+import tempfile
 
 PASS = 0
 FAIL = 0
@@ -51,7 +52,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -71,11 +72,11 @@ def check_binary_search(name, label):
     if found:
         print(f"  OK    {label}: {found}")
         PASS += 1
-        return
+        return found
     # Search common locations
     search_dirs = [
-        "/mnt/disk1/Hydrocraft_server/model",
-        "/home/server",
+        "KISSPATH_BINARIES",
+        "KISSPATH_HOME",
         "/usr/local/bin",
     ]
     for d in search_dirs:
@@ -86,22 +87,89 @@ def check_binary_search(name, label):
                 if name.lower() in f.lower() and os.access(os.path.join(root, f), os.X_OK):
                     print(f"  OK    {label}: {os.path.join(root, f)}")
                     PASS += 1
-                    return
+                    return os.path.join(root, f)
             if root.count(os.sep) - d.count(os.sep) > 3:
                 dirs.clear()  # limit depth
     print(f"  FAIL  {label}: binary '{name}' not found in PATH or common locations")
     print(f"         Check SKILL.md for the correct binary path")
     FAIL += 1
+    return None
+
+
+def check_binary_execution(binary):
+    """Prove this is a working CRHM executable, not merely a named file."""
+    global PASS, FAIL
+    if not binary:
+        return
+    try:
+        probe = subprocess.run(
+            [binary, "--help"], capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"  FAIL  CRHM binary launch: {error}")
+        FAIL += 1
+        return
+    help_text = (probe.stdout or "") + (probe.stderr or "")
+    # Upstream CRHM prints the correct help text but exits 1 for an explicit
+    # help request, so identify the CLI by its documented usage rather than by
+    # that unconventional status code.
+    if "crhm [options] PROJECT_FILE" not in help_text:
+        print("  FAIL  CRHM binary launch: --help did not return the CRHM CLI")
+        FAIL += 1
+        return
+    print("  OK    CRHM binary launch: real CRHM CLI responded")
+    PASS += 1
+
+    # Source installations include the upstream Bad Lake regression case. Run
+    # it in a disposable directory so CRHM's log/output never pollutes or
+    # blocks its source checkout. We intentionally verify successful execution
+    # and output structure rather than byte-identical floating-point text;
+    # Clang and GCC can differ in their final digits without changing the model.
+    executable = os.path.realpath(binary)
+    checkout = os.path.dirname(os.path.dirname(executable))
+    project = os.path.join(
+        checkout, "system_regression_test", "projects", "badlake.prj")
+    observations = os.path.join(checkout, "prj", "BadLake")
+    if not (os.path.isfile(project) and os.path.isdir(observations)):
+        print("  WARN  CRHM reference simulation: upstream fixture not present")
+        return
+    try:
+        with tempfile.TemporaryDirectory(prefix="geoforge-crhm-") as work:
+            local_obs = os.path.join(work, "prj", "BadLake")
+            os.makedirs(os.path.dirname(local_obs), exist_ok=True)
+            shutil.copytree(observations, local_obs)
+            output = os.path.join(work, "badlake_output.txt")
+            run = subprocess.run(
+                [executable, project, "-o", output], cwd=work,
+                capture_output=True, text=True, timeout=120,
+            )
+            with open(output, "r", encoding="utf-8", errors="replace") as fh:
+                header = fh.read(8192)
+            valid = (run.returncode == 0 and os.path.getsize(output) > 10_000
+                     and header.startswith("time\t") and "basinflow" in header)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"  FAIL  CRHM reference simulation: {error}")
+        FAIL += 1
+        return
+    if valid:
+        print("  OK    CRHM reference simulation: Bad Lake case completed")
+        PASS += 1
+    else:
+        detail = ((run.stdout or "") + (run.stderr or "")).strip().splitlines()
+        print("  FAIL  CRHM reference simulation: model did not produce valid output")
+        if detail:
+            print(f"         {detail[-1][:300]}")
+        FAIL += 1
 
 
 def check_common_data():
     """Check common HydroCraft data paths."""
     global PASS, FAIL
     common = [
-        ("/mnt/disk1/Hydrocraft_server/data/obs", "Observation data"),
-        ("/media/server/hc_ssd/forcing", "Forcing data"),
-        ("/mnt/disk1/Hydrocraft_server/data/dem", "DEM data"),
-        ("/mnt/disk1/Hydrocraft_server/data/soil", "Soil data"),
+        ("KISSPATH_OBS", "Observation data"),
+        ("KISSPATH_FORCING", "Forcing data"),
+        ("KISSPATH_STATIC", "DEM data"),
+        ("KISSPATH_STATIC", "Soil data"),
     ]
     for path, label in common:
         if os.path.isdir(path):
@@ -119,7 +187,9 @@ def main():
 
     # Model-specific checks
     # Binary (search): CRHM binary
-    check_binary_search("crhm", "CRHM binary")
+    binary = check_binary_search("crhm", "CRHM binary")
+    check_binary_execution(binary)
+    check_import("ki_tools_common.humidity", "GeoForge shared data tools")
 
     print()
 

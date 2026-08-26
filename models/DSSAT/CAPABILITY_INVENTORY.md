@@ -11,7 +11,7 @@
 
 ### 1A. Crop Species (Plant Models)
 
-Source: /home/server/DSSAT/Plant/ directories and /home/server/DSSAT/Data/Genotype/*.CUL files.
+Source: KISSPATH_HOME/DSSAT/Plant/ directories and KISSPATH_HOME/DSSAT/Data/Genotype/*.CUL files.
 DSSAT v4.8.5 README states "more than 45 crops." The installed source has 28 plant model directories.
 
 | # | Crop | Model | CUL File | KI Status | Notes |
@@ -78,7 +78,7 @@ DSSAT v4.8.5 README states "more than 45 crops." The installed source has 28 pla
 
 ### 1B. Soil Process Modules
 
-Source: /home/server/DSSAT/Soil/ directories.
+Source: KISSPATH_HOME/DSSAT/Soil/ directories.
 
 | # | Capability | Status | Current KI Coverage | Notes |
 |---|-----------|--------|-------------------|-------|
@@ -111,7 +111,7 @@ Source: /home/server/DSSAT/Soil/ directories.
 | 81 | Seasonal analysis (economic) | TODO | DSSAT seasonal analysis module | No KI coverage |
 | 82 | CO2 enrichment / climate scenarios | PARTIAL | CO2 switch (M=measured, W=from weather file, D=default 380 ppm) documented | No scenario generation tool |
 | 83 | Automatic management (planting window, irrigation triggers) | PARTIAL | s5 documents PLANT/IRRIG switches (R=reported, A=automatic) | Auto-planting not tested |
-| 84 | GLUE calibration | PARTIAL | GLUE tool exists at /home/server/DSSAT/Tools/GLUE/ (R scripts) | R-based, not integrated into KI Python pipeline |
+| 84 | GLUE calibration | PARTIAL | GLUE tool exists at KISSPATH_HOME/DSSAT/Tools/GLUE/ (R scripts) | R-based, not integrated into KI Python pipeline |
 | 85 | Pest/disease simulation | TODO | Generic-Pest/ plant module exists; DISES switch | No KI coverage |
 
 ### 1D. Output and Post-Processing
@@ -167,7 +167,7 @@ Source: /home/server/DSSAT/Soil/ directories.
 | Crop distribution | SPAM | EXISTS | data_ki/SPAM/ |
 | Fertilizer rates | NPKGRIDS | EXISTS | data_ki/NPKGRIDS/ |
 | Crop calendar | GGCMI phase 3 | EXISTS | data_ki/GGCMI/ |
-| Crop calendar (China) | China Phenology GeoTIFF | EXISTS (external) | /home/server/Crop_model_dataset/8313530/ |
+| Crop calendar (China) | China Phenology GeoTIFF | EXISTS (external) | KISSPATH_HOME/Crop_model_dataset/8313530/ |
 | CROPGRIDS (global) | CROPGRIDS | EXISTS | data_ki/CROPGRIDS/ |
 | P dynamics validation | No specific P obs Data KI | MISSING | Need water quality or soil P database |
 | GHG validation | FLUXNET (eddy covariance) | EXISTS | data_ki/FLUXNET/ |

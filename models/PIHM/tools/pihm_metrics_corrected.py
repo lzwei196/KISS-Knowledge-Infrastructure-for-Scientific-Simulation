@@ -9,7 +9,7 @@ import math
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
-REPO = Path("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PIHM/source/repo")
+REPO = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PIHM/source/repo")
 SIM = REPO / "output/test_run/ShaleHills.river.flx1.txt"
 OBS = ["/tmp/SH_2008.dat", "/tmp/SH_2009.dat", "/tmp/SH_2010.dat"]
 

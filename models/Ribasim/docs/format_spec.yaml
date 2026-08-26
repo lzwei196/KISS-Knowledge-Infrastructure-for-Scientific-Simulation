@@ -4,7 +4,7 @@ model:
   domain: "water_resources"
   description: "Network-based water resources model for regional surface water management"
   developer: "Deltares"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Ribasim/venv/bin/python"
+  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
   core_language: "Julia (SciML ODE solvers)"
   api_language: "Python"
 

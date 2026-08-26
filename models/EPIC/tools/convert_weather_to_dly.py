@@ -6,7 +6,7 @@ Pipeline: NASA POWER cache → aggregate to daily → unit conversion → .DLY f
 Pattern:  validate inputs → process → validate outputs
 
 Supports:
-  - NASA POWER hourly cache (pre-cached at /mnt/disk1/.../nasa_power_cache/hourly/)
+  - NASA POWER hourly cache (pre-cached at KISSPATH_ROOT/.../nasa_power_cache/hourly/)
   - Generic CSV with columns: date, tmax_C, tmin_C, srad_MJm2d, prcp_mm, rh_frac, ws_ms
 """
 

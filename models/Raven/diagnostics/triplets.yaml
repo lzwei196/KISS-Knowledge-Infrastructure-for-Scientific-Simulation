@@ -524,7 +524,7 @@ triplets:
       affected_components: [Raven.exe]
     remedy:
       action: "chmod +x Raven.exe"
-      manual_steps: ["chmod +x /mnt/disk1/Hydrocraft_server/model/raven/Raven.exe"]
+      manual_steps: ["chmod +x KISSPATH_BINARIES/raven/Raven.exe"]
 
   # ========================================================================
   # SPINUP / WARM START ERRORS

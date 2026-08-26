@@ -1,0 +1,219 @@
+{
+  "model": "Climate_Projection",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 21,
+  "open_access": 16,
+  "papers": [
+    {
+      "doi": "10.5194/hess-16-3391-2012",
+      "title": "HESS Opinions \"Should we apply bias correction to global and regional climate model data?\"",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "precipitation",
+        "temperature",
+        "air_temperature",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-14-687-2010",
+      "title": "Evaluation of a bias correction method applied to downscaled precipitation and temperature reanalysis data for the Rhine basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "precipitation",
+        "temperature",
+        "air_temperature",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-2547-2015",
+      "title": "Comparing bias correction methods in downscaling meteorological variables for a hydrologic impact study in an arid area in China",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "precipitation",
+        "temperature",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/esd-4-219-2013",
+      "title": "A trend-preserving bias correction – the ISI-MIP approach",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "precipitation",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-2649-2017",
+      "title": "Scaled distribution mapping: a bias correction method that preserves raw climate model projected changes",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "precipitation",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1007/s40641-016-0050-x",
+      "title": "Bias Correcting Climate Change Simulations - a Critical Review",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "precipitation",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1002/joc.5462",
+      "title": "An intercomparison of a large ensemble of statistical downscaling methods over Europe (VALUE perfect predictor experiment)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "precipitation",
+        "temperature",
+        "air_temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-3383-2012",
+      "title": "Technical Note: Downscaling RCM precipitation to the station scale using statistical transformations (quantile mapping) – a comparison of methods",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "precipitation",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-3309-2012",
+      "title": "Technical Note: Bias correcting climate model simulated daily temperature extremes with quantile mapping",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "air_temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-11-1417-2007",
+      "title": "A multimodel ensemble approach to assessment of climate change impacts on the hydrology and water resources of the Colorado River basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-3989-2012",
+      "title": "The implications of climate change scenario selection for future streamflow projection in the Upper Colorado River Basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-019-41334-7",
+      "title": "Uncertainty in hydrological analysis of climate change: multi-parameter vs. multi-GCM ensemble predictions",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1038/s41612-023-00486-0",
+      "title": "Downscaling and bias-correction contribute considerable uncertainty to local climate projections in CMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "precipitation",
+        "temperature",
+        "air_temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-1937-2016",
+      "title": "Overview of the Coupled Model Intercomparison Project Phase 6 (CMIP6) experimental design and organization",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "precipitation",
+        "temperature",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-3461-2016",
+      "title": "The Scenario Model Intercomparison Project (ScenarioMIP) for CMIP6",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "precipitation",
+        "temperature",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2012jd018192",
+      "title": "Bias correction of regional climate model simulations for hydrological climate-change impact studies: Review and evaluation of different methods (intercomparison of bias-correction methods for temperature and precipitation)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "precipitation",
+        "temperature",
+        "air_temperature"
+      ]
+    },
+    {
+      "doi": "10.1007/s00382-017-3580-6",
+      "title": "Multivariate quantile mapping bias correction: an N-dimensional probability density function transform for climate model simulations of multiple variables (MBCn)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "precipitation",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3390/w12020482",
+      "title": "Performance Evaluation of Bias Correction Methods for Climate Change Monthly Precipitation Projections over Costa Rica",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "precipitation",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/aa8359",
+      "title": "Intercomparison of regional-scale hydrological models and climate change impacts on streamflow",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2011wr011533",
+      "title": "Quantifying uncertainty sources in an ensemble of hydrological climate-impact projections",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s00704-009-0134-9",
+      "title": "Statistical bias correction for daily precipitation in regional climate models over Europe",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

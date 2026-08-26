@@ -1,0 +1,21 @@
+kiss_manifest_version: 1
+model: pyGIMLi
+binary_type: Python
+verified: observed
+install_dir: pyGIMLi
+
+acquire:
+  strategy: pip
+  package: pygimli
+  produces: pygimli
+
+python_deps: [pygimli]
+
+reference_case: >-
+  python -c "import pygimli; print(pygimli.__name__, 'importable')"
+
+notes: >-
+  OBSERVED 2026-08-18: `kiss init pyGIMLi` installed pygimli 1.6.0 into a clean venv
+  and the KI's own preflight_check.py passed with no hand-written recipe. The
+  package name was resolved from the KI directory name and confirmed by import,
+  not assumed from a PyPI name match.

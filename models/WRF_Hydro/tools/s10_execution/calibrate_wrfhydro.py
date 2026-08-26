@@ -51,10 +51,10 @@ import numpy as np
 # ===================================================================
 # Default paths
 # ===================================================================
-MPICH_BIN = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', '/mnt/disk1/Hydrocraft_server'), 'model/wrf_hydro/deps/mpich-install/bin'))
-MPICH_LIB = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', '/mnt/disk1/Hydrocraft_server'), 'model/wrf_hydro/deps/mpich-install/lib'))
-DEFAULT_WRF_HYDRO_EXE = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', '/mnt/disk1/Hydrocraft_server'), 'model/wrf_hydro/source/trunk/NDHMS/Run/wrf_hydro.exe'))
-DEFAULT_TBL_DIR = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', '/mnt/disk1/Hydrocraft_server'), 'model/wrf_hydro/source/trunk/NDHMS/Run'))
+MPICH_BIN = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', 'KISSPATH_ROOT'), 'model/wrf_hydro/deps/mpich-install/bin'))
+MPICH_LIB = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', 'KISSPATH_ROOT'), 'model/wrf_hydro/deps/mpich-install/lib'))
+DEFAULT_WRF_HYDRO_EXE = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', 'KISSPATH_ROOT'), 'model/wrf_hydro/source/trunk/NDHMS/Run/wrf_hydro.exe'))
+DEFAULT_TBL_DIR = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', 'KISSPATH_ROOT'), 'model/wrf_hydro/source/trunk/NDHMS/Run'))
 
 
 # ===================================================================

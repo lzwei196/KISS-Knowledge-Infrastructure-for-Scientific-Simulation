@@ -29,7 +29,7 @@ import glob
 
 PARFLOW_DIR = os.environ.get(
     "PARFLOW_DIR",
-    "/mnt/disk1/Hydrocraft_server/model/parflow/install"
+    "KISSPATH_BINARIES/parflow/install"
 )
 PARFLOW_BIN = os.path.join(PARFLOW_DIR, "bin", "parflow")
 

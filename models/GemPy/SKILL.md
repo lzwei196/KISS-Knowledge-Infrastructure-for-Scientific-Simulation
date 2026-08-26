@@ -1,3 +1,13 @@
+---
+name: gempy
+description: >-
+  GemPy v3 implicit potential-field geomodeling (Lajaunie 1997 / Calcagno 2008 universal
+  cokriging), de la Varga et al. 2019 stochastic formulation. Covers Construction of
+  complex 3D structural geological models from interface points + orientation data; Folds,
+  fault networks, unconformities, multiple conformal stratigraphic layers, intrusions….
+  Use when the task involves running, configuring, calibrating or interpreting GemPy.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -75,7 +85,7 @@ variability (sub-km spatial correlation). R is stable at 0.15–0.35 regardless 
 training density (confirmed by sensitivity test). Alice (external reviewer) confirmed
 results are reasonable and comparable to other model outputs against this reference.
 
-**Outputs**: `/mnt/disk1/Hydrocraft_server/outputs/gempy_dtb_multisite/`
+**Outputs**: `KISSPATH_OUTPUTS/gempy_dtb_multisite/`
 
 
 ## 1. Overview

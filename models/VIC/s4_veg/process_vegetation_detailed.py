@@ -36,12 +36,12 @@ def open_nc(path) -> xr.Dataset:
 # ====================================================================
 # 改为使用“流域格网文件(grid.nc)”作为主格网模板
 _BASIN = os.environ.get("VIC_BASIN_NAME", "xixian_rerun_71379b42")
-_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
+_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "KISSPATH_OUTPUTS"))
 
 MASTER_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025deg.nc"
 
-VEG_RASTER_IN = Path(r"/mnt/disk1/Hydrocraft_server/data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif")
-VEGLIB_FILE = Path(r"/mnt/disk1/Hydrocraft_server/data/vic_param/veglib.LDAS")
+VEG_RASTER_IN = Path(r"KISSPATH_DATA/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif")
+VEGLIB_FILE = Path(r"KISSPATH_DATA/vic_param/veglib.LDAS")
 VEG_PARAM_OUT = _OUT_ROOT / _BASIN / "vic_temp" / "veg" / "vic_veg_param_final.txt"
 
 # grid.nc 中变量名（与你生成脚本一致）

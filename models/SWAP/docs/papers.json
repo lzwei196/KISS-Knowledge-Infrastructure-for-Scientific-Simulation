@@ -1,0 +1,246 @@
+{
+  "model": "SWAP",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 21,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.25165/j.ijabe.20201303.5218",
+      "title": "Simulation and optimization of irrigation schedule for summer maize based on SWAP model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "salinity",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-6-49-2002",
+      "title": "Inverse modelling in estimating soil hydraulic functions: a Genetic Algorithm approach (SWAP)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.18174/197426",
+      "title": "A Transient Model Approach to Improve On-Farm Irrigation and Drainage in Semi-Arid Zones (SWAP)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "salinity",
+        "discharge",
+        "water_table",
+        "soil_moisture",
+        "evapotranspiration",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5027/jnrd.v4i0.01",
+      "title": "A new novel index for evaluating model performance (Nash-Sutcliffe, Willmott index of agreement, model efficiency, RMSE)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "yield",
+        "lai",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.4236/jep.2015.68076",
+      "title": "Sensitivity Analysis and Calibration of Hydrological Modeling of the Watershed (reproduces Moriasi NSE/PBIAS/RSR very-good/satisfactory/unsatisfactory tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1007/s11368-020-02647-7",
+      "title": "Evaluating the effects of layered soils on water flow, solute transport, and crop growth with a coupled agro-eco-hydrological model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "soil_moisture",
+        "salinity",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-487-2016",
+      "title": "Sensitivity of water stress in a two-layered sandy grassland soil to variations in groundwater depth and soil hydraulic parameters",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1038/srep43122",
+      "title": "Modeling contribution of shallow groundwater to evapotranspiration and yield of maize in an arid area (HYDRUS, same-domain)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "evapotranspiration",
+        "yield",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "temperature",
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2011.05.001",
+      "title": "Simulation of winter wheat yield and its variability in different climates of Europe",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1080/02723646.1981.10642213",
+      "title": "On the validation of models (index of agreement / d-index)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2024.108883",
+      "title": "SWAP 50 years: Advances in modelling soil-water-atmosphere-plant interactions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "water_table",
+        "salinity",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.2136/sssaj2005.0051",
+      "title": "Application and Evaluation of the SWAP Model for Simulating Water and Solute Transport",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "salinity"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)ir.1943-4774.0000435",
+      "title": "Comparison of SWAP and FAO Agro-Hydrological Models to Schedule Irrigation of Winter Wheat",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.18174/416321",
+      "title": "SWAP version 4 (theory description and user manual)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "water_table",
+        "discharge",
+        "temperature",
+        "salinity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2014.09.014",
+      "title": "Simulation of salt dynamics in the root zone and yield of wheat crop under irrigation (SWAP)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "salinity",
+        "yield",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2019.04.053",
+      "title": "Evaluating the effects of limited irrigation on crop water productivity and reducing deep drainage (SWAP)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "discharge",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3390/w12051330",
+      "title": "Modeling Soil Water-Heat Dynamic Changes in Seed-Maize Fields under Film Mulching",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1007/s12665-017-6701-y",
+      "title": "Combining global sensitivity analysis and multiobjective optimisation to estimate soil hydraulic properties for the agro-hydrological SWAP model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2016.05.013",
+      "title": "Global sensitivity analysis and calibration of parameters for a physically-based agro-hydrological model (SWAP)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/s1002-0160(21)60038-3",
+      "title": "Sensitivity analysis of the SWAP model under different nitrogen applications and root distributions in saline soils",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "salinity",
+        "yield"
+      ]
+    }
+  ]
+}

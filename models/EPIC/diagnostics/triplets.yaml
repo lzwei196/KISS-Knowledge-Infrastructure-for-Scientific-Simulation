@@ -467,8 +467,8 @@ triplets:
       TMX=TMN=mean; 3-hourly store gave TMX -15.3..32.3, TMN -21.3..23.5 degC.
     remedy: |
       Always point CMFD forcing at Data_forcing_03hr_010deg. The hc_ssd copy
-      (/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg) is the fast one;
-      /mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg is the
+      (KISSPATH_FORCING/Data_forcing_03hr_010deg) is the fast one;
+      KISSPATH_DATA/forcing/Data_forcing_03hr_010deg is the
       fallback when hc_ssd is not mounted. convert_forcing_to_epic.py now
       (a) resolves CMFD_DEFAULT_DIR from that candidate list and (b) RAISES if
       >90% of days have |TMX - TMN| < 0.01 degC, so the daily store can no
@@ -592,7 +592,7 @@ triplets:
       "Quick validation (fastest path -- use this for KI testing)" -- dies
       immediately with:
         ERROR: [Errno 2] No such file or directory:
-        '/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace/epic1102-official_release.exe'
+        'KISSPATH_BINARIES/EPIC/epic_workspace/epic1102-official_release.exe'
       and emits {"ki_usable": false}. Without --rerun it instead reports
       "Missing umstead_0.ANN" / "Missing umstead_0.ACY", because the default
       workspace points at the same vanished directory.
@@ -780,7 +780,7 @@ triplets:
       was the only possible outcome -- a fabricated site geometry that changes
       EPIC's PET (barometric pressure is derived from elevation) and its
       curve-number runoff / MUSLE erosion (slope). The curated GLOBAL primary
-      DEM (MERIT DEM v1.0.2, 3 arcsec, /mnt/datasets/MERIT_DEM, 5x5 degree tiles
+      DEM (MERIT DEM v1.0.2, 3 arcsec, KISSPATH_DATA/MERIT_DEM, 5x5 degree tiles
       named by their lower-left corner) was on the server the whole time, and
       ki_tools_common.terrain.get_terrain is China-only too, so there was no
       global fallback to import.

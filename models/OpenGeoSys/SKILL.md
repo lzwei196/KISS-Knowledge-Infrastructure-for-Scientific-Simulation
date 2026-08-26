@@ -1,3 +1,13 @@
+---
+name: opengeosys
+description: >-
+  OpenGeoSys 6 (OGS-6) THMC finite-element multiphysics; doxygen-stable 6.5.7 lineage.
+  Covers Coupled thermo-hydro-mechanical-chemical (THMC) processes in porous and fractured
+  media; Single-phase saturated (Darcy) liquid flow and steady-state diffusion;
+  Variably-saturated (Richards) and two-phase non-isothermal flow. Use when the task
+  involves running, configuring, calibrating or interpreting OpenGeoSys.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -68,7 +78,7 @@ This knowledge infrastructure enables simulation of subsurface processes using O
 ### Building from source
 
 ```bash
-cd /home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenGeoSys/source/repo
+cd KISSPATH_BINARIES/OpenGeoSys/source/repo
 mkdir -p build && cd build
 cmake .. -DOGS_BUILD_CLI=ON -DOGS_BUILD_TESTING=OFF -DOGS_BUILD_UTILS=OFF
 make -j$(nproc)

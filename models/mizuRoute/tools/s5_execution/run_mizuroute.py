@@ -19,7 +19,7 @@ import sys
 import time
 
 
-MIZUROUTE_BIN = os.path.join(os.environ.get('HYDROCRAFT_ROOT', '/mnt/disk1/Hydrocraft_server'), 'model/mizuRoute/mizuRoute-main/route/bin/mizuroute.exe')
+MIZUROUTE_BIN = os.path.join(os.environ.get('HYDROCRAFT_ROOT', 'KISSPATH_ROOT'), 'model/mizuRoute/mizuRoute-main/route/bin/mizuroute.exe')
 
 
 def parse_control_file(control_path):

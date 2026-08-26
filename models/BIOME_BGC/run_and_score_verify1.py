@@ -16,11 +16,11 @@ Sim: BIOME-BGC summary.daily_gpp (kgC/m2/d) * 1000.
 import os, sys, json, subprocess, calendar
 from datetime import date
 
-KI = "/mnt/disk1/Hydrocraft_server/models/BIOME_BGC/knowledge_infrastructure"
-BGC = "/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc"
+KI = "KISSPATH_KI_ROOT/BIOME_BGC/knowledge_infrastructure"
+BGC = "KISSPATH_BINARIES/biome-bgc/bgc-src/bgc"
 TOOLS = os.path.join(KI, "tools")
-OBS = "/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/US-MMS/FULLSET_DD.csv"
-OUT = "/mnt/disk1/Hydrocraft_server/models/BIOME_BGC/detached/verify_1"
+OBS = "KISSPATH_OBS/fluxnet/sites/US-MMS/FULLSET_DD.csv"
+OUT = "KISSPATH_KI_ROOT/BIOME_BGC/detached/verify_1"
 RESULT = os.path.join(OUT, "result.json")
 
 # --- Site ---

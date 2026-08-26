@@ -38,7 +38,7 @@ import textwrap
 
 import numpy as np
 
-CAMA_ROOT = "/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg"
+CAMA_ROOT = "KISSPATH_BINARIES/cmf_v420_pkg"
 GLB_MAP = os.path.join(CAMA_ROOT, "map", "glb_15min")
 GPCC_CLIM = os.path.join(CAMA_ROOT, "map", "data",
                          "ELSE_GPCC_coastmod_dayclm-1981-2010.one")

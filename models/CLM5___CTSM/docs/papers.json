@@ -1,0 +1,192 @@
+{
+  "model": "CLM5___CTSM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 17,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.5194/bg-17-3017-2020",
+      "title": "Benchmarking and parameter sensitivity of physiological and vegetation dynamics using the Community Land Model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-5147-2020",
+      "title": "Modeling land surface processes over a mountainous rainforest in Costa Rica using CLM5",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "gpp",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-14-3361-2021",
+      "title": "Addressing biases in Arctic-boreal carbon cycling in the Community Land Model Version 5",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-1001-2024",
+      "title": "Evapotranspiration prediction for European forest sites does not improve with assimilation of surface soil moisture into the CLM5 land surface model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1038/s41597-023-02049-7",
+      "title": "Characterizing uncertainty in Community Land Model version 5 hydrological applications",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-2827-2023",
+      "title": "Point-scale multi-objective calibration of the Community Land Model (version 5.0) using in situ observations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-3857-2012",
+      "title": "A framework for benchmarking land models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "runoff",
+        "soil_carbon",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-14-573-2021",
+      "title": "Improving the representation of cropland sites in the Community Land Model (CLM) version 5.0",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "gpp",
+        "trace_gas",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-16-2771-2019",
+      "title": "Decadal fates and impacts of nitrogen additions on temperate forest carbon storage",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "soil_carbon",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.1029/2018gb006141",
+      "title": "Beyond Static Benchmarking: Using Experimental Manipulations to Evaluate Land Model Assumptions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.1073/pnas.1704665115",
+      "title": "Global models underestimate large decadal declining and rising water storage trends relative to GRACE satellite data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "total_water_storage"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2011ms00045",
+      "title": "Parameterization improvements and functional and structural advances in Version 4 of the Community Land Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "snow_depth",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1029/2007jf000883",
+      "title": "Sensitivity of a model projection of near-surface permafrost degradation to soil column depth and representation of soil organic matter",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001583",
+      "title": "The Community Land Model Version 5 (CLM5): Description of New Features, Benchmarking, and Impact of Forcing Uncertainty",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "runoff",
+        "soil_moisture",
+        "temperature",
+        "soil_carbon",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001354",
+      "title": "The International Land Model Benchmarking (ILAMB) System: Design, Theory, and Implementation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "runoff",
+        "soil_carbon",
+        "temperature",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr014581",
+      "title": "Uncertainty in evapotranspiration from land surface modeling, remote sensing, and GRACE satellites",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    }
+  ]
+}

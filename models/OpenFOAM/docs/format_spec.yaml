@@ -2,7 +2,7 @@ model:
   name: OpenFOAM
   version: dev
   domain: ocean
-  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenFOAM/source/repo/platforms/linux64GccDPInt32Opt/bin/foamRun
+  binary_path: KISSPATH_BINARIES/OpenFOAM/source/repo/platforms/linux64GccDPInt32Opt/bin/foamRun
   utilities:
   - blockMesh
   - checkMesh

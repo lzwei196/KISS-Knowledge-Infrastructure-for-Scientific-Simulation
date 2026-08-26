@@ -7,7 +7,7 @@ layer and prescribes comparison against fixed-depth WATER-temperature
 observations (dag.yaml comparable_obs_shapes[point_time_series] caveat
 "Compare at matched depths ... interpolate to fixed observation depths").
 Before this tool the KI's only observation loader was load_ismn_obs.py, which
-reads SOIL temperature from /mnt/datasets/ismn_clean.db -- a different physical
+reads SOIL temperature from KISSPATH_DATA/ismn_clean.db -- a different physical
 medium. Scoring GLM against soil temperature yields a high r that is just the
 shared annual air-temperature harmonic and never exercises stratification,
 thermocline depth, vertical mixing, wind stirring or Kw.
@@ -38,7 +38,7 @@ import sys
 
 import pandas as pd
 
-CSV_DEFAULT = "/mnt/datasets/obs/ntl-lter-phys-limno/ntl29_physical_limnology.csv"
+CSV_DEFAULT = "KISSPATH_DATA/obs/ntl-lter-phys-limno/ntl29_physical_limnology.csv"
 
 LAKE_NAMES = {
     'AL': 'Allequash Lake', 'BM': 'Big Muskellunge Lake', 'CB': 'Crystal Bog',

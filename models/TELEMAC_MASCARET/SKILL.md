@@ -1,3 +1,14 @@
+---
+name: telemac-mascaret
+description: >-
+  TELEMAC-2D depth-averaged shallow-water (Saint-Venant) hydrodynamics; openTELEMAC
+  consortium release v9.1.0. Covers Depth-averaged (2D) free-surface flow via the
+  Saint-Venant / shallow-water equations; Long-wave propagation including non-linear
+  effects; Bed (bottom) friction; Coriolis force; Meteorological forcing: atmospheric
+  pressure, wind, rain, evaporation. Use when the task involves running, configuring,
+  calibrating or interpreting TELEMAC_MASCARET.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

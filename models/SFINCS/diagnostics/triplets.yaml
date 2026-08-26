@@ -1060,7 +1060,7 @@
   symptom:
     description: >
       prepare_sfincs_rainfall.py --source mswx exits 2 with
-      "No precipitation files found for YYYYMM-YYYYMM in /mnt/disk3/msxw".
+      "No precipitation files found for YYYYMM-YYYYMM in KISSPATH_FORCING".
     error_pattern: "No precipitation files found"
     detection_method: "exception"
   diagnosis:
@@ -1082,13 +1082,13 @@
       Load MSWX through ki_tools_common:
         from ki_tools_common.load_forcing import load_hourly_forcing
         fc = load_hourly_forcing("mswx", lat, lon, start.year, end.year,
-                                 forcing_dir="/mnt/disk3/msxw")
+                                 forcing_dir="KISSPATH_FORCING")
         precip_mmhr = fc["precip_mm"] / 3.0     # MSWX raw units are mm/3hr (dt_001)
       Budget the time: MSWX annual files are one gzip slab per GLOBAL timestep, so a
       single-point read still decompresses the whole year (~5 min per variable).
     tool_to_run: "prepare_sfincs_rainfall.py"
     manual_steps:
-      - "ls /mnt/disk3/msxw/P/ | head   # P_1979.nc ... annual, per-variable subdirs"
+      - "ls KISSPATH_FORCING/P/ | head   # P_1979.nc ... annual, per-variable subdirs"
       - "Check rainfall_summary.json: precip_max_mmhr must be > 0"
     prevention: >
       prepare_sfincs_rainfall.py (fixed 2026-08-02) has a dedicated mswx branch that
@@ -1242,12 +1242,12 @@
     detection_method: "log_pattern"
   diagnosis:
     root_cause: >
-      AVHRR_DEFAULT pointed at "/media/server/hc_ssd/forcing/AVHRR/", a removable drive
+      AVHRR_DEFAULT pointed at "KISSPATH_FORCING/AVHRR/", a removable drive
       that is not mounted on this server, so glob() returned [] and the fallback fired.
     explanation: >
       The land-cover raster IS on disk, indexed by dataset_index.yaml as
       parameter_sourcing.land_cover.avhrr_landcover ->
-      /mnt/disk1/Hydrocraft_server/data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif.
+      KISSPATH_DATA/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif.
       The directory also contains AppleDouble "._*.tif" stubs that must be skipped.
     affected_components: ["build_sfincs_roughness.py AVHRR auto-discovery"]
   remedy:

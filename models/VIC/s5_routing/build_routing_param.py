@@ -76,7 +76,7 @@ USAGE
     python3 s5_routing/build_routing_param.py
 
 Then: ln -s <vic flux 7-col dir> routing_param/vic_in
-      cd routing_param && /mnt/disk1/Hydrocraft_server/model/route_1.0/src/rout rout_global.txt
+      cd routing_param && KISSPATH_BINARIES/route_1.0/src/rout rout_global.txt
 """
 
 import os
@@ -90,7 +90,7 @@ from shapely.geometry import box, mapping
 # ============================================================================
 # Configuration (environment-driven; defaults reproduce the Bengbu recipe)
 # ============================================================================
-ROOT = os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server")
+ROOT = os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT")
 BASIN = os.environ.get("VIC_BASIN_NAME", "bengbu")
 OUT_ROOT = os.environ.get("VIC_OUT_ROOT", os.path.join(ROOT, "outputs"))
 
@@ -123,7 +123,7 @@ DIFFUSIVITY = float(os.environ.get("VIC_ROUT_DIFF", 800))       # m^2/s
 YEAR_START = int(os.environ.get("VIC_YEAR_START", 1980))
 YEAR_END = int(os.environ.get("VIC_YEAR_END", 1990))
 
-WBT_DIR = os.environ.get("WBT_DIR", "/home/server/.local/lib/python3.12/site-packages/whitebox/WBT")
+WBT_DIR = os.environ.get("WBT_DIR", "KISSPATH_HOME/.local/lib/python3.12/site-packages/whitebox/WBT")
 
 # D8 encoding used by Lohmann route_1.0: 1=N, 2=NE, 3=E, 4=SE, 5=S, 6=SW, 7=W, 8=NW
 DIR_OFFSETS = {1: (-1, 0), 2: (-1, 1), 3: (0, 1), 4: (1, 1),

@@ -1,3 +1,13 @@
+---
+name: pydeltarcm
+description: >-
+  DeltaRCM reduced-complexity delta morphodynamics (Liang, Voller & Paola 2015 Part 1 +
+  Liang, Geleynse, Edmonds & Passalacqua 2015 Part 2), as…. Covers River delta
+  morphodynamics (delta formation, growth, and planform evolution); Reduced-complexity
+  hydrodynamics via weighted-random-walk routing of water parcels. Use when the task
+  involves running, configuring, calibrating or interpreting PyDeltaRCM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

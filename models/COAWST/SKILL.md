@@ -1,3 +1,13 @@
+---
+name: coawst
+description: >-
+  COAWST v3.8. Covers Two-way coupled coastal-ocean circulation (3D temperature, salinity,
+  velocity, free surface) via…; Nearshore spectral wind-wave evolution and wave-current
+  interaction via SWAN; Mesoscale atmospheric forcing and air-sea feedback via WRF;
+  Wave-current driven sediment resuspension, transport, and bed morphodynamics. Use when
+  the task involves running, configuring, calibrating or interpreting COAWST.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

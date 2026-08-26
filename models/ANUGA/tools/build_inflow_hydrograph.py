@@ -8,7 +8,7 @@ converting a daily gauge discharge series into the CSV that
 run_anuga.py --inflow_csv consumes.
 
 Input format A -- `--gauge_txt`, China water-level archive, e.g.
-/mnt/datasets/china_water_level/淮河txt/*.txt:
+KISSPATH_DATA/china_water_level/淮河txt/*.txt:
 
     stcd	dates	z	Q	name
     50101100	1952-5-30	0	403	王家坝
@@ -42,7 +42,7 @@ Output CSV (consumed by run_anuga.py):
 
 Example:
     python tools/build_inflow_hydrograph.py \
-        --gauge_txt /mnt/datasets/china_water_level/淮河txt/鲁台子.txt \
+        --gauge_txt KISSPATH_DATA/china_water_level/淮河txt/鲁台子.txt \
         --start 2003-07-01 --end 2003-08-07 \
         --output_csv ./forcing/inflow_lutaizi.csv
 """

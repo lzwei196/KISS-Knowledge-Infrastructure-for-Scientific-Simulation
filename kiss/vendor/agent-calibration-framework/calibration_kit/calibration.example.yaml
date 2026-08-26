@@ -1,0 +1,56 @@
+# Example calibration contract — PCSE (WOFOST) maize, scoring against FAOSTAT yield.
+# Few free parameters on purpose (codex C4: avoid equifinality). Expensive cost_class
+# => DDS + stratified-cell subset + holdout years (NOT a population MOEA).
+template_version: "calib-0.1"
+model_id: PCSE
+identity:
+  domain: crop
+  binding: Wofost72_WLP_CWB
+
+targets:
+  - var: TWSO          # storage-organ (grain) yield — observable vs FAOSTAT (regional_aggregate)
+    weight: 1.0
+
+parameters:
+  - name: TSUM1
+    description: "Temperature sum emergence->anthesis"
+    type: continuous
+    units: "degC.day"
+    default: 1050.0
+    range: [800.0, 1300.0]
+    transform: identity
+    scope: per-crop
+    zone_key: crop
+    address: {kind: yaml_path, file: "work/grid/maize.crop", path: "TSUM1"}
+
+  - name: TSUM2
+    description: "Temperature sum anthesis->maturity"
+    type: continuous
+    units: "degC.day"
+    default: 1000.0
+    range: [800.0, 1300.0]
+    transform: identity
+    scope: per-crop
+    zone_key: crop
+    address: {kind: yaml_path, file: "work/grid/maize.crop", path: "TSUM2"}
+
+  - name: SPAN
+    description: "Leaf life span at 35C"
+    type: continuous
+    units: "day"
+    default: 33.0
+    range: [25.0, 45.0]
+    transform: identity
+    scope: per-crop
+    zone_key: crop
+    address: {kind: yaml_path, file: "work/grid/maize.crop", path: "SPAN"}
+
+constraints:
+  - "TSUM1 + 200 <= TSUM2 + 800"     # keep phenology ordering plausible
+
+strategy:
+  cost_class: expensive
+  default_algorithm: dds
+  max_evaluations: 200
+  holdout:   {kind: years, fraction: 0.3}
+  subset:    {kind: stratified_cells, n: 40, stratify_by: ["agro_zone"]}

@@ -1,3 +1,14 @@
+---
+name: porepy
+description: >-
+  PorePy multiphysics fractured-porous-media framework. Covers Single-phase Darcy fluid
+  mass balance in mixed-dimensional fractured media; Linear-elastic momentum balance with
+  frictional fracture contact mechanics; Energy balance (advective + conductive heat
+  transport, local thermal equilibrium); Biot poromechanics (coupled flow + mechanics);
+  Thermoporomechanics (coupled THM). Use when the task involves running, configuring,
+  calibrating or interpreting PorePy.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

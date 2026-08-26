@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 
-W2_BINARY_DEFAULT = "/mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2_v5"
+W2_BINARY_DEFAULT = "KISSPATH_BINARIES/ce_qual_w2/bin/w2_v5"
 
 
 def preflight_checks(run_dir, binary):

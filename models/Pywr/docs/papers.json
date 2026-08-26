@@ -1,0 +1,150 @@
+{
+  "model": "Pywr",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 14,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.4236/jgis.2011.34024",
+      "title": "Hydrologic Modeling of the Bouregreg Watershed (Morocco) Using GIS and SWAT Model",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "storage_volume"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-18-1305-2014",
+      "title": "Comparing impacts of climate change on streamflow in four large African river basins",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-397-2020",
+      "title": "On the representation of water reservoir storage and operations in large-scale hydrological models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage_volume",
+        "release_discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-3735-2019",
+      "title": "Representation and improved parameterization of reservoir operation in hydrological and land-surface models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage_volume",
+        "release_discharge"
+      ]
+    },
+    {
+      "doi": "10.1038/s41467-021-25877-w",
+      "title": "Collaborative management of the Grand Ethiopian Renaissance Dam increases economic benefits and resilience",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage_volume",
+        "supply_reliability"
+      ]
+    },
+    {
+      "doi": "10.3389/fenvs.2021.596612",
+      "title": "Quantifying Cooperation Benefits for New Dams in Transboundary Water Systems Without Formal Operating Rules",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage_volume"
+      ]
+    },
+    {
+      "doi": "10.31223/x58p7f",
+      "title": "An open-source package with interactive Jupyter Notebooks to enhance the accessibility of reservoir operations simulation and optimisation",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "storage_volume",
+        "supply_reliability",
+        "release_discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "storage_volume"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2017.189",
+      "title": "Evaluation of the SWAT model performance for simulating river discharge in the Himalayan and lower plain basins",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/wr018i001p00014",
+      "title": "Reliability, resiliency, and vulnerability criteria for water resource system performance evaluation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "supply_reliability",
+        "demand_deficit"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2020.104635",
+      "title": "A water resource simulator in Python",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage_volume",
+        "supply_reliability"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2024.106185",
+      "title": "Pywr-DRB: An open-source Python model for water availability and drought risk assessment in the Delaware River Basin",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage_volume",
+        "supply_reliability"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2018.01.019",
+      "title": "A python framework for multi-agent simulation of networked resource systems (Pynsim)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage_volume"
+      ]
+    },
+    {
+      "doi": "10.1061/jwrmd5.wreng-6506",
+      "title": "National-Scale Optimized Design of Cost-Effective Water Supply and Transfer Systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "supply_reliability"
+      ]
+    }
+  ]
+}

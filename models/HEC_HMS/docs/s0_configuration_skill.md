@@ -74,9 +74,9 @@ output but establishes the framework for all subsequent stages.
 
 ```python
 config = {
-    "basin_shp": "/mnt/disk1/.../bengbu_clip.shp",
-    "forcing_dir": "/mnt/disk1/.../Data_forcing_01dy_025deg/",
-    "obs_file": "/mnt/disk1/.../51080_bengbu.txt",
+    "basin_shp": "KISSPATH_ROOT/.../bengbu_clip.shp",
+    "forcing_dir": "KISSPATH_ROOT/.../Data_forcing_01dy_025deg/",
+    "obs_file": "KISSPATH_ROOT/.../51080_bengbu.txt",
     "start_date": "1980-01-01",
     "end_date": "1990-12-31",
     "spinup_years": 1,

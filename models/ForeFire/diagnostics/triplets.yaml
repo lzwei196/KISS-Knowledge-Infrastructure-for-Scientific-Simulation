@@ -332,8 +332,8 @@
     action: "Put the directory containing libnetcdf-cxx4.so.1 on LD_LIBRARY_PATH (usually already installed, just not on the default loader path)."
     tool_to_run: run_forefire
     manual_steps:
-      - "Locate it: find / -name 'libnetcdf-cxx4.so.1' 2>/dev/null (on this platform: /home/server/.local/lib)"
-      - "Run with: LD_LIBRARY_PATH=/home/server/.local/lib forefire -i script.ff"
+      - "Locate it: find / -name 'libnetcdf-cxx4.so.1' 2>/dev/null (on this platform: KISSPATH_HOME/.local/lib)"
+      - "Run with: LD_LIBRARY_PATH=KISSPATH_HOME/.local/lib forefire -i script.ff"
       - "run_forefire.py now auto-prepends ~/.local/lib (or /usr/local/lib) when it holds the lib."
       - "Only if genuinely missing: apt install libnetcdf-c++4-dev"
     prevention: "run_forefire.py._runtime_env() sets LD_LIBRARY_PATH from the prefix that actually contains the lib."

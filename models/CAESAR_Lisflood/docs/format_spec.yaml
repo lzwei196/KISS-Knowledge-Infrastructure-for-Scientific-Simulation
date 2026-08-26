@@ -5,7 +5,7 @@ model:
   domain: "Geomorphology / Flood inundation / Landscape evolution"
   language: "C++"
   parallelism: "OpenMP shared-memory"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CAESAR_Lisflood/source/repo/bin/HAIL-CAESAR.exe"
+  binary_path: "KISSPATH_BINARIES/CAESAR_Lisflood/source/repo/bin/HAIL-CAESAR.exe"
   source_url: "https://github.com/dvalters/HAIL-CAESAR"
 
 inputs:

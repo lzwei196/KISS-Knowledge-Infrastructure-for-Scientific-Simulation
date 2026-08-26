@@ -1,3 +1,14 @@
+---
+name: gifmod
+description: >-
+  GIFMod. Covers Hydraulic and water-quality performance of stormwater green
+  infrastructure and urban/agricultural…; Variably-saturated flow from surface water
+  through the vadose zone to groundwater across an…; Particle/colloid transport across
+  mobile and attached phases; Dissolved and particle-bound reactive constituent fate and
+  transport with user-defined…. Use when the task involves running, configuring,
+  calibrating or interpreting GIFMod.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

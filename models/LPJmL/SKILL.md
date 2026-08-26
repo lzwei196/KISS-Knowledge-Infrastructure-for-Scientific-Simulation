@@ -1,3 +1,14 @@
+---
+name: lpjml
+description: >-
+  LPJmL 6.0.0. Covers Carbon cycle (GPP, NPP, autotrophic and heterotrophic respiration;
+  vegetation/soil/litter carbon…; Nitrogen cycle (deposition, fertilizer/manure,
+  biological N fixation, leaching, denitrification…; Terrestrial water balance (soil
+  moisture by layer, evapotranspiration, runoff, percolation); Lateral river routing,
+  reservoir operations, and irrigation demand/supply. Use when the task involves running,
+  configuring, calibrating or interpreting LPJmL.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

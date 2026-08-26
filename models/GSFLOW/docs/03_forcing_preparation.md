@@ -100,8 +100,8 @@ pre-processed per-HRU values.
 ## Example
 ```bash
 python convert_forcing_to_gsflow.py \
-    --forcing-dir /media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg/ \
-    --shapefile /mnt/disk1/Hydrocraft_server/data/shp/bengbu_shp/bengbu_clip.shp \
+    --forcing-dir KISSPATH_FORCING/huai/Data_forcing_01dy_025deg/ \
+    --shapefile KISSPATH_DATA/shp/bengbu_shp/bengbu_clip.shp \
     --output-dir ./input/prms/ \
     --start-year 1980 --end-year 1990 \
     --source cmfd \

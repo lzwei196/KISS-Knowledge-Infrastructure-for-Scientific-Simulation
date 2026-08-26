@@ -1,0 +1,275 @@
+{
+  "model": "CISM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 26,
+  "open_access": 21,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-12-387-2019",
+      "title": "Description and evaluation of the Community Ice Sheet Model (CISM) v2.1",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change",
+        "water_level",
+        "sea_ice",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-15-633-2021",
+      "title": "ISMIP6-based projections of ocean-forced Antarctic Ice Sheet evolution using the Community Ice Sheet Model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "sea_ice"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-17-1513-2023",
+      "title": "Exploring ice sheet model sensitivity to ocean thermal forcing and basal sliding using the Community Ice Sheet Model (CISM)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-19-283-2025",
+      "title": "Present-day mass loss rates are a precursor for West Antarctic Ice Sheet collapse",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "sea_ice"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-2-95-2008",
+      "title": "Benchmark experiments for higher-order and full-Stokes ice sheet models (ISMIP-HOM)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "velocity",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-12-1433-2018",
+      "title": "Design and results of the ice sheet model initialisation experiments initMIP-Greenland",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "velocity",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-13-1441-2019",
+      "title": "initMIP-Antarctica: an ice sheet model initialization experiment of ISMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "velocity",
+        "water_level",
+        "sea_ice"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-4521-2016",
+      "title": "Ice Sheet Model Intercomparison Project (ISMIP6) contribution to CMIP6",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "sea_ice",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-2283-2020",
+      "title": "Results of the third Marine Ice Sheet Model Intercomparison Project (MISMIP+)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "sea_ice",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-6-573-2012",
+      "title": "Results of the Marine Ice Sheet Model Intercomparison Project, MISMIP",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "sea_ice"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-6-1561-2012",
+      "title": "Greenland ice sheet contribution to sea-level rise from a new-generation ice-sheet model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-6-1299-2013",
+      "title": "Capabilities and performance of Elmer/Ice, a new-generation ice sheet model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "velocity",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-8-1539-2014",
+      "title": "Elevation and elevation change of Greenland and Antarctica derived from CryoSat-2",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-7-499-2013",
+      "title": "A new bed elevation dataset for Greenland",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-3071-2020",
+      "title": "The future sea-level contribution of the Greenland ice sheet: a multi-model ensemble study of ISMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "sea_ice"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-3033-2020",
+      "title": "ISMIP6 Antarctica: a multi-model ensemble of the Antarctic ice sheet evolution over the 21st century",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "sea_ice"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-2331-2020",
+      "title": "Experimental protocol for sea level projections from ISMIP6 stand-alone ice sheet models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-2471-2016",
+      "title": "Experimental design for three interrelated marine ice sheet and ocean model intercomparison projects",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "sea_ice",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-12-1367-2020",
+      "title": "Greenland Ice Sheet solid ice discharge from 1986 through March 2020",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "sea_ice",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-8-1509-2014",
+      "title": "The Greenland Ice Mapping Project (GIMP) land classification and surface elevation datasets",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "sea_ice",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-4021-2020",
+      "title": "Geothermal heat flux from measured temperature profiles in deep ice boreholes in Antarctica",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1038/s41586-019-1855-2",
+      "title": "Mass balance of the Greenland Ice Sheet from 1992 to 2018 (IMBIE)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.1175/jcli-d-12-00557.1",
+      "title": "Implementation and Initial Evaluation of the Glimmer Community Ice Sheet Model in the Community Earth System Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-14-5111-2022",
+      "title": "Processing methodology for the ITS_LIVE Sentinel-1 ice velocity products",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3189/s0260305500013197",
+      "title": "The EISMINT benchmarks for testing ice-sheet models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change",
+        "temperature",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1029/2008jf001015",
+      "title": "The Glimmer community ice sheet model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change",
+        "water_level",
+        "temperature"
+      ]
+    }
+  ]
+}

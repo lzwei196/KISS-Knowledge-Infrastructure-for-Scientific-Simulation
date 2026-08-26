@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 
 
-HYDROCRAFT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+HYDROCRAFT_ROOT = Path("KISSPATH_ROOT")
 TOOLS_ROOT = HYDROCRAFT_ROOT / "models" / "wflow" / "knowledge_infrastructure" / "tools"
 PYTHON = str(HYDROCRAFT_ROOT / "python_env" / "bin" / "python")
 

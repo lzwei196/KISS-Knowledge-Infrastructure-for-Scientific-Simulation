@@ -4,7 +4,7 @@
 #   obs          ESA Snow_cci MERGED SWE v2.0 — GENUINE snow water equivalent (mm),
 #                clipped and area-averaged over the Hulunbuir open-steppe region
 #                polygon 120.0-120.8 E / 49.1-49.7 N (48 cells @ 0.1 deg)
-#                granules  /mnt/datasets/benchmarks/snowcci_swe
+#                granules  KISSPATH_DATA/benchmarks/snowcci_swe
 #                cache     outputs/hulunbuir_steppe/obs_snowcci_region_mean.csv
 #   quantity     SWE  (dag var SWE, obs_shape regional_aggregate_time_series,
 #                determining metric NSE)
@@ -135,8 +135,8 @@ identity:
     (504.4 km2, 13.0%, PBSM-inhibited canopy HRUs).
   obs_source: snowcci_swe
   obs_id: "ESA Snow_cci MERGED SWE v2.0, region mean over the Hulunbuir polygon"
-  obs_file: "/mnt/disk1/Hydrocraft_server/models/CRHM/knowledge_infrastructure/outputs/hulunbuir_steppe/obs_snowcci_region_mean.csv"
-  obs_granules: "/mnt/datasets/benchmarks/snowcci_swe"
+  obs_file: "KISSPATH_KI_ROOT/CRHM/knowledge_infrastructure/outputs/hulunbuir_steppe/obs_snowcci_region_mean.csv"
+  obs_granules: "KISSPATH_DATA/benchmarks/snowcci_swe"
   target_quantity: swe
   baseline_run: >
     CRHM_20260726T164031Z_286796 (2026-07-27) — held-out 2009-2014 monthly-mean

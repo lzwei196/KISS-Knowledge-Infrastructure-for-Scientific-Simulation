@@ -253,11 +253,11 @@ def resolve_shared_libs(binary_path):
     if not missing:
         return []
     search = list(known_dirs) + [
-        "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/lib",
+        "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/lib",
     ]
     # Add all conda env lib dirs as a last resort
     import glob
-    search += sorted(glob.glob("/home/server/miniconda3/envs/*/lib"))
+    search += sorted(glob.glob("KISSPATH_HOME/miniconda3/envs/*/lib"))
     found = []
     for soname in missing:
         for d in search:

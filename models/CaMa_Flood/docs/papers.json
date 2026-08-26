@@ -1,0 +1,200 @@
+{
+  "model": "CaMa_Flood",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 10,
+  "papers": [
+    {
+      "doi": "10.5194/hess-21-5143-2017",
+      "title": "Impacts of spatial resolution and representation of flow connectivity on large-scale simulation of floods",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-3057-2019",
+      "title": "Assessing the performance of global hydrological models for capturing peak river flows in the Amazon basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-4143-2012",
+      "title": "Deriving global flood hazard maps of fluvial floods through a physical model cascade",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent",
+        "depth",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-018-35823-4",
+      "title": "Potential Disruption of Flood Dynamics in the Lower Mekong River Basin Due to Upstream Flow Regulation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-4815-2018",
+      "title": "Toward continental hydrologic-hydrodynamic modeling in South America",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-16-75-2024",
+      "title": "AltiMaP: altimetry mapping procedure for hydrography data",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-2135-2018",
+      "title": "Large-scale hydrological model river storage and discharge correction using a satellite altimetry-based discharge product",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-647-2023",
+      "title": "Assimilation of transformed water surface elevation to improve river discharge estimation in a continental-scale river",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-4983-2016",
+      "title": "Calibration of channel depth and friction parameters in the LISFLOOD-FP hydraulic model using medium-resolution SAR data and identifiability techniques",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/aae014",
+      "title": "A first collective validation of global fluvial flood models for major floods in Nigeria and Mozambique",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1029/2010wr009726",
+      "title": "A physically based description of floodplain inundation dynamics in a global river routing model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent",
+        "depth",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/ac188d",
+      "title": "Evaluation of river flood extent simulated with multiple global hydrological models and climate forcings",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/ad52b0",
+      "title": "Global hydrological models continue to overestimate river discharge",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1002/wrcr.20552",
+      "title": "Improving computational efficiency in global river models by implementing the local inertial flow equation and a vector-based river network map",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1002/2017gl074684",
+      "title": "Rivers and Floodplains as Key Components of Global Terrestrial Water Storage Variability",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/aa7250",
+      "title": "The critical role of the routing scheme in simulating peak river discharge in global hydrological models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-19-1723-2019",
+      "title": "Evaluating the impact of model complexity on flood wave propagation and inundation extent",
+      "access": "open",
+      "role": "sensitivity"
+    }
+  ]
+}

@@ -37,7 +37,7 @@ VARIABLES_TO_PROCESS = [
 # config_paths.py silently does NOT update GRID_NC_PATH. Reading them from the
 # environment removes both traps. Defaults reproduce the old hard-coded run.
 _BASIN = os.environ.get("VIC_BASIN_NAME", "xixian")
-_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
+_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "KISSPATH_OUTPUTS"))
 
 YEAR_START = int(os.environ.get("VIC_YEAR_START", 1979))
 YEAR_END = int(os.environ.get("VIC_YEAR_END", 1980))

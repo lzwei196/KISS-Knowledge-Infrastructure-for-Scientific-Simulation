@@ -1,0 +1,212 @@
+{
+  "model": "OpenFOAM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.4236/ojfd.2022.122011",
+      "title": "Numerical Experiments of Subsonic Jet Flow Simulations Using RANS with OpenFOAM",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "pressure",
+        "turbulence"
+      ]
+    },
+    {
+      "doi": "10.1051/itmconf/20140204002",
+      "title": "Dynamic flow analysis using an OpenFOAM based CFD tool: Validation of Turbulence Modelling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "turbulence",
+        "velocity",
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-023-41324-w",
+      "title": "Assessing the impact of turbulent kinetic energy boundary conditions on turbulent flow simulations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "turbulence"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0178749",
+      "title": "Use of the FDA nozzle model to illustrate validation techniques in computational fluid dynamics (CFD) simulations",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "velocity",
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.51560/ofj.v2.65",
+      "title": "A Review on the Modelling of Wave-Structure Interactions Based on OpenFOAM",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "velocity",
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.1007/s40722-020-00173-9",
+      "title": "Beyond VoF: alternative OpenFOAM solvers for numerical wave tanks",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-024-61297-8",
+      "title": "Experimental and numerical investigations of the water surface profile and wave characteristics (OpenFOAM spillway/free-surface)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "discharge",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1007/s13201-019-1112-8",
+      "title": "Investigation of trapezoidal sharp-crested side weir discharge coefficients under subcritical flow (CFD vs experiment)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.51560/ofj.v3.88",
+      "title": "OpenFOAM-preCICE: Coupling OpenFOAM with External Solvers for Multi-Physics Simulations",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "velocity",
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.1155/2017/5251902",
+      "title": "Guidance on Setup, Calibration, and Validation of Hydrodynamic, Wave, and Sediment Models for Shelf Seas and Estuaries",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "discharge",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.2172/793406",
+      "title": "Verification and Validation in Computational Fluid Dynamics",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "velocity",
+        "pressure",
+        "turbulence",
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1080/00221686.2024.2401905",
+      "title": "Benchmark of computational hydraulics models for open-channel flow with lateral inflow",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.oceaneng.2014.06.003",
+      "title": "Numerical investigation of wave-structure interaction using OpenFOAM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "pressure",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3390/jmse8090650",
+      "title": "Validation of RANS Modelling for Wave Interactions with Sea Dikes on Shallow Foreshores",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.renene.2019.08.059",
+      "title": "Validation of a CFD-based numerical wave tank model for the power production assessment of a wave energy converter",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "velocity",
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology12060145",
+      "title": "Numerical Simulation of Turbulent Flow in River Bends and Confluences Using OpenFOAM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "turbulence",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1556/1848.2021.00264",
+      "title": "Assessment of RANS turbulence closure models for predicting airflow in neutral atmospheric boundary layer",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "turbulence",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3390/w13152134",
+      "title": "Analysis of Applicability of CFD Numerical Studies Applied to Problem When Pump Working as Turbine",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.1108/hff-12-2023-0726",
+      "title": "Turbo-RANS: straightforward and efficient Bayesian optimization of turbulence model coefficients",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "turbulence"
+      ]
+    },
+    {
+      "doi": "10.1016/j.cja.2016.02.012",
+      "title": "Instability and sensitivity analysis of flows using OpenFOAM",
+      "access": "subscription",
+      "role": "sensitivity"
+    }
+  ]
+}

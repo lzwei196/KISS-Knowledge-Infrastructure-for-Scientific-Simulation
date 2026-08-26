@@ -1,3 +1,13 @@
+---
+name: elm
+description: >-
+  E3SM Land Model (ELM), E3SM v2/v3 lineage — CLM4.5-derived land-surface scheme with
+  CN(P) biogeochemistry and optional FATES vegetation demography. Covers Terrestrial water
+  balance (soil moisture, infiltration, surface runoff, sub-surface drainage…; Surface
+  energy balance (latent and sensible heat flux, ground/soil heat, soil temperature with….
+  Use when the task involves running, configuring, calibrating or interpreting ELM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

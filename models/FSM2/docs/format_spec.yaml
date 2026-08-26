@@ -5,8 +5,8 @@ model:
   domain: "cryosphere"
   subdomain: "snow accumulation, melt, forest canopy snow processes"
   author: "Richard Essery, University of Edinburgh"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/FSM2/source/repo/FSM2"
-  source_dir: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/FSM2/source/repo/src"
+  binary_path: "KISSPATH_BINARIES/FSM2/source/repo/FSM2"
+  source_dir: "KISSPATH_BINARIES/FSM2/source/repo/src"
   language: "Fortran 90"
   compiler: "gfortran -cpp -O3"
   timestep_s: 3600

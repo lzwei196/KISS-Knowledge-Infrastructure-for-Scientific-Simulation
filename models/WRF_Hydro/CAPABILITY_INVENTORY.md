@@ -25,7 +25,7 @@
 
 ## 2. WRF-Hydro Capabilities: What Exists in the Binary
 
-The compiled `wrf_hydro.exe` at `/mnt/disk1/Hydrocraft_server/model/wrf_hydro/source/trunk/NDHMS/Run/` contains these Fortran modules:
+The compiled `wrf_hydro.exe` at `KISSPATH_BINARIES/wrf_hydro/source/trunk/NDHMS/Run/` contains these Fortran modules:
 
 ### 2a. Land Surface (Noah-MP) -- all present in binary
 | Capability | Source Module | Status |

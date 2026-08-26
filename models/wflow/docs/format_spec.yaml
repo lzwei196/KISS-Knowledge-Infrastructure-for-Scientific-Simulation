@@ -12,7 +12,7 @@ model:
   domain: "hydrology"
   secondary_domains: ["sediment"]
   binary: "julia wflow_runner.jl"
-  binary_path: "/mnt/disk1/Hydrocraft_server/model/julia-1.10.7/bin/julia"
+  binary_path: "KISSPATH_BINARIES/julia-1.10.7/bin/julia"
   language: "Julia"
   working_directory: "directory containing wflow_sbm.toml"
   dependencies: "Julia 1.10+, Wflow.jl package"

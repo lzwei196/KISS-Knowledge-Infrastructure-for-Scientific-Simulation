@@ -25,7 +25,7 @@ Supports two modes:
   2. Point mode: returns the C-factor for a single lat/lon.
 
 Data source: AVHRR 1km UMD Global Land Cover
-    /mnt/disk1/Hydrocraft_server/data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif
+    KISSPATH_DATA/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif
 
 Usage:
     # Grid mode (main use case):
@@ -55,7 +55,7 @@ import numpy as np
 # AVHRR Data
 # ---------------------------------------------------------------------------
 
-AVHRR_TIF = "/mnt/disk1/Hydrocraft_server/data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif"
+AVHRR_TIF = "KISSPATH_DATA/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif"
 
 # ---------------------------------------------------------------------------
 # USLE C-factor lookup tables for UMD land cover classes

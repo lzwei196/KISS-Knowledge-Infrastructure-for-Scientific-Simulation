@@ -1,0 +1,155 @@
+{
+  "model": "pySTEPS",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 16,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-12-4185-2019",
+      "title": "Pysteps: an open-source Python library for probabilistic precipitation nowcasting (v1.0)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "exceedance_probability",
+        "motion_field"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-18-4671-2014",
+      "title": "The effect of flow and orography on the spatial distribution of the very short-term predictability of rainfall from composite radar images",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "motion_field"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-1387-2019",
+      "title": "Optical flow models as an open benchmark for radar-based precipitation nowcasting (rainymotion v0.1)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "motion_field",
+        "exceedance_probability"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-26-2697-2022",
+      "title": "Hydrometeorological evaluation of two nowcasting systems for Mediterranean heavy precipitation events with operational considerations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "exceedance_probability"
+      ]
+    },
+    {
+      "doi": "10.3402/tellusa.v65i0.18171",
+      "title": "Spatial-temporal fractions verification for high-resolution ensemble forecasts",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "exceedance_probability"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-024-82182-4",
+      "title": "A new verification approach for nowcasting based on intensity and spatial-temporal structure",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "exceedance_probability",
+        "motion_field"
+      ]
+    },
+    {
+      "doi": "10.3402/tellusa.v66.22662",
+      "title": "Calibrating ensemble reliability whilst preserving spatial structure",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "exceedance_probability"
+      ]
+    },
+    {
+      "doi": "10.1002/met.1392",
+      "title": "Progress and challenges in forecast verification",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "exceedance_probability",
+        "motion_field"
+      ]
+    },
+    {
+      "doi": "10.1175/2007mwr2123.1",
+      "title": "Scale-Selective Verification of Rainfall Accumulations from High-Resolution Forecasts of Convective Events",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "exceedance_probability"
+      ]
+    },
+    {
+      "doi": "10.1002/met.25",
+      "title": "Fuzzy verification of high-resolution gridded forecasts: a review and proposed framework",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "exceedance_probability"
+      ]
+    },
+    {
+      "doi": "10.1175/2010waf2222404.1",
+      "title": "Neighborhood-Based Verification of Precipitation Forecasts from Convection-Allowing NWP Models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "exceedance_probability"
+      ]
+    },
+    {
+      "doi": "10.1029/2021wr031591",
+      "title": "Large-Sample Evaluation of Radar Rainfall Nowcasting for Flood Early Warning",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "exceedance_probability"
+      ]
+    },
+    {
+      "doi": "10.1002/qj.3766",
+      "title": "NowPrecip: localized precipitation nowcasting in the complex terrain of Switzerland",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "exceedance_probability",
+        "motion_field"
+      ]
+    },
+    {
+      "doi": "10.3390/forecast2020011",
+      "title": "Performance Comparison between Deep Learning and Optical Flow-Based Techniques for Nowcast Precipitation from Radar Images",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "motion_field",
+        "exceedance_probability"
+      ]
+    },
+    {
+      "doi": "10.1002/qj.4461",
+      "title": "Scale-dependent blending of ensemble rainfall nowcasts and numerical weather prediction in the open-source pysteps library",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "exceedance_probability"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-505-2016",
+      "title": "Development and verification of a real-time stochastic precipitation nowcasting system (STEPS)",
+      "access": "open",
+      "role": "sensitivity"
+    }
+  ]
+}

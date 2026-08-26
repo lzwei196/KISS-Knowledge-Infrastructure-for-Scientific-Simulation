@@ -1,0 +1,172 @@
+{
+  "model": "mHM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 17,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.5194/hess-21-4323-2017",
+      "title": "Toward seamless hydrologic predictions across spatial scales",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-1769-2017",
+      "title": "A high-resolution dataset of water fluxes and states for Germany accounting for parametric uncertainty",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-1299-2018",
+      "title": "Combining satellite data and appropriate objective functions for improved spatial pattern performance of a distributed hydrologic model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-1873-2018",
+      "title": "The SPAtial EFficiency metric (SPAEF): multiple-component evaluation of spatial patterns for optimization of hydrological models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-2501-2019",
+      "title": "The multiscale routing model mRM v1.0: simple river routing at resolutions from 1 to 50 km",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-5379-2020",
+      "title": "Suitability of 17 gridded rainfall and temperature datasets for large-scale hydrological modelling across Germany",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w11102083",
+      "title": "Additional Value of Using Satellite-Based Soil Moisture and Two Sources of Groundwater Data for Hydrological Model Calibration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/rs14020315",
+      "title": "Climate Normalized Spatial Patterns of Evapotranspiration Enhance the Calibration of a Hydrological Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3390/w10101418",
+      "title": "Computationally Efficient Multivariate Calibration and Validation of a Grid-Based Hydrologic Model in Sparsely Gauged West African River Basins",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-12-075.1",
+      "title": "Implications of Parameter Uncertainty on Soil Moisture Drought Analysis in Germany",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2012wr012195",
+      "title": "Implications of distributed hydrologic model parameterization on water fluxes at multiple scales and locations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2008wr007327",
+      "title": "Multiscale parameter regionalization of a grid-based hydrologic model at the mesoscale",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology9090158",
+      "title": "Testing the mHM-MPR Reliability for Parameter Transferability across Locations in North-Central Nigeria",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2022wr034193",
+      "title": "Tradeoffs Between Temporal and Spatial Pattern Calibration and Their Impacts on Robustness and Transferability of Hydrologic Model Parameters",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    }
+  ]
+}

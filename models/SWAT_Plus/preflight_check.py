@@ -51,7 +51,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -74,8 +74,8 @@ def check_binary_search(name, label):
         return
     # Search common locations
     search_dirs = [
-        "/mnt/disk1/Hydrocraft_server/model",
-        "/home/server",
+        "KISSPATH_BINARIES",
+        "KISSPATH_HOME",
         "/usr/local/bin",
     ]
     for d in search_dirs:
@@ -98,10 +98,10 @@ def check_common_data():
     """Check common HydroCraft data paths."""
     global PASS, FAIL
     common = [
-        ("/mnt/disk1/Hydrocraft_server/data/obs", "Observation data"),
-        ("/media/server/hc_ssd/forcing", "Forcing data"),
-        ("/mnt/disk1/Hydrocraft_server/data/dem", "DEM data"),
-        ("/mnt/disk1/Hydrocraft_server/data/soil", "Soil data"),
+        ("KISSPATH_OBS", "Observation data"),
+        ("KISSPATH_FORCING", "Forcing data"),
+        ("KISSPATH_STATIC", "DEM data"),
+        ("KISSPATH_STATIC", "Soil data"),
     ]
     for path, label in common:
         if os.path.isdir(path):
@@ -125,8 +125,8 @@ def main():
     # DO NOT use .../wangjiaba/run/swatplus — that is the broken 6.5MB recompile
     # ("Revision unknown", GNU 13.3.0) that segfaults on channel init.
     REV59_CANDIDATES = [
-        "/mnt/disk1/Hydrocraft_server/models/SWAT_Plus/test_rev59/swatplus_rev59",
-        "/mnt/disk1/Hydrocraft_server/outputs/chaohe_2000_2010_025deg/swatplus_cn2_test/swatplus_rev59",
+        "KISSPATH_KI_ROOT/SWAT_Plus/test_rev59/swatplus_rev59",
+        "KISSPATH_OUTPUTS/chaohe_2000_2010_025deg/swatplus_cn2_test/swatplus_rev59",
     ]
     rev59 = next((p for p in REV59_CANDIDATES if os.path.isfile(p)), None)
     if rev59:

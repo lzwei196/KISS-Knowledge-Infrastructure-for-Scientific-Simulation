@@ -18,7 +18,7 @@ This tool can:
 2. Auto-select cultivar by latitude (using the latitude-based guide)
 3. Write the selected cultivar's params into the scenario's .CUL file
 
-Data source: /home/server/DSSAT/Data/Genotype/China/ (DSSAT v4.8 format)
+Data source: KISSPATH_HOME/DSSAT/Data/Genotype/China/ (DSSAT v4.8 format)
 Conversion: MZCER048 → MZCER040 (drop EXPNO field, add Height/Biomass defaults)
 
 Inputs:
@@ -40,7 +40,7 @@ LAT = ""
 CULTIVAR_ID = ""  # e.g., CN0001. If empty, auto-select by latitude.
 
 # DSSAT China cultivar library
-CHINA_CUL_DIR = "/home/server/DSSAT/Data/Genotype/China"
+CHINA_CUL_DIR = "KISSPATH_HOME/DSSAT/Data/Genotype/China"
 
 # Crop → CUL file mapping
 CROP_CUL_MAP = {

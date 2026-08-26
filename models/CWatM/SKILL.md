@@ -1,3 +1,14 @@
+---
+name: cwatm
+description: >-
+  CWatM v1.04. Covers Terrestrial water cycle simulated daily: precipitation/snow
+  partitioning, evapotranspiration, soil…; Water availability, demand and water stress
+  across river basins; Human water use and abstraction (irrigation, industry, domestic,
+  livestock) including return flows; Water-infrastructure effects: reservoirs, lakes,
+  groundwater pumping, irrigation. Use when the task involves running, configuring,
+  calibrating or interpreting CWatM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -43,7 +54,7 @@
 references are STALE. Use instead:
 - forcing units and traps → `ki_tools_common.load_forcing`, plus `tools/convert_forcing_to_cwatm.py`
 - soil properties → `ki_tools_common.soil_utils`, plus `tools/convert_soil_to_cwatm.py`
-- observed discharge → `/mnt/disk1/Hydrocraft_server/data_ki/dataset_index.yaml`
+- observed discharge → `KISSPATH_DATA_KI/dataset_index.yaml`
   (`observation.discharge`) and `kdt_dataset_layouts.yaml` for on-disk format quirks.
 
 

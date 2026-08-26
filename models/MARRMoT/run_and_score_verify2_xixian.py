@@ -41,9 +41,9 @@ Period 1978-01-01..2018-12-31 (CMFD covers 1951-2024):
 Obs are absent 1998-2001 and 2004; MARRMoT's check_and_select drops NaN /
 negative obs natively, so no masking is needed.
 
-ALL INPUTS ARE LOCAL (CMFD on /media/server/hc_ssd, obs on /mnt/datasets,
-HydroBASINS on /mnt/disk1) -- the runner performs NO network fetch, and
-nothing is read from the exfat disk /mnt/disk3.
+ALL INPUTS ARE LOCAL (CMFD on KISSPATH_DATA, obs on KISSPATH_DATA,
+HydroBASINS on KISSPATH_ROOT) -- the runner performs NO network fetch, and
+nothing is read from the exfat disk KISSPATH_DATA.
 
 RESUMABLE at every stage: basin cells, each CMFD year, forcing, obs, and each
 structure's best_theta.json / timeseries / summary json are all skipped if
@@ -62,17 +62,17 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
-KTC = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
-MARRMOT_SRC = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/source/repo/MARRMoT"
+KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
+KTC = "KISSPATH_KI_TOOLS_COMMON"
+MARRMOT_SRC = "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
 MODEL_DIR = os.path.join(MARRMOT_SRC, "Models", "Model files")
-STATE = ("/mnt/disk1/Hydrocraft_server/models/MARRMoT/detached/"
+STATE = ("KISSPATH_KI_ROOT/MARRMoT/detached/"
          "verify_2_c4037a0135114a14a2807548fbc73766")
-VALIDATORS = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"
-CMFD_DIR = "/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg"
-HYBAS = ("/mnt/disk1/Hydrocraft_server/data/awd_paper/hydrobasins/asia/"
+VALIDATORS = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
+CMFD_DIR = "KISSPATH_FORCING/Data_forcing_01dy_010deg"
+HYBAS = ("KISSPATH_DATA/awd_paper/hydrobasins/asia/"
          "hybas_as_lev07_v1c.shp")
-OBS_TXT = "/mnt/datasets/china_water_level/淮河txt/息县.txt"
+OBS_TXT = "KISSPATH_DATA/china_water_level/淮河txt/息县.txt"
 
 STCD = "50225601"
 GAUGE_NAME = "息县 Xixian, upper Huai River (淮河), Henan, China"
@@ -151,9 +151,9 @@ def stage_availability():
     res = {"all_required_reachable": not missing, "unreachable_required": missing,
            "unreachable_optional": [], "degraded_mode": None,
            "note": "every input is on local disk (CMFD on hc_ssd, obs on "
-                   "/mnt/datasets, HydroBASINS on /mnt/disk1); the runner "
+                   "KISSPATH_DATA, HydroBASINS on KISSPATH_ROOT); the runner "
                    "performs no network fetch and reads nothing from exfat "
-                   "/mnt/disk3"}
+                   "KISSPATH_DATA"}
     json.dump(res, open(AVAIL, "w"), indent=2)
     return res
 

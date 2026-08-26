@@ -1,0 +1,116 @@
+{
+  "model": "RAPID",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 12,
+  "open_access": 4,
+  "papers": [
+    {
+      "doi": "10.5194/hess-27-3505-2023",
+      "title": "To what extent does river routing matter in hydrological modeling?",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3389/fenvs.2019.00171",
+      "title": "Evaluation of Available Global Runoff Datasets Through a River Model in Support of the SWOT Mission",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-4815-2018",
+      "title": "Toward continental hydrologic-hydrodynamic modeling in South America",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4127-2015",
+      "title": "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1175/2011jhm1345.1",
+      "title": "River Network Routing on the NHDPlus Dataset",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2023wr035337",
+      "title": "Improving River Routing Using a Differentiable Muskingum-Cunge Model and Physics-Informed Machine Learning",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2015ea000142",
+      "title": "A decade of RAPID - Reflections on the development of an open source geoscience code",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.2166/hydro.2023.030",
+      "title": "Machine learning-enabled calibration of river routing model parameters",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1111/1752-1688.12456",
+      "title": "Continental-Scale River Flow Modeling of the Mississippi River Basin Using High-Resolution NHDPlus Dataset",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2023.105631",
+      "title": "Development of non-data driven reservoir routing in the routing application for parallel computatIon of discharge (RAPID) model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/rs11232804",
+      "title": "River Discharge Simulation in the High Andes of Southern Ecuador Using High-Resolution Radar Data and RAPID",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    }
+  ]
+}

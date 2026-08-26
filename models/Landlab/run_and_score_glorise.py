@@ -42,11 +42,11 @@ from landlab.components import FlowAccumulator, SpaceLargeScaleEroder
 warnings.filterwarnings("ignore")
 
 STATE_DIR = pathlib.Path(
-    "/mnt/disk1/Hydrocraft_server/models/Landlab/detached/verify_2"
+    "KISSPATH_KI_ROOT/Landlab/detached/verify_2"
 )
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 GLORISE = pathlib.Path(
-    "/mnt/disk1/Hydrocraft_server/data/obs/sediment/glorise/GloRiSe/"
+    "KISSPATH_OBS/sediment/glorise/GloRiSe/"
     "SedimentDatabase_ME_Nut.csv"
 )
 STATION = "NLD-RHN-111112"   # Rhine @ Lobith — best-sampled single river

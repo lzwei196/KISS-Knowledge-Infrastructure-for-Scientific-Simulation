@@ -1,0 +1,215 @@
+{
+  "model": "DNDC",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 11,
+  "papers": [
+    {
+      "doi": "10.5194/bg-9-3983-2012",
+      "title": "Parameter-induced uncertainty quantification of soil N2O, NO and CO2 emission from Hoglwald spruce forest (Germany) using the LandscapeDNDC model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "N2O_emission",
+        "NO_emission",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-11-91-2014",
+      "title": "Assessing biogeochemical effects and best management practice for a wheat-maize cropping system using the DNDC model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "N2O_emission",
+        "soil_carbon",
+        "yield",
+        "NO3_leaching"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-16-2905-2019",
+      "title": "Using a modified DNDC biogeochemical model to optimize field management of a multi-crop (cotton, wheat, and maize) system",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "N2O_emission",
+        "soil_carbon",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-2-113-2005",
+      "title": "Greenhouse gas emissions from Indian rice fields: calibration and upscaling using the DNDC model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "N2O_emission"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-8-1225-2011",
+      "title": "Quantifying methane emissions from rice paddies in Northeast China by integrating remote sensing mapping with a biogeochemical model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-8-2999-2011",
+      "title": "Modeling nitrogen loading in a small watershed in southwest China using a DNDC model with hydrological enhancements",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "NO3_leaching"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-020-79988-3",
+      "title": "Modelling adaptation strategies to reduce adverse impacts of climate change on maize cropping system in Africa",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/acp-20-6903-2020",
+      "title": "Effects of fertilization and stand age on N2O and NO emissions from tea plantations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "N2O_emission",
+        "NO_emission"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-14-5455-2017",
+      "title": "Modeling impacts of climate change and grazing effects on plant biomass and soil organic carbon in the Qinghai-Tibetan grasslands",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-13-3735-2016",
+      "title": "Reviews and syntheses: Four decades of modeling methane cycling in terrestrial ecosystems",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.5027/jnrd.v4i0.01",
+      "title": "A new novel index for evaluating model performance",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "N2O_emission",
+        "soil_carbon",
+        "trace_gas",
+        "NO3_leaching"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2011.05.001",
+      "title": "Simulation of winter wheat yield and its variability in different climates of Europe",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.geoderma.2023.116450",
+      "title": "Development of DNDC-BC model to estimate greenhouse gas emissions from rice paddy fields under combination of biochar and controlled irrigation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "N2O_emission",
+        "yield",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1080/02723646.1981.10642213",
+      "title": "On the validation of models (index of agreement / d-index)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "soil_carbon",
+        "N2O_emission",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.1080/00380768.2012.682955",
+      "title": "Validation of the DNDC-Rice model by using CH4 and N2O flux data from rice paddy fields",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "N2O_emission"
+      ]
+    },
+    {
+      "doi": "10.2134/jeq2016.04.0129",
+      "title": "Drainage and Nitrate Leaching from Artificially Drained Maize Fields Simulated by the DNDC Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "NO3_leaching",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.3390/agriculture15141525",
+      "title": "Field Validation of the DNDC-Rice Model for Crop Yield, Nitrous Oxide Emissions and Methane",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "N2O_emission",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envpol.2020.114199",
+      "title": "Calibration and validation of the DNDC model to estimate nitrous oxide emissions and crop productivity for a summer maize-winter wheat double cropping system in Hebei, China",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "N2O_emission",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.compag.2016.04.017",
+      "title": "Sensitivity and uncertainty analysis for the DNDC model: modeling soil organic carbon dynamics at a long-term observation site with a rice-bean rotation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1007/s10705-006-9076-0",
+      "title": "Application of the DNDC model to tile-drained Illinois agroecosystems: model calibration, validation, and uncertainty analysis",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "NO3_leaching",
+        "water_table",
+        "yield"
+      ]
+    }
+  ]
+}

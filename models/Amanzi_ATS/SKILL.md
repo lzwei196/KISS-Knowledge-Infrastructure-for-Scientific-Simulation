@@ -1,3 +1,14 @@
+---
+name: amanzi-ats
+description: >-
+  Amanzi/ATS integrated surface-subsurface thermal hydrology framework. Covers
+  Variably-saturated subsurface flow (Richards equation, van Genuchten/Brooks-Corey
+  retention, Mualem…; Saturated / constant (Darcy) flow; Advective-dispersive reactive
+  solute transport; Geochemistry (sorption, mineral precipitation, decay chains) via
+  native beaker or Alquimia engines. Use when the task involves running, configuring,
+  calibrating or interpreting Amanzi_ATS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

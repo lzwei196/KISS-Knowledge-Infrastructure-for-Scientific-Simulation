@@ -163,7 +163,7 @@ assuming (a) every CMFD variable lives as a *.nc in ONE flat directory,
 (b) the coordinates are named latitude/longitude and (c) prec is in mm/hr.
 
 None of that matches CMFD V2.0 as shipped on this server
-(/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg/): the store is
+(KISSPATH_FORCING/Data_forcing_03hr_010deg/): the store is
 per-variable SUBDIRECTORIES (Temp/ Prec/ SRad/ LRad/ Wind/ SHum/ Pres/) with
 one file per MONTH, coordinates are lat/lon, and prec is kg/m2/s. The reader
 raised/garbled on the real store, so `--source cmfd` was effectively dead.

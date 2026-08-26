@@ -68,18 +68,18 @@ git clone --depth 1 --branch v3.13.0 https://github.com/parflow/parflow.git sour
 # Build HYPRE
 cd source/dependencies
 tar xzf hypre-*.tar.gz && cd hypre/src
-./configure --prefix=/mnt/disk1/Hydrocraft_server/model/parflow/deps/hypre-install --with-MPI
+./configure --prefix=KISSPATH_BINARIES/parflow/deps/hypre-install --with-MPI
 make -j$(nproc) && make install
 
 # Build ParFlow
-cd /mnt/disk1/Hydrocraft_server/model/parflow/source
+cd KISSPATH_BINARIES/parflow/source
 mkdir build && cd build
 cmake .. \
-  -DCMAKE_INSTALL_PREFIX=/mnt/disk1/Hydrocraft_server/model/parflow/install \
+  -DCMAKE_INSTALL_PREFIX=KISSPATH_BINARIES/parflow/install \
   -DPARFLOW_ENABLE_TIMING=TRUE \
   -DPARFLOW_HAVE_CLM=ON \
   -DPARFLOW_ENABLE_HYPRE=TRUE \
-  -DHYPRE_ROOT=/mnt/disk1/Hydrocraft_server/model/parflow/deps/hypre-install \
+  -DHYPRE_ROOT=KISSPATH_BINARIES/parflow/deps/hypre-install \
   -DPARFLOW_AMPS_LAYER=mpi1 \
   -DPARFLOW_ACCELERATOR_BACKEND=none
 make -j$(nproc) && make install
@@ -239,7 +239,7 @@ When ParFlow is used for a basin, these models are **not needed** for that basin
 | China DEM 90m | Local | Available | `data/dem/china_dem_90m/` |
 | Copernicus GLO-30 | AWS auto-download | Available | Via hydrobasin |
 | CMFD forcing | Local | Available | `data/forcing/Data_forcing_03hr_010deg/` |
-| MSWX forcing | Local | Available | `/mnt/disk3/msxw/` |
+| MSWX forcing | Local | Available | `KISSPATH_FORCING/` |
 | AVHRR land cover | Local | Available | `data/forcing/AVHRR/` |
 | Reinecke WTD | Local | Available | `data/soil/water_table_depth/` |
 
@@ -249,7 +249,7 @@ When ParFlow is used for a basin, these models are **not needed** for that basin
 
 ```bash
 # Activate venv
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 
 # 1. Define domain
 python tools/s1_domain/define_parflow_domain.py \

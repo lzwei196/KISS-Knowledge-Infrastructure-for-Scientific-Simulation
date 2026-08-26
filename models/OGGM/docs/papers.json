@@ -1,0 +1,209 @@
+{
+  "model": "OGGM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 15,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-12-909-2019",
+      "title": "The Open Global Glacier Model (OGGM) v1.1",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "specific_mass_balance",
+        "volume",
+        "area",
+        "length"
+      ]
+    },
+    {
+      "doi": "10.1017/aog.2023.57",
+      "title": "Glacier projections sensitivity to temperature-index model choices and calibration strategies",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "specific_mass_balance",
+        "volume"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2019.91",
+      "title": "Quantifying parameter uncertainty in a large-scale glacier evolution model using Bayesian inference: application to High Mountain Asia",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "volume",
+        "specific_mass_balance"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-13-1125-2019",
+      "title": "Modelling the future evolution of glaciers in the European Alps under the EURO-CORDEX RCM ensemble",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "length",
+        "area",
+        "volume",
+        "specific_mass_balance"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-15-3135-2021",
+      "title": "Twentieth century global glacier mass change: an ensemble-based model reconstruction",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "specific_mass_balance",
+        "volume"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2021.595755",
+      "title": "Reconstruction of Past Glacier Changes with an Ice-Flow Glacier Model: Proof of Concept and Validation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "length",
+        "area"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-11-949-2017",
+      "title": "How accurate are estimates of glacier ice thickness? Results from ITMIX, the Ice Thickness Models Intercomparison eXperiment",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "ice_thickness",
+        "volume"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2020.571923",
+      "title": "Results from the Ice Thickness Models Intercomparison eXperiment Phase 2 (ITMIX2)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "ice_thickness",
+        "volume"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-12-3039-2020",
+      "title": "A worldwide version-controlled database of glacier thickness observations (GlaThiDa)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "ice_thickness",
+        "volume"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-7-1227-2013",
+      "title": "Reanalysing glacier mass balance measurement series",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "specific_mass_balance"
+      ]
+    },
+    {
+      "doi": "10.3189/172756409787769591",
+      "title": "Six decades of glacier mass-balance observations: a review of the worldwide monitoring network",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "specific_mass_balance"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2015.00054",
+      "title": "A new model for global glacier change and sea-level rise (GloGEM)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "volume",
+        "specific_mass_balance"
+      ]
+    },
+    {
+      "doi": "10.1126/science.abo1324",
+      "title": "Global glacier change in the 21st century: Every increase in temperature matters",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "volume",
+        "specific_mass_balance"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2019.00331",
+      "title": "Glacier Mass Change in High Mountain Asia Through 2100 Using the Open-Source Python Glacier Evolution Model (PyGEM)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "specific_mass_balance"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2023.62",
+      "title": "Bayesian parameter estimation in glacier mass-balance modelling using observations with distributed uncertainty",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "specific_mass_balance"
+      ]
+    },
+    {
+      "doi": "10.1038/s41561-019-0300-3",
+      "title": "A consensus estimate for the ice thickness distribution of all glaciers on Earth",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "ice_thickness",
+        "volume"
+      ]
+    },
+    {
+      "doi": "10.1029/2019ef001470",
+      "title": "Partitioning the Uncertainty of Ensemble Projections of Global Glacier Mass Change",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "specific_mass_balance",
+        "volume"
+      ]
+    },
+    {
+      "doi": "10.1002/2013jf002931",
+      "title": "Global response of glacier runoff to twenty-first century climate change",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1007/978-3-031-76532-2_3",
+      "title": "The OGGM-Based Assessment of Glacier Mass Variations in Chhota Shigri Glacier, Western Indian Himalaya",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "specific_mass_balance",
+        "volume"
+      ]
+    },
+    {
+      "doi": "10.1038/ncomms9566",
+      "title": "Calving rates at tidewater glaciers vary strongly with ocean temperature",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "calving"
+      ]
+    }
+  ]
+}

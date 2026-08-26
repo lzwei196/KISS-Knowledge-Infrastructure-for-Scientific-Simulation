@@ -32,11 +32,11 @@ import flopy
 import flopy.utils.binaryfile as bf
 from ki_tools_common.metrics import all_metrics
 
-MF6   = "/mnt/disk1/Hydrocraft_server/model/modflow6/mf6.6.1_linux/bin/mf6"
-FANWTD = "/mnt/disk1/Hydrocraft_server/data/groundwater/fan_wtd/MeanWaterTableDepth_meter.tif"
-GLHYMPS = "/mnt/disk1/Hydrocraft_server/data/groundwater/glhymps/GLHYMPS.shp"
-SRTM_DIR = "/mnt/disk4/SRTMGL1"
-STATE = "/mnt/disk1/Hydrocraft_server/models/MODFLOW6/detached/verify_2"
+MF6   = "KISSPATH_BINARIES/modflow6/mf6.6.1_linux/bin/mf6"
+FANWTD = "KISSPATH_DATA/groundwater/fan_wtd/MeanWaterTableDepth_meter.tif"
+GLHYMPS = "KISSPATH_DATA/groundwater/glhymps/GLHYMPS.shp"
+SRTM_DIR = "KISSPATH_DATA/SRTMGL1"
+STATE = "KISSPATH_KI_ROOT/MODFLOW6/detached/verify_2"
 WS    = os.path.join(STATE, "ws")
 CACHE = os.path.join(STATE, "domain")
 os.makedirs(WS, exist_ok=True)

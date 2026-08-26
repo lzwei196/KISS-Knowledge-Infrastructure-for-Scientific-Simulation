@@ -3,7 +3,7 @@ model:
   version: 1.2.3
   full_name: Ensemble Framework For Flash Flood Forecasting
   domain: flood
-  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/EF5/source/repo/bin/ef5
+  binary_path: KISSPATH_BINARIES/EF5/source/repo/bin/ef5
   invocation: ef5 [control.txt]
   language: C++
   authors: HyDROSLab, University of Oklahoma

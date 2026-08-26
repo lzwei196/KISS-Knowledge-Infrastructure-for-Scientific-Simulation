@@ -1,3 +1,14 @@
+---
+name: oggm
+description: >-
+  OGGM 1.6.x flowline glacier framework. Covers Mountain glacier mass balance, volume,
+  area, length and geometry evolution at glacier-to-global…; Climatic surface mass balance
+  via monthly temperature-index model; Ice thickness / bed-topography inversion
+  (shallow-ice, mass conservation, Glen's flow law); 1.5D flowline ice dynamics
+  (shallow-ice approximation). Use when the task involves running, configuring,
+  calibrating or interpreting OGGM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

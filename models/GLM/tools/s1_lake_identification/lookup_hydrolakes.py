@@ -204,7 +204,7 @@ def main():
     parser.add_argument("--max_results", type=int, default=5,
                         help="Maximum results to return (default: 5)")
     parser.add_argument("--hydrolakes_shp", type=str,
-                        default="/mnt/disk1/Hydrocraft_server/data/lakes/"
+                        default="KISSPATH_DATA/lakes/"
                                 "HydroLAKES_polys_v10.shp",
                         help="Path to HydroLAKES shapefile")
     parser.add_argument("--output", type=str,

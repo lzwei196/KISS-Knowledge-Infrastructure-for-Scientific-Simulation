@@ -1,3 +1,13 @@
+---
+name: trigrs
+description: >-
+  TRIGRS 2.0 (USGS Open-File Report 2008-1159) infiltration + infinite-slope theory, as
+  realized by the v2.1.00c serial code. Covers Transient rainfall infiltration via 1-D
+  vertical analytical flow, one independent soil column per…; Saturated/tension-saturated
+  infiltration (Iverson 2000 linearized Richards solution, with finite-…. Use when the
+  task involves running, configuring, calibrating or interpreting TRIGRS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

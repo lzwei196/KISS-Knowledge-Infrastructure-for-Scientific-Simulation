@@ -42,8 +42,8 @@ from netCDF4 import Dataset
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-MIZUROUTE_EXE = "/mnt/disk1/Hydrocraft_server/model/mizuRoute/mizuRoute-main/route/bin/mizuroute.exe"
-PARAM_NML_DEFAULT = "/mnt/disk1/Hydrocraft_server/model/mizuRoute/mizuRoute-main/route/ancillary_data/param.nml.default"
+MIZUROUTE_EXE = "KISSPATH_BINARIES/mizuRoute/mizuRoute-main/route/bin/mizuroute.exe"
+PARAM_NML_DEFAULT = "KISSPATH_BINARIES/mizuRoute/mizuRoute-main/route/ancillary_data/param.nml.default"
 
 # mizuRoute aborts via shr_mpi_abort ("FATAL ERROR") or a bare Fortran STOP.
 # Anchor on word boundaries so STOPWATCH / STOPPING_CRITERION do not false-positive.

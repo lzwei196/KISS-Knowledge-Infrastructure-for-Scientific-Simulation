@@ -53,7 +53,7 @@ AVHRR_MANNINGS = {
     16: 0.030,   # Barren or Sparsely Vegetated
 }
 
-HYDROCRAFT_ROOT = "/mnt/disk1/Hydrocraft_server"
+HYDROCRAFT_ROOT = "KISSPATH_ROOT"
 AVHRR_PATH = os.path.join(HYDROCRAFT_ROOT, "data/forcing/AVHRR")
 
 

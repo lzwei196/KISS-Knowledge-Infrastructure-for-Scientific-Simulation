@@ -1,3 +1,14 @@
+---
+name: kineros2
+description: >-
+  KINEROS2 (USDA-ARS Kinematic Runoff and Erosion Model lineage;
+  Woolhiser/Smith/Goodrich), instantiated here as a lumped daily continuous Green-Ampt +….
+  Covers Daily basin-average precipitation partitioning via Green-Ampt infiltration;
+  Infiltration-excess (Hortonian) surface runoff generation; Lumped soil-moisture
+  accounting with ET extraction and gravity drainage. Use when the task involves running,
+  configuring, calibrating or interpreting KINEROS2.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

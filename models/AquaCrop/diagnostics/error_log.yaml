@@ -16,7 +16,7 @@ errors:
       aquacrop_version: "3.0.12"
       python_version: "3.12"
       os: "Linux"
-      venv_path: "/mnt/disk1/Hydrocraft_server/python_env/"
+      venv_path: "KISSPATH_PYTHON_ENV/"
     error_message: "TypeError: '<' not supported between instances of 'float' and 'Timestamp' in growing_degree_day.py"
     context: >
       When constructing a weather DataFrame from VIC forcing output, the Date column
@@ -39,7 +39,7 @@ errors:
       aquacrop_version: "3.0.12"
       python_version: "3.12"
       os: "Linux"
-      venv_path: "/mnt/disk1/Hydrocraft_server/python_env/"
+      venv_path: "KISSPATH_PYTHON_ENV/"
     error_message: "ET0 values unrealistic — ReferenceET < 0.1 or > 20 mm/day"
     context: >
       VIC forcing column 6 contains vapor pressure in kPa (range 0.1-4.2), not specific

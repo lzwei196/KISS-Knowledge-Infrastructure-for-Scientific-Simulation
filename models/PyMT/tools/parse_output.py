@@ -1,4 +1,4 @@
-#!/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/bin/python
+#!KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyMT/venv/bin/python
 """Parse PyMT model output variables and export to CSV.
 
 Purpose:

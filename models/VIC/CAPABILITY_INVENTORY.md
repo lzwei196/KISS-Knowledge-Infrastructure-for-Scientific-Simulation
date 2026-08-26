@@ -2,8 +2,8 @@
 
 **Generated**: 2026-04-03
 **Source**: VIC 5.1.0, 59 C source files in `vic_run/src/`, 3 drivers (Classic, Image, CESM)
-**Binary**: `/mnt/disk1/Hydrocraft_server/model/VIC-5.1.0/vic/drivers/classic/vic_classic.exe` (compiled, 1.5 MB)
-**Image driver**: Source present, NOT compiled (`/mnt/disk1/Hydrocraft_server/model/VIC-5.1.0/vic/drivers/image/`)
+**Binary**: `KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/classic/vic_classic.exe` (compiled, 1.5 MB)
+**Image driver**: Source present, NOT compiled (`KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/image/`)
 **Extensions**: RVIC routing extension (source only, not compiled)
 **Current KI version**: 1.1 (2025-02-01)
 **Usage**: 64 VIC result directories in outputs/ -- the most-used model in HydroCraft (vs 15 HYPE, ~249 total)
@@ -238,20 +238,20 @@
 
 ### 7.1 Classic Driver (ASCII I/O)
 - **Status**: DONE in KI (the only driver used)
-- **Binary**: `/mnt/disk1/Hydrocraft_server/model/VIC-5.1.0/vic/drivers/classic/vic_classic.exe`
+- **Binary**: `KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/classic/vic_classic.exe`
 - **What it does**: Serial execution. ASCII parameter files and forcing. One grid cell at a time (space-after-time). Suitable for small-to-medium domains.
 - **Limitation**: No parallelism. For large domains (>1000 cells), wall time becomes significant.
 
 ### 7.2 Image Driver (NetCDF + MPI)
 - **Status**: NOT in KI (source present, not compiled)
-- **Source**: `/mnt/disk1/Hydrocraft_server/model/VIC-5.1.0/vic/drivers/image/`
+- **Source**: `KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/image/`
 - **What it does**: NetCDF I/O. Space-before-time evaluation. MPI parallel processing. Modern implementation for large-scale applications.
 - **Requirements**: NetCDF libraries, MPI environment
 - **KI GAP**: Not compiled, not documented. Would enable parallel execution for large basins. All parameter files would need conversion to NetCDF format.
 
 ### 7.3 CESM Driver (Earth System Model Coupling)
 - **Status**: NOT in KI (not applicable to standalone usage)
-- **Source**: `/mnt/disk1/Hydrocraft_server/model/VIC-5.1.0/vic/drivers/cesm/`
+- **Source**: `KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/cesm/`
 - **What it does**: Couples VIC as a land surface scheme within CESM.
 - **KI GAP**: Not relevant for HydroCraft use case.
 
@@ -267,13 +267,13 @@
 
 ### 8.2 Lohmann Routing Model
 - **Status**: NOT in KI
-- **Source**: `/mnt/disk1/Hydrocraft_server/model/route_1.0/`
+- **Source**: `KISSPATH_BINARIES/route_1.0/`
 - **What it does**: Unit hydrograph-based routing (Lohmann et al., 1996/1998). Simpler than CaMa-Flood. Produces streamflow at gauge points from VIC runoff fields.
-- **KI GAP**: Binary exists at `/mnt/disk1/Hydrocraft_server/model/route_1.0/` but no KI tools for flow direction file preparation.
+- **KI GAP**: Binary exists at `KISSPATH_BINARIES/route_1.0/` but no KI tools for flow direction file preparation.
 
 ### 8.3 RVIC Extension (Built-in Routing)
 - **Status**: NOT in KI
-- **Source**: `/mnt/disk1/Hydrocraft_server/model/VIC-5.1.0/vic/extensions/rout_rvic/`
+- **Source**: `KISSPATH_BINARIES/VIC-5.1.0/vic/extensions/rout_rvic/`
 - **What it does**: RVIC routing compiled directly into VIC Image Driver. Convolution-based routing.
 - **Requirements**: Image Driver must be compiled with ROUT=rout_rvic
 - **KI GAP**: Image driver not compiled. RVIC extension not configured.

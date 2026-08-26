@@ -4,7 +4,7 @@ model:
   domain: hydrology
   language: C++11
   build_system: CMake 3.0+
-  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/GEOtop/source/repo/build/geotop
+  binary_path: KISSPATH_BINARIES/GEOtop/source/repo/build/geotop
   invocation: ./geotop <sim_folder>
   time_step_default: 900
   simulation_modes:

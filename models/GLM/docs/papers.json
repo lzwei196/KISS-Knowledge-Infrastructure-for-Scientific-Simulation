@@ -1,0 +1,219 @@
+{
+  "model": "GLM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 12,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-12-473-2019",
+      "title": "A General Lake Model (GLM 3.0) for linking with high-frequency sensor data from the Global Lake Ecological Observatory Network (GLEON)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "water_level",
+        "dissolved_oxygen",
+        "chlorophyll",
+        "nutrient",
+        "glacier_change",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-565-2020",
+      "title": "glmGUI v1.0: an R-based graphical user interface and toolbox for GLM (General Lake Model) simulations",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature",
+        "schmidt_stability"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-29-1183-2025",
+      "title": "Learning from a large-scale calibration effort of multiple lake temperature models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-837-2023",
+      "title": "Past and future climate change effects on the thermal regime and oxygen solubility of four temperate lakes",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-1009-2021",
+      "title": "Lake thermal structure drives interannual variability in summer anoxia dynamics in a eutrophic lake",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "schmidt_stability",
+        "thermocline_depth",
+        "dissolved_oxygen",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-1361-2023",
+      "title": "Sources of skill in lake temperature, discharge and ice-off seasonal forecasting tools",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-17-3141-2025",
+      "title": "LakeBeD-US: a benchmark dataset for lake water quality time series and vertical profiles",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen",
+        "chlorophyll",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-5001-2019",
+      "title": "Historical modelling of changes in Lake Erken thermal conditions",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "schmidt_stability",
+        "thermocline_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-3311-2020",
+      "title": "Simulations of future changes in thermal structure of Lake Erken: proof of concept for ISIMIP2b lake sector local simulation strategy",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "schmidt_stability"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-1977-2016",
+      "title": "LAKE 2.0: a model for temperature, methane, carbon dioxide and oxygen dynamics in lakes",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.4081/aiol.2016.5791",
+      "title": "Prediction of lake surface temperature using the air2water model: guidelines, challenges, and future perspectives",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1186/s12302-019-0202-4",
+      "title": "Variable withdrawal elevations as a management tool to counter the effects of climate warming in Germany's largest drinking water reservoir",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen",
+        "schmidt_stability"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2017.11.016",
+      "title": "A multi-lake comparative analysis of the General Lake Model (GLM): Stress-testing across a global observatory network",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2020.104697",
+      "title": "A system of metrics for the assessment and improvement of aquatic ecosystem models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen",
+        "chlorophyll",
+        "nutrient",
+        "schmidt_stability"
+      ]
+    },
+    {
+      "doi": "10.1029/2019wr026138",
+      "title": "A Near-Term Iterative Forecasting System Successfully Predicts Reservoir Hydrodynamics and Biogeochemical Dynamics",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.1029/2020jd033417",
+      "title": "Validation and Sensitivity Analysis of a 1-D Lake Model Across Global Lakes",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2023rg000816",
+      "title": "Lake Water Temperature Modeling in an Era of Climate Change: Data Sources, Models, and Future Prospects",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3390/w16010151",
+      "title": "Assessing the Impacts of Climate Change and Water Extraction on Thermal Stratification (GLM)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "schmidt_stability",
+        "temperature",
+        "thermocline_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-15-4597-2022",
+      "title": "A framework for ensemble modelling of climate change impacts on lakes worldwide: the ISIMIP Lake Sector",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "schmidt_stability"
+      ]
+    },
+    {
+      "doi": "10.1002/lno.11963",
+      "title": "Stratification strength and light climate explain variation in chlorophyll-a at the continental scale",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "chlorophyll",
+        "schmidt_stability"
+      ]
+    }
+  ]
+}

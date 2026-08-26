@@ -38,7 +38,7 @@
 #
 # ---------------------------------------------------------------------------
 # COMMISSIONED 2026-08-05 — live, real HYPE 5.35.0 binary
-#   /mnt/disk1/Hydrocraft_server/model/hype/hype, ~1.3-2.5 s per eval
+#   KISSPATH_BINARIES/hype/hype, ~1.3-2.5 s per eval
 # ---------------------------------------------------------------------------
 # * RECIPE FIDELITY. Dropping the validated real_case par.txt verbatim into the staged
 #   deck this driver builds reproduces the validated run EXACTLY:
@@ -119,7 +119,7 @@ identity:
     (1980-01-01..1990-12-31).
   obs_source: "GRDC Asia-Region Daily Discharge Export (250 stations, 2026-05-11 download)"
   obs_id: "GRDC:2178951 (CHANGTAIGUAN, HUAI HE, CN)"
-  obs_file: "/mnt/disk1/Hydrocraft_server/data/china_data/GRDC_asia_discharge_daily_20260511/2178951_Q_Day.Cmd.txt"
+  obs_file: "KISSPATH_DATA/china_data/GRDC_asia_discharge_daily_20260511/2178951_Q_Day.Cmd.txt"
   baseline_run: >
     real_case HYPE_20260717T014155Z (2026-07-17) — full NSE 0.1404 / KGE 0.0412 /
     PBIAS -22.52 / r 0.3949 over 1981-01-01..1990-12-31 (3652 paired days);
@@ -149,7 +149,7 @@ targets:
 # metrics file. The GRDC file is opened READ-ONLY (`open(path, "r", encoding="latin-1")`)
 # so scoring works on a read-only mount / review sandbox.
 obs_contract:
-  file: "/mnt/disk1/Hydrocraft_server/data/china_data/GRDC_asia_discharge_daily_20260511/2178951_Q_Day.Cmd.txt"
+  file: "KISSPATH_DATA/china_data/GRDC_asia_discharge_daily_20260511/2178951_Q_Day.Cmd.txt"
   format: "GRDC STATION DATA FILE, DOS-ASCII / latin-1, ';' delimited, header commented with '#'"
   station_identity:
     grdc_no: 2178951
@@ -719,7 +719,7 @@ runner:
   kind: subprocess
   command: ["python3", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
   metrics_file: "{metrics_json}"
-  cwd: "/mnt/disk1/Hydrocraft_server/models/HYPE/knowledge_infrastructure"
+  cwd: "KISSPATH_KI_ROOT/HYPE/knowledge_infrastructure"
   timeout: 900          # soft hint; one eval is ~1.3-2.5 s wall clock
 
 # ---------------------------------------------------------------------------

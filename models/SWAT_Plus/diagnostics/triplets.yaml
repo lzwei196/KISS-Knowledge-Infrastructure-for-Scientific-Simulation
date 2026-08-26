@@ -1426,7 +1426,7 @@ triplets:
     remedy:
       action: "Edit the existing print.prt in place: change nyskip and only the flags of the requested categories, preserving structure and row order. The tool now does this, with a canonical 37-row fallback."
       steps:
-        - "diff <(awk '/^objects/,0{print $1}' TxtInOut/print.prt) <(awk '/^objects/,0{print $1}' /mnt/disk1/Hydrocraft_server/models/SWAT_Plus/run_lrew/swatplus_rev59_demo/print.prt)"
+        - "diff <(awk '/^objects/,0{print $1}' TxtInOut/print.prt) <(awk '/^objects/,0{print $1}' KISSPATH_KI_ROOT/SWAT_Plus/run_lrew/swatplus_rev59_demo/print.prt)"
         - "Confirm 37 object rows and the csvout/soilout blocks are present"
       prevention: "COPY-FIRST: never regenerate a fixed-layout Fortran control file from a Python list."
     severity: "fatal"
@@ -1475,7 +1475,7 @@ triplets:
     remedy:
       action: "Anchor the year glob to the `_YYYYMM` stamp and force sub-daily forcing for temperature. Both are fixed: the loader now rejects out-of-range/duplicate dates, and validate_weather_data flags >95% Tmax==Tmin."
       steps:
-        - "Use forcing_dir=/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg"
+        - "Use forcing_dir=KISSPATH_FORCING/Data_forcing_03hr_010deg"
         - "Assert len(dates) == 365/366 per requested year"
         - "python tools/s3/validate_weather_data.py <weather_dir>   # must report 0 silent_errors"
         - "For many stations use load_daily_forcing_points(): it reads each monthly NetCDF once for ALL stations (a 6-station basin then costs what 1 station did)"

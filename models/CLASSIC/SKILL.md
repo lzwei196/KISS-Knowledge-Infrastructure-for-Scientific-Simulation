@@ -1,3 +1,14 @@
+---
+name: classic
+description: >-
+  CLASSIC v1.0. Covers Surface exchange of energy, momentum, and water between atmosphere
+  and land (CLASS physics); Multi-layer soil temperature and liquid/frozen soil moisture
+  dynamics; Snowpack accumulation, melt, density, albedo (single-layer representation);
+  Vegetation canopy interception, radiation cascade, and evapotranspiration; Surface
+  ponding. Use when the task involves running, configuring, calibrating or interpreting
+  CLASSIC.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

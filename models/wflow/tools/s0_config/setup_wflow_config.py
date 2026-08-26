@@ -27,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-HYDROCRAFT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+HYDROCRAFT_ROOT = Path("KISSPATH_ROOT")
 JULIA_BINARY_DEFAULT = str(HYDROCRAFT_ROOT / "model" / "julia-1.10.7" / "bin" / "julia")
 JULIA_ENV_DEFAULT = str(
     HYDROCRAFT_ROOT / "models" / "wflow" / "knowledge_infrastructure" / "julia"
@@ -118,7 +118,7 @@ def process(args):
         "forcing": {
             "dataset": args.forcing,
             "cmfd_dir": str(HYDROCRAFT_ROOT / "data" / "forcing" / "Data_forcing_03hr_010deg"),
-            "mswx_dir": "/mnt/disk3/msxw",
+            "mswx_dir": "KISSPATH_FORCING",
         },
         "paths": {
             "hydrocraft_root": str(HYDROCRAFT_ROOT),

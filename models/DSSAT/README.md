@@ -21,7 +21,7 @@
 **Version**: 4.8.5, Build 41
 **Domain**: Crop simulation — multi-crop growth, development, and yield
 **Language**: Fortran 90
-**Binary**: `/home/server/DSSAT/build/bin/dscsm048`
+**Binary**: `KISSPATH_HOME/DSSAT/build/bin/dscsm048`
 **License**: Research/non-commercial
 **Repository**: https://github.com/DSSAT/dssat-csm-os
 
@@ -45,7 +45,7 @@ stages, Chinese cultivar library with 42 calibrated varieties.
 
 ```python
 import sys
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/tools")
+sys.path.insert(0, "KISSPATH_KI_ROOT/DSSAT/knowledge_infrastructure/tools")
 from dssat_workdir_setup import create_workdir, run_dssat, parse_summary
 
 # Step 1: Create workdir (handles all 6 Fortran pitfalls automatically)
@@ -84,7 +84,7 @@ for rec in summary:
 **Raw binary** (only if you know what you're doing):
 ```bash
 cd /path/to/working_directory
-/home/server/DSSAT/build/bin/dscsm048 B DSSBatch.v48
+KISSPATH_HOME/DSSAT/build/bin/dscsm048 B DSSBatch.v48
 ```
 
 ---
@@ -124,7 +124,7 @@ Stage 8 depends on all of 1-7. Stage 9 depends on 8.
 
 ## Chinese Cultivar Library
 
-Location: `/home/server/DSSAT/Data/Genotype/China/`
+Location: `KISSPATH_HOME/DSSAT/Data/Genotype/China/`
 
 | Crop | File | Cultivars | Key varieties |
 |------|------|-----------|---------------|
@@ -185,7 +185,7 @@ fetch_nasa_power_dssat(lat=45.5, lon=-73.6, start=2005, end=2023, output="MTRL05
 
 ```python
 import sys
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/tools")
+sys.path.insert(0, "KISSPATH_KI_ROOT/DSSAT/knowledge_infrastructure/tools")
 from dssat_workdir_setup import create_workdir, run_dssat, parse_summary
 
 workdir = create_workdir(

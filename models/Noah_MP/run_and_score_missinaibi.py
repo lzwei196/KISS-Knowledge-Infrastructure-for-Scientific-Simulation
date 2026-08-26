@@ -30,21 +30,20 @@ import netCDF4 as nc
 from datetime import datetime, timedelta
 
 # ----------------------------------------------------------------------------- paths
-ROOT   = "/mnt/disk1/Hydrocraft_server/models/Noah_MP"
+ROOT   = "KISSPATH_KI_ROOT/Noah_MP"
 KI     = f"{ROOT}/knowledge_infrastructure"
 TOOLS  = f"{KI}/tools"
-BIN    = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
-SRCDIR = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Noah_MP/source/repo"
-MSWX   = "/mnt/disk3/msxw"
-HYBAS  = "/mnt/disk1/Hydrocraft_server/data/awd_paper/hydrobasins/north_america/hybas_na_lev12_v1c.shp"
-ESA    = "/mnt/datasets/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_1992_01deg.tif"
-MERIT  = "/mnt/datasets/MERIT_DEM"
-HYDAT  = "/mnt/datasets/observed_data/dischargeandwatershed/National Water Data Archive HYDAT/Hydat.sqlite3"
+BIN    = "KISSPATH_BINARIES/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
+SRCDIR = "KISSPATH_BINARIES/Noah_MP/source/repo"
+MSWX   = "KISSPATH_FORCING"
+HYBAS  = "KISSPATH_DATA/awd_paper/hydrobasins/north_america/hybas_na_lev12_v1c.shp"
+ESA    = "KISSPATH_DATA/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_1992_01deg.tif"
+MERIT  = "KISSPATH_DATA/MERIT_DEM"
+HYDAT  = "KISSPATH_DATA/observed_data/dischargeandwatershed/National Water Data Archive HYDAT/Hydat.sqlite3"
 WORK   = f"{ROOT}/detached/verify_3"
 CELLS  = f"{WORK}/cells"
 BOX    = f"{WORK}/mswx_cmfd"            # CMFD-style box forcing derived from MSWX
 RESULT = f"{WORK}/result.json"
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
 
 # ----------------------------------------------------------------------------- config
 GAUGE       = "04LJ001"

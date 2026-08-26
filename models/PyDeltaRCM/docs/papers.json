@@ -1,0 +1,175 @@
+{
+  "model": "PyDeltaRCM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 16,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.21105/joss.03398",
+      "title": "pyDeltaRCM: a flexible numerical delta model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "water_level",
+        "depth",
+        "velocity",
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-3-67-2015",
+      "title": "A reduced-complexity model for river delta formation - Part 1: Modeling deltas with channel dynamics",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-3-87-2015",
+      "title": "A reduced-complexity model for river delta formation - Part 2: Assessment of the flow routing scheme",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "depth",
+        "velocity",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.21105/joss.02952",
+      "title": "RivGraph: Automatic extraction and analysis of river and delta channel network topology",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-8-87-2020",
+      "title": "Determining flow directions in river channel networks using planform morphology and topology",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.sedgeo.2017.12.022",
+      "title": "The role of discharge variability in the formation and preservation of alluvial sediment bodies",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "depth",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1002/2015jf003653",
+      "title": "Quantifying the patterns and dynamics of river deltas under conditions of steady forcing and relative sea level rise",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "discharge",
+        "sediment",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1029/2010jf001955",
+      "title": "Quantitative metrics that describe river deltas and their channel networks",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration",
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1029/2022gl102684",
+      "title": "River Delta Morphotypes Emerge From Multiscale Characterization of Shorelines",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1029/2007jf000882",
+      "title": "Morphodynamic evolution of experimental cohesive deltas",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "depth",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1002/2014wr016149",
+      "title": "Hydrological connectivity in river deltas: The first-order importance of channel network",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1073/pnas.1708404114",
+      "title": "Entropy and optimality in river deltas",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2018gl079405",
+      "title": "Comparing the Cohesive Effects of Mud and Vegetation on Delta Evolution",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1029/2022jf006762",
+      "title": "Modeling the Dynamic Response of River Deltas to Sea-Level Rise Acceleration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1146/annurev-earth-063016-015935",
+      "title": "Autogenic Sedimentation in Clastic Stratigraphy",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "depth",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-11-259-2023",
+      "title": "An Arctic delta reduced-complexity model and its reproduction of key geomorphological structures",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

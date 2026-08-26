@@ -1,3 +1,14 @@
+---
+name: hec-hms
+description: >-
+  HEC-HMS public-domain rainfall-runoff method set (USACE HEC; SCS Curve Number loss, SCS
+  dimensionless Unit Hydrograph transform, Muskingum channel…. Covers Precipitation-loss /
+  runoff-volume computation (SCS Curve Number); Direct-runoff transform of excess rainfall
+  to a hydrograph (SCS dimensionless Unit Hydrograph); Conceptual baseflow generation
+  (Linear Reservoir recession store). Use when the task involves running, configuring,
+  calibrating or interpreting HEC_HMS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -358,13 +369,13 @@ End:
 
 | Data | Source | Status | Path |
 |------|--------|--------|------|
-| Precipitation | CMFD 0.25° | Available | `/mnt/disk1/.../huai/Data_forcing_01dy_025deg/` |
+| Precipitation | CMFD 0.25° | Available | `KISSPATH_ROOT/.../huai/Data_forcing_01dy_025deg/` |
 | Temperature | CMFD 0.25° | Available | Same as above |
-| Soil | HWSD China | Available | `/mnt/disk1/.../soil/HWSD_China_Geo.img` |
-| Land Cover | AVHRR 1km | Available | `/mnt/disk1/.../landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif` |
-| DEM | SRTM 90m | Available | `/mnt/disk1/.../dem/china_dem_90m/china_dem_90m.tif` |
-| Basin Shape | Bengbu | Available | `/mnt/disk1/.../shp/bengbu_shp/bengbu_clip.shp` |
-| Observation | Bengbu 51080 | Available | `/mnt/disk1/.../obs/BB/51080_bengbu.txt` |
+| Soil | HWSD China | Available | `KISSPATH_ROOT/.../soil/HWSD_China_Geo.img` |
+| Land Cover | AVHRR 1km | Available | `KISSPATH_ROOT/.../landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif` |
+| DEM | SRTM 90m | Available | `KISSPATH_ROOT/.../dem/china_dem_90m/china_dem_90m.tif` |
+| Basin Shape | Bengbu | Available | `KISSPATH_ROOT/.../shp/bengbu_shp/bengbu_clip.shp` |
+| Observation | Bengbu 51080 | Available | `KISSPATH_ROOT/.../obs/BB/51080_bengbu.txt` |
 
 ---
 
@@ -373,8 +384,8 @@ End:
 ### 1. Convert forcing data
 ```bash
 python3 ki/tools/convert_forcing_to_hms.py \
-  --forcing_dir /media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg/ \
-  --basin_shp /mnt/disk1/Hydrocraft_server/data/shp/bengbu_shp/bengbu_clip.shp \
+  --forcing_dir KISSPATH_FORCING/huai/Data_forcing_01dy_025deg/ \
+  --basin_shp KISSPATH_DATA/shp/bengbu_shp/bengbu_clip.shp \
   --start_date 1980-01-01 --end_date 1990-12-31 \
   --output_dir ./forcing_out/
 ```
@@ -382,9 +393,9 @@ python3 ki/tools/convert_forcing_to_hms.py \
 ### 2. Convert soil parameters
 ```bash
 python3 ki/tools/convert_soil_to_hms.py \
-  --soil_file /mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img \
-  --landcover_file /mnt/disk1/Hydrocraft_server/data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif \
-  --basin_shp /mnt/disk1/Hydrocraft_server/data/shp/bengbu_shp/bengbu_clip.shp \
+  --soil_file KISSPATH_STATIC/HWSD_China_Geo.img \
+  --landcover_file KISSPATH_DATA/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif \
+  --basin_shp KISSPATH_DATA/shp/bengbu_shp/bengbu_clip.shp \
   --output_file ./soil_params.json
 ```
 
@@ -409,7 +420,7 @@ python3 ki/tools/parse_hms_output.py \
 ```bash
 python3 ki/tools/validate_hms.py \
   --sim_csv ./discharge_daily.csv \
-  --obs_file /mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt \
+  --obs_file KISSPATH_OBS/BB/51080_bengbu.txt \
   --start_date 1981-01-01 --end_date 1990-12-31 \
   --output_figure ./validation.png
 ```
@@ -418,7 +429,7 @@ python3 ki/tools/validate_hms.py \
 ```bash
 python3 ki/tools/calibrate_hms.py \
   --forcing_csv ./forcing_out/basin_avg_forcing.csv \
-  --obs_file /mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt \
+  --obs_file KISSPATH_OBS/BB/51080_bengbu.txt \
   --basin_area_km2 121330 \
   --start_date 1981-01-01 --end_date 1990-12-31 \
   --n_samples 500 \

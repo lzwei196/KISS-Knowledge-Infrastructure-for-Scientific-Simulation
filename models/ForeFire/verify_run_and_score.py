@@ -28,17 +28,17 @@ RESUMABLE: every expensive artifact is skipped if it already exists.
 import json, os, subprocess, sys, glob
 import numpy as np
 
-KI    = "/mnt/disk1/Hydrocraft_server/models/ForeFire/knowledge_infrastructure"
+KI    = "KISSPATH_KI_ROOT/ForeFire/knowledge_infrastructure"
 TOOLS = KI + "/tools"
-FF_BIN = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ForeFire/source/repo/bin/forefire"
-LDLIB = "/home/server/.local/lib"
+FF_BIN = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ForeFire/source/repo/bin/forefire"
+LDLIB = "KISSPATH_HOME/.local/lib"
 PY = "/usr/bin/python3"
-GDALWARP = "/home/server/.local/bin/gdalwarp"
-MERIT = "/mnt/datasets/MERIT_DEM/n45w110_dem.tif"
-OBS_SHP = "/mnt/disk1/Hydrocraft_server/data/obs/fire_perimeters/mtbs/mtbs_perims/mtbs_perims_DD.shp"
+GDALWARP = "KISSPATH_HOME/.local/bin/gdalwarp"
+MERIT = "KISSPATH_DATA/MERIT_DEM/n45w110_dem.tif"
+OBS_SHP = "KISSPATH_OBS/fire_perimeters/mtbs/mtbs_perims/mtbs_perims_DD.shp"
 EVENT_ID = "MT4747410788719880818"   # JIM WELLS 1988, 2088 ac
 
-WORK = "/mnt/disk1/Hydrocraft_server/models/ForeFire/detached/verify_1"
+WORK = "KISSPATH_KI_ROOT/ForeFire/detached/verify_1"
 RESULT = WORK + "/result.json"
 os.makedirs(WORK, exist_ok=True)
 

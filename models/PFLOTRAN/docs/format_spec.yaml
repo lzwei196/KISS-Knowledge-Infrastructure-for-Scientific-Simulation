@@ -3,7 +3,7 @@ model:
   version: "Development Version"
   domain: "Groundwater flow and reactive transport"
   description: "Massively parallel simulator for multiphase flow, reactive multicomponent transport, and geomechanics in the subsurface"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PFLOTRAN/source/pflotran_full/src/pflotran/pflotran"
+  binary_path: "KISSPATH_BINARIES/PFLOTRAN/source/pflotran_full/src/pflotran/pflotran"
   execution: "mpirun -n <nproc> pflotran -pflotranin <input_file.in>"
   dependencies:
     - "PETSc (v3.18+)"

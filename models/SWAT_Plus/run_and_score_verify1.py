@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT      = "/mnt/disk1/Hydrocraft_server"
+ROOT      = "KISSPATH_ROOT"
 TXTINOUT  = Path(ROOT) / "outputs/swatplus_bengbu_improve/TxtInOut"
 BINARY    = Path(ROOT) / "models/SWAT+/bin/swatplus_rev59"
 OBS       = Path(ROOT) / "data/obs/BB/51080_bengbu.txt"
@@ -25,8 +25,6 @@ OUTDIR    = Path(ROOT) / "models/SWAT+/detached/verify_1"
 RESULT    = OUTDIR / "result.json"
 
 sys.path.insert(0, str(KI / "tools/s9"))
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit")
 
 from extract_discharge import find_channel_file, parse_channel_day, load_obs   # KI s9 tool
 from ki_tools_common.metrics import all_metrics

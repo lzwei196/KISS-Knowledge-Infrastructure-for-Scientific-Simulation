@@ -1,7 +1,7 @@
 model:
   name: "Alpine3D"
   domain: "Cryosphere — spatially distributed snow, energy balance, and runoff in mountainous terrain"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d"
+  binary_path: "KISSPATH_BINARIES/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d"
   version: "20260328.609d2ea"
   components:
     - MeteoIO (data I/O, quality filtering, spatial/temporal interpolation)

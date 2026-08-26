@@ -1,0 +1,230 @@
+{
+  "model": "MOM6",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 10,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-13-3643-2020",
+      "title": "Evaluation of global ocean–sea-ice model simulations based on the experimental protocols of the Ocean Model Intercomparison Project phase 2 (OMIP-2)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level",
+        "currents",
+        "MLD",
+        "ocean_heat_content",
+        "AMOC_transport"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-18-7681-2025",
+      "title": "Evaluation of a coupled ocean and sea-ice model (MOM6-NEP10k) over the Bering Sea and its sensitivity to turbulence decay scales",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "MLD",
+        "currents"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-16-6943-2023",
+      "title": "A high-resolution physical–biogeochemical model for marine resource applications in the northwest Atlantic (MOM6-COBALT-NWA12 v1.0)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level",
+        "currents"
+      ]
+    },
+    {
+      "doi": "10.5194/os-9-57-2013",
+      "title": "Evaluation of global monitoring and forecasting systems at Mercator Océan",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level",
+        "currents"
+      ]
+    },
+    {
+      "doi": "10.5670/oceanog.2009.39",
+      "title": "US GODAE: Global Ocean Prediction with the HYbrid Coordinate Ocean Model (HYCOM)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level",
+        "currents"
+      ]
+    },
+    {
+      "doi": "10.3389/fmars.2019.00065",
+      "title": "Challenges and Prospects in Ocean Circulation Models",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature",
+        "salinity",
+        "currents",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3389/fclim.2022.933091",
+      "title": "Pacific Equatorial Undercurrent: Mean state, sources, and future changes across models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "currents"
+      ]
+    },
+    {
+      "doi": "10.5194/os-15-1207-2019",
+      "title": "DUACS DT2018: 25 years of reprocessed sea level altimetry products",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3389/fmars.2019.00260",
+      "title": "Atlantic Meridional Overturning Circulation: Observed Transport and Variability",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "AMOC_transport",
+        "currents"
+      ]
+    },
+    {
+      "doi": "10.5194/os-10-29-2014",
+      "title": "Observed decline of the Atlantic meridional overturning circulation 2004–2012",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "AMOC_transport"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001373",
+      "title": "An Evaluation of the Ocean and Sea Ice Climate of E3SM Using MPAS and Interannual CORE-II Forcing",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "currents",
+        "ocean_heat_content"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-401-2020",
+      "title": "ACCESS-OM2 v1.0: a global ocean–sea ice model at three resolutions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level",
+        "currents"
+      ]
+    },
+    {
+      "doi": "10.1029/2019ms001726",
+      "title": "The GFDL Global Ocean and Sea Ice Model OM4.0: Model Description and Simulation Features",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level",
+        "currents",
+        "MLD",
+        "ocean_heat_content"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-4595-2020",
+      "title": "Impact of horizontal resolution on global ocean–sea ice model simulations based on the experimental protocols of the Ocean Model Intercomparison Project phase 2 (OMIP-2)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level",
+        "currents"
+      ]
+    },
+    {
+      "doi": "10.1002/jame.20023",
+      "title": "Characteristics of the ocean simulations in the Max Planck Institute Ocean Model (MPIOM)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "ocean_heat_content",
+        "AMOC_transport"
+      ]
+    },
+    {
+      "doi": "10.1002/2017gl073426",
+      "title": "An Argo mixed layer climatology and database",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "MLD"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrc.20157",
+      "title": "Assessment of Southern Ocean mixed-layer depths in CMIP5 models: Historical bias and forcing response",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "MLD"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2018.10.004",
+      "title": "A simplified energetics based planetary boundary layer (ePBL) approach for ocean climate simulations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "MLD",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2023ea003485",
+      "title": "Improving Equatorial Upper Ocean Vertical Mixing in the NOAA/GFDL OM4 Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "currents",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2021ms002496",
+      "title": "Revealing the Impact of Global Heating on North Atlantic Circulation Using Transient Simulations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "AMOC_transport",
+        "currents"
+      ]
+    }
+  ]
+}

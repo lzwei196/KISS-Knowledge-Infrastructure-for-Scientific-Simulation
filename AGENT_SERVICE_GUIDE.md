@@ -173,7 +173,7 @@ Exact paths to every dataset. The agent must NOT guess paths.
 | Dataset | Path | Coverage |
 |---------|------|----------|
 | CMFD forcing | data/forcing/Data_forcing_03hr_010deg/ | China, 1979-2018 |
-| MSWX forcing | /mnt/disk3/msxw/ | Global, 1979-2026 |
+| MSWX forcing | data/forcing/MSWX/ | Global, 1979-2026 |
 | HWSD soil | data/soil/HWSD_RASTER/hwsd.bil | Global |
 ```
 

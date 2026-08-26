@@ -1,3 +1,13 @@
+---
+name: lisflood
+description: >-
+  EC-JRC LISFLOOD (Van Der Knijff et al. 2010; Burek et al. 2013 Revised User Manual, JRC
+  EUR 26162 EN) — distributed rainfall-runoff core of…. Covers Spatially distributed
+  catchment-scale water balance and rainfall-runoff simulation; Snow accumulation, melt
+  and glacier icemelt over sub-pixel elevation zones. Use when the task involves running,
+  configuring, calibrating or interpreting LISFLOOD.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

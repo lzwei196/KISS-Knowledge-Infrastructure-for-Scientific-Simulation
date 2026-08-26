@@ -1,0 +1,190 @@
+{
+  "model": "pyBadlands",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 13,
+  "papers": [
+    {
+      "doi": "10.1371/journal.pone.0195557",
+      "title": "pyBadlands: A framework to simulate sediment transport, landscape dynamics and basin stratigraphic evolution through space and time",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "erosion_deposition",
+        "sediment",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.cageo.2019.06.012",
+      "title": "Bayeslands: A Bayesian inference approach for parameter uncertainty quantification in Badlands",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.1029/2019gc008465",
+      "title": "Multicore Parallel Tempering Bayeslands for Basin and Landscape Evolution",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "erosion_deposition",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-2959-2020",
+      "title": "Surrogate-assisted Bayesian inversion for landscape and basin evolution models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "erosion_deposition",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-1267-2019",
+      "title": "Terrainbento 1.0: a Python package for multi-model analysis in long-term drainage basin evolution",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "erosion_deposition",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-2571-2019",
+      "title": "Quantitative stratigraphic analysis in a source-to-sink numerical framework",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "sediment",
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-018-23519-8",
+      "title": "A unified framework for modelling sediment fate from source to sink and its interactions with reef systems over geological times",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "sediment",
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-4873-2018",
+      "title": "Global sensitivity analysis of parameter uncertainty in landscape evolution models",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_level",
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-8-447-2020",
+      "title": "Parameterization of river incision models requires accounting for environmental variability",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.1016/j.geomorph.2016.05.035",
+      "title": "Global analysis of the stream power law parameters based on worldwide 10Be denudation rates data",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.5194/soil-6-337-2020",
+      "title": "Modeling soil and landscape evolution - the effect of rainfall and land-use change on soil and landscape patterns",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_level",
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.1002/esp.4125",
+      "title": "3-D uncertainty-based topographic change detection with structure-from-motion photogrammetry",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_level",
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.1002/esp.4162",
+      "title": "Developing, choosing and using landscape evolution models to inform field-based landscape reconstruction",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "erosion_deposition",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1002/esp.4894",
+      "title": "The impact of different rainfall products on landscape modelling simulations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level",
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrf.20127",
+      "title": "Impact of flow routing on catchment area calculations, slope estimates, and numerical simulations of landscape evolution",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1029/2019gc008262",
+      "title": "Observation and Simulation of Solid Sedimentary Flux: Examples From Northwest African Margin",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment",
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.1016/j.earscirev.2018.04.007",
+      "title": "Beyond equilibrium: Re-evaluating physical modelling of fluvial systems to represent natural river dynamics",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "sediment",
+        "erosion_deposition"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-023-10223-4",
+      "title": "Surrogate-assisted distributed swarm optimisation for computationally expensive landscape evolution models (Badlands)",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

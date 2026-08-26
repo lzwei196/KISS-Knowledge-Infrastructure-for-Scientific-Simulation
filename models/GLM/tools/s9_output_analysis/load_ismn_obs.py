@@ -3,7 +3,7 @@
 load_ismn_obs.py — Load ISMN (International Soil Moisture Network) cleaned
 observations for validation of near-surface temperature / moisture.
 
-Obs store (server): /mnt/datasets/ismn_clean.db  (sqlite3)
+Obs store (server): KISSPATH_DATA/ismn_clean.db  (sqlite3)
   stations(network, station_id, lat, lon, depth_cm, depth_from_m, depth_to_m,
            variable, start, end, n_obs_days, qc_pass, qc_reason, ...)
   observations(station_id, network, lat, lon, date, depth_cm, variable, value,
@@ -41,7 +41,7 @@ import sys
 
 import pandas as pd
 
-DB_DEFAULT = "/mnt/datasets/ismn_clean.db"
+DB_DEFAULT = "KISSPATH_DATA/ismn_clean.db"
 
 
 def connect(db_path):

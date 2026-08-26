@@ -22,12 +22,12 @@ from collections import defaultdict
 # ============================================================================
 
 # 输入文件
-SOIL_PARAM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/hefei_2000-2001/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"  # VIC土壤参数文件
-DEM_PATH = "/mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m/china_dem_90m.tif"  # DEM文件
-BASIN_SHP = "/mnt/disk1/Hydrocraft_server/data/shp/hefei_shp/hefei_boundary_shp/hefei_boundary.shp"  # 流域边界shapefile
+SOIL_PARAM_PATH = "KISSPATH_OUTPUTS/hefei_2000-2001/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"  # VIC土壤参数文件
+DEM_PATH = "KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif"  # DEM文件
+BASIN_SHP = "KISSPATH_DATA/shp/hefei_shp/hefei_boundary_shp/hefei_boundary.shp"  # 流域边界shapefile
 
 # 输出目录
-OUTPUT_DIR = "/mnt/disk1/Hydrocraft_server/outputs/hefei_2000-2001/routing_param"
+OUTPUT_DIR = "KISSPATH_OUTPUTS/hefei_2000-2001/routing_param"
 
 # 参数配置
 CELL_SIZE = 0.25  # VIC网格分辨率（度）
@@ -43,7 +43,7 @@ VELOCITY = 1.5  # m/s
 DIFFUSIVITY = 800  # m²/s
 
 # WhiteboxTools路径
-WBT_DIR = "/home/server/.local/lib/python3.12/site-packages/whitebox/WBT"
+WBT_DIR = "KISSPATH_HOME/.local/lib/python3.12/site-packages/whitebox/WBT"
 
 # ============================================================================
 # 工具函数

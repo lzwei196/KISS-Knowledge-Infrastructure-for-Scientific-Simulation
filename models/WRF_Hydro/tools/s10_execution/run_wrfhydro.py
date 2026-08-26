@@ -30,9 +30,9 @@ from pathlib import Path
 # ===================================================================
 # Default paths (can be overridden via args)
 # ===================================================================
-DEFAULT_WRF_HYDRO_EXE = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', '/mnt/disk1/Hydrocraft_server'), 'model/wrf_hydro/source/trunk/NDHMS/Run/wrf_hydro.exe'))
-DEFAULT_TBL_DIR = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', '/mnt/disk1/Hydrocraft_server'), 'model/wrf_hydro/source/trunk/NDHMS/Run'))
-DEFAULT_MPIRUN = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', '/mnt/disk1/Hydrocraft_server'), 'model/wrf_hydro/deps/mpich-install/bin/mpirun'))
+DEFAULT_WRF_HYDRO_EXE = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', 'KISSPATH_ROOT'), 'model/wrf_hydro/source/trunk/NDHMS/Run/wrf_hydro.exe'))
+DEFAULT_TBL_DIR = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', 'KISSPATH_ROOT'), 'model/wrf_hydro/source/trunk/NDHMS/Run'))
+DEFAULT_MPIRUN = Path(os.path.join(os.environ.get('HYDROCRAFT_ROOT', 'KISSPATH_ROOT'), 'model/wrf_hydro/deps/mpich-install/bin/mpirun'))
 
 
 def preflight_check(run_dir):

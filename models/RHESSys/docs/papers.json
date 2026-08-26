@@ -1,0 +1,208 @@
+{
+  "model": "RHESSys",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 10,
+  "papers": [
+    {
+      "doi": "10.5194/hess-17-341-2013",
+      "title": "Parameterizing sub-surface drainage with geology to improve modeling streamflow responses to climate in data-limited environments",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-4-647-2007",
+      "title": "Assessing the ability of three land ecosystem models to simulate gross carbon uptake of forests from boreal to Mediterranean climate in Europe",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-21-893-2024",
+      "title": "Understanding the effects of revegetated shrubs on fluxes of energy, water, and gross primary productivity",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-11-5809-2014",
+      "title": "Capturing interactions between nitrogen and hydrological cycles under historical climate and land use",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-537-2020",
+      "title": "FORests and HYdrology under Climate Change in Switzerland v1.0: a spatially distributed model combining hydrology and forest dynamics (couples RHESSys)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "lai",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3389/ffgc.2019.00036",
+      "title": "Plant Accessible Water Storage Capacity and Tree-Scale Root Interactions Determine How Forest Density Reductions Increase Water Yield (RHESSys)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-1017-2017",
+      "title": "Daily Landsat-scale evapotranspiration estimation over a forested landscape in North Carolina, USA, using multi-satellite data fusion",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1007/s13201-019-1013-x",
+      "title": "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-1341-2009",
+      "title": "Improving land surface models with FLUXNET data (eddy-covariance model efficiency / RMSE benchmarking of GPP and ET)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-26-2519-2022",
+      "title": "Guidance on evaluating parametric model uncertainty at decision-relevant scales",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/w9100782",
+      "title": "Streamflow and Sediment Yield Prediction for Watershed Prioritization in the Upper Blue Nile",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/eap.1718",
+      "title": "Accounting for disturbance history in models: using remote sensing to constrain carbon and nitrogen pool spin-up",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "lai",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.3390/w12102878",
+      "title": "The Regional Hydro-Ecological Simulation System for 30 Years: A Systematic Review",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "swe",
+        "lai",
+        "gpp",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1175/1087-3562(2004)8<1:rrhsso>2.0.co;2",
+      "title": "RHESSys: Regional Hydro-Ecologic Simulation System—An Object-Oriented Approach to Spatially Distributed Modeling of Carbon, Water, and Nutrient Cycling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "lai",
+        "gpp",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1002/eco.2053",
+      "title": "Hydrologic responses to climate warming for a snow-dominated watershed and a transient snow watershed in the California Sierra",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2008wr007179",
+      "title": "Groundwater dynamics mediate low-flow response to global warming in snow-dominated alpine regions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.14114",
+      "title": "Assessing the effects of forest biomass reductions on forest health and streamflow",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1002/wrcr.20189",
+      "title": "Evaluating controls on coupled hydrologic and vegetation dynamics in a humid continental climate watershed using a subdaily water balance",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "lai",
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2023wr036008",
+      "title": "Simulating the Role of Biogeochemical Hotspots in Driving Nitrogen Export From Dynamic, Ecohydrological Systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/rs5052534",
+      "title": "Evaluating Ecohydrological Impacts of Vegetation Activities on Climatological Perspectives Using RHESSys",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "lai"
+      ]
+    }
+  ]
+}

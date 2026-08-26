@@ -81,12 +81,12 @@ import traceback
 import numpy as np
 import yaml
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MODFLOW6/knowledge_infrastructure"
-MODEL_ROOT = "/mnt/disk1/Hydrocraft_server/models/MODFLOW6"
+KI = "KISSPATH_KI_ROOT/MODFLOW6/knowledge_infrastructure"
+MODEL_ROOT = "KISSPATH_KI_ROOT/MODFLOW6"
 RUNNER_PY = os.path.join(MODEL_ROOT, "run_and_score.py")   # validated forward driver
 CONTRACT_YAML = os.path.join(KI, "calibration.yaml")       # sole source of declared numbers
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 from ki_tools_common.metrics import all_metrics  # noqa: E402
 
 # --- TARGET CASE: pinned. `case_id`/`scored_obs` in the output are DERIVED from the
@@ -100,13 +100,13 @@ AQUIFER_TYPE = "孔隙潜水"
 GW_ZONE = ""                            # this station's gw_zone column is blank in ALL
                                         # three editions; asserted EXACTLY (a future
                                         # ingest that fills it in must be re-derived)
-YB_DB_DEFAULT = "/mnt/disk1/Hydrocraft_server/outputs/yearbook_catalog/yearbook.db"
+YB_DB_DEFAULT = "KISSPATH_OUTPUTS/yearbook_catalog/yearbook.db"
 OBS_TABLE, OBS_COLUMN = "地下水_月均水位", "avg_wl_m"
 
 LAT, LON = 28.286, 117.177     # 贵溪市滨江镇 (Nominatim); CMFD 0.1deg -> same cell
 TOP_ELEV = 33.72               # land surface = yearbook elevation_m
-CMFD_DIR = "/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg"
-MF6 = "/home/server/.local/share/flopy/bin/mf6"
+CMFD_DIR = "KISSPATH_FORCING/Data_forcing_01dy_010deg"
+MF6 = "KISSPATH_HOME/.local/share/flopy/bin/mf6"
 
 SPINUP_YEARS = [2018]                 # warm-up on real CMFD, UNSCORED
 EVAL_YEARS = [2019, 2020, 2021]
@@ -168,7 +168,7 @@ def resolve_obs_db():
     """The yearbook catalog has been relocated between /outputs/ and /outputs_disk1/
     in this environment; a missing DB raises rather than scoring nothing."""
     cands = [YB_DB_DEFAULT, YB_DB_DEFAULT.replace("/outputs/", "/outputs_disk1/"),
-             "/mnt/disk1/Hydrocraft_server/outputs_disk1/yearbook_catalog/yearbook.db"]
+             "KISSPATH_OUTPUTS_ALT/yearbook_catalog/yearbook.db"]
     for c in cands:
         if os.path.exists(c):
             return c

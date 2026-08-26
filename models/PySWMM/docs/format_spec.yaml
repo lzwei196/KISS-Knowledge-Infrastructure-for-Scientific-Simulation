@@ -3,7 +3,7 @@ model:
   version: "2.1.0"
   domain: "urban hydrology / stormwater management"
   engine: "EPA SWMM 5.1.14–5.2.4 via swmm-toolkit"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PySWMM/venv/bin/python"
+  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
   language: "Python 3.10–3.12"
   input_format: "SWMM .inp (section-based plain-text)"
   output_format: "binary .out + plain-text .rpt"

@@ -100,7 +100,7 @@
 ## Full End-to-End Run with Real Data (Iowa, 2015-2017)
 
 - **Date**: 2026-03-16
-- **Data**: MSWX forcing (real, `/mnt/disk3/msxw/`), SoilGrids soil (API), DSSAT maize
+- **Data**: MSWX forcing (real, `KISSPATH_FORCING/`), SoilGrids soil (API), DSSAT maize
 - **Hydrology**: Precipitation 71-99 cm/yr (matches Iowa 85-100). ET 65-95 cm/yr. Temperature -28 to +34°C. All physically correct.
 - **Crop issue diagnosed and fixed (Bug 10)**: Year 1 planted MAIZE, year 2 SOYBEAN, year 3 WHEAT — model cycled through RZCropSel.rzq entries. Root cause: `write_management_events` used incrementing `ref_num` as crop reference. Fix: use `crop_ref=1` (configurable) for all years.
 - **After fix**: All 3 years plant MAIZE.
@@ -144,7 +144,7 @@
 ## HWSD Soil Adapter
 
 - **File**: `tools/s0_global_data/hwsd_soil_adapter.py` (new tool)
-- **Data**: HWSD China raster at `/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img`, lookup via `/media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb`
+- **Data**: HWSD China raster at `KISSPATH_STATIC/HWSD_China_Geo.img`, lookup via `KISSPATH_FORCING/huaihe_raw/soil/HWSD.mdb`
 - **Requires**: `mdbtools` system package (apt install mdbtools)
 - **Flow**: lat/lon → raster pixel → MU_GLOBAL code → mdb-export HWSD_DATA → sand/clay/BD/OC/pH → texture defaults → 6 RZWQM2 horizons
 - **Impact**: Siping maize yield jumped from 1,904 kg/ha (Ohio soil) to **5,908 kg/ha** (HWSD soil). LAI from 2.13 to **4.05**. The soil was the primary limitation.
@@ -206,7 +206,7 @@
 - **CUL file format**: Fixed-width. ECO# must be at position 24. Misalignment causes silent param read failure.
 - **For Chinese cultivars**: Safest approach is to **modify the existing IB1068 line in MZCER040.CUL** with Chinese cultivar params (P1=270, P5=800 for Zhengdan 958) rather than adding a new cultivar ID.
 - **Result**: Modifying IB1068 params to Zhengdan 958 values increased yield from 2,443 → **6,882 kg/ha** and extended maturity from DAP 83 → DAP 96.
-- **China cultivar database**: `/home/server/DSSAT/Data/Genotype/China/MZCER048_China.CUL` has 10 calibrated Chinese cultivars (HHH summer maize + NE spring maize).
+- **China cultivar database**: `KISSPATH_HOME/DSSAT/Data/Genotype/China/MZCER048_China.CUL` has 10 calibrated Chinese cultivars (HHH summer maize + NE spring maize).
 
 ## Bug 16: mass_project_generator key mismatch for met file
 
@@ -264,7 +264,7 @@ These must go into the workflow.md and diagnostic triplets:
 | **ERA5** (global) | `forcing_source_adapter.py` | Stub only ("not yet implemented") | No |
 | **SoilGrids** (global 250m) | `soil_source_adapter.py` `_retrieve_soilgrids()` | Working (with nodata fix) | API-based, no local data needed |
 | **HWSD** (China raster) | `soil_source_adapter.py` | Stub only ("not yet implemented") | No HWSD data on disk |
-| **Crop Calendar** (Sacks global) | `crop_calendar_lookup.py` | Implemented | Needs `/home/server/Crop_model_dataset/` |
+| **Crop Calendar** (Sacks global) | `crop_calendar_lookup.py` | Implemented | Needs `KISSPATH_HOME/Crop_model_dataset/` |
 | **CROPGRIDS** | `crop_area_lookup.py` | Implemented | Needs external GeoTIFF |
 | **NPKGRIDS** | `fertilizer_rate_lookup.py` | Implemented | Needs external GeoTIFF |
 | **SPAM 2020** | `irrigation_type_lookup.py` | Implemented | Needs external GeoTIFF |
@@ -342,14 +342,14 @@ These must go into the workflow.md and diagnostic triplets:
 
 ### MSWX Data Access
 
-- **Location**: `/mnt/disk3/msxw/` — 7 variables: `Tair, P, Pres, SWd, LWd, wind, spechum`
+- **Location**: `KISSPATH_FORCING/` — 7 variables: `Tair, P, Pres, SWd, LWd, wind, spechum`
 - **Layout**: `{var}/{prefix}_{YYYY}.nc` (e.g., `Tair/Tair_2015.nc`)
 - **Coverage**: 1979-2026, global 0.1° 3-hourly
 - **File size**: ~9GB per year per variable
 - **Variable names in NC**: `air_temperature, precipitation, downward_shortwave_radiation, wind_speed, surface_pressure, specific_humidity`
 - **Units**: Tair in °C (NOT Kelvin like CMFD), P in mm/3h, SWd in W/m², wind in m/s, Pres in Pa, spechum in kg/kg
 - **Our adapter match**: Variable mapping in `forcing_source_adapter.py _retrieve_mswx()` matches exactly
-- **Performance issue**: 9GB files slow to open with netCDF4 direct indexed reads. HydroCraft at `/mnt/disk1/Hydrocraft_server/skills/vic-auto-run/s2_forcing/forcing_1d.py` has optimized MSWX reader with pre-clipping. May need to adopt their approach for speed.
+- **Performance issue**: 9GB files slow to open with netCDF4 direct indexed reads. HydroCraft at `KISSPATH_ROOT/skills/vic-auto-run/s2_forcing/forcing_1d.py` has optimized MSWX reader with pre-clipping. May need to adopt their approach for speed.
 - **HydroCraft MSWX approach**: Renames MSWX vars to CMFD names, converts Tair °C→K and P mm/3h→kg/m²/s for VIC compatibility. For RZWQM2 we DON'T need those conversions (RZWQM2 expects °C and mm).
 - **TODO**: Test if adapter produces correct output (currently timing out on 9GB reads). Consider optimizing with xarray sel() or pre-subsetting.
 
@@ -362,7 +362,7 @@ These must go into the workflow.md and diagnostic triplets:
 - **Fix**: Rewrote `_retrieve_mswx()` with `multiprocessing.Pool` — reads all 6 variables per year in parallel. Worker function `_read_mswx_var()` extracts single pixel via netCDF4 indexed read.
 - **Performance**: 241s for 1 month (6 parallel file reads). ~4 min/year. 6-year run ~24 min. Disk I/O bound.
 - **Verified**: Iowa Jan 2015 — temps -21 to +1.5°C, rain events, RH 44-82%. All physically reasonable.
-- **MSWX path**: `/mnt/disk3/msxw/` (7 subdirs: Tair, P, Pres, SWd, LWd, wind, spechum, 1979-2026)
+- **MSWX path**: `KISSPATH_FORCING/` (7 subdirs: Tair, P, Pres, SWd, LWd, wind, spechum, 1979-2026)
 - **Status**: Fixed
 
 ### Issue 2: Binary not copied into new projects [FIXED]

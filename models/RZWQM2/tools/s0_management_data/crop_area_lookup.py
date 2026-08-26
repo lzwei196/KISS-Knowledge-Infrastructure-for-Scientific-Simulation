@@ -18,7 +18,7 @@ Inputs:
     lat                - Latitude in decimal degrees  (required)
     lon                - Longitude in decimal degrees  (required)
     cropgrids_zip_path - Path to CROPGRIDSv1.08_NC_maps.zip
-                         (default: /home/server/Crop_model_dataset/22491997/CROPGRIDSv1.08_NC_maps.zip)
+                         (default: KISSPATH_HOME/Crop_model_dataset/22491997/CROPGRIDSv1.08_NC_maps.zip)
     top_n              - Number of top crops to return (default: 5)
 
 Exit codes:
@@ -46,7 +46,7 @@ from crop_name_harmonizer import _CROP_TABLE, harmonize  # noqa: E402
 # ---------------------------------------------------------------------------
 LAT = ""
 LON = ""
-CROPGRIDS_ZIP_PATH = "/home/server/Crop_model_dataset/22491997/CROPGRIDSv1.08_NC_maps.zip"
+CROPGRIDS_ZIP_PATH = "KISSPATH_HOME/Crop_model_dataset/22491997/CROPGRIDSv1.08_NC_maps.zip"
 TOP_N = "5"
 
 

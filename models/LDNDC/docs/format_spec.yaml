@@ -9,7 +9,7 @@ model:
   - crop_yield
   - soil_carbon
   binary: ldndc
-  binary_path: /home/server/LDNDC/bin/ldndc
+  binary_path: KISSPATH_HOME/LDNDC/bin/ldndc
   language: C++11
   execution: $LDNDC_BIN project.xml
   working_directory: project directory with input/ and output/ subdirectories

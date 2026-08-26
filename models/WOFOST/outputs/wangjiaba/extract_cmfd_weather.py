@@ -25,8 +25,8 @@ LAT = 32.43
 LON = 115.6
 START_YEAR = 1980
 END_YEAR = 1990
-CMFD_DIR = Path("/mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg")
-OUTPUT_DIR = Path("/mnt/disk1/Hydrocraft_server/models/WOFOST/knowledge_infrastructure/outputs/wangjiaba")
+CMFD_DIR = Path("KISSPATH_DATA/forcing/Data_forcing_03hr_010deg")
+OUTPUT_DIR = Path("KISSPATH_KI_ROOT/WOFOST/knowledge_infrastructure/outputs/wangjiaba")
 
 VARS = {
     'Temp': 'temp',

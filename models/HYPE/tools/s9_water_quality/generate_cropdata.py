@@ -34,7 +34,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # Add NPKGRIDS Data KI tool path
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/data_ki/NPKGRIDS/tools")
+sys.path.insert(0, "KISSPATH_DATA_KI/NPKGRIDS/tools")
 
 # Regional crop calendars (day-of-year for key events)
 # Based on FAO crop calendar database and national statistics

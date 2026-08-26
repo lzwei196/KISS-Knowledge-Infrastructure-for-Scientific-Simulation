@@ -40,7 +40,7 @@ Edit the copy:
 ```bash
 mkdir -p outputs/{basin}/climate_projection/vic_result_{MODEL}_{ssp}
 
-/mnt/disk1/Hydrocraft_server/model/VIC-5.1.0/vic/drivers/classic/vic_classic.exe \
+KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/classic/vic_classic.exe \
   -g outputs/{basin}/climate_projection/global_param_{basin}_{MODEL}_{ssp}.txt
 ```
 

@@ -32,7 +32,7 @@ identity:
 # ---------------------------------------------------------------------------
 obs_contract:
   dataset: "CNGF (china_gaugeflux) — 黄河 daily discharge txt"
-  file: "/mnt/datasets/china_water_level/黄河txt/唐乃亥.txt"
+  file: "KISSPATH_DATA/china_water_level/黄河txt/唐乃亥.txt"
   format: "tab-separated; header stcd/dates/z/Q/name; dates are Y-M-D (unpadded)"
   station_code: 40100350          # `stcd`; must be the ONLY station in the file
   station_name: "唐乃亥"           # `name`

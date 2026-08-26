@@ -33,8 +33,8 @@ USAGE
 =====
     python dissect_space_ssc_q_rating.py \
         --site-id USGS-07374000 \
-        --ssc-csv  /mnt/disk1/Hydrocraft_server/data/obs/sediment/usgs_suspended_sediment/wqp_pcode80154_louisiana.csv \
-        --flow-rdb /mnt/disk1/Hydrocraft_server/data/obs/sediment/usgs_suspended_sediment/07374000_Mississippi_daily_flow.rdb \
+        --ssc-csv  KISSPATH_OBS/sediment/usgs_suspended_sediment/wqp_pcode80154_louisiana.csv \
+        --flow-rdb KISSPATH_OBS/sediment/usgs_suspended_sediment/07374000_Mississippi_daily_flow.rdb \
         --label "Mississippi River at St. Francisville, LA"
 
 Output:
@@ -65,7 +65,7 @@ from dissect_atchafalaya_ssc_q_surrogate import (  # noqa: E402
 )
 
 OUT_ROOT = pathlib.Path(
-    "/mnt/disk1/Hydrocraft_server/outputs/landlab_space_ssc_q"
+    "KISSPATH_OUTPUTS/landlab_space_ssc_q"
 )
 
 

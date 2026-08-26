@@ -45,7 +45,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 KI = HERE  # this file lives inside knowledge_infrastructure/
 TOOLS = os.path.join(KI, "tools")
-for _cand in ["/mnt/disk1/Hydrocraft_server/models/ki_tools_common"]:
+for _cand in ["KISSPATH_KI_TOOLS_COMMON"]:
     if os.path.isdir(os.path.join(_cand, "ki_tools_common")):
         sys.path.insert(0, _cand)
         break
@@ -195,7 +195,7 @@ def _point_series(lat, lon, elev, tag, crop, variety, mode, hy0, hy1,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default=os.path.join(
-        "/mnt/disk1/Hydrocraft_server/models/WOFOST/detached/verify_1"))
+        "KISSPATH_KI_ROOT/WOFOST/detached/verify_1"))
     ap.add_argument("--crop", default="maize")
     ap.add_argument("--variety", default="Grain_maize_205")
     ap.add_argument("--mode", default="WLP_FD")

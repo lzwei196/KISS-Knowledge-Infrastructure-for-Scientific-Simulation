@@ -23,13 +23,13 @@ episodes:
     context:
       goal: "Run DSSAT for the first time on Linux after compiling from source"
       action: "Execute dscsm048 from the build directory, pointing at test case in run_test/"
-      command: "/home/server/DSSAT/build/bin/dscsm048 MZCER048 B DSSBatch.v48"
-      working_directory: "/home/server/DSSAT/run_test"
+      command: "KISSPATH_HOME/DSSAT/build/bin/dscsm048 MZCER048 B DSSBatch.v48"
+      working_directory: "KISSPATH_HOME/DSSAT/run_test"
       input_files: ["DSSBatch.v48", "UFGA8201.MZX", "Weather/UFGA8201.WTH", "Soil/SOIL.SOL"]
       preceding_steps: ["cmake configured successfully", "make compiled 14MB binary"]
 
     error:
-      observed_output: "Could not locate error file: /home/server/DSSAT/build/bin/MODEL.ERR"
+      observed_output: "Could not locate error file: KISSPATH_HOME/DSSAT/build/bin/MODEL.ERR"
       error_pattern: "Could not locate error file.*MODEL\\.ERR"
       exit_code: 99
       error_file: "stderr"
@@ -37,7 +37,7 @@ episodes:
 
     debugging_trace:
       - step: "Checked if MODEL.ERR exists anywhere"
-        result: "Found at /home/server/DSSAT/Data/MODEL.ERR and /home/server/DSSAT/run_test/MODEL.ERR"
+        result: "Found at KISSPATH_HOME/DSSAT/Data/MODEL.ERR and KISSPATH_HOME/DSSAT/run_test/MODEL.ERR"
         useful: true
       - step: "Copied MODEL.ERR to the build/bin/ directory next to the executable"
         result: "Different error appeared (Error 29 — File not found for experiment)"
@@ -49,7 +49,7 @@ episodes:
     resolution:
       root_cause: "DSSAT resolves MODEL.ERR and other support files relative to the executable's own directory, not the current working directory. When the binary is at build/bin/ but data is at run_test/, it can't find anything."
       fix_action: "Copy dscsm048 into the working directory and run it from there: cp build/bin/dscsm048 run_test/ && cd run_test && ./dscsm048 B DSSBatch.v48"
-      fix_command: "cp /home/server/DSSAT/build/bin/dscsm048 . && ./dscsm048 B DSSBatch.v48"
+      fix_command: "cp KISSPATH_HOME/DSSAT/build/bin/dscsm048 . && ./dscsm048 B DSSBatch.v48"
       time_to_resolve_minutes: 5
       difficulty: "moderate"
 
@@ -77,13 +77,13 @@ episodes:
     context:
       goal: "Run test case after fixing MODEL.ERR issue"
       action: "Used sed to replace macOS paths in DSSBatch.v48 with Linux paths"
-      command: "sed 's|/Users/leo/Desktop/DSSAT/run_test|/home/server/DSSAT/run_test|g' DSSBatch.v48"
-      working_directory: "/home/server/DSSAT/run_test"
+      command: "sed 's|/Users/leo/Desktop/DSSAT/run_test|KISSPATH_HOME/DSSAT/run_test|g' DSSBatch.v48"
+      working_directory: "KISSPATH_HOME/DSSAT/run_test"
       input_files: ["DSSBatch.v48"]
       preceding_steps: ["ep_001 resolved — executable now in working directory"]
 
     error:
-      observed_output: "File not found. File: /home/server/DSSAT/run_test/UFGA8201.   Line: 0   Error key: IPEXP"
+      observed_output: "File not found. File: KISSPATH_HOME/DSSAT/run_test/UFGA8201.   Line: 0   Error key: IPEXP"
       error_pattern: "File not found.*UFGA8201\\."
       exit_code: 99
       error_file: "WARNING.OUT"
@@ -135,7 +135,7 @@ episodes:
       goal: "Run test case after fixing batch file"
       action: "DSSAT now reads FileX correctly but can't find weather, soil, or genotype files"
       command: "./dscsm048 MZCER048 B DSSBatch.v48"
-      working_directory: "/home/server/DSSAT/run_test"
+      working_directory: "KISSPATH_HOME/DSSAT/run_test"
       input_files: ["DSSATPRO.v48", "Weather/UFGA8201.WTH", "Soil/SOIL.SOL", "Genotype/MZCER048.CUL"]
       preceding_steps: ["ep_001 and ep_002 resolved"]
 
@@ -148,7 +148,7 @@ episodes:
 
     debugging_trace:
       - step: "Checked DSSATPRO.v48 — WED path had Windows backslashes"
-        result: "WED /home/server/DSSAT/run_test\\Weather — backslash invalid on Linux"
+        result: "WED KISSPATH_HOME/DSSAT/run_test\\Weather — backslash invalid on Linux"
         useful: true
       - step: "Fixed backslashes with sed 's|\\\\|/|g'"
         result: "Path now correct but DSSAT still can't find files — case sensitivity issue"
@@ -246,7 +246,7 @@ episodes:
       goal: "Run gridded DSSAT after fixing .L48 filename issue"
       action: "Generated DSSATPRO.L48 with correct format but long paths"
       command: "./dscsm048 B DSSBatch.v48"
-      working_directory: "/mnt/disk1/Hydrocraft_server/outputs/bengbu_1980_1990_cama/dssat/runs/cell_0001"
+      working_directory: "KISSPATH_OUTPUTS/bengbu_1980_1990_cama/dssat/runs/cell_0001"
       input_files: ["DSSATPRO.L48"]
       preceding_steps: ["ep_004 resolved — using .L48 format"]
 
@@ -259,7 +259,7 @@ episodes:
 
     debugging_trace:
       - step: "Checked DSSATPRO.L48 — MMZ entry looks correct"
-        result: "MMZ // /mnt/disk1/Hydrocraft_server/outputs/bengbu_1980_1990_cama/dssat/runs/cell_0001 dscsm048 MZCER048"
+        result: "MMZ // KISSPATH_OUTPUTS/bengbu_1980_1990_cama/dssat/runs/cell_0001 dscsm048 MZCER048"
         useful: true
       - step: "Counted path length: 85 characters"
         result: "The reference DSSATPRO.L48 that works has 38-char paths. DSSAT Fortran CHARACTER for paths is likely ~60-80 chars."

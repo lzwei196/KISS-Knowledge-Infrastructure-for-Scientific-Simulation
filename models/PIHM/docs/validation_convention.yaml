@@ -21,49 +21,49 @@ references:
     venue: "Transactions of the ASABE"
     year: 2007
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
   moriasi2015:
     doi: 10.13031/trans.58.10715
     title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
     venue: "Transactions of the ASABE"
     year: 2015
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_trans.58.10715.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
   shud2020:
     doi: 10.5194/gmd-13-2743-2020
     title: "Simulator for Hydrologic Unstructured Domains (SHUD v1.0): numerical modeling of watershed hydrology with the finite volume method"
     venue: "Geoscientific Model Development"
     year: 2020
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_gmd-13-2743-2020.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-2743-2020.txt
   shi2013:
     doi: 10.1175/jhm-d-12-0145.1
     title: "Development of a Coupled Land Surface Hydrologic Model and Evaluation at a Critical Zone Observatory (Flux-PIHM, Shale Hills)"
     venue: "Journal of Hydrometeorology"
     year: 2013
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1175_jhm-d-12-0145.1.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jhm-d-12-0145.1.txt
   swgw2005:
     doi: 10.5194/hess-9-549-2005
     title: "Multi-objective calibration of a surface water-groundwater flow model in an irrigated agricultural region"
     venue: "Hydrology and Earth System Sciences"
     year: 2005
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-9-549-2005.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-9-549-2005.txt
   qin2013:
     doi: 10.5194/hess-17-3759-2013
     title: "Integrated hydrological modeling of the North China Plain and implications for sustainable water management"
     venue: "Hydrology and Earth System Sciences"
     year: 2013
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-17-3759-2013.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-17-3759-2013.txt
   da2016:
     doi: 10.5194/hess-20-4341-2016
     title: "Multivariate hydrological data assimilation of soil moisture and groundwater head"
     venue: "Hydrology and Earth System Sciences"
     year: 2016
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-20-4341-2016.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-4341-2016.txt
 
 validation:
 

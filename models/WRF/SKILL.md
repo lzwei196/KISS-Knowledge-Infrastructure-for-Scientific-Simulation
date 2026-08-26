@@ -1,3 +1,14 @@
+---
+name: wrf
+description: >-
+  Advanced Research WRF (ARW) dynamical core, v4.x lineage; governing equations per the
+  ARW Technical Note (NCAR TN series): fully compressible…. Covers Limited-area
+  mesoscale-to-microscale atmospheric dynamics (compressible nonhydrostatic, with…;
+  Real-data numerical weather prediction over a map-projected limited-area domain;
+  Idealized simulations (LES, convection, baroclinic wave). Use when the task involves
+  running, configuring, calibrating or interpreting WRF.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

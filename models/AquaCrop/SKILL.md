@@ -1,3 +1,14 @@
+---
+name: aquacrop
+description: >-
+  FAO AquaCrop 7.1 (Reference Manual lineage; Chapter 3 algorithmic spec). Covers Yield
+  response of herbaceous crops to water; Daily soil water balance of the root zone
+  (drainage, runoff, infiltration, capillary rise); Soil evaporation (FAO two-stage:
+  energy-limited then falling-rate); Crop transpiration with stress modulation (water,
+  aeration, temperature, CO2). Use when the task involves running, configuring,
+  calibrating or interpreting AquaCrop.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -326,9 +337,9 @@ wp = final['Dry yield (tonne/ha)'].values * 1000 / seasonal_et['ET'].values  # k
 | South | <28°N | — | — | Mar-Jul, Jul-Nov |
 
 **Data sources on server:**
-- GGCMI Crop Calendar: `/home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
-- China Phenology GeoTIFF: `/home/server/Crop_model_dataset/8313530/`
-- SPAM crop distribution: `/home/server/Crop_model_dataset/dataverse_files/`
+- GGCMI Crop Calendar: `KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
+- China Phenology GeoTIFF: `KISSPATH_HOME/Crop_model_dataset/8313530/`
+- SPAM crop distribution: `KISSPATH_HOME/Crop_model_dataset/dataverse_files/`
 
 
 ---

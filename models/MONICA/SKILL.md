@@ -1,3 +1,14 @@
+---
+name: monica
+description: >-
+  MONICA 3.6.x. Covers Coupled daily turnover of carbon, nitrogen and water in a 1-D
+  agro-ecosystem soil-plant column; Soil water balance (capacity-based): infiltration,
+  interception, evaporation, transpiration…; Soil heat conduction (per-layer temperature)
+  with snow-cover and frost effects; Soil organic matter C/N turnover (AOM/SMB/SOM
+  multi-pool) with mineralisation, nitrification…. Use when the task involves running,
+  configuring, calibrating or interpreting MONICA.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

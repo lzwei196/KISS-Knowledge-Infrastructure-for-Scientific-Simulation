@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 
-HYDROCRAFT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+HYDROCRAFT_ROOT = Path("KISSPATH_ROOT")
 
 
 def validate_inputs(args):
@@ -118,7 +118,7 @@ def process(args):
         }
     elif args.forcing == "mswx":
         catalog["mswx_forcing"] = {
-            "path": "/mnt/disk3/msxw/{variable}/*.nc",
+            "path": "KISSPATH_FORCING/{variable}/*.nc",
             "data_type": "RasterDataset",
             "driver": "netcdf",
             "crs": 4326,
@@ -131,7 +131,7 @@ def process(args):
         }
 
     # --- GRDC stations ---
-    grdc_shp = Path("/mnt/disk3/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc/shapefiles/grdc/grdc_basin_shapes.shp")
+    grdc_shp = Path("KISSPATH_DATA/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc/shapefiles/grdc/grdc_basin_shapes.shp")
     if grdc_shp.exists():
         catalog["grdc_basins"] = {
             "path": str(grdc_shp),

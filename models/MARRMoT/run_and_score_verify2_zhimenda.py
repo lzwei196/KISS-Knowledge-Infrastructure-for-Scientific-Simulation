@@ -32,14 +32,14 @@ import sys
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
-KTC = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
-MARRMOT_SRC = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/source/repo/MARRMoT"
-STATE = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/detached/verify_2"
-VALIDATORS = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"
-CMFD_DIR = "/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg"
-HYBAS = "/mnt/disk1/Hydrocraft_server/data/awd_paper/hydrobasins/asia/hybas_as_lev07_v1c.shp"
-OBS_TXT = ("/mnt/disk1/Hydrocraft_server/data/china_data/"
+KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
+KTC = "KISSPATH_KI_TOOLS_COMMON"
+MARRMOT_SRC = "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
+STATE = "KISSPATH_KI_ROOT/MARRMoT/detached/verify_2"
+VALIDATORS = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
+CMFD_DIR = "KISSPATH_FORCING/Data_forcing_01dy_010deg"
+HYBAS = "KISSPATH_DATA/awd_paper/hydrobasins/asia/hybas_as_lev07_v1c.shp"
+OBS_TXT = ("KISSPATH_DATA/china_data/"
            "GRDC_asia_discharge_daily_20260511/2181500_Q_Day.Cmd.txt")
 
 GAUGE_LAT, GAUGE_LON = 33.433333, 96.6

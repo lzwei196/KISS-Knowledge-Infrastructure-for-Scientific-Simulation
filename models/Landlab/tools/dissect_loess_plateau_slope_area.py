@@ -35,7 +35,7 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-SRTM_TILE_ZIP = "/mnt/disk4/SRTMGL1/N36E109.SRTMGL1.hgt.zip"
+SRTM_TILE_ZIP = "KISSPATH_DATA/SRTMGL1/N36E109.SRTMGL1.hgt.zip"
 OUTPUT_DIR = "outputs/landlab_loess_slope_area"
 KI_TOOLS_DIR = os.path.join(
     os.path.dirname(__file__)

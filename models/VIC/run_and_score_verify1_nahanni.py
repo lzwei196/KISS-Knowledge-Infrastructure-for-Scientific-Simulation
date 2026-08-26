@@ -79,13 +79,12 @@ import urllib.request
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 from validators.standard_calval import compute_calval_metrics
 
 # ---------------------------------------------------------------------------
-BASE = "/mnt/disk1/Hydrocraft_server"
+BASE = "KISSPATH_ROOT"
 KI = f"{BASE}/models/VIC/knowledge_infrastructure"
 CASE = f"{BASE}/models/VIC/detached/verify_1"
 
@@ -93,7 +92,7 @@ BASIN = "nahanni_virginiafalls"
 STA = "NAH"
 GAUGE_ID = "GRDC_4208221"
 
-CARAVAN = "/mnt/datasets/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc"
+CARAVAN = "KISSPATH_DATA/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc"
 OBS_NC = f"{CARAVAN}/timeseries/netcdf/grdc/{GAUGE_ID}.nc"
 BASIN_SHAPES = f"{CARAVAN}/shapefiles/grdc/grdc_basin_shapes.shp"
 

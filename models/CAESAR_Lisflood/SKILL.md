@@ -1,3 +1,13 @@
+---
+name: caesar-lisflood
+description: >-
+  CAESAR-Lisflood (Coulthard et al. 2013, ESPL 38:1897-1906) — LISFLOOD-FP inertial
+  shallow-water routing (Bates et al. 2010) coupled to the CAESAR…. Covers
+  Non-steady-state 2D hydrodynamic surface flow / inundation (LISFLOOD-FP inertial
+  shallow-water…; Spatially variable TOPMODEL rainfall-runoff generation. Use when the
+  task involves running, configuring, calibrating or interpreting CAESAR_Lisflood.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

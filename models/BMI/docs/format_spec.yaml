@@ -8,7 +8,7 @@ model:
     model (bmi-example-python / bmi-heat).
 
     '
-  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/BMI/venv/bin/python
+  binary_path: KISSPATH_PYTHON_ENV/bin/python
   package: bmi-heat 2.1.3.dev0
   import_path: heat.bmi_heat.BmiHeat
   config_format: YAML

@@ -66,7 +66,7 @@ EXECUTE = False       # Actually run the binary
 PARSE_RESULTS = False # Parse calibration output
 
 MHM_BINARY = os.path.join(
-    os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"),
+    os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"),
     "model/mhm/mhm"
 )
 

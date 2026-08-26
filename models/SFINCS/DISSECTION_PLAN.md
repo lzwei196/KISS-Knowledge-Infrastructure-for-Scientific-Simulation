@@ -90,7 +90,7 @@ docker run -v $(pwd):/data deltares/sfincs:latest
 ### Phase B: HydroMT-SFINCS (Python model builder)
 
 ```bash
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 pip install hydromt_sfincs
 ```
 
@@ -519,7 +519,7 @@ These can proceed in parallel once the binary is installed:
 After dissection, register in the central knowledge infrastructure:
 
 ```yaml
-# In /home/server/LDNDC/knowledge_infrastructure/knowledge_infrastructure.yaml
+# In KISSPATH_HOME/LDNDC/knowledge_infrastructure/knowledge_infrastructure.yaml
 # Add under models section:
 - name: SFINCS
   version: "2.1.1"

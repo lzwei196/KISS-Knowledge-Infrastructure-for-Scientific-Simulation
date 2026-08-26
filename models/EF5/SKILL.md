@@ -1,3 +1,14 @@
+---
+name: ef5
+description: >-
+  HYPE 5.35.0. Covers Subbasin water balance: snow accumulation/melt, soil water (up to 3
+  layers), evapotranspiration…; Infiltration, surface runoff, percolation, macropore flow,
+  tile drainage, groundwater runoff…; Soil temperature and ground frost; Glacier mass
+  balance (glacier classes); Internal river routing (local + main river) with delay and
+  attenuation via MAINDOWN topology. Use when the task involves running, configuring,
+  calibrating or interpreting EF5.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -492,7 +503,7 @@ metric families are `spatial_pattern_match` / `event_detection` (CSI/POD/FAR), w
 KI cannot deliver. Skip such obs; do not score them with temporal NSE/KGE/PBIAS.
 
 **KI-INTEGRITY CAVEAT — dag.yaml is HYPE's, not EF5's.** The installed `dag.yaml`
-(and its source `/mnt/datasets/EF5_dag_v3_5_auto.yaml`) both carry
+(and its source `KISSPATH_DATA/EF5_dag_v3_5_auto.yaml`) both carry
 `identity.model_id: "HYPE"` with HYPE outputs (`cout`/`snow`/`evap`/`soim`/`gwat`).
 The dag-driven obs-shape gate therefore reads HYPE metadata for EF5 runs and CANNOT be
 trusted as an EF5 output contract. Prior EF5 streamflow PASSes matched on `var=cout`,

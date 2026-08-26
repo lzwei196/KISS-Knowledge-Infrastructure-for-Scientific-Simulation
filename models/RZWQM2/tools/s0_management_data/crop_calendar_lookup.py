@@ -70,8 +70,8 @@ LAT = ""
 LON = ""
 CROP_NAME = ""
 YEAR = "2019"
-CALENDAR_DIR = "/home/server/Crop_model_dataset/ALL_CROPS_netCDF_0.5deg_filled"
-CHINA_PHENO_DIR = "/home/server/Crop_model_dataset/8313530"
+CALENDAR_DIR = "KISSPATH_HOME/Crop_model_dataset/ALL_CROPS_netCDF_0.5deg_filled"
+CHINA_PHENO_DIR = "KISSPATH_HOME/Crop_model_dataset/8313530"
 PREFER_CHINA_PHENOLOGY = "True"
 
 # ---------------------------------------------------------------------------

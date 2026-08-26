@@ -1,3 +1,13 @@
+---
+name: hydrotrend
+description: >-
+  HydroTrend v3.0 (Kettner & Syvitski 2008); BQART sediment-flux relation per Syvitski &
+  Milliman 2007. Covers Climate-driven daily water balance at a single river outlet (rain
+  runoff, snow/nival melt, glacial…; Stochastic daily weather generation from monthly
+  climate statistics and multi-epoch climate trends. Use when the task involves running,
+  configuring, calibrating or interpreting HydroTrend.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

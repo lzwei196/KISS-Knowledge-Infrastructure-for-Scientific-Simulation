@@ -44,9 +44,9 @@ import sys
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
-KTC = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
-STATE = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/detached/verify_1"
+KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
+KTC = "KISSPATH_KI_TOOLS_COMMON"
+STATE = "KISSPATH_KI_ROOT/MARRMoT/detached/verify_1"
 
 sys.path.insert(0, KTC)
 from ki_tools_common.metrics import all_metrics  # noqa: E402
@@ -57,7 +57,7 @@ RUNTOOL = os.path.join(KI, "tools", "run_marrmot.py")
 
 GAUGE = "GRDC_3275140"
 GAUGE_NAME = "Rio de los Patos at La Plateada, San Juan, Argentina (Andes)"
-NC = ("/mnt/datasets/observed_data/dischargeandwatershed/"
+NC = ("KISSPATH_DATA/observed_data/dischargeandwatershed/"
       f"GRDC-Caravan-extension-nc/timeseries/netcdf/grdc/{GAUGE}.nc")
 AREA_KM2 = 8460.835471
 MODEL = "m_12_alpine2_6p_2s"

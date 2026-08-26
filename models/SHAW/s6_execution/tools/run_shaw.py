@@ -11,7 +11,7 @@ Usage:
         --sit_file site.sit --wea_file weather.wea \
         --moi_file init.moi --tem_file init.tem \
         [--mtstep 1] [--iflagsi 1] \
-        [--shaw_exe /mnt/disk1/Hydrocraft_server/model/shaw/Code/shaw303]
+        [--shaw_exe KISSPATH_BINARIES/shaw/Code/shaw303]
 """
 
 import argparse
@@ -24,7 +24,7 @@ from pathlib import Path
 # Canonical compiled binary: model/shaw/shaw303 (symlink -> model/shaw/Shaw303/shaw303,
 # produced by model/shaw/compile.sh). The old "model/shaw/Code/shaw303" path never
 # existed (there is no Code/ directory) — fixed 2026-06-28 RISMA run.
-SHAW_EXE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/shaw/shaw303")
+SHAW_EXE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/shaw/shaw303")
 
 
 def create_inp_file(args, workdir):

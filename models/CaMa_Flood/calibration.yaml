@@ -274,7 +274,7 @@ strategy:
 #   forcing     : Lancang VIC->CaMa runoff (map/jinghong_15min regionalized from glb_15min;
 #                 yearly NetCDFs jinghong_runoff_1d_YYYY.nc built by the KI's own
 #                 prepare_runoff_input.py + configure_simulation.py, one-time prepare), 1968-1985.
-#   obs         : /mnt/datasets/china_water_level/澜沧江txt/允景洪.txt (Q m3/s, 1970-1985).
+#   obs         : KISSPATH_DATA/china_water_level/澜沧江txt/允景洪.txt (Q m3/s, 1970-1985).
 #   metric      : nse (dag determining_metric for outflw point_time_series), + kge/pbias/rmse/r.
 # The scored gauge/obs/lat/lon/area are HARD-PINNED constants in calib_run.py (no overridable
 # env can redirect scoring to another gauge); scored_obs in __kdt__ is DERIVED from the same

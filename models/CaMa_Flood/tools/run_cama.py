@@ -12,14 +12,14 @@ Performs:
 
 Usage:
     python run_cama.py \\
-        --script /mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/gosh/run_bengbu_1d_nc.sh
+        --script KISSPATH_BINARIES/cmf_v420_pkg/gosh/run_bengbu_1d_nc.sh
 
     python run_cama.py \\
-        --script /mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/gosh/run_bengbu_1d_nc.sh \\
+        --script KISSPATH_BINARIES/cmf_v420_pkg/gosh/run_bengbu_1d_nc.sh \\
         --dry_run
 
     python run_cama.py \\
-        --script /mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/gosh/run_bengbu_1d_nc.sh \\
+        --script KISSPATH_BINARIES/cmf_v420_pkg/gosh/run_bengbu_1d_nc.sh \\
         --timeout 7200
 """
 
@@ -30,7 +30,7 @@ import subprocess
 import sys
 import time
 
-CAMA_ROOT = "/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg"
+CAMA_ROOT = "KISSPATH_BINARIES/cmf_v420_pkg"
 BINARY = os.path.join(CAMA_ROOT, "src", "MAIN_cmf")
 
 
@@ -66,7 +66,7 @@ def preflight_check(script_path):
     if "/Volumes/" in script_content:
         errors.append(
             "Run script contains macOS paths (/Volumes/...). "
-            "Fix: replace with /mnt/disk1/Hydrocraft_server/... paths"
+            "Fix: replace with KISSPATH_ROOT/... paths"
         )
 
     # Check for relative paths in namelist (STOP 10 risk)

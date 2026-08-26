@@ -298,7 +298,7 @@ def main():
 
         # Compute metrics
         if len(merged) >= 30:
-            sys.path.insert(0, '/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent')
+            sys.path.insert(0, 'KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent')
             from ki_tools_common.metrics import all_metrics
             m = all_metrics(merged['Q_obs'].values, merged['Q_sim'].values)
             print(f"r={m['r']:.4f}, NSE={m['NSE']:.4f}, KGE={m['KGE']:.4f}, PBIAS={m['PBIAS']:.2f}%")

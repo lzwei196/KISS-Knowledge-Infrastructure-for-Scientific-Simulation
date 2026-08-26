@@ -1,3 +1,14 @@
+---
+name: summa
+description: >-
+  SUMMA. Covers Per-HRU vertical land-surface mass and energy conservation: vegetation
+  canopy, snowpack, soil…; Radiation transmission and wind attenuation through canopy;
+  Snow interception, accumulation, phase change, compaction, and melt; Evapotranspiration
+  (canopy/ground evaporation, transpiration, sublimation); Soil water flow (Richards
+  equation, van Genuchten-Mualem retention). Use when the task involves running,
+  configuring, calibrating or interpreting SUMMA.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -124,9 +135,9 @@ and now warns; use it only for a genuinely uniform single-HRU site.
 | Dataset | Path | Legend | Epoch |
 |---|---|---|---|
 | AVHRR 1 km (**primary — already IGBP**) | `data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif` | IGBP 0–16 | 1981–1994 |
-| ESA-CCI-LC 0.1° | `/mnt/datasets/vegetation/ESA_CCI_LC_global/` | LCCS (needs its own crosswalk) | 1992–2020 |
-| GLCFCS30 30 m | `/mnt/datasets/vegetation/GLCFCS30/` | 29-class (needs its own crosswalk) | 2015 |
-| CLCD 30 m China | `/mnt/datasets/vegetation/CLCD_raw/` | 9-class | 2000–2024 |
+| ESA-CCI-LC 0.1° | `KISSPATH_DATA/vegetation/ESA_CCI_LC_global/` | LCCS (needs its own crosswalk) | 1992–2020 |
+| GLCFCS30 30 m | `KISSPATH_DATA/vegetation/GLCFCS30/` | 29-class (needs its own crosswalk) | 2015 |
+| CLCD 30 m China | `KISSPATH_DATA/vegetation/CLCD_raw/` | 9-class | 2000–2024 |
 
 **Step 1b — canopy height is a PARAMETER, not a table lookup.** SUMMA reads
 `heightCanopyTop` / `heightCanopyBottom` from `localParamInfo.txt` / `trialParams.nc`
@@ -469,7 +480,7 @@ SUMMA can share forcing data with VIC through the `convert_vic_forcing_to_summa.
 ### Build (Makefile method)
 ```bash
 cd model/summa/build
-export F_MASTER=/mnt/disk1/Hydrocraft_server/model/summa
+export F_MASTER=KISSPATH_BINARIES/summa
 export FC=gfortran
 export FC_EXE=gfortran
 export INCLUDES='-I/usr/include'
@@ -513,11 +524,11 @@ python tools/s6_execution/run_summa.py --summa_exe ... --file_manager ...
 python tools/s7_physics_comparison/compare_physics.py --file_manager ... --summa_exe ... --variations '...'
 
 # 8. External channel routing -- REQUIRED whenever the obs is a stream gauge
-PY=/mnt/disk1/Hydrocraft_server/python_env/bin/python
+PY=KISSPATH_PYTHON_ENV/bin/python
 $PY tools/s8_routing/build_river_network.py --hybas_shp <hybas_as_lev07_v1c.shp> \
     --outlet_hybas_id <HYBAS_ID of the gauge sub-basin> --dem <dem.tif> \
     --output_dir <route/> --soil_index <N> \
-    --landcover_tif /mnt/disk1/Hydrocraft_server/data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif \
+    --landcover_tif KISSPATH_DATA/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif \
     --veg_scheme modis   # modis = MODIFIED_IGBP_MODIS_NOAH (non-NA); MUST match vegeParTbl (Sec 2c)
 # stdout JSON carries veg_area_fraction -- read it. If a 4900 m Tibetan sub-basin
 # came back "Evergreen Broadleaf Forest", the vegetation is wrong and so is the ET.
@@ -587,8 +598,8 @@ If the observation is **gauged streamflow** (`point_time_series` discharge), Sta
 `averageRoutedRunoff_scored_as_channel_discharge`).
 
 ### Binary and interpreter
-- Router: `/mnt/disk1/Hydrocraft_server/model/mizuRoute/mizuRoute-main/route/bin/mizuroute.exe`
-- **Always** invoke the s8 tools with `/mnt/disk1/Hydrocraft_server/python_env/bin/python`.
+- Router: `KISSPATH_BINARIES/mizuRoute/mizuRoute-main/route/bin/mizuroute.exe`
+- **Always** invoke the s8 tools with `KISSPATH_PYTHON_ENV/bin/python`.
   The system/conda `lisflood` python raises `ValueError: numpy.dtype size changed`
   on `import netCDF4`. That is an env ABI mismatch, **not** a tool bug.
 

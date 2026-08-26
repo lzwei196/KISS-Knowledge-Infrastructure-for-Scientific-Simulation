@@ -753,7 +753,7 @@ def _resolve_marrmot_path(marrmot_path):
     if marrmot_path:
         return marrmot_path
     candidates = [
-        "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/MARRMoT/source/repo/MARRMoT",
+        "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MARRMoT/source/repo/MARRMoT",
         os.path.expanduser("~/MARRMoT/MARRMoT"),
         "./MARRMoT",
     ]
@@ -772,7 +772,7 @@ def process(args):
     if not marrmot_path:
         # Try common locations
         candidates = [
-            "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/MARRMoT/source/repo/MARRMoT",
+            "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MARRMoT/source/repo/MARRMoT",
             os.path.expanduser("~/MARRMoT/MARRMoT"),
             "./MARRMoT",
         ]

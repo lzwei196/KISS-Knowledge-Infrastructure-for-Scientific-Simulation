@@ -3,8 +3,8 @@ model:
   version: "3.7.1"
   domain: "cryosphere (snow/land-surface)"
   developer: "WSL/SLF, Switzerland"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/SNOWPACK/source/repo/Source/snowpack/bin/snowpack"
-  meteoio_binary: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/SNOWPACK/local/bin/meteoio_timeseries"
+  binary_path: "KISSPATH_BINARIES/SNOWPACK/source/repo/Source/snowpack/bin/snowpack"
+  meteoio_binary: "KISSPATH_BINARIES/SNOWPACK/local/bin/meteoio_timeseries"
   description: >
     1D multi-layer snow and land-surface model simulating mass and energy
     exchange between snow, atmosphere, optional canopy, and soil.

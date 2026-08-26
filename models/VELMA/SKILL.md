@@ -1,3 +1,14 @@
+---
+name: velma
+description: >-
+  VELMA-inspired lumped daily 4-layer water-balance model (Python re-implementation;
+  conceptually after EPA VELMA 2.0 soil-column hydrology…. Covers Basin-lumped daily
+  streamflow at a single outlet (m3/s); Degree-day snow accumulation and melt (snow water
+  equivalent); Radiation-driven potential evapotranspiration (Priestley-Taylor /
+  Hargreaves-style). Use when the task involves running, configuring, calibrating or
+  interpreting VELMA.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

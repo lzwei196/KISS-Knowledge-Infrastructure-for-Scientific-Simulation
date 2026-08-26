@@ -42,7 +42,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # --- Default DEM paths ---
-CHINA_DEM = "/mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m/china_dem_90m.tif"
+CHINA_DEM = "KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif"
 
 # BedMachine is the ONLY source that carries fjord/shelf BATHYMETRY together with
 # land topography over the ice sheets. `bed` = bedrock/seafloor altitude in metres
@@ -54,9 +54,9 @@ CHINA_DEM = "/mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m/china_dem_90m.t
 # "OSError [Errno -101] NetCDF: HDF error". System netCDF (HDF5 1.10) and GDAL read
 # them fine. ALWAYS reach BedMachine through the GDAL/rasterio NETCDF subdataset
 # connection string, never through xarray/netCDF4 in this venv.
-BEDMACHINE_GREENLAND = ("/mnt/disk1/Hydrocraft_server/data/obs/ice_sheets/bedmachine/"
+BEDMACHINE_GREENLAND = ("KISSPATH_OBS/ice_sheets/bedmachine/"
                         "BedMachineGreenland-v6.nc")
-BEDMACHINE_ANTARCTICA = ("/mnt/disk1/Hydrocraft_server/data/obs/ice_sheets/bedmachine/"
+BEDMACHINE_ANTARCTICA = ("KISSPATH_OBS/ice_sheets/bedmachine/"
                          "NSIDC-0756_BedMachineAntarctica_19700101-20191001_V04.1.nc")
 
 

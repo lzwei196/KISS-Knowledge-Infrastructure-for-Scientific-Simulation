@@ -34,7 +34,7 @@ import argparse, csv, json, math, os, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # tools/
 from dssat_workdir_setup import parse_summary
-sys.path.insert(0, '/mnt/disk1/Hydrocraft_server/models/ki_tools_common')
+sys.path.insert(0, 'KISSPATH_KI_TOOLS_COMMON')
 from ki_tools_common.crop_obs import get_observed_yield_series, get_faostat_yield_series
 from ki_tools_common.metrics import all_metrics
 

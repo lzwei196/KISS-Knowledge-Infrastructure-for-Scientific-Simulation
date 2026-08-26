@@ -25,7 +25,7 @@ tools/parse_swan_output.py (parse_table), ki_tools_common.metrics.all_metrics.
 import os, sys, shutil, subprocess, time, json, datetime
 import numpy as np
 
-KI    = "/mnt/disk1/Hydrocraft_server/models/SWAN/knowledge_infrastructure"
+KI    = "KISSPATH_KI_ROOT/SWAN/knowledge_infrastructure"
 TOOLS = os.path.join(KI, "tools")
 sys.path.insert(0, TOOLS)
 
@@ -35,11 +35,10 @@ from ki_tools_common.metrics import all_metrics
 
 # ---------------------------------------------------------------- config
 BUOY     = "41002"
-OBS_FILE = f"/mnt/disk1/Hydrocraft_server/data/obs/ndbc_buoys/{BUOY}_stdmet_2020.txt"
-SWAN_EXE = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ADCIRC"
-            "/source/repo/thirdparty/swan/swan.exe")
-SWANINIT = "/mnt/disk1/Hydrocraft_server/outputs/swan_lekima/swaninit"
-DET      = "/mnt/disk1/Hydrocraft_server/models/SWAN/detached/verify_2"
+OBS_FILE = f"KISSPATH_OBS/ndbc_buoys/{BUOY}_stdmet_2020.txt"
+SWAN_EXE = ("KISSPATH_BINARIES/ADCIRC/source/repo/thirdparty/swan/swan.exe")
+SWANINIT = "KISSPATH_OUTPUTS/swan_lekima/swaninit"
+DET      = "KISSPATH_KI_ROOT/SWAN/detached/verify_2"
 WORK     = os.environ.get("SWAN_WORK",   os.path.join(DET, "swanrun"))
 RESULT   = os.environ.get("SWAN_RESULT", os.path.join(DET, "result.json"))
 

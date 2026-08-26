@@ -4,9 +4,9 @@ model:
   version: "2026.1"
   domain: "cryosphere"
   developer: "NASA JPL / UC Irvine"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ISSM/source/repo/bin/issm.exe"
-  binary_slc_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ISSM/source/repo/bin/issm_slc.exe"
-  ld_library_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ISSM/source/repo/externalpackages/triangle/install/lib"
+  binary_path: "KISSPATH_BINARIES/ISSM/source/repo/bin/issm.exe"
+  binary_slc_path: "KISSPATH_BINARIES/ISSM/source/repo/bin/issm_slc.exe"
+  ld_library_path: "KISSPATH_BINARIES/ISSM/source/repo/externalpackages/triangle/install/lib"
   mesh_type: "unstructured triangular/prismatic finite-element"
 
 inputs:

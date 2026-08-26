@@ -11,7 +11,7 @@ Why this tool exists
 SKILL.md's pipeline table lists ``convert_wind_forcing`` as the stage-3 tool,
 but ``convert_wind_forcing`` only accepts STATION series.  With no gridded
 ingest in ``tools/`` and no marine wind product in
-``/mnt/disk1/Hydrocraft_server/data_ki/dataset_index.yaml``, a run at a buoy
+``KISSPATH_DATA_KI/dataset_index.yaml``, a run at a buoy
 site had exactly one wind option left: the buoy's own anemometer, broadcast as
 a domain constant.  That makes the model's HIGHEST-sensitivity driver of HSIGN
 an in-situ measurement taken AT the validation point, which is not an

@@ -2,7 +2,7 @@ model:
   name: Raven v4.1
   domain: hydrology
   binary: Raven.exe
-  binary_path: /mnt/disk1/Hydrocraft_server/model/raven/Raven.exe
+  binary_path: KISSPATH_BINARIES/raven/Raven.exe
   language: C++
   working_directory: ./
   invocation: Raven.exe <basin_name> -o output/

@@ -1,3 +1,14 @@
+---
+name: fsm2
+description: >-
+  FSM2 (Flexible Snow Model) 2.1.x lineage; Essery et al. 2025 (GMD 18, 3583-3605)
+  forest-canopy extension of FSM 1.0. Covers Multi-layer snowpack energy and mass balance
+  (accumulation and melt) on the ground; Snow in forest canopies: interception, unloading,
+  melt drip, sub-canopy radiation/wind; Multi-layer soil heat conduction with freeze/thaw
+  under the snow. Use when the task involves running, configuring, calibrating or
+  interpreting FSM2.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

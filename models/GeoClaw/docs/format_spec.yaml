@@ -1,7 +1,7 @@
 model:
   name: "GeoClaw"
   domain: "Ocean / Coastal / Tsunami / Storm Surge"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GeoClaw/bowl-slosh-test/xgeoclaw"
+  binary_path: "KISSPATH_BINARIES/GeoClaw/bowl-slosh-test/xgeoclaw"
   description: >
     Finite-volume solver for 2D shallow water equations with adaptive mesh
     refinement (AMR) for geophysical flows including tsunamis, storm surges,

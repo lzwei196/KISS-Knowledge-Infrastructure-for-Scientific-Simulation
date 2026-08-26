@@ -38,17 +38,17 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 
-ROOT = "/mnt/disk1/Hydrocraft_server/models/CWatM"
+ROOT = "KISSPATH_KI_ROOT/CWatM"
 KI = f"{ROOT}/knowledge_infrastructure"
 TOOLS = f"{KI}/tools"
 CASE = f"{ROOT}/cwatm_james_cartersville"
 CWATM_DIR = f"{ROOT}/source/repo"
-PY = "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+PY = "KISSPATH_PYTHON_ENV/bin/python"
 STATE = f"{ROOT}/detached/verify_2"
 
-OBS_NC = ("/mnt/datasets/observed_data/dischargeandwatershed/"
+OBS_NC = ("KISSPATH_DATA/observed_data/dischargeandwatershed/"
           "GRDC-Caravan-extension-nc/timeseries/netcdf/grdc/GRDC_4147330.nc")
 LOCATION = ("James River at Cartersville, VA (Appalachian Piedmont, humid temperate) "
             "— GRDC 4147330, GRDC-Caravan Extension")
@@ -69,8 +69,8 @@ CAL = ("1993-01-01", "2002-12-31")
 VAL = ("2003-01-01", "2012-12-31")
 
 MERIT_DIR = f"{CASE}/merit_tiles"    # pre-extracted n35w080/n35w085 dir,upa,elv,wth
-ESA_LC = "/mnt/datasets/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_2010_01deg.tif"
-HWSD_DIR = "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_RASTER"
+ESA_LC = "KISSPATH_DATA/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_2010_01deg.tif"
+HWSD_DIR = "KISSPATH_STATIC/HWSD_RASTER"
 
 ENV = dict(os.environ, LD_PRELOAD="/lib/x86_64-linux-gnu/libstdc++.so.6")
 

@@ -127,7 +127,7 @@ This is the configuration used in the PySWaN test cases — waves are prescribed
 ## Choosing the wind source (added after the NDBC 46050 real case)
 
 ERA5/CFSR/GFS are named above, but none of them is in
-`/mnt/disk1/Hydrocraft_server/data_ki/dataset_index.yaml` - every
+`KISSPATH_DATA_KI/dataset_index.yaml` - every
 `forcing.reanalysis` entry there is China CMFD, which has no marine coverage.
 On this server the working gridded route is `tools/fetch_gridded_wind.py`
 (NOAA CoastWatch ERDDAP griddap, no credentials):

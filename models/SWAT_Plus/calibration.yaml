@@ -2,7 +2,7 @@ template_version: "calib-0.1"
 model_id: SWAT+
 identity:
   domain: hydrology
-  binding: swatplus_rev59            # /mnt/disk1/Hydrocraft_server/models/SWAT+/bin/swatplus_rev59
+  binding: swatplus_rev59            # KISSPATH_KI_ROOT/SWAT+/bin/swatplus_rev59
 
 # ---------------------------------------------------------------------------
 # TARGET CASE — this contract calibrates ONE gauge. tools/calib_run.py PINS the
@@ -15,9 +15,9 @@ case:
   case_id: "SITE:xixian"
   gauge: "xixian_50225601 息县"
   obs_source: "china_gaugeflux (stcd 50225601, upper Huai River)"
-  obs_file: "/mnt/datasets/china_water_level/淮河txt/息县.txt"
+  obs_file: "KISSPATH_DATA/china_water_level/淮河txt/息县.txt"
   drainage_area_km2: 10190          # object.cnt tot_area 968133.65 ha ≈ 9681 km2 delineated
-  deck: "/mnt/disk1/Hydrocraft_server/outputs/swatplus_xixian_multista/TxtInOut"
+  deck: "KISSPATH_OUTPUTS/swatplus_xixian_multista/TxtInOut"
   provenance: "SWAT+_20260719T235310Z_630596"
   prior_validated_metric: {metric: nse, value: 0.6417397628628487}
   prior_validated_params:            # the vector calibration must reproduce + beat
@@ -548,7 +548,7 @@ constraints:
 
 runner:
   kind: subprocess
-  command: ["/mnt/disk1/Hydrocraft_server/python_env/bin/python",
+  command: ["KISSPATH_PYTHON_ENV/bin/python",
             "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
   metrics_file: "{metrics_json}"
   timeout: 1800          # soft hint only; the kit ignores it unless KDT_CALIB_EVAL_TIMEOUT is set

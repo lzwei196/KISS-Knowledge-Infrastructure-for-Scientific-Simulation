@@ -7,7 +7,7 @@ TARGET CASE (pinned; this driver scores nothing else)
     case_id     HYDAT:08MF035
     gauge/obs   HYDAT 08MF035 "FRASER RIVER NEAR AGASSIZ" daily water level (DLY_LEVELS,
                 metres in HYDAT DATUM_ID 35 "GEODETIC SURVEY OF CANADA DATUM"),
-                read READ-ONLY out of /mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3
+                read READ-ONLY out of KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3
     quantity    water surface elevation at the SFINCS observation point (his `point_zs`)
     metric      PBIAS (magnitude_accuracy); nse / kge / r / rmse also emitted
     provenance  SFINCS_20260805T020658Z_648666 — the validated coupling reproduced here
@@ -103,19 +103,19 @@ OBS_UNIT = "m"
 FLOW_STATION = "08MF005"                  # inflow BC — Fraser River at Hope (a DIFFERENT gauge)
 FLOW_STATION_NAME = "FRASER RIVER AT HOPE"
 
-HYDAT_DB = "/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3"
+HYDAT_DB = "KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3"
 HYDAT_VERSION = "Hydat_sqlite3_20260116"
 
-DEM = ("/mnt/disk1/Hydrocraft_server/data/dem/dem_tiles_cache/"
+DEM = ("KISSPATH_STATIC/dem_tiles_cache/"
        "Copernicus_DSM_COG_10_N49_00_W122_00_DEM.tif")
-LULC = ("/mnt/disk1/Hydrocraft_server/data/landcover/"
+LULC = ("KISSPATH_DATA/landcover/"
         "AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif")
-MSWX = "/mnt/disk3/msxw/"
-SFINCS_BIN = "/mnt/disk1/Hydrocraft_server/model/sfincs/bin/sfincs"
+MSWX = "KISSPATH_FORCING/"
+SFINCS_BIN = "KISSPATH_BINARIES/sfincs/bin/sfincs"
 
 # The validated run's staged tree (domain + per-year forcing). Rebuilt by ensure_base()
 # with the KI's own s1-s4 tools if it is absent; never rebuilt per eval.
-BASE = Path("/mnt/disk1/Hydrocraft_server/outputs/sfincs_fraser_agassiz")
+BASE = Path("KISSPATH_OUTPUTS/sfincs_fraser_agassiz")
 
 # Domain / run recipe — verbatim from the validated run (run_and_score_hydat_fraser.py).
 BBOX = "-121.90,49.15,-121.42,49.40"
@@ -725,7 +725,7 @@ def main():
     if len(paired) < 30:
         raise Fail(f"only {len(paired)} paired days — refusing to score")
 
-    sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+    sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
     from ki_tools_common.metrics import all_metrics
     m = all_metrics(paired["obs"], paired["sim"], label=split,
                     meta={"unit": OBS_UNIT, "period_role": split,

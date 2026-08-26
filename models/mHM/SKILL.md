@@ -1,6 +1,13 @@
 ---
 name: mhm-hydrocraft
-version: "1.0.0"
+description: >-
+  mHM (mesoscale Hydrologic Model) v5.13 lineage with Multiscale Parameter Regionalization
+  (MPR); Samaniego, Kumar & Attinger 2010 WRR methodology. Covers Distributed mesoscale
+  catchment water balance across a basin; Canopy interception; Snow accumulation and melt
+  (degree-day); Multi-horizon soil moisture dynamics; Infiltration and direct
+  (sealed/saturation-excess) runoff. Use when the task involves running, configuring,
+  calibrating or interpreting mHM.
+version: 1.0.0
 model: mHM v5.13.1
 domain: distributed hydrology with parameter regionalization
 validation_status: binary_only
@@ -49,8 +56,8 @@ Then convert to mHM NetCDF format using this KI's tool: `tools/s4_forcing/conver
 
 **mHM (mesoscale Hydrological Model)** is a grid-based distributed hydrological model developed at the Helmholtz Centre for Environmental Research (UFZ), Leipzig. Its defining innovation is **Multiscale Parameter Regionalization (MPR)** -- a methodology that derives spatially distributed model parameters from high-resolution physiographic data through transfer functions with a small set of **global parameters** (~50-70). Because these global parameters encode process understanding (not location-specific values), they can be calibrated on gauged basins and transferred directly to ungauged basins.
 
-**Binary**: `/mnt/disk1/Hydrocraft_server/model/mhm/mhm`
-**Source**: `/mnt/disk1/Hydrocraft_server/model/mhm_src/` (v5.13.1, built from GitHub)
+**Binary**: `KISSPATH_BINARIES/mhm/mhm`
+**Source**: `KISSPATH_BINARIES/mhm_src/` (v5.13.1, built from GitHub)
 **Test domain**: KGE=0.75, NSE=0.77 on bundled Mosel basin test case
 
 ### What Makes mHM Unique in HydroCraft

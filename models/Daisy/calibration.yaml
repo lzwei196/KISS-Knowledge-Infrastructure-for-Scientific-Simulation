@@ -54,7 +54,7 @@ parameters:
     activation: always
     address:
       kind: text_token
-      root: "/mnt/disk1/Hydrocraft_server/models/Daisy/knowledge_infrastructure"
+      root: "KISSPATH_KI_ROOT/Daisy/knowledge_infrastructure"
       file: "calibration_assets/crop_params.dai"
       pattern: "\\(SpLAI\\s+([0-9.eE+-]+)\\)"
 
@@ -70,7 +70,7 @@ parameters:
     activation: always
     address:
       kind: text_token
-      root: "/mnt/disk1/Hydrocraft_server/models/Daisy/knowledge_infrastructure"
+      root: "KISSPATH_KI_ROOT/Daisy/knowledge_infrastructure"
       file: "calibration_assets/crop_params.dai"
       pattern: "\\(EPext\\s+([0-9.eE+-]+)\\)"
 
@@ -86,7 +86,7 @@ parameters:
     activation: always
     address:
       kind: text_token
-      root: "/mnt/disk1/Hydrocraft_server/models/Daisy/knowledge_infrastructure"
+      root: "KISSPATH_KI_ROOT/Daisy/knowledge_infrastructure"
       file: "calibration_assets/crop_params.dai"
       pattern: "\\(MaxPen\\s+([0-9.eE+-]+)\\)"
 
@@ -103,7 +103,7 @@ constraints: []
 # dag-gated family). It honours env KDT_CALIB_SPLIT (calibration|holdout).
 runner:
   kind: subprocess
-  command: ["/mnt/disk1/Hydrocraft_server/python_env/bin/python", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  command: ["KISSPATH_PYTHON_ENV/bin/python", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
   metrics_file: "{metrics_json}"
   timeout: 600                     # one 2-yr Daisy sim ~1.5 s; calibration split (2 yrs) ~3-4 s
 

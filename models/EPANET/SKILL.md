@@ -1,3 +1,14 @@
+---
+name: epanet
+description: >-
+  EPANET 2.2. Covers Pressurized pipe-network hydraulics: flow, velocity, head, pressure
+  at every node and link; Single-period (snapshot) and extended-period simulation (EPS)
+  with time-varying demands and…; Demand-driven (DDA) and pressure-driven (PDA) demand
+  satisfaction; Water-quality fate/transport: single chemical constituent decay, water
+  age, and source tracing. Use when the task involves running, configuring, calibrating or
+  interpreting EPANET.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

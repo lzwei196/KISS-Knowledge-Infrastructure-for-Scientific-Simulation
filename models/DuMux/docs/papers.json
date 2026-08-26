@@ -1,0 +1,200 @@
+{
+  "model": "DuMux",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 19,
+  "open_access": 11,
+  "papers": [
+    {
+      "doi": "10.1007/s11242-023-01977-7",
+      "title": "The FluidFlower Validation Benchmark Study for the Storage of CO2",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.2302.10986",
+      "title": "The FluidFlower International Benchmark Study: Process, Modeling Results, and Comparison to Experimental Data",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2017.10.036",
+      "title": "Benchmarks for single-phase flow in fractured porous media",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-024-10268-z",
+      "title": "A benchmark study on reactive two-phase flow in porous media: Part I - model description",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-024-10269-y",
+      "title": "A benchmark study on reactive two-phase flow in porous media: Part II - results and discussion",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1051/proc/201550002",
+      "title": "Numerical simulation of two-phase multicomponent flow with reactive transport in porous media",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.2516/ogst/2018033",
+      "title": "Improvement of numerical approximation of coupled multiphase multicomponent flow with reactive geochemical transport in porous media",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "water_table",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2018.02.001",
+      "title": "Groundwater flow and heat transport for systems undergoing freeze-thaw: Intercomparison of numerical simulators",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-3333-2015",
+      "title": "A parallelization scheme to simulate reactive transport in the subsurface environment",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1007/s12665-024-11887-6",
+      "title": "Multiphase flow and reactive transport benchmark for radioactive waste disposal",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr013725",
+      "title": "Surface-subsurface model intercomparison: A first set of benchmark results to diagnose integrated hydrology and feedbacks",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2020.103759",
+      "title": "Verification benchmarks for single-phase flow in three-dimensional fractured porous media",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2011.03.007",
+      "title": "DuMux: DUNE for multi-{phase,component,scale,physics,...} flow and transport in porous media",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "storage",
+        "velocity",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.camwa.2020.02.012",
+      "title": "DuMux 3 - an open-source simulator for solving flow and transport problems in porous media with a focus on model coupling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "storage",
+        "velocity",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-010-9178-2",
+      "title": "Comparison of numerical methods for simulating strongly nonlinear and heterogeneous reactive transport problems (MoMaS benchmark)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.2118/218015-pa",
+      "title": "The 11th Society of Petroleum Engineers Comparative Solution Project (SPE11): Problem Definition",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.18419/opus-501",
+      "title": "Multi-scale modeling of two-phase flow in porous media including capillary pressure effects",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ijggc.2024.104162",
+      "title": "Experimentally assessing the uncertainty of forecasts of geological carbon storage",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "storage"
+      ]
+    }
+  ]
+}

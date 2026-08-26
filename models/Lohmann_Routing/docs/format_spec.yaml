@@ -8,7 +8,7 @@ model:
   secondary_domains:
   - hydrology
   binary: rout
-  binary_path: /mnt/disk1/Hydrocraft_server/model/route_1.0/src/rout
+  binary_path: KISSPATH_BINARIES/route_1.0/src/rout
   language: Fortran77
   execution: ./rout rout_global.txt
   working_directory: routing_param/ (with vic_in/ symlink to VIC fluxes)

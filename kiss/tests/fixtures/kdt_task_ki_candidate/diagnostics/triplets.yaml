@@ -1,0 +1,60 @@
+- id: rain-001
+  symptom: Input file cannot be opened
+  diagnosis: The path is wrong or unreadable
+  remedy: Choose an existing readable CSV file
+- id: rain-002
+  symptom: The date column is missing
+  diagnosis: The CSV schema is not the documented input schema
+  remedy: Rename or add the field as date
+- id: rain-003
+  symptom: The precipitation column is missing
+  diagnosis: The CSV schema lacks precip_mm
+  remedy: Rename or add the precipitation field as precip_mm
+- id: rain-004
+  symptom: A date cannot be parsed
+  diagnosis: The value is not an ISO calendar date
+  remedy: Convert the value to YYYY-MM-DD
+- id: rain-005
+  symptom: A precipitation value cannot be parsed
+  diagnosis: The value is not numeric
+  remedy: Replace it with a numeric millimetre value
+- id: rain-006
+  symptom: Negative precipitation is reported
+  diagnosis: The source contains an invalid physical value
+  remedy: Correct or flag the source record before aggregation
+- id: rain-007
+  symptom: The output file is empty
+  diagnosis: The input contained no valid data rows
+  remedy: Provide at least one valid daily record
+- id: rain-008
+  symptom: A month is absent from output
+  diagnosis: No valid input record belongs to that month
+  remedy: Check the date range and missing source records
+- id: rain-009
+  symptom: Monthly totals do not match daily totals
+  diagnosis: The wrong input or a modified output was compared
+  remedy: Rerun with recorded paths and compare unrounded sums
+- id: rain-010
+  symptom: Day counts are unexpectedly low
+  diagnosis: Source dates are missing or outside the requested period
+  remedy: Audit source date coverage before using the summary
+- id: rain-011
+  symptom: Output columns open in one spreadsheet column
+  diagnosis: The viewer used the wrong delimiter
+  remedy: Import the file explicitly as comma-separated UTF-8
+- id: rain-012
+  symptom: The command uses the wrong Python
+  diagnosis: A different environment was selected
+  remedy: Use the Python interpreter recorded by GeoForge
+- id: rain-013
+  symptom: Permission is denied when writing output
+  diagnosis: The destination folder is not writable
+  remedy: Select a writable path inside the project
+- id: rain-014
+  symptom: Existing output was unexpectedly replaced
+  diagnosis: The same output path was reused
+  remedy: Choose a versioned output name before rerunning
+- id: rain-015
+  symptom: Results cannot be reproduced
+  diagnosis: Input and command provenance were not saved
+  remedy: Record the input checksum and exact command with the output

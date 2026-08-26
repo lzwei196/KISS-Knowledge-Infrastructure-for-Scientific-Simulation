@@ -1,0 +1,246 @@
+{
+  "model": "SNOWPACK",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 23,
+  "open_access": 13,
+  "papers": [
+    {
+      "doi": "10.5194/tc-8-257-2014",
+      "title": "Solving Richards Equation for snow improves snowpack meltwater runoff estimation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "runoff",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-5027-2018",
+      "title": "ESM-SnowMIP: assessing snow models and quantifying snow-related climate feedbacks",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "energy_fluxes",
+        "snow_temperature"
+      ]
+    },
+    {
+      "doi": "10.3189/172756404781814825",
+      "title": "Validation of the energy budget of an alpine snowpack simulated by several snow models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "energy_fluxes",
+        "snow_temperature",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-10-371-2016",
+      "title": "Intercomparison of snow density measurements: bias, precision, and vertical resolution",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "snow_density"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-11-1173-2017",
+      "title": "A multiphysical ensemble system of numerical snow modelling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "snow_density"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-1579-2020",
+      "title": "Evaluation of long-term Northern Hemisphere snow water equivalent products",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-15-4241-2021",
+      "title": "Snow model comparison to simulate snow depth evolution and sublimation at point scale",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "snow_depth",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-4061-2020",
+      "title": "Sensitivity of snow models to the accuracy of meteorological forcings in mountain environments",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-5-773-2012",
+      "title": "The detailed snowpack scheme Crocus and its implementation in SURFEX v7.2",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "snow_density",
+        "snow_temperature",
+        "grain_type"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-7-3135-2014",
+      "title": "MeteoIO 2.4.2: a preprocessing library for meteorological data",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-20-2873-2020",
+      "title": "Sensitivity of modeled snow stability data to meteorological input uncertainty",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "grain_type",
+        "snow_density",
+        "avalanche_stability"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-15-1065-2021",
+      "title": "Physics-based SNOWPACK model improves representation of near-surface Antarctic snow and firn density",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "snow_density",
+        "snow_temperature"
+      ]
+    },
+    {
+      "doi": "10.1002/2014wr016498",
+      "title": "Evaluating snow models with varying process representations for hydrological applications",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2012.07.013",
+      "title": "A comparison of 1701 snow models using observations from an alpine site",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "energy_fluxes",
+        "snow_temperature"
+      ]
+    },
+    {
+      "doi": "10.1016/j.coldregions.2020.103163",
+      "title": "Forcing and evaluating detailed snow cover models with stratigraphy observations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "grain_type",
+        "snow_density",
+        "snow_temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2018wr023403",
+      "title": "Uncertainties in Snowpack Simulations - Assessing the Impact of Model Structure, Parameter Choice, and Forcing Data Error on Point-Scale Energy Balance Snow Model Performance",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "energy_fluxes"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-9-2271-2015",
+      "title": "Verification of the multi-layer SNOWPACK model with different water transport schemes",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "runoff",
+        "snow_density"
+      ]
+    },
+    {
+      "doi": "10.1016/j.coldregions.2013.12.004",
+      "title": "Evaluation of modelled snow depth and snow water equivalent at three contrasting sites in Switzerland using SNOWPACK simulations driven by different meteorological data input",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.1016/j.coldregions.2006.05.007",
+      "title": "Evaluating and improving the stability predictions of the snow cover model SNOWPACK",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "avalanche_stability",
+        "grain_type"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-16-775-2016",
+      "title": "Snow instability evaluation: calculating the skier-induced stress in a multi-layered snow cover",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "avalanche_stability"
+      ]
+    },
+    {
+      "doi": "10.1016/s0165-232x(02)00073-3",
+      "title": "A physical SNOWPACK model for the Swiss avalanche warning. Part II: Snow microstructure",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "grain_type",
+        "snow_density"
+      ]
+    },
+    {
+      "doi": "10.1016/s0165-232x(02)00074-5",
+      "title": "A physical SNOWPACK model for the Swiss avalanche warning. Part III: Meteorological forcing, thin layer formation and evaluation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "snow_depth",
+        "snow_temperature",
+        "grain_type"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-1741-2017",
+      "title": "Modelling liquid water transport in snow under rain-on-snow conditions - considering preferential flow",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

@@ -47,7 +47,7 @@ triplets:
     action: Check exact model name spelling and verify files exist in the target scenario directory
     tool_to_run: ''
     manual_steps:
-    - 'List available models: ls /mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China/pr/r1/'
+    - 'List available models: ls KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China/pr/r1/'
     - 'Check if model has temperature: ls .../tasmax/r1/ | grep {MODEL}'
     - Use exact filename spelling (case-sensitive, with hyphens)
     prevention: Use the 26-model list from the skill document (all have pr + tasmax + tasmin)

@@ -1,0 +1,209 @@
+{
+  "model": "EF5",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 21,
+  "open_access": 11,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-13-4943-2020",
+      "title": "The Ensemble Framework For Flash Flood Forecasting (EF5) v1.2: description and case study",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4559-2015",
+      "title": "Large-scale hydrological modelling by using modified PUB recommendations: the India-HYPE case",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-5035-2016",
+      "title": "iCRESTRIGRS: a coupled modeling system for cascading flood-landslide disaster forecasting",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-3057-2019",
+      "title": "Assessing the performance of global hydrological models for capturing peak river flows in the Amazon basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-16-2915-2023",
+      "title": "iHydroSlide3D v1.0: an advanced hydrological-geotechnical model for hydrological simulation and 3D landslide prediction",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-107-2011",
+      "title": "Hydroclimatology of Lake Victoria region using hydrologic model and satellite remote sensing data",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-4815-2018",
+      "title": "Toward continental hydrologic-hydrodynamic modeling in South America",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-3371-2012",
+      "title": "Critical review of SWAT applications in the upper Nile basin countries",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-13-1-2009",
+      "title": "A new data assimilation approach for improving runoff prediction using remotely-sensed soil moisture data",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "soil_moisture",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.rse.2023.113721",
+      "title": "Assessment of 9 km SMAP soil moisture: Evidence of narrowing the gap between satellite retrievals and in situ observations",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr014710",
+      "title": "Real-time global flood estimation using satellite-based precipitation and a coupled land surface and routing model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2023.130333",
+      "title": "CONUS-wide model calibration and validation for CRESTv3.0 - An improved Coupled Routing and Excess Storage model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w9100776",
+      "title": "Forecasting and Providing Warnings of Flash Floods for Ungauged Mountainous Areas Based on a Distributed Hydrological Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w11081615",
+      "title": "The Role of Satellite-Based Remote Sensing in Improving Simulated Streamflow: A Review",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2023.129124",
+      "title": "Hydrologic evaluation of the Global Precipitation Measurement mission over the conterminous United States",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2015.10.047",
+      "title": "A high resolution coupled hydrologic-hydraulic model (HiResFlood-UCI) for flash flood modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2016.06.011",
+      "title": "Estimating a-priori kinematic wave model parameters based on regionalization for flash flood forecasting in the Conterminous United States",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/rs12030445",
+      "title": "Can Remote Sensing Technologies Capture the Extreme Precipitation Event and Its Cascading Hydrological Response?",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    }
+  ]
+}

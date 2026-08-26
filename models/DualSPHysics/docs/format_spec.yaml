@@ -3,12 +3,12 @@ model:
   version: "5.4.355"
   domain: "coastal_ocean"
   description: "3D meshless Smoothed Particle Hydrodynamics (SPH) solver for free-surface flows"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DualSPHysics/source/repo/bin/linux/DualSPHysics5.4CPU_linux64"
+  binary_path: "KISSPATH_BINARIES/DualSPHysics/source/repo/bin/linux/DualSPHysics5.4CPU_linux64"
   auxiliary_binaries:
-    gencase: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DualSPHysics/source/repo/bin/linux/GenCase_linux64"
-    partvtk: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DualSPHysics/source/repo/bin/linux/PartVTK_linux64"
-    measuretool: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DualSPHysics/source/repo/bin/linux/MeasureTool_linux64"
-    isosurface: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DualSPHysics/source/repo/bin/linux/IsoSurface_linux64"
+    gencase: "KISSPATH_BINARIES/DualSPHysics/source/repo/bin/linux/GenCase_linux64"
+    partvtk: "KISSPATH_BINARIES/DualSPHysics/source/repo/bin/linux/PartVTK_linux64"
+    measuretool: "KISSPATH_BINARIES/DualSPHysics/source/repo/bin/linux/MeasureTool_linux64"
+    isosurface: "KISSPATH_BINARIES/DualSPHysics/source/repo/bin/linux/IsoSurface_linux64"
 
 inputs:
   case_definition:

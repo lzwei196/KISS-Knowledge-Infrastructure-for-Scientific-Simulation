@@ -5,10 +5,10 @@ model:
   domain: data_assimilation
   language: Fortran 90+
   developer: DAReS / NSF NCAR
-  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DART/source/repo/models/lorenz_63/work/filter
+  binary_path: KISSPATH_BINARIES/DART/source/repo/models/lorenz_63/work/filter
   additional_executables:
-  - /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DART/source/repo/models/lorenz_63/work/perfect_model_obs
-  - /home/server/knowledge-dissection-toolkit/auto_dissect/_work/DART/source/repo/models/lorenz_63/work/obs_diag
+  - KISSPATH_BINARIES/DART/source/repo/models/lorenz_63/work/perfect_model_obs
+  - KISSPATH_BINARIES/DART/source/repo/models/lorenz_63/work/obs_diag
 inputs:
   forcing:
   - name: obs_seq.in

@@ -3,7 +3,7 @@ model:
   version: "5.2.0"
   domain: "land_surface"
   description: "Noah Multi-Parameterization Land Surface Model — coupled energy, water, and carbon cycle simulation"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Noah_MP/run_fullyear/hrldas.exe"
+  binary_path: "KISSPATH_BINARIES/Noah_MP/run_fullyear/hrldas.exe"
   driver: "HRLDAS (High Resolution Land Data Assimilation System)"
   language: "Fortran (F90/F2003/F2008)"
 

@@ -56,24 +56,22 @@ from datetime import datetime
 import numpy as np
 
 # --------------------------------------------------------------------------
-KI = "/mnt/disk1/Hydrocraft_server/models/PCR_GLOBWB_2/knowledge_infrastructure"
+KI = "KISSPATH_KI_ROOT/PCR_GLOBWB_2/knowledge_infrastructure"
 TOOLS = os.path.join(KI, "tools")
-PCR_PY = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/"
-          "PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin/python")
+PCR_PY = (sys.executable)
 PCR_BIN = os.path.dirname(PCR_PY)
-MODEL_DIR = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/"
-             "PCR_GLOBWB_2/source/repo/model")
+MODEL_DIR = ("KISSPATH_BINARIES/PCR_GLOBWB_2/source/repo/model")
 
-OUT = "/mnt/disk1/Hydrocraft_server/outputs/pcrglobwb2_wangjiaba_huai"
+OUT = "KISSPATH_OUTPUTS/pcrglobwb2_wangjiaba_huai"
 INPUT_DIR = os.path.join(OUT, "input")
 CLONE_DIR = os.path.join(OUT, "clone")
 FORCING_DIR = os.path.join(INPUT_DIR, "global_30min/meteo/forcing")
 RESULT_DIR = os.environ.get(
     "KDT_RESULT_DIR",
-    "/mnt/disk1/Hydrocraft_server/models/PCR_GLOBWB_2/detached/verify_2")
+    "KISSPATH_KI_ROOT/PCR_GLOBWB_2/detached/verify_2")
 
-CMFD_DAILY = "/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg"
-OBS_FILE = "/mnt/disk1/Hydrocraft_server/data/obs/WJB/HUAIH-51030-wangjiaba.txt"
+CMFD_DAILY = "KISSPATH_FORCING/Data_forcing_01dy_010deg"
+OBS_FILE = "KISSPATH_OBS/WJB/HUAIH-51030-wangjiaba.txt"
 
 GAUGE_ID = "51030"
 GAUGE_NAME = "WANGJIABA (王家坝), HUAI RIVER"

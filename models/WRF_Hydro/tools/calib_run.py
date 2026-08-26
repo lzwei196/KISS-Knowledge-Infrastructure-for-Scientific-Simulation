@@ -4,7 +4,7 @@ calib_run.py -- programmatic run+score of ONE WRF-Hydro parameter candidate.
 
 TARGET CASE (pinned, NOT overridable from the environment):
     case_id      SITE:wangjiaba
-    obs          china_gaugeflux -> /mnt/datasets/china_water_level/淮河txt/王家坝.txt
+    obs          china_gaugeflux -> KISSPATH_DATA/china_water_level/淮河txt/王家坝.txt
                  (stcd 50101100 == gauge 51030, Huai River main stem, ~30,630 km2)
     gauge        32.4275 N / 115.595 E, matched to a CHRTOUT channel feature with
                  Strahler order >= 2 (real_case WRF_Hydro_20260719T082141Z_172227)
@@ -49,7 +49,7 @@ import numpy as np
 # --------------------------------------------------------------------------
 CASE_ID = "SITE:wangjiaba"
 OBS_DATASET = "china_gaugeflux"
-OBS_FILE = Path("/mnt/datasets/china_water_level/淮河txt/王家坝.txt")
+OBS_FILE = Path("KISSPATH_DATA/china_water_level/淮河txt/王家坝.txt")
 GAUGE_STCD = "50101100"
 GAUGE_NAME = "王家坝 Wangjiaba"
 GAUGE_LAT = 32.4275
@@ -66,7 +66,7 @@ REF_CELL_LON = 115.808
 REF_CELL_TOL_DEG = 0.05
 
 # Completed reference run supplying DOMAIN, FORCING and the warm-start restarts.
-REF_RUN = Path("/mnt/disk1/Hydrocraft_server/outputs/bengbu_wrfhydro_025deg_1980_1990")
+REF_RUN = Path("KISSPATH_OUTPUTS/bengbu_wrfhydro_025deg_1980_1990")
 
 KI_ROOT = Path(__file__).resolve().parent.parent
 TOOLS = KI_ROOT / "tools"
@@ -108,8 +108,8 @@ def load_ki_tools():
 def load_all_metrics():
     """Shared metric implementation; prefer the canonical package over the
     kdt-release copy, which has been observed stale and shadowing it."""
-    for p in ("/mnt/disk1/Hydrocraft_server/models/ki_tools_common",
-              "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"):
+    for p in ("KISSPATH_KI_TOOLS_COMMON",
+              "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"):
         if Path(p, "ki_tools_common").is_dir():
             sys.path.insert(0, p)
             break
@@ -465,7 +465,7 @@ def score(wd, split, extract_discharge, all_metrics):
 
 # --------------------------------------------------------------------------
 DEFAULT_TBL_DIR = os.path.join(
-    os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"),
+    os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"),
     "model/wrf_hydro/source/trunk/NDHMS/Run")
 
 

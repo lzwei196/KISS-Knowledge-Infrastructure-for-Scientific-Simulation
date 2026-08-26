@@ -15,9 +15,9 @@ already exist; relaunch continues.
 import os, sys, json, subprocess, shutil
 from pathlib import Path
 
-KI = "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure"
+KI = "KISSPATH_KI_ROOT/DSSAT/knowledge_infrastructure"
 TOOLS = os.path.join(KI, "tools")
-STATE = "/mnt/disk1/Hydrocraft_server/models/DSSAT/detached/verify_1"
+STATE = "KISSPATH_KI_ROOT/DSSAT/detached/verify_1"
 WORK = os.path.join(STATE, "work")
 # short /tmp workdir to dodge the Fortran 92-char FileX path limit
 DSSAT_WD = "/tmp/dssat_v1_henan"
@@ -27,7 +27,7 @@ LAT, LON = 34.0, 113.0
 YR0, YR1 = 2000, 2020
 CULT = "CN0001"          # Zhengdan958 (same cultivar as Real-case)
 PLANT = "2000-06-15"     # summer maize after winter wheat
-FORCING = "/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg"
+FORCING = "KISSPATH_FORCING/Data_forcing_03hr_010deg"
 PY = sys.executable
 
 os.makedirs(WORK, exist_ok=True)

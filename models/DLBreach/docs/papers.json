@@ -1,0 +1,168 @@
+{
+  "model": "DLBreach",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 15,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.3311/ppci.14565",
+      "title": "Experimental Study of Cohesive Embankment Dam Breach Formation due to Overtopping",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "breach_bottom_width",
+        "breach_top_width"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-3-171-2015",
+      "title": "Numerical modelling of glacial lake outburst floods using physically based dam-breach models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.2478/johh-2026-0007",
+      "title": "Backward analysis of the Bila Desna dam break outflow",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1051/e3sconf/20160703002",
+      "title": "Applying Mechanistic Dam Breach Models to Historic Levee Breaches",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "breach_bottom_width",
+        "breach_top_width"
+      ]
+    },
+    {
+      "doi": "10.1007/s10230-024-01015-y",
+      "title": "Tailings Dam Breach Outflow Modelling: A Review",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "cumulative_breach_volume"
+      ]
+    },
+    {
+      "doi": "10.1007/s11269-024-03765-4",
+      "title": "Investigating the Non-Linear Effects of Breach Parameters on a Dam Break Study",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "breach_bottom_width",
+        "time_to_peak_discharge"
+      ]
+    },
+    {
+      "doi": "10.31223/x59v0t",
+      "title": "swmm-breach: Probabilistic dam-breach hydrograph forecasting integrated with EPA SWMM",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "time_to_peak_discharge"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)hy.1943-7900.0000741",
+      "title": "Simplified Physically Based Model of Earthen Embankment Breaching",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "breach_bottom_width",
+        "breach_bottom_elevation",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1007/s11069-016-2492-9",
+      "title": "Comparison of simplified physically based dam breach models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "breach_bottom_width",
+        "time_to_peak_discharge"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)hy.1943-7900.0000498",
+      "title": "Earthen Embankment Breaching",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "breach_bottom_width",
+        "breach_bottom_elevation"
+      ]
+    },
+    {
+      "doi": "10.2166/hydro.2015.250",
+      "title": "Dam breach modelling: influence on downstream water levels and a proposal of a probabilistic approach",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w13141968",
+      "title": "Review of Historical Dam-Break Events and Laboratory Tests on Real Topography for the Validation of Numerical Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "breach_bottom_width",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.2166/hydro.2013.084",
+      "title": "Gene expression models for prediction of dam breach parameters",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "breach_bottom_width",
+        "discharge",
+        "time_to_peak_discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2022wr033894",
+      "title": "Global Sensitivity Analysis of a Dam Breaching Model: To Which Extent Is Parameter Sensitivity Case-Dependent?",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "breach_bottom_width",
+        "time_to_peak_discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w7084283",
+      "title": "Modeling of Breaching Due to Overtopping Flow and Waves Based on Coupled Flow and Sediment Transport",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "breach_bottom_width"
+      ]
+    }
+  ]
+}

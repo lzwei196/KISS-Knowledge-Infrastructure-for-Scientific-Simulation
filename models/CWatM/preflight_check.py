@@ -30,7 +30,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -47,12 +47,12 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: CWatM ':=^60}")
     print()
-    check_dir("/mnt/disk1/Hydrocraft_server/models/CWatM/knowledge_infrastructure/tools", "KI tools directory")
+    check_dir("KISSPATH_KI_ROOT/CWatM/knowledge_infrastructure/tools", "KI tools directory")
 
     # Model-specific package check. CWatM is natively Python: run_cwatm.py IS the
     # model. The old code printed "binary path not verified" and counted it as a
     # PASS, so preflight succeeded even when the model could not be imported.
-    repo = "/mnt/disk1/Hydrocraft_server/models/CWatM/source/repo"
+    repo = "KISSPATH_KI_ROOT/CWatM/source/repo"
     check_file(os.path.join(repo, "run_cwatm.py"), "CWatM entry point")
     check_file(os.path.join(repo, "cwatm", "hydrological_modules",
                             "routing_reservoirs", "t5_linux.so"),

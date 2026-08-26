@@ -1,3 +1,14 @@
+---
+name: delft3d
+description: >-
+  D-Flow Flexible Mesh shallow-water hydrodynamics. Covers Non-steady 2D-horizontal
+  (depth-averaged) and 3D shallow-water hydrodynamics on a staggered…; Tidal and
+  wind-driven flow: water level and velocity; Advection-diffusion transport of salinity,
+  temperature, and conservative tracers; Baroclinic (density-driven) circulation via
+  equation of state. Use when the task involves running, configuring, calibrating or
+  interpreting Delft3D.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

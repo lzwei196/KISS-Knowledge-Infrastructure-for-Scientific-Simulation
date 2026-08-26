@@ -143,8 +143,8 @@ bgc-4.2/
 
 **Dependencies**: None beyond standard C library (libc). GCC 4.x+ works. No MPI, no NetCDF, no HDF5, no LAPACK.
 
-**Installation target**: `/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-4.2/`
-**Binary path**: `/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-4.2/bgc`
+**Installation target**: `KISSPATH_BINARIES/biome-bgc/bgc-4.2/`
+**Binary path**: `KISSPATH_BINARIES/biome-bgc/bgc-4.2/bgc`
 
 ### 2.2 Preflight Classification
 
@@ -826,7 +826,7 @@ When presenting BIOME-BGC results, always clarify:
 
 ## 11. Integration with Knowledge Infrastructure YAML
 
-The final `knowledge_infrastructure.yaml` will follow the schema at `/home/server/knowledge-dissection-toolkit/schema/knowledge_infrastructure.yaml` with:
+The final `knowledge_infrastructure.yaml` will follow the schema at `KISSPATH_INTERNAL_NOT_SHIPPED/schema/knowledge_infrastructure.yaml` with:
 
 ```yaml
 package:

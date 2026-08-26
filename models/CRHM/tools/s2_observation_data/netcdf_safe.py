@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """dt_v010 -- HDF5 load-order-safe NetCDF access for the CRHM KI.
 
-Under the canonical interpreter (/mnt/disk1/Hydrocraft_server/python_env),
+Under the canonical interpreter (KISSPATH_PYTHON_ENV),
 h5py 3.16.0 and netCDF4 1.7.4 each ship their OWN bundled libhdf5 (both
 report 1.14.6). ``import xarray`` runs a backend-entrypoint scan that imports
 h5netcdf -> h5py, so h5py's libhdf5 initialises FIRST; netCDF4's nc_open then
@@ -90,7 +90,7 @@ STDERR is written on exactly these occasions, and none of them is silent:
 import os
 import sys
 
-DEFAULT_CMFD_ELEV = ("/mnt/disk1/Hydrocraft_server/data/elev/"
+DEFAULT_CMFD_ELEV = ("KISSPATH_DATA/elev/"
                      "elev_CMFD_V0200_B-00_fx_010deg.nc")
 
 _LAT_NAMES = ("lat", "latitude", "y")

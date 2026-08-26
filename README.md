@@ -143,21 +143,117 @@ Then point an agent at the package with a task such as:
 
 Model binaries and large forcing or observational datasets are not bundled uniformly with every KI package. Read the package's operational reference and provenance files before execution, and connect the referenced dependencies to your environment.
 
+## Driving a KI with your own agent — the KI harness
+
+The prompt above is written by hand. The **KI harness** generates it, so that
+any agent — a coding CLI, an API client, your own loop — receives the same
+obligations for any of the packages, instead of whatever the person wiring it
+up remembered to type.
+
+```python
+from pathlib import Path
+from ki_tools_common import harness
+
+contract = harness.contract(Path("models/VIC").resolve(), execute=True)
+```
+
+Place `contract` in the agent's system prompt. That is the integration.
+
+### Why a shared contract
+
+The instructions for using a KI were originally written twice — once in an
+interactive application, once in an automated improvement loop — and the two
+drifted. One kept its rules in a branch table, where 29 of them sat in a branch
+that most runs never reached, and its per-package review gate covered 3 of 458
+packages. The other embedded a single block that could not be partially
+applied.
+
+The design follows from that: a rule placed at a junction is skipped by
+whoever takes the other road, so the harness is a single function every caller
+passes through, with no branch on which caller is asking.
+
+### The obligations it carries
+
+`contract()` renders a package's operational documentation as ten obligations,
+held as a registry in `ki_harness.py` rather than as prose, so a parity test
+fails if any driver stops emitting one:
+
+| | |
+|---|---|
+| **Run the real model** | no toy substitute, no literature value reported as a result |
+| **Follow the protocol in order** | the staged protocol is a sequence, not a menu |
+| **Absolute tool paths** | run operators with the project interpreter — do not search, do not disk-glob |
+| **Know the outputs** | establish what the model produces before running it |
+| **Units from the files** | read them from each file's own attributes, never from documentation |
+| **Preflight first** | check the environment, and obey the result |
+| **Failure ladder** | diagnostic triplets, then documentation, then reasoning — in that order |
+| **Never weaken** | do not relax a tool or a gate to obtain a pass |
+| **Not your own judge** | verdicts belong to the caller, not the agent under test |
+| **Evidence series** | write the simulated series to CSV so the result is reproducible |
+
+### The rest of the interface
+
+```python
+ki = Path("models/MODFLOW6").resolve()
+
+m = harness.manifest(ki)          # what this package actually ships
+m["artifacts"]                    # {'SKILL.md': True, 'dag.yaml': True, ...}
+m["missing"]                      # [] — stated up front, not discovered mid-run
+m["tools"]                        # 30 operator scripts for MODFLOW 6
+
+harness.tool_command(ki, "tools/calib_run.py")
+# '/usr/bin/python3 /abs/path/models/MODFLOW6/tools/calib_run.py'
+
+harness.run_preflight(ki, timeout=60)
+# {'report': ..., 'returncode': 1, 'raw_tail': ...}
+
+harness.assert_injected(prompt)   # raises unless the prompt carries the contract
+```
+
+Two of these refuse rather than guess. `tool_command()` raises `KiHarnessError`
+for an operator that does not exist, because a fabricated path fails later and
+less legibly. `assert_injected()` is the conformance hook: it raises unless the
+prompt carries the `[KI HARNESS v1]` marker, so a spawn site that bypassed the
+contract fails immediately rather than producing plausible unguided work. Wire
+it into your own runner and the same guarantee holds there.
+
+| | |
+|---|---|
+| `HC_PROJECT_PYTHON` | interpreter used by `tool_command()` and `run_preflight()`; set it to your project environment |
+| `KI_HARNESS_FULL=1` | adds the run-time attention digest: dependency-graph caveats, format specification, leading diagnostic triplets |
+
+### Resolving a package by model name
+
+A directory name is not always the model identifier: 8 of the packages here
+differ, with `SWAT+` in `SWAT_Plus`, `HEC-RAS` in `HEC_RAS`, `Noah-MP` in
+`Noah_MP`. `resolve_ki_path()` consults a database that this repository does
+not distribute and refuses to guess without it, so resolve names against the
+catalogue instead, which handles the same spellings and reports ambiguity
+rather than selecting one:
+
+```python
+from kiss_cli.catalog import Catalog
+ki = Catalog.discover().get("SWAT+").root
+```
+
 ## Repository layout
 
 ```text
 .
 ├── README.md
 ├── models/                          # model-specific KI packages
+├── ki_tools_common/                 # shared helper library + the KI harness
+├── kiss/                            # the desktop application and its engine
+├── docs/manual/                     # desktop application manual (EN / 中文 / bilingual)
 ├── CLAUDE_TEMPLATE.md               # reusable agent instruction template
 ├── AGENT_SERVICE_GUIDE.md           # agent-service deployment examples
 ├── DEPLOYMENT.md                    # infrastructure setup notes
-├── revalidation_3x3_results.xlsx    # expert-supervised validation record
-└── kdt-release.zip                  # archived toolkit/shared-library snapshot
+└── revalidation_3x3_results.xlsx    # expert-supervised validation record
 ```
 
 ## Related resources
 
+- **Desktop application:** GeoForge Desktop runs these packages with an agent on your own machine — see the [releases](../../releases) and the manual in [English](docs/manual/GeoForge-Desktop-Manual-EN-v0.6.24.pdf), [简体中文](docs/manual/GeoForge-Desktop-Manual-ZH-CN-v0.6.24.pdf) or [bilingual](docs/manual/GeoForge-Desktop-Manual-Bilingual-v0.6.24.pdf)
 - **KI catalogue and execution environment:** [GeoForge](https://app.geoforgehhu.com)
 - **Knowledge Dissection Toolkit:** [KDT-single](https://github.com/lzwei196/KDT-single)
 - **Paper:** [KISS — Knowledge Infrastructure for Scientific Simulation: A Scaffolding for Agentic Earth Science](https://arxiv.org/abs/2605.17856)

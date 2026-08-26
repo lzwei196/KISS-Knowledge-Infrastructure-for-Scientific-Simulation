@@ -14,7 +14,7 @@ Exit codes: 0=success, 1=input error, 2=processing error, 3=output error
 import sys, os, json, logging, subprocess
 from pathlib import Path
 
-LDNDC_BINARY = "/home/server/LDNDC/bin/ldndc"
+LDNDC_BINARY = "KISSPATH_HOME/LDNDC/bin/ldndc"
 PROJECT_XML = ""
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

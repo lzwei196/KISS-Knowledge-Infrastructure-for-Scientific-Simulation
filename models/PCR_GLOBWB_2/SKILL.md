@@ -1,3 +1,14 @@
+---
+name: pcr-globwb-2
+description: >-
+  PCR-GLOBWB 2 (Sutanudjaja et al. 2018, GMD 11:2429-2453) — 5 arcmin global hydrology &
+  water resources spec. Covers grid-based terrestrial hydrology (snow, interception,
+  two-layer soil moisture, groundwater, runoff); river/channel routing along an LDD
+  network including lakes and reservoirs; integrated human water use (irrigation,
+  domestic, industry, livestock demand, withdrawal…. Use when the task involves running,
+  configuring, calibrating or interpreting PCR_GLOBWB_2.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -47,7 +58,7 @@ variable. `ki_tools_common.load_forcing` already returns mm/day and °C, so the
 only remaining PCR-GLOBWB conversion is mm/day → m/day (dt_001).
 
 **Data Validation Reference**: soil properties and observed-discharge layouts are
-described in `/mnt/disk1/Hydrocraft_server/data_ki/dataset_index.yaml` and
+described in `KISSPATH_DATA_KI/dataset_index.yaml` and
 `kdt_dataset_layouts.yaml`. (Earlier revisions of this file pointed at
 `data_ki/CMFD/SKILL.md`, `data_ki/HWSD/SKILL.md` and `data_ki/ObservedQ/SKILL.md`
 — those paths do not exist under KDT 5.0.)
@@ -182,7 +193,7 @@ $PCR_PY tools/fetch_pcrglobwb_inputs.py --bbox LON_MIN LAT_MIN LON_MAX LAT_MAX \
 #     (mode (b): --clone-json; needs an interpreter with ki_tools_common)
 python tools/convert_forcing_to_pcrglobwb.py --source cmfd \
     --clone-json $O/clone/MyBasin30min.clone.json \
-    --forcing-dir /media/server/hc_ssd/forcing/Data_forcing_01dy_010deg \
+    --forcing-dir KISSPATH_FORCING/Data_forcing_01dy_010deg \
     --output-dir $O/input/global_30min/meteo/forcing \
     --start-date 2000-01-01 --end-date 2010-12-31 --subsample 2
 
@@ -235,9 +246,9 @@ proved reachable.**
 Complete 30 arcmin trees already exist locally and cover whole regions:
 
 ```
-/mnt/disk1/Hydrocraft_server/outputs_disk1/pcrglobwb2_huai_bengbu/input      # Huai   111.5-118.0E, 30.5-35.0N
-/mnt/disk1/Hydrocraft_server/outputs_disk1/pcrglobwb2_araguaia_araguatins/input
-/mnt/disk1/Hydrocraft_server/outputs_disk1/pcrglobwb2_rhine_kaub_2000_2005/input
+KISSPATH_OUTPUTS_ALT/pcrglobwb2_huai_bengbu/input      # Huai   111.5-118.0E, 30.5-35.0N
+KISSPATH_OUTPUTS_ALT/pcrglobwb2_araguaia_araguatins/input
+KISSPATH_OUTPUTS_ALT/pcrglobwb2_rhine_kaub_2000_2005/input
 ```
 
 Each holds ~100 NetCDFs (LDD, cell area, soil, topography, groundwater, all
@@ -248,10 +259,10 @@ the Huai tree, CMFD forcing with Penman-Monteith refET for 1979-01-01..1997-12-3
 is a topological subset of it.
 
 **TRAP — the orphaned cache (2026-07-19).**
-`/mnt/disk1/Hydrocraft_server/outputs` is now a SYMLINK to
-`/media/server/hc_ssd/hc_outputs`, but the real trees live in
+`KISSPATH_OUTPUTS` is now a SYMLINK to
+`KISSPATH_DATA/hc_outputs`, but the real trees live in
 `outputs_disk1/`. The absolute paths baked into the older `.ini` files and
-`*.clone.json` still say `/mnt/disk1/Hydrocraft_server/outputs/...`, which now
+`*.clone.json` still say `KISSPATH_OUTPUTS/...`, which now
 resolves to an EMPTY directory. A runner reusing those paths therefore finds no
 cache, decides it must fetch, and hangs on the dead OPeNDAP server — which is
 exactly how the 2026-07-12/13 runs burned out with null metrics. Always

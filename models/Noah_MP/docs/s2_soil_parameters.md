@@ -28,7 +28,7 @@ Noah-MP uses soil type indices (ISLTYP) to look up parameters from NoahmpTable.T
 **HWSD v1.2** (Harmonized World Soil Database):
 - Resolution: 30 arc-second (~1 km)
 - Variables: T_SAND, T_CLAY, T_SILT, T_OC (top soil, 0-30cm)
-- Path: `/mnt/disk1/Hydrocraft_server/data/soil/`
+- Path: `KISSPATH_STATIC/`
 
 **SoilGrids v2.0**:
 - Resolution: 250 m
@@ -71,7 +71,7 @@ Initialize SMOIS per layer (in HRLDAS setup file):
 
 ```bash
 python ki/tools/convert_soil_to_noahmp.py \
-  --hwsd_path /mnt/disk1/Hydrocraft_server/data/soil/hwsd.nc \
+  --hwsd_path KISSPATH_STATIC/hwsd.nc \
   --lat 33.0 --lon 117.0 \
   --output soil_params.json
 ```

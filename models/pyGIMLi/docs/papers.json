@@ -1,0 +1,72 @@
+{
+  "model": "pyGIMLi",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 8,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.1007/s10712-022-09731-2",
+      "title": "A Review on Applications of Time-Lapse Electrical Resistivity Tomography Over th",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "resistivity",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1007/s11104-020-04529-w",
+      "title": "Imaging of plant current pathways for non-invasive root Phenotyping using a newl",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "resistivity",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1186/s13007-024-01247-7",
+      "title": "Quantitative phenotyping of crop roots with spectral electrical impedance tomogr",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "resistivity",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2020.00085",
+      "title": "Petrophysical Joint Inversion Applied to Alpine Permafrost Field Sites to Image Subsurface Ice and Water Contents",
+      "access": "open",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.5194/hess-24-2121-2020",
+      "title": "Time-lapse cross-hole electrical resistivity tomography (CHERT) for monitoring seawater intrusion",
+      "access": "open",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.1038/s41598-023-48100-w",
+      "title": "A multiscale accuracy assessment of moisture content predictions using time-lapse electrical resistivity tomography",
+      "access": "open",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.1190/geo2022-0133.1",
+      "title": "Quantitative interpretation of geoelectric inverted data with a robust probabili",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "resistivity",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1093/gji/ggy055",
+      "title": "Geostatistical regularization operators for geophysical inverse problems on irregular meshes",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

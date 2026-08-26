@@ -1,0 +1,213 @@
+{
+  "model": "CAESAR_Lisflood",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 21,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.5194/esurf-8-619-2020",
+      "title": "Modelling the impacts of spatially variable erosion drivers on suspended sediment dynamics",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-8-17-2020",
+      "title": "Temperature effects on the spatial structure of heavy rainfall modify catchment hydro-morphological response",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-18-1395-2025",
+      "title": "Hydro-geomorphological modelling of leaky wooden dam efficacy from reach to catchment scale",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-2979-2021",
+      "title": "Performance of automated methods for flash flood inundation mapping: a comparison of a digital terrain model (DTM) filling and two hydrodynamic methods",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "depth",
+        "velocity",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-1-2013",
+      "title": "Impact of climate change on sediment yield in the Mekong River basin: a case study of the Nam Ou basin, Lao PDR",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4127-2015",
+      "title": "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity for a small, mountainous catchment",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-20-2791-2020",
+      "title": "Simulation of extreme rainfall and streamflow events in small Mediterranean watersheds with a one-way-coupled atmospheric-hydrologic modelling system",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-11-695-2023",
+      "title": "Testing the sensitivity of the CAESAR-Lisflood landscape evolution model to grid cell size",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "depth",
+        "water_level",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-4873-2018",
+      "title": "Global sensitivity analysis of parameter uncertainty in landscape evolution models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1002/2017wr020917",
+      "title": "Validation of a 30 m resolution flood hazard model of the conterminous United States",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrf.20154",
+      "title": "Reduced-complexity modeling of braided rivers: Assessing model performance by sensitivity analysis, calibration, and validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/aae014",
+      "title": "A first collective validation of global fluvial flood models for major floods in Nigeria and Mozambique",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w9100782",
+      "title": "Streamflow and Sediment Yield Prediction for Watershed Prioritization in the Upper Blue Nile Basin, Ethiopia",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/esp.3478",
+      "title": "Integrating the LISFLOOD-FP 2D hydrodynamic model with the CAESAR model: implications for modelling landscape evolution",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "depth",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2010.03.027",
+      "title": "A simple inertial formulation of the shallow water equations for efficient two-dimensional flood inundation modelling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1002/wrcr.20366",
+      "title": "Applicability of the local inertial approximation of the shallow water equations to flood modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1002/esp.4804",
+      "title": "Modelling the decadal dynamics of reach-scale river channel evolution and floodplain turnover in CAESAR-Lisflood",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-4-757-2016",
+      "title": "The sensitivity of landscape evolution models to spatial and temporal rainfall resolution",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "yield"
+      ]
+    }
+  ]
+}

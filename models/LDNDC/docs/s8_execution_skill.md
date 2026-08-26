@@ -46,7 +46,7 @@ python tools/s8_execution/run_ldndc.py
 Or directly:
 ```bash
 cd {project_dir}
-/home/server/LDNDC/bin/ldndc project.xml
+KISSPATH_HOME/LDNDC/bin/ldndc project.xml
 ```
 
 **Expected behavior**:

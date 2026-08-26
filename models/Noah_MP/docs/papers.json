@@ -1,0 +1,296 @@
+{
+  "model": "Noah_MP",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 29,
+  "open_access": 14,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-16-5131-2023",
+      "title": "Modernizing the open-source community Noah with multi-parameterization options (Noah-MP) land surface model (version 5.0)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "runoff",
+        "swe",
+        "soil_moisture",
+        "temperature",
+        "gpp",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-4199-2019",
+      "title": "Assessment of simulated soil moisture from WRF Noah, Noah-MP, and CLM land surface schemes",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-1485-2020",
+      "title": "Evaluation of global terrestrial evapotranspiration using state-of-the-art approaches in remote sensing, machine learning and land surface modeling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-2881-2017",
+      "title": "Global evaluation of runoff from 10 state-of-the-art hydrological models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-331-2020",
+      "title": "Comparison of modeled snow properties in Afghanistan, Pakistan, and Tajikistan",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-18-3553-2014",
+      "title": "Evaluating the Utah Energy Balance (UEB) snow model in the Noah land-surface model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2023.1106621",
+      "title": "Intercomparison of snow water equivalent products in the Sierra Nevada California",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-1579-2020",
+      "title": "Evaluation of long-term Northern Hemisphere snow water equivalent products",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-1341-2009",
+      "title": "Improving land surface models with FLUXNET data",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-3857-2012",
+      "title": "A framework for benchmarking land models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-4-647-2007",
+      "title": "Assessing the ability of three land ecosystem models to simulate gross carbon uptake of forests from boreal to Mediterranean climate in Europe",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-12-2311-2015",
+      "title": "On the use of the post-closure methods uncertainty band to evaluate the performance of land surface models against eddy covariance flux data",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4127-2015",
+      "title": "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity for a small, mixed land use catchment",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-3371-2012",
+      "title": "Critical review of SWAT applications in the upper Nile basin countries",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1002/2017jd027597",
+      "title": "A Systematic Evaluation of Noah-MP in Simulating Land-Atmosphere Energy, Water, and Carbon Exchanges Over the Continental United States",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "gpp",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1002/2015jd023404",
+      "title": "Assessing and improving Noah-MP land model simulations for the central Tibetan Plateau",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2020ms002062",
+      "title": "Enhancing the Noah-MP Ecosystem Response to Droughts With an Explicit Representation of Plant Hydraulics",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2023jd039780",
+      "title": "Evaluating Noah-MP Simulated Runoff and Snowpack in Heavily Burned Pacific-Northwest Watersheds",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1029/2023ms003869",
+      "title": "Evaluating and Enhancing Snow Compaction Process in the Noah-MP Land Surface Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1029/2022ms003141",
+      "title": "Evaluation and Optimization of Snow Albedo Scheme in Noah-MP Land Surface Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1029/2021jd035753",
+      "title": "Global Evaluation of the Noah-MP Land Surface Model and Suggestions for Selecting Parameterization Schemes",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "runoff",
+        "swe",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1002/2013jd020792",
+      "title": "Hydrological evaluation of the Noah-MP land surface model for the Mississippi River Basin",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-3079-2024",
+      "title": "Improving runoff simulation in the Western United States with Noah-MP and VIC",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-17-0205.1",
+      "title": "Parameter Sensitivity of the Noah-MP Land Surface Model with Dynamic Vegetation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "lai",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1002/2013ms000252",
+      "title": "Sensitivity of global terrestrial gross primary production to hydrologic states simulated by the Community Land Model / Noah-MP",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5065/ew8g-yr95",
+      "title": "The Community Noah-MP Land Surface Modeling System Technical Description Version 5.0",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "runoff",
+        "swe",
+        "soil_moisture",
+        "temperature",
+        "gpp",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1029/2010jd015139",
+      "title": "The community Noah land surface model with multiparameterization options (Noah-MP): 1. Model description and evaluation with local-scale measurements",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "swe",
+        "soil_moisture",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2010jd015140",
+      "title": "The community Noah land surface model with multiparameterization options (Noah-MP): 2. Evaluation over global river basins",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2022.128991",
+      "title": "Grid-based calibration of the WRF-Hydro with Noah-MP model with improved groundwater representation",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

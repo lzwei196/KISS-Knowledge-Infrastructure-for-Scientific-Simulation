@@ -43,7 +43,7 @@ import numpy as np
 import pandas as pd
 
 ROUT_EXE = os.environ.get(
-    "VIC_ROUT_EXE", "/mnt/disk1/Hydrocraft_server/model/route_1.0/src/rout")
+    "VIC_ROUT_EXE", "KISSPATH_BINARIES/route_1.0/src/rout")
 
 # The 7 columns Lohmann `rout` reads: year month day prec evap runoff baseflow.
 # Indices into the ASCII flux file of the KI's 21-OUTVAR global param template.

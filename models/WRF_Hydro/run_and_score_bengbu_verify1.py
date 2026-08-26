@@ -5,10 +5,10 @@ WRF-Hydro v5.2.0 standalone -- VERIFIER run at Bengbu (蚌埠), Huai River.
 Companion location to the real-case at 紫荆关 Zijingguan (Juma R., Haihe).
 
 Gauge   : Bengbu stcd 51080, ~32.943N 117.388E
-Obs     : /mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt
+Obs     : KISSPATH_OBS/BB/51080_bengbu.txt
           tab-separated (stcd dates z Q name); Q in m3/s; -99.9 = missing,
           dropped by the KI's own extract_discharge.load_obs() (Q>0 filter).
-Basin   : /mnt/disk1/Hydrocraft_server/data/shp/bengbu_0a65a081_shp/
+Basin   : KISSPATH_DATA/shp/bengbu_0a65a081_shp/
           bengbu_0a65a081_boundary_shp/bengbu_0a65a081_boundary.shp
           -> 115,818.7 km2 delineated (published Bengbu catchment ~121,330 km2)
 Forcing : CMFD V2.0 3-hourly 0.1deg -> hourly LDASIN on the LCC grid, via the KI
@@ -55,7 +55,7 @@ Resumable at stage level:
   * model    -- skipped when the CHRTOUT count already matches the simulation days
   * scoring  -- always recomputed (cheap)
 Final action: writes the complete verifier result object to
-  /mnt/disk1/Hydrocraft_server/models/WRF_Hydro/detached/verify_1/result.json
+  KISSPATH_KI_ROOT/WRF_Hydro/detached/verify_1/result.json
 """
 import os
 import sys
@@ -71,10 +71,10 @@ import numpy as np
 import pandas as pd
 import netCDF4 as nc
 
-ROOT = Path("/mnt/disk1/Hydrocraft_server")
+ROOT = Path("KISSPATH_ROOT")
 KI = ROOT / "models/WRF_Hydro/knowledge_infrastructure"
 TOOLS = KI / "tools"
-VALID = Path("/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+VALID = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 PY = "/usr/bin/python3"
 
 sys.path.insert(0, str(TOOLS / "s11_output"))

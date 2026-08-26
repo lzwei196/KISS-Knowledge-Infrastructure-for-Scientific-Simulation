@@ -1,0 +1,240 @@
+{
+  "model": "ISSM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 24,
+  "open_access": 19,
+  "papers": [
+    {
+      "doi": "10.5194/tc-2-95-2008",
+      "title": "Benchmark experiments for higher-order and full-Stokes ice sheet models (ISMIP-HOM)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-2-67-2008",
+      "title": "The ISMIP-HOM benchmark experiments performed using the Finite-Element code Elmer",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-6-1299-2013",
+      "title": "Capabilities and performance of Elmer/Ice, a new-generation ice sheet model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-8-2335-2014",
+      "title": "Inferred basal friction and surface mass balance of the Northeast Greenland Ice Stream",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-7-1659-2013",
+      "title": "Parameter and state estimation with a time-dependent adjoint marine ice sheet model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-12-1433-2018",
+      "title": "Design and results of the ice sheet model initialisation experiments initMIP-Greenland",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-13-1441-2019",
+      "title": "initMIP-Antarctica: an ice sheet model initialization experiment of ISMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-4521-2016",
+      "title": "Ice Sheet Model Intercomparison Project (ISMIP6) contribution to CMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-3033-2020",
+      "title": "ISMIP6 Antarctica: a multi-model ensemble of the Antarctic ice sheet evolution over the 21st century",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-3071-2020",
+      "title": "The future sea-level contribution of the Greenland ice sheet: a multi-model ensemble study of ISMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-2283-2020",
+      "title": "Results of the third Marine Ice Sheet Model Intercomparison Project (MISMIP+)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-6-573-2012",
+      "title": "Results of the Marine Ice Sheet Model Intercomparison Project, MISMIP",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.3189/2013jog12j129",
+      "title": "Grounding-line migration in plan-view marine ice-sheet models: results of the ice2sea MISMIP3d intercomparison",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-1087-2016",
+      "title": "ISSM-SESAW v1.0: mesh-based computation of gravitationally consistent sea-level and geodetic signatures",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-11-629-2019",
+      "title": "Sea-level fingerprints emergent from GRACE mission data",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_level",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-10-1965-2016",
+      "title": "Application of GRACE to the assessment of model-based estimates of monthly Greenland Ice Sheet mass balance",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.1038/s41467-022-32632-2",
+      "title": "Ice mass loss sensitivity to the Antarctic ice sheet basal thermal state",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-13-1349-2019",
+      "title": "Uncertainty quantification of the multi-centennial response of the Antarctic ice sheet to climate change",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-8-2075-2014",
+      "title": "Hydrostatic grounding line parameterization in ice sheet models",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "glacier_change",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1029/2011jf002140",
+      "title": "Continental scale, high order, high spatial resolution, ice sheet modeling using the Ice Sheet System Model (ISSM)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-15-1195-2022",
+      "title": "Implementation of a Gaussian Markov random field sampler for forward uncertainty quantification in the Ice-sheet and Sea-level System Model v4.19",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrf.20062",
+      "title": "Decadal-scale sensitivity of Northeast Greenland ice flow to errors in surface mass balance using ISSM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.1029/2011jf002146",
+      "title": "Sensitivity Analysis of Pine Island Glacier ice flow using ISSM and DAKOTA",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrf.20125",
+      "title": "Inversion of basal friction in Antarctica using exact and incomplete adjoints of a higher-order model",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

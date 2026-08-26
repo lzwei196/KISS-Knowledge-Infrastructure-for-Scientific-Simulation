@@ -12,7 +12,7 @@ TARGET CASE (pinned, never overridable from the environment)
   provenance     : DSSAT_20260630T053443Z, prior validated pbias = +8.34 %
 
 This reproduces EXACTLY the validated coupling recorded in
-``/mnt/disk1/Hydrocraft_server/models/DSSAT/real_case_result.json``:
+``KISSPATH_KI_ROOT/DSSAT/real_case_result.json``:
 
   * 42 grid points = 6 lat x 7 lon on lat [35.0, 37.5] x lon [116.0, 119.0], step
     0.5 deg (endpoints inclusive) over the Shandong / North-China-Plain
@@ -131,10 +131,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-KI = Path("/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure")
+KI = Path("KISSPATH_KI_ROOT/DSSAT/knowledge_infrastructure")
 sys.path.insert(0, str(KI / "tools"))
 sys.path.insert(0, str(KI / "tools" / "s2_weather_prep"))
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 
 # ===========================================================================
 # TARGET CASE — pinned constants. NOT readable from the environment.
@@ -175,7 +175,7 @@ HOLDOUT_LON_MIN = 118.5
 
 # --- binding shared spec (models/DSSAT/knowledge_infrastructure/interface_contracts.yaml
 #     -> shared: shared_specs/dssat/base/format_spec.yaml)
-SPEC_PATH = Path("/mnt/disk1/Hydrocraft_server/models/shared_specs/dssat/base/format_spec.yaml")
+SPEC_PATH = Path("KISSPATH_KI_ROOT/shared_specs/dssat/base/format_spec.yaml")
 
 CACHE_DIR = Path(os.environ.get("KDT_DSSAT_CALIB_CACHE") or "/tmp/dssat_calib_cache")
 WTH_DIR = CACHE_DIR / "wth"

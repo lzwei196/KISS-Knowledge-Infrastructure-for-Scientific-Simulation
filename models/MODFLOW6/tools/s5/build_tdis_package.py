@@ -21,7 +21,7 @@ import os
 import json
 import logging
 
-SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"
+SIM_PATH = "KISSPATH_OUTPUTS/qinghai_lake_1951_2024/modflow6/workspace"
 NPER = 74
 PERIOD_DATA = [(365.0, 1, 1.0)] * 74  # 1951-2024 annual  # 1 year, daily timesteps
 TIME_UNITS = "days"

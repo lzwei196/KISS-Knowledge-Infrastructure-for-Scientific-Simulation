@@ -178,7 +178,7 @@ def generate_r_script(forcing_csv: str, output_csv: str,
     r_script = f'''
 # airGR is installed in the HydroCraft user library; --vanilla/--no-environ
 # may not pick up R_LIBS_USER, so register it explicitly (robust fix).
-.libPaths(c("/home/server/R/library", .libPaths()))
+.libPaths(c("KISSPATH_HOME/R/library", .libPaths()))
 library(airGR)
 
 # --- Read forcing data ---

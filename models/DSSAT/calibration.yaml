@@ -539,7 +539,7 @@ constraints:
 runner:
   kind: subprocess
   command: ["python3",
-            "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/tools/calib_run.py",
+            "KISSPATH_KI_ROOT/DSSAT/knowledge_infrastructure/tools/calib_run.py",
             "--workdir", "{workdir}", "--out", "{metrics_json}"]
   metrics_file: "{metrics_json}"
   timeout: 1800

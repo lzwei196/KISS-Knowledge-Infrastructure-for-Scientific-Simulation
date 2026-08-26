@@ -23,7 +23,7 @@ model must convert an inflow hydrograph into a stage through its own bathymetry,
 and momentum equations.
 
 Inputs:
-  --hydat_db:       HYDAT sqlite3 (default: /mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3)
+  --hydat_db:       HYDAT sqlite3 (default: KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3)
   --grid_info:      grid_info.json from s1_domain (for the projection)
   --flow_station:   COMMA LIST of HYDAT station numbers whose DLY_FLOWS drive sfincs.src/.dis.
                     Include every unforced in-domain tributary (dt_v024).
@@ -96,7 +96,7 @@ import numpy as np
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-DEFAULT_HYDAT = "/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3"
+DEFAULT_HYDAT = "KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3"
 
 
 def connect_hydat(path):

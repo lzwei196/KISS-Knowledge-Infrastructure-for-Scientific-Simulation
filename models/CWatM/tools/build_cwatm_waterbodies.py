@@ -27,7 +27,7 @@ for reservoir/regulated bodies (Lake_type in {2, 3}).
 Usage:
     python build_cwatm_waterbodies.py \
         --clone   /path/static/MaskMap.nc \
-        --hydrolakes /mnt/disk1/Hydrocraft_server/data/lakes/HydroLAKES_polys_v10.shp \
+        --hydrolakes KISSPATH_DATA/lakes/HydroLAKES_polys_v10.shp \
         --out_dir /path/static \
         [--subsample 20] [--min_area_km2 10.0]
 """

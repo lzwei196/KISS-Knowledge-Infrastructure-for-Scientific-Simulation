@@ -48,7 +48,7 @@ except ImportError as e:
     sys.exit(1)
 
 
-HYDROCRAFT_ROOT = "/mnt/disk1/Hydrocraft_server"
+HYDROCRAFT_ROOT = "KISSPATH_ROOT"
 
 # CLM forcing variable names (in the order CLM expects them)
 CLM_VARS = ["DSWR", "DLWR", "APCP", "Tmp", "UGRD", "VGRD", "Press", "SPFH"]

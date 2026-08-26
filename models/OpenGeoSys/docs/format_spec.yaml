@@ -2,7 +2,7 @@ model:
   name: "OpenGeoSys"
   version: "6.5.7"
   domain: "subsurface THMC (Thermo-Hydro-Mechanical-Chemical) processes in porous and fractured media"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenGeoSys/venv/bin/ogs"
+  binary_path: "KISSPATH_BINARIES/OpenGeoSys/venv/bin/ogs"
   binary_type: "compiled_cpp"
   input_format: "XML project file (.prj) + VTU meshes"
   output_format: "VTU (VTK Unstructured Grid) + PVD time series index"

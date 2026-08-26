@@ -1,3 +1,14 @@
+---
+name: wflow
+description: >-
+  Wflow.jl v1.x (CSDMS standard-name TOML era); wflow_sbm SBM concept per van Verseveld et
+  al. 2024 GMD. Covers Distributed grid-based catchment hydrology (wflow_sbm SBM vertical
+  concept); Interception, snow accumulation/melt, glacier melt (degree-day), multi-layer
+  soil water…; Lateral routing of river, overland and subsurface flow (kinematic wave or
+  local inertial). Use when the task involves running, configuring, calibrating or
+  interpreting wflow.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -146,7 +157,7 @@ downstream on the fine network to the next active coarse cell gives the coarse
 direction. At Xixian this gave 97 cells / 10,171 km², **−0.2%** against the
 published 10,190 km², one outlet, zero cycles.
 
-MERIT-Hydro tiles ship as 30°×30° tars under `/mnt/datasets/MERIT_Hydro/v1.0.1/`.
+MERIT-Hydro tiles ship as 30°×30° tars under `KISSPATH_DATA/MERIT_Hydro/v1.0.1/`.
 Do NOT hand-roll `tar xf` (the member path and the s/w hemisphere tile names are
 easy to get wrong, and the failure surfaces only as
 `no MERIT-Hydro 'dir' tiles ... for bbox`). Stage them with the KI tool — it is
@@ -155,7 +166,7 @@ resumable and takes the bbox straight from the basin shapefile:
 ```bash
 python tools/s1_hydromt/fetch_merit_hydro_tiles.py \
   --shapefile data/shp/<basin>.shp --pad_deg 0.4 --kinds dir,upa,elv \
-  --out_dir /mnt/disk1/Hydrocraft_server/data/merit_hydro_cache
+  --out_dir KISSPATH_DATA/merit_hydro_cache
 ```
 
 **Always pass `--kinds dir,upa,elv`.** `--kinds` defaults to `dir,upa`, which is
@@ -189,13 +200,13 @@ instead of the terrain. wflow runs; the hydrograph is simply wrong.
 
 The DEM is now resolved per basin: `--dem_path` > config `data.dem_path` > auto
 (China 90 m DEM when the whole window is inside China, otherwise the global
-MERIT DEM tile directory `/mnt/datasets/MERIT_DEM`). `--dem_path` accepts either
+MERIT DEM tile directory `KISSPATH_DATA/MERIT_DEM`). `--dem_path` accepts either
 a single GeoTIFF or a **directory of MERIT 5°×5° `<tile>_dem.tif` tiles**, which
 are merged over the window. If the DEM covers none of the window the build now
 FAILS instead of substituting a placeholder. Always read the s1 line:
 
 ```
-DEM sampled from /mnt/datasets/MERIT_DEM: 374/391 cells valid, -0 - 1738 m
+DEM sampled from KISSPATH_DATA/MERIT_DEM: 374/391 cells valid, -0 - 1738 m
 ```
 
 ### Critical: dt_w040's DEM fix has been ROLLED BACK once — verify it every run
@@ -263,7 +274,7 @@ the preflight and the output-file scan now resolve through `dir_input` /
 
 | Input | Non-China choice |
 |---|---|
-| DEM | leave `--dem_path` unset (auto → `/mnt/datasets/MERIT_DEM`) |
+| DEM | leave `--dem_path` unset (auto → `KISSPATH_DATA/MERIT_DEM`) |
 | Flow network | `fetch_merit_hydro_tiles.py` → `--merit_hydro_dir <cache>` |
 | Forcing | `--forcing mswx` (s0) and `--source mswx` (s2); CMFD is China-only |
 | Soil | HWSD via `lookup_hwsd` — already global |
@@ -320,7 +331,7 @@ Runner script:   models/wflow/knowledge_infrastructure/julia/wflow_runner.jl
 
 Install Julia:
 ```bash
-cd /mnt/disk1/Hydrocraft_server/model
+cd KISSPATH_BINARIES
 wget https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-1.10.7-linux-x86_64.tar.gz
 tar xzf julia-1.10.7-linux-x86_64.tar.gz
 ```

@@ -40,22 +40,22 @@ import sys
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
-KTC = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
+KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
+KTC = "KISSPATH_KI_TOOLS_COMMON"
 MODEL = "m_07_gr4j_4p_2s"
-MARRMOT_SRC = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/source/repo/MARRMoT"
+MARRMOT_SRC = "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
 AREA_KM2 = 121330.0
 CENTROID_LAT = 33.0
 START_Y, END_Y = 1979, 1990
-CMFD_DIR = "/media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg"
-OBS_TXT = "/mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt"
+CMFD_DIR = "KISSPATH_FORCING/huai/Data_forcing_01dy_025deg"
+OBS_TXT = "KISSPATH_OBS/BB/51080_bengbu.txt"
 
 PARAMS_JSON = os.path.join(KI, "calib", "params.json")
 CACHE = os.path.join(KI, "calib")                 # cached deterministic inputs
 FORCING = os.path.join(CACHE, "forcing.csv")
 OBS = os.path.join(CACHE, "obs_q.csv")
 # Fallback source: the validated real-case run already built these exact files.
-REAL_CASE = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/detached/real_case"
+REAL_CASE = "KISSPATH_KI_ROOT/MARRMoT/detached/real_case"
 
 CAL_WIN = ("1981-01-01", "1985-12-31")
 VAL_WIN = ("1986-01-01", "1990-12-31")

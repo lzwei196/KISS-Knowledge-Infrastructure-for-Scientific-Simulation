@@ -6,7 +6,7 @@ model:
   secondary_domains:
   - water_quality
   binary: glm
-  binary_path: /mnt/disk1/Hydrocraft_server/model/glm/bin/glm
+  binary_path: KISSPATH_BINARIES/glm/bin/glm
   language: Fortran / C
   working_directory: directory containing glm3.nml
   notes: 1D vertical hydrodynamic model for lakes and reservoirs. Optional AED2 water quality library.

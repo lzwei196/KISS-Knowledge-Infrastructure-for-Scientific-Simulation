@@ -38,7 +38,7 @@ from pathlib import Path
 # Configuration
 # ---------------------------------------------------------------------------
 RUN_DIR = ""
-MHM_BINARY = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/mhm/mhm")
+MHM_BINARY = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/mhm/mhm")
 TIMEOUT = 3600  # seconds
 
 if len(sys.argv) > 1:

@@ -41,7 +41,7 @@ import platform
 # INPUTS
 # ---------------------------------------------------------------------------
 SCENARIO_DIR = ""       # Scenario directory containing ipnames.dat
-BINARY_PATH = "/home/server/RZWQM2/RZWQM2/linux/main_ryzen_patched"  # RZWQM2 executable (also copied into each scenario dir)
+BINARY_PATH = "KISSPATH_HOME/RZWQM2/RZWQM2/linux/main_ryzen_patched"  # RZWQM2 executable (also copied into each scenario dir)
 TIMEOUT = "3600"        # Max execution time in seconds
 
 # ---------------------------------------------------------------------------

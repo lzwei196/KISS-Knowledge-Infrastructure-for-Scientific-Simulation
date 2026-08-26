@@ -11,7 +11,7 @@ model:
   name: "SUMMA (Structure for Unifying Multiple Modeling Alternatives)"
   domain: "hydrology"
   binary: "summa.exe"
-  binary_path: "/mnt/disk1/Hydrocraft_server/model/summa/bin/summa.exe"
+  binary_path: "KISSPATH_BINARIES/summa/bin/summa.exe"
   language: "Fortran 90"
   working_directory: "./"
   invocation: "summa.exe -m fileManager.txt"

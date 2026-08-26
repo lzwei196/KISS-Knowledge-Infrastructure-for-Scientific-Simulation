@@ -1,0 +1,181 @@
+{
+  "model": "GSFLOW",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 17,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-11-4755-2018",
+      "title": "GSFLOW-GRASS v1.0.0: GIS-enabled hydrologic modeling of coupled groundwater-surface-water systems",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2022.907533",
+      "title": "Rapid Model Development for GSFLOW With Python and pyGSFLOW",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1186/s12302-020-00395-6",
+      "title": "Quantifying the streamflow response to groundwater abstractions for irrigation or drinking water at catchment scale using SWAT and SWAT-MODFLOW",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-2018-268",
+      "title": "A Conceptual Framework for Integration Development of GSFLOW Model: Concerns and Suggestions",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "water_table",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.4236/jgis.2011.34024",
+      "title": "Hydrologic Modeling of the Bouregreg Watershed (Morocco) Using GIS and SWAT Model",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-3077-2020",
+      "title": "Future shift in winter streamflow modulated by the internal variability of climate (PRMS large-ensemble application)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3133/tm6b10",
+      "title": "Parameter estimation at the conterminous United States scale and streamflow routing (National Hydrologic Model / PRMS)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2023.129176",
+      "title": "Evaluation of distributed process-based hydrologic model performance using only a priori information",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3133/tm6d1",
+      "title": "GSFLOW - Coupled Ground-Water and Surface-Water Flow Model Based on the Integration of PRMS and MODFLOW-2005",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "water_table",
+        "swe",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2018wr024209",
+      "title": "Sensitivity Analysis and Calibration of an Integrated Hydrologic Model in an Irrigated Agricultural Basin With a Groundwater-Dependent Ecosystem",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1029/2020wr029390",
+      "title": "Simulating Fully-Integrated Hydrological Dynamics in Complex Alpine Headwaters",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_table",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.3390/w16030419",
+      "title": "Assessment of Future Climate Change Impacts on Groundwater Recharge Using Hydrological Modeling (GSFLOW)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3133/sir20125213",
+      "title": "Simulation of daily streamflows at gaged and ungaged locations within the Cedar River Basin using a PRMS/GSFLOW model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3133/tm6b7",
+      "title": "PRMS-IV, the Precipitation-Runoff Modeling System, Version 4",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1002/vzj2.70010",
+      "title": "The value of long-term in situ soil moisture and snowpack monitoring",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "swe"
+      ]
+    }
+  ]
+}

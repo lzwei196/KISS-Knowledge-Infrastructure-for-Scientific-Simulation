@@ -35,7 +35,7 @@ if os.path.isdir(PYSWAN_ROOT):
 # interpreter, and this KI ships no ../../source/repo checkout.  Mirror the
 # search path used by preflight_check.py so the tool imports under a plain
 # `python3` too.
-_PENV = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+_PENV = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
 if os.path.isdir(_PENV) and _PENV not in sys.path:
     sys.path.append(_PENV)
 try:

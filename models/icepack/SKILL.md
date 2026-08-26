@@ -1,3 +1,14 @@
+---
+name: icepack
+description: >-
+  icepack glacier-flow package (Shapero et al. 2021, GMD 14, 4593-4616,
+  doi:10.5194/gmd-14-4593-2021), version 1.x. Covers Ice momentum balance / velocity
+  diagnostic solve (SSA, SIA, hybrid); Ice thickness evolution via mass continuity
+  (prognostic); Glen's flow law viscosity and Weertman basal friction; Hydrostatic surface
+  elevation from thickness and bed. Use when the task involves running, configuring,
+  calibrating or interpreting icepack.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

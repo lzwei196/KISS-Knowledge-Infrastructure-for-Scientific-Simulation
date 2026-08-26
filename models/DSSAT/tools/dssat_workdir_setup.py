@@ -34,8 +34,8 @@ from typing import Optional, Union, List, Dict, Any
 # ---------------------------------------------------------------------------
 # Constants — DSSAT installation paths on this server
 # ---------------------------------------------------------------------------
-DSSAT_BINARY = Path("/home/server/DSSAT/build/bin/dscsm048")
-DSSAT_DATA = Path("/home/server/DSSAT/Data")
+DSSAT_BINARY = Path("KISSPATH_HOME/DSSAT/build/bin/dscsm048")
+DSSAT_DATA = Path("KISSPATH_HOME/DSSAT/Data")
 DSSAT_GENOTYPE = DSSAT_DATA / "Genotype"
 DSSAT_STANDARD_DATA = DSSAT_DATA / "StandardData"
 DSSAT_SOIL_SOL = None  # Will use the default soil file from run_test if available
@@ -588,7 +588,7 @@ def _generate_filex(
 
 # Width of the DSSBatch.v48 @FILEX path field, in columns.
 #
-# PRIMARY SOURCE — dssat-csm-os v4.8 as built at /home/server/DSSAT, NOT KI
+# PRIMARY SOURCE — dssat-csm-os v4.8 as built at KISSPATH_HOME/DSSAT, NOT KI
 # folklore. The batch record is parsed in CSM_Main/CSM.for:
 #
 #   268:  END_POS = LEN(TRIM(CHARTEST(1:92)))+1
@@ -1056,7 +1056,7 @@ def create_workdir(
         shutil.copy2(soil_file, soil_dst_dir)
     else:
         # Use default from DSSAT run_test (has IB00000001-12 generic profiles)
-        default_soil = Path("/home/server/DSSAT/run_test/SOIL.SOL")
+        default_soil = Path("KISSPATH_HOME/DSSAT/run_test/SOIL.SOL")
         if default_soil.exists():
             shutil.copy2(str(default_soil), soil_dst_main)
             shutil.copy2(str(default_soil), soil_dst_dir)
@@ -1556,7 +1556,7 @@ if __name__ == "__main__":
 
     # Test: create a workdir for maize in Montreal (45.5N, 73.6W)
     # Uses existing weather file from DSSAT run_test if available
-    weather_src = "/home/server/DSSAT/run_test/MTRL0501.WTH"
+    weather_src = "KISSPATH_HOME/DSSAT/run_test/MTRL0501.WTH"
     if not os.path.isfile(weather_src):
         print(f"WARNING: Weather file not found: {weather_src}")
         weather_src = None

@@ -23,8 +23,8 @@ import math
 from pathlib import Path
 
 # HWSD soil adapter
-HWSD_RASTER = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "data/soil/HWSD_RASTER/hwsd.bil"))
-HWSD_MDB = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "data/forcing/huaihe_raw/soil/HWSD.mdb"))
+HWSD_RASTER = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "data/soil/HWSD_RASTER/hwsd.bil"))
+HWSD_MDB = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "data/forcing/huaihe_raw/soil/HWSD.mdb"))
 
 
 def get_hwsd_soil(lat, lon):
@@ -34,7 +34,7 @@ def get_hwsd_soil(lat, lon):
     for top and sub soil.
     """
     try:
-        sys.path.insert(0, str(Path("/mnt/disk1/Hydrocraft_server/skills/vic-auto-run/s1_soil")))
+        sys.path.insert(0, str(Path("KISSPATH_ROOT/skills/vic-auto-run/s1_soil")))
         from hwsd_soil_adapter import query_hwsd_point
         props = query_hwsd_point(lat, lon, str(HWSD_RASTER), str(HWSD_MDB))
         return props

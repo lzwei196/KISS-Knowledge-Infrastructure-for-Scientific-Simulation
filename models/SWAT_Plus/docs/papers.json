@@ -1,0 +1,243 @@
+{
+  "model": "SWAT_Plus",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 23,
+  "open_access": 10,
+  "papers": [
+    {
+      "doi": "10.5194/hess-23-1113-2019",
+      "title": "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture",
+        "power"
+      ]
+    },
+    {
+      "doi": "10.1007/s13201-019-1013-x",
+      "title": "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-807-2011",
+      "title": "Sediment management modelling in the Blue Nile Basin using SWAT model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "sediment",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/adgeo-48-1-2019",
+      "title": "Evaluating the SWAT model to predict streamflow, nitrate loadings and crop yields in a small agricultural catchment",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "nutrient",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-2775-2018",
+      "title": "Comparison of MODIS and SWAT evapotranspiration over a complex terrain at different spatial scales",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-18-5681-2025",
+      "title": "SWAT+MODFLOW: a new hydrologic model for simulating surface-subsurface flow",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-14-991-2010",
+      "title": "Prediction of snowmelt derived streamflow in a wetland dominated prairie basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-3125-2017",
+      "title": "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1007/s10584-020-02924-x",
+      "title": "Mass balance calibration and reservoir representations for large-scale hydrological impact studies using SWAT+",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "power"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "sediment",
+        "nutrient",
+        "yield",
+        "evapotranspiration",
+        "swe",
+        "power"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w10010006",
+      "title": "A Guideline for Successful Calibration and Uncertainty Analysis for Soil and Water Assessment: A Review of Papers from the 2016 International SWAT Conference",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "sediment",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1111/j.1752-1688.2008.00233.x",
+      "title": "Hydrologic Calibration and Validation of SWAT in a Snow-Dominated Rocky Mountain Watershed, Montana, U.S.A.",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w9100782",
+      "title": "Streamflow and Sediment Yield Prediction for Watershed Prioritization in the Upper Blue Nile",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1111/1752-1688.12482",
+      "title": "Introduction to SWAT+, A Completely Restructured Version of the Soil and Water Assessment Tool",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "power",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.3390/agronomy10010002",
+      "title": "Predicting Streamflow and Nutrient Loadings in a Semi-Arid Mediterranean Watershed with Ephemeral Streams Using the SWAT Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.3390/w13162238",
+      "title": "Multi-Step Calibration Approach for SWAT Model Using Soil Moisture and Crop Yields in a Small Agricultural Catchment",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/rs14061511",
+      "title": "Calibration and Validation of SWAT Model by Using Hydrological Remote Sensing Observatories in the Lake Chad Basin",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-26-71-2022",
+      "title": "Improved representation of agricultural land use and crop management for large-scale hydrological impact simulation in Africa using SWAT+",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3390/rs14225823",
+      "title": "Improvement of the SWAT Model for Snowmelt Runoff Simulation in Seasonal Snowmelt Area Using Remote Sensing Data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology9070112",
+      "title": "Multi-Variable SWAT Model Calibration Using Satellite-Based Evapotranspiration Data and Streamflow",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ejrh.2023.101532",
+      "title": "Regional evaluation of groundwater-surface water interactions using a coupled geohydrological model (SWAT+gwflow)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.gsd.2024.101275",
+      "title": "Groundwater modelling in SWAT+: Considerations for a realistic baseflow simulation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    }
+  ]
+}

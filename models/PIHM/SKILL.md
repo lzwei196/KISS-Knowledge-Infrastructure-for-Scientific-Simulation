@@ -1,3 +1,14 @@
+---
+name: pihm
+description: >-
+  MM-PIHM v1.0.0 — semi-discrete finite-volume coupled surface-subsurface watershed
+  formulation. Covers Spatially-distributed physically-based watershed hydrology on an
+  unstructured triangular (TIN) mesh; Overland (surface) flow per element; Unsaturated
+  (vadose) zone soil water and infiltration; Saturated (groundwater) zone lateral and
+  vertical flow, recharge. Use when the task involves running, configuring, calibrating or
+  interpreting PIHM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -144,7 +155,7 @@ the river centreline are CONSTRAINED segments — so every river reach lands on
 element edges, which is what `InitRiver` requires.
 
 ```bash
-python tools/mesh_builder.py --dem /mnt/datasets/MERIT_DEM/n40e005_dem.tif \
+python tools/mesh_builder.py --dem KISSPATH_DATA/MERIT_DEM/n40e005_dem.tif \
     --outlet-lon 8.6124 --outlet-lat 42.1771 \
     --out-dir input/ChiuniFR --project ChiuniFR \
     --target-elem-area-km2 0.12 --aquifer-thickness-m 15

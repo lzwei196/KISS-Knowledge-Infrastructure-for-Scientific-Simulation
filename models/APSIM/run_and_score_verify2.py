@@ -21,10 +21,10 @@ import os, sys, json, csv, glob, subprocess, traceback
 import numpy as np
 import pandas as pd
 
-ROOT = "/mnt/disk1/Hydrocraft_server/models/APSIM"
+ROOT = "KISSPATH_KI_ROOT/APSIM"
 KI   = os.path.join(ROOT, "knowledge_infrastructure")
 TOOLS= os.path.join(KI, "tools")
-BIN  = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/APSIM/source/repo/bin/Release/net8.0/apsim"
+BIN  = "KISSPATH_BINARIES/APSIM/source/repo/bin/Release/net8.0/apsim"
 STATE= os.path.join(ROOT, "detached", "verify_2")
 WORK = os.path.join(STATE, "work")
 RESULT = os.path.join(STATE, "result.json")
@@ -41,7 +41,7 @@ AREA_COVER = 0.90        # keep 0.5deg cells until 90% of wheat harvested area
 MAX_CELLS  = 40
 CROP, CULTIVAR = "Wheat", "Wyalkatchem"
 
-ENV = dict(os.environ, DOTNET_ROOT="/home/server/.dotnet")
+ENV = dict(os.environ, DOTNET_ROOT="KISSPATH_HOME/.dotnet")
 os.makedirs(WORK, exist_ok=True)
 
 
@@ -52,8 +52,8 @@ def log(*a):
 def ensure_spam():
     import zipfile
     for path, zp in [
-        (SPAM_Y, "/mnt/datasets/Crop_model_dataset/dataverse_files/Global_CSV/spam2020V2r0_global_yield.csv.zip"),
-        (SPAM_H, "/mnt/datasets/Crop_model_dataset/dataverse_files/Global_CSV/spam2020V2r0_global_harvested_area.csv.zip"),
+        (SPAM_Y, "KISSPATH_DATA/Crop_model_dataset/dataverse_files/Global_CSV/spam2020V2r0_global_yield.csv.zip"),
+        (SPAM_H, "KISSPATH_DATA/Crop_model_dataset/dataverse_files/Global_CSV/spam2020V2r0_global_harvested_area.csv.zip"),
     ]:
         if not os.path.isfile(path):
             log("unzip", zp)

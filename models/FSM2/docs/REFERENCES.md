@@ -26,4 +26,4 @@
 ## Documentation
 
 - Scientific documentation: `docs/FSMsci.tex` in the source repository (LaTeX)
-- Skill documents: `/mnt/disk1/Hydrocraft_server/models/FSM2/knowledge_infrastructure/docs/`
+- Skill documents: `KISSPATH_KI_ROOT/FSM2/knowledge_infrastructure/docs/`

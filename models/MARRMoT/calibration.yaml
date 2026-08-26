@@ -42,7 +42,7 @@ parameters:
     address:
       kind: json_path
       file: "calib/params.json"
-      root: "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
+      root: "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
       path: "x1"
 
   - name: x2
@@ -58,7 +58,7 @@ parameters:
     address:
       kind: json_path
       file: "calib/params.json"
-      root: "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
+      root: "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
       path: "x2"
 
   - name: x3
@@ -74,7 +74,7 @@ parameters:
     address:
       kind: json_path
       file: "calib/params.json"
-      root: "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
+      root: "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
       path: "x3"
 
   - name: x4
@@ -90,7 +90,7 @@ parameters:
     address:
       kind: json_path
       file: "calib/params.json"
-      root: "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
+      root: "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
       path: "x4"
 
 # GR4J's four parameters are structurally independent (no ordering relation), so no

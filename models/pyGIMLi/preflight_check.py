@@ -30,7 +30,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -49,7 +49,6 @@ def main():
     print()
     # pyGIMLi in dissection venv
     import sys
-    sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyGIMLi/venv/lib/python3.12/site-packages")
     check_import("pygimli", "pyGIMLi (pygimli)")
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))

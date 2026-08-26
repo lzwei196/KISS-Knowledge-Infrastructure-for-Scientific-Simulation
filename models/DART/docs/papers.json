@@ -1,0 +1,172 @@
+{
+  "model": "DART",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 17,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.5194/hess-16-3863-2012",
+      "title": "Advancing data assimilation in operational hydrologic forecasting: progresses, challenges, and emerging opportunities",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "analysis ensemble mean (posterior state)",
+        "observation-space innovations and QC (obs_seq.final)"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-635-2017",
+      "title": "Evaluation of snow data assimilation using the ensemble Kalman filter for seasonal streamflow prediction in the western United States",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "analysis ensemble mean (posterior state)",
+        "analysis ensemble spread (posterior sd)",
+        "binned observation-space diagnostics (bias, rmse, totalspread)"
+      ]
+    },
+    {
+      "doi": "10.5194/acp-7-5695-2007",
+      "title": "Evaluating model performance of an ensemble-based chemical data assimilation system during INTEX-B field mission",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "observation-space innovations and QC (obs_seq.final)",
+        "analysis ensemble mean (posterior state)",
+        "binned observation-space diagnostics (bias, rmse, totalspread)"
+      ]
+    },
+    {
+      "doi": "10.5194/acp-16-3927-2016",
+      "title": "Development of the Ensemble Navy Aerosol Analysis Prediction System (ENAAPS) and its application of the Data Assimilation Research Testbed (DART) in support of aerosol forecasting",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "analysis ensemble mean (posterior state)",
+        "analysis ensemble spread (posterior sd)",
+        "observation-space innovations and QC (obs_seq.final)"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-3499-2012",
+      "title": "The impact of model and rainfall forcing errors on characterizing soil moisture uncertainty in land surface modeling (EnKF)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "analysis ensemble spread (posterior sd)",
+        "analysis ensemble mean (posterior state)"
+      ]
+    },
+    {
+      "doi": "10.5194/npg-21-971-2014",
+      "title": "Representing model error in ensemble data assimilation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "analysis ensemble spread (posterior sd)",
+        "binned observation-space diagnostics (bias, rmse, totalspread)"
+      ]
+    },
+    {
+      "doi": "10.1175/2009bams2618.1",
+      "title": "The Data Assimilation Research Testbed: A Community Facility",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "analysis ensemble mean (posterior state)",
+        "observation-space innovations and QC (obs_seq.final)",
+        "binned observation-space diagnostics (bias, rmse, totalspread)"
+      ]
+    },
+    {
+      "doi": "10.1175/jtech2049.1",
+      "title": "Scalable Implementations of Ensemble Filter Algorithms for Data Assimilation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "analysis ensemble mean (posterior state)",
+        "analysis ensemble spread (posterior sd)"
+      ]
+    },
+    {
+      "doi": "10.1175/jcli-d-11-00395.1",
+      "title": "DART/CAM: An Ensemble Data Assimilation System for CESM Atmospheric Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "analysis ensemble mean (posterior state)",
+        "binned observation-space diagnostics (bias, rmse, totalspread)"
+      ]
+    },
+    {
+      "doi": "10.1029/2019ms001634",
+      "title": "Assimilation of Remotely Sensed Leaf Area Index Into the Community Land Model With DART",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "analysis ensemble mean (posterior state)",
+        "analysis ensemble spread (posterior sd)"
+      ]
+    },
+    {
+      "doi": "10.1002/qj.3308",
+      "title": "A global coupled ensemble data assimilation system using the Community Earth System Model and the Data Assimilation Research Testbed",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "analysis ensemble mean (posterior state)",
+        "observation-space innovations and QC (obs_seq.final)"
+      ]
+    },
+    {
+      "doi": "10.1175/1520-0493(2001)129<0550:iorhfv>2.0.co;2",
+      "title": "Interpretation of Rank Histograms for Verifying Ensemble Forecasts",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "analysis ensemble spread (posterior sd)",
+        "binned observation-space diagnostics (bias, rmse, totalspread)"
+      ]
+    },
+    {
+      "doi": "10.1175/mwr-d-12-00111.1",
+      "title": "Why Should Ensemble Spread Match the RMSE of the Ensemble Mean? (Assessing the Ensemble Spread-Error Relationship)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "analysis ensemble spread (posterior sd)"
+      ]
+    },
+    {
+      "doi": "10.1175/mwr3262.1",
+      "title": "Measuring the Ensemble Spread-Error Relationship with a Probabilistic Approach: Stochastic Ensemble Results",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "analysis ensemble spread (posterior sd)"
+      ]
+    },
+    {
+      "doi": "10.1002/qj.2661",
+      "title": "Theoretical insight into diagnosing observation error correlations using observation-minus-background and observation-minus-analysis statistics",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "observation-space innovations and QC (obs_seq.final)",
+        "binned observation-space diagnostics (bias, rmse, totalspread)"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-15-1277-2021",
+      "title": "Estimating parameters in a sea ice model using an ensemble Kalman filter",
+      "access": "open",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.1016/j.envsoft.2021.105074",
+      "title": "DART-PFLOTRAN: An ensemble-based data assimilation system for estimating subsurface parameters",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

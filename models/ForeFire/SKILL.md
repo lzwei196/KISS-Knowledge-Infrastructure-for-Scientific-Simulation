@@ -1,3 +1,14 @@
+---
+name: forefire
+description: >-
+  ForeFire wildland-fire front-tracking engine with Rothermel (1972) and Balbi physical
+  rate-of-spread models (Filippi/Balbi, Univ. de Corse / CNRS). Covers Wildland fire front
+  propagation / fire spread over complex terrain; Rate-of-spread modeling (Rothermel,
+  Balbi, RothermelAndrews2018, Farsite, Isotropic); Fire perimeter geometry and per-cell
+  arrival-time (burning) map computation. Use when the task involves running, configuring,
+  calibrating or interpreting ForeFire.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

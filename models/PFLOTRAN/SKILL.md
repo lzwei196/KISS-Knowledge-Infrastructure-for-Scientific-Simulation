@@ -1,3 +1,14 @@
+---
+name: pflotran
+description: >-
+  PFLOTRAN v6.0 (RICHARDS variably-saturated flow + multicomponent reactive transport; van
+  Genuchten/Mualem characteristic curves). Covers Variably saturated single-phase
+  isothermal subsurface flow (RICHARDS mode); Single-phase non-isothermal coupled flow +
+  heat (TH mode); Two-phase liquid-gas multiphase multicomponent flow incl. supercritical
+  CO2 (GENERAL mode). Use when the task involves running, configuring, calibrating or
+  interpreting PFLOTRAN.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

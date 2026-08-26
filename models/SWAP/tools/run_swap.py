@@ -23,7 +23,7 @@ from pathlib import Path
 
 # The SWAP executable this KI is validated against: the Meson build of the
 # pinned v4.2.0 source tree. Recorded so a run's evidence is attributable.
-PINNED_SWAP_BINARY = ("/home/server/knowledge-dissection-toolkit/auto_dissect/"
+PINNED_SWAP_BINARY = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/"
                       "_work/SWAP/source/repo/builddir/swap")
 PINNED_SWAP_SHA256 = \
     "a696efc5344daa53b3ddeebd3664656d0822959a5b2f4f863efc710469f1cf97"

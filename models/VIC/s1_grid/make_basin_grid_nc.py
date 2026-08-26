@@ -16,11 +16,11 @@ import os as _os
 # now honours VIC_BASIN_NAME / VIC_BASIN_SHP / VIC_OUT_ROOT, falling back to
 # the previous hard-coded defaults when unset.
 _BASIN = _os.environ.get("VIC_BASIN_NAME", "xixian_rerun_71379b42")
-_OUT_ROOT = Path(_os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
+_OUT_ROOT = Path(_os.environ.get("VIC_OUT_ROOT", "KISSPATH_OUTPUTS"))
 
 BASIN_SHP = Path(_os.environ.get(
     "VIC_BASIN_SHP",
-    r"/mnt/disk1/Hydrocraft_server/data/shp/xixian_025deg_shp/xixian_boundary_shp/xixian_boundary.shp"))
+    r"KISSPATH_DATA/shp/xixian_025deg_shp/xixian_boundary_shp/xixian_boundary.shp"))
 OUT_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025deg.nc"
 
 RES = 0.25  # 目标分辨率（度）

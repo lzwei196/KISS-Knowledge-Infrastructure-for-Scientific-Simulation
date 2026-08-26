@@ -35,5 +35,5 @@
 
 - **Build system**: wmake (custom Make-based system), Allwmake master script
 - **Prerequisites**: GCC >= 7, OpenMPI/MPICH, Scotch/METIS, flex
-- **KDT build location**: `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenFOAM/source/repo/`
+- **KDT build location**: `KISSPATH_BINARIES/OpenFOAM/source/repo/`
 - **Platform**: linux64GccDPInt32Opt (64-bit, GCC, double precision, 32-bit int labels)

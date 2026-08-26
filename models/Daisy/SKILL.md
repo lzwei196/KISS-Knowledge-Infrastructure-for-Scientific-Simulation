@@ -1,3 +1,13 @@
+---
+name: daisy
+description: >-
+  Daisy 7.1.x — open Soil-Plant-Atmosphere system model. Covers Soil water transport
+  (Richards equation in 1-D; matrix, secondary and tertiary/macropore…; Surface water
+  balance (snow accumulation/melt, interception, through-fall, infiltration, surface…;
+  Soil heat transport (conduction/convection, freeze/thaw with apparent heat capacity).
+  Use when the task involves running, configuring, calibrating or interpreting Daisy.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

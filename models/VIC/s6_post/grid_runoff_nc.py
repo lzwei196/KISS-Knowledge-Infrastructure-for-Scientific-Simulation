@@ -29,7 +29,7 @@ ROUTE").
 Configuration is by environment variable, matching every other stage:
 
     VIC_BASIN_NAME     basin tag (drives outputs/<name>/...)
-    VIC_OUT_ROOT       default /mnt/disk1/Hydrocraft_server/outputs
+    VIC_OUT_ROOT       default KISSPATH_OUTPUTS
     VIC_RESULT_DIR     default <out_root>/<basin>/vic_result
     VIC_POST_OUT_DIR   default <out_root>/<basin>/cama_input
     VIC_POST_NC        default <post_out_dir>/<basin>_runoff_1d.nc
@@ -67,7 +67,7 @@ def _env_paths():
     if not basin:
         raise SystemExit("VIC_BASIN_NAME is not set (see SKILL.md env-var table)")
     out_root = Path(os.environ.get(
-        "VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
+        "VIC_OUT_ROOT", "KISSPATH_OUTPUTS"))
     result_dir = Path(os.environ.get(
         "VIC_RESULT_DIR", out_root / basin / "vic_result"))
     post_dir = Path(os.environ.get(

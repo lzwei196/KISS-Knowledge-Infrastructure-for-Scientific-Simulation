@@ -22,11 +22,11 @@ from _common import write_text_crlf, add_kdt_common_to_path
 # 3-HOURLY one — the daily CMFD product carries only a daily MEAN temperature
 # and load_forcing then returns temp_max_c == temp_min_c == temp_mean_c. See
 # triplet EPIC_023. The hc_ssd copy is the fast one but that disk auto-mounts
-# under /media/server and can be absent after a reboot, so fall back to the
+# under KISSPATH_DATA and can be absent after a reboot, so fall back to the
 # disk1 original rather than dying (or, worse, silently taking a daily store).
 _CMFD_DIR_CANDIDATES = [
-    "/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg",
-    "/mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg",
+    "KISSPATH_FORCING/Data_forcing_03hr_010deg",
+    "KISSPATH_DATA/forcing/Data_forcing_03hr_010deg",
 ]
 CMFD_DEFAULT_DIR = next((p for p in _CMFD_DIR_CANDIDATES if os.path.isdir(p)),
                         _CMFD_DIR_CANDIDATES[0])

@@ -5,7 +5,7 @@
 #   gauge / obs  HYDAT 08MF035 "FRASER RIVER NEAR AGASSIZ" — daily mean water level
 #                (DLY_LEVELS, metres in HYDAT DATUM_ID 35 "GEODETIC SURVEY OF CANADA
 #                DATUM"), read READ-ONLY from
-#                /mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3
+#                KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3
 #   quantity     water surface elevation at the SFINCS his observation point
 #   metric       PBIAS (magnitude_accuracy)
 #   provenance   SFINCS_20260805T020658Z_648666
@@ -109,7 +109,7 @@ identity:
     over the holdout window; inflow at Hope 1080-10 400 m3/s.
   obs_source: "HYDAT (Water Survey of Canada national hydrometric database)"
   obs_id: "HYDAT:08MF035 (FRASER RIVER NEAR AGASSIZ), DLY_LEVELS, metres"
-  obs_file: "/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3"
+  obs_file: "KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3"
   baseline_run: >
     SFINCS_20260805T020658Z_648666 — the validated coupling. Determining metric
     pbias = -0.6652085034672962 on the held-out 2022 window (nse 0.9744295,
@@ -173,7 +173,7 @@ obs_contract:
     datum_id: 35
     datum_name: "GEODETIC SURVEY OF CANADA DATUM"
   source:
-    database: "/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3"
+    database: "KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3"
     version: "Hydat_sqlite3_20260116"
     table: "DLY_LEVELS"                   # wide MONTH-per-row, LEVEL1..LEVEL31
     open_mode: "sqlite3 file:...?mode=ro&immutable=1 (read-only; WAL-safe on read-only media)"
@@ -616,14 +616,14 @@ constraints: []
 # ---------------------------------------------------------------------------
 runner:
   kind: subprocess
-  command: ["/mnt/disk1/Hydrocraft_server/python_env/bin/python", "tools/calib_run.py",
+  command: ["KISSPATH_PYTHON_ENV/bin/python", "tools/calib_run.py",
             "--workdir", "{workdir}", "--out", "{metrics_json}"]
   metrics_file: "{metrics_json}"
   timeout: 7200                     # soft hint only; measured 11-25 min per eval
   prepare_once: >
     The domain (grid_info.json, sfincs.dep/.msk/.ind/.man) and the per-year forcing
     (sfincs.precip/.src/.dis/.obs) live under
-    /mnt/disk1/Hydrocraft_server/outputs/sfincs_fraser_agassiz and are built ONCE — by
+    KISSPATH_OUTPUTS/sfincs_fraser_agassiz and are built ONCE — by
     the validated run, or by calib_run.py ensure_base() re-running the KI's s1_domain /
     s2_topobathy / s3_roughness / s4_forcing tools under a lock if that tree is absent.
     No eval downloads anything, re-reads the DEM/LULC/MSWX rasters, or re-queries HYDAT
@@ -734,13 +734,13 @@ citation_index:
 # COMMISSIONING RECORD — live, 2026-08-09, this KI, the canonical python_env interpreter,
 # the real SFINCS v2.3.2 binary, one simulated year per eval. Filled in from the runs
 # themselves; see the metrics JSON under
-# /mnt/disk1/Hydrocraft_server/outputs/_sfincs_calib_commission/<case>/calib_metrics.json.
+# KISSPATH_OUTPUTS/_sfincs_calib_commission/<case>/calib_metrics.json.
 # ---------------------------------------------------------------------------
 commissioning:
   date: "2026-08-09"
-  interpreter: "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
-  binary: "/mnt/disk1/Hydrocraft_server/model/sfincs/bin/sfincs (v2.3.2 mt. Faber+)"
-  artifacts: "/mnt/disk1/Hydrocraft_server/outputs/_sfincs_calib_commission/<case>/calib_metrics.json"
+  interpreter: "KISSPATH_PYTHON_ENV/bin/python"
+  binary: "KISSPATH_BINARIES/sfincs/bin/sfincs (v2.3.2 mt. Faber+)"
+  artifacts: "KISSPATH_OUTPUTS/_sfincs_calib_commission/<case>/calib_metrics.json"
   n_real_model_runs: 15
   wall_clock_per_eval_s: "2144-2633 with all 15 evals running concurrently (8 OpenMP
     threads each) on a host already at load ~250/192 cores; 655 s for a solo eval"

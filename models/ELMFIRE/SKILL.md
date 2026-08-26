@@ -1,3 +1,13 @@
+---
+name: elmfire
+description: >-
+  ELMFIRE 2025.1002. Covers Surface and crown wildland fire spread across a landscape
+  raster; Fire arrival time, rate of spread, fireline intensity, flame length; Crown fire
+  initiation and class (passive/active); Ensemble burn probability via Monte Carlo over
+  perturbed weather/ignitions; Optional ember transport / spot-fire ignition. Use when the
+  task involves running, configuring, calibrating or interpreting ELMFIRE.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

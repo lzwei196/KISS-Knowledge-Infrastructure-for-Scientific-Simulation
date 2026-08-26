@@ -36,7 +36,7 @@ import sys
 import numpy as np
 
 # Ensure ki_tools_common is importable
-_ki_common = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
+_ki_common = "KISSPATH_KI_TOOLS_COMMON"
 if _ki_common not in sys.path:
     sys.path.insert(0, _ki_common)
 

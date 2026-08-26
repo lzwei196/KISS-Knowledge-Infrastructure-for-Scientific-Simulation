@@ -128,13 +128,13 @@ LANDCOVER_SCHEMES = {
     # native CRHM / AVHRR-UMD table above (legacy default)
     "crhm": CRHM_LANDCOVER_CLASSES,
     "avhrr_umd": CRHM_LANDCOVER_CLASSES,
-    # CLCD v01 China 30 m annual (Yang & Huang) -- /mnt/datasets/vegetation/CLCD_raw
+    # CLCD v01 China 30 m annual (Yang & Huang) -- KISSPATH_DATA/vegetation/CLCD_raw
     "clcd": {
         1: _CROP, 2: _MIXED_F, 3: _SHRUB, 4: _OPEN_STEPPE, 5: _WATER,
         6: _SNOWICE, 7: _BARE, 8: _URBAN, 9: _WETLAND,
     },
     # GLCFCS30 30 m global fine classification (RADI/CAS), and ESA-CCI-LC, which
-    # share the LCCS code space -- /mnt/datasets/vegetation/{GLCFCS30,ESA_CCI_LC*}
+    # share the LCCS code space -- KISSPATH_DATA/vegetation/{GLCFCS30,ESA_CCI_LC*}
     "glcfcs30": {
         10: _CROP, 11: _CROP, 12: _CROP, 20: _CROP,
         51: _DECID, 52: _DECID, 61: _DECID, 62: _DECID,

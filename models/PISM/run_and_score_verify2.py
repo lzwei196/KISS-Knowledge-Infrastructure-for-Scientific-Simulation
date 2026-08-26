@@ -14,11 +14,11 @@ so run_pism.py's shutil.which("mpiexec") resolves the *matching* conda mpiexec
 """
 import os, sys, json, subprocess, traceback
 
-BASE      = "/mnt/disk1/Hydrocraft_server/models/PISM"
+BASE      = "KISSPATH_KI_ROOT/PISM"
 KI        = f"{BASE}/knowledge_infrastructure"
 TOOLS     = f"{KI}/tools"
 STATE     = f"{BASE}/detached/verify_2"
-OBS       = "/mnt/disk1/Hydrocraft_server/data/obs/ice_sheets/bedmachine/BedMachineGreenland-v6.nc"
+OBS       = "KISSPATH_OBS/ice_sheets/bedmachine/BedMachineGreenland-v6.nc"
 PISM_BIN  = f"{BASE}/build/pism"
 PROJ      = "+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
 
@@ -30,11 +30,11 @@ COARSEN   = 50          # 150 m * 50 = 7.5 km whole-Greenland grid
 GRID_DX   = 7.5
 
 os.makedirs(STATE, exist_ok=True)
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 
 # conda MPI must be found first so it matches the /mnt binary's linkage
 env = dict(os.environ)
-env["PATH"] = "/home/server/miniconda3/bin:" + env.get("PATH", "")
+env["PATH"] = "KISSPATH_HOME/miniconda3/bin:" + env.get("PATH", "")
 PY = "/usr/bin/python3"
 
 

@@ -3,8 +3,8 @@
 
 import netCDF4
 
-src = netCDF4.Dataset("/mnt/disk3/msxw/LWd/LWd_1979.nc", "r")
-dst = netCDF4.Dataset("/mnt/disk3/msxw/LWd/LWd_1979_fixed.nc", "w")
+src = netCDF4.Dataset("KISSPATH_FORCING/LWd/LWd_1979.nc", "r")
+dst = netCDF4.Dataset("KISSPATH_FORCING/LWd/LWd_1979_fixed.nc", "w")
 
 # Copy dimensions
 for d in src.dimensions:
@@ -41,4 +41,4 @@ dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
 dst.close()
 src.close()
 print("Done. Now run:")
-print("  sudo mv /mnt/disk3/msxw/LWd/LWd_1979_fixed.nc /mnt/disk3/msxw/LWd/LWd_1979.nc")
+print("  sudo mv KISSPATH_FORCING/LWd/LWd_1979_fixed.nc KISSPATH_FORCING/LWd/LWd_1979.nc")

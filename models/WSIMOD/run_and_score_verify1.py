@@ -12,11 +12,11 @@ if result.json already exists the script exits immediately.
 """
 import os, sys, math, json, subprocess, csv
 
-ROOT = "/mnt/disk1/Hydrocraft_server"
+ROOT = "KISSPATH_ROOT"
 KI = f"{ROOT}/models/WSIMOD/knowledge_infrastructure"
 TOOLS = f"{KI}/tools"
 KTC = f"{ROOT}/models/ki_tools_common"
-WSI_REPO = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/WSIMOD/source/repo"
+WSI_REPO = "KISSPATH_BINARIES/WSIMOD/source/repo"
 for p in (KTC, WSI_REPO):
     if p not in sys.path:
         sys.path.insert(0, p)

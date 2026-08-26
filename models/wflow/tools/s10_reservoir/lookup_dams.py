@@ -34,8 +34,8 @@ import sys
 import os
 
 # GRanD Data KI path
-GRAND_SEARCH = "/mnt/disk1/Hydrocraft_server/data_ki/GRanD/tools/search_dams.py"
-GRAND_CSV = "/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/map/data/GRanD_allocated.csv"
+GRAND_SEARCH = "KISSPATH_DATA_KI/GRanD/tools/search_dams.py"
+GRAND_CSV = "KISSPATH_BINARIES/cmf_v420_pkg/map/data/GRanD_allocated.csv"
 
 
 def load_grand_csv():

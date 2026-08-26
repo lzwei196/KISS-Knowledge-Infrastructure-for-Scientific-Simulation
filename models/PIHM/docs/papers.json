@@ -1,0 +1,204 @@
+{
+  "model": "PIHM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 12,
+  "papers": [
+    {
+      "doi": "10.5194/hess-21-4053-2017",
+      "title": "Simulating the influence of snow surface processes on soil moisture dynamics and streamflow generation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "soil_moisture",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-2743-2020",
+      "title": "Simulator for Hydrologic Unstructured Domains (SHUD v1.0): numerical modeling of watershed hydrology with the finite volume method",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-018-24122-7",
+      "title": "Using nested discretization for a detailed yet computationally efficient simulation of local hydrology in a distributed hydrologic model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-4341-2016",
+      "title": "Multivariate hydrological data assimilation of soil moisture and groundwater head",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2021.721009",
+      "title": "Integrated Hydrologic Modelling of Groundwater-Surface Water Interactions",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-3759-2013",
+      "title": "Integrated hydrological modeling of the North China Plain and implications for sustainable water management",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-10-4539-2017",
+      "title": "Coupling a three-dimensional subsurface flow and transport model with a land surface model (PIHM-based, latent heat / ET / soil moisture)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-945-2020",
+      "title": "Temperature controls production but hydrology regulates export of dissolved organic carbon (Flux-PIHM application)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-3371-2012",
+      "title": "Critical review of SWAT applications in the upper Nile basin countries (reproduces Moriasi NSE/PBIAS/RSR performance tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-9-549-2005",
+      "title": "Multi-objective calibration of a surface water-groundwater flow model in an irrigated agricultural region (groundwater head RMSE targets)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-923-2015",
+      "title": "A high-resolution simulation of groundwater and surface water over most of the continental US",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-15-315-2022",
+      "title": "BioRT-Flux-PIHM v1.0: a biogeochemical reactive transport model at the watershed scale",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2006wr005752",
+      "title": "A semidiscrete finite volume formulation for multiprocess watershed simulation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-12-0145.1",
+      "title": "Development of a Coupled Land Surface Hydrologic Model and Evaluation at a Critical Zone Observatory",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-12-0177.1",
+      "title": "Evaluation of the Parameter Sensitivities of a Coupled Land Surface Hydrologic Model at a Critical Zone Observatory",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.cageo.2015.05.006",
+      "title": "Hydrological model uncertainty due to spatial evapotranspiration estimation methods",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr014070",
+      "title": "Parameter estimation of a physically based land surface hydrologic model using the ensemble Kalman filter",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2014wr016371",
+      "title": "Spin-up behavior and effects of initial conditions for an integrated hydrologic model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    }
+  ]
+}

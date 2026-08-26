@@ -29,7 +29,7 @@ import logging
 import numpy as np
 from pathlib import Path
 
-SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"
+SIM_PATH = "KISSPATH_OUTPUTS/qinghai_lake_1951_2024/modflow6/workspace"
 MODEL_NAME = "gwf"
 RECHARGE_RATE = 0.000164     # m/day (= 1 mm/day). Typical: 0.0001 to 0.01
 VIC_RECHARGE_NC = ""      # Optional: NetCDF with VIC deep percolation

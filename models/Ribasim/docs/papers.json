@@ -1,0 +1,147 @@
+{
+  "model": "Ribasim",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 14,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.1007/s13201-019-1013-x",
+      "title": "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-4603-2012",
+      "title": "Future changes in Mekong River hydrology: impact of climate change and reservoir operation on discharge",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage",
+        "level"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-14-1037-2021",
+      "title": "The global water resources and use model WaterGAP v2.2d: model description and evaluation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage",
+        "allocation"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-14-2343-2010",
+      "title": "Modeling for transboundary water resources planning and allocation: the case of Southern Africa",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "allocation",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-789-2018",
+      "title": "A global hydrological simulation to specify the sources of water used by humans",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "allocation"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0192294",
+      "title": "A linear bi-level multi-objective program for optimal allocation of water resources",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "allocation"
+      ]
+    },
+    {
+      "doi": "10.3389/frwa.2024.1386303",
+      "title": "Strategic water resource management: pump stations in Fayoum City, Egypt",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "allocation",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2017.189",
+      "title": "Evaluation of the SWAT model performance for simulating river discharge in the Himalayan and lower plain basins",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.012",
+      "title": "Comparison of generic simulation models for water resource systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "allocation",
+        "discharge",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2021.107377",
+      "title": "Assessment of water demand reliability using SWAT and RIBASIM models with respect to climate change and operational water projects",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "allocation",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.wsj.2013.12.008",
+      "title": "Evaluation of actions for better water supply and demand management in Fayoum, Egypt using RIBASIM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "allocation",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology9100164",
+      "title": "Assessing Climate Change Impact on Water Resources in Water Demand Scenarios",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "allocation",
+        "discharge"
+      ]
+    }
+  ]
+}

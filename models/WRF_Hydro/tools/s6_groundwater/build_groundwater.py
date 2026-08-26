@@ -40,7 +40,7 @@ from rasterio.features import rasterize
 from rasterio.transform import from_origin
 
 
-DEFAULT_HYDRO_TBL = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/wrf_hydro/source/trunk/NDHMS/Run/HYDRO.TBL"))
+DEFAULT_HYDRO_TBL = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/wrf_hydro/source/trunk/NDHMS/Run/HYDRO.TBL"))
 
 
 def parse_hydro_tbl(tbl_path):

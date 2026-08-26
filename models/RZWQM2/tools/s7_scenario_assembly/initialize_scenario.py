@@ -35,10 +35,10 @@ from datetime import datetime
 # ---------------------------------------------------------------------------
 # INPUTS
 # ---------------------------------------------------------------------------
-# Canonical template: /home/server/RZWQM2/RZWQM2/template_bengbu/
+# Canonical template: KISSPATH_HOME/RZWQM2/RZWQM2/template_bengbu/
 # This is a clean Bengbu wheat project with all required files, DSSAT databases,
 # and pre-patched Linux binary. ALL new projects should start by copying this.
-PROJECT_PATH = "/home/server/RZWQM2/RZWQM2/template_bengbu/"  # Template project root
+PROJECT_PATH = "KISSPATH_HOME/RZWQM2/RZWQM2/template_bengbu/"  # Template project root
 TEMPLATE_NAME = "bengbu_wheat"  # Scenario dir inside PROJECT_PATH to copy from
 NEW_NAME = ""           # New scenario name (REQUIRED)
 START_DATE = ""         # Simulation start date, YYYY-MM-DD (REQUIRED)

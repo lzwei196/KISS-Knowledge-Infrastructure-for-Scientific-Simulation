@@ -1,3 +1,14 @@
+---
+name: shaw
+description: >-
+  SHAW v3.03. Covers 1-D vertical coupled heat, water, and solute transfer through a
+  single plant canopy - snow -…; Soil freezing/thawing: ice content, frost/thaw depth,
+  freeze-thaw cycles with latent-heat coupling; Multi-layer snowpack: density/grain
+  metamorphism, albedo decay, liquid retention and snowmelt; Explicit crop-residue
+  heat/water/vapor transfer. Use when the task involves running, configuring, calibrating
+  or interpreting SHAW.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -75,11 +86,11 @@ The standalone version has **more physics options** and is required for detailed
 - **OS**: Linux, macOS, Windows (with MinGW or Cygwin)
 
 ### Compilation
-The binary is ALREADY COMPILED at `/mnt/disk1/Hydrocraft_server/model/shaw/shaw303`
+The binary is ALREADY COMPILED at `KISSPATH_BINARIES/shaw/shaw303`
 (a symlink to `model/shaw/Shaw303/shaw303`). To rebuild, use the shipped script
 (handles gfortran 10+ legacy flags) — do NOT invent a `Code/` path, there is none:
 ```bash
-cd /mnt/disk1/Hydrocraft_server/model/shaw
+cd KISSPATH_BINARIES/shaw
 bash compile.sh    # gfortran -O2 -w -std=legacy -fallow-argument-mismatch
                    #   -o Shaw303/shaw303 Shaw303/Code+Debug/Shaw303.for
                    # + symlink model/shaw/shaw303
@@ -88,13 +99,13 @@ bash compile.sh    # gfortran -O2 -w -std=legacy -fallow-argument-mismatch
 ### Running
 ```bash
 cd /path/to/input/files
-/mnt/disk1/Hydrocraft_server/model/shaw/shaw303
+KISSPATH_BINARIES/shaw/shaw303
 # When prompted, enter: Trial.303.inp
 ```
 SHAW reads from stdin — it prompts for the .inp file path AND a final
 "Press Enter to end". For automation, pipe BOTH (triplet shaw_024):
 ```bash
-printf "Trial.303.inp\n\n" | /mnt/disk1/Hydrocraft_server/model/shaw/shaw303
+printf "Trial.303.inp\n\n" | KISSPATH_BINARIES/shaw/shaw303
 ```
 NOTE: SHAW normally exits with a benign Fortran EOF backtrace (non-zero return
 code) when it reaches the end of the weather file, yet writes COMPLETE output.
@@ -305,7 +316,7 @@ The coupling approach:
 - Operated by Environment and Climate Change Canada (ECCC)
 - Site: Old Jack Pine (OJP), ~53.916°N, 104.692°W, 580m elevation
 - Part of FLUXNET / AmeriFlux network
-- Local path: `/mnt/disk4/observedST-SM/soil_temperatureand_soil_moisture_canada/sas_forest/`
+- Local path: `KISSPATH_DATA/observedST-SM/soil_temperatureand_soil_moisture_canada/sas_forest/`
 - Reference: Barr et al. (2012) JGR-Biogeosciences; Zha et al. (2010) Global Change Biology
 
 **Data used**:
@@ -346,7 +357,7 @@ All at `outputs/shaw_jackpine/`: 6 validation plots + SHAW input/output files
 **Data source**: Manitoba Agriculture Weather Program (MAWP)
 - Station 544, Alexander, Manitoba (49.81°N, 100.37°W, 460m elevation)
 - Prairie grassland (no canopy, MCANFLG=0)
-- Local path: `/mnt/disk4/observedST-SM/soil_temperatureand_soil_moisture_canada/manitoba/`
+- Local path: `KISSPATH_DATA/observedST-SM/soil_temperatureand_soil_moisture_canada/manitoba/`
 - Soil temperature at 4 depths: 5, 20, 50, 100 cm
 
 **Simulation**: Nov 2019 – Oct 2020, **daily weather input (MTSTEP=1)**, 364 days

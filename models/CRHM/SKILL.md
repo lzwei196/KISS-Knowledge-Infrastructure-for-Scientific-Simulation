@@ -1,3 +1,14 @@
+---
+name: crhm
+description: >-
+  Cold Regions Hydrological Modelling platform — Pomeroy et al. Covers Snow accumulation,
+  blowing-snow redistribution and sublimation in HRUs; Canopy interception and sublimation
+  of rain and snow; Energy-balance and temperature-index snowmelt with slope/aspect
+  radiation correction; Frozen and unfrozen soil infiltration; Two-layer soil water
+  balance with depression storage and groundwater store. Use when the task involves
+  running, configuring, calibrating or interpreting CRHM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -61,12 +72,12 @@ Modules form a **chain**: output of one feeds input to the next via `declvar()`/
 CRHM is built from C++ source with CMake and GCC:
 
 ```bash
-bash /mnt/disk1/Hydrocraft_server/models/CRHM/knowledge_infrastructure/install_crhm.sh
+bash KISSPATH_KI_ROOT/CRHM/knowledge_infrastructure/install_crhm.sh
 ```
 
 **Requirements**: cmake, g++ (C++14), git, Boost 1.75.0 (auto-downloaded by install script).
 
-**Executable**: `/mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm`
+**Executable**: `KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm`
 
 **CLI**:
 ```bash

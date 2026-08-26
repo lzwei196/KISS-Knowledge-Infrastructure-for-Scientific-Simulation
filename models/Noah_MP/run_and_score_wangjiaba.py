@@ -24,21 +24,20 @@ import netCDF4 as nc
 from datetime import datetime, timedelta
 
 # ----------------------------------------------------------------------------- paths
-ROOT   = "/mnt/disk1/Hydrocraft_server/models/Noah_MP"
+ROOT   = "KISSPATH_KI_ROOT/Noah_MP"
 KI     = f"{ROOT}/knowledge_infrastructure"
 TOOLS  = f"{KI}/tools"
-BIN    = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
-SRCDIR = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Noah_MP/source/repo"
+BIN    = "KISSPATH_BINARIES/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
+SRCDIR = "KISSPATH_BINARIES/Noah_MP/source/repo"
 PARAMD = f"{SRCDIR}/parameters"
-CMFD   = "/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg"
-HYBAS  = "/mnt/disk1/Hydrocraft_server/data/awd_paper/hydrobasins/asia/hybas_as_lev07_v1c.shp"
-ESA    = "/mnt/datasets/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_1992_01deg.tif"
-MERIT  = "/mnt/datasets/MERIT_DEM"
-OBS    = "/mnt/disk1/Hydrocraft_server/data/obs/WJB/HUAIH-51030-wangjiaba.txt"
+CMFD   = "KISSPATH_FORCING/Data_forcing_01dy_010deg"
+HYBAS  = "KISSPATH_DATA/awd_paper/hydrobasins/asia/hybas_as_lev07_v1c.shp"
+ESA    = "KISSPATH_DATA/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_1992_01deg.tif"
+MERIT  = "KISSPATH_DATA/MERIT_DEM"
+OBS    = "KISSPATH_OBS/WJB/HUAIH-51030-wangjiaba.txt"
 WORK   = f"{ROOT}/detached/verify_2"
 CELLS  = f"{WORK}/cells"
 RESULT = f"{WORK}/result.json"
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
 
 # ----------------------------------------------------------------------------- config
 POUR_LAT, POUR_LON = 32.43, 115.61   # Wangjiaba gauge (Huai River main stem)

@@ -39,16 +39,16 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-ROOT = "/mnt/disk1/Hydrocraft_server/models/CWatM"
+ROOT = "KISSPATH_KI_ROOT/CWatM"
 KI = f"{ROOT}/knowledge_infrastructure"
 TOOLS = f"{KI}/tools"
 CASE = f"{ROOT}/cwatm_huangheyan"
 CWATM_DIR = f"{ROOT}/source/repo"
-PY = "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+PY = "KISSPATH_PYTHON_ENV/bin/python"
 STATE = f"{ROOT}/detached/verify_1"
 SETTINGS_BASE = f"{CASE}/settings_huangheyan.ini"
 
-OBS = ("/mnt/disk1/Hydrocraft_server/data/china_data/"
+OBS = ("KISSPATH_DATA/china_data/"
        "GRDC_asia_discharge_daily_20260511/2180712_Q_Day.Cmd.txt")
 LOCATION = "Huangheyan 黄河沿, Yellow River source (Madoi), Tibetan Plateau — GRDC 2180712"
 OBS_SOURCE = ("GRDC Asia-Region Daily Discharge Export (250 stations, 2026-05-11 download); "
@@ -63,8 +63,8 @@ SPINUP_START, RUN_START, RUN_END = "1975-01-01", "1978-01-01", "1997-12-31"
 CAL = ("1978-01-01", "1987-12-31")
 VAL = ("1988-01-01", "1997-12-31")
 
-MERIT_DIR = "/mnt/disk1/Hydrocraft_server/data/merit_hydro"
-ESA_LC = "/mnt/datasets/vegetation/ESA_CCI_LC/ESA_CCI_LC_cold_china_1992_01deg.tif"
+MERIT_DIR = "KISSPATH_DATA/merit_hydro"
+ESA_LC = "KISSPATH_DATA/vegetation/ESA_CCI_LC/ESA_CCI_LC_cold_china_1992_01deg.tif"
 
 # GDAL in this env needs libstdc++ preloaded (TLS static block).
 ENV = dict(os.environ, LD_PRELOAD="/lib/x86_64-linux-gnu/libstdc++.so.6")
@@ -141,7 +141,7 @@ def stage_soil():
         TOOLS_USED.append("convert_soil_to_cwatm.py")
         return
     sh([PY, f"{TOOLS}/convert_soil_to_cwatm.py", "--source", "hwsd",
-        "--input_dir", "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_RASTER",
+        "--input_dir", "KISSPATH_STATIC/HWSD_RASTER",
         "--bbox", *BBOX, "--resolution", RES, "--output_dir", f"{CASE}/soil"],
        "convert_soil_to_cwatm.py")
 
@@ -192,12 +192,12 @@ def stage_forcing():
         TOOLS_USED.append("convert_forcing_to_cwatm.py")
         return
     sh([PY, f"{TOOLS}/convert_forcing_to_cwatm.py",
-        "--forcing_dir", "/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg",
+        "--forcing_dir", "KISSPATH_FORCING/Data_forcing_01dy_010deg",
         "--forcing_type", "cmfd", "--bbox", *BBOX,
         "--start_date", SPINUP_START, "--end_date", RUN_END,
         "--target_res", RES, "--resume",
         "--tminmax_3hr_dir",
-        "/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg/Temp",
+        "KISSPATH_FORCING/Data_forcing_03hr_010deg/Temp",
         "--output_dir", out], "convert_forcing_to_cwatm.py")
     missing = [v for v in FORCING_VARS if not os.path.exists(f"{out}/{v}.nc")]
     if missing:

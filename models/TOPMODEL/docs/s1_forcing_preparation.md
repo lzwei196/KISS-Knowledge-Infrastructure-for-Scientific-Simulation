@@ -80,7 +80,7 @@ This is the most error-prone stage due to critical unit conversions.
 
 ```bash
 python tools/convert_forcing_to_topmodel.py \
-  --forcing-dir /media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg/ \
+  --forcing-dir KISSPATH_FORCING/huai/Data_forcing_01dy_025deg/ \
   --start-date 1980-01-01 --end-date 1990-12-31 \
   --lat 33.0 --lon 117.0 --dt-hours 24 \
   --output data/inputs.dat

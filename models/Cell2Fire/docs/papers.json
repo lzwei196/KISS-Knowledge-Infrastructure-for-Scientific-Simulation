@@ -1,0 +1,174 @@
+{
+  "model": "Cell2Fire",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 16,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.1038/s41598-025-05706-6",
+      "title": "Fire spread simulations using Cell2Fire on synthetic and real landscapes",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "FinalGrid (burned/unburned)",
+        "fire propagation messages",
+        "rate of spread (ROS)",
+        "burn probability"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.1905.09317",
+      "title": "Cell2Fire: A Cell Based Forest Fire Growth Model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "FinalGrid (burned/unburned)",
+        "fire propagation messages",
+        "rate of spread (ROS)",
+        "fireline intensity",
+        "flame length",
+        "crown fire state / crown fraction burned"
+      ]
+    },
+    {
+      "doi": "10.3389/ffgc.2023.1071484",
+      "title": "A fire spread simulator to support tactical management decisions for Mediterranean landscapes",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "FinalGrid (burned/unburned)",
+        "rate of spread (ROS)",
+        "fire propagation messages"
+      ]
+    },
+    {
+      "doi": "10.1186/s42408-022-00147-2",
+      "title": "Modeling of fire spread in sagebrush steppe using FARSITE: an approach to improve input data and calibration",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "FinalGrid (burned/unburned)"
+      ]
+    },
+    {
+      "doi": "10.4996/fireecology.0401001",
+      "title": "Sensitivity Analysis of a Fire Spread Model in a Chaparral Landscape",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "FinalGrid (burned/unburned)"
+      ]
+    },
+    {
+      "doi": "10.1186/s42408-023-00239-7",
+      "title": "Cellular automata-based simulators for the design of prescribed fire plans: the case of Liguria, Italy",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "FinalGrid (burned/unburned)",
+        "fire propagation messages"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-15-3791-2023",
+      "title": "The Portuguese Large Wildfire Spread database (PT-FireSprd)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "rate of spread (ROS)",
+        "fire propagation messages",
+        "fireline intensity"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-025-07968-6",
+      "title": "Benchmarking performance of annual burn probability modeling against subsequent fire occurrence",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "burn probability"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2025.106436",
+      "title": "Evaluating Australian forest fire rate of spread models using VIIRS satellite observations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "rate of spread (ROS)",
+        "fire propagation messages"
+      ]
+    },
+    {
+      "doi": "10.1071/wf23196",
+      "title": "Evaluating a simulation-based wildfire burn probability map for the conterminous United States",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "burn probability"
+      ]
+    },
+    {
+      "doi": "10.3390/atmos11111264",
+      "title": "Performance Evaluation of an Operational Rapid Response Fire Spread Forecasting System",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "FinalGrid (burned/unburned)",
+        "fire propagation messages"
+      ]
+    },
+    {
+      "doi": "10.3390/fire3030026",
+      "title": "PROPAGATOR: An Operational Cellular-Automata Based Wildfire Simulator",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "FinalGrid (burned/unburned)",
+        "fire propagation messages"
+      ]
+    },
+    {
+      "doi": "10.3390/fire7040141",
+      "title": "Comparing Accuracy of Wildfire Spread Prediction Models under Different Data Deficiency Conditions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "FinalGrid (burned/unburned)",
+        "rate of spread (ROS)"
+      ]
+    },
+    {
+      "doi": "10.3389/ffgc.2021.692706",
+      "title": "Cell2Fire: A Cell-Based Forest Fire Growth Model to Support Strategic Landscape Management Planning",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "FinalGrid (burned/unburned)",
+        "fire propagation messages",
+        "rate of spread (ROS)",
+        "burn probability"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ecolmodel.2019.01.017",
+      "title": "Adjusting the rate of spread of fire simulations in real-time",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "rate of spread (ROS)",
+        "fire propagation messages"
+      ]
+    },
+    {
+      "doi": "10.3390/fire6090360",
+      "title": "It's about Time: A Method for Estimating Wildfire Arrival and Weather Conditions",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "fire propagation messages",
+        "rate of spread (ROS)"
+      ]
+    }
+  ]
+}

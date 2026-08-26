@@ -141,7 +141,7 @@ Convert CMFD data for Bengbu basin (China):
 ```bash
 python ki/tools/convert_forcing_to_clm.py \
     --source csv \
-    --input /mnt/disk1/Hydrocraft_server/data/bengbu_forcing.csv \
+    --input KISSPATH_DATA/bengbu_forcing.csv \
     --output /path/to/datm/ \
     --lat 32.95 --lon 117.35
 ```

@@ -41,7 +41,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-DEFAULT_SFINCS = "/mnt/disk1/Hydrocraft_server/model/sfincs/bin/sfincs"
+DEFAULT_SFINCS = "KISSPATH_BINARIES/sfincs/bin/sfincs"
 
 
 def validate_inputs(args):

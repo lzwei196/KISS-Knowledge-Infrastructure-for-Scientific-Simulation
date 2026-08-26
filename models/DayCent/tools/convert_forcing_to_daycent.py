@@ -39,7 +39,7 @@ Usage:
     # FLUXNET site CSV (preferred for FLUXNET validation tasks)
     python convert_forcing_to_daycent.py \
         --source fluxnet \
-        --fluxnet-csv /mnt/disk1/.../sites/DE-Tha/FULLSET_DD.csv \
+        --fluxnet-csv KISSPATH_ROOT/.../sites/DE-Tha/FULLSET_DD.csv \
         --year-start 1996 --year-end 2014 \
         --out de_tha.wth
 """
@@ -49,19 +49,19 @@ from datetime import date, timedelta
 from pathlib import Path
 
 # Shared loader — handles CMFD, MSWX, NASA-POWER under one interface.
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 try:
     from ki_tools_common.load_forcing import load_daily_forcing
     from ki_tools_common.validation import validate_forcing_ranges
 except ImportError as e:
     print(f"FATAL: could not import ki_tools_common: {e}", file=sys.stderr)
-    print("       fix: pip install -e /home/server/knowledge-dissection-toolkit/auto_dissect/ki_tools_common",
+    print("       fix: pip install -e KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/ki_tools_common",
           file=sys.stderr)
     sys.exit(2)
 
 
-CMFD_DEFAULT = "/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg"
-MSWX_DEFAULT = "/mnt/disk3/msxw"
+CMFD_DEFAULT = "KISSPATH_FORCING/Data_forcing_03hr_010deg"
+MSWX_DEFAULT = "KISSPATH_FORCING"
 
 
 def validate_inputs(args):

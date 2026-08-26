@@ -1,3 +1,13 @@
+---
+name: modflow6
+description: >-
+  MODFLOW 6 Groundwater Flow (GWF) Model — USGS TM 6-A55 (Langevin et al. 2017) on the TM
+  6-A57 framework (Hughes et al. 2017); GWT transport per TM…. Covers 3-D saturated
+  groundwater flow (hydraulic head) over confined and unconfined/water-table aquifers;
+  Newton-Raphson formulation for drying/rewetting of water-table cells. Use when the task
+  involves running, configuring, calibrating or interpreting MODFLOW6.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

@@ -24,7 +24,7 @@ header/TAV/AMP convention is identical to the single-point tool.
 
 Usage:
     python extract_cmfd_points.py \
-        --forcing_dir /mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg \
+        --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
         --points_csv members.csv \
         --start_year 2000 --end_year 2016 \
         --out_dir /tmp/grid/weather

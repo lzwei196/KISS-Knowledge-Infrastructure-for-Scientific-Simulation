@@ -70,13 +70,12 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
 
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 from validators.standard_calval import compute_calval_metrics
 
-ROOT = Path("/mnt/disk1/Hydrocraft_server")
+ROOT = Path("KISSPATH_ROOT")
 KI = ROOT / "models/mHM/knowledge_infrastructure"
 TOOLS = KI / "tools"
 RUNS = ROOT / "models/mHM/runs"

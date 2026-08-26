@@ -50,7 +50,7 @@ import shutil
 import subprocess
 import sys
 
-BASE = "/mnt/disk1/Hydrocraft_server"
+BASE = "KISSPATH_ROOT"
 KI = f"{BASE}/models/VIC/knowledge_infrastructure"
 CASE = f"{BASE}/models/VIC/detached/verify_2"
 INNER = f"{KI}/run_and_score_verify2_johnday.py"

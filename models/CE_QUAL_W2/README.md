@@ -233,8 +233,8 @@ else:
 ## Quick Start (Idealized Reservoir)
 
 ```bash
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
-cd /mnt/disk1/Hydrocraft_server/models/CE_QUAL_W2/knowledge_infrastructure
+source KISSPATH_PYTHON_ENV/bin/activate
+cd KISSPATH_KI_ROOT/CE_QUAL_W2/knowledge_infrastructure
 
 # 1. Build idealized grid (no DEM needed)
 python tools/s1_bathymetry/build_reservoir_grid.py \

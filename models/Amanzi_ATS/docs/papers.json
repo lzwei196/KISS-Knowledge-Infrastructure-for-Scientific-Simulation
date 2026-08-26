@@ -1,0 +1,183 @@
+{
+  "model": "Amanzi_ATS",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 10,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-13-2259-2020",
+      "title": "Evaluating integrated surface/subsurface permafrost thermal hydrology models in ATS (v0.88) against observations from a polygonal tundra site",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-2621-2023",
+      "title": "Knowledge-informed deep learning for hydrological model calibration: an application to Coal Creek Watershed in Colorado",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-12-1957-2018",
+      "title": "Microtopographic control on the ground thermal regime in ice wedge polygons",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2018.02.001",
+      "title": "Groundwater flow and heat transport for systems undergoing freeze-thaw: Intercomparison of numerical simulators for 2D test cases",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-6-613-2012",
+      "title": "Numerical modeling of permafrost dynamics in Alaska using a high spatial resolution dataset",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-9-549-2005",
+      "title": "Multi-objective calibration of a surface water-groundwater flow model in an irrigated agricultural region",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s13201-019-1013-x",
+      "title": "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-3875-2015",
+      "title": "Performance evaluation of groundwater model hydrostratigraphy from airborne electromagnetic data and lithological borehole logs",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-16-977-2023",
+      "title": "SERGHEI (SERGHEI-SWE) v1.0: a performance-portable high-performance parallel-computing shallow-water solver for hydrology and environmental hydraulics",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-13-115-2009",
+      "title": "An evaluation of ASCAT surface soil moisture products with in-situ observations in Southwestern France",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_table",
+        "discharge",
+        "temperature",
+        "saturation_liquid"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_table",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr013725",
+      "title": "Surface-subsurface model intercomparison: A first set of benchmark results to diagnose integrated hydrology and feedbacks",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2016wr019191",
+      "title": "The integrated hydrologic model intercomparison project, IH-MIP2: A second set of benchmark results to diagnose integrated hydrology and feedbacks",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2017jd026858",
+      "title": "Numerical Modeling of the Active Layer Thickness and Permafrost Thermal State Across Alaska",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "saturation_ice"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-014-9443-x",
+      "title": "Reactive transport codes for subsurface environmental simulation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "total_component_concentration"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr013755",
+      "title": "Assessment of parametric uncertainty for groundwater reactive transport modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "total_component_concentration"
+      ]
+    },
+    {
+      "doi": "10.1002/2014wr016689",
+      "title": "Impact of degrading permafrost on subsurface solute transport pathways and travel times",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "total_component_concentration",
+        "temperature"
+      ]
+    }
+  ]
+}

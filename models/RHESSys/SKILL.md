@@ -1,3 +1,13 @@
+---
+name: rhessys
+description: >-
+  RHESSys 7.4. Covers Daily coupled water, carbon and nitrogen cycling at watershed scale;
+  Soil moisture redistribution, runoff production, saturated subsurface throughflow,
+  overland flow; Evapotranspiration (interception, soil/litter evaporation, canopy
+  transpiration); Snowpack energy-balance accumulation and melt. Use when the task
+  involves running, configuring, calibrating or interpreting RHESSys.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

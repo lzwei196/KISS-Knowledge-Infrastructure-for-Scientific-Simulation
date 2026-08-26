@@ -119,16 +119,69 @@ The cross-domain corpus supports the paper's central premise that operational ex
 - Domain failure profiles were similar, with median pairwise **Spearman's ρ = 0.75**.
 - **3,478 decision points** clustered into 11 categories. Parameter selection, physics-option configuration, and unit-system specification appeared in every domain and accounted for **55%** of all decisions.
 
-## Quick start — using a KI with an agent
+## Installation
+
+Three ways in, depending on what you want to do.
+
+### 1. The desktop application — no Python required
+
+GeoForge Desktop runs these packages with an agent on your own machine. Download
+it from [releases](../../releases): everything travels inside the download,
+including all the model packages.
+
+The manual walks one model from project creation to calibration, in
+[English](docs/manual/GeoForge-Desktop-Manual-EN-v0.6.24.pdf),
+[简体中文](docs/manual/GeoForge-Desktop-Manual-ZH-CN-v0.6.24.pdf) or
+[bilingual](docs/manual/GeoForge-Desktop-Manual-Bilingual-v0.6.24.pdf).
+
+### 2. The library and harness — to drive a KI from your own code
+
+For pointing your own agent at a package. Python 3.8 or newer; the clone is
+about 145 MB.
 
 ```bash
 git clone https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation.git
 cd KISS---Knowledge-Infrastructure-for-Scientific-Simulation
 
 pip install -e ki_tools_common/     # the shared library, and the KI harness
+
+# the interpreter the harness runs a package's operators and preflight with
+export HC_PROJECT_PYTHON="$(which python)"
 ```
 
-Then hand any of the packages to your agent:
+Set `HC_PROJECT_PYTHON` before importing, not after — the harness reads it once
+at import time. Left unset, `tool_command()` emits an unresolved placeholder
+and `run_preflight()` raises `FileNotFoundError` trying to execute it.
+
+> **Or nothing at all.** The harness imports only the standard library — the
+> `numpy` requirement comes from the rest of the shared library, which the
+> harness does not use. To skip the install, load the module directly:
+>
+> ```python
+> import sys; sys.path.insert(0, "ki_tools_common/ki_tools_common/harness")
+> import ki_harness
+> ```
+>
+> Everything below works the same way; read `ki_harness.contract` for
+> `harness.contract`.
+
+### 3. The command line — to inspect and install packages
+
+Python 3.11 or newer.
+
+```bash
+pip install -e kiss/
+
+kiss list                # the 127 packages
+kiss info SWAT_Plus      # what one model needs
+kiss papers WRF_Hydro    # the literature behind it
+kiss verify              # what actually runs on this machine
+```
+
+Installing `kiss/` does **not** give you the harness; the two are separate
+installs. Run both lines if you want both.
+
+## Usage — driving a KI with an agent
 
 ```python
 from pathlib import Path
@@ -142,19 +195,10 @@ same call works for every package in `models/`, and the agent receives the
 model's staged protocol, its operators as absolute commands, its diagnostic
 knowledge, and the obligations that govern how it may report a result.
 
-> **Without installing anything.** The harness itself imports only the standard
-> library; the `numpy` requirement comes from the rest of the shared library.
-> To skip the install, load the module directly:
->
-> ```python
-> import sys; sys.path.insert(0, "ki_tools_common/ki_tools_common/harness")
-> import ki_harness
-> contract = ki_harness.contract(Path("models/VIC").resolve(), execute=True)
-> ```
-
 Model binaries and large forcing or observational datasets are not bundled
 uniformly with every package. `harness.run_preflight(ki)` reports what is
-missing before a run rather than during one.
+missing before a run rather than during one — it executes the package's own
+preflight script with `HC_PROJECT_PYTHON`, so set that first.
 
 ### Reading a package by hand
 

@@ -127,13 +127,15 @@ calibration scratch, snapshots, and forcing archives are not.
 
 > **Note on the shared library.** The KI packages were authored against a shared
 > helper library, `ki_tools_common` (unit conversions, humidity, forcing loaders,
-> soil utilities, metrics). **That library is not distributed as source in this
-> repository** -- 126 of the 127 packages reference it (121 in their `SKILL.md`,
-> 54 as a real import in `tools/*.py`), so `from ki_tools_common... import ...`
-> will not resolve against a fresh clone. An archived snapshot is retained in
-> [`kdt-release.zip`](kdt-release.zip). Every other part of a KI package -- the
-> operational documentation, format specifications, diagnostic triplets, and the
-> model-specific tools -- stands on its own.
+> soil utilities, metrics). It **is** distributed here, as source, under
+> [`ki_tools_common/`](../ki_tools_common) -- 126 of the 127 packages reference it
+> (121 in their `SKILL.md`, 54 as a real import in `tools/*.py`), and an install
+> puts it into the model's environment. It also carries the **KI harness**, the
+> one contract describing how an agent uses a KI; see
+> [Using the KI harness](../README.md#using-the-ki-harness).
+>
+> The dissection toolkit that produced these packages lives in its own
+> repository: [KDT-single](https://github.com/lzwei196/KDT-single).
 >
 > **Note on portability.** The packages were authored against the development
 > server and carry absolute paths (`/srv/models/...`) to
@@ -300,7 +302,7 @@ reasonableness checks. This proves the knowledge infrastructure works.
   AGENT_SERVICE_GUIDE.md             Deploying KI with an agent service
   DEPLOYMENT.md                      Infrastructure setup guide
   CLAUDE_TEMPLATE.md                 Master agent instruction file template
-  kdt-release.zip                    Archived shared-library snapshot (see note above)
+  ki_tools_common/                   Shared helper library + the KI harness
   revalidation_3x3_results.xlsx      3x3 revalidation: 25 models, 254 runs
   models/                            127 KI packages
     VIC/

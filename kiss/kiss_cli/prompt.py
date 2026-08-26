@@ -86,14 +86,59 @@ HEADLESS_LONG_JOB_RULE = _HEADLESS_LONG_JOB_TEMPLATE.format(
     detach="nohup" if os.name == "nt" else "setsid nohup")
 
 
+def _load_harness_standalone():
+    """Load ``ki_harness`` from its file, bypassing its package's ``__init__``.
+
+    ``ki_tools_common/__init__.py`` eagerly imports seventeen submodules —
+    netcdf_utils, load_forcing, soil_utils, climate_scenarios — so
+    ``from ki_tools_common.harness import contract`` drags in numpy, netCDF4
+    and h5py. The desktop build ships none of them, and should not: the harness
+    is text generation and imports nothing but the standard library. Frozen,
+    that mismatch made every agent prompt fall back to the weaker pointer list
+    with the ten obligations missing, announced only in a line nobody reads.
+
+    ki_harness.py already inserts its own directory on sys.path for sibling
+    imports, so loading it by path is how it was built to be used.
+    """
+    import importlib.util
+    import sys
+
+    rel = Path("ki_tools_common") / "ki_tools_common" / "harness" / "ki_harness.py"
+    roots = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        roots.append(Path(meipass))
+    roots.append(Path(__file__).resolve().parents[2])   # a source checkout
+    for root in roots:
+        f = root / rel
+        if not f.is_file():
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location("_kiss_ki_harness", f)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules.setdefault("_kiss_ki_harness", mod)
+            spec.loader.exec_module(mod)
+            if hasattr(mod, "contract"):
+                return mod
+        except Exception:
+            continue
+    return None
+
+
 def _harness_contract(ki, *, execute: bool, python: str | None) -> tuple[str, str | None]:
     """The shared KI-usage contract, or ('', reason) if it is unavailable."""
     import os
 
     try:
         from ki_tools_common.harness import contract as _contract
-    except Exception as e:
-        return "", f"ki_tools_common.harness unavailable ({type(e).__name__}: {e})"
+        from ki_tools_common.harness import ki_harness as _kh
+    except Exception:
+        _kh = _load_harness_standalone()
+        if _kh is None:
+            return "", ("the KI usage contract could not be loaded — "
+                        "ki_tools_common/ki_tools_common/harness/ki_harness.py "
+                        "is not beside this build")
+        _contract = _kh.contract
 
     # The harness renders every tool command with a project interpreter, and it
     # resolves that ONCE at import time:
@@ -104,8 +149,6 @@ def _harness_contract(ki, *, execute: bool, python: str | None) -> tuple[str, st
     # already imported. Left unset it emits the authoring machine's python, and
     # an agent dutifully copies a path that does not exist on this one. Rebind
     # the module attribute for the duration of the call instead.
-    from ki_tools_common.harness import ki_harness as _kh
-
     prev = getattr(_kh, "PROJECT_PY", None)
     if python:
         _kh.PROJECT_PY = str(python)

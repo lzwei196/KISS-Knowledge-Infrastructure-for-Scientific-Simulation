@@ -124,6 +124,16 @@ jobs:
             curl -fsS http://127.0.0.1:18777/api/providers >/dev/null && break
             sleep 0.25
           done
+          # The KI usage contract must survive freezing. ki_tools_common is
+          # bundled as a data folder, so the importable package sits one level
+          # deeper than its name, and ki_tools_common/__init__ pulls numpy —
+          # neither is in the app. Both failures are caught by prompt.py and
+          # replaced with a weaker fallback, so the only way to know the ten
+          # obligations still reach the agent is to read a real prompt.
+          PROMPT="$(curl -fsS http://127.0.0.1:18777/api/prompt/MODFLOW6)"
+          grep -q 'KI HARNESS v1' <<< "$PROMPT" \
+            || { echo "::error::the frozen build lost the KI usage contract"; \
+                 grep -A1 'CONTRACT UNAVAILABLE' <<< "$PROMPT"; exit 1; }
           REPORT="$(curl -fsS 'http://127.0.0.1:18777/api/selfcheck?provider=api%3Adeepseek')"
           ! grep -q CERTIFICATE_VERIFY_FAILED <<< "$REPORT"
           grep -Eq 'HTTP (401|403)' <<< "$REPORT"
@@ -310,6 +320,16 @@ jobs:
           for page in / /setup /library /i18n.js /clipboard.js; do
             curl -fsS "http://127.0.0.1:18777$page" >/dev/null
           done
+          # The KI usage contract must survive freezing. ki_tools_common is
+          # bundled as a data folder, so the importable package sits one level
+          # deeper than its name, and ki_tools_common/__init__ pulls numpy —
+          # neither is in the app. Both failures are caught by prompt.py and
+          # replaced with a weaker fallback, so the only way to know the ten
+          # obligations still reach the agent is to read a real prompt.
+          PROMPT="$(curl -fsS http://127.0.0.1:18777/api/prompt/MODFLOW6)"
+          grep -q 'KI HARNESS v1' <<< "$PROMPT" \
+            || { echo "::error::the frozen build lost the KI usage contract"; \
+                 grep -A1 'CONTRACT UNAVAILABLE' <<< "$PROMPT"; exit 1; }
           REPORT="$(curl -fsS 'http://127.0.0.1:18777/api/selfcheck?provider=api%3Adeepseek')"
           ! grep -q CERTIFICATE_VERIFY_FAILED <<< "$REPORT"
           grep -Eq 'HTTP (401|403)' <<< "$REPORT"
@@ -402,6 +422,16 @@ jobs:
           for page in / /setup /library /i18n.js /clipboard.js; do
             curl -fsS "http://127.0.0.1:18777$page" >/dev/null
           done
+          # The KI usage contract must survive freezing. ki_tools_common is
+          # bundled as a data folder, so the importable package sits one level
+          # deeper than its name, and ki_tools_common/__init__ pulls numpy —
+          # neither is in the app. Both failures are caught by prompt.py and
+          # replaced with a weaker fallback, so the only way to know the ten
+          # obligations still reach the agent is to read a real prompt.
+          PROMPT="$(curl -fsS http://127.0.0.1:18777/api/prompt/MODFLOW6)"
+          grep -q 'KI HARNESS v1' <<< "$PROMPT" \
+            || { echo "::error::the frozen build lost the KI usage contract"; \
+                 grep -A1 'CONTRACT UNAVAILABLE' <<< "$PROMPT"; exit 1; }
           REPORT="$(curl -fsS 'http://127.0.0.1:18777/api/selfcheck?provider=api%3Adeepseek')"
           ! grep -q CERTIFICATE_VERIFY_FAILED <<< "$REPORT"
           grep -Eq 'HTTP (401|403)' <<< "$REPORT"

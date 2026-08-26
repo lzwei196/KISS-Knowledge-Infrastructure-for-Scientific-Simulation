@@ -1,0 +1,28 @@
+# Python bytecode. Tracked .pyc files are platform-stamped (cpython-312),
+# rebuilt on import, and a stale one can shadow a module just updated.
+__pycache__/
+*.py[cod]
+
+# Editor backups, referenced by nothing.
+*.bak
+*.bak.*
+*.orig
+*~
+
+# Build output. The release workflow builds from a clean checkout, so these
+# only ever arrive by accident from a local build.
+build/
+dist/
+*.spec
+.build-venv/
+*.egg-info/
+
+# Model run residue. Running a model from the repository root leaves these;
+# ERROR.OUT, fort.502, LUN.LST and WARNING.OUT all reached a commit this way.
+ERROR.OUT
+WARNING.OUT
+LUN.LST
+fort.*
+
+# macOS
+.DS_Store

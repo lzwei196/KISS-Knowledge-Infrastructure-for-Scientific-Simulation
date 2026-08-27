@@ -574,6 +574,11 @@ print(MARKER, len(text), implementation.__file__)
     def test_dssat_weather_fields_do_not_silently_drop_a_digit(self):
         script = (Path(__file__).parents[2] / "models" / "DSSAT" / "tools" /
                   "run_reference_case.py")
+        # The refreshed real-case runner imports NumPy.  Load it before
+        # patch.dict snapshots sys.modules; otherwise patch restoration removes
+        # NumPy's extension modules and a later readiness check cannot safely
+        # import them a second time in the same process.
+        import numpy  # noqa: F401
         forcing = types.ModuleType("ki_tools_common.load_forcing")
         forcing.NASA_POWER_DAILY_PARAMS = ()
         forcing.NASA_POWER_DAILY_URL = "https://example.invalid"

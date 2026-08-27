@@ -170,7 +170,7 @@ outputs:
   - var: "LAI"
     validation_rank: 2
     unit: "m2/m2"
-    description: "Leaf area index from heat-unit-driven development and senescence"
+    description: "Crop-canopy leaf area index from heat-unit-driven development and senescence"
     emitted_in: "<run>.OUT / .SAD"
     observability:
       comparable_obs_shapes:
@@ -196,7 +196,7 @@ outputs:
   - var: "ET"
     validation_rank: 3
     unit: "mm"
-    description: "Actual evapotranspiration"
+    description: "Actual evapotranspiration water flux from the soil-plant land surface"
     emitted_in: "<run>.OUT"
     observability:
       comparable_obs_shapes:
@@ -209,7 +209,7 @@ outputs:
   - var: "DPRK"
     validation_rank: 6
     unit: "mm"
-    description: "Deep percolation below the root zone"
+    description: "Deep percolation of water below the crop root zone into the subsurface groundwater system"
     emitted_in: "<run>.OUT"
     observability:
       comparable_obs_shapes:
@@ -451,3 +451,17 @@ safety:
       scope: "implementation identity"
       source: "APEX0806 User Guide (epicapex.tamu.edu); KI SKILL.md operation-code table"
       status: "adopted"
+
+medium_evidence:
+  - var: "LAI"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jglr.2015.05.001.txt"
+    quote: "differences in canopy height and leaf area index may result in lower"
+    note: "APEX conservation-practice text places leaf area index in the crop/vegetation canopy."
+  - var: "ET"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.22004_ag.econ.49156.txt"
+    quote: "Infiltrated water can be stored in the soil profile, percolate vertically to groundwater, be lost via evapotranspiration, or routed laterally"
+    note: "APEX hydrologic balance places evapotranspiration as water lost from the soil-profile/land-surface water balance."
+  - var: "DPRK"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.22004_ag.econ.49156.txt"
+    quote: "reaches groundwater storage, which can lose water because of deep percolation from the overall"
+    note: "APEX hydrologic balance places deep percolation in the subsurface groundwater/system water balance."

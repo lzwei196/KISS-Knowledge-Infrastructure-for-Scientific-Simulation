@@ -1,164 +1,115 @@
-# ============================================================================
-# HEC-RAS Knowledge Infrastructure v2.0.0
-# ============================================================================
-# HEC-RAS 6.7 Beta 5 (USACE) — real Intel-Fortran solvers under WINE 9.0
-# 1-D/2-D river & open-channel hydraulics
-# Rebuilt 2026-06-03: drives the ACTUAL binary (prior GR4J surrogate removed)
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: "hydrocraft-hec-ras"
-  version: "2.0.0"
-  description: "Knowledge infrastructure for HEC-RAS steady-flow river hydraulics, driving the real RasSteady.exe under WINE"
-  target_model: "HEC-RAS 6.7 Beta 5"
-  domain: "river / open-channel hydraulics"
-  authors:
-    - "Jianyun Zhang Research Group, Hohai University"
-  license: "Proprietary (USACE HEC-RAS; public-domain US Government software)"
-
-binary:
-  type: "PE/WINE (Windows x64 Intel-Fortran, run under WINE 9.0)"
-  path: "KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe"
-  solvers:
-    steady: "x64/RasSteady.exe"              # validated end-to-end
-    unsteady: "x64/RasUnsteady.exe"          # loads; needs Ras.exe (Wine Mono)
-    geom_preprocess: "x64/RasGeomPreprocess.exe"
-    unsteady_sediment: "x64/RasUnsteadySediment.exe"
-    quasi_sediment: "x64/RasQuasiSediment.exe"
-    water_quality: "x64/RasWaterQuality.exe"
-  invocation: "env -u LD_PRELOAD WINEPREFIX=KISSPATH_HOME/.wine WINEDEBUG=-all wine RasSteady.exe <prj>.rNN"
-  build: "prebuilt (proprietary closed-source; no compilation)"
-  notes: >
-    Headless steady runs work by seeding <prj>.pNN.tmp.hdf from <prj>.gNN.hdf
-    (the step Ras.exe/Wine-Mono normally performs) then invoking RasSteady on the
-    run file. Wine Mono is absent so the .NET orchestrator Ras.exe is unavailable;
-    unsteady/sediment/WQ load but cannot complete headless.
-
-inputs:
-  - name: discharge
-    description: "Steady flow per profile"
-    units: "cfs (English) or m3/s (SI)"
-    file: ".fNN / .rNN  (Section - Flow Data)"
-    required: true
-  - name: cross_section_geometry
-    description: "Station-elevation cross sections defining the channel"
-    units: "ft or m"
-    file: ".gNN  (#Sta/Elev)"
-    required: true
-  - name: manning_n
-    description: "Channel/overbank roughness"
-    units: "dimensionless"
-    file: ".gNN  (#Mann)"
-    required: true
-    typical_range: [0.025, 0.15]
-  - name: reach_length
-    description: "LOB/Channel/ROB length between cross sections"
-    units: "ft or m"
-    file: ".gNN  (Type RM Length L Ch R)"
-    required: true
-  - name: boundary_condition
-    description: "Up/down boundary: normal-depth slope (3), known WS (1), critical (2), rating (4)"
-    units: "slope ft/ft, or WS ft"
-    file: ".fNN / .rNN  (Section - Reach Boundaries)"
-    required: true
-  - name: flow_regime
-    description: "Subcritical / Supercritical / Mixed"
-    units: "categorical"
-    file: ".pNN"
-    required: true
-
-outputs:
-  - name: water_surface
-    description: "Computed water-surface elevation per cross section per profile"
-    units: "ft or m"
-    hdf_path: "/Results/Steady/Output/Output Blocks/Base Output/Steady Profiles/Cross Sections/Water Surface"
-  - name: energy_grade
-    description: "Energy grade line elevation"
-    units: "ft or m"
-    hdf_path: ".../Cross Sections/Energy Grade"
-  - name: discharge_out
-    description: "Total discharge (conserved along reach)"
-    units: "cfs or m3/s"
-    hdf_path: ".../Cross Sections/Flow"
-  - name: velocity
-    description: "Channel / average velocity"
-    units: "ft/s or m/s"
-    hdf_path: ".../Cross Sections/Additional Variables/Velocity Channel"
-  - name: froude
-    description: "Froude number + regime (sub/super/critical)"
-    units: "dimensionless"
-    derived: "V / sqrt(g*D)"
-
+  name: HEC-RAS
+  language: fortran
+  implementation:
+    id: hec-ras-6.7b5
+    version: 6.7 Beta 5
+    provenance: USACE HEC-distributed Windows binaries (RasSteady.exe, RasUnsteady.exe, RasGeomPreprocess.exe)
+      executed via WINE; Intel-Fortran PE64 solver core (libifcoremd.dll, libiomp5md.dll) with HDF5 I/O.
+      Closed-source, public-domain U.S. Government software.
+  scientific_reference_version: HEC-RAS Hydraulic Reference Manual v6.1/6.5 (1-D Saint-Venant + standard-step
+    energy equation; 2-D shallow-water equations)
+  binary:
+    path: KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe
+    type: PE32_wine
 pipeline:
-  stages:
-    - id: s1_data_preparation
-      name: "Data preparation (discharge & project setup)"
-      skill_document: "docs/01_data_preparation.md"
-      tools: [prepare_steady_run, convert_flow_to_hecras]
-    - id: s2_geometry_editing
-      name: "Geometry & roughness editing"
-      skill_document: "docs/02_geometry_editing.md"
-      tools: [edit_geometry, edit_boundaries]
-    - id: s3_steady_execution
-      name: "Steady-flow execution (real solver)"
-      skill_document: "docs/03_steady_execution.md"
-      tools: [run_hecras, preprocess_geometry]
-    - id: s4_output_parsing
-      name: "Output parsing"
-      skill_document: "docs/04_output_parsing.md"
-      tools: [parse_output_hecras, rating_curve]
-    - id: s5_validation
-      name: "Validation vs observed water surface"
-      skill_document: "docs/05_validation.md"
-      tools: [validate_hecras]
-
+  stages: []
 tools:
-  - {name: prepare_steady_run,     file: tools/prepare_steady_run.py,     purpose: "copy template + set flows/boundaries/roughness"}
-  - {name: convert_flow_to_hecras, file: tools/convert_flow_to_hecras.py, purpose: "set discharges in run file (Layer-1/ObservedQ tie-in)"}
-  - {name: edit_geometry,          file: tools/edit_geometry.py,          purpose: "scale/set Manning n; set exp/contr"}
-  - {name: edit_boundaries,        file: tools/edit_boundaries.py,        purpose: "set normal-depth boundary slopes"}
-  - {name: preprocess_geometry,    file: tools/preprocess_geometry.py,    purpose: "run RasGeomPreprocess to build geometry HDF"}
-  - {name: run_hecras,             file: tools/run_hecras.py,             purpose: "run the real RasSteady solver; collect HDF"}
-  - {name: parse_output_hecras,    file: tools/parse_output_hecras.py,    purpose: "results HDF -> per-XS records (CSV/JSON)"}
-  - {name: rating_curve,           file: tools/rating_curve.py,           purpose: "flow sweep -> stage-discharge rating curve"}
-  - {name: validate_hecras,        file: tools/validate_hecras.py,        purpose: "computed vs observed WS metrics + figure"}
-
-unit_conversions:
-  discharge_m3s_to_cfs: 35.3146667
-  length_m_to_ft: 3.2808399
-  gravity_english_fts2: 32.174
-  gravity_si_ms2: 9.81
-  manning_n: "dimensionless — identical in English & SI; never convert"
-  slope: "dimensionless ft/ft = m/m — never scale"
-
+  count: 11
+  files:
+  - tools/_hecras_env.py
+  - tools/author_steady_geometry.py
+  - tools/convert_flow_to_hecras.py
+  - tools/edit_boundaries.py
+  - tools/edit_geometry.py
+  - tools/parse_output_hecras.py
+  - tools/prepare_steady_run.py
+  - tools/preprocess_geometry.py
+  - tools/rating_curve.py
+  - tools/run_hecras.py
+  - tools/validate_hecras.py
+inputs:
+  forcing:
+  - name: discharge (upstream inflow hydrograph)
+    unit: cfs (English) or m^3/s (SI)
+  - name: downstream stage or stage hydrograph
+    unit: ft or m
+  - name: lateral inflow hydrograph
+    unit: cfs or m^3/s
+  - name: precipitation on grid
+    unit: mm/hr or in/hr
+  parameters:
+  - name: cross_section_geometry (station/elevation pairs)
+    unit: ft or m (per project unit system)
+  - name: reach_length (LOB / channel / ROB)
+    unit: ft or m
+  - name: main channel bank stations
+    unit: ft or m
+  - name: 2-D computational mesh + underlying terrain
+    unit: m (cell size); m (elevation)
+  - name: manning_n (channel and overbanks)
+    unit: dimensionless
+  - name: expansion_contraction_coefficients
+    unit: dimensionless
+  - name: bridge / culvert / weir / gate coefficients
+    unit: varies
+  - name: theta (implicit weighting) and friction-slope averaging method
+    unit: dimensionless
+  - name: eddy viscosity / turbulence closure parameters (2-D)
+    unit: m^2/s
+  initial_conditions:
+  - name: initial flow at upstream end of each reach (1-D unsteady)
+    unit: cfs or m^3/s
+  - name: initial water-surface profile (restart)
+    unit: ft or m
+  - name: initial water-surface elevation per 2-D area
+    unit: ft or m
+  - name: initial bed elevation and gradation (sediment runs)
+    unit: ft or m; fraction by mass
+  boundary_conditions:
+  - name: upstream BC type code
+    unit: enum {1=Known WS, 2=Critical Depth, 3=Normal Depth (slope), 4=Rating Curve}
+  - name: downstream BC type code
+    unit: enum {1=Known WS, 2=Critical Depth, 3=Normal Depth (slope), 4=Rating Curve}
+  - name: downstream_boundary_slope (when BC type = Normal Depth)
+    unit: ft/ft = m/m (dimensionless)
+  - name: flow_regime
+    unit: enum {Subcritical, Supercritical, Mixed}
+  - name: unit_system
+    unit: enum {English, SI}
+  - name: 2-D solver type (SWE vs DSW)
+    unit: enum {Full SWE, Diffusion Wave}
+  - name: gate openings, pump rules, rule-controlled structure states
+    unit: varies (gate openings in ft or m; rule-time series)
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - water_surface_elevation
+  - energy_grade
+  - discharge_out
+  - velocity_channel
+  - velocity_total
+  - flood_inundation_extent
+  - froude_number
+  - shear_stress_channel
+  - sediment_transport_rate
+  - bed_elevation_change
+  - water_quality_constituent
+  other:
+  - friction_slope
 validation:
-  tier: "real"
-  benchmark: "HEC-RAS 'Mixed Flow Regime Channel' example (1D Steady Flow Hydraulics)"
-  observed_data: "examples/MixedFlowSteady/MIXED.f01 (Observed WS= lines, 19 cross sections)"
-  observed_source: "Observed water-surface elevations shipped with the HEC-RAS example dataset (USACE)"
-  reference_profile: "PF 1 @ Q=500 cfs"
-  metrics_reported: [NSE, KGE, PBIAS, RMSE, Pearson_r, max_abs_err]
+  tier: not_runnable
+  tier_justification: 'measured: NSE=0.808, KGE=0.902, R=0.903'
   metrics:
-    NSE: 0.9965
-    KGE: 0.977
-    RMSE_ft: 0.096
-    PBIAS_pct: -0.09
-    r: 0.999
-    max_abs_err_ft: 0.28
-    n: 19
-  binary_smoke_test: "RasSteady.exe MIXED.r01 prints 'Finished Steady Flow Simulation'; writes 2 profiles x 19 XS of WS/EG/Q/V into MIXED.p01.tmp.hdf (~262 kB) in ~1 s"
-  physics_check: "supercritical (Fr>1) upstream -> subcritical (Fr<1) downstream mixed-flow transition reproduced; EG = WS + V^2/2g satisfied; Q conserved along reach"
-  figure: "figures/s8_validation.png"
-
-documentation:
-  primary_references:
-    - "USACE HEC-RAS 6.x Hydraulic Reference Manual"
-    - "USACE HEC-RAS 6.x User's Manual"
-    - "Brunner, G.W., HEC-RAS River Analysis System (USACE Hydrologic Engineering Center)"
-  example_library: "~/.local/share/ras-commander/examples/Example_Projects_6_6.zip (68 projects)"
-  python_api: "ras-commander 0.93.0 (install layout not auto-detected; solvers driven directly)"
-
-limitations:
-  - "Unsteady / 2-D / sediment / water-quality solvers load and execute but cannot finish headless (need Ras.exe + Wine Mono for the plan-HDF skeleton)."
-  - "Brand-new geometry requires a .rNN run file the GUI/ras-commander must generate; this KI re-parameterises and runs existing projects."
-  - "Not a rainfall-runoff model: consumes discharge, not meteorological forcing."
+    best_nse: 0.8077
+    best_kge: 0.9018
+    best_r: 0.9027
+summary:
+  total_tools: 11
+  total_stage_docs: 0
+  total_diagnostic_triplets: 20
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

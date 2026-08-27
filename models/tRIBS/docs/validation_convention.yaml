@@ -1,0 +1,418 @@
+schema_version: 1
+model_id: tRIBS
+domain: hydrology
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  me2015:
+    doi: 10.5194/hess-19-4127-2015
+    title: "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-4127-2015.txt
+  ivanov2004_jhydrol:
+    doi: 10.1016/j.jhydrol.2004.03.041
+    title: "Preserving high-resolution surface and rainfall data in operational-scale basin hydrology: a fully-distributed physically-based approach"
+    venue: "Journal of Hydrology"
+    year: 2004
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2004.03.041.txt
+  mascaro2013:
+    doi: 10.5194/hess-17-4143-2013
+    title: "Distributed hydrologic modeling of a sparsely monitored basin in Sardinia, Italy, through hydrometeorological downscaling"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-17-4143-2013.txt
+  chen2017:
+    doi: 10.5194/hess-21-735-2017
+    title: "Large-watershed flood forecasting with high-resolution distributed hydrological model"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-21-735-2017.txt
+  entekhabi2010:
+    doi: 10.1175/2010jhm1223.1
+    title: "Performance Metrics for Soil Moisture Retrievals and Application Requirements"
+    venue: "Journal of Hydrometeorology"
+    year: 2010
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_2010jhm1223.1.txt
+  castillo2015:
+    doi: 10.5194/hess-19-1857-2015
+    title: "Gravitational and capillary soil moisture dynamics for distributed hydrologic models"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-1857-2015.txt
+  sivandran2013:
+    doi: 10.1002/wrcr.20245
+    title: "Dynamic root distributions in ecohydrological modeling: A case study at Walnut Gulch Experimental Watershed"
+    venue: "Water Resources Research"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_wrcr.20245.txt
+  formetta2014:
+    doi: 10.5194/gmd-7-725-2014
+    title: "Snow water equivalent modeling components in NewAge-JGrass"
+    venue: "Geoscientific Model Development"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-7-725-2014.txt
+  moreno2016:
+    doi: 10.5194/hess-20-1241-2016
+    title: "Modeling the distributed effects of forest thinning on the long-term water balance and streamflow in a semiarid basin"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-1241-2016.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling and Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+
+validation:
+  - dag_variable: "Discharge at outlet (Qstrm)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007: satisfactory watershed simulations use NSE > 0.50; Me 2015 reproduces the all-constituent NSE tiers 0.5-0.65, 0.65-0.75, 0.75-1."
+        cites: [moriasi2007, me2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 gives streamflow PBIAS tiers of < +/-10, +/-10 to +/-15, and +/-15 to +/-25 percent."
+        cites: [moriasi2007, me2015]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "tRIBS streamflow benchmark papers co-report correlation or hydrograph agreement, but field convention keeps NSE/PBIAS as the pass gate."
+        cites: [ivanov2004_jhydrol, chen2017]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 25% for gauged outlet discharge."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: "Moriasi 2007 says model simulation can be judged satisfactory if NSE > 0.50 and streamflow PBIAS is within +/-25%. tRIBS benchmarks report outlet hydrograph skill: Ivanov 2004 lists multi-year Nr 0.533-0.614 for several basins and Chen 2017 reports average optimized NSE 0.82 for flood hydrographs."
+
+  - dag_variable: "Channel stage (HLevel)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred from fetched hydrologic time-series NSE convention; Me 2015 reproduces all-variable NSE tiers, but no fetched stage-specific rating table was found."
+        cites: [moriasi2007, me2015]
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an absolute channel-stage RMSE pass band; stage error depends on the cross-section and rating reference."
+        cites: []
+    secondary_metrics: []
+    validated_when: "NSE >= 0.50 may contextualize stage timing/shape, but absolute RMSE remains unevaluable without a local rating-stage uncertainty target."
+    evidence_strength: moderate
+    confidence: 0.50
+    notes: "The dag determining metric nse is retained. This is a transferred hydrologic convention, not a stage-specific literature threshold."
+
+  - dag_variable: "Total evapotranspiration (EvpTtrs / EvapoTranspiration)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: bias
+        direction: zero_centered
+        unit: W/m2
+        bands: {very_good: null, good: null, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "Sivandran and Bras 2013 judged energy-balance biases of less than 10 W m-2 robust over 8 years; use only when ET is evaluated as latent heat flux against an eddy-covariance tower."
+        cites: [sivandran2013]
+      - metric: rmse
+        direction: minimize
+        unit: W/m2
+        bands: {very_good: null, good: null, satisfactory: 50.0}
+        pass_band: satisfactory
+        band_note: "Sivandran and Bras 2013 cite turbulent-flux measurement uncertainty of 10 to 50 W m-2 and state latent/sensible RMSEs are close to observation error."
+        cites: [sivandran2013]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Dag determining metric retained but no fetched ET paper gives an NSE validation tier."
+        cites: []
+    secondary_metrics: []
+    validated_when: "For flux-tower latent heat comparisons, |bias| <= 10 W/m2 and RMSE <= 50 W/m2; NSE remains contextual only."
+    evidence_strength: weak
+    confidence: 0.40
+    notes: "Literature for tRIBS-style ET validation emphasizes energy-flux bias/RMSE and measurement uncertainty rather than NSE. The numeric band is single-study and in latent-heat units, so it must not be used for unconverted mm/hr ET."
+
+  - dag_variable: "Total evapotranspiration (EvpTtrs / EvapoTranspiration)"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI threshold for gridded ET validation; Bennett 2013 describes contingency metrics for threshold events but not a universal pass band."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bennett 2013 recommends pairing RMSE or r2 with bias and choosing purpose-specific objective criteria."
+        cites: [bennett2013]
+    validated_when: "UNRESOLVED - no cited numeric spatial ET CSI convention was fetched."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "The dag determining metric csi is retained with a null band. OpenAlex coverage checks did not locate a fetched OA threshold paper within the cap."
+
+  - dag_variable: "Depth to groundwater table (Nwt)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched groundwater-head/depth NSE or normalized-RMSE pass band was found."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: mm
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Absolute head/depth RMSE must be tied to site datum and well-screen uncertainty; no fetched numeric target supports a band."
+        cites: []
+    secondary_metrics:
+      - metric: water_balance_closure
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "tRIBS papers document that water-table depth initializes and controls wetness, runoff production, and saturated-zone lateral exchange, but do not provide a head-error pass band."
+        cites: [ivanov2004_jhydrol]
+    validated_when: "UNRESOLVED - compare to co-located wells, but no cited numeric head/depth band is available."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "OpenAlex coverage check for groundwater head normalized RMSE surfaced broad ML/model papers, not a fetched convention table. Leave the gate unevaluable rather than transferring streamflow NSE."
+
+  - dag_variable: "Depth to groundwater table (Nwt)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for spatial water-table depth snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Groundwater-depth validation requires datum reconciliation and site-specific observation support; fetched tRIBS papers document mechanism, not a universal numeric spatial threshold."
+        cites: [ivanov2004_jhydrol, bennett2013]
+    validated_when: "UNRESOLVED - spatial water-table maps require a local RMSE/contour tolerance before automated validation."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "The dag csi metric is retained with null bands. Bennett 2013 supports using confusion matrices for spatial categories, but does not define a universal CSI pass value."
+
+  - dag_variable: "Soil moisture (top 10 cm / root zone)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m3/m3
+        bands: {very_good: null, good: null, satisfactory: 0.04}
+        pass_band: satisfactory
+        band_note: "Entekhabi 2010 analyzes ubRMSE = 0.04 m3 m-3 as the soil-moisture accuracy requirement/target; use with support-depth matching."
+        cites: [entekhabi2010]
+      - metric: bias
+        direction: zero_centered
+        unit: m3/m3
+        bands: {very_good: null, good: null, satisfactory: 0.04}
+        pass_band: satisfactory
+        band_note: "Entekhabi 2010 states an RMSE target cannot be achieved if mean bias exceeds the target."
+        cites: [entekhabi2010]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Dag determining metric retained, but fetched soil-moisture validation convention uses RMSE/ubRMSE and correlation rather than NSE."
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Entekhabi 2010 links ubRMSE and time-series correlation; Castillo 2015 reports point soil-moisture R and bias for distributed hydrologic model evaluation."
+        cites: [entekhabi2010, castillo2015]
+    validated_when: "RMSE <= 0.04 m3/m3 and |bias| <= 0.04 m3/m3 after matching observation depth; NSE is not a pass gate."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Entekhabi 2010 gives the 0.04 m3/m3 soil-moisture target and warns that dynamic range constrains achievable RMSE. Castillo 2015 reports validation biases from 0.016 to 0.050 m3/m3 and R values from 0.34 to 0.95 across sites/depths, illustrating site dependence."
+
+  - dag_variable: "Soil moisture (top 10 cm / root zone)"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: ub_rmse
+        direction: minimize
+        unit: m3/m3
+        bands: {very_good: null, good: null, satisfactory: 0.04}
+        pass_band: satisfactory
+        band_note: "Satellite-footprint soil-moisture applications use unbiased RMSE; Entekhabi 2010 centers the requirement discussion on ubRMSE = 0.04 m3/m3."
+        cites: [entekhabi2010]
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Dag determining metric retained, but no fetched soil-moisture paper gives a CSI pass band for gridded continuous fields."
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Entekhabi 2010 notes that, for fixed ubRMSE, corresponding correlation can range from 0 to 1 depending on true and retrieved variability."
+        cites: [entekhabi2010]
+    validated_when: "ubRMSE <= 0.04 m3/m3 for top-layer gridded soil moisture; CSI is unresolved unless the comparison is explicitly thresholded."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: "The literature supersedes CSI for continuous gridded soil moisture with ubRMSE/correlation requirements. CSI remains listed but cannot auto-validate."
+
+  - dag_variable: "Snow water equivalent (SnWE; liqWEq/iceWEq)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred watershed NSE tiers; Formetta 2014 reports SWE evaluation values and states they are within the range for good model performance."
+        cites: [moriasi2007, formetta2014]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred watershed PBIAS tiers; Formetta 2014's daily SWE evaluation PBIAS values include -21.6% and are discussed as within good-performance ranges."
+        cites: [moriasi2007, formetta2014]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Formetta 2014 selected KGE as the calibration objective and co-reported NSE, PBIAS and IOA."
+        cites: [formetta2014]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 25% for point SWE time series, with melt-out timing checked graphically."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: "Formetta 2014 reports daily SWE evaluation NSE 0.71-0.87 for one model and 0.81-0.85 for another; hourly validation NSE 0.86-0.91 and PBIAS 4.8-7.3%. The numeric tiers are transferred from watershed guidelines, so confidence is moderate."
+
+  - dag_variable: "Snow water equivalent (SnWE; liqWEq/iceWEq)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI/POD/FAR threshold for binary snow-covered-area snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Spatial SWE papers report differences from high-resolution baselines or maps, but the fetched set does not define a universal pass band."
+        cites: [formetta2014, bennett2013]
+    validated_when: "UNRESOLVED - snow presence/absence can use contingency metrics, but no cited numeric CSI threshold was fetched."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "Bennett 2013 defines contingency/confusion-matrix evaluation for threshold events and spatial classes. The threshold itself and CSI pass value must be local or fetched from a snow-cover validation convention."
+
+  - dag_variable: "Runoff-mechanism hydrograph separation (Hsrf, Sbsrf, Psrf, Satsrf)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Use the hydrologic hydrograph convention when tracer/baseflow-separated mechanism time series are available."
+        cites: [moriasi2007, me2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Use streamflow volume-bias tiers for mechanism hydrograph volumes only when an observed/separated mechanism volume is available."
+        cites: [moriasi2007, me2015]
+    secondary_metrics:
+      - metric: mechanism_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "tRIBS explicitly simulates infiltration-excess, saturation-excess, groundwater exfiltration, and perched return flow; direct observed partitioning is normally diagnostic rather than a standard gauge comparison."
+        cites: [ivanov2004_jhydrol]
+    validated_when: "If directly observed or separated mechanism hydrographs exist, require NSE >= 0.50 and |PBIAS| <= 25%; otherwise treat as diagnostic support, not an independent validation gate."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Ivanov 2004 says tRIBS runoff can be produced via several mechanisms and that partitioning of the simulated hydrograph is provided as model interpretation. Numeric bands are transferred from streamflow hydrograph evaluation."
+
+  - dag_variable: "Mean areal precipitation and basin-averaged water-balance terms"
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No single fetched convention covers mixed basin aggregates of precipitation forcing, ET, runoff, mean soil moisture, and groundwater depth."
+        cites: []
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Moriasi streamflow PBIAS tiers should not be silently transferred to precipitation, ET, soil-water storage, and groundwater aggregates as one mixed variable."
+        cites: []
+    secondary_metrics:
+      - metric: water_balance_closure
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "tRIBS benchmark papers use basin water-balance components diagnostically, but the fetched literature does not supply a universal numeric closure band."
+        cites: [moreno2016, ivanov2004_jhydrol]
+    validated_when: "UNRESOLVED - validate each constituent aggregate with its own convention; do not auto-validate the mixed aggregate row."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "Moreno 2016 presents mean monthly basin streamflow, soil moisture, groundwater depth, ET, SWE and snow-covered area as scenario diagnostics. No fetched source supports one numeric pass rule for the mixed aggregate output."
+
+deferred_paywalled:
+  - ref: "Observed relation between evapotranspiration and soil moisture in the North American monsoon region"
+    doi: 10.1029/2008gl036001
+    needed_for: ["Total evapotranspiration (EvpTtrs / EvapoTranspiration)", "Soil moisture (top 10 cm / root zone)"]
+  - ref: "Investigating Parameter Transferability across Models and Events for a Semiarid Mediterranean Catchment"
+    doi: 10.3390/w11112261
+    needed_for: ["Discharge at outlet (Qstrm)", "Runoff-mechanism hydrograph separation (Hsrf, Sbsrf, Psrf, Satsrf)"]
+  - ref: "Groundwater-model calibration texts such as Anderson and Woessner or Hill 1998, needed for normalized head-RMSE targets"
+    doi: null
+    needed_for: ["Depth to groundwater table (Nwt)"]
+  - ref: "Snow-cover remote-sensing validation convention with explicit CSI/POD/FAR pass bands"
+    doi: null
+    needed_for: ["Snow water equivalent (SnWE; liqWEq/iceWEq)"]

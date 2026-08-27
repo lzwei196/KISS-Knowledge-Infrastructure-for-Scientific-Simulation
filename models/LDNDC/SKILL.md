@@ -1,13 +1,3 @@
----
-name: ldndc
-description: >-
-  LandscapeDNDC 1.37.0 (MoBiLE framework; Models Description Apr 2026), MeTrx
-  soil-biogeochemistry lineage from Arable-DNDC / Forest-DNDC. Covers Coupled
-  soil-plant-atmosphere C, N and water cycling at site scale (1-D layered soil + canopy…;
-  Soil biogeochemistry: SOM turnover, microbial dynamics, nitrification, denitrification….
-  Use when the task involves running, configuring, calibrating or interpreting LDNDC.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -33,6 +23,56 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (20 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (12 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (27 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/run_ldndc_bengbu_ghg.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_ldndc_bengbu_ghg.py --help` |
+| `tools/run_ldndc_rice_paddy_ch4.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_ldndc_rice_paddy_ch4.py --help` |
+| `tools/s10_vic_coupling/vic_soil_to_ldndc_site.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_vic_coupling/vic_soil_to_ldndc_site.py --help` |
+| `tools/s10_vic_coupling/vic_to_ldndc_climate.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_vic_coupling/vic_to_ldndc_climate.py --help` |
+| `tools/s10_vic_coupling/vic_to_ldndc_soilwater.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_vic_coupling/vic_to_ldndc_soilwater.py --help` |
+| `tools/s1_project_setup/create_project_structure.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_project_setup/create_project_structure.py --help` |
+| `tools/s1_project_setup/generate_project_xml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_project_setup/generate_project_xml.py --help` |
+| `tools/s2_site_config/generate_site_xml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_site_config/generate_site_xml.py --help` |
+| `tools/s2_site_config/hwsd_to_ldndc_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_site_config/hwsd_to_ldndc_soil.py --help` |
+| `tools/s3_setup_modules/generate_setup_xml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_setup_modules/generate_setup_xml.py --help` |
+| `tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py --help` |
+| `tools/s4_climate_prep/validate_climate_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_climate_prep/validate_climate_file.py --help` |
+| `tools/s5_airchemistry_prep/generate_airchemistry_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_airchemistry_prep/generate_airchemistry_file.py --help` |
+| `tools/s6_management_config/generate_management_xml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_management_config/generate_management_xml.py --help` |
+| `tools/s7_species_params/validate_species_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_species_params/validate_species_params.py --help` |
+| `tools/s8_execution/run_ldndc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_execution/run_ldndc.py --help` |
+| `tools/s9_output_parsing/aggregate_annual_budget.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_parsing/aggregate_annual_budget.py --help` |
+| `tools/s9_output_parsing/parse_physiology_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_parsing/parse_physiology_output.py --help` |
+| `tools/s9_output_parsing/parse_soilchemistry_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_parsing/parse_soilchemistry_output.py --help` |
+| `tools/s9_output_parsing/parse_watercycle_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_parsing/parse_watercycle_output.py --help` |
+
+*20 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 ---
 
 ## Data Preparation
@@ -57,6 +97,60 @@ Then convert to LDNDC climate.txt format using this KI's tool: `tools/s4_climate
 ## Overview
 
 LandscapeDNDC is a modular, CLI-native C++ biogeochemistry framework for simulating biosphere-atmosphere-hydrosphere exchange processes. It replaces the GUI-bound DNDC model with a scalable, XML-configured system suitable for site and regional-scale simulations.
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | LandscapeDNDC |
+| Version | v1.37 |
+| Language | C++ |
+| Primary domain | Terrestrial biogeochemistry |
+| Spatial mode | Site and regional-scale simulations |
+| Binary | `model/ldndc/ldndc-1.37.linux64/bin/ldndc` |
+
+## 2. What This Model Does
+
+LandscapeDNDC simulates C/N cycling, greenhouse gas emissions, nutrient leaching, crop growth, soil carbon dynamics, and water-cycle processes for terrestrial systems. It is configured through XML input files and run through the real LDNDC binary; do not replace it with simplified formulas.
+
+## 3. Input Requirements
+
+**Exact shapes live in `docs/format_spec.yaml`** (projected from dag + triplets; regenerate it after changing either source, never hand-edit). This section explains the operational intent and common traps; the spec file is the contract.
+
+### 3.1 Meteorological Forcing
+
+| Variable | Unit model expects | Source dataset | Source unit | Conversion |
+|----------|-------------------|----------------|-------------|------------|
+| Precipitation | mm/day | CMFD 3-hourly | kg/m2/s | multiply each 3-hour step by 10800, then sum 8 steps |
+| Precipitation | mm/day | MSWX 3-hourly | mm/3hr | sum 8 steps |
+| Temperature | degC | CMFD 3-hourly | K | subtract 273.15 |
+| Temperature | degC | MSWX 3-hourly | degC | none |
+| Shortwave radiation | W/m2 | VIC/forcing pipeline | W/m2 | none |
+| Wind speed | m/s | forcing pipeline | m/s | none |
+| Relative humidity | % | forcing pipeline | % | enforce 0-100 range |
+
+Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER, or `from ki_tools_common.netcdf_utils import load_cmfd_daily_all` when direct CMFD 3-hourly NetCDF reading is needed.
+
+### 3.2 Static Inputs
+
+| Input | Source | Tool that prepares it |
+|-------|--------|----------------------|
+| Soil properties | HWSD or VIC soil parameters | `tools/s2_site_config/hwsd_to_ldndc_soil.py`, `tools/s10_vic_coupling/vic_soil_to_ldndc_site.py` |
+| Project structure | User/project settings | `tools/s1_project_setup/create_project_structure.py` |
+| Site XML | Soil profile, canopy, initial conditions | `tools/s2_site_config/generate_site_xml.py` |
+| Species parameters | LDNDC species parameter files | `tools/s7_species_params/validate_species_params.py` |
+
+### 3.3 Configuration Files
+
+| File | Format | Notes |
+|------|--------|-------|
+| `project.xml` | XML | Master schedule, source paths, and output paths |
+| `site.xml` | XML | Soil profile, canopy, and initial conditions |
+| `setup.xml` | XML | Module selection and output configuration |
+| `climate.txt` | tab-separated text | Meteorological forcing |
+| `airchem.txt` | text | CO2 concentration and N deposition |
+| `mana.xml` | XML | Sowing, fertilizer, harvest, flood, and drain events |
+| `parameters_species.xml` | XML | Crop and vegetation parameters |
 
 ## Validated Results — Bengbu Wheat-Maize (Default Parameters)
 
@@ -115,11 +209,11 @@ Key capabilities:
 - **Water cycle**: Infiltration, percolation, ET partitioning, runoff, snow dynamics
 - **Management effects**: Tillage, fertilization, irrigation, crop rotation impacts on biogeochemistry
 
-## Installation
+## 4. Build Instructions
 
 See `docs/s1_installation_skill.md` for compilation from source and dependency setup. For HydroCraft, the pre-built binary is at `KISSPATH_HOME/LDNDC/bin/ldndc`. The LDNDC Docker image is available at `codebase.helmholtz.cloud/landscapedndc/ldndc-docker` for containerized deployment.
 
-## Environment Setup
+## 5. Execution
 
 ```bash
 # LDNDC binary location
@@ -133,6 +227,26 @@ $LDNDC_BIN -c ldndc.conf project.xml
 # Python tools require the HydroCraft venv
 source KISSPATH_PYTHON_ENV/bin/activate
 ```
+
+Always run `python preflight_check.py` in this KI directory before debugging model execution.
+
+## 6. Output Description
+
+**Source: `dag.yaml`.** The dag is the model identity for outputs. If this section ever disagrees with `dag.yaml`, the dag wins and this section is the bug.
+
+**Headline output** (the dag's `validation_rank: 1` variable; the output this model is judged by):
+
+> `evapotranspiration` -- Daily actual evapotranspiration (transpiration + soil + interception evaporation). (mm)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `evapotranspiration` | 1 | mm | Daily actual evapotranspiration (transpiration + soil + interception evaporation). |
+
+Other dag outputs: `dN_n2o_emis`, `dN_no_emis`, `dC_co2_emis_hetero`, `dC_ch4_emis`, `dN_no3_leach`, `yield`, `lai`.
+
+## 7. Tool Inventory
+
+Use the stage table and tool reference below as the operational inventory. Read each tool's argparse (`--help`) before composing a command.
 
 ## Pipeline
 
@@ -171,6 +285,41 @@ source KISSPATH_PYTHON_ENV/bin/activate
 | `vic_to_ldndc_climate` | `tools/s10_vic_coupling/vic_to_ldndc_climate.py` | Convert VIC forcing to LDNDC climate format |
 | `vic_to_ldndc_soilwater` | `tools/s10_vic_coupling/vic_to_ldndc_soilwater.py` | Map VIC soil moisture to LDNDC layers |
 | `vic_soil_to_ldndc_site` | `tools/s10_vic_coupling/vic_soil_to_ldndc_site.py` | Convert VIC soil params to LDNDC site.xml |
+
+Shared utilities should be used instead of raw one-off data extraction code:
+
+```python
+from ki_tools_common.load_forcing import load_daily_forcing
+from ki_tools_common.netcdf_utils import load_cmfd_daily_all
+from ki_tools_common.soil_utils import lookup_hwsd
+from ki_tools_common.metrics import all_metrics
+from ki_tools_common.validation import validate_forcing_ranges
+from ki_tools_common.units import convert
+```
+
+## 8. Unit Conversion Table
+
+| Variable | Source unit (verified) | Model unit | Factor or operation | Type |
+|----------|------------------------|------------|---------------------|------|
+| `corg` soil organic carbon | % | fraction | divide by 100 | multiplicative |
+| `sks` saturated hydraulic conductivity | mm/hr | cm/min | divide by 600 | multiplicative |
+| `clay` | % | fraction | divide by 100 | multiplicative |
+| Temperature | K | degC | subtract 273.15 | additive |
+| Temperature | degC | degC | none | identity |
+| Radiation | W/m2 | W/m2 | none | identity |
+| Precipitation | mm/3hr | mm/day | sum 8 steps | aggregation |
+| CMFD precipitation | kg/m2/s | mm/day | multiply each 3-hour step by 10800, then sum 8 steps | multiplicative + aggregation |
+
+### 8c. Sign Conventions and Output Units
+
+Post-processing must treat evapotranspiration as the dag headline output in `mm`. For all output variables, bind observations and metric calculations by the dag variable name, not by an inferred column label.
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| `evapotranspiration` | Daily actual evapotranspiration in mm | Rate or differently signed ET flux | Magnitude or sign error in water-balance validation |
+| `dN_n2o_emis` | Daily nitrogen emission output by dag variable name | Confusion with annual kgN/ha summaries | Wrong temporal aggregation or variable binding |
+| `dN_no_emis` | Daily nitrogen emission output by dag variable name | Confusion with N2O emission | Wrong gas species validation |
+| `dN_no3_leach` | Leaching output by dag variable name | Confusion with concentration | Wrong nutrient-loss comparison |
 
 ## Critical Domain Knowledge
 
@@ -248,6 +397,20 @@ Example:
 
 5. **Incompatible module combination**: Selecting a forest physiology module with cropland management events produces no error but generates nonsensical output.
 
+## 9. Diagnostic Triplets (Top 5)
+
+The full diagnostic corpus stays in `diagnostics/triplets.yaml`; check it first on any error and do not duplicate or renumber entries here.
+
+| # | Error class | Diagnosis | Remedy |
+|---|-------------|-----------|--------|
+| 1 | Path resolution errors (`dt_001`) | Required binary, config, or input path is wrong | Use the triplet remedy, then re-run `python preflight_check.py` |
+| 2 | XML format errors (`dt_002`, `dt_004`, `dt_008`) | LDNDC input XML is malformed or semantically incompatible | Compare with working examples and regenerate with this KI's XML tools |
+| 3 | Silent unit conversion errors (`dt_005`, `dt_012`, `dt_014`) | Input values have plausible syntax but wrong units | Re-read `docs/format_spec.yaml` and the conversion table before rerunning |
+| 4 | Silent biogeochemistry errors (`dt_003`, `dt_007`, `dt_009`, `dt_013`) | Model runs but crop, C/N, or module behavior is scientifically wrong | Follow the triplet remedy and inspect model-native outputs |
+| 5 | Runtime crashes (`dt_010`, `dt_011`) | LDNDC terminates before producing valid output | Use the triplet remedy and preserve full stderr/log context |
+
+## 10. Coupling Interfaces
+
 ## Coupling Points with HydroCraft Models
 
 ### VIC -> LDNDC
@@ -279,6 +442,34 @@ See `diagnostics/triplets.yaml` for 15 diagnostic triplets covering:
 *Part of the HydroCraft multi-model simulation platform by the Jianyun Zhang Research Group, Hohai University.*
 
 ---
+
+## 11. Validated Results
+
+### Test Site: Bengbu Wheat-Maize
+
+| Property | Value |
+|----------|-------|
+| Location | 32.94, 117.35 |
+| Period | 2000-2005 |
+| Status | Validated on Bengbu wheat-maize |
+
+### Performance Metrics -- judged against the field's bar, not intuition
+
+**State the bar from `docs/validation_convention.yaml`; cite every band and write null bands as "no cited threshold".** The convention bars currently restated here are for `dN_n2o_emis` and `dN_no_emis`. No convention bar is stated here for the dag rank-1 `evapotranspiration`; consult `docs/validation_convention.yaml` before judging an evapotranspiration run.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Citation key |
+|--------------|--------|-----------|-------------------|-----------|----------------|--------------|
+| `dN_n2o_emis` | NSE | maximize | 0.0 (`ali2014`) | no cited threshold (`ali2014`) | 1.0 (`ali2014`) | `ali2014` |
+| `dN_n2o_emis` | PBIAS | zero_centered | 25.0 (`ali2014`) | 15.0 (`ali2014`) | 10.0 (`ali2014`) | `ali2014` |
+| `dN_no_emis` | NSE | maximize | 0.0 (`ali2014`) | no cited threshold (`ali2014`) | 1.0 (`ali2014`) | `ali2014` |
+
+### Data Replacement Tracking
+
+No additional component replacement statuses are restated here. Use `knowledge_infrastructure.yaml`, `docs/format_spec.yaml`, and the run artifacts for machine-readable component status; do not infer replacement status from this prose section.
+
+## 12. Parameter Selection by Region
+
+Use the region guidance below as physically informed starting points, not calibration. When no site-specific calibration exists, prefer documented crop calendars, species names, and module stacks already represented in this KI.
 
 ## Rice (Paddy) Configuration — Critical (Validated 2026-03-20)
 

@@ -1,0 +1,350 @@
+schema_version: 1
+model_id: RHESSys
+domain: hydrology
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  das2019:
+    doi: 10.1007/s13201-019-1013-x
+    title: "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India"
+    venue: "Applied Water Science"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13201-019-1013-x.txt
+  chen2020:
+    doi: 10.3390/w12102878
+    title: "The Regional Hydro-Ecological Simulation System for 30 Years: A Systematic Review"
+    venue: "Water"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w12102878.txt
+  ren2024:
+    doi: 10.1029/2023wr036008
+    title: "Simulating the Role of Biogeochemical Hotspots in Driving Nitrogen Export From Dryland Watersheds"
+    venue: "Water Resources Research"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2023wr036008.txt
+  son2019:
+    doi: 10.1002/eco.2053
+    title: "Hydrologic responses to climate warming for a snow-dominated watershed and a transient snow watershed in the California Sierra"
+    venue: "Ecohydrology"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_eco.2053.txt
+  hanan2018:
+    doi: 10.1002/eap.1718
+    title: "Accounting for disturbance history in models: using remote sensing to constrain carbon and nitrogen pool spin-up"
+    venue: "Ecological Applications"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_eap.1718.txt
+  tague2019:
+    doi: 10.3389/ffgc.2019.00036
+    title: "Plant Accessible Water Storage Capacity and Tree-Scale Root Interactions Determine How Forest Density Reductions Alter Forest Water Use and Productivity"
+    venue: "Frontiers in Forests and Global Change"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_ffgc.2019.00036.txt
+  jung2007:
+    doi: 10.5194/bg-4-647-2007
+    title: "Assessing the ability of three land ecosystem models to simulate gross carbon uptake of forests from boreal to Mediterranean climate in Europe"
+    venue: "Biogeosciences"
+    year: 2007
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-4-647-2007.txt
+  tang2024:
+    doi: 10.5194/bg-21-893-2024
+    title: "Understanding the effects of revegetated shrubs on fluxes of energy, water, and gross primary productivity in a desert steppe ecosystem using the STEMMUS-SCOPE model"
+    venue: "Biogeosciences"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-21-893-2024.txt
+  williams2009:
+    doi: 10.5194/bg-6-1341-2009
+    title: "Improving land surface models with FLUXNET data"
+    venue: "Biogeosciences"
+    year: 2009
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-6-1341-2009.txt
+  liu2011:
+    doi: 10.5194/hess-15-425-2011
+    title: "Developing an improved soil moisture dataset by blending passive and active microwave satellite-based retrievals"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-15-425-2011.txt
+
+validation:
+  - dag_variable: streamflow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.75, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "OA paper reproduces Moriasi et al. monthly hydrology rule: satisfactory if NSE > 0.50; it also quotes NSE > 0.75 as good."
+        cites: [das2019]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "OA paper reproduces Moriasi et al. monthly streamflow PBIAS convention: satisfactory within +/-25%."
+        cites: [das2019]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "RHESSys review says streamflow validation commonly uses NSe, LogNSe, PBIAS, or R2; R2 is supplementary to NSE/PBIAS."
+        cites: [chen2020]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 25% after converting RHESSys depth flux to gauge discharge or specific discharge."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: "Das 2019 quotes: 'satisfactory as if NSE > 0.50 ... PBIAS +/- 25% for streamflow.' RHESSys benchmark Ren 2024 reports calibration monthly NSE 0.88 and evaluation NSE 0.8, with percent error 5.45% and -3.92%."
+
+  - dag_variable: evaporation
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides an evaporation-partition NSE threshold; RHESSys literature more often validates total ET/LE than evaporation alone."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "RHESSys review lists ET validation using flux towers and R2/RMSE/PBIAS; partitioned evaporation remains model-specific."
+        cites: [chen2020, tang2024]
+    validated_when: "UNRESOLVED - validate total ET/LE where possible; do not auto-grade evaporation alone without a fetched partition-specific band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Chen 2020 reports RHESSys ET validation against flux towers with R2, RMSE, and PBIAS. Tang 2024 gives land-surface LE/GPP validation examples, but not a RHESSys evaporation threshold."
+
+  - dag_variable: transpiration (sat + unsat zone)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.91, good: null, satisfactory: 0.69}
+        pass_band: satisfactory
+        band_note: "RHESSys review reports site-monitored versus simulated transpiration correlations ranging from 0.69 to 0.91 and says other measures were acceptable."
+        cites: [chen2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag uses NSE, but the fetched RHESSys review describes transpiration validation by correlation and error metrics rather than NSE thresholds."
+        cites: [chen2020]
+    validated_when: "Correlation with observed transpiration is at least the lower RHESSys benchmark value, r >= 0.69; use total ET checks when transpiration observations are absent."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Chen 2020: transpiration coefficients 'ranged from 0.69 to 0.91' and total error percentage was 14.6%; this supersedes dag NSE for transpiration because the fetched review reports R as the field practice."
+
+  - dag_variable: snowpack.water_equivalent_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.95, good: 0.87, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "RHESSys snow calibration/validation examples report R2=0.95/0.90 for snowmelt timing and R2=0.87/0.70 for measured SWE."
+        cites: [son2019, chen2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched RHESSys review says snow parameters are often calibrated with R2 for snow depth/SWE rather than an NSE threshold."
+        cites: [chen2020]
+    validated_when: "R2 >= 0.70 against measured SWE or snow-depth-derived SWE, with timing checked by snowmelt-date R2 where available."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: "Son 2019 reports modeled-vs-measured SWE R2 values of 0.87 and 0.7 and snowmelt timing R2 of 0.95 and 0.9; Chen 2020 repeats these values as evidence that RHESSys reproduced snowmelt."
+
+  - dag_variable: snowpack.water_equivalent_depth
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched RHESSys paper supplies a CSI threshold for patch-scale SWE or binary snow-cover snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched RHESSys snow validation convention is point/time R2 for snow depth, SWE, or melt timing, not CSI for spatial snapshots."
+        cites: [son2019, chen2020]
+    validated_when: "UNRESOLVED - spatial SWE/snow-cover CSI requires a fetched snow remote-sensing validation convention."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "OpenAlex coverage check did not produce a clear RHESSys spatial-SWE CSI threshold within the cap; leave the band null."
+
+  - dag_variable: lai (proj_lai / effective_lai)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a dynamic point-time-series LAI NSE threshold for RHESSys."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RHESSys review says vegetation parameters are manually calibrated with remote sensing or field LAI and lists RMSE/literature-based value, but gives no point-time-series band."
+        cites: [chen2020]
+    validated_when: "UNRESOLVED - compare to field or remote-sensing LAI with RMSE/seasonal timing, but do not auto-validate the NSE metric without a cited band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Chen 2020 lists LAI as a vegetation target and RMSE/literature-based value as criteria; Hanan 2018 focuses on remote-sensing-constrained initialization rather than temporal LAI skill."
+
+  - dag_variable: lai (proj_lai / effective_lai)
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 5.0}
+        pass_band: satisfactory
+        band_note: "RHESSys target-driven spin-up stores a patch when the model target variable such as LAI is within 5% of the remote-sensing target."
+        cites: [hanan2018]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Continuous LAI is validated with remote-sensing LAI targets or mean error in fetched RHESSys literature, not binary CSI."
+        cites: [chen2020, hanan2018]
+    validated_when: "Spatial LAI initialization/benchmarking is within 5% of remote-sensing LAI targets; dynamic spatial-time-series CSI remains unsupported."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "Hanan 2018 says the target is reached when model LAI is 'within 5%' of the user-specified target and that initialized LAI corresponded well with remote-sensing estimates. This is a spatial initialization convention, not a full dynamic LAI threshold."
+
+  - dag_variable: cs.net_psn (net photosynthesis / NPP proxy)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Land-ecosystem GPP benchmark reports agreement acceptable when model relative RMSE is about 30%."
+        cites: [jung2007]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Land-surface flux validation also reports R2 for GPP; Tang 2024 calls GPP validation with R2=0.70 reasonable."
+        cites: [tang2024, williams2009]
+    validated_when: "Relative RMSE for GPP/net-photosynthesis proxy is <= 30%, with flux-tower definition matching the RHESSys net-photosynthesis output."
+    evidence_strength: moderate
+    confidence: 0.56
+    notes: "Jung 2007 reports GPP RMSE of approximately 30% or 420 gC/m2/yr and says absolute agreement is acceptable considering driver and flux-partition uncertainties. This transfers from GPP to RHESSys cs.net_psn only when units and flux partitioning are reconciled."
+
+  - dag_variable: streamflow_NO3 / streamflow_DON
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "OA paper reproduces Moriasi et al. monthly rule and states satisfactory objective functions have NSE > 0.50."
+        cites: [das2019]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 70.0}
+        pass_band: satisfactory
+        band_note: "OA paper reproduces Moriasi et al. PBIAS convention for N and P as +/-70%."
+        cites: [das2019]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "RHESSys review reports monthly NO3 validation with correlation coefficient and NSE; Ren 2024 shows nitrate export timing remains difficult even after hotspot calibration."
+        cites: [chen2020, ren2024]
+    validated_when: "N export is validated when NSE >= 0.50 and |PBIAS| <= 70% against observed stream N export or concentration-derived load."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Das 2019 quotes 'PBIAS +/- 70% for N and P.' Chen 2020 reports a RHESSys NO3 example with correlation 0.82 and NSE 0.64. Ren 2024 hotspot scenario improved peak streamflow nitrate NSE from 0.22 to 0.4, below the transferred satisfactory band."
+
+  - dag_variable: soil_cs.totalc / litter_cs.totalc
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched RHESSys paper provides a numeric PBIAS threshold for soil plus litter carbon pool snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: target_tolerance
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hanan 2018 constrains plant C and N spin-up using remote-sensing targets such as LAI; it does not provide a direct soil/litter carbon validation band."
+        cites: [hanan2018]
+    validated_when: "UNRESOLVED - soil/litter C snapshots need field soil/litter carbon benchmarks; remote-sensing LAI spin-up is only contextual."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Hanan 2018 states model projections are limited by uncertainty in initial plant C and N stores and compares LAI, ET, NPP, streamflow, and N export, not a soil/litter total-C pass band."
+
+  - dag_variable: sat_deficit / unsat_storage / rz_storage / theta (soil moisture)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.65}
+        pass_band: satisfactory
+        band_note: "Soil-moisture validation source says R > 0.65 between independent products preserves temporal soil-moisture dynamics with confidence."
+        cites: [liu2011]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag uses NSE, but RHESSys review says soil moisture validation used correlation between observed and simulated soil moisture contents."
+        cites: [chen2020]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Tang 2024 reports SWC R2=0.84 and says rainfall-event dynamics were captured; retained as benchmark context, not the pass band."
+        cites: [tang2024]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Tang 2024 reports SWC RMSE=0.01 m3/m3 as a benchmark value, but the fetched RHESSys texts do not provide a general RHESSys RMSE pass threshold."
+        cites: [tang2024]
+    validated_when: "Soil-moisture temporal dynamics have R >= 0.65 against observations or a trusted soil-moisture product; treat point-sensor/root-zone mismatch as contextual."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Liu 2011 chooses the 0.65 correlation threshold because two independent soil-moisture products then show similar temporal variation; Chen 2020 says RHESSys soil-water validation uses correlation. Tang 2024 provides supporting SWC benchmark context with R2=0.84 and RMSE=0.01 m3/m3."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2007 original model-evaluation guideline; thresholds used only through fetched OA reproduction in Das 2019"
+    doi: 10.13031/2013.23153
+    needed_for: [streamflow, "streamflow_NO3 / streamflow_DON"]
+  - ref: "Dedicated binary snow-cover or SWE spatial validation paper with CSI/POD/FAR thresholds"
+    doi: unknown_not_fetched
+    needed_for: [snowpack.water_equivalent_depth]
+  - ref: "RHESSys vegetation paper reporting dynamic LAI time-series RMSE/NSE validation thresholds"
+    doi: unknown_not_fetched
+    needed_for: ["lai (proj_lai / effective_lai)"]
+  - ref: "RHESSys or ecosystem model soil/litter carbon pool validation paper with field-carbon PBIAS/RMSE bands"
+    doi: unknown_not_fetched
+    needed_for: ["soil_cs.totalc / litter_cs.totalc"]
+  - ref: "Assessment of the SMAP Level-4 Surface and Root-Zone Soil Moisture Product Using In Situ Measurements"
+    doi: 10.1175/JHM-D-17-0063.1
+    needed_for: ["sat_deficit / unsat_storage / rz_storage / theta (soil moisture)"]

@@ -1,254 +1,764 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["flood"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "SFINCS v2.3.2"
-  domain: "flood"
-  secondary_domains: ["coastal"]
-  binary: "sfincs"
-  binary_path: "KISSPATH_BINARIES/sfincs/bin/sfincs"
-  language: "Fortran 90"
-  working_directory: "directory containing sfincs.inp (binary reads from CWD only)"
-  notes: "Reduced-complexity 2D shallow water solver for rapid flood inundation. No command-line arguments."
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: SFINCS
+  language: fortran
+  implementation:
+    id: sfincs-v232
+    version: v2.3.2 (mt_Faber lineage)
+    provenance: Fortran reduced-physics flood solver shipped by Deltares; realizes the SFINCS local-inertial/SSWE
+      spec (Leijnse et al. 2021) with subgrid per van Ormondt et al. 2025.
+  scientific_reference_version: SFINCS reduced-physics solver (Leijnse et al. 2021; local-inertial / SSWE),
+    subgrid per van Ormondt et al. 2025
 inputs:
-
   forcing:
-    - name: "precipitation"
-      file: "sfincs.precip (ASCII) or NetCDF"
-      unit: "mm/hr"
-      valid_range: [0.0, 200.0]
-      format: "ASCII preferred: time_seconds precip_mmhr (two columns)"
-      conversion_from_cmfd: "CMFD mm/3hr / 3 -> mm/hr"
-      notes: "ALWAYS use ASCII precipfile, NOT netprecipfile. NetCDF may silently fail."
-
-    - name: "river_discharge"
-      file: "sfincs.src + sfincs.dis"
-      unit: "m3/s"
-      valid_range: [0.0, 1e6]
-      format: "sfincs.src: source cell locations; sfincs.dis: time series (seconds, Q)"
-      conversion_from_cama: "CaMa-Flood outflw (m3/s) direct"
-
-    - name: "water_level_boundary"
-      file: "sfincs.bnd + sfincs.bzs"
-      unit: "m"
-      valid_range: [-10.0, 100.0]
-      format: "sfincs.bnd: boundary cell locations; sfincs.bzs: time series (seconds, WL)"
-      conversion_from_cama: "CaMa-Flood sfcelv (m) direct"
-      notes: "Datum must match DEM vertical datum."
-
+  - name: precipitation
+    unit: mm/hr
+    category: forcing
+    source_kind: forcing
+    model_input_format: ASCII precipfile (time_seconds precip_mmhr); netprecipfile NetCDF path unreliable
+    notes: Instantaneous rate in mm/hr; drives pluvial flooding. Time-interpolated each step by the meteo
+      module into prcp.
+  - name: river discharge boundary
+    unit: m3/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: sfincs.src (source points) + sfincs.dis (discharge time series)
+    notes: Injected as point/source discharge qsrc; the CaMa-Flood->SFINCS fluvial coupling path.
+  - name: water level boundary
+    unit: m
+    category: forcing
+    source_kind: forcing
+    model_input_format: sfincs.bnd (boundary points) + sfincs.bzs (water-level time series)
+    notes: Coastal/downstream water-level BC; vertical datum must match the DEM datum.
+  - name: wind speed and direction
+    unit: m/s, degrees
+    category: forcing
+    source_kind: forcing
+    model_input_format: spiderweb / amu-amv wind fields (dtwnd update interval, default 1800 s)
+    notes: Optional; produces wind stress (tauwu/tauwv) for surge/setup. Not active in default pluvial/fluvial
+      runs.
+  - name: atmospheric pressure
+    unit: Pa
+    category: forcing
+    source_kind: forcing
+    model_input_format: atmospheric pressure forcing field / spwfile composite
+    notes: Optional; barometric forcing for surge runs.
   parameters:
-    critical:
-      - name: "manning_n"
-        file: "sfincs.man (grid) or manning_n in sfincs.inp"
-        description: "Manning roughness coefficient"
-        valid_range: [0.01, 0.20]
-        default: 0.04
-        unit: "s/m^(1/3)"
-
-      - name: "dt"
-        file: "sfincs.inp"
-        description: "Computational timestep"
-        valid_range: [0.1, 60.0]
-        unit: "seconds"
-        bug_history: >
-          Must satisfy CFL: dt <= dx / sqrt(g * h_max). For dx=100m, h_max=10m:
-          dt_max = 10.1s. Use 0.75 * dt_max for safety. Triplet dt_009.
-
-      - name: "mask_values"
-        file: "sfincs.msk"
-        description: "Cell status: 0=inactive, 1=closed boundary, 2=outflow, 3=active"
-        valid_range: [0, 3]
-        unit: "integer flag"
-        bug_history: >
-          Edge cells MUST be mask=2 (outflow) for coastal domains. But for inland
-          mountainous terrain, mask=2 defaults to WL=0 (sea level) creating massive
-          hydraulic gradient. Use mask=1 (closed) if min_elevation > 10m, or provide
-          explicit bzs water levels. Triplet dt_v005.
-
-      - name: "outputformat"
-        file: "sfincs.inp"
-        description: "Output format selector"
-        valid_range: ["net"]
-        default: "net"
-        bug_history: >
-          Must be 'net' for NetCDF output. Without it, output may be binary and
-          post-processing tools (expecting sfincs_map.nc) will fail. Triplet dt_018.
-
-  files:
-    required:
-      - name: "sfincs.inp"
-        description: "Master configuration file"
-        format: "Key-value pairs, one per line"
-
-      - name: "sfincs.dep"
-        description: "DEM / bathymetry grid"
-        format: "Binary (NX*NY float32)"
-
-      - name: "sfincs.msk"
-        description: "Active domain mask"
-        format: "Binary (NX*NY int8)"
-
-      - name: "sfincs.ind"
-        description: "Index file for active cells"
-        format: "Binary: [n_active int32] [n_active 1-based indices int32]"
-        notes: "#1 trap. Wrong format gives single-cell domain silently."
-
-    optional:
-      - name: "sfincs.man"
-        description: "Spatially varying Manning's n"
-        format: "Binary (NX*NY float32)"
-
-      - name: "sfincs.precip"
-        description: "Uniform precipitation time series"
-        format: "ASCII: time_seconds precip_mmhr"
-
-      - name: "sfincs.src / sfincs.dis"
-        description: "Point source locations and discharge time series"
-
-      - name: "sfincs.bnd / sfincs.bzs"
-        description: "Water level boundary locations and time series"
-
-      - name: "sfincs.thd"
-        description: "Thin dam (levee) locations"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: bed level (topography/bathymetry)
+    unit: m (vertical datum must match boundary conditions)
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: sfincs.dep (binary float32 row-major), sourced from a DEM raster (GeoTIFF)
+    notes: Terrain elevation, positive upward; defines conveyance with subgrid tables.
+  - name: active cell mask
+    unit: category code
+    category: parameter
+    source_kind: user_provided
+    model_input_format: 'sfincs.msk (binary uint8): 0=inactive, 1=active(computed), 2=outflow boundary,
+      3=water-level BC'
+    notes: SKILL.md convention adopted (1=active). Interior cells must be 1; mask=3 on interior makes
+      SFINCS prescribe water level and compute zero flood depth.
+  - name: active-cell index map
+    unit: cell indices
+    category: parameter
+    source_kind: derived
+    model_input_format: 'sfincs.ind (binary int32: [n_active][1-based flat indices])'
+    notes: Maps active cells to grid / subgrid; header int32 must equal n_active.
+  - name: Manning's n roughness
+    unit: s/m^(1/3) (dimensionless n, ~0.015-0.20)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: sfincs.man (binary float32 row-major) or uniform manning; manning_land 0.04 /
+      manning_sea 0.02 split at rgh_lev_land
+    notes: Primary calibration parameter. Precomputed once into gn2=g*n^2 at init (compute_fluxes reads
+      gn2); editing manning after init is inert. In subgrid mode roughness is embedded in the subgrid
+      tables instead.
+  - name: subgrid tables
+    unit: derived (volume-depth, conveyance, roughness)
+    category: parameter
+    source_kind: derived
+    model_input_format: sfincs.sbg / sbgfile (NetCDF; h73table, subgrid_z_volmax)
+    notes: Optional but dominant control on coarse-grid accuracy; continuity maps storage volume to water
+      level via these tables.
+  - name: infiltration parameters
+    unit: mm/hr (qinf); method-specific (CN, Green-Ampt, Horton)
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: qinf constant or qinffile; scsfile/sfacinf (CN); ksfile/sigmafile/psifile (Green-Ampt);
+      f0file/fcfile/kdfile (Horton)
+    notes: Optional infiltration sink subtracted from precipitation in the continuity balance.
+  - name: grid definition
+    unit: m / EPSG
+    category: parameter
+    source_kind: user_provided
+    model_input_format: 'sfincs.inp keywords: x0,y0,dx,dy,mmax,nmax,rotation,epsg'
+    notes: EPSG must be a projected (UTM) CRS; geographic 4326 with metric dx/dy is fatal.
+  initial_conditions:
+  - name: initial water level
+    unit: m
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: zsini uniform (default 0.0) or inifile (binary spatially varying)
+    notes: Sets zs at simulation start.
+  - name: restart state
+    unit: mixed
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: rstfile containing zs, qx, qy, umean, vmean
+    notes: Optional warm-start from a prior run.
+  boundary_conditions:
+  - name: momentum advection toggle
+    unit: 0/1
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: advection keyword (0=LIE local-inertial, 1=SSWE with advection)
+    notes: Structural switch selecting the reduced-physics regime; default 0.
+  - name: minimum flow depth threshold (huthresh)
+    unit: m
+    category: boundary_condition
+    source_kind: default
+    model_input_format: huthresh keyword in sfincs.inp
+    notes: 'Wetting/drying threshold; cells below huthresh treated dry, controlling flood-extent edges
+      and wet/dry stability. Default split across streams: docs default 0.05 m (range 0.001-0.1); binary
+      symbol __sfincs_data_MOD_huthresh default 0.01 m. Unresolved across docs vs binary streams - use
+      SFINCS-manual 0.05 m unless byte-confirmed otherwise.'
+  - name: momentum time-integration / smoothing weight (theta)
+    unit: dimensionless
+    category: boundary_condition
+    source_kind: default
+    model_input_format: theta keyword in sfincs.inp
+    notes: 'Momentum time-integration / numerical-smoothing weight affecting stability. Default split
+      across streams: source binary symbol __sfincs_data_MOD_theta default 0.9; docs default 1.0. Unresolved
+      across docs vs binary streams.'
+  - name: simulation time window
+    unit: s / datetime
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: tref / tstart / tstop
+    notes: Reference, start and stop times; forcing times are relative to tref.
+  - name: computational timestep control
+    unit: s / dimensionless
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: alpha Courant limiter (default 0.5; binary alfa default 0.75) constraining dt
+      <= alpha*dx/sqrt(g*h_max)
+    notes: Adaptive CFL-limited timestep; violation produces NaN crash.
+  - name: output format and intervals
+    unit: s
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: outputformat=net (NetCDF); dtout/dtmapout, dthisout, dtmaxout
+    notes: outputformat must be 'net' for NetCDF map/his output; otherwise binary.
+  - name: hydraulic structures
+    unit: geometry / m
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: thin dams (.thd), weirs, drainage (.drn)
+    notes: Optional; override fluxes between cells inside the momentum step.
 outputs:
-
   primary:
-    - name: "flood_depth"
-      file: "sfincs_map.nc"
-      unit: "m"
-      valid_range: [0.0, 20.0]
-      key_columns: ["hmax"]
-      format: "NetCDF (NX x NY, time dimension)"
-      notes: "Use hmax (water DEPTH above bed), NOT zsmax (water SURFACE elevation)."
-
-    - name: "flood_velocity"
-      file: "sfincs_map.nc"
-      unit: "m/s"
-      valid_range: [0.0, 15.0]
-      key_columns: ["vmax"]
-      format: "NetCDF"
-
-    - name: "water_surface_elevation"
-      file: "sfincs_map.nc"
-      unit: "m"
-      valid_range: null
-      key_columns: ["zsmax"]
-      notes: "DO NOT use for flood depth mapping — gives terrain + water depth."
-
-  diagnostics:
-    - name: "mass_balance"
-      check: "rain volume ~ stored volume (ratio 0.9-1.1)"
-      reference: "Bengbu test: ratio 1.03 (excellent)"
-      notes: "Compute: rain_vol = precip_total * active_area; stored_vol = sum(hmax * cell_area)"
-
-    - name: "flood_depth_range"
-      check: "Max flood depth < 20m for typical fluvial events"
-      notes: "Depths > 20m indicate boundary condition or DEM errors."
-
-    - name: "flooded_area"
-      check: "Non-zero flood extent with depth > 0.3m"
-      notes: "Zero flooding despite rainfall means precipitation not loaded (check sfincs.log for 'Precipitation: no')."
-
-    - name: "no_nan"
-      check: "No NaN values in hmax or zsmax"
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: hmax
+    unit: m
+    description: Maximum water depth above bed over the simulation; the correct flood-depth variable (cf.
+      zsmax which is surface elevation).
+    validation_rank: 5
+    emitted_in: sfincs_map.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Compare against observed/benchmark flood-extent or depth maps; flood/no-flood detection uses
+          CSI/hit-rate. Datum and grid alignment must match.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - High-water marks at surveyed points; SFINCS local-domain depth vs surveyed peak depth.
+      detrending_options:
+      - none
+  - name: zsmax
+    unit: m
+    description: Maximum water surface elevation (bed + depth) over the simulation; not flood depth.
+    validation_rank: 2
+    emitted_in: sfincs_map.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compare against surveyed high-water-mark surface elevations on a shared vertical datum; not
+          a flood-depth proxy.
+      detrending_options:
+      - none
+  - name: zs
+    unit: m
+    description: Instantaneous water surface elevation at each map-output interval.
+    validation_rank: 3
+    emitted_in: sfincs_map.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Event-scale; map snapshots at dtmapout. Requires matching grid and datum.
+      detrending_options:
+      - none
+  - name: point_zs / point_h
+    unit: m
+    description: Water surface elevation / water depth at observation (his) points.
+    validation_rank: 4
+    emitted_in: sfincs_his.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against stage/depth gauges within the domain; timing of peak (t_zsmax) admits DOY/lag
+          bias. Requires shared datum for zs.
+      detrending_options:
+      - none
+  - name: flood extent (derived from hmax > threshold)
+    unit: category / area
+    description: Flood-water wet/dry extent classification derived from hmax exceeding a depth threshold.
+    validation_rank: 1
+    emitted_in: sfincs_map.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Against satellite/observed inundation masks (e.g. SAR-derived) using CSI / hit-rate / false-alarm;
+          sensitive to chosen depth threshold.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "precip_unit_error"
-    triplet: "dt_001"
-    description: "Precipitation not in mm/hr — flood depths 3x too high or zero"
-    affected_output: "hmax, flood extent"
-    detection: "Flood depths unrealistic or zero flooding"
-    fix: "CMFD mm/3hr / 3 = mm/hr"
+- id: dt_001
+  symptom: Flood depths 10-100x too high; entire domain floods unrealistically
+  diagnosis: 'Precipitation in mm/3hr not converted to mm/hr. SFINCS expects mm/hr.; CMFD and MSWX forcing
+    data are accumulated over 3-hour windows (mm/3hr). SFINCS precipitation input expects instantaneous
+    rates in mm/hr. If mm/3hr values are passed directly, precipitation is 3x too high. For example, 30
+    mm/3hr '
+  remedy: 'Divide CMFD/MSWX precipitation by 3.0 before writing to sfincs.precip; prepare_sfincs_rainfall;
+    [''Check precipitation values in sfincs.precip: ncdump -h sfincs.precip'', ''Verify units attribute
+    says mm/hr'', ''Check max value is reasonable (< 100 mm/hr for extreme events)'']; prepare_sfincs_rainfall.py '
+  severity: silent
+- id: dt_002
+  symptom: No flooding despite heavy rain event
+  diagnosis: Precipitation in m/s instead of mm/hr (factor of 3.6e6 too small); Some climate model outputs
+    provide precipitation in kg/m2/s (= m/s water equivalent). SFINCS expects mm/hr. 1 m/s = 3,600,000
+    mm/hr. If not converted, values are effectively zero (e.g., 0.000003 m/s = 0.0108 mm/hr instead of
+    10.8 mm/
+  remedy: 'Convert from m/s to mm/hr: multiply by 3600 * 1000; prepare_sfincs_rainfall; [''Check forcing
+    data units in source NetCDF metadata'', ''Verify precipitation maximum is > 1 mm/hr during storm events''];
+    Always check units attribute in source data before conversion'
+  severity: silent
+- id: dt_003
+  symptom: CaMa-Flood discharge BC produces wrong flood extent; river flow too small
+  diagnosis: 'Discharge in mm/day (VIC native units) not converted to m3/s; VIC outputs runoff in mm/day
+    per grid cell. To convert to discharge for SFINCS: Q_m3s = runoff_mm_day * cell_area_m2 / (1000 *
+    86400). CaMa-Flood outflw is already in m3/s, so no conversion needed for CaMa output. But if using
+    VIC runoff '
+  remedy: 'Use CaMa-Flood outflw (already m3/s) for SFINCS discharge BC. If using VIC directly, convert:
+    Q = runoff_mm * area_m2 / (1000 * 86400); cama_to_sfincs_boundary; [''Check CaMa outflw values are
+    in m3/s (typical river: 10-10000 m3/s)'', ''If values are < 1 for a large river, units are wrong''];
+    cama_to_sf'
+  severity: silent
+- id: dt_004
+  symptom: Coastal water levels systematically offset by 20-40m from expected
+  diagnosis: 'Vertical datum mismatch: DEM uses EGM96 geoid but tide model uses MSL/chart datum; Copernicus
+    GLO-30 and China DEM 90m use EGM96 geoid heights. Tidal models (FES2014) and many water level records
+    use local MSL or chart datum. The difference between EGM96 geoid and WGS84 ellipsoid can be 20-40m
+    depen'
+  remedy: 'Verify both DEM and water level BC use the same vertical datum. Apply geoid correction if needed.;
+    ; [''Check DEM vertical datum: gdalinfo dem.tif | grep VERT'', ''Check water level BC reference: usually
+    MSL or chart datum'', ''If different, apply geoid correction using EGM96 grid'', ''CaMa-Flood sfcelv
+    us'
+  severity: silent
+- id: dt_005
+  symptom: SFINCS crashes immediately with grid error or produces garbage output
+  diagnosis: 'CRS mismatch: sfincs.inp uses geographic (degrees) but dx/dy are in meters; SFINCS dx/dy
+    are in the CRS unit. If EPSG is geographic (e.g., 4326), dx=100 means 100 degrees, not 100 meters.
+    The grid must use a projected CRS (e.g., UTM) for metric dx/dy values. setup_sfincs_domain.py auto-detects
+    UTM.
 
-  - id: "ind_format_trap"
-    triplet: "dt_v001"
-    description: "sfincs.ind wrong format — reads as single-cell domain silently"
-    affected_output: "Entire domain (model runs on 1 cell)"
-    detection: "Read first 4 bytes as int32, check it equals active cell count"
-    fix: "Write as [n_active int32] [n_active flat 1-based indices int32]"
+    '
+  remedy: Use a projected CRS (UTM). setup_sfincs_domain.py auto-detects the correct UTM zone.; setup_sfincs_domain;
+    ['Check epsg in sfincs.inp — must be a projected CRS (e.g., 326xx for UTM north)', 'Verify dx/dy are
+    in meters, not degrees']; Always use setup_sfincs_domain.py which auto-selects UTM
+  severity: fatal
+- id: dt_006
+  symptom: Flood map displaced from actual terrain; flooding in wrong locations
+  diagnosis: 'x0/y0 origin does not match DEM origin after reprojection; When reprojecting DEM to SFINCS
+    grid, the origin (x0, y0) must be consistent between the grid definition and the dep/msk files. If
+    the DEM is clipped or reprojected separately, the origin may shift.
 
-  - id: "vic_forcing_column_order"
-    triplet: "dt_v002"
-    description: "VIC forcing column 0 is temperature, NOT precipitation"
-    affected_output: "Precipitation input (wrong data)"
-    detection: "Precipitation values look like temperature (-20 to 40)"
-    fix: "VIC columns: TEMP(0), PREC(1), PRESSURE(2), SW(3), LW(4), VP(5), WIND(6)"
+    ; [''build_sfincs_topobathy'', ''setup_sfincs'
+  remedy: Ensure build_sfincs_topobathy uses the exact same x0, y0, dx, dy from grid_info.json; build_sfincs_topobathy;
+    ['Compare x0/y0 in sfincs.inp with the transform origin in sfincs.dep', 'Overlay flood map on DEM
+    to check alignment']; Both tools read from grid_info.json — single source of truth
+  severity: silent
+- id: dt_007
+  symptom: Water flows uphill at domain boundary; water accumulates at edges
+  diagnosis: 'Mask file boundary cells set to 3 (active) instead of 2 (outflow); SFINCS mask values: 0=inactive,
+    1=boundary inflow, 2=outflow, 3=active interior. If edge cells are set to 3, water cannot leave the
+    domain and accumulates unrealistically at boundaries. Edge cells should be 2 (outflow) to allow drain'
+  remedy: Set edge cells of active domain to mask=2 (outflow); build_sfincs_topobathy; ['Read sfincs.msk
+    as numpy array', 'Check that domain edge active cells have value 2, not 3']; build_sfincs_topobathy.py
+    auto-detects edge cells and sets to 2
+  severity: silent
+- id: dt_008
+  symptom: Checkerboard pattern in flood depth; alternating wet/dry cells
+  diagnosis: Subgrid resolution too fine relative to computational grid (ratio > 30x); The subgrid lookup
+    tables approximate volume-depth relationships within each computational cell. If the subgrid resolution
+    is too fine (e.g., 1m subgrid on 200m computational grid = 200x ratio), the tables become noisy and
+    pro
+  remedy: Reduce subgrid ratio to 5-20x. E.g., for dx=100m, use 5-20m subgrid.; ; ['Check subgrid_ratio
+    in grid_info.json', 'If > 20, coarsen the subgrid or refine the computational grid']; setup_sfincs_domain.py
+    caps subgrid ratio at 20x
+  severity: degraded
+- id: dt_009
+  symptom: Model crashes with NaN or Inf after N timesteps
+  diagnosis: 'dt too large for dx (CFL violation: dt > dx/sqrt(g*h)); The Courant-Friedrichs-Lewy condition
+    for shallow water equations: dt <= dx / sqrt(g * h_max). For dx=100m and h_max=10m: dt_max = 100 /
+    sqrt(9.81*10) = 10.1s. Exceeding this causes numerical instability and NaN propagation.
 
-  - id: "netprecipfile_silent_fail"
-    triplet: "dt_v004"
-    description: "NetCDF precipitation silently fails — simulation runs without rainfall"
-    affected_output: "Zero flooding"
-    detection: "sfincs.log shows 'Precipitation: no'"
-    fix: "Use ASCII precipfile instead of netprecipfile"
+    ; [''generate_sfincs'
+  remedy: Reduce dt. Use dt <= 0.75 * dx / sqrt(9.81 * h_max_expected); generate_sfincs_inp; ['Calculate
+    dt_max = dx / sqrt(9.81 * 10) for 10m max depth assumption', 'Set dt to 75% of dt_max in sfincs.inp',
+    'For very shallow flows (h<1m), dt can be larger']; generate_sfincs_inp.py auto-computes CFL-stable
+    dt
+  severity: fatal
+- id: dt_010
+  symptom: Very slow convergence; oscillating water levels; simulation takes 100x expected
+  diagnosis: Advection enabled with alpha too low for steep terrain; The momentum damping coefficient
+    alpha (default 0.75) controls numerical stability. With advection=1 on steep terrain, alpha < 0.5
+    can cause oscillations. Also, dt may be auto-reduced by the solver when instability is detected, drastically
+    incr
+  remedy: Set advection=0 (usually not needed for flood inundation). If needed, increase alpha to 0.75-0.95.;
+    generate_sfincs_inp; ['Check if advection=1 in sfincs.inp', 'If runtime is excessive, disable advection
+    first', 'If advection is needed, increase alpha toward 0.9']; generate_sfincs_inp.py sets advect
+  severity: degraded
+- id: dt_011
+  symptom: Runtime 10-100x longer than expected; grid seems too fine for domain
+  diagnosis: 'Grid resolution too fine for domain size. Computational cost scales as (1/dx)^3.; SFINCS
+    cost is proportional to n_cells * n_timesteps. Halving dx quadruples cells and halves dt (CFL), giving
+    8x cost. For a 50km x 50km domain: dx=100m: 250,000 cells, dt~10s -> manageable dx=10m: 25,000,000
+    cells, dt'
+  remedy: Increase dx. Use subgrid for fine-resolution effects. For domains > 10km, use dx >= 50m.; setup_sfincs_domain;
+    ['Check total_cells in grid_info.json', 'If > 2,000,000, consider coarsening or reducing domain extent',
+    'Use subgrid tables (sfincs.sbg) for fine-resolution bathymetry']; setup_sfincs_doma
+  severity: degraded
+- id: dt_012
+  symptom: Water level BC has no effect; boundary appears dry
+  diagnosis: 'Boundary point locations (sfincs.bnd) not aligned to active mask cells; SFINCS matches bnd
+    point coordinates to the nearest grid cell. If the nearest cell has mask=0 (inactive), the BC is ignored
+    silently. The point must fall on a cell with mask=1 (boundary) or mask=3 (active).
 
-  - id: "inland_mask2_drain"
-    triplet: "dt_v005"
-    description: "Mask=2 (outflow) for inland terrain defaults to WL=0 (sea level)"
-    affected_output: "All water drains instantly, no flooding"
-    detection: "Zero flood depth despite rainfall"
-    fix: "Use mask=1 for inland, or provide explicit bzs matching bed elevation"
+    ; [''cama_to_sfincs_bo'
+  remedy: 'Verify bnd point coordinates fall on active mask cells (mask > 0); ; [''Read sfincs.bnd coordinates'',
+    ''Convert to grid indices: i = (x - x0) / dx, j = (y - y0) / dy'', ''Check mask value at those indices:
+    must be > 0'', ''If mask=0, move point to nearest active cell'']; cama_to_sfincs_boundary.py should
+    v'
+  severity: silent
+- id: dt_013
+  symptom: Discharge source creates artificial pond at a single point; no downstream flow
+  diagnosis: 'Source point placed on high ground (ridge), not in channel. No drainage path.; SFINCS adds
+    water at discharge source points (sfincs.src). If the point is on a topographic high, water pools
+    locally instead of flowing downstream. The source point must be placed in the river channel (topographic
+    low).
 
-  - id: "gfortran_sigabrt"
-    triplet: "dt_v006"
-    description: "gfortran cleanup SIGABRT (exit code -6) after successful simulation"
-    affected_output: "None — output is valid"
-    detection: "Exit code -6 but 'Simulation finished' in log"
-    fix: "Check success by: (1) 'Simulation finished' in log AND (2) sfincs_map.nc exists"
+    '
+  remedy: Place discharge source at a topographic low (river channel). Check DEM elevation at source point.;
+    ; ['Read source point coordinates from sfincs.src', 'Look up elevation at those coordinates in sfincs.dep',
+    'Verify it is a local minimum (channel), not a ridge or hillslope', 'If wrong, move to neares
+  severity: degraded
+- id: dt_014
+  symptom: Double flood volume — both precipitation and VIC runoff applied in SFINCS domain
+  diagnosis: 'Same precipitation applied in both VIC (which generates runoff) and SFINCS (which generates
+    its own runoff from rainfall); When SFINCS receives gridded precipitation AND VIC surface runoff as
+    discharge sources, the rainfall is counted twice: once by VIC (producing runoff that enters SFINCS
+    via CaMa-'
+  remedy: 'Choose ONE approach: (a) SFINCS with rainfall + CaMa river BC only, or (b) SFINCS with VIC
+    runoff sources, no rainfall; ; [''If using netprecipfile in sfincs.inp, use CaMa discharge as river
+    BC only'', ''Do NOT add VIC surface runoff as SFINCS discharge source at the same time'', ''If using
+    VIC runoff di'
+  severity: silent
+- id: dt_015
+  symptom: CaMa-Flood boundary flows in wrong direction; flooding appears on wrong side
+  diagnosis: Stage BC (water level) used where discharge BC was intended, or sign convention mismatch;
+    CaMa-Flood outflw can be positive (downstream) or negative (backwater effect). If negative discharge
+    is used as SFINCS inflow, water is removed instead of added. Also, using water level BC (sfcelv) at
+    a river e
+  remedy: 'Use discharge BC (sfincs.src + sfincs.dis) for river inflow. Use water level BC (sfincs.bnd
+    + sfincs.bzs) for coastal/downstream boundaries.; cama_to_sfincs_boundary; [''For upstream river entry:
+    use bc_type=discharge'', ''For downstream coastal boundary: use bc_type=waterlevel'', ''Verify discharge
+    valu'
+  severity: silent
+- id: dt_016
+  symptom: Artificial step changes in water level at SFINCS boundary every 24 hours
+  diagnosis: CaMa-Flood output at daily step, SFINCS needs sub-hourly; linear interpolation causes visible
+    ramps; CaMa-Flood typically outputs daily mean discharge/water level. SFINCS operates at seconds-to-minutes
+    timesteps. Linear interpolation between daily values creates 24-hour ramps that do not represent a
+  remedy: Use sub-daily CaMa-Flood output if available. Otherwise, acknowledge temporal smoothing.; ;
+    ['Check CaMa-Flood output time interval (daily vs 3-hourly)', 'If daily, consider running CaMa-Flood
+    with smaller DTIN/DTOUT', 'For flash flood applications, daily BC is insufficient']; Note temporal
+    resoluti
+  severity: degraded
+- id: dt_017
+  symptom: SFINCS exits immediately with 'Cannot open file' error
+  diagnosis: 'SFINCS reads from CWD only; binary executed from wrong directory; SFINCS has NO command-line
+    arguments. It reads sfincs.inp from the current working directory. If the binary is called from a
+    different directory than where sfincs.inp resides, it will fail to find any input files.
 
-  - id: "hmax_vs_zsmax"
-    triplet: "dt_v007"
-    description: "Using zsmax instead of hmax for flood depth — values equal terrain+depth"
-    affected_output: "Flood depth map shows 310m instead of 7m"
-    detection: "Flood depth values match terrain elevation"
-    fix: "Always use hmax (depth above bed), not zsmax (water surface elevation)"
+    ; [''run_sfincs'', ''s7'
+  remedy: 'cd to the directory containing sfincs.inp before running the binary; run_sfincs; [''Verify
+    sfincs.inp is in the current working directory'', ''All file references in sfincs.inp must be relative
+    to this directory'', ''run_sfincs.py handles this automatically via cwd parameter'']; run_sfincs.py
+    always sets '
+  severity: fatal
+- id: dt_018
+  symptom: Output file empty or missing after successful run
+  diagnosis: 'outputformat not set in sfincs.inp; default may be binary when NetCDF expected; If outputformat
+    is not specified in sfincs.inp, SFINCS may default to binary output instead of NetCDF. The post-processing
+    tools expect NetCDF (sfincs_map.nc). Binary output files have different names and format.
 
-  - id: "precipfile_keyword"
-    triplet: "dt_v008"
-    description: "Config writes netprecipfile when file is ASCII — no rainfall loaded"
-    affected_output: "Zero flooding"
-    detection: "sfincs.log shows 'Precipitation: no'"
-    fix: "Write precipfile = sfincs.precip for ASCII format"
+    ; [''gen'
+  remedy: Add 'outputformat = net' to sfincs.inp; generate_sfincs_inp; ["Check sfincs.inp for 'outputformat'
+    line", "If missing, add 'outputformat = net'", 'Re-run SFINCS']; generate_sfincs_inp.py always includes
+    outputformat = net
+  severity: degraded
+- id: dt_019
+  symptom: Model runs to completion but output is all zeros
+  diagnosis: Mask file has no active cells (all values 0), or all cells set to inactive; If sfincs.msk
+    contains only zeros, SFINCS has no cells to compute. The model may still run without error but produce
+    empty output. This can happen if the shapefile used for masking has wrong CRS or doesn't overlap with
+    the c
+  remedy: 'Check sfincs.msk has active cells (values > 0). Verify shapefile CRS matches grid CRS.; build_sfincs_topobathy;
+    ["Read msk file: np.fromfile(''sfincs.msk'', dtype=np.uint8)", ''Count active cells: np.sum(msk >
+    0)'', ''If 0, check shapefile CRS vs grid EPSG'']; build_sfincs_topobathy.py checks active cell '
+  severity: silent
+- id: dt_020
+  symptom: Water flows too fast; CFL instability with reasonable dt
+  diagnosis: 'Manning''s n too low (< 0.01). Reduces friction, increases flow velocity.; Manning''s n
+    controls flow resistance. Values below 0.01 are physically unrealistic for any surface and can cause
+    CFL violations even with small dt. Minimum realistic values: 0.02 (smooth water), 0.025 (concrete).
 
-  - id: "double_counting_precip"
-    triplet: "dt_014"
-    description: "VIC/CaMa runoff + SFINCS precipitation for same area = double counting"
-    affected_output: "2x expected flood volume"
-    detection: "Flood volume much larger than expected"
-    fix: "Choose either SFINCS precipitation OR VIC/CaMa runoff, not both"
+    ; [''build_sfi'
+  remedy: Set minimum Manning's n to 0.02. Check LULC-to-Manning lookup table.; build_sfincs_roughness;
+    ['Check manning value in sfincs.inp or min value in sfincs.man', 'If < 0.02, increase to at least
+    0.02']; build_sfincs_roughness.py enforces minimum n=0.015
+  severity: fatal
+- id: dt_v001
+  symptom: 'SFINCS reads sfincs.ind and reports ''Number of active z points: 1'' despite thousands of
+    active cells in mask'
+  diagnosis: 'sfincs.ind written as full 2D grid of sequential int32 indices instead of the required binary
+    format: [n_active int32] [flat_indices int32 1-based]; SFINCS v2.3.2 expects the index file (sfincs.ind)
+    in a specific binary format: the first int32 is the count of active points, followed by that many
+    int'
+  remedy: 'Write sfincs.ind as: header (n_active as int32) + body (1-based flat indices of active cells
+    as int32 array); build_sfincs_topobathy; [''Read sfincs.msk, find active cells (mask > 0)'', ''Compute
+    flat 1-based indices: idx = row * mmax + col + 1'', ''Write binary: np.array([n_active], dtype=np.int32).tofi'
+  severity: fatal
+- id: dt_v002
+  symptom: prepare_sfincs_rainfall.py produces negative 'precipitation' values when reading VIC forcing
+    files
+  diagnosis: 'VIC forcing column 0 is temperature, not precipitation. Code reads data[:, 0] instead of
+    data[:, 1]; VIC forcing ASCII files have 7 columns in this order: TEMP(0), PREC(1), PRESSURE(2), SW(3),
+    LW(4), VP(5), WIND(6). The original prepare_sfincs_rainfall.py had ''precip_sum += data[:, 0]  # Column
+    0 is'
+  remedy: Change data[:, 0] to data[:, 1] in the vic_ascii branch of prepare_sfincs_rainfall.py; prepare_sfincs_rainfall;
+    ['Open prepare_sfincs_rainfall.py, find the vic_ascii reading section', 'Verify column index is 1
+    (PREC), not 0 (TEMP)', 'Check output values are non-negative']; prepare_sfincs_rainfall.py
+  severity: fatal
+- id: dt_v003
+  symptom: SFINCS rainfall forcing shows wrong season — e.g., winter precipitation for a summer flood
+    event
+  diagnosis: Multi-year VIC forcing file time offset not computed — always reads from file start (year
+    2000) regardless of start_date; VIC forcing files contain the entire simulation period (e.g., 2000-2010,
+    ~80,000+ 3-hourly timesteps). When extracting a sub-period (e.g., Aug 2008), the tool must compute
+    the by
+  remedy: 'Compute day offset from VIC simulation start to target start_date, convert to timestep offset,
+    then slice: data[ts_start:ts_end, 1]; prepare_sfincs_rainfall; [''Determine VIC simulation start year
+    from forcing filename or config'', ''Calculate days_offset = (target_start - vic_start).days'', ''Calculate '
+  severity: fatal
+- id: dt_v004
+  symptom: 'SFINCS log shows ''Precipitation: no'' despite netprecipfile being specified in sfincs.inp'
+  diagnosis: 'SFINCS v2.3.2 netprecipfile keyword requires specific NetCDF variable naming and coordinate
+    conventions that may not match tool output; SFINCS supports two precipitation input formats: ASCII
+    (precipfile keyword) and NetCDF (netprecipfile keyword). The NetCDF format requires specific variable
+    names ('
+  remedy: 'Use ASCII precipitation format with ''precipfile'' keyword instead of NetCDF ''netprecipfile'';
+    prepare_sfincs_rainfall; [''Generate ASCII sfincs.precip with format: time_seconds precip_mmhr (one
+    line per timestep)'', "In sfincs.inp, use ''precipfile = sfincs.precip'' (not netprecipfile)", "Verify
+    SFINCS lo'
+  severity: degraded
+- id: dt_v005
+  symptom: Zero water depth across entire domain despite correct active cells and correct precipitation
+    — all h=0, hmax=0
+  diagnosis: Mask outflow boundary (mask=2) defaults to water level 0.0m (sea level). For inland terrain
+    at 143m+ elevation, this creates a huge hydraulic gradient that instantly drains all water.; SFINCS
+    mask value 2 means 'outflow boundary' with a default boundary water level of 0.0m (sea level). For
+    coastal d
+  remedy: 'For inland/mountainous domains, use mask=1 (closed boundary) instead of mask=2 (outflow at
+    sea level). Only use mask=2 for coastal domains or with explicit bzs water levels.; build_sfincs_topobathy;
+    [''Check domain elevation range: if min_elevation > 10m, domain is inland'', ''For inland: set all
+    edge '
+  severity: silent
+- id: dt_v006
+  symptom: SFINCS exits with code -6 (SIGABRT) after printing 'Simulation finished' — output is valid
+    but exit code suggests failure
+  diagnosis: gfortran 13.3 runtime finalization crashes during cleanup after successful simulation. Likely
+    a NetCDF/HDF5 library deallocation race condition.; After SFINCS writes all output and prints 'Simulation
+    finished', the Fortran runtime attempts to finalize (close files, deallocate). With gfortran 13.3
+    an
+  remedy: 'Check sfincs.log for ''Simulation finished'' AND verify sfincs_map.nc exists. If both true,
+    treat as success regardless of exit code.; run_sfincs; ["Check sfincs.log: grep ''Simulation finished''
+    sfincs.log", ''Check output: ls -la sfincs_map.nc (must be > 0 bytes)'', ''If both pass, the run succeeded
+    — ig'
+  severity: degraded
+- id: dt_v007
+  symptom: extract_sfincs_results reports max flood depth 310m and all cells in >3m category — physically
+    impossible for a 6.99m actual flood
+  diagnosis: Variable selection list prioritized 'zsmax' (water surface elevation = bed + depth) over
+    'hmax' (water depth). For terrain at 310m elevation, zsmax=310m even with only 0.05m of water.; SFINCS
+    output contains multiple water-related variables. 'zsmax' is the maximum water surface elevation (MSL),
+    whic
+  remedy: 'Change variable priority to [''hmax'', ''h'', ...] in extract_sfincs_results.py; extract_sfincs_results;
+    ["Check which variable was used: look for ''Using variable'' in tool output", ''If zsmax was used,
+    re-run with hmax: ncdump -v hmax sfincs_map.nc'', ''hmax should have values in physically reasonable
+    rang'
+  severity: silent
+- id: dt_v008
+  symptom: 'SFINCS runs without precipitation despite ASCII precip file existing — log shows ''Precipitation:
+    no'' or ''no'' next to precipitation in processes section'
+  diagnosis: generate_sfincs_inp.py wrote 'netprecipfile = sfincs.precip' but the file is in ASCII format.
+    SFINCS 'netprecipfile' expects NetCDF, 'precipfile' expects ASCII.; The sfincs.inp keyword 'netprecipfile'
+    tells SFINCS to read precipitation from a NetCDF file. If the file is actually in ASCII format (tim
+  remedy: 'Use ''precipfile'' keyword (ASCII) instead of ''netprecipfile'' (NetCDF); generate_sfincs_inp;
+    [''Check sfincs.inp: grep precip sfincs.inp'', "If ''netprecipfile'', change to ''precipfile''", ''Check
+    sfincs.log after run: grep -i precip sfincs.log'', "Should show ''reading prcp file sfincs.precip''
+    and ''Precipita'
+  severity: silent
+- id: dt_v009
+  symptom: SFINCS runs but produces zero flood depth despite rainfall input
+  diagnosis: 'Mask set to 3 (water level BC) instead of 1 (active) for interior cells; build_sfincs_topobathy.py
+    used mask value 3 for active cells. SFINCS convention: 0=inactive, 1=active (flow computed), 2=outflow
+    boundary, 3=water level BC (prescribed). With mask=3, SFINCS expects prescribed water levels, not '
+  remedy: 'Set interior cells to mask=1, edge cells to mask=2; build_sfincs_topobathy.py (fixed 2026-04-11);
+    [''Check: np.unique(msk) should show mostly 1 (active) and some 2 (outflow)'', ''If all 3: fix with
+    msk[msk==3] = 1'']; Fixed in tool. Comment documents correct convention.'
+  severity: silent
+- id: dt_v010
+  symptom: Precipitation near zero (max < 0.01 mm/hr) despite monsoon conditions
+  diagnosis: 'CMFD precip treated as mm/3hr but actual unit is kg/m²/s; CMFD NetCDF attribute says kg/m²/s.
+    Tool divided by 3 (assuming mm/3hr). Correct: multiply by 3600 for mm/hr. This is the #1 CMFD unit
+    trap (PREFLIGHT.md).
 
-# =========================================================================
-# EXPECTED RANGES (validated basins)
-# =========================================================================
-expected_ranges:
-  chaohe_basin:
-    grid: "174x171 cells, 100m resolution"
-    event: "Aug 2-12 2008, 88.7mm total rainfall"
-    max_flood_depth_m: 7.29
-    flood_volume_m3: 37.9e6
-    runtime_seconds: 5.7
+    ; [''prepare_sfincs_rainfall.py unit conversion'']'
+  remedy: 'CMFD: ×3600 (kg/m²/s → mm/hr). MSWX: ÷3 (mm/3hr → mm/hr).; prepare_sfincs_rainfall.py (fixed
+    2026-04-11)'
+  severity: silent
+- id: dt_v011
+  symptom: Rainfall tool hangs or takes hours — reading all CMFD files
+  diagnosis: 'No date filter on CMFD file glob — reads all months instead of requested period; CMFD directory
+    has hundreds of monthly files. Tool globbed *.nc without filtering by YYYYMM. Each file is 3-9 GB.
+    Fixed: extract YYYYMM from filename, only read files within start_date to end_date range.
 
-  bengbu_basin:
-    grid: "384x455 cells, 100m resolution"
-    event: "July 2003, 390mm total rainfall"
-    max_flood_depth_m: 6.99
-    flood_volume_m3: 701e6
-    mass_balance_ratio: 1.03
-    runtime_seconds: 397
-    cama_cross_validation: "CaMa max depth 8.17m at same location — consistent"
+    ; [''prepare_sfi'
+  remedy: Filter glob results by YYYYMM matching start/end period; prepare_sfincs_rainfall.py (fixed 2026-04-11)
+  severity: degraded
+- id: dt_v012
+  symptom: SFINCS segfaults when reading precipitation file
+  diagnosis: 'Precipitation written as NetCDF but referenced as precipfile (ASCII expected); SFINCS has
+    two modes: precipfile (ASCII) and netprecipfile (NetCDF). Tool wrote NetCDF to sfincs.precip but sfincs.inp
+    used precipfile keyword. SFINCS tried to read binary NetCDF as ASCII text → segfault.
+
+    ; [''prepare_sfin'
+  remedy: 'Write ASCII format: one line per timestep, ''time_seconds precip_mmhr''; prepare_sfincs_rainfall.py
+    (fixed 2026-04-11)'
+  severity: fatal
+- id: dt_v013
+  symptom: CaMa-Flood boundary has negative time values, SFINCS ignores them
+  diagnosis: 'CaMa time series includes years before SFINCS tref, producing negative seconds; cama_to_sfincs_boundary.py
+    read all CaMa output years (e.g., 2000-2005) but tref was set to the requested start date (2003-07-01).
+    Times from 2000-2003 became negative. SFINCS ignores negative-time entries silently.
+
+    ; ['''
+  remedy: Filter CaMa data to start_date:end_date before writing sfincs.dis; cama_to_sfincs_boundary.py
+    (fixed 2026-04-11)
+  severity: silent
+- id: dt_v014
+  symptom: sfincs.inp missing srcfile/disfile/precipfile despite files existing
+  diagnosis: generate_sfincs_inp.py checks file existence in cwd only, not output_dir; Tool args like
+    --src_file sfincs.src check Path('sfincs.src').exists() which fails when cwd != output_dir. Files
+    exist in output_dir but tool doesn't find them, so sfincs.inp omits the references. SFINCS runs but
+    with no forci
+  remedy: Check both cwd and output_dir for file existence; generate_sfincs_inp.py (fixed 2026-04-11)
+  severity: silent
+- id: dt_v015
+  symptom: Reports 40-80m flood depths in flat agricultural areas; 50-100x too large vs expected
+  diagnosis: Post-processing reads 'zsmax' (water surface ELEVATION above datum) instead of 'hmax' (water
+    DEPTH). zsmax = bed_level + water_depth. For a cell at 60m terrain elevation with only 5cm of flood
+    water, zsmax=60.05m but hmax=0.05m. When zsmax is reported as "flood depth", every wetted upland cell
+    shows
+  remedy: "Always read 'hmax' from sfincs_map.nc for flood depth, never 'zsmax' or 'zs'. To fix a custom\
+    \ script:\n  import xarray as xr\n  ds = xr.open_dataset('sfincs_map.nc')\n  assert 'hmax' in ds,\
+    \ \"hmax not found — check SFINCS version\"\n  depth = ds['hmax'].values.squeeze()  # shape (nmax,\
+    \ mmax), unit metres\n"
+  severity: silent
+- id: dt_v016
+  symptom: 'Every attempt to read a SFINCS output file in the HydroCraft venv dies with "OSError: [Errno
+    -101] NetCDF: HDF error". extract_sfincs_results.py exits 2 on a run whose sfincs.log says "Simulation
+    finished" and whose sfincs_map.nc is non-zero and well-formed. The same failure hits BedMachine''s
+    NSIDC '
+  diagnosis: 'Library defect in the venv, NOT a corrupt file. The venv ships netCDF4 1.7.4 bundling HDF5
+    1.14.6; SFINCS writes its NetCDF-4 with libnetcdff/HDF5 1.10, and the 1.14.6 wheel refuses those files.
+    Proof that the file is fine: `ncdump -h` (system netCDF 4.9/HDF5 1.10), system python netCDF4 1.7.4.1,
+    GD'
+  remedy: "Open with a fallback chain: try the default engine, and on OSError retry with engine=\"h5netcdf\"\
+    \ (h5netcdf 1.8.1 is already installed in the venv):\n  try:    ds = xr.open_dataset(path)\n  except\
+    \ OSError: ds = xr.open_dataset(path, engine=\"h5netcdf\")\nFor BedMachine specifically, go through\
+    \ GDAL instead"
+  severity: fatal
+- id: dt_v017
+  symptom: 'flood_stats.json reports max_depth_m = 9999.0 and a flood volume ~10^6 times too large, on
+    a run whose flood map looks otherwise sane.
+
+    '
+  diagnosis: 'SFINCS writes +9999 into hmax (and -9999 into zb) for every cell OUTSIDE the active mask.
+    extract_sfincs_results.py clipped NaN and NEGATIVE values to 0 but never touched the POSITIVE +9999
+    sentinel, so it flowed straight into max_depth_m, the depth classes and the flood volume.
+
+    ; Domains where the '
+  remedy: 'Mask |value| >= 9998 to NaN BEFORE any statistic, and additionally mask cells where the map''s
+    own `msk` variable is 0. Only then clip the remainder to >= 0.
+
+    ; extract_sfincs_results.py; [''grep max_depth_m results/flood_stats.json  # 9999 => this triplet'',
+    "Check the log line ''Masked N cells carrying'
+  severity: silent
+- id: dt_v018
+  symptom: 'prepare_sfincs_rainfall.py --source mswx exits 2 with "No precipitation files found for YYYYMM-YYYYMM
+    in KISSPATH_FORCING".
+
+    '
+  diagnosis: 'The tool''s mswx branch reused the CMFD file-discovery logic: glob ''*.nc'' in the forcing
+    dir, keep names containing ''prec''/''precip'', then match a YYYYMM stamp. MSWX stores ANNUAL files
+    in per-variable subdirectories — P/P_2012.nc — whose names contain neither ''prec'' nor a YYYYMM stamp,
+    and which are '
+  remedy: "Load MSWX through ki_tools_common:\n  from ki_tools_common.load_forcing import load_hourly_forcing\n\
+    \  fc = load_hourly_forcing(\"mswx\", lat, lon, start.year, end.year,\n                          \
+    \ forcing_dir=\"KISSPATH_FORCING\")\n  precip_mmhr = fc[\"precip_mm\"] / 3.0     # MSWX raw units are\
+    \ mm/3hr (dt_001"
+  severity: fatal
+- id: dt_v019
+  symptom: 'A domain that spans both coast and uplands reports hmax = 0 (or near-zero) everywhere despite
+    real rainfall, or drains implausibly fast.
+
+    '
+  diagnosis: build_sfincs_topobathy.py set EVERY edge cell of the active domain to mask=2 (outflow). Outflow
+    cells are held at zs = 0.0 m, so an edge cell whose bed sits at 300 m creates a 300 m head gradient
+    that empties the domain. dt_v005 states the inland-vs-coastal rule but the tool had no switch implementi
+  remedy: "For a coastal domain:\n  build_sfincs_topobathy.py --min_elev 0.0 --outflow_max_elev 5.0\n\
+    --min_elev deactivates cells below that bed level (cuts the ocean/fjord out and moves the outflow\
+    \ ring onto the shoreline); --outflow_max_elev makes only edge cells at/below that elevation outflow,\
+    \ keeping upland"
+  severity: silent
+- id: dt_v020
+  symptom: 'dt written into sfincs.inp is several times above the true CFL limit on any domain that carries
+    standing water; risk of NaN/Inf crash or a wasted run.
+
+    '
+  diagnosis: 'generate_sfincs_inp.py hard-coded h_max = 10.0 m when computing dt = 0.75 * dx / sqrt(g
+    * h_max), regardless of the actual bathymetry. A coastal domain whose bed reaches -135 m carries h
+    = zsini - bed = 135 m of water from t = 0, where the limit is 2.7 s, not 10.1 s.
+
+    ; SFINCS sub-steps internally, s'
+  remedy: 'Pass --topobathy_dir so the tool reads elevation_min from topobathy_summary.json and uses h_max
+    = max(10, zsini - elevation_min), or set --h_max explicitly. Confirm the log line ''CFL h_max = X
+    m from ...''.
+
+    ; generate_sfincs_inp.py; [''grep \''"elevation_min"\'' topobathy_summary.json'', "grep ''^dt '' sfi'
+  severity: degraded
+- id: dt_v021
+  symptom: An INLAND domain (bed far above 0 m) either drains to hmax = 0 instantly, or — if the boundary
+    is closed to avoid that — fills up with no outlet at all. The SFINCS log prints "Warning! Boundary
+    cells found in mask without boundary points from bnd file. Setting water level at 0.0 m at mask boundary
+    c
+  diagnosis: 'The KI had the SFINCS mask convention BACKWARDS. The solver binary states it verbatim: "inactive=0,
+    active=1, normal_boundary=2, outflow_boundary=3, wavemaker=4". msk=2 is the WATER-LEVEL boundary (held
+    at zs = 0.0 m when no bnd/bzs pair is supplied); msk=3 is the absorbing OUTFLOW boundary. SKILL.m'
+  remedy: 'Use --outflow_value 3 (now the DEFAULT) for any domain whose bed is above sea level, and --outflow_edges
+    to open only the downstream side of a river-reach domain. Keep --outflow_value 2 only for a true coastal
+    boundary at zs=0 m, or when you also supply sfincs.bnd + sfincs.bzs.
+
+    ; build_sfincs_topoba'
+  severity: silent
+- id: dt_v022
+  symptom: '"No LULC data found. Falling back to uniform n=0.04" on EVERY domain; the whole s3 roughness
+    stage silently becomes a no-op and sfincs.man is a constant field.
+
+    '
+  diagnosis: 'AVHRR_DEFAULT pointed at "KISSPATH_FORCING/AVHRR/", a removable drive that is
+    not mounted on this server, so glob() returned [] and the fallback fired.
+
+    ; The land-cover raster IS on disk, indexed by dataset_index.yaml as parameter_sourcing.land_cover.avhrr_landcover
+    -> /mnt/disk1/Hydrocr'
+  remedy: 'Pass --lulc_path explicitly, or rely on the fixed AVHRR_SEARCH_PATHS list.; build_sfincs_roughness.py;
+    ["grep ''LULC class distribution'' <log>   # must list several classes, not a fallback"]; build_sfincs_roughness.py
+    (fixed 2026-08-05) searches AVHRR_SEARCH_PATHS, the on-disk copy first, and ignores'
+  severity: silent
+- id: dt_v023
+  symptom: 'SFINCS runs to "Simulation finished" but the domain it simulated is not the one you built:
+    sfincs_map.nc `msk` contains far FEWER active cells than topobathy_summary.json reports, every mask=2/3
+    boundary cell has vanished, `zb` is scrambled, hmax is all +9999 and observation points return point_zb
+    ='
+  diagnosis: "SFINCS v2 binary maps are COMPRESSED. Proven against the solver on 2026-08-05 by reading\
+    \ sfincs_map.nc `zb` back and matching it byte-for-byte to the input:\n  sfincs.ind = int32 n_active,\
+    \ then n_active 1-BASED flat indices in FORTRAN\n               order (n fastest) over an (nmax, mmax)\
+    \ grid whose r"
+  remedy: 'Write the compressed form. Re-expand with build_sfincs_topobathy.read_binary_map(topobathy_dir,
+    nmax, mmax) instead of fromfile+reshape. Verify sizes: dep = n_active*4, msk = n_active*1, man = n_active*4,
+    ind = (n_active+1)*4.
+
+    ; build_sfincs_topobathy.py; [''stat -c%s sfincs.dep sfincs.msk sfincs.man'
+  severity: fatal
+- id: dt_v024
+  symptom: A downstream stage gauge scores near-perfectly (NSE > 0.95, r > 0.99) against a SFINCS run
+    whose only water source is an observed discharge hydrograph at an upstream gauge on the SAME channel.
+    The two-stations rule was followed, yet a zero-hydraulics power-law rating h = a*Q^b + c fitted on
+    the cali
+  diagnosis: 'The scoring target is a near-monotone transform of the prescribed boundary condition, so
+    the metric measures the stage-discharge rating the BC already contains, not the 2D hydraulics. Two
+    DIFFERENT stations is NECESSARY but NOT SUFFICIENT: with no unforced tributary between them the downstream
+    gauge'
+  remedy: 'Run tools/s9_validation/screen_obs_independence.py BEFORE scoring and honour its exit code.
+    On exit 1 do NOT report a number: emit a NULL metric with reason ''no_independent_obs_target''. To
+    obtain an informative target instead, force every unforced in-domain tributary as an extra source
+    (comma-list -'
+  severity: silent

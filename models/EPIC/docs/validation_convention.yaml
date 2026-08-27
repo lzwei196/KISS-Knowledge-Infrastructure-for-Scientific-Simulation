@@ -1,219 +1,254 @@
 schema_version: 1
 model_id: EPIC
-domain: crop            # Environmental Policy Integrated Climate agroecosystem model; rank-1 quantity
-                        # is crop yield, but it also simulates hydrologic fluxes (discharge, ET, sediment,
-                        # nutrient loss) which use hydrology conventions.
-generated_by: "self-improve step-B agent (Claude Opus 4.8) — validation-convention fleet, general schema"
+domain: crop
+generated_by: self-improve step-B agent (Claude Opus 4.8) — validation-convention fleet, general schema
 generated_at: 2026-07-07
-
-# ---------------------------------------------------------------------------------------------------
-# GROUNDING SUMMARY (honesty gate)
-# EPIC has 0 cached OA full texts. Coverage-check ran OpenAlex (<=2 queries/quantity) + <=4 new fetches.
-# The two canonical hydrology-convention papers (Moriasi 2007 10.13031/2013.23153; Moriasi 2015
-# 10.13031/trans.58.10715) both returned CLOSED via paper_fetch, and two MDPI restatement candidates
-# returned fetch_failed. The ONE OA full text successfully fetched is Roth & Lemann 2016 (HESS, gold),
-# whose Table 3 reproduces the Moriasi et al. (2007) NSE / RSR / PBIAS performance-rating tiers verbatim.
-# => discharge NSE+PBIAS bands are CITED (via roth2016 Table 3) = moderate. ET reuses the general
-#    hydrologic-flux NSE tiers = moderate (transferred, Moriasi 2015 formally extends to ET but is closed).
-# => YIELD (rank-1) has NO fetched crop nRMSE / d-index / PBIAS threshold -> null bands, confidence<=0.4;
-#    the crop-yield convention papers (Jamieson 1991 nRMSE tiers; Willmott 1981 d-index) and the EPIC
-#    yield-evaluation benchmarks (Balkovic 2013; Xiong 2014; Wang 2018) are all closed/failed -> deferred.
-# => NUTRIENT (nitrate loss) PBIAS: the Moriasi N/P PBIAS column is NOT in the fetched text -> null band.
-# Bands are plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md). Never fabricated.
-#
-# NOTE on obs binding: the skeleton flagged has_obs_binding=false at the dag-var level (var-name
-# mismatch, e.g. "YLDG" vs obs_map "grain_yield"), but model_obs_map DOES bind these quantities
-# (grain_yield/biomass->yield, streamflow->discharge, ET->ET_corr, NO3/TP->nutrient). obs_map_present
-# is true, so blocks are emitted for the quantities that carry a real obs binding.
-# ---------------------------------------------------------------------------------------------------
-
 references:
   roth2016:
     doi: 10.5194/hess-20-921-2016
-    title: "Comparing CFSR and conventional weather data for discharge and soil loss modelling with SWAT in a subhumid Ethiopian catchment"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Comparing CFSR and conventional weather data for discharge and soil loss modelling with SWAT
+      in a subhumid Ethiopian catchment
+    venue: Hydrol. Earth Syst. Sci.
     year: 2016
     oa: gold
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-921-2016.txt
   moriasi2007:
     doi: 10.13031/2013.23153
-    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
-    venue: "Transactions of the ASABE"
+    title: Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations
+    venue: Transactions of the ASABE
     year: 2007
-    oa: closed        # not fetched; tiers read only as reproduced in roth2016 Table 3
+    oa: closed
     resolves: null
-
 validation:
-
-  # ============================= YIELD (rank-1) — no fetched crop threshold =============================
-  - canonical_quantity: yield
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: pbias           # dag determining_metric for grain yield (YLDG)
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: null, good: null, satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no fetched paper quantifies a crop-yield PBIAS threshold; crop nRMSE tiers (Jamieson 1991) and Willmott d-index (1981) are the field convention but were not fetchable (see deferred_paywalled)"
-        cites: []
-      - metric: nse             # dag determining_metric for biomass (BIOM), same quantity+shape
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: null, good: null, satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no cited yield/biomass NSE threshold in the fetched set"
-        cites: []
-    secondary_metrics:
-      - metric: nrmse
-        direction: minimize
-        status: supportive
-        ceiling_reason: "The field grades crop-yield simulation by normalized RMSE tiers (excellent <10% / good 10-20% / fair 20-30% / poor >30%; Jamieson et al. 1991) and Willmott's index of agreement d, but no paper stating those numeric tiers was fetchable here; band left null rather than fabricated."
-        cites: []
-    validated_when: "UNRESOLVED — crop-yield magnitude convention (nRMSE tiers + d-index) not fetched; treat as literature-gap. Bands null; gate MUST NOT auto-validate or loosen on yield."
-    evidence_strength: weak
-    confidence: 0.35
-    notes: >-
-      Rank-1 quantity but the strongest literature gap. EPIC yield-evaluation benchmarks
-      (Balkovic 2013 pan-European; Xiong 2014 global-maize calibration uncertainty; Wang 2018
-      north-China scale dependence; Gaiser 2010 NERICA) and the convention sources (Jamieson 1991
-      nRMSE tiers, Willmott 1981 d-index) are all closed or fetch_failed -> deferred_paywalled.
-      Caveat from dag: discard first ~2 spin-up years; valid harvest requires HUSC 0.9-1.2.
-
-  - canonical_quantity: yield
-    obs_shape: regional_aggregate_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: null, good: null, satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no cited regional-yield PBIAS/trend threshold in the fetched set"
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — compare detrended trend, not inter-annual r; no cited numeric band."
-    evidence_strength: weak
-    confidence: 0.30
-    notes: >-
-      dag caveat: national/regional yield aggregates carry a technology trend a weather-driven point
-      model cannot reproduce; grade the detrended trend + magnitude, not inter-annual correlation.
-      No fetched convention -> null band.
-
-  - canonical_quantity: yield
-    obs_shape: point_snapshot
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: null, good: null, satisfactory: null}
-        pass_band: satisfactory
-        band_note: "single-season mean yield; no cited snapshot PBIAS threshold fetched"
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — single-season mean yield at a calibrated field site; no cited numeric band."
-    evidence_strength: weak
-    confidence: 0.30
-    notes: "Snapshot mean yield. Same crop-convention gap as the time-series block; bands null."
-
-  # ============================= DISCHARGE — Moriasi tiers (cited via roth2016) =============================
-  - canonical_quantity: discharge
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        cites: [roth2016]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, good: 15, satisfactory: 25}
-        pass_band: satisfactory
-        cites: [roth2016]
-    secondary_metrics:
-      - metric: rsr
-        direction: minimize
-        status: supportive
-        ceiling_reason: "Moriasi RSR co-metric (very good 0.00-0.50 / good 0.50-0.60 / satisfactory 0.60-0.70); informative, RMSE-standardized. Reported alongside NSE/PBIAS but not made a headline here."
-        cites: [roth2016]
-    validated_when: "NSE >= 0.50 AND |PBIAS| <= 25% (Moriasi et al. 2007 satisfactory streamflow rating, reproduced in Roth & Lemann 2016 Table 3)."
-    evidence_strength: moderate
-    confidence: 0.70
-    notes: >-
-      Roth & Lemann 2016 Table 3 ("General performance ratings recommended by Moriasi et al. (2007)"):
-      Very good NSE 0.75-1.00 / Good 0.65-0.75 / Satisfactory 0.50-0.65 / Unsatisfactory <=0.50; streamflow
-      PBIAS Very good <+/-10 / Good +/-10-15 / Satisfactory +/-15-25 / Unsatisfactory >=+/-25. EPIC's Q is
-      SURFACE runoff only (dag caveat: do not close P-ET-Q on .ANN; SSF/PRK are separate columns). Single
-      fetched source restating the canonical tiers -> moderate; Moriasi 2007 original is closed (deferred).
-
-  # ============================= EVAPOTRANSPIRATION — transferred flux NSE tiers =============================
-  - canonical_quantity: evapotranspiration
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "general hydrologic-flux NSE tiers transferred from the discharge convention (Moriasi via Roth & Lemann 2016); Moriasi et al. 2015 formally extends these ratings to ET but is closed (deferred)"
-        cites: [roth2016]
-    secondary_metrics:
-      - metric: pbias
-        direction: zero_centered
-        status: supportive
-        ceiling_reason: "ET is a demand-side flux with no energy-balance closure enforced (dag caveat); magnitude bias is informative but no ET-specific PBIAS threshold was fetched."
-        cites: []
-    validated_when: "NSE >= 0.50 (hydrologic-flux satisfactory rating transferred from discharge; reduced confidence pending an ET-specific Moriasi 2015 fetch)."
-    evidence_strength: moderate
-    confidence: 0.50
-    notes: >-
-      Point-scale actual ET vs flux-tower ET (obs_map ET->ET_corr). No ET-specific numeric band was
-      fetchable; the discharge NSE tiers are applied as the general hydrologic-flux convention with reduced
-      confidence. Moriasi et al. 2015 (10.13031/trans.58.10715, closed) is the paper that would raise this
-      to a directly-cited ET band -> deferred_paywalled.
-
-  - canonical_quantity: evapotranspiration
-    obs_shape: spatial_snapshot
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: null, good: null, satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no cited categorical CSI threshold for gridded ET fetched"
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — only meaningful when many HLU points are mosaicked to a grid; no cited CSI band."
-    evidence_strength: weak
-    confidence: 0.30
-    notes: "Spatial ET pattern check; requires point mosaic to a grid. No fetched categorical-skill threshold."
-
-  # ============================= NUTRIENT (nitrate loss) — N/P PBIAS column not in fetched text =========
-  - canonical_quantity: nutrient
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: pbias           # dag determining_metric for QNO3/SNO3 nitrate loss
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: null, good: null, satisfactory: null}
-        pass_band: satisfactory
-        band_note: "Moriasi 2007 defines N/P PBIAS tiers (very good <+/-25 / good +/-25-40 / satisfactory +/-40-70), but that column is NOT present in the fetched Roth & Lemann 2016 text; not fabricated -> null pending a Moriasi fetch"
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — nitrate-loss PBIAS convention (Moriasi N/P tiers) not in the fetched text; band null, gate MUST NOT loosen."
-    evidence_strength: weak
-    confidence: 0.35
-    notes: >-
-      QNO3/SNO3 mineral-N loss (obs_map NO3->NO3_N). The canonical Moriasi N/P PBIAS ratings exist but the
-      fetched paper only reproduces the streamflow + sediment PBIAS columns, so no numeric nutrient band is
-      quoted here. Moriasi 2007/2015 (closed) -> deferred_paywalled.
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: null
+      good: null
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no fetched paper quantifies a crop-yield PBIAS threshold; crop nRMSE tiers (Jamieson 1991)
+      and Willmott d-index (1981) are the field convention but were not fetchable (see deferred_paywalled)
+    cites: []
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: null
+      good: null
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no cited yield/biomass NSE threshold in the fetched set
+    cites: []
+  secondary_metrics:
+  - metric: nrmse
+    direction: minimize
+    status: supportive
+    ceiling_reason: The field grades crop-yield simulation by normalized RMSE tiers (excellent <10% /
+      good 10-20% / fair 20-30% / poor >30%; Jamieson et al. 1991) and Willmott's index of agreement d,
+      but no paper stating those numeric tiers was fetchable here; band left null rather than fabricated.
+    cites: []
+  validated_when: UNRESOLVED — crop-yield magnitude convention (nRMSE tiers + d-index) not fetched; treat
+    as literature-gap. Bands null; gate MUST NOT auto-validate or loosen on yield.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: 'Rank-1 quantity but the strongest literature gap. EPIC yield-evaluation benchmarks (Balkovic
+    2013 pan-European; Xiong 2014 global-maize calibration uncertainty; Wang 2018 north-China scale dependence;
+    Gaiser 2010 NERICA) and the convention sources (Jamieson 1991 nRMSE tiers, Willmott 1981 d-index)
+    are all closed or fetch_failed -> deferred_paywalled. Caveat from dag: discard first ~2 spin-up years;
+    valid harvest requires HUSC 0.9-1.2.'
+  dag_variable: YLDG
+- obs_shape: regional_aggregate_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: null
+      good: null
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no cited regional-yield PBIAS/trend threshold in the fetched set
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — compare detrended trend, not inter-annual r; no cited numeric band.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: 'dag caveat: national/regional yield aggregates carry a technology trend a weather-driven point
+    model cannot reproduce; grade the detrended trend + magnitude, not inter-annual correlation. No fetched
+    convention -> null band.'
+  dag_variable: YLDG
+- obs_shape: point_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: null
+      good: null
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: single-season mean yield; no cited snapshot PBIAS threshold fetched
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — single-season mean yield at a calibrated field site; no cited numeric band.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: Snapshot mean yield. Same crop-convention gap as the time-series block; bands null.
+  dag_variable: YLDG
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - roth2016
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      good: 15
+      satisfactory: 25
+    pass_band: satisfactory
+    cites:
+    - roth2016
+  secondary_metrics:
+  - metric: rsr
+    direction: minimize
+    status: supportive
+    ceiling_reason: Moriasi RSR co-metric (very good 0.00-0.50 / good 0.50-0.60 / satisfactory 0.60-0.70);
+      informative, RMSE-standardized. Reported alongside NSE/PBIAS but not made a headline here.
+    cites:
+    - roth2016
+  validated_when: NSE >= 0.50 AND |PBIAS| <= 25% (Moriasi et al. 2007 satisfactory streamflow rating,
+    reproduced in Roth & Lemann 2016 Table 3).
+  evidence_strength: moderate
+  confidence: 0.7
+  notes: 'Roth & Lemann 2016 Table 3 ("General performance ratings recommended by Moriasi et al. (2007)"):
+    Very good NSE 0.75-1.00 / Good 0.65-0.75 / Satisfactory 0.50-0.65 / Unsatisfactory <=0.50; streamflow
+    PBIAS Very good <+/-10 / Good +/-10-15 / Satisfactory +/-15-25 / Unsatisfactory >=+/-25. EPIC''s Q
+    is SURFACE runoff only (dag caveat: do not close P-ET-Q on .ANN; SSF/PRK are separate columns). Single
+    fetched source restating the canonical tiers -> moderate; Moriasi 2007 original is closed (deferred).'
+  dag_variable: Q
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: general hydrologic-flux NSE tiers transferred from the discharge convention (Moriasi via
+      Roth & Lemann 2016); Moriasi et al. 2015 formally extends these ratings to ET but is closed (deferred)
+    cites:
+    - roth2016
+  secondary_metrics:
+  - metric: pbias
+    direction: zero_centered
+    status: supportive
+    ceiling_reason: ET is a demand-side flux with no energy-balance closure enforced (dag caveat); magnitude
+      bias is informative but no ET-specific PBIAS threshold was fetched.
+    cites: []
+  validated_when: NSE >= 0.50 (hydrologic-flux satisfactory rating transferred from discharge; reduced
+    confidence pending an ET-specific Moriasi 2015 fetch).
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: Point-scale actual ET vs flux-tower ET (obs_map ET->ET_corr). No ET-specific numeric band was
+    fetchable; the discharge NSE tiers are applied as the general hydrologic-flux convention with reduced
+    confidence. Moriasi et al. 2015 (10.13031/trans.58.10715, closed) is the paper that would raise this
+    to a directly-cited ET band -> deferred_paywalled.
+  dag_variable: ET
+- obs_shape: spatial_snapshot
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: null
+      good: null
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no cited categorical CSI threshold for gridded ET fetched
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — only meaningful when many HLU points are mosaicked to a grid; no cited
+    CSI band.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: Spatial ET pattern check; requires point mosaic to a grid. No fetched categorical-skill threshold.
+  dag_variable: ET
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: null
+      good: null
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: Moriasi 2007 defines N/P PBIAS tiers (very good <+/-25 / good +/-25-40 / satisfactory +/-40-70),
+      but that column is NOT present in the fetched Roth & Lemann 2016 text; not fabricated -> null pending
+      a Moriasi fetch
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — nitrate-loss PBIAS convention (Moriasi N/P tiers) not in the fetched text;
+    band null, gate MUST NOT loosen.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: QNO3/SNO3 mineral-N loss (obs_map NO3->NO3_N). The canonical Moriasi N/P PBIAS ratings exist
+    but the fetched paper only reproduces the streamflow + sediment PBIAS columns, so no numeric nutrient
+    band is quoted here. Moriasi 2007/2015 (closed) -> deferred_paywalled.
+  dag_variable: QNO3 / SNO3 (nitrate loss / soil nitrate)
 deferred_paywalled:
-  - {ref: "Moriasi et al. 2007 — Model Evaluation Guidelines (original NSE/RSR/PBIAS tiers incl. the N/P PBIAS column); tiers read only as reproduced in Roth & Lemann 2016, original returned CLOSED", doi: 10.13031/2013.23153, needed_for: [nutrient, discharge]}
-  - {ref: "Moriasi et al. 2015 — Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria (formally extends ratings to ET); returned CLOSED", doi: 10.13031/trans.58.10715, needed_for: [evapotranspiration, nutrient]}
-  - {ref: "Jamieson et al. 1991 — nRMSE simulation-quality tiers (excellent<10/good10-20/fair20-30/poor>30%), the crop-yield magnitude convention", doi: 10.1016/0378-4290(91)90040-3, needed_for: [yield]}
-  - {ref: "Willmott 1981 — index of agreement (d) for model-obs agreement, standard crop-model co-metric", doi: 10.1080/02723646.1981.10642213, needed_for: [yield]}
-  - {ref: "Balkovic et al. 2013 — Pan-European crop modelling with EPIC: implementation, up-scaling and regional crop yield validation (fetch_failed)", doi: 10.1016/j.agsy.2013.05.008, needed_for: [yield]}
-  - {ref: "Xiong et al. 2014 — Calibration-induced uncertainty of the EPIC model for global maize yield (fetch_failed)", doi: 10.1002/2016ms000625, needed_for: [yield]}
-  - {ref: "Wang et al. 2018 — Scale dependence and parameter sensitivity of EPIC in the agro-pastoral transitional zone of north China (closed)", doi: 10.1016/j.ecolmodel.2018.10.021, needed_for: [yield]}
-  - {ref: "Wang et al. 2012 — EPIC and APEX: Model Use, Calibration, and Validation (closed)", doi: 10.13031/2013.42253, needed_for: [yield, nutrient]}
+- ref: Moriasi et al. 2007 — Model Evaluation Guidelines (original NSE/RSR/PBIAS tiers incl. the N/P PBIAS
+    column); tiers read only as reproduced in Roth & Lemann 2016, original returned CLOSED
+  doi: 10.13031/2013.23153
+  needed_for:
+  - nutrient
+  - discharge
+- ref: 'Moriasi et al. 2015 — Hydrologic and Water Quality Models: Performance Measures and Evaluation
+    Criteria (formally extends ratings to ET); returned CLOSED'
+  doi: 10.13031/trans.58.10715
+  needed_for:
+  - evapotranspiration
+  - nutrient
+- ref: Jamieson et al. 1991 — nRMSE simulation-quality tiers (excellent<10/good10-20/fair20-30/poor>30%),
+    the crop-yield magnitude convention
+  doi: 10.1016/0378-4290(91)90040-3
+  needed_for:
+  - yield
+- ref: Willmott 1981 — index of agreement (d) for model-obs agreement, standard crop-model co-metric
+  doi: 10.1080/02723646.1981.10642213
+  needed_for:
+  - yield
+- ref: 'Balkovic et al. 2013 — Pan-European crop modelling with EPIC: implementation, up-scaling and regional
+    crop yield validation (fetch_failed)'
+  doi: 10.1016/j.agsy.2013.05.008
+  needed_for:
+  - yield
+- ref: Xiong et al. 2014 — Calibration-induced uncertainty of the EPIC model for global maize yield (fetch_failed)
+  doi: 10.1002/2016ms000625
+  needed_for:
+  - yield
+- ref: Wang et al. 2018 — Scale dependence and parameter sensitivity of EPIC in the agro-pastoral transitional
+    zone of north China (closed)
+  doi: 10.1016/j.ecolmodel.2018.10.021
+  needed_for:
+  - yield
+- ref: 'Wang et al. 2012 — EPIC and APEX: Model Use, Calibration, and Validation (closed)'
+  doi: 10.13031/2013.42253
+  needed_for:
+  - yield
+  - nutrient

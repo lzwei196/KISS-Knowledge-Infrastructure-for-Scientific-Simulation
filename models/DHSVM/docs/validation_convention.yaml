@@ -1,0 +1,337 @@
+schema_version: 1
+model_id: DHSVM
+domain: hydrology
+generated_by: "Step-B validation-convention agent (Codex GPT-5)"
+generated_at: 2026-08-14
+
+# Grounded in locally fetched OA/manual texts listed in the DHSVM Step-B skeleton.
+# Blocks are keyed by the model's own dag.yaml output names. Numeric bands cite
+# fetched text only; uncited or only mechanism-level conventions remain null and
+# low confidence.
+
+references:
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  kelleher2017:
+    doi: 10.5194/hess-21-3325-2017
+    title: "Characterizing and reducing equifinality by constraining a distributed catchment model with regional signatures, local observations, and process understanding"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2017
+    oa: gold
+    resolves: https://www.hydrol-earth-syst-sci.net/21/3325/2017/hess-21-3325-2017.pdf
+  naz2014:
+    doi: 10.5194/hess-18-787-2014
+    title: "Modeling the effect of glacier recession on streamflow response using a coupled glacio-hydrological model"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2014
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/18/787/2014/hess-18-787-2014.pdf
+  du2014:
+    doi: 10.1002/hyp.10110
+    title: "Validation and sensitivity test of the distributed hydrology soil-vegetation model (DHSVM) in a forested mountain watershed"
+    venue: "Hydrological Processes"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_hyp.10110.txt
+  pan2018:
+    doi: 10.3390/w10121841
+    title: "Integration of Remote Sensing Evapotranspiration into Multi-Objective Calibration of DHSVM in a Humid Region of China"
+    venue: "Water"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w10121841.txt
+  wu2020:
+    doi: 10.3390/rs12030428
+    title: "Satellite-Based Evapotranspiration in Hydrological Model Calibration"
+    venue: "Remote Sensing"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_rs12030428.txt
+  rientjes2020:
+    doi: 10.3390/rs12223768
+    title: "Hydrological Model Calibration with Streamflow and Remote Sensing Based Evapotranspiration Data in a Data-Poor Environment"
+    venue: "Remote Sensing"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_rs12223768.txt
+  wigmosta1994:
+    doi: 10.1029/94wr00436
+    title: "A distributed hydrology-vegetation model for complex terrain"
+    venue: "Water Resources Research"
+    year: 1994
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_94wr00436.txt
+
+validation:
+  - dag_variable: Streamflow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.60, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 recommends flow simulations as satisfactory when NSE > 0.50; DHSVM benchmarks report daily validation NSE values from about 0.63 to 0.82 and 0.77."
+        cites: [moriasi2015, kelleher2017, naz2014]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 recommends watershed-scale flow PBIAS <= +/-15%; DHSVM studies report validation bias values such as 13% or smaller monthly seasonal biases."
+        cites: [moriasi2015, naz2014]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "DHSVM papers report RMSE in native flow units, e.g. monthly streamflow RMSE, but the transferable field criterion is NSE/PBIAS rather than a universal discharge-unit RMSE."
+        cites: [naz2014, wigmosta1994]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 recommends R2 with regression diagnostics for flow, but dag.yaml names NSE as the determining metric."
+        cites: [moriasi2015]
+    validated_when: "For gauge-matched stream segments after spin-up, NSE >= 0.50 and |PBIAS| <= 15% on daily/monthly/annual flow; use RMSE/R2 graphically or as supporting evidence."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Moriasi 2015 states that flow model performance can be judged "satisfactory" when NSE exceeds 0.50
+      and PBIAS is within +/-15%. DHSVM-specific support comes from Naz 2014 validation NSE 0.77 daily
+      and 0.87 monthly, Kelleher 2017 streamflow NSE ranges at multiple gauges, and Wigmosta 1994
+      verification RMSE 2.3 mm, R2 0.91, and 7% volume under-simulation.
+
+  - dag_variable: Swq
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.80}
+        pass_band: satisfactory
+        band_note: "Kelleher 2017 used NSE_S > 0.8 as the SWE behavioral constraint; Du 2014 reports SNOTEL SWE NSE 0.93 as a successful DHSVM validation."
+        cites: [kelleher2017, du2014]
+      - metric: swe_volume_error
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Kelleher 2017 used VOLS < 20 for error in SWE volume."
+        cites: [kelleher2017]
+    secondary_metrics:
+      - metric: melt_timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Kelleher 2017 includes an error in peak-flow timing threshold for streamflow response, but no fetched paper gives a universal SWE melt-out day threshold."
+        cites: [kelleher2017]
+    validated_when: "Point SNOTEL/snow-course SWE time series should meet NSE >= 0.80 and absolute SWE volume error <= 20% when probe/site representativeness is defensible."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Kelleher 2017 Table 2 lists SWE constraints NSE_S > 0.8 and VOLS < 20. Du 2014 reports that
+      "SWE simulation matched measurements" with NSE 0.93 and PRMSD 0.46 at Mica SNOTEL, while
+      warning that snow-course mismatches can reflect canopy gaps, redistribution, and point-location scale.
+
+  - dag_variable: Swq
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DHSVM or snow-cover paper supplied a numeric CSI/POD/FAR threshold for spatial SWE/snow-cover snapshots within the capped search."
+        cites: []
+    secondary_metrics:
+      - metric: visual_snow_cover_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Wigmosta 1994 compared simulated snow-cover extent to AVHRR and described general agreement, but did not provide a numeric categorical pass band."
+        cites: [wigmosta1994]
+    validated_when: "UNRESOLVED - spatial snow/SWE snapshot validation needs a fetched categorical snow-cover convention; this block must not auto-validate from CSI."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      Wigmosta 1994 assessed spatial snowpack dynamics using AVHRR snow-cover patterns and reported
+      general agreement, but no CSI threshold. OpenAlex searches for snow-cover CSI/MODIS thresholds
+      did not yield a directly usable fetched convention in this pass.
+
+  - dag_variable: TotalET
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.70, good: 0.50, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Pan 2018's DHSVM ET evaluation standard labels NS 0.5-0.7 as good and NS > 0.7 as very good; this block uses 0.50 as the minimum validation band."
+        cites: [pan2018]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Pan 2018's standard labels PBIAS <10% very good and 10%-15% good; DHSVM multi-objective ET reached PBIAS 8.6%."
+        cites: [pan2018]
+    secondary_metrics:
+      - metric: sap_flux_trend_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Du 2014 compared DHSVM ET to sap-flux transpiration and emphasized seasonal trend agreement, but this is a component/footprint comparison rather than an ET numeric pass band."
+        cites: [du2014]
+    validated_when: "For flux-tower or other local ET time-series comparisons, require NSE >= 0.50 and |PBIAS| <= 15%, with seasonal trend/footprint checks as supporting evidence."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: >-
+      Pan 2018 selected NS and PBIAS for runoff and ET objectives and reported multi-objective DHSVM ET
+      performance of NSE 0.76 and PBIAS -8.6%. Du 2014 found better ET/sap-flux agreement in summer,
+      but noted canopy-interception evaporation makes sap flux an imperfect observation for TotalET.
+
+  - dag_variable: TotalET
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: apbias
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 10.0, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "Wu 2020 uses APBIAS as the spatial ET objective and notes good coupled calibration when spatial ET APBIAS is less than 10%; this supersedes the dag csi metric for ET fields."
+        cites: [wu2020]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is a categorical spatial-overlap metric, but the fetched ET calibration papers evaluate spatial ET fields with bias/efficiency metrics rather than CSI."
+        cites: [wu2020, pan2018]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Remote-sensing ET studies often report basin/sub-basin ET NSE alongside bias; Rientjes 2020 reports ET NSE tables, but APBIAS is the explicitly spatial ET calibration objective."
+        cites: [rientjes2020, wu2020]
+    validated_when: "For gridded/satellite ET time series, use spatial ET APBIAS <= 10%; do not require CSI unless a categorical ET-mask convention is separately fetched."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      Wu 2020 defines APBIAS for spatial ET and uses it as the spatial ETRS calibration objective.
+      The paper states that when streamflow KGE is good (>0.7), APBIAS for ET is less than 10%.
+      This is a transferred remote-sensing ET convention, not a DHSVM-only CSI convention.
+
+  - dag_variable: SoilMoist
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provided a numeric NSE/RMSE threshold for point volumetric soil-moisture validation in DHSVM."
+        cites: []
+    secondary_metrics:
+      - metric: seasonal_trend_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Du 2014 says SWC validation should emphasize reproduced relative dynamics because grid-cell soil properties are highly heterogeneous relative to point sensors."
+        cites: [du2014]
+      - metric: absolute_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Du 2014 reports considerable absolute SWC discrepancies at some clear-cut locations, but no numeric pass threshold."
+        cites: [du2014]
+    validated_when: "UNRESOLVED - compare seasonal dry-down/re-wetting dynamics qualitatively; do not auto-validate soil moisture until a fetched numeric point-SWC convention is added."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Du 2014 states that modeled SWC trends were well replicated, but because soil heterogeneity is large
+      over a grid cell, it is more important to verify relative dynamics than absolute values. The capped
+      OpenAlex search did not produce a fetched numeric DHSVM soil-moisture threshold.
+
+  - dag_variable: SoilMoist
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provided a numeric CSI threshold for spatial satellite-vs-DHSVM soil-moisture fields."
+        cites: []
+    secondary_metrics:
+      - metric: pattern_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Wigmosta 1994 displays spatial upper-rooting-zone soil moisture patterns, but the validation is interpretive and not tied to an observation-based CSI threshold."
+        cites: [wigmosta1994]
+    validated_when: "UNRESOLVED - spatial soil-moisture CSI is a data-gap; use only as contextual evidence until a fetched satellite soil-moisture validation convention is added."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      The fetched DHSVM papers support spatial soil-moisture process interpretation but not a categorical
+      pass band. OpenAlex searches for soil-moisture ubRMSE/correlation thresholds returned remote-sensing
+      product evaluations rather than a fetched hydrologic-model validation convention.
+
+  - dag_variable: TableDepth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provided a numeric NSE/RMSE/nRMSE threshold for point water-table-depth validation."
+        cites: []
+    secondary_metrics:
+      - metric: high_water_table_area
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Kelleher 2017 used a spatial behavior test that high water tables should occupy minimal areas (<5%) during snowmelt, but that is not a point time-series NSE threshold."
+        cites: [kelleher2017]
+      - metric: average_water_table_depth
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Kelleher 2017 used catchment average annual water-table depth WT < 0.5 m as a behavioral signature, not a well-observation validation band."
+        cites: [kelleher2017]
+    validated_when: "UNRESOLVED - point well TableDepth needs a fetched groundwater-head RMSE/nRMSE convention; do not auto-validate from NSE."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Kelleher 2017 provides DHSVM water-table process constraints and reports that water-table-depth
+      simulations vary substantially under equifinality, but it does not define a point-well NSE pass band.
+      Capped OpenAlex groundwater-head searches did not yield a fetched directly applicable threshold.
+
+  - dag_variable: MassError
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "MassError is an internal water-balance closure diagnostic, not an external observation; no fetched literature threshold was found."
+        cites: []
+    secondary_metrics:
+      - metric: closure_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "DHSVM documentation and dag caveat expect small closure, but this KI/local rule is not a fetched-paper validation convention."
+        cites: []
+    validated_when: "UNRESOLVED - use MassError as an internal numerical consistency check only; it should not be treated as literature-validated observational skill."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      The DAG caveat says closure should be below 1% of total inflow, but the no-fabrication rule requires
+      fetched-paper support for numeric bands. Therefore the band is null and the metric cannot auto-validate.
+
+deferred_paywalled:
+  - ref: "Anderson and Woessner / Hill-style groundwater-head calibration guidance, or another fetched groundwater head RMSE/nRMSE convention"
+    doi: unknown_not_fetched
+    needed_for: [TableDepth]
+  - ref: "Snow-cover categorical validation convention reporting CSI/POD/FAR pass thresholds for modeled spatial snow extent"
+    doi: unknown_not_fetched
+    needed_for: [Swq]
+  - ref: "Satellite soil-moisture model-validation convention reporting ubRMSE/correlation/CSI pass thresholds for spatial or point soil moisture"
+    doi: unknown_not_fetched
+    needed_for: [SoilMoist]

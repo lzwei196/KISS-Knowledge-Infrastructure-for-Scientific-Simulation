@@ -1,0 +1,436 @@
+schema_version: 1
+model_id: RZWQM2
+domain: crop
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  ma2012:
+    doi: 10.13031/2013.42252
+    title: "Root Zone Water Quality Model (RZWQM2): Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42252.txt
+  qi2011:
+    doi: 10.13031/2013.39836
+    title: "Simulating Long-Term Impacts of Winter Rye Cover Crop on Hydrologic Cycling and Nitrogen Dynamics for a Corn-Soybean Crop System"
+    venue: "Transactions of the ASABE"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.39836.txt
+  craft2018:
+    doi: 10.13031/trans.12300
+    title: "Effects of Subsurface Drainage Systems on Water and Nitrogen Footprints Simulated with RZWQM2"
+    venue: "Transactions of the ASABE"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.12300.txt
+  cheng2022:
+    doi: 10.3390/agriculture12050672
+    title: "RZWQM2 Simulated Drip Fertigation Management to Improve Water and Nitrogen Use Efficiency of Maize in a Solar Greenhouse"
+    venue: "Agriculture"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_agriculture12050672.txt
+  zhang2016:
+    doi: 10.1038/srep25755
+    title: "An integrated soil-crop system model for water and nitrogen management in North China"
+    venue: "Scientific Reports"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_srep25755.txt
+  umair2017:
+    doi: 10.3389/fpls.2017.01667
+    title: "Evaluation of the CropSyst Model during Wheat-Maize Rotations on the North China Plain for Identifying Soil Evaporation Losses"
+    venue: "Frontiers in Plant Science"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_fpls.2017.01667.txt
+  yu2007:
+    doi: 10.13031/2013.23948
+    title: "Energy Balance Simulation of a Wheat Canopy Using the RZ-SHAW (RZWQM-SHAW) Model"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23948.txt
+
+validation:
+  - dag_variable: soil_water_storage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "RZWQM2 model-use paper says r2 > 0.80 is acceptable; Cheng et al. use R2 > 0.7 as acceptable; Craft et al. deem R2 > 0.50 acceptable for measured-data variance."
+        cites: [ma2012, cheng2022, craft2018]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 6.0, good: 15.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Ma et al. quote -15% < PBIAS < 15%; Cheng et al. consider PBIAS within +/-15% acceptable and report VWC within +/-6%."
+        cites: [ma2012, cheng2022]
+      - metric: rrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Cheng et al. state RRMSE <30% is acceptable; RZWQM2 crop papers use RRMSE/n-RMSE <30% as satisfactory."
+        cites: [cheng2022, qi2011]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag names r, but fetched RZWQM2 papers report linear-regression R2, PBIAS, RRMSE, IoA, NSE, and RSR rather than raw r."
+        cites: [ma2012, cheng2022]
+      - metric: ioa
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Cheng et al. consider IoA > 0.7 acceptable for RZWQM2 greenhouse maize outputs."
+        cites: [cheng2022]
+    validated_when: "R2 >= 0.50, |PBIAS| <= 15%, and RRMSE <= 30% after matching sensor depths to the RZWQM2 profile."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      The dag determining metric r is superseded by R2 because the fetched RZWQM2 validation literature reports R2.
+      Ma et al. write that r2 is for trend analysis and quote r2 > 0.80 and -15% < PBIAS < 15% as acceptable.
+      Cheng et al. report RZWQM2 VWC predictions as satisfactory with RRMSE <9.8%, PBIAS within +/-6%, IoA >0.85, and R2 >0.71.
+      Qi et al. found soil water storage unsatisfactory by NSE/RSR in one cover-crop study, so passing PBIAS alone is not enough.
+
+  - dag_variable: tile_drainage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "RZWQM2-P reproduces Moriasi hydrology tiers: very good when NSE >0.75, good above 0.65, satisfactory above 0.50."
+        cites: [craft2018]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Hydrology PBIAS tiers reproduced in RZWQM2-P: <+/-10%, <+/-15%, and <+/-25%."
+        cites: [craft2018]
+      - metric: rsr
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.60, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "RZWQM2 drainage papers use RSR <=0.70 as satisfactory; Hydrology 2014 reproduces monthly-flow RSR <=0.60 as calibrated."
+        cites: [qi2011, craft2018]
+    secondary_metrics: []
+    validated_when: "Daily or aggregated tile drainage is validated when NSE >= 0.50, |PBIAS| <= 25%, and RSR <= 0.70 after converting cm to the observation unit."
+    evidence_strength: strong
+    confidence: 0.86
+    notes: >-
+      Craft et al. state hydrology simulations were satisfactory when NSE >0.50, PBIAS within +/-25%, and RSR <=0.70.
+      The RZWQM2-P paper labels drainage validation NSE 0.76 as very good and PBIAS 23.57 as satisfactory under these tiers.
+
+  - dag_variable: evapotranspiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Crop-model ET evaluation paper reproduces Jamieson-style NRMSE tiers: excellent <10%, good 10-20%, fair 20-30%, poor >30%."
+        cites: [umair2017]
+      - metric: ioa
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.70, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "Cheng et al. state RZWQM2 performance is acceptable if IoA > 0.7."
+        cites: [cheng2022]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag names NSE, but ET validation in the fetched crop-model papers is reported mainly as NRMSE/RMSE and Willmott agreement."
+        cites: [umair2017, cheng2022]
+    validated_when: "ET time-series validation uses NRMSE <= 30% and IoA >= 0.70; NSE is informative if reported but not the fetched ET convention."
+    evidence_strength: moderate
+    confidence: 0.64
+    notes: >-
+      Umair et al. evaluated ETa with RMSE, Willmott d, and NRMSE and quote the NRMSE tier rule.
+      This is a transferred crop/ET convention rather than an RZWQM2-specific ET threshold, although RZWQM2 papers also warn that acceptable yield can coexist with unrealistic ET or soil water.
+
+  - dag_variable: no3_leaching
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 15.0, good: 30.0, satisfactory: 70.0}
+        pass_band: satisfactory
+        band_note: "Qi et al. reproduce Moriasi water-quality guidance: PBIAS within +/-70% for NO3-N loss and concentration."
+        cites: [qi2011]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "RZWQM2 cover-crop study treats NO3-N loss as satisfactory when NSE >0.50, RSR <0.70, and PBIAS meets the NO3-N tolerance."
+        cites: [qi2011]
+      - metric: rsr
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "RZWQM2 cover-crop study uses RSR <0.70 for hydrology and NO3-N in drainage."
+        cites: [qi2011]
+    secondary_metrics: []
+    validated_when: "NO3-N leaching/tile loss is validated when |PBIAS| <= 70%, NSE >= 0.50, and RSR <= 0.70 on the same aggregation basis."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Qi et al. state daily and annual drainage and annual NO3-N loss were satisfactory under NSE >0.50, RSR <0.70, and PBIAS within +/-25% except drainage outliers; their methods specify +/-70% for NO3-N loss and concentration.
+      The dag PBIAS metric is retained as a headline and paired with NSE/RSR because RZWQM2 nitrate leaching papers judge both bias and temporal error.
+
+  - dag_variable: soil_nitrate
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 15.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "No soil-nitrate time-series PBIAS tier was found; this transfers the RZWQM2 paper's general acceptable PBIAS <15% and Craft et al.'s soil nitrate PE italicization around +/-15%."
+        cites: [ma2012, craft2018]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Craft et al. report fall soil nitrate n-RMSE and mark values above roughly 30% as unsatisfactory."
+        cites: [craft2018]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Zhang et al. state mineral-N dynamics often have low or negative NSE because of complex N transformation and high soil NO3-N measurement variability."
+        cites: [zhang2016]
+    validated_when: "Soil nitrate time series are provisionally validated by |PBIAS| <= 15% and nRMSE <= 30%; NSE is contextual only because mineral-N temporal NSE is often low."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      This is weaker than no3_leaching because the fetched papers do not provide a clean RZWQM2 soil-nitrate time-series threshold table.
+      Craft et al. use PE and n-RMSE for fall profile nitrate and note upper-layer simulations can be unsatisfactory.
+      Zhang et al. explicitly say low NSE indices are acceptable for mineral N given transformation complexity and measurement variability.
+
+  - dag_variable: soil_nitrate
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 15.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Point/profile snapshot soil nitrate is closest to Craft et al.'s fall soil nitrate PE comparison; their table marks PE outside about +/-15% as unsatisfactory."
+        cites: [craft2018, ma2012]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Craft et al. report fall profile nitrate n-RMSE and mark >30% cases as unsatisfactory."
+        cites: [craft2018]
+    secondary_metrics: []
+    validated_when: "Depth-matched soil nitrate snapshots are validated when |PBIAS| <= 15% and nRMSE <= 30%."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      Depth matching is essential. Craft et al. found 0-90 cm fall soil nitrate better simulated than the upper 0-30 cm distribution, so profile-integrated comparisons are more defensible than individual shallow-node comparisons.
+
+  - dag_variable: crop_yield
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "RZWQM2 crop simulations are considered satisfactory when percent error is within +/-15%."
+        cites: [qi2011, craft2018]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Jamieson-style crop-model tiers reproduced by Umair et al.; RZWQM2 papers use RRMSE/n-RMSE <30% as satisfactory for crop production."
+        cites: [umair2017, qi2011, craft2018]
+    secondary_metrics:
+      - metric: ioa
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Willmott agreement is commonly reported for crop model yield/biomass; Cheng et al. use IoA >0.7 as acceptable."
+        cites: [cheng2022]
+    validated_when: "Single-season point yield is validated when |PBIAS or percent error| <= 15%; if multiple yield observations exist, nRMSE should also be <= 30%."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Qi et al. state crop production simulations were satisfactory when PE was within +/-15% and RRMSE <30%.
+      Cheng et al. used relative error for sparse yield scenarios and reported yield RE of 1.5-7.2% as satisfactory, but did not state a separate RE gate, so the RZWQM2 +/-15% PE convention is retained.
+
+  - dag_variable: crop_yield
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "RZWQM2 crop time series are judged satisfactory when percent error is within +/-15%."
+        cites: [qi2011, craft2018]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "NRMSE <10%, 10-20%, 20-30%, >30% maps to excellent, good, fair, poor in the fetched crop-model paper; RZWQM2 crop papers use <30% satisfactory."
+        cites: [umair2017, qi2011, craft2018]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Ma et al. quote r2 >0.80 as acceptable but caution that r2 should only be used for trend analysis."
+        cites: [ma2012]
+    validated_when: "Multi-season point yield is validated when |PBIAS| <= 15% and nRMSE <= 30%; year-to-year ranking can be summarized with R2 but does not replace magnitude checks."
+    evidence_strength: strong
+    confidence: 0.84
+    notes: >-
+      The dag PBIAS metric is retained. The RZWQM2 papers also use RRMSE/nRMSE because crop yield time series need magnitude spread as well as aggregate bias.
+
+  - dag_variable: crop_yield
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "No regional-aggregate RZWQM2 yield gate was fetched; this transfers the point/field crop PE <= +/-15% convention."
+        cites: [qi2011, craft2018]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Transferred from crop-model NRMSE tiers and RZWQM2 field-yield RRMSE <30% convention."
+        cites: [umair2017, qi2011]
+    secondary_metrics:
+      - metric: trend_slope_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Regional yield aggregates include cultivar, technology, and reporting trends outside a calibrated point RZWQM2 setup; no fetched paper provided a numeric trend gate."
+        cites: [ma2012]
+    validated_when: "Regional yield aggregates should first be detrended or otherwise harmonized; then use transferred crop-yield |PBIAS| <= 15% and nRMSE <= 30%."
+    evidence_strength: weak
+    confidence: 0.38
+    notes: >-
+      This block is intentionally low-confidence. RZWQM2 is a one-dimensional field model and the fetched validation papers are field/site studies, not national or regional aggregate benchmarks.
+      The transferred bands contextualize comparisons but should not loosen a gate on technology-trended regional data.
+
+  - dag_variable: soil_temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched RZWQM2/RZ-SHAW paper gave a soil-temperature NSE validation threshold."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The fetched RZ-SHAW paper reports energy-flux RMSE, not a numeric soil-temperature RMSE gate."
+        cites: []
+    secondary_metrics:
+      - metric: energy_flux_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Yu et al. evaluated RZ-SHAW canopy energy balance and report RMSE for net radiation, latent heat, sensible heat, and soil heat flux."
+        cites: [yu2007]
+    validated_when: "UNRESOLVED: soil temperature requires a fetched soil-temperature-specific RMSE/NSE convention; do not auto-validate on null bands."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      Yu et al. document the RZ-SHAW coupling and note prior testing for snow depth, ice contents, soil water content, and soil temperature, but the fetched paper's numeric table is for energy balance components.
+      The dag NSE metric is retained with null bands.
+
+  - dag_variable: snow_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched RZWQM2/RZ-SHAW snow-depth NSE validation threshold was found after the capped OpenAlex search."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: cm
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched snow-depth RMSE band was available; the fetched RZ-SHAW paper only states snow dynamics capability and cites prior validation."
+        cites: []
+    secondary_metrics:
+      - metric: qualitative_snow_dynamics
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Yu et al. state SHAW includes snow dynamics and that prior RZ-SHAW testing covered snow depth, ice contents, soil water content, and soil temperature."
+        cites: [yu2007]
+    validated_when: "UNRESOLVED: snow-depth validation must use a future fetched snow-depth benchmark; current bands are null."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      OpenAlex found Yu et al. 2007 as the best RZ-SHAW paper and it fetched as OA, but it did not reproduce a numeric snow-depth threshold.
+      A separate over-winter RZ-SHAW/SHAW validation paper is needed.
+
+  - dag_variable: pesticide_loss
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The capped search found a model-specific herbicide leaching paper, but DOI fetch failed; no fetched pesticide-loss NSE band is available."
+        cites: []
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provided a pesticide-loss PBIAS validation threshold."
+        cites: []
+    secondary_metrics:
+      - metric: sensitivity_context
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Ma et al. describe pesticide-process parameters including application efficiency, degradation half-lives, sorption, pH, dissociation, and macropore transport, but do not give numeric pesticide skill bands."
+        cites: [ma2012]
+    validated_when: "UNRESOLVED: pesticide loss is a low-confidence data gap until a fetched RZWQM pesticide benchmark provides numeric NSE/PBIAS/RMSE bands."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      The best OpenAlex hit was 'Using RZWQM to predict herbicide leaching losses in subsurface drainage water' (10.13031/2013.17621), but fetch_doi returned fetch_failed, so it is deferred and not cited.
+
+deferred_paywalled:
+  - ref: "Using RZWQM to predict herbicide leaching losses in subsurface drainage water"
+    doi: 10.13031/2013.17621
+    needed_for: [pesticide_loss]
+  - ref: "RZ-SHAW / SHAW over-winter validation paper reporting snow depth, ice content, soil water content, and soil temperature thresholds"
+    doi: unknown_not_fetched
+    needed_for: [snow_depth, soil_temperature]

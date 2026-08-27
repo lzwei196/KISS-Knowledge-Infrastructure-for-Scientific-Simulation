@@ -1,14 +1,3 @@
----
-name: oggm
-description: >-
-  OGGM 1.6.x flowline glacier framework. Covers Mountain glacier mass balance, volume,
-  area, length and geometry evolution at glacier-to-global…; Climatic surface mass balance
-  via monthly temperature-index model; Ice thickness / bed-topography inversion
-  (shallow-ice, mass conservation, Glen's flow law); 1.5D flowline ice dynamics
-  (shallow-ice approximation). Use when the task involves running, configuring,
-  calibrating or interpreting OGGM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,54 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (18 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (26 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/s1_glacier_inventory/download_rgi_region.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_glacier_inventory/download_rgi_region.py --help` |
+| `tools/s1_glacier_inventory/find_glaciers_in_basin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_glacier_inventory/find_glaciers_in_basin.py --help` |
+| `tools/s1_glacier_inventory/validate_glacier_selection.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_glacier_inventory/validate_glacier_selection.py --help` |
+| `tools/s2_preprocessing/configure_oggm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_preprocessing/configure_oggm.py --help` |
+| `tools/s2_preprocessing/init_glacier_directories.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_preprocessing/init_glacier_directories.py --help` |
+| `tools/s2_preprocessing/validate_preprocessing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_preprocessing/validate_preprocessing.py --help` |
+| `tools/s3_climate_input/process_climate_baseline.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_climate_input/process_climate_baseline.py --help` |
+| `tools/s3_climate_input/process_cmip6_projections.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_climate_input/process_cmip6_projections.py --help` |
+| `tools/s3_climate_input/process_custom_climate.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_climate_input/process_custom_climate.py --help` |
+| `tools/s4_calibration/calibrate_mass_balance.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_calibration/calibrate_mass_balance.py --help` |
+| `tools/s4_calibration/validate_calibration.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_calibration/validate_calibration.py --help` |
+| `tools/s5_simulation/compile_glacier_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_simulation/compile_glacier_output.py --help` |
+| `tools/s5_simulation/run_glacier_projections.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_simulation/run_glacier_projections.py --help` |
+| `tools/s5_simulation/run_glacier_simulation.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_simulation/run_glacier_simulation.py --help` |
+| `tools/s5_simulation/validate_wgms_reference_mb.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_simulation/validate_wgms_reference_mb.py --help` |
+| `tools/s6_vic_coupling/glacier_contribution_analysis.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_vic_coupling/glacier_contribution_analysis.py --help` |
+| `tools/s6_vic_coupling/oggm_to_vic_runoff.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_vic_coupling/oggm_to_vic_runoff.py --help` |
+| `tools/s6_vic_coupling/plot_glacier_hydro.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_vic_coupling/plot_glacier_hydro.py --help` |
+
+*18 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -174,6 +211,48 @@ Stage 6: VIC Coupling
   Convert OGGM output to VIC grid, analyze glacier contribution
   Tools: oggm_to_vic_runoff, glacier_contribution_analysis, plot_glacier_hydro
 ```
+
+## Output Description
+
+This section restates `dag.yaml`; if this text ever disagrees with the dag, the dag wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable — the output this KI is judged by):
+
+> `specific_mass_balance` — Annual (and monthly) specific surface mass balance. (`kg m^-2 yr^-1 (mm w.e./yr)`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|---|---:|---|---|
+| `specific_mass_balance` | 1 | `kg m^-2 yr^-1 (mm w.e./yr)` | Annual (and monthly) specific surface mass balance. |
+
+Other dag outputs are: `volume`, `area`, `length`, `calving`, `melt_on_glacier`, `melt_off_glacier`, `liq_prcp_on_glacier`, `snowfall_on_glacier`, `refreezing`.
+
+## Unit Table
+
+This table records only units present in the sourced dag facts. Do not fill blank entries from memory; read `dag.yaml` for the current contract before parsing or scoring outputs.
+
+| Variable | Unit stated by `dag.yaml` | Notes |
+|---|---|---|
+| `specific_mass_balance` | `kg m^-2 yr^-1 (mm w.e./yr)` | Rank-1 output; annual and monthly specific surface mass balance. |
+| `volume` | not included in the extracted facts | Listed as another dag output. |
+| `area` | not included in the extracted facts | Listed as another dag output. |
+| `length` | not included in the extracted facts | Listed as another dag output. |
+| `calving` | not included in the extracted facts | Listed as another dag output. |
+| `melt_on_glacier` | not included in the extracted facts | Listed as another dag output. |
+| `melt_off_glacier` | not included in the extracted facts | Listed as another dag output. |
+| `liq_prcp_on_glacier` | not included in the extracted facts | Listed as another dag output. |
+| `snowfall_on_glacier` | not included in the extracted facts | Listed as another dag output. |
+| `refreezing` | not included in the extracted facts | Listed as another dag output. |
+
+## Validated Results
+
+This section restates `docs/validation_convention.yaml`; if this text ever disagrees with the convention file, the convention wins. The supplied convention facts include bars for `volume` and `area`; no convention bar for the rank-1 `specific_mass_balance` output is stated here unless it appears in the convention file.
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band | Citation key(s) |
+|---|---|---|---|---|---|---|
+| `volume` | `nse` | maximize | no cited threshold | no cited threshold | no cited threshold | none |
+| `volume` | `pbias` | zero_centered | no cited threshold | 8.0 (`farinotti2017`, `farinotti2019`) | 26.0 (`farinotti2017`, `farinotti2019`) | `farinotti2017`, `farinotti2019` |
+| `volume` | `pbias` | zero_centered | no cited threshold | 8.0 (`farinotti2017`, `farinotti2019`) | 26.0 (`farinotti2017`, `farinotti2019`) | `farinotti2017`, `farinotti2019` |
+| `area` | `pbias` | zero_centered | 0.7 (`zekollari2019`) | no cited threshold | 1.0 (`zekollari2019`) | `zekollari2019` |
 
 ## Critical Domain Knowledge
 

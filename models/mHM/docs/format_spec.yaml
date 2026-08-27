@@ -1,332 +1,648 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "mHM v5.13.1"
-  domain: "hydrology"
-  binary: "mhm"
-  binary_path: "KISSPATH_BINARIES/mhm/mhm"
-  language: "Fortran 90"
-  working_directory: "run directory containing mhm.nml"
-  dependencies: "NetCDF-Fortran, LAPACK"
-  notes: >
-    Distributed hydrology with Multiscale Parameter Regionalization (MPR).
-    Unique in HydroCraft: global parameters (~70) calibrated on gauged basins
-    can be transferred directly to ungauged basins via transfer functions.
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: mHM
+  language: fortran
+  implementation:
+    id: mhm-v5131
+    version: 5.13.1
+    provenance: Fortran 2008; UFZ (Helmholtz Centre for Environmental Research) mHM, depends on the FORCES/CHS
+      Fortran library and NetCDF-Fortran.
+  scientific_reference_version: mHM (mesoscale Hydrologic Model) v5.13 lineage with Multiscale Parameter
+    Regionalization (MPR); Samaniego, Kumar & Attinger 2010 WRR methodology
 inputs:
-
   forcing:
-    - name: "precipitation"
-      file: "meteo_forcing/pre.nc"
-      variable: "pre"
-      unit: "mm/day"
-      valid_range: [0.0, 500.0]
-      format: "NetCDF; dimensions (time, lat, lon)"
-      conversion_from_cmfd: "mm/3hr -> mm/day: SUM 8 timesteps per day"
-      bug_history: "mm/3hr fed directly = 8x too low precipitation"
-
-    - name: "temperature"
-      file: "meteo_forcing/tavg.nc"
-      variable: "tavg"
-      unit: "degC"
-      valid_range: [-60.0, 60.0]
-      conversion_from_cmfd: "K -> degC: subtract 273.15; mean of 8 timesteps"
-      bug_history: "Kelvin not converted -> wrong PET, wrong snow"
-
-    - name: "potential_evapotranspiration"
-      file: "meteo_forcing/pet.nc"
-      variable: "pet"
-      unit: "mm/day"
-      valid_range: [0.0, 20.0]
-      notes: "Pre-computed PET or Tmin/Tmax for Hargreaves"
-
+  - name: precipitation
+    unit: mm/day
+    category: meteorology
+    source_kind: forcing
+    model_input_format: NetCDF (time, lat, lon), CF conventions, variable 'pre', DOUBLE, one file per
+      year, daily (hourly supported)
+    notes: Valid model range ~0-500 mm/day; mHM is sensitive to sub-daily-vs-daily aggregation errors
+      (mm/3hr fed as daily underestimates ~8x).
+  - name: mean air temperature
+    unit: degC
+    category: meteorology
+    source_kind: forcing
+    model_input_format: NetCDF variable 'tavg', daily/hourly, DOUBLE
+    notes: Model expects Celsius (-60 to 60 degC); Kelvin forcing breaks snow thresholds, degree-day melt,
+      and PET silently.
+  - name: potential evapotranspiration
+    unit: mm/day
+    category: meteorology
+    source_kind: forcing
+    model_input_format: NetCDF variable 'pet', daily/hourly
+    notes: Consumed directly when processCase(5)=0; otherwise PET is computed internally from tmin/tmax
+      (Hargreaves-Samani), net radiation (Priestley-Taylor), or radiation+vapor pressure+wind (Penman-Monteith).
+  - name: minimum/maximum air temperature
+    unit: degC
+    category: meteorology
+    source_kind: forcing
+    model_input_format: NetCDF, daily
+    notes: Required when processCase(5)=1 (Hargreaves-Samani); if absent mHM silently substitutes tavg,
+      biasing PET.
+  - name: net radiation
+    unit: W m-2
+    category: meteorology
+    source_kind: forcing
+    model_input_format: NetCDF, daily
+    notes: Used by radiation-based PET (Priestley-Taylor / Penman-Monteith).
+  - name: absolute vapor pressure
+    unit: Pa
+    category: meteorology
+    source_kind: forcing
+    model_input_format: NetCDF, daily
+    notes: Used by Penman-Monteith PET (processCase(5)=3).
+  - name: wind speed
+    unit: m s-1
+    category: meteorology
+    source_kind: forcing
+    model_input_format: NetCDF, daily
+    notes: Used by Penman-Monteith PET (processCase(5)=3).
   parameters:
-    critical:
-      - name: "iFlag_cordinate_sys"
-        file: "mhm.nml"
-        description: "Coordinate system flag: 0=projected, 1=geographic (lat/lon)"
-        valid_range: [0, 1]
-        default: 0
-        bug_history: >
-          MUST be 1 for all HydroCraft basins using EPSG:4326 (lat/lon).
-          Using 0 with geographic coordinates causes cell areas to be
-          0.25*0.25 = 0.0625 m^2 instead of ~680 km^2, producing
-          ZERO routed discharge. This is the #1 cause of zero discharge.
-
-      - name: "resolution_Hydrology"
-        file: "mhm.nml"
-        description: "L1 hydrological grid resolution"
-        notes: >
-          When iFlag_cordinate_sys=1, units are DEGREES (e.g., 0.25).
-          MUST be an integer multiple of L0 resolution.
-
-      - name: "resolution_Routing"
-        file: "mhm.nml"
-        description: "L11 routing grid resolution"
-        notes: "Must be integer multiple of L0. Usually same as L1."
-
-      - name: "D8 flow direction"
-        file: "morph/fdir.asc"
-        description: "ArcGIS D8 convention (1=E, 2=SE, 4=S, 8=SW, 16=W, 32=NW, 64=N, 128=NE)"
-        bug_history: >
-          WhiteboxTools uses a DIFFERENT D8 convention — must convert to
-          ArcGIS encoding. Wrong encoding -> zero discharge (dt_r05).
-
-      - name: "ASCII grid header consistency"
-        file: "morph/*.asc"
-        description: "ALL morphological grids must have identical ncols, nrows, xllcorner, yllcorner, cellsize"
-        bug_history: "Any mismatch causes 'ERROR: Resolution mismatch' at startup"
-
-      - name: "soil_classdefinition.txt"
-        file: "morph/soil_classdefinition.txt"
-        description: "Soil class definitions with horizon depths and texture"
-        format: "Tab-separated; first line: nSoil_Types N"
-        bug_history: "Wrong format (missing header) -> fatal error at startup"
-
-    mpr_global_parameters:
-      count: "~50-70"
-      file: "mhm_parameter.nml"
-      description: >
-        Transfer function coefficients that map physical properties
-        (sand%, clay%, bulk_density) to model parameters (Ksat, porosity).
-        These are the parameters calibrated and transferred across basins.
-      climate_presets:
-        humid_subtropical: "Wider infiltration/interflow, narrow snow ranges"
-        semi_arid: "High infiltration shape, narrow interflow, low recharge"
-        cold_alpine: "Wide snow parameters, moderate infiltration"
-        tropical: "No snow, high interflow, intense rainfall infiltration"
-
-  files:
-    required:
-      - name: "mhm.nml"
-        description: "Master namelist (simulation, paths, process switches)"
-        format: "Fortran namelist"
-        notes: "iFlag_cordinate_sys MUST be 1 for lat/lon grids"
-
-      - name: "mhm_parameter.nml"
-        description: "MPR global parameter values and bounds"
-        format: "Fortran namelist"
-
-      - name: "mrm_outputs.nml"
-        description: "Routing model output configuration"
-        format: "Fortran namelist"
-
-      - name: "mhm_outputs.nml"
-        description: "Land surface model output configuration"
-        format: "Fortran namelist"
-
-      - name: "morph/dem.asc"
-        description: "Digital elevation model"
-        format: "ESRI ASCII grid"
-
-      - name: "morph/slope.asc"
-        description: "Terrain slope"
-        format: "ESRI ASCII grid"
-
-      - name: "morph/aspect.asc"
-        description: "Terrain aspect"
-        format: "ESRI ASCII grid"
-
-      - name: "morph/fdir.asc"
-        description: "D8 flow direction (ArcGIS convention)"
-        format: "ESRI ASCII grid"
-
-      - name: "morph/facc.asc"
-        description: "Flow accumulation"
-        format: "ESRI ASCII grid"
-
-      - name: "morph/soil_class.asc"
-        description: "Soil class ID grid"
-        format: "ESRI ASCII grid"
-
-      - name: "morph/soil_classdefinition.txt"
-        description: "Soil class properties (texture, horizons)"
-
-      - name: "morph/geology_class.asc"
-        description: "Geology class ID grid"
-        format: "ESRI ASCII grid"
-
-      - name: "morph/geology_classdefinition.txt"
-        description: "Geology class properties (karstic flag)"
-
-      - name: "morph/lc_YYYY.asc"
-        description: "Land cover class grids (one per time period)"
-        format: "ESRI ASCII grid"
-
-      - name: "morph/lai_classdefinition.txt"
-        description: "Monthly LAI per land use class"
-
-      - name: "gauge/gauge.asc"
-        description: "Gauge location grid"
-        format: "ESRI ASCII grid"
-
-      - name: "latlon.nc"
-        description: "Latitude/longitude NetCDF for the domain"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: MPR global transfer-function parameters (gammas)
+    unit: various
+    category: regionalization
+    source_kind: calibrated
+    model_input_format: 'mhm_parameter.nml (~50-70 global parameters; per parameter: lower, upper, value,
+      FLAG, SCALING)'
+    notes: Transfer-function coefficients mapping L0 physiographic properties (sand%, clay%, bulk density,
+      slope, LAI, geology) to effective L1 parameters (Ksat, porosity, recession k0/k1/k2/kp, degree-day
+      factors, root fractions). Encode process, not location; calibrate once, transfer to ungauged basins.
+      Defaults calibrated on German (Mosel) basins.
+  - name: soil texture / hydraulic lookup
+    unit: CLAY %, SAND %, BD g cm-3, horizon depths UD/LD mm
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: soil_class.asc (ESRI ASCII grid) + soil_classdefinition.txt (columns MU_GLOBAL
+      HORIZON UD LD CLAY SAND BD; column order load-bearing)
+    notes: Feeds pedotransfer functions for Ksat/porosity; wrong column order silently corrupts soil hydraulics
+      everywhere.
+  - name: geology class / baseflow recession lookup
+    unit: dimensionless class + GeoParam recession
+    category: geology
+    source_kind: dataset_lookup
+    model_input_format: geology_class.asc + geology_classdefinition.txt (GeoParam ClassUnit Karstic Description)
+    notes: Karstic flag drives baseflow recession behaviour.
+  - name: land cover / monthly LAI lookup
+    unit: LAI m2 m-2
+    category: vegetation
+    source_kind: dataset_lookup
+    model_input_format: lc_YYYY.asc + lai_classdefinition.txt (ID LAND-USE Jan..Dec); land cover reduced
+      to forest / impervious(sealed) / pervious
+    notes: Monthly LAI per class drives interception and PET correction.
+  - name: DEM, slope, aspect, flow direction, flow accumulation
+    unit: m / degrees / D8 code / count
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: ESRI ASCII grids (dem.asc, slope.asc, aspect.asc, fdir.asc, facc.asc); all grids
+      share identical header; fdir uses ArcGIS D8 codes (1,2,4,8,16,32,64,128)
+    notes: L0 physiographic predictors; DEM/slope/aspect feed MPR and PET-aspect correction, fdir/facc
+      build the L11 routing network.
+  initial_conditions:
+  - name: initial soil moisture (cold start)
+    unit: mm
+    category: soil
+    source_kind: default
+    model_input_format: internal cold-start default (0.5 x field capacity per horizon) unless a restart
+      file is supplied
+    notes: Hardcoded warm-start assumption affecting early-period results when no restart state is provided.
+  - name: initial interception/snow/unsaturated/saturated storages
+    unit: mm
+    category: storages
+    source_kind: default
+    model_input_format: internal cold-start magic constants (e.g. unsat/sat storage init) or NetCDF restart
+      file
+    notes: Cold-start initial state/flux constants are fixed in code, not exposed in the namelist.
+  boundary_conditions:
+  - name: coordinate system flag (iFlag_cordinate_sys)
+    unit: 0=projected meters | 1=geographic degrees
+    category: grid_configuration
+    source_kind: user_provided
+    model_input_format: mhm.nml
+    notes: Must match the grid CRS; =0 on a lat/lon grid computes cell area as cellsize^2 m^2 and collapses
+      routed discharge to ~zero.
+  - name: L0/L1/L11 resolutions (resolution_Hydrology, resolution_Routing)
+    unit: m or degrees
+    category: grid_configuration
+    source_kind: user_provided
+    model_input_format: mhm.nml
+    notes: L1 and L11 must be exact integer multiples of L0; resolution_Routing must match the actual
+      L11 cellsize or routing peak timing shifts.
+  - name: PET method (processCase(5))
+    unit: 0=input | 1=Hargreaves-Samani | 2=Priestley-Taylor | 3=Penman-Monteith
+    category: process_switch
+    source_kind: user_provided
+    model_input_format: mhm.nml
+  - name: routing activation (processCase(8))
+    unit: 0=off | 1=mRM Muskingum | 2=adaptive-timestep celerity
+    category: process_switch
+    source_kind: user_provided
+    model_input_format: mhm.nml
+  - name: neutron module (processCase(10))
+    unit: 0=off | 1=Desilets N0 | 2=COSMIC
+    category: process_switch
+    source_kind: user_provided
+    model_input_format: mhm.nml
+    notes: Diagnostic cosmic-ray neutron output; the ground-albedo-neutrons output path is flagged work-in-progress
+      by the developers.
+  - name: warming/evaluation periods and time stepping
+    unit: dates
+    category: simulation_period
+    source_kind: user_provided
+    model_input_format: mhm.nml (warming_Days, eval_Per, timestep)
+  - name: gauge location grid + observed discharge
+    unit: m3 s-1
+    category: evaluation
+    source_kind: user_provided
+    model_input_format: idgauges.asc (gauge ID at gauge cell) + per-gauge text file (YYYY MM DD Q); gauge
+      ID must match evaluation_gauges in mhm.nml
+    notes: Observed discharge drives objective-function evaluation; gauge must land on a valid in-domain
+      L11 cell with upstream drainage.
 outputs:
-
   primary:
-    - name: "discharge"
-      file: "output/mRM_Fluxes_States.nc"
-      variable: "Qrouted"
-      unit: "m3/s"
-      valid_range: [0, null]
-      notes: "Routed discharge at L11 grid cells. Extract at gauge location."
-
-    - name: "evapotranspiration"
-      file: "output/mHM_Fluxes_States.nc"
-      variable: "aET"
-      unit: "mm/day"
-      valid_range: [0, 20.0]
-
-    - name: "soil_moisture"
-      file: "output/mHM_Fluxes_States.nc"
-      variable: "SM"
-      unit: "mm"
-
-    - name: "total_runoff"
-      file: "output/mHM_Fluxes_States.nc"
-      variable: "total_runoff"
-      unit: "mm/day"
-
-  diagnostics:
-    - name: "config_log"
-      file: "ConfigFile.log"
-      notes: >
-        Check for 'Resolution [m]: 0.' or 'Effective Area: 0.000'
-        which indicate wrong iFlag_cordinate_sys.
-
-    - name: "calibration_output"
-      file: "output/FinalParam.nml"
-      notes: "Best parameter set from DDS/SCE calibration"
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: mRM_runoff (routed discharge)
+    unit: m3 s-1
+    description: Routed streamflow discharge on the L11 routing network, extracted at gauge cells.
+    validation_rank: 1
+    emitted_in: mRM_Fluxes_States.nc (and daily_discharge.out at gauges)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Gauge must map to an L11 cell with correct upstream drainage; a mis-snapped gauge yields all-zero
+          discharge despite a valid routed field.
+        - Routing-resolution mismatch can shift peak timing by 1-3 days independent of water-balance skill.
+      detrending_options:
+      - none
+  - name: aET (actual evapotranspiration)
+    unit: mm/timestep
+    description: Actual evapotranspiration summed over canopy, soil layers, and sealed-surface evaporation.
+    validation_rank: 3
+    emitted_in: mHM_Fluxes_States.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - PET-method/forcing mismatch (e.g. Hargreaves selected with only tavg) systematically biases
+          aET.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Spatial AET pattern is dominated by PET-correction/aspect and vegetation parameters, not by
+          discharge-only calibration.
+      detrending_options:
+      - none
+  - name: SM (soil moisture)
+    unit: mm or mm/mm (per layer / mean)
+    description: Multi-horizon soil water content (volumetric or depth) per L1 cell.
+    validation_rank: 4
+    emitted_in: mHM_Fluxes_States.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: r
+        caveats:
+        - Absolute magnitude depends on soil-depth configuration; anomaly/index comparison is often more
+          meaningful than absolute mm.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Satellite SM products sense a shallow surface layer; compare against the corresponding model
+          horizon.
+      detrending_options:
+      - first_difference
+      - linear_residual
+  - name: total_runoff (Q)
+    unit: mm/timestep
+    description: Total water runoff depth (direct + fast interflow + slow interflow + baseflow) generated
+      per L1 cell before routing.
+    validation_rank: 2
+    emitted_in: mHM_Fluxes_States.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Per-cell generated runoff is pre-routing; do not compare directly to gauge hydrographs.
+      detrending_options:
+      - none
+  - name: baseflow (QB)
+    unit: mm/timestep
+    description: Saturated-zone groundwater baseflow generated per cell, governed by geology-class recession
+      (GeoParam).
+    validation_rank: 5
+    emitted_in: mHM_Fluxes_States.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Best assessed via baseflow-index (BFI) separation of observed discharge; single-geology-class
+          domains silently zero baseflow.
+      detrending_options:
+      - none
+  - name: recharge
+    unit: mm/timestep
+    description: Groundwater recharge (deep percolation to the saturated zone) per cell.
+    validation_rank: 6
+    emitted_in: mHM_Fluxes_States.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Rarely directly observed; usually inferred and weakly constrained.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "coordinate_sys_flag"
-    triplet: "dt_r01"
-    description: "iFlag_cordinate_sys=0 with lat/lon grids -> cell area 0.0625 m^2 -> zero discharge"
-    affected_output: "All outputs — zero discharge"
-    detection: "ConfigFile.log shows 'Resolution [m]: 0.' or 'Effective Area: 0.000'"
-    fix: "Set iFlag_cordinate_sys = 1 in mhm.nml"
-    severity: "silent — #1 cause of zero discharge"
+- id: dt_b01
+  symptom: CMake fails to find FORCES library during build
+  diagnosis: CPM (CMake Package Manager) cannot download FORCES from git.ufz.de; mHM uses CPM to auto-download
+    the FORCES library. If behind a firewall or the UFZ server is down, the download fails.; ['build_system']
+  remedy: Clone FORCES manually and point CMake to it; ['git clone https://git.ufz.de/chs/forces.git /path/to/forces',
+    'cmake -B build -DCPM_forces_SOURCE=/path/to/forces']; Pre-clone FORCES repository before building
+  severity: fatal
+- id: dt_b02
+  symptom: Undefined reference to NetCDF-Fortran symbols
+  diagnosis: NetCDF-Fortran development library not found by CMake; mHM requires libnetcdff-dev for I/O.
+    If not installed or not in the search path, linking fails.; ['build_system', 'netcdf']
+  remedy: 'Install NetCDF-Fortran dev package and set NetCDF root; [''sudo apt install libnetcdff-dev'',
+    ''If still fails: cmake -DNetCDF_ROOT=$(nf-config --prefix)'']; Verify libnetcdff-dev installed before
+    building'
+  severity: fatal
+- id: dt_b03
+  symptom: 'Fatal Error: Cannot open module file ''mo_*'''
+  diagnosis: Build order dependency issue; Fortran modules must be compiled in dependency order. Parallel
+    build sometimes fails.; ['build_system']
+  remedy: Clean and rebuild sequentially; ['rm -rf build', 'cmake -B build -DCMAKE_BUILD_TYPE=Release',
+    'cmake --build build -j1']; Use cmake --build build -j$(nproc) which usually handles dependencies
+  severity: fatal
+- id: dt_b04
+  symptom: Rank mismatch or unsupported Fortran feature error
+  diagnosis: gfortran version too old (< 9.0); mHM v5.13 requires gfortran >= 9.0 for certain Fortran
+    2008/2018 features.; ['build_system', 'compiler']
+  remedy: 'Upgrade gfortran; [''gfortran --version  # check current'', ''sudo apt install gfortran-11  #
+    or newer'', ''export FC=gfortran-11 && cmake -B build'']; Verify gfortran >= 9.0 before building'
+  severity: fatal
+- id: dt_b05
+  symptom: fypp preprocessor warning during CMake configure
+  diagnosis: fypp not installed in the Python environment; Some FORCES source files use fypp preprocessing.
+    Build may succeed with warnings but miss features.; ['build_system']
+  remedy: Install fypp; ['pip install fypp']; Install fypp before building mHM
+  severity: degraded
+- id: dt_r01
+  symptom: mHM crashes with 'Number of rows/columns do not match'
+  diagnosis: ASCII grid headers are inconsistent across morphological input files; ALL ASCII grids (dem.asc,
+    soil_class.asc, geology_class.asc, etc.) MUST have identical ncols, nrows, xllcorner, yllcorner, cellsize
+    values. Even a difference of 0.0001 in xllcorner will crash.; ['s2_morphology', 'all_grids']
+  remedy: Run validate_morph_grids.py to identify the mismatch; validate_morph_grids.py --morph_dir input/morph/;
+    Generate ALL grids from the same domain_info.json header
+  severity: fatal
+- id: dt_r02
+  symptom: mHM crashes with 'Resolution mismatch' between L0, L1, L11
+  diagnosis: L1 or L11 resolution is not an exact integer multiple of L0 resolution; mHM requires L1 =
+    N * L0 and L11 = M * L0 where N,M are positive integers. If L0=500m and L1=1200m, this fails because
+    1200/500 = 2.4.; ['s1_domain', 'grid_setup']
+  remedy: 'Adjust L1/L11 resolution to be integer multiples of L0; [''Check domain_info.json for all three
+    resolutions'', ''Ensure L1/L0 and L11/L0 are integer ratios'', ''Example: L0=1000m, L1=24000m (24x),
+    L11=24000m (24x)'']; setup_mhm_domain.py validates this automatically'
+  severity: fatal
+- id: dt_r03
+  symptom: mHM crashes with 'No meteorological data found' or 'Missing forcing file'
+  diagnosis: Forcing NetCDF files have wrong path, wrong variable names, or wrong time range; mHM looks
+    for forcing in the directories specified in mhm.nml (dir_Precipitation, dir_Temperature, etc.). The
+    files must be named correctly and cover the simulation period.; ['s4_forcing', 'namelist']
+  remedy: 'Check forcing directory paths in mhm.nml and verify files exist; [''ls input/meteo/pre/  #
+    check precipitation files exist'', ''ncdump -h input/meteo/pre/pre_2005.nc  # check variable names'',
+    ''Verify time range covers eval_Per in mhm.nml'']; Use convert_forcing_to_mhm.py which names files
+    correctly'
+  severity: fatal
+- id: dt_r04
+  symptom: mHM crashes with 'Gauge ID not found in grid'
+  diagnosis: The gauge ID in mhm.nml does not match any cell value in idgauges.asc, or the gauge falls
+    on a NODATA cell; idgauges.asc must have the gauge ID (e.g., 398) at exactly the cell where the gauge
+    is located. If the gauge falls on a NODATA cell (-9999), mHM cannot find it.; ['s2_morphology', 's6_namelist
+  remedy: Check gauge location and idgauges.asc; ['Verify Gauge_id in mhm.nml matches value in idgauges.asc',
+    'Check gauge coordinates are within the domain and on a valid cell', 'Re-run generate_gauge_grid.py
+    with correct coordinates']; generate_gauge_grid.py auto-snaps gauge to nearest valid cell
+  severity: fatal
+- id: dt_r05
+  symptom: Model runs but routed discharge is zero everywhere
+  diagnosis: 'Flow direction grid uses wrong D8 convention; mHM uses ArcGIS D8: 1=E, 2=SE, 4=S, 8=SW,
+    16=W, 32=NW, 64=N, 128=NE. WhiteboxTools uses a DIFFERENT convention. If the tool writes WBT D8 values,
+    mHM routing breaks completely but model still runs.; [''s2_morphology'', ''fdir'']'
+  remedy: 'Verify fdir.asc uses ArcGIS D8 convention; [''Check unique values in fdir.asc: should be 0,1,2,4,8,16,32,64,128'',
+    ''If values are 0,1,2,3,4,5,6,7: WBT convention, must convert'', ''Use prepare_morpho_data.py which
+    uses ArcGIS convention'']; Always generate fdir with prepare_morpho_data.py, never Whitebox'
+  severity: fatal
+- id: dt_r06
+  symptom: Discharge way too high (10-100x expected)
+  diagnosis: 'Precipitation units wrong: mm/3hr not aggregated to mm/day; CMFD and MSWX precipitation
+    is in mm/3hr (8 timesteps per day). If not summed to daily, precip is 8x too low. But some tools sum
+    all monthly files, giving ~240x too much.; [''s4_forcing'']'
+  remedy: 'Check precipitation values in forcing NetCDF; [''ncdump -v pre input/meteo/pre/pre_2005.nc
+    | tail -5'', ''Daily precip should be 0-100 mm/day typically'', ''If values are 0-12 mm (too low):
+    not aggregated from 3-hourly'', ''If values are 0-10000 (too high): double aggregation'']; Use convert_forcing_to_mhm.'
+  severity: fatal
+- id: dt_r07
+  symptom: Baseflow is zero despite wet climate
+  diagnosis: Geology class grid has all cells mapped to a single class, or geology_classdefinition.txt
+    is malformed; mHM uses GeoParam(i) for baseflow recession. If geology_class.asc has all cells as one
+    class and that class has a very low recession constant, baseflow will be zero.; ['s2_morphology',
+    'geology']
+  remedy: Check geology class distribution and classdefinition; ['Count unique values in geology_class.asc',
+    'Verify geology_classdefinition.txt has correct format', 'Check GeoParam values in mhm_parameter.nml
+    for the dominant class']; Use glim_to_mhm_geology.py for realistic geology classification
+  severity: degraded
+- id: dt_r08
+  symptom: mHM crashes with 'Parameter out of range'
+  diagnosis: 'A parameter value in mhm_parameter.nml is outside its [lower, upper] bounds; Each parameter
+    has format: lower, upper, value, FLAG, SCALING. If value < lower or value > upper, mHM rejects it.;
+    [''s3_mpr'']'
+  remedy: Check mhm_parameter.nml for out-of-range values; ['Search for parameters where value is outside
+    bounds', 'Adjust value to be within [lower, upper]', 'Or widen the bounds if the calibrated value
+    is physically reasonable']; transfer_mpr_params.py validates bounds during transfer
+  severity: fatal
+- id: dt_r09
+  symptom: NaN values appear in output fields
+  diagnosis: NODATA (-9999) in soil or DEM propagates through calculations; If soil_classdefinition.txt
+    has a mapping unit referenced in soil_class.asc but not defined in the classdefinition, mHM may produce
+    NaN for those cells.; ['s2_morphology', 'soil']
+  remedy: Check that all soil/geology IDs in grids are defined in classdefinition files; ['Extract unique
+    IDs from soil_class.asc', 'Verify each ID exists in soil_classdefinition.txt', 'Check for -9999 leaking
+    into valid computation cells']; hwsd_to_mhm_soil.py generates consistent class + definition files
+  severity: degraded
+- id: dt_r10
+  symptom: Model runs extremely slowly (10x expected runtime)
+  diagnosis: L0 resolution too fine relative to domain size; If L0 is 100m for a 100,000 km2 basin, there
+    are 10 million L0 cells. MPR must process all of them. Use L0=1000m for large basins.; ['s0_config',
+    's1_domain']
+  remedy: Increase L0 resolution (coarser grid); ['Check L0 resolution vs basin size', 'For basins >10,000
+    km2, use L0 >= 1000m', 'For basins >100,000 km2, use L0 >= 2000m']; configure_mhm_basin.py should
+    warn about excessive L0 cell counts
+  severity: degraded
+- id: dt_s01
+  symptom: Soil parameters physically unreasonable (all cells have same Ksat)
+  diagnosis: soil_classdefinition.txt has wrong column order or all soil types have identical properties;
+    If clay and sand columns are swapped, MPR transfer functions produce wrong Ksat/porosity. The model
+    runs fine but soil hydraulic properties are wrong everywhere.; ['s2_morphology', 'soil']
+  remedy: 'Verify soil_classdefinition.txt column order; [''Check header: MU_GLOBAL HORIZON UD[mm] LD[mm]
+    CLAY[%] SAND[%] BD[gcm-3]'', ''Verify some entries have different clay/sand values'', ''Compare with
+    HWSD original data'']; hwsd_to_mhm_soil.py validates output column order'
+  severity: silent
+- id: dt_s02
+  symptom: ET systematically too high or too low
+  diagnosis: 'PET method mismatch: processCase(5)=1 (Hargreaves) but only tavg provided instead of tmin/tmax;
+    Hargreaves requires tmin and tmax separately. If only tavg is provided, mHM may use tavg for both,
+    producing wrong PET. No error message.; [''s4_forcing'', ''s6_namelist'']'
+  remedy: 'Check processCase(5) matches available forcing variables; [''processCase(5)=0: needs pet/ directory'',
+    ''processCase(5)=1: needs tmin/ and tmax/ directories'', ''processCase(5)=2: needs radiation data'',
+    ''processCase(5)=3: needs wind, humidity, radiation, pressure'']; generate_mhm_namelists.py sets process'
+  severity: silent
+- id: dt_s03
+  symptom: Regionalization (parameter transfer) degrades performance significantly
+  diagnosis: Calibration and prediction basins used DIFFERENT L0 data sources; MPR transfer functions
+    are calibrated to a specific soil/geology database. If the calibration basin used HWSD v1.2 but the
+    prediction basin used FAO Digital Soil Map, the transfer functions are not valid because the classification
+    sch
+  remedy: 'Ensure both basins use identical L0 data sources; [''Check soil database: both must use HWSD'',
+    ''Check geology: both must use GLiM'', ''Check land cover: both must use AVHRR'', ''The transfer_report.json
+    documents which sources were used'']; HydroCraft uses the same global databases for all basins'
+  severity: silent
+- id: dt_s04
+  symptom: Multi-basin calibration biased toward the largest basin
+  diagnosis: Objective function not normalized by basin area or number of timesteps; When calibrating
+    across multiple basins, a 100,000 km2 basin dominates the objective function over a 1,000 km2 basin
+    because it has more grid cells contributing to total error.; ['s9_calibrate']
+  remedy: Use per-basin KGE/NSE averaged across basins (not summed); ['Set opti_function to KGE (value
+    10) which normalizes per gauge', 'Or compute weighted average of per-basin metrics']; Default opti_function=10
+    (KGE) handles this correctly
+  severity: silent
+- id: dt_s05
+  symptom: Aspect values wrong (north/south flipped)
+  diagnosis: DEM is in geographic CRS but aspect was computed assuming projected CRS; In geographic CRS,
+    row 0 is top (north) but gradient computation may assume row 0 is bottom. This flips the aspect, causing
+    wrong PET correction from aspect.; ['s2_morphology', 'aspect']
+  remedy: 'Verify aspect convention: N=0/360, E=90, S=180, W=270; [''Check a known south-facing slope
+    has aspect ~180'', ''Compare with GIS software output'']; prepare_morpho_data.py handles CRS convention
+    correctly'
+  severity: silent
+- id: dt_s06
+  symptom: Interflow always zero even in steep terrain
+  diagnosis: interflowStorageCapacityFactor at lower bound (75) is too low for the basin; The interflow
+    storage capacity factor determines how much water can be held before interflow begins. If too low,
+    all water percolates to groundwater instead.; ['s3_mpr']
+  remedy: Increase interflowStorageCapacityFactor bounds or initial value; ['Check mhm_parameter.nml &interflow1
+    section', 'Try value=150 (mid-range)', 'Enable FLAG=1 for calibration']; Literature-informed initial
+    values help avoid this
+  severity: silent
+- id: dt_s07
+  symptom: Routing peak timing wrong by 1-3 days
+  diagnosis: resolution_Routing in mhm.nml does not match actual grid spacing; If resolution_Routing says
+    24000m but the actual L11 grid has cells of 10000m, the Muskingum travel time computation is wrong.
+    Peaks arrive too early or too late.; ['s6_namelist', 's1_domain']
+  remedy: Verify resolution_Routing matches L11 grid cellsize; ['Check domain_info.json for resolution_L11_m',
+    'Check mhm.nml resolution_Routing(1)', 'They must be identical']; generate_mhm_namelists.py sets this
+    from config automatically
+  severity: silent
+- id: dt_s08
+  symptom: Temperature in Kelvin instead of Celsius passed to mHM
+  diagnosis: CMFD temperature not converted from K to C before writing mHM forcing; CMFD temperature is
+    in Kelvin (273-323 range). mHM expects Celsius (-30 to 50). If not converted, snow thresholds are
+    never met (everything > 2C), ET is wildly wrong, degree-day factors produce nonsense.; ['s4_forcing']
+  remedy: 'Check temperature values in forcing NetCDF; [''ncdump -v tavg input/meteo/tavg/tavg_2005.nc
+    | head -20'', ''If values are 250-310: Kelvin, must subtract 273.15'', ''If values are -30 to 50:
+    Celsius, correct'']; convert_forcing_to_mhm.py applies K->C conversion for CMFD'
+  severity: silent
+- id: dt_v001
+  symptom: daily_discharge.out contains all zeros, but mHM_Fluxes_States.nc shows non-zero total_runoff
+  diagnosis: 'iFlag_cordinate_sys=0 (metric) set for a geographic (lat/lon) grid; When iFlag_cordinate_sys=0,
+    mHM computes cell area as cellsize^2 in m^2 (e.g., 0.25*0.25 = 0.0625 m^2 instead of ~680 km^2) and
+    link length as cellsize in meters (0.25 m instead of ~27,800 m). The runoff accumulation L11_runoff_acc '
+  remedy: 'Set iFlag_cordinate_sys = 1 in mhm.nml for all geographic (lat/lon) grids; ["Check ConfigFile.log
+    for ''Resolution [m]: 0.'' or ''Effective Area: 0.000''", ''Edit mhm.nml: change iFlag_cordinate_sys
+    = 0 to iFlag_cordinate_sys = 1'', ''Ensure resolution_Hydrology and resolution_Routing are in degrees
+    (e.g.,'
+  severity: fatal
+- id: dt_v002
+  symptom: mRM_Fluxes_States.nc has non-zero Qrouted but daily_discharge.out gauge column is all zeros
+  diagnosis: 'Gauge L0 cell maps to an L11 cell with zero upstream drainage; The highest flow-accumulation
+    cell at L0 (fine resolution) may map to an L11 cell (coarse routing resolution) that has no upstream
+    L11 drainage cells. This happens when the L0 outlet sits right at the boundary between two L11 cells:
+    the '
+  remedy: After an initial mHM run, read mRM_Fluxes_States.nc to find the max-Q L11 cell, then move the
+    gauge to the max-facc L0 cell within that L11 cell; ['Run mHM once (discharge will be zero at gauge
+    but Qrouted field will be valid)', 'Read mRM_Fluxes_States.nc Qrouted to find L11 cell with max mean
+    Q', '
+  severity: fatal
+- id: dt_v003
+  symptom: Slope values in slope.asc are unrealistically large (>80 degrees) for relatively flat terrain
+  diagnosis: prepare_morpho_data.py passes cellsize in degrees to np.gradient instead of meters; np.gradient(dem,
+    cellsize) treats cellsize as the spacing between grid points. For geographic coordinates, cellsize=0.05
+    degrees but the actual distance is ~5560 m. This makes gradients ~111,000 times too large, prod
+  remedy: Convert cellsize from degrees to meters before computing slope; ['In prepare_morpho_data.py
+    compute_slope_aspect(), use meter_spacing = cellsize * 111000 * cos(lat_rad)', 'Or use np.gradient
+    with different dx/dy for each row (accounting for latitude)']; This only affects aspect-driven PET
+    correction
+  severity: degraded
+- id: dt_r11
+  symptom: dem.asc contains impossible elevations (e.g. min = -4358 m) and a halo of values between -9999
+    and 0 around the basin edge; downstream `== -9999` masks miss cells because nodata reads back as -9999.00000000001
+  diagnosis: rasterio reproject() called without src_nodata; clip_and_resample_dem() masked the DEM with
+    nodata=-9999 and then called reproject(..., resampling=bilinear, dst_nodata=-9999) WITHOUT src_nodata.
+    The resampling kernel therefore treats -9999 as a real elevation and blends it with valid terrain,
+    creati
+  remedy: 'Pass src_nodata to reproject, fold the source''s own nodata first, use Resampling.average,
+    and normalise fuzz with a tolerance; [''out_image[out_image == src.nodata] = -9999   # e.g. 32767
+    for china_dem_90m'', ''reproject(..., resampling=Resampling.average, src_nodata=-9999, dst_nodata=-9999)'',
+    ''dst[dst'
+  severity: fatal
+- id: dt_r12
+  symptom: mHM aborts at startup with a level-2 grid mismatch where only xllcorner/yllcorner disagree,
+    and the expected corners look geographically wrong
+  diagnosis: "mHM's read_header_ascii() dummy args are (ncols, nrows) but every call site passes (nrows,\
+    \ ncols); In mo_meteo_handler.f90 the call is\n  call read_header_ascii(fName, unit, nrows2, ncols2,\
+    \ ...)\nwhile the subroutine declares (header_ncols, header_nrows, ...). The ASCII \"ncols\" line\
+    \ therefore lands in"
+  remedy: Pad L0 to a SQUARE grid whose side is an exact multiple of the L1/L11 ratio; ['side = max(ncols,
+    nrows); round side UP to a multiple of R = cs_L1/cs_L0', 'Grow xllcorner/yllcorner outward so the
+    basin stays centred', 'Then xllOut = xll0 + N*cs0 - (N/R)*cs1 = xll0 for either reading']; setup_mhm_doma
+  severity: fatal
+- id: dt_r13
+  symptom: mHM prints 'Initialize domains ...' and then spins forever at ~100% CPU with no further output
+    and no error
+  diagnosis: A cycle in the L0 flow-direction grid; mRM's L11 network tracer follows fdir until an outlet
+    and never terminates; When upscaling a fine D8 network (MERIT-Hydro) to L0 by 'walk downstream until
+    leaving the cell', a river that meanders across a cell boundary yields A->B and B->A. Two further
+    traps ma
+  remedy: Accept a downstream neighbour only if its max upstream area is STRICTLY greater; then assert
+    acyclicity; ['Precompute upa_max per L0 cell from MERIT `upa`', 'During the trace accept (ni,nj) only
+    when upa_max[ni,nj] > upa_max[i,j]', 'Otherwise keep walking; if nothing qualifies set fdir = 0 (outlet)'
+  severity: fatal
+- id: dt_r14
+  symptom: 'mHM prints ''Use DDS'' then exits with return code 0. No FinalParam.nml, no dds_results.out,
+    no ''mHM: Finished!'''
+  diagnosis: 'nIterations < 6; FORCES mo_dds.F90:169 does `if (imaxiter < 6) stop ''Error DDS: max function
+    evals must be minimum 6''`. A Fortran `stop ''<message>''` exits with status ZERO, so every wrapper
+    that checks the return code reports SUCCESS while the calibration never ran.
 
-  - id: "resolution_not_multiple"
-    triplet: "dt_r02"
-    description: "L1/L11 resolution not integer multiple of L0"
-    affected_output: "Fatal: 'ERROR: Resolution mismatch'"
-    fix: "Ensure L1 and L11 resolutions are exact integer multiples of L0"
+    ; [''s9_calibration'', ''s6_namelist'
+  remedy: 'Use nIterations >= 6 (realistically several hundred for DDS); [''Set nIterations >= 6 in &Optimization'',
+    "Never trust mHM''s exit code alone: assert FinalParam.nml exists afterwards"]; generate_mhm_namelists.py
+    and setup_mhm_calibration.py both reject n_iterations < 6'
+  severity: fatal
+- id: dt_r15
+  symptom: Calibration aborts immediately with a missing-namelist error even though only discharge is
+    being calibrated
+  diagnosis: opti_function=10 is NOT KGE of discharge in mHM v5.13.1; mo_mhm_read_config.f90 reads the
+    &optional_data namelist for `case(10:13, 28)` (soil moisture), `case(17)` (neutrons), `case(27,29,30)`
+    (ET) and `case(15)` (TWS). Per mo_mrm_objective_function_runoff.F90 the DISCHARGE objectives are 1
+    = 1-NSE,
+  remedy: For discharge calibration use opti_function = 1 (1-NSE) or 9 (1-KGE); ['opti_function = 1  ->
+    minimise 1 - NSE(Q)', 'opti_function = 9  -> minimise 1 - KGE(Q)', 'Only use 10-13/15/17/27-30 with
+    an &optional_data namelist AND the obs files']; setup_mhm_calibration.py rejects objectives that require
+    &
+  severity: fatal
+- id: dt_r16
+  symptom: A run configured with --opti_function 1 --n_iterations 2000 actually executes with opti_function=10
+    and nIterations=1000
+  diagnosis: 'setup_mhm_calibration.py rewrote mhm.nml again on the --execute call, stamping in argparse
+    DEFAULTS; SKILL.md documents invoking the tool three times: configure, then --execute, then --parse_results.
+    The latter two carry no optimiser flags, so process() re-ran modify_mhm_nml_for_calibration() with
+    t'
+  remedy: 'Only rewrite mhm.nml on the configure call; [''if not (EXECUTE or PARSE_RESULTS): modify_mhm_nml_for_calibration(...)'',
+    ''Verify mhm.nml right before launching: grep opti_function nIterations'']; Fixed in setup_mhm_calibration.py:
+    the rewrite is skipped when --execute/--parse_results is given'
+  severity: fatal
+- id: dt_s09
+  symptom: Simulated discharge is a roughly constant fraction of observed (PBIAS approx -50%) with good
+    timing (r > 0.8); calibration cannot remove the bias
+  diagnosis: 'The basin shapefile covers only part of the gauge''s true drainage area; data/shp/wangjiaba_shp
+    contains THREE nested polygons; the largest is 15,952 km2 against the gauge''s documented 30,630 km2
+    (52%). Re-deriving D8 from the China 90 m DEM reproduces the same 15.8k km2, because on the flat,
+    leveed '
+  remedy: Delineate the catchment from MERIT-Hydro and snap the outlet to the DOCUMENTED drainage area;
+    ['python tools/s1_domain/delineate_basin_merit.py --outlet_lon .. --outlet_lat .. --target_area_km2
+    30630', 'MERIT `upa` gives 30,844 km2 at (115.585, 32.425); the reverse-traced basin is 29,638 km2
+    (-3.2%)
+  severity: fatal
+- id: dt_s10
+  symptom: Basin-mean precipitation is about 1/8 of the climatological value (e.g. 125 mm/yr instead of
+    1000 mm/yr); runoff is near zero, PBIAS approx -95%
+  diagnosis: CMFD DAILY precipitation multiplied by 10800 s (3 h) instead of 86400 s (1 d); The CMFD daily
+    product (Data_forcing_01dy_*) stores a daily MEAN RATE in kg m-2 s-1, not a 3-hourly accumulation.
+    The old tool applied the 3-hourly factor 10800 and then skipped the resample (because a daily file
+    has <= 3
+  remedy: 'Load through ki_tools_common.load_forcing.load_daily_forcing, which normalises units once;
+    [''from ki_tools_common.load_forcing import load_daily_forcing  # returns precip_mm in mm/day'', ''Sanity
+    gate: basin-mean precipitation must be 200-4000 mm/yr'']; convert_forcing_to_mhm.py hard-fails when
+    basin-m'
+  severity: fatal
+- id: dt_s11
+  symptom: PET is either identically zero, or wildly inflated (basin mean ~98 mm/day) when tmin/tmax are
+    synthesised as tavg +/- 5 K
+  diagnosis: Hargreaves-Samani (processCase(5)=1) applied to a daily-mean-temperature-only forcing; CMFD
+    daily provides one temperature field, so load_daily_forcing returns temp_max_c == temp_min_c == temp_mean_c.
+    Hargreaves scales with sqrt(Tmax - Tmin) and is therefore EXACTLY zero. Fabricating a diurnal range
+  remedy: 'Pre-compute PET with Oudin (2005) and run mHM with processCase(5)=0; [''convert_forcing_to_mhm.py
+    --pet_method 0  -> writes input/meteo/pet/pet.nc'', ''Oudin needs only tavg and latitude; at Wangjiaba
+    it gives 925 mm/yr, max 6.5 mm/day'', ''Cross-check: PET/precip should be O(1) in a humid subtropical
+    ba'
+  severity: fatal
+- id: dt_s12
+  symptom: lc_YYYY.asc and LAI_class.asc contain a SINGLE class for the whole basin, or croplands carry
+    a flat year-round LAI of 2-5
+  diagnosis: Wrong default raster path (silent uniform fallback) plus an IGBP lookup applied to a UMD-legend
+    raster; landcover_to_mhm_luse.py defaulted to data/vegetation/AVHRR/... which does not exist; the
+    missing-file branch filled the grid with a single cropland class. The real raster, data/landcover/AVHRR_1k
+  remedy: 'Point at data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif and use --legend umd; [''Verify
+    the class histogram over the basin looks physical before proceeding'', ''Wangjiaba: 23.8% forest,
+    74.6% pervious, 1.6% sealed, 7 LAI classes'']; landcover_to_mhm_luse.py now exits 1 rather than emitting
+    a un'
+  severity: degraded
+- id: dt_s13
+  symptom: daily_discharge.out shows Qobs values that look like day-of-month numbers, or all gauge metrics
+    are nonsense
+  diagnosis: 'Gauge file written as 4 columns (YYYY MM DD Q) with no header; mo_read_timeseries.f90 skips
+    FIVE header lines and then parses SIX columns (YYYY MM DD HH MM Q). A bare 4-column file makes mHM
+    consume the first data rows as the header and then read discharge out of the DAY column.
 
-  - id: "d8_convention_wrong"
-    triplet: "dt_r05"
-    description: "WhiteboxTools D8 convention differs from ArcGIS D8"
-    affected_output: "Zero discharge"
-    fix: "Convert to ArcGIS encoding (1=E, 2=SE, 4=S, ...)"
-
-  - id: "ascii_header_mismatch"
-    description: "Not all morphological ASCII grids have identical headers"
-    affected_output: "Fatal at startup"
-    detection: "Run validate_morph_grids.py"
-    fix: "Regenerate all grids with consistent headers"
-
-  - id: "gauge_placement_upscaling"
-    description: "Highest-facc L0 cell may NOT map to highest-Q L11 cell after upscaling"
-    affected_output: "Gauge captures wrong (low) discharge"
-    fix: >
-      After first run, read mRM_Fluxes_States.nc to find L11 cell with max Qrouted,
-      place gauge at max-facc L0 cell within that L11 cell.
-
-  - id: "forcing_variable_names"
-    triplet: "dt_r03"
-    description: "NetCDF variable names must match mhm.nml expectations"
-    fix: "Check forcing file variable names against namelist settings"
-
-  - id: "german_defaults"
-    description: "Default MPR parameters are calibrated for Mosel basin (Germany)"
-    affected_output: "NSE=-0.304 on Bengbu with defaults"
-    fix: "Use climate-zone-aware presets or calibrate for target region"
-
-# =========================================================================
-# EXPECTED RANGES
-# =========================================================================
-expected_ranges:
-  mosel_test_case:
-    nse: 0.77
-    kge: 0.75
-    notes: "Bundled test domain with calibrated parameters"
-
-  bengbu_defaults:
-    nse: -0.304
-    notes: "German defaults are very poor for Chinese basins — calibration essential"
-
-# =========================================================================
-# CALIBRATION REFERENCE
-# =========================================================================
-calibration_reference:
-  built_in_methods:
-    - "DDS (opti_method=1, recommended, 1000 iterations usually sufficient)"
-    - "SCE (opti_method=3, more robust but slower)"
-
-  objective_functions:
-    - "KGE (opti_function=10, recommended)"
-    - "1-NSE (opti_function=1, biased toward peaks)"
-
-  recommended_sequence:
-    - "Set up basin with climate-zone-aware MPR defaults"
-    - "Forward run to verify setup"
-    - "DDS calibration (1000 iterations, KGE objective)"
-    - "Extract FinalParam.nml"
-    - "Transfer to ungauged basin via transfer_mpr_params.py"
-
-  regionalization_workflow:
-    description: >
-      Calibrate global MPR parameters on gauged basin, then apply
-      same parameters to ungauged basin with local physiographic data.
-      BOTH basins MUST use same L0 data sources (HWSD, GLiM, AVHRR).
-    steps:
-      - "Calibrate on gauged basin -> mhm_parameter_calibrated.nml"
-      - "Set up ungauged basin with same L0 data"
-      - "python transfer_mpr_params.py --calibrated_nml ... --target_dir ..."
-      - "Forward simulation on ungauged basin"
-
-  target_metrics:
-    - "NSE > 0.5"
-    - "KGE > 0.5"
-    - "PBIAS < 25%"
-
-# =========================================================================
-# UNIT CONVERSION TABLE
-# =========================================================================
-unit_conversions:
-  - variable: "precipitation"
-    source: "CMFD (mm/3hr)"
-    target: "mHM (mm/day)"
-    operation: "SUM 8 timesteps (multiply by 8)"
-    trap_if_wrong: "Precipitation 8x too low"
-
-  - variable: "temperature"
-    source: "CMFD (K)"
-    target: "mHM (degC)"
-    offset: -273.15
-    operation: "subtract"
-    trap_if_wrong: "Wrong PET and snow processes"
-
-  - variable: "solar_radiation"
-    source: "CMFD (W/m2)"
-    target: "mHM (W/m2)"
-    operation: "none"
-    notes: "Only needed for Penman-Monteith PET method"
+    ; [''s5_gauge'', ''prep'
+  remedy: 'Emit the 5-line header and 6 columns, as in mhm_src/test_domain/input/gauge/00398.txt; ["line1:
+    ''<id> <name> (daily discharge)''", "line2: ''nodata   -9999''", "line3: ''n       1       measurements
+    per day [1, 1440]''", "line4/5: ''start''/''end''  YYYY MM DD HH MM", ''data:   YYYY MM DD 00 00   <Q>''];
+    prepa'
+  severity: fatal

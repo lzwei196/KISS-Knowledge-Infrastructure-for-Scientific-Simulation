@@ -1,0 +1,319 @@
+schema_version: 1
+model_id: LPJmL
+domain: hydrology
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  schaphoff2018eval:
+    doi: 10.5194/gmd-11-1377-2018
+    title: "LPJmL4 - a dynamic global vegetation model with managed land - Part 2: Model evaluation"
+    venue: "Geosci. Model Dev."
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-11-1377-2018.txt
+  kelley2012benchmark:
+    doi: 10.5194/bgd-9-15723-2012
+    title: "A comprehensive benchmarking system for evaluating global vegetation models"
+    venue: "Biogeosciences Discuss."
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bgd-9-15723-2012.txt
+  hyd_nile2011:
+    doi: 10.5194/hess-15-807-2011
+    title: "Sediment management modelling in the Blue Nile Basin using SWAT model"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-15-807-2011.txt
+  li2021crop:
+    doi: 10.1038/s41598-020-79988-3
+    title: "Modelling adaptation strategies to reduce adverse impacts of climate change on maize cropping system in Northeast China"
+    venue: "Scientific Reports"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-020-79988-3.txt
+  mueller2013et:
+    doi: 10.5194/hess-17-3707-2013
+    title: "Benchmark products for land evapotranspiration: LandFlux-EVAL multi-data set synthesis"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-17-3707-2013.txt
+  jung2011flux:
+    doi: 10.1029/2010jg001566
+    title: "Global patterns of land-atmosphere fluxes of carbon dioxide, latent heat, and sensible heat derived from eddy covariance, satellite, and meteorological observations"
+    venue: "J. Geophys. Res."
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2010jg001566.txt
+  muller2017cropbenchmark:
+    doi: 10.5194/gmd-10-1403-2017
+    title: "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications"
+    venue: "Geosci. Model Dev."
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-10-1403-2017.txt
+
+validation:
+  - dag_variable: pft_harvestc
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "Crop-model validation paper reports nRMSE < 10% as good to excellent for maize yield/biomass/N uptake; transferred to LPJmL harvested carbon after the required carbon-to-dry-matter conversion."
+        cites: [li2021crop]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "DAG determining metric retained as contextual only: the fetched crop-benchmark paper stresses that yield statistics alone are not a good reference for dissecting model functionality."
+        cites: [muller2017cropbenchmark]
+    validated_when: "Regional harvested-carbon yield is validated when converted dry-matter yield has nRMSE <= 10% against reported crop aggregates; PBIAS is diagnostic but has no fetched numeric crop-yield band."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Li 2021 states nRMSE < 10% and nRMSE <= 6.4% indicated good to excellent agreement; only the 10% ceiling is used as the numeric pass band. Muller 2017 cautions that yield statistics in themselves are not a good reference data set."
+
+  - dag_variable: pft_harvestc
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "Use only after matching CFT, irrigation status, and carbon-to-dry-matter units; CSI is superseded for continuous gridded yield magnitude by nRMSE."
+        cites: [li2021crop]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI can summarize categorical spatial overlap after thresholding, but the fetched GGCM crop benchmark evaluates yield skill with correlations and distributional comparisons rather than a universal CSI gate."
+        cites: [muller2017cropbenchmark]
+    validated_when: "Spatial harvested-carbon yield is validated when gridded dry-matter yield nRMSE <= 10% after crop/CFT and irrigation mapping."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: "Threshold is transferred from a field-scale maize validation paper; the LPJmL/GGCM gridded crop benchmark does not provide a universal spatial CSI pass band."
+
+  - dag_variable: npp
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "DGVM benchmark convention: NMSE is zero for perfect agreement, 1.0 means the model is as good as the data mean, and larger than 1.0 is less skillful."
+        cites: [schaphoff2018eval, kelley2012benchmark]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DAG CSI is superseded for continuous NPP fields by the fetched DGVM spatial-field NMSE convention."
+        cites: [schaphoff2018eval, kelley2012benchmark]
+    validated_when: "Spatial NPP is validated when NMSE <= 1.0 against a gridded NPP or productivity benchmark; this means no worse than the observed-data mean predictor."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "LPJmL Part 2 uses Kelley-style NMSE for gridded carbon and water reference datasets. NPP-specific numeric tiers were not found in the fetched set, so the field-level NMSE baseline is transferred."
+
+  - dag_variable: npp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric point-time-series NPP NSE threshold; eddy-flux NPP is partitioned/derived rather than directly observed."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - point NPP time-series validation needs a fetched flux-partitioning benchmark with a numeric NSE or MEF threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Bands are null by the no-fabrication rule. Jung 2011 benchmarks GPP/LE/TER/NEE from FLUXNET but does not establish a direct NPP NSE gate."
+
+  - dag_variable: gpp
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "LPJmL Part 2 reports GPP annual-average NMSE = 0.13 and defines NMSE = 1.0 as the data-mean baseline."
+        cites: [schaphoff2018eval, kelley2012benchmark]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DAG CSI is superseded for continuous GPP fields by the fetched LPJmL/DGVM NMSE convention."
+        cites: [schaphoff2018eval]
+    validated_when: "Spatial GPP is validated when NMSE <= 1.0 against a gridded GPP benchmark; values below 1 outperform the data-mean predictor."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Schaphoff 2018: NMSE is zero for perfect agreement, 1.0 as good as using the data mean, and larger than 1.0 less well; its LPJmL table reports GPP NMSE 0.13."
+
+  - dag_variable: gpp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.82, good: 0.64, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "NSE/MEF >= 0 is the no-worse-than-mean baseline implied by the fetched NMSE convention; Jung 2011 gives higher empirical GPP/flux benchmark tiers for good among-site and very good seasonal performance."
+        cites: [jung2011flux, schaphoff2018eval, kelley2012benchmark]
+    secondary_metrics: []
+    validated_when: "Point GPP time series are validated when NSE/MEF >= 0.0, with stronger evidence at >= 0.64 for among-site variability or >= 0.82 for seasonal cycles."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Jung 2011 says cross-validation showed good performance with MEF 0.64-0.84 among sites and seasonal variation was very well reproduced with MEF 0.82-0.89. Schaphoff/Kelley link NMSE to the Nash-Sutcliffe baseline, with NMSE = 1.0 as the data-mean predictor."
+
+  - dag_variable: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Open HESS paper reproduces the Moriasi flow rule: satisfactory if NSE > 0.5."
+        cites: [hyd_nile2011]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Open HESS paper reproduces the Moriasi flow rule: satisfactory if PBIAS is within +/-25%."
+        cites: [hyd_nile2011]
+      - metric: rsr
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "Open HESS paper reproduces the Moriasi flow rule: satisfactory if RSR <= 0.70."
+        cites: [hyd_nile2011]
+    secondary_metrics: []
+    validated_when: "Discharge at a gauge is validated when NSE >= 0.5, |PBIAS| <= 25%, and RSR <= 0.70 after gauge-cell/routing alignment."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Hyd_nile2011 states model simulation is judged satisfactory if NSE > 0.5, RSR <= 0.70, and PBIAS = +/-25% for flow. LPJmL Part 2 also evaluates discharge with gauge stations and reports R2/NMSE diagnostics."
+
+  - dag_variable: runoff
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Continuous gridded water fields follow the LPJmL/Kelley NMSE convention; per-cell runoff products are model-derived, so basin aggregation is preferred when available."
+        cites: [schaphoff2018eval, kelley2012benchmark]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DAG CSI is contextual for thresholded spatial overlap; fetched LPJmL/DGVM evaluation uses NMSE/correlation for continuous water fields."
+        cites: [schaphoff2018eval]
+    validated_when: "Spatial runoff time series are validated when NMSE <= 1.0 against a gridded runoff/river-discharge benchmark, preferably after basin aggregation."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Schaphoff 2018 defines NMSE = 1.0 as as good as using the data mean. For routed gauge discharge, use the separate discharge block with hydrologic NSE/PBIAS/RSR bands."
+
+  - dag_variable: transp
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Only valid against a transpiration-resolving ET product; otherwise compare total ET components rather than transpiration alone."
+        cites: [schaphoff2018eval, kelley2012benchmark]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Transpiration is only one ET component. LandFlux-EVAL notes that ET benchmark products are needed for validation and that GLEAM discriminates interception, bare-soil evaporation, transpiration, and sublimation; component mismatch makes a total-ET CSI failure a data-ceiling, not a KI defect."
+        cites: [mueller2013et]
+    validated_when: "Spatial transpiration is validated when NMSE <= 1.0 against a component-resolving transpiration benchmark; total ET products must first be decomposed or the LPJmL evap+interc+transp sum must be used."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "LandFlux-EVAL says land-surface modellers use ET to validate model output and describes component discrimination in GLEAM. LPJmL Part 2 reports ET NMSE 0.07 for latent heat flux, but this block is for transpiration alone."
+
+  - dag_variable: transp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric point-time-series transpiration-only NSE threshold; eddy covariance latent heat is total ET/LE, not transpiration alone."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "A point latent-heat/ET comparison is structurally limited for transpiration alone unless the observation product separates ET components; LandFlux-EVAL documents component-resolving ET estimates but not a universal transpiration NSE band."
+        cites: [mueller2013et]
+    validated_when: "UNRESOLVED - point transpiration validation needs a component-resolving observation and a fetched numeric NSE/MEF band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Null band prevents the gate from auto-validating or loosening. Use total ET comparison only after summing transp+evap+interc in LPJmL."
+
+  - dag_variable: vegc
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "LPJmL Part 2 reports VegC NMSE = 0.36 and defines NMSE = 1.0 as the data-mean baseline."
+        cites: [schaphoff2018eval, kelley2012benchmark]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DAG CSI is superseded for continuous biomass-carbon maps by the fetched LPJmL/DGVM NMSE convention."
+        cites: [schaphoff2018eval]
+    validated_when: "Vegetation carbon stock maps are validated when NMSE <= 1.0 against a matched biomass-carbon benchmark and above-ground/total-biomass definitions are aligned."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "Schaphoff 2018 table reports VegC annual-average NME 0.33, NMSE 0.36, and correlation 0.84."
+
+  - dag_variable: soilc
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "LPJmL Part 2 reports SoilC NMSE = 0.75 and defines NMSE = 1.0 as the data-mean baseline."
+        cites: [schaphoff2018eval, kelley2012benchmark]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DAG CSI is superseded for continuous soil-carbon maps by the fetched LPJmL/DGVM NMSE convention."
+        cites: [schaphoff2018eval]
+    validated_when: "Soil organic carbon maps are validated when NMSE <= 1.0 against a depth-matched soil-carbon benchmark after confirming spinup equilibration."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "Schaphoff 2018 table reports SoilC annual-average NME 0.48, NMSE 0.75, and correlation 0.29; depth matching remains essential."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2007 model evaluation guidelines for systematic hydrology NSE/PBIAS/RSR tiers"
+    doi: 10.13031/2013.23153
+    needed_for: [discharge, runoff]
+  - ref: "Moriasi et al. 2015 hydrologic/water-quality model performance ratings update"
+    doi: 10.13031/trans.58.10715
+    needed_for: [discharge, runoff]
+  - ref: "Jamieson et al. 1991 primary crop-model nRMSE class paper"
+    doi: unknown_not_fetched
+    needed_for: [pft_harvestc]

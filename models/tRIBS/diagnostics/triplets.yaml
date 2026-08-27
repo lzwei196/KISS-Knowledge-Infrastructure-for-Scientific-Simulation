@@ -1,500 +1,554 @@
+# ========================================================================
+# tRIBS Diagnostic Triplets
+# ========================================================================
+# 20 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+
+# Comments preserved from the previous file:
 # tRIBS Diagnostic Triplets
 # Symptom → Diagnosis → Remedy entries for common failures
 # Each triplet follows: id, stage, failure_domain, symptom, diagnosis, remedy, severity
-
-triplets:
-
   # ═══════════════════════════════════════════════════════════
   # UNIT CONVERSION TRAPS (dt_001 – dt_012)
   # ═══════════════════════════════════════════════════════════
-
-  - id: dt_001
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    symptom:
-      description: "Discharge hydrograph is scaled by factor of 24× or 3.6e6× compared to observations"
-      error_pattern: "Peak Q >> observed OR Peak Q << observed by orders of magnitude"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Rainfall rate not in mm/hr"
-      explanation: >
-        tRIBS expects rainfall in mm/hr. ERA5 provides mm/day (divide by 24),
-        CMFD provides m/s (multiply by 3.6e6). Using raw values without conversion
-        produces hydrographs that are systematically too high or too low with no
-        error message from the model.
-      affected_components: [tRainfall, tHydroModel, tKinemat]
-    remedy:
-      action: "Convert rainfall to mm/hr before creating forcing files"
-      tool_to_run: convert_met_forcing.py
-      manual_steps:
-        - "Check source rainfall units in metadata"
-        - "Apply: mm/day ÷ 24 = mm/hr, OR m/s × 3,600,000 = mm/hr"
-        - "Verify peak rainfall is in plausible range (1–100 mm/hr for most regions)"
-      prevention: "Always check rainfall units when switching data sources"
-    severity: silent
-    cross_references: []
-
-  - id: dt_002
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    symptom:
-      description: "Evapotranspiration is extremely high or zero; snow never forms even in winter"
-      error_pattern: "ET >> P or ET = 0; no snow accumulation at high elevations"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Temperature in Kelvin instead of Celsius"
-      explanation: >
-        tRIBS expects temperature in °C. Reanalysis data (ERA5, CMFD) provides
-        temperature in K (~293 K = 20°C). Using K values makes tRIBS think the
-        air temperature is ~293°C, producing enormous ET and preventing snow.
-      affected_components: [tEvapoTrans, tSnowPack, tHydroMet]
-    remedy:
-      action: "Subtract 273.15 from all temperature fields"
-      tool_to_run: convert_met_forcing.py
-      manual_steps:
-        - "T_celsius = T_kelvin - 273.15"
-        - "Verify temperatures are in plausible range (-40 to +50°C)"
-      prevention: "Check first few temperature values after conversion"
-    severity: silent
-    cross_references: [dt_003]
-
-  - id: dt_003
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    symptom:
-      description: "ET wildly exceeds precipitation; soil moisture drops to zero within hours"
-      error_pattern: "ActEvap >> PotEvap theoretical maximum; storage becomes negative"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Relative humidity in percent (0–100) instead of fraction (0–1)"
-      explanation: >
-        tRIBS expects RH as a fraction (0–1). Providing RH=65 (meaning 65%)
-        is interpreted as RH=65 (6500%), producing enormous vapor pressure
-        deficit and evaporative demand. The model does not clamp RH.
-      affected_components: [tEvapoTrans, tHydroMet]
-    remedy:
-      action: "Divide RH by 100 to convert from percent to fraction"
-      tool_to_run: convert_met_forcing.py
-      manual_steps:
-        - "RH_frac = RH_pct / 100"
-        - "Verify all RH values are between 0.0 and 1.0"
-      prevention: "Add validation check: if max(RH) > 1.0, divide by 100"
-    severity: silent
-    cross_references: [dt_002]
-
-  - id: dt_004
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    symptom:
-      description: "Psychrometric calculations produce wrong values; ET has systematic bias"
-      error_pattern: "Unusual latent heat values; VPD calculation errors"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Atmospheric pressure in Pa instead of mb (hPa)"
-      explanation: >
-        tRIBS expects pressure in mb (hPa). ERA5 provides Pa (×100 larger).
-        Using 101325 instead of 1013.25 corrupts the psychrometric constant
-        calculation, leading to wrong Penman-Monteith ET estimates.
-      affected_components: [tEvapoTrans]
-    remedy:
-      action: "Divide pressure by 100 to convert Pa to mb"
-      tool_to_run: convert_met_forcing.py
-      manual_steps:
-        - "PA_mb = PA_Pa / 100"
-        - "Verify pressure is in range 500–1050 mb"
-      prevention: "Check pressure magnitude: if > 2000, likely in Pa"
-    severity: degraded
-    cross_references: []
-
-  - id: dt_005
-    stage: s2_soil_landuse
-    failure_domain: unit_conversion
-    symptom:
-      description: "Immediate soil saturation; massive surface runoff from first timestep; unrealistic runoff ratio >0.9"
-      error_pattern: "satsrf >> 0 from timestep 1; Nwt ~ 0"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Soil depth in meters instead of millimeters"
-      explanation: >
-        HWSD reports bedrock depth in meters. tRIBS expects mm.
-        DEPTHTOBEDROCK=2 means 2mm (not 2m), giving an impossibly thin soil
-        column that saturates from the first rainfall pulse. No error raised.
-      affected_components: [tHydroModel, tCNode]
-    remedy:
-      action: "Multiply all depth values by 1000 (m → mm)"
-      tool_to_run: convert_soil_params.py
-      manual_steps:
-        - "DEPTHTOBEDROCK: multiply by 1000"
-        - "SURFACESOILDEPTH: multiply by 1000"
-        - "ROOTZONEDEPTH: multiply by 1000"
-        - "Typical values: DEPTHTOBEDROCK 1000–5000 mm"
-      prevention: "Validate: if depth < 10, likely in meters"
-    severity: silent
-    cross_references: [dt_006, dt_007]
-
-  - id: dt_006
-    stage: s2_soil_landuse
-    failure_domain: unit_conversion
-    symptom:
-      description: "No infiltration; 100% surface runoff; discharge equals rainfall"
-      error_pattern: "srf ≈ Rain for all timesteps; zero baseflow"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Saturated hydraulic conductivity (Ks) in m/s instead of mm/hr"
-      explanation: >
-        HWSD reports Ks in m/s (typical: 1e-6 to 1e-4). tRIBS expects mm/hr
-        (typical: 0.1–200). Using raw m/s values gives Ks ~ 1e-6 mm/hr,
-        meaning essentially zero infiltration capacity.
-      affected_components: [tHydroModel, infiltration]
-    remedy:
-      action: "Multiply Ks by 3,600,000 (3.6e6) to convert m/s → mm/hr"
-      tool_to_run: convert_soil_params.py
-      manual_steps:
-        - "Ks_mmhr = Ks_ms × 3.6e6"
-        - "Verify: sand ~120 mm/hr, clay ~0.6 mm/hr, loam ~13 mm/hr"
-      prevention: "Check Ks range against texture class defaults"
-    severity: silent
-    cross_references: [dt_005]
-
-  - id: dt_007
-    stage: s2_soil_landuse
-    failure_domain: unit_conversion
-    symptom:
-      description: "Negative soil moisture; unrealistic ET; model may crash"
-      error_pattern: "MuNew < 0; storage violations"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Porosity (ThetaS) in percent instead of fraction"
-      explanation: >
-        tRIBS expects porosity as a fraction (0–1). Providing ThetaS=43
-        (meaning 43%) is interpreted as porosity of 43 (4300%), allowing
-        the soil to hold impossibly large amounts of water, distorting
-        all moisture accounting.
-      affected_components: [tHydroModel, tCNode]
-    remedy:
-      action: "Divide porosity by 100"
-      manual_steps:
-        - "ThetaS_frac = ThetaS_pct / 100"
-        - "Verify: 0.25 < ThetaS < 0.65"
-      prevention: "Validate: if ThetaS > 1.0, divide by 100"
-    severity: silent
-    cross_references: [dt_005]
-
-  - id: dt_008
-    stage: s1_mesh_preparation
-    failure_domain: unit_conversion
-    symptom:
-      description: "Domain is ~0.001 km²; all nodes within meters of each other"
-      error_pattern: "Voronoi areas are tiny; total basin area << expected"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Mesh coordinates in degrees (lat/lon) instead of meters (UTM)"
-      explanation: >
-        tRIBS expects mesh coordinates in UTM meters. Supplying lat/lon
-        in degrees produces nodes at coordinates like (33.5, 117.2) which
-        tRIBS interprets as a ~33m × ~117m domain.
-      affected_components: [tMesh, tFlowNet, tResample]
-    remedy:
-      action: "Reproject all mesh coordinates from lat/lon to UTM"
-      manual_steps:
-        - "Determine UTM zone for the study area"
-        - "Use GDAL/pyproj to reproject coordinates"
-        - "Verify X and Y values are in 100,000–900,000 range"
-      prevention: "Always check coordinate magnitude before mesh generation"
-    severity: silent
-    cross_references: [dt_009]
-
-  - id: dt_009
-    stage: s1_mesh_preparation
-    failure_domain: unit_conversion
-    symptom:
-      description: "Slopes are approximately 3× too low; flow velocities wrong"
-      error_pattern: "Hillslope gradients << expected for terrain"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Elevation in feet instead of meters"
-      explanation: >
-        tRIBS expects elevation in meters. US datasets may provide feet.
-        Using feet directly gives slopes that are ~3× too gentle
-        (1 ft = 0.3048 m), affecting flow routing and soil moisture dynamics.
-      affected_components: [tMesh, tFlowNet]
-    remedy:
-      action: "Multiply elevation by 0.3048 to convert feet to meters"
-      manual_steps:
-        - "elev_m = elev_ft × 0.3048"
-      prevention: "Check DEM metadata for vertical units"
-    severity: degraded
-    cross_references: [dt_008]
-
-  - id: dt_010
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    symptom:
-      description: "Large gaps in forcing; interpolation artifacts; wrong ET"
-      error_pattern: "Met data appears to have 60-hour gaps; stepwise artifacts"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "METSTEP given in minutes instead of hours"
-      explanation: >
-        METSTEP=60 means tRIBS expects data every 60 hours, not every
-        60 minutes. With hourly data, tRIBS reads only every 60th record,
-        creating large time gaps and interpolation errors.
-      affected_components: [tSimulator, tEvapoTrans]
-    remedy:
-      action: "Set METSTEP in hours (e.g., 1 for hourly data)"
-      manual_steps:
-        - "METSTEP should be 1 for hourly, 0.5 for 30-min, 3 for 3-hourly"
-        - "Never use 60 (that means 60 hours)"
-      prevention: "Verify METSTEP matches actual data interval"
-    severity: silent
-    cross_references: [dt_001]
-
-  - id: dt_011
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    symptom:
-      description: "Dew point calculation is wrong; ET has bias"
-      error_pattern: "Dew point appears 10× too low"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Vapor pressure in kPa instead of mb (hPa)"
-      explanation: >
-        tRIBS expects vapor pressure in mb. Providing kPa values (10× smaller)
-        gives wrong dewpoint and vapor pressure deficit calculations.
-      affected_components: [tEvapoTrans, tHydroMet]
-    remedy:
-      action: "Multiply vapor pressure by 10 (kPa → mb)"
-      manual_steps:
-        - "VP_mb = VP_kPa × 10"
-      prevention: "Check VP magnitude: typical 5–40 mb"
-    severity: degraded
-    cross_references: [dt_004]
-
-  - id: dt_012
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    symptom:
-      description: "Snow water equivalent is 1000× too small"
-      error_pattern: "SWE values are ~0.001 when they should be ~1–100 mm"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "SWE initialized in meters instead of millimeters"
-      explanation: >
-        tRIBS snow module uses mm internally. Initializing SWE in meters
-        gives negligible snowpack that melts instantly.
-      affected_components: [tSnowPack]
-    remedy:
-      action: "Multiply SWE by 1000 (m → mm)"
-      manual_steps:
-        - "SWE_mm = SWE_m × 1000"
-      prevention: "Verify SWE initialization units"
-    severity: silent
-    cross_references: [dt_005]
-
   # ═══════════════════════════════════════════════════════════
   # CONFIGURATION ERRORS (dt_013 – dt_015)
   # ═══════════════════════════════════════════════════════════
-
-  - id: dt_013
-    stage: s4_execution
-    failure_domain: configuration
-    symptom:
-      description: "Crash at startup with 'Cannot open file' or segmentation fault"
-      error_pattern: "Segmentation fault|Cannot open|No such file"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "OPTMESHINPUT does not match available file format"
-      explanation: >
-        Setting OPTMESHINPUT=8 (tRIBS format) when only a DEM grid is
-        available causes the model to look for .nodes/.edges/.tri files
-        that don't exist. Similarly, option 9 (meshbuilder) requires
-        specially formatted partition files.
-      affected_components: [tMesh, tListInputData]
-    remedy:
-      action: "Match OPTMESHINPUT to the file format available"
-      manual_steps:
-        - "Option 8: requires .nodes, .edges, .tri, .z files"
-        - "Option 9: requires meshbuilder partition files"
-        - "Option 2: requires a raster grid"
-        - "Verify all required files exist before running"
-      prevention: "Run preflight check with -K flag"
-    severity: fatal
-    cross_references: []
-
-  - id: dt_014
-    stage: s4_execution
-    failure_domain: configuration
-    symptom:
-      description: "Model reads wrong station data; met variables are for different location"
-      error_pattern: "Temperature/pressure values don't match basin climate"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Station metadata file (.sdf) points to wrong data files"
-      explanation: >
-        The .sdf file lists station IDs, locations, and paths to .mdf data
-        files. If paths are wrong or point to data from a different basin,
-        tRIBS silently uses incorrect forcing.
-      affected_components: [tEvapoTrans, tHydroMet]
-    remedy:
-      action: "Verify all file paths in .sdf are correct and accessible"
-      manual_steps:
-        - "Check each path in .sdf exists"
-        - "Verify station coordinates match basin location"
-        - "Spot-check temperature and pressure ranges"
-      prevention: "Use absolute paths in .sdf; run preflight validation"
-    severity: silent
-    cross_references: []
-
-  - id: dt_015
-    stage: s4_execution
-    failure_domain: configuration
-    symptom:
-      description: "Simulation dates don't match forcing data; gaps or extrapolation"
-      error_pattern: "Warning about missing data; unexpected zero rainfall"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "STARTDATE/ENDDATE in .in file doesn't match forcing data period"
-      explanation: >
-        If the simulation period extends beyond the forcing data, tRIBS
-        may use zero values or extrapolate, producing wrong results
-        without a clear error message.
-      affected_components: [tSimulator, tRainfall, tEvapoTrans]
-    remedy:
-      action: "Ensure simulation dates are within forcing data period"
-      manual_steps:
-        - "Check first and last dates in .mdf files"
-        - "Set STARTDATE and ENDDATE within that range"
-      prevention: "Validate date overlap before running"
-    severity: degraded
-    cross_references: []
-
   # ═══════════════════════════════════════════════════════════
   # RUNTIME FAILURES (dt_016 – dt_018)
   # ═══════════════════════════════════════════════════════════
-
-  - id: dt_016
-    stage: s4_execution
-    failure_domain: runtime
-    symptom:
-      description: "NaN values appear in output; model may crash mid-simulation"
-      error_pattern: "nan|NaN|inf in output files or stderr"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "NaN in forcing data propagates through calculations"
-      explanation: >
-        Missing or corrupt values in met/rainfall forcing files appear as
-        NaN in the input. These propagate through ET, soil moisture, and
-        routing calculations, eventually producing NaN in all outputs.
-      affected_components: [all]
-    remedy:
-      action: "Fill gaps in forcing data before running"
-      manual_steps:
-        - "Check all .mdf files for NaN or missing values"
-        - "Interpolate gaps or use gap-filling"
-        - "Re-run the model"
-      prevention: "Add NaN-check to forcing conversion pipeline"
-    severity: fatal
-    cross_references: [dt_001, dt_002]
-
-  - id: dt_017
-    stage: s4_execution
-    failure_domain: runtime
-    symptom:
-      description: "Process killed by OS; 'Killed' or OOM error"
-      error_pattern: "Killed|Out of memory|Cannot allocate"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Mesh too large for available memory"
-      explanation: >
-        Each TIN node stores 50+ double-precision variables. A mesh with
-        1 million nodes requires ~400 MB RAM for node data alone, plus
-        edge/triangle storage. Large meshes can exceed available memory.
-      affected_components: [tMesh, tCNode]
-    remedy:
-      action: "Reduce mesh resolution or use parallel version"
-      manual_steps:
-        - "Coarsen mesh to reduce node count"
-        - "Or compile parallel version: cmake -Dparallel=ON"
-        - "Run with mpirun: mpirun -np N ./tRIBSpar input.in"
-      prevention: "Estimate memory: ~500 bytes/node × N_nodes"
-    severity: fatal
-    cross_references: []
-
-  - id: dt_018
-    stage: s4_execution
-    failure_domain: runtime
-    symptom:
-      description: "Simulation hangs or runs extremely slowly"
-      error_pattern: "No progress after Part 8 begins; CPU at 100% indefinitely"
-      detection_method: log_match
-    diagnosis:
-      root_cause: "Convergence failure in Newton solver or infinite flow loop"
-      explanation: >
-        The unsaturated zone solver uses Newton iteration (LambertW/Newton
-        methods in tHydroModel). Extreme parameter combinations can prevent
-        convergence, causing the solver to iterate indefinitely. Also,
-        circular flow paths in the mesh can cause infinite routing loops.
-      affected_components: [tHydroModel, tFlowNet]
-    remedy:
-      action: "Check soil parameters and mesh topology"
-      manual_steps:
-        - "Verify Ks, ThetaS, PsiB are in valid ranges"
-        - "Check mesh for circular flow paths"
-        - "Try running with -V flag to identify problematic node"
-        - "Consider reducing simulation time step"
-      prevention: "Validate parameter ranges before running"
-    severity: fatal
-    cross_references: [dt_005, dt_006, dt_007]
-
   # ═══════════════════════════════════════════════════════════
   # SILENT ERRORS (dt_019 – dt_020)
   # ═══════════════════════════════════════════════════════════
 
-  - id: dt_019
-    stage: s5_output_analysis
-    failure_domain: silent_error
-    symptom:
-      description: "Hydrograph shape is wrong: peaks too early/late, recession too fast/slow"
-      error_pattern: "NSE < 0.3 with timing mismatch"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Routing velocity parameters (HILLSLOPE_KSE, STREAM_KSE) are wrong"
-      explanation: >
-        HILLSLOPE_KSE and STREAM_KSE control how fast water moves through
-        the basin. Too high = peaks arrive too early; too low = peaks
-        arrive too late and are attenuated. These have no default validation.
-      affected_components: [tKinemat, tFlowNet]
-    remedy:
-      action: "Calibrate routing velocities against observed hydrographs"
-      manual_steps:
-        - "HILLSLOPE_KSE: typical 0.001–0.1 m/s"
-        - "STREAM_KSE: typical 0.5–5.0 m/s"
-        - "Adjust until peak timing matches observations"
-      prevention: "Use literature values for initial estimates"
-    severity: degraded
-    cross_references: []
+- id: dt_001
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: Discharge hydrograph is scaled by factor of 24× or 3.6e6× compared to observations
+    error_pattern: Peak Q >> observed OR Peak Q << observed by orders of magnitude
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Rainfall rate not in mm/hr
+    explanation: 'tRIBS expects rainfall in mm/hr. ERA5 provides mm/day (divide by 24), CMFD provides
+      m/s (multiply by 3.6e6). Using raw values without conversion produces hydrographs that are systematically
+      too high or too low with no error message from the model.
 
-  - id: dt_020
-    stage: s5_output_analysis
-    failure_domain: silent_error
-    symptom:
-      description: "Water balance does not close; cumulative error grows over time"
-      error_pattern: "P - ET - Q - ΔS > 1% of P"
-      detection_method: value_comparison
-    diagnosis:
-      root_cause: "Numerical precision issues or output time step mismatch"
-      explanation: >
-        tRIBS tracks water balance internally, but output files may use
-        different time steps than the internal computation, leading to
-        apparent imbalance in post-processed results. Also, very large
-        or very small time steps can cause numerical drift.
-      affected_components: [tWaterBalance, tOutput]
-    remedy:
-      action: "Compare internal water balance report to post-processed values"
-      manual_steps:
-        - "Check tRIBS internal water balance output"
-        - "Ensure output interval matches analysis interval"
-        - "If numerical: reduce computational time step"
-      prevention: "Always check water balance closure as first validation step"
-    severity: degraded
-    cross_references: [dt_001, dt_005]
+      '
+    affected_components:
+    - tRainfall
+    - tHydroModel
+    - tKinemat
+  remedy:
+    action: Convert rainfall to mm/hr before creating forcing files
+    tool_to_run: convert_met_forcing.py
+    manual_steps:
+    - Check source rainfall units in metadata
+    - 'Apply: mm/day ÷ 24 = mm/hr, OR m/s × 3,600,000 = mm/hr'
+    - Verify peak rainfall is in plausible range (1–100 mm/hr for most regions)
+    prevention: Always check rainfall units when switching data sources
+  severity: silent
+  cross_references: []
+- id: dt_002
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: Evapotranspiration is extremely high or zero; snow never forms even in winter
+    error_pattern: ET >> P or ET = 0; no snow accumulation at high elevations
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Temperature in Kelvin instead of Celsius
+    explanation: 'tRIBS expects temperature in °C. Reanalysis data (ERA5, CMFD) provides temperature in
+      K (~293 K = 20°C). Using K values makes tRIBS think the air temperature is ~293°C, producing enormous
+      ET and preventing snow.
+
+      '
+    affected_components:
+    - tEvapoTrans
+    - tSnowPack
+    - tHydroMet
+  remedy:
+    action: Subtract 273.15 from all temperature fields
+    tool_to_run: convert_met_forcing.py
+    manual_steps:
+    - T_celsius = T_kelvin - 273.15
+    - Verify temperatures are in plausible range (-40 to +50°C)
+    prevention: Check first few temperature values after conversion
+  severity: silent
+  cross_references:
+  - dt_003
+- id: dt_003
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: ET wildly exceeds precipitation; soil moisture drops to zero within hours
+    error_pattern: ActEvap >> PotEvap theoretical maximum; storage becomes negative
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Relative humidity in percent (0–100) instead of fraction (0–1)
+    explanation: 'tRIBS expects RH as a fraction (0–1). Providing RH=65 (meaning 65%) is interpreted as
+      RH=65 (6500%), producing enormous vapor pressure deficit and evaporative demand. The model does
+      not clamp RH.
+
+      '
+    affected_components:
+    - tEvapoTrans
+    - tHydroMet
+  remedy:
+    action: Divide RH by 100 to convert from percent to fraction
+    tool_to_run: convert_met_forcing.py
+    manual_steps:
+    - RH_frac = RH_pct / 100
+    - Verify all RH values are between 0.0 and 1.0
+    prevention: 'Add validation check: if max(RH) > 1.0, divide by 100'
+  severity: silent
+  cross_references:
+  - dt_002
+- id: dt_004
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: Psychrometric calculations produce wrong values; ET has systematic bias
+    error_pattern: Unusual latent heat values; VPD calculation errors
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Atmospheric pressure in Pa instead of mb (hPa)
+    explanation: 'tRIBS expects pressure in mb (hPa). ERA5 provides Pa (×100 larger). Using 101325 instead
+      of 1013.25 corrupts the psychrometric constant calculation, leading to wrong Penman-Monteith ET
+      estimates.
+
+      '
+    affected_components:
+    - tEvapoTrans
+  remedy:
+    action: Divide pressure by 100 to convert Pa to mb
+    tool_to_run: convert_met_forcing.py
+    manual_steps:
+    - PA_mb = PA_Pa / 100
+    - Verify pressure is in range 500–1050 mb
+    prevention: 'Check pressure magnitude: if > 2000, likely in Pa'
+  severity: degraded
+  cross_references: []
+- id: dt_005
+  stage: s2_soil_landuse
+  failure_domain: unit_conversion
+  symptom:
+    description: Immediate soil saturation; massive surface runoff from first timestep; unrealistic runoff
+      ratio >0.9
+    error_pattern: satsrf >> 0 from timestep 1; Nwt ~ 0
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Soil depth in meters instead of millimeters
+    explanation: 'HWSD reports bedrock depth in meters. tRIBS expects mm. DEPTHTOBEDROCK=2 means 2mm (not
+      2m), giving an impossibly thin soil column that saturates from the first rainfall pulse. No error
+      raised.
+
+      '
+    affected_components:
+    - tHydroModel
+    - tCNode
+  remedy:
+    action: Multiply all depth values by 1000 (m → mm)
+    tool_to_run: convert_soil_params.py
+    manual_steps:
+    - 'DEPTHTOBEDROCK: multiply by 1000'
+    - 'SURFACESOILDEPTH: multiply by 1000'
+    - 'ROOTZONEDEPTH: multiply by 1000'
+    - 'Typical values: DEPTHTOBEDROCK 1000–5000 mm'
+    prevention: 'Validate: if depth < 10, likely in meters'
+  severity: silent
+  cross_references:
+  - dt_006
+  - dt_007
+- id: dt_006
+  stage: s2_soil_landuse
+  failure_domain: unit_conversion
+  symptom:
+    description: No infiltration; 100% surface runoff; discharge equals rainfall
+    error_pattern: srf ≈ Rain for all timesteps; zero baseflow
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Saturated hydraulic conductivity (Ks) in m/s instead of mm/hr
+    explanation: 'HWSD reports Ks in m/s (typical: 1e-6 to 1e-4). tRIBS expects mm/hr (typical: 0.1–200).
+      Using raw m/s values gives Ks ~ 1e-6 mm/hr, meaning essentially zero infiltration capacity.
+
+      '
+    affected_components:
+    - tHydroModel
+    - infiltration
+  remedy:
+    action: Multiply Ks by 3,600,000 (3.6e6) to convert m/s → mm/hr
+    tool_to_run: convert_soil_params.py
+    manual_steps:
+    - Ks_mmhr = Ks_ms × 3.6e6
+    - 'Verify: sand ~120 mm/hr, clay ~0.6 mm/hr, loam ~13 mm/hr'
+    prevention: Check Ks range against texture class defaults
+  severity: silent
+  cross_references:
+  - dt_005
+- id: dt_007
+  stage: s2_soil_landuse
+  failure_domain: unit_conversion
+  symptom:
+    description: Negative soil moisture; unrealistic ET; model may crash
+    error_pattern: MuNew < 0; storage violations
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Porosity (ThetaS) in percent instead of fraction
+    explanation: 'tRIBS expects porosity as a fraction (0–1). Providing ThetaS=43 (meaning 43%) is interpreted
+      as porosity of 43 (4300%), allowing the soil to hold impossibly large amounts of water, distorting
+      all moisture accounting.
+
+      '
+    affected_components:
+    - tHydroModel
+    - tCNode
+  remedy:
+    action: Divide porosity by 100
+    manual_steps:
+    - ThetaS_frac = ThetaS_pct / 100
+    - 'Verify: 0.25 < ThetaS < 0.65'
+    prevention: 'Validate: if ThetaS > 1.0, divide by 100'
+  severity: silent
+  cross_references:
+  - dt_005
+- id: dt_008
+  stage: s1_mesh_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: Domain is ~0.001 km²; all nodes within meters of each other
+    error_pattern: Voronoi areas are tiny; total basin area << expected
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Mesh coordinates in degrees (lat/lon) instead of meters (UTM)
+    explanation: 'tRIBS expects mesh coordinates in UTM meters. Supplying lat/lon in degrees produces
+      nodes at coordinates like (33.5, 117.2) which tRIBS interprets as a ~33m × ~117m domain.
+
+      '
+    affected_components:
+    - tMesh
+    - tFlowNet
+    - tResample
+  remedy:
+    action: Reproject all mesh coordinates from lat/lon to UTM
+    manual_steps:
+    - Determine UTM zone for the study area
+    - Use GDAL/pyproj to reproject coordinates
+    - Verify X and Y values are in 100,000–900,000 range
+    prevention: Always check coordinate magnitude before mesh generation
+  severity: silent
+  cross_references:
+  - dt_009
+- id: dt_009
+  stage: s1_mesh_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: Slopes are approximately 3× too low; flow velocities wrong
+    error_pattern: Hillslope gradients << expected for terrain
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Elevation in feet instead of meters
+    explanation: 'tRIBS expects elevation in meters. US datasets may provide feet. Using feet directly
+      gives slopes that are ~3× too gentle (1 ft = 0.3048 m), affecting flow routing and soil moisture
+      dynamics.
+
+      '
+    affected_components:
+    - tMesh
+    - tFlowNet
+  remedy:
+    action: Multiply elevation by 0.3048 to convert feet to meters
+    manual_steps:
+    - elev_m = elev_ft × 0.3048
+    prevention: Check DEM metadata for vertical units
+  severity: degraded
+  cross_references:
+  - dt_008
+- id: dt_010
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: Large gaps in forcing; interpolation artifacts; wrong ET
+    error_pattern: Met data appears to have 60-hour gaps; stepwise artifacts
+    detection_method: log_match
+  diagnosis:
+    root_cause: METSTEP given in minutes instead of hours
+    explanation: 'METSTEP=60 means tRIBS expects data every 60 hours, not every 60 minutes. With hourly
+      data, tRIBS reads only every 60th record, creating large time gaps and interpolation errors.
+
+      '
+    affected_components:
+    - tSimulator
+    - tEvapoTrans
+  remedy:
+    action: Set METSTEP in hours (e.g., 1 for hourly data)
+    manual_steps:
+    - METSTEP should be 1 for hourly, 0.5 for 30-min, 3 for 3-hourly
+    - Never use 60 (that means 60 hours)
+    prevention: Verify METSTEP matches actual data interval
+  severity: silent
+  cross_references:
+  - dt_001
+- id: dt_011
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: Dew point calculation is wrong; ET has bias
+    error_pattern: Dew point appears 10× too low
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Vapor pressure in kPa instead of mb (hPa)
+    explanation: 'tRIBS expects vapor pressure in mb. Providing kPa values (10× smaller) gives wrong dewpoint
+      and vapor pressure deficit calculations.
+
+      '
+    affected_components:
+    - tEvapoTrans
+    - tHydroMet
+  remedy:
+    action: Multiply vapor pressure by 10 (kPa → mb)
+    manual_steps:
+    - VP_mb = VP_kPa × 10
+    prevention: 'Check VP magnitude: typical 5–40 mb'
+  severity: degraded
+  cross_references:
+  - dt_004
+- id: dt_012
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: Snow water equivalent is 1000× too small
+    error_pattern: SWE values are ~0.001 when they should be ~1–100 mm
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: SWE initialized in meters instead of millimeters
+    explanation: 'tRIBS snow module uses mm internally. Initializing SWE in meters gives negligible snowpack
+      that melts instantly.
+
+      '
+    affected_components:
+    - tSnowPack
+  remedy:
+    action: Multiply SWE by 1000 (m → mm)
+    manual_steps:
+    - SWE_mm = SWE_m × 1000
+    prevention: Verify SWE initialization units
+  severity: silent
+  cross_references:
+  - dt_005
+- id: dt_013
+  stage: s4_execution
+  failure_domain: configuration
+  symptom:
+    description: Crash at startup with 'Cannot open file' or segmentation fault
+    error_pattern: Segmentation fault|Cannot open|No such file
+    detection_method: log_match
+  diagnosis:
+    root_cause: OPTMESHINPUT does not match available file format
+    explanation: 'Setting OPTMESHINPUT=8 (tRIBS format) when only a DEM grid is available causes the model
+      to look for .nodes/.edges/.tri files that don''t exist. Similarly, option 9 (meshbuilder) requires
+      specially formatted partition files.
+
+      '
+    affected_components:
+    - tMesh
+    - tListInputData
+  remedy:
+    action: Match OPTMESHINPUT to the file format available
+    manual_steps:
+    - 'Option 8: requires .nodes, .edges, .tri, .z files'
+    - 'Option 9: requires meshbuilder partition files'
+    - 'Option 2: requires a raster grid'
+    - Verify all required files exist before running
+    prevention: Run preflight check with -K flag
+  severity: fatal
+  cross_references: []
+- id: dt_014
+  stage: s4_execution
+  failure_domain: configuration
+  symptom:
+    description: Model reads wrong station data; met variables are for different location
+    error_pattern: Temperature/pressure values don't match basin climate
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Station metadata file (.sdf) points to wrong data files
+    explanation: 'The .sdf file lists station IDs, locations, and paths to .mdf data files. If paths are
+      wrong or point to data from a different basin, tRIBS silently uses incorrect forcing.
+
+      '
+    affected_components:
+    - tEvapoTrans
+    - tHydroMet
+  remedy:
+    action: Verify all file paths in .sdf are correct and accessible
+    manual_steps:
+    - Check each path in .sdf exists
+    - Verify station coordinates match basin location
+    - Spot-check temperature and pressure ranges
+    prevention: Use absolute paths in .sdf; run preflight validation
+  severity: silent
+  cross_references: []
+- id: dt_015
+  stage: s4_execution
+  failure_domain: configuration
+  symptom:
+    description: Simulation dates don't match forcing data; gaps or extrapolation
+    error_pattern: Warning about missing data; unexpected zero rainfall
+    detection_method: log_match
+  diagnosis:
+    root_cause: STARTDATE/ENDDATE in .in file doesn't match forcing data period
+    explanation: 'If the simulation period extends beyond the forcing data, tRIBS may use zero values
+      or extrapolate, producing wrong results without a clear error message.
+
+      '
+    affected_components:
+    - tSimulator
+    - tRainfall
+    - tEvapoTrans
+  remedy:
+    action: Ensure simulation dates are within forcing data period
+    manual_steps:
+    - Check first and last dates in .mdf files
+    - Set STARTDATE and ENDDATE within that range
+    prevention: Validate date overlap before running
+  severity: degraded
+  cross_references: []
+- id: dt_016
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: NaN values appear in output; model may crash mid-simulation
+    error_pattern: nan|NaN|inf in output files or stderr
+    detection_method: log_match
+  diagnosis:
+    root_cause: NaN in forcing data propagates through calculations
+    explanation: 'Missing or corrupt values in met/rainfall forcing files appear as NaN in the input.
+      These propagate through ET, soil moisture, and routing calculations, eventually producing NaN in
+      all outputs.
+
+      '
+    affected_components:
+    - all
+  remedy:
+    action: Fill gaps in forcing data before running
+    manual_steps:
+    - Check all .mdf files for NaN or missing values
+    - Interpolate gaps or use gap-filling
+    - Re-run the model
+    prevention: Add NaN-check to forcing conversion pipeline
+  severity: fatal
+  cross_references:
+  - dt_001
+  - dt_002
+- id: dt_017
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: Process killed by OS; 'Killed' or OOM error
+    error_pattern: Killed|Out of memory|Cannot allocate
+    detection_method: log_match
+  diagnosis:
+    root_cause: Mesh too large for available memory
+    explanation: 'Each TIN node stores 50+ double-precision variables. A mesh with 1 million nodes requires
+      ~400 MB RAM for node data alone, plus edge/triangle storage. Large meshes can exceed available memory.
+
+      '
+    affected_components:
+    - tMesh
+    - tCNode
+  remedy:
+    action: Reduce mesh resolution or use parallel version
+    manual_steps:
+    - Coarsen mesh to reduce node count
+    - 'Or compile parallel version: cmake -Dparallel=ON'
+    - 'Run with mpirun: mpirun -np N ./tRIBSpar input.in'
+    prevention: 'Estimate memory: ~500 bytes/node × N_nodes'
+  severity: fatal
+  cross_references: []
+- id: dt_018
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: Simulation hangs or runs extremely slowly
+    error_pattern: No progress after Part 8 begins; CPU at 100% indefinitely
+    detection_method: log_match
+  diagnosis:
+    root_cause: Convergence failure in Newton solver or infinite flow loop
+    explanation: 'The unsaturated zone solver uses Newton iteration (LambertW/Newton methods in tHydroModel).
+      Extreme parameter combinations can prevent convergence, causing the solver to iterate indefinitely.
+      Also, circular flow paths in the mesh can cause infinite routing loops.
+
+      '
+    affected_components:
+    - tHydroModel
+    - tFlowNet
+  remedy:
+    action: Check soil parameters and mesh topology
+    manual_steps:
+    - Verify Ks, ThetaS, PsiB are in valid ranges
+    - Check mesh for circular flow paths
+    - Try running with -V flag to identify problematic node
+    - Consider reducing simulation time step
+    prevention: Validate parameter ranges before running
+  severity: fatal
+  cross_references:
+  - dt_005
+  - dt_006
+  - dt_007
+- id: dt_019
+  stage: s5_output_analysis
+  failure_domain: silent_error
+  symptom:
+    description: 'Hydrograph shape is wrong: peaks too early/late, recession too fast/slow'
+    error_pattern: NSE < 0.3 with timing mismatch
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Routing velocity parameters (HILLSLOPE_KSE, STREAM_KSE) are wrong
+    explanation: 'HILLSLOPE_KSE and STREAM_KSE control how fast water moves through the basin. Too high
+      = peaks arrive too early; too low = peaks arrive too late and are attenuated. These have no default
+      validation.
+
+      '
+    affected_components:
+    - tKinemat
+    - tFlowNet
+  remedy:
+    action: Calibrate routing velocities against observed hydrographs
+    manual_steps:
+    - 'HILLSLOPE_KSE: typical 0.001–0.1 m/s'
+    - 'STREAM_KSE: typical 0.5–5.0 m/s'
+    - Adjust until peak timing matches observations
+    prevention: Use literature values for initial estimates
+  severity: degraded
+  cross_references: []
+- id: dt_020
+  stage: s5_output_analysis
+  failure_domain: silent_error
+  symptom:
+    description: Water balance does not close; cumulative error grows over time
+    error_pattern: P - ET - Q - ΔS > 1% of P
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Numerical precision issues or output time step mismatch
+    explanation: 'tRIBS tracks water balance internally, but output files may use different time steps
+      than the internal computation, leading to apparent imbalance in post-processed results. Also, very
+      large or very small time steps can cause numerical drift.
+
+      '
+    affected_components:
+    - tWaterBalance
+    - tOutput
+  remedy:
+    action: Compare internal water balance report to post-processed values
+    manual_steps:
+    - Check tRIBS internal water balance output
+    - Ensure output interval matches analysis interval
+    - 'If numerical: reduce computational time step'
+    prevention: Always check water balance closure as first validation step
+  severity: degraded
+  cross_references:
+  - dt_001
+  - dt_005

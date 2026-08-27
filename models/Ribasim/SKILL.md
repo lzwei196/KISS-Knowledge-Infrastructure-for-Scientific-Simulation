@@ -1,13 +1,3 @@
----
-name: ribasim
-description: >-
-  Ribasim 2026.1 (open-source Julia network water-resources model; SciML ODE core). Covers
-  Water balance of interconnected basins (lumped reservoirs, lakes, canals, river
-  reaches); Flow through controlled structures (pumps, outlets, weirs/rating curves,
-  resistances); Rule-based, continuous, and PID control of hydraulic structure parameters.
-  Use when the task involves running, configuring, calibrating or interpreting Ribasim.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +21,41 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (14 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-24 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_network.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_network.py --help` |
+| `tools/convert_basin_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_basin_params.py --help` |
+| `tools/parse_ribasim_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_ribasim_output.py --help` |
+| `tools/run_ribasim.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_ribasim.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # Ribasim (Water Resources Model) — Knowledge Infrastructure
 
 **Package**: `hydrocraft-ribasim` v1.0.0
@@ -42,6 +67,238 @@ description: >-
 **Validation status**: `prototype`
 
 ---
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | Ribasim (Water Resources Model) |
+| Package | `hydrocraft-ribasim` v1.0.0 |
+| Model version | Ribasim 2026.1.0-rc2 (Deltares) |
+| Language | Julia computational core; Python API for model building and I/O |
+| Primary domain | Water resources / regional surface water management |
+| Spatial mode | Directed water-network graph of nodes and links |
+| Validation status | `prototype` |
+
+---
+
+## 2. What This Model Does
+
+Ribasim routes water through engineered and natural surface-water networks represented as
+directed graphs. It solves basin water balances, structure flows, control logic and
+priority-based allocation; it is a network routing and allocation model, not a
+rainfall-runoff generator.
+
+---
+
+## 3. Input Requirements
+
+**Exact shapes live in `docs/format_spec.yaml`** (projected from dag + triplets; regenerate it
+after changing either source, never hand-edit it). This section explains the operational
+intent and the traps; `docs/format_spec.yaml` is the schema contract.
+
+### 3.1 Forcing And Boundary Inputs
+
+| Input | Unit Ribasim expects | Typical source | Preparation note |
+|-------|----------------------|----------------|------------------|
+| Basin precipitation | m/s | ERA5, CMFD, MSWX, stations | Convert vertical fluxes before writing `Basin / static` or `Basin / time`. |
+| Basin evaporation | m/s | ERA5, CMFD, MSWX, stations | Same vertical-flux conversion as precipitation. |
+| Boundary inflow | m³/s | VIC, SWAT+, CaMa-Flood, gauges | Bind to `FlowBoundary / static` or time-varying flow boundary data. |
+| Boundary level | m | Gauge records, downstream water-level model | Bind to `LevelBoundary / static` or time-varying level boundary data; datum consistency is required. |
+| Demands | m³/s | Cadastral, operational or planning demand data | Bind to `UserDemand / time` with priority and return-flow information. |
+
+### 3.2 Static Inputs
+
+| Input | Source | Tool or section that prepares it |
+|-------|--------|----------------------------------|
+| Network topology | User-defined CSV/shapefile/GeoPackage | `tools/build_network.py` |
+| Basin profiles | Surveys, DEM or lake/reservoir databases | `tools/convert_basin_params.py` |
+| Structures | Operations manuals or site configuration | Python API / manual GeoPackage tables |
+| Controls | Operations manuals or site configuration | Python API / manual GeoPackage tables |
+| Allocation subnetworks and priorities | Planning or operational rules | Python API / manual GeoPackage tables |
+
+### 3.3 Configuration Files
+
+| File | Format | Notes |
+|------|--------|-------|
+| `ribasim.toml` | TOML | Main run configuration: time range, CRS, input/results directories, solver and allocation settings. |
+| `input/database.gpkg` | GeoPackage / SQLite spatial | Main model database containing Node, Link and node-type parameter tables. |
+| Optional time series | NetCDF | Time-varying tables can be referenced from TOML when not stored directly in the GeoPackage. |
+
+---
+
+## 4. Build Instructions
+
+Run the KI preflight before any execution attempt:
+
+```bash
+python preflight_check.py
+```
+
+Install or expose the real Ribasim binary/package described by this KI; do not substitute a
+Python formula or hand-coded approximation. If import, compile or execution fails, follow the
+mandatory execution policy at the top of this file.
+
+---
+
+## 5. Execution
+
+```bash
+ribasim ribasim.toml
+python tools/run_ribasim.py --help
+python tools/run_ribasim.py <model_dir_or_config>
+```
+
+Read each tool's `--help` before composing a pipeline command. Stage-specific procedure and
+verification details live in `docs/s*_*.md`.
+
+---
+
+## 6. Output Description
+
+**Source: `dag.yaml`.** The dag is the model identity for observable outputs; if this section
+and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (the dag's rank-1 variable):
+
+> `flow_rate` — Water flow rate on each network link (per from_node→to_node connection). (m³/s)
+
+| Output variable (dag `var`) | Rank / status | Unit / status | Dag fact restated here |
+|-----------------------------|---------------|---------------|------------------------|
+| `flow_rate` | 1 | m³/s | Water flow rate on each network link (per from_node→to_node connection). |
+| `level` | other dag output | dag output listed | Listed in the supplied dag output facts. |
+| `storage` | other dag output | dag output listed | Listed in the supplied dag output facts. |
+| `balance_error / relative_error` | other dag output | dag output listed | Listed in the supplied dag output facts. |
+| `allocated / supplied / demand` | other dag output | dag output listed | Listed in the supplied dag output facts. |
+
+Do not infer extra headline variables from NetCDF filenames. For scoring and observation
+binding, use the dag variables above and read `dag.yaml` directly when full metadata is needed.
+
+---
+
+## 7. Tool Inventory
+
+| Tool | Purpose | Inputs | Outputs |
+|------|---------|--------|---------|
+| `tools/build_network.py` | Build Node/Link tables and TOML scaffolding | CSV/shapefile inputs and configuration | GeoPackage network tables and `ribasim.toml` |
+| `tools/convert_basin_params.py` | Convert basin profiles and forcing into Ribasim-ready units | Basin data, forcing and morphometry | Basin profile, state, static and time tables |
+| `tools/run_ribasim.py` | Execute the real Ribasim model with checks | Complete model directory or configuration | Ribasim results in `results_dir` |
+| `tools/parse_ribasim_output.py` | Parse NetCDF outputs and compute summaries/metrics | Ribasim NetCDF results and optional observations | CSV outputs, plots and metric tables |
+
+### Shared Utilities
+
+Use the shared KI utilities when applicable:
+
+```python
+from ki_tools_common.load_forcing import load_daily_forcing
+from ki_tools_common.metrics import all_metrics
+from ki_tools_common.validation import validate_forcing_ranges
+from ki_tools_common.units import convert
+```
+
+---
+
+## 8. Unit Conversion Table
+
+Every unit conversion must be verified against the actual source data attributes before a
+production run. These are the Ribasim-side units this KI expects.
+
+| Variable | Source unit | Model unit | Conversion | Risk if wrong |
+|----------|-------------|------------|------------|---------------|
+| Precipitation | mm/day | m/s | divide by 86400000 | Silent magnitude error |
+| Evaporation | mm/day | m/s | divide by 86400000 | Silent magnitude error |
+| Flow rate | L/s | m³/s | divide by 1000 | Silent magnitude error |
+| Flow rate | ML/day | m³/s | divide by 86.4 | Silent magnitude error |
+| Level | cm | m | divide by 100 | Silent magnitude or datum error |
+| Area | km² | m² | multiply by 1000000 | Silent storage/profile error |
+| Area | ha | m² | multiply by 10000 | Silent storage/profile error |
+| Storage | MCM | m³ | multiply by 1000000 | Silent storage error |
+| Storage | ML | m³ | multiply by 1000 | Silent storage error |
+| Solver timestep | hours | seconds | multiply by 3600 | Silent timestep error |
+| Solver timestep | days | seconds | multiply by 86400 | Silent timestep error |
+| Allocation timestep | days | seconds | multiply by 86400 | Silent timestep error |
+
+---
+
+## 8c. Sign Conventions And Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| `flow_rate` | m³/s on each network link, per `from_node→to_node` connection | Node-local or basin-total discharge | Wrong observation binding and link direction. |
+| `level` | m, with the configured CRS/vertical datum | Local datum or cm | Apparent bias caused by datum or scale mismatch. |
+| `storage` | m³ from basin area-level-storage profile | ML or MCM | Incorrect water-balance magnitude. |
+| Precipitation / evaporation | m/s vertical fluxes | mm/day or mm/hr | Extreme water-balance error. |
+| `balance_error / relative_error` | Diagnostic water-balance outputs | Treated as physical flux | False validation metric or masked solver issue. |
+
+Output unit verification checklist:
+- Read `units` attributes from output NetCDF variables before computing metrics.
+- Inspect first values and time coordinates for order-of-magnitude and timestep mistakes.
+- For `flow_rate`, confirm the link id and `from_node→to_node` direction before comparing to gauges.
+- For `level`, confirm the observation and model use the same vertical datum.
+
+---
+
+## 9. Diagnostic Triplets (Top 5)
+
+The full diagnostic corpus remains in `diagnostics/triplets.yaml`; check it before debugging.
+
+| # | Error | Diagnosis | Remedy |
+|---|-------|-----------|--------|
+| `dt_001` | Precipitation in mm/day instead of m/s | Vertical flux unit mismatch | Convert mm/day to m/s before writing Ribasim basin forcing. |
+| `dt_002` | Evaporation in mm/day instead of m/s | Vertical flux unit mismatch | Convert mm/day to m/s before writing Ribasim basin forcing. |
+| `dt_003` | Area in km² instead of m² | Basin profile area unit mismatch | Convert km² to m² before writing area-level curves. |
+| `dt_004` | Flow boundary in L/s instead of m³/s | Boundary flow unit mismatch | Convert L/s to m³/s before writing flow boundary data. |
+| `dt_005` | Allocation timestep in days instead of seconds | Configuration timestep unit mismatch | Convert days to seconds in allocation settings. |
+
+---
+
+## 10. Coupling Interfaces
+
+| Upstream model | Variable exchanged | Unit | Temporal resolution |
+|----------------|--------------------|------|---------------------|
+| VIC / SWAT+ | Runoff to `FlowBoundary` | m³/s | Match Ribasim `saveat` or boundary time series |
+| CaMa-Flood | Discharge to `FlowBoundary` | m³/s | Match Ribasim `saveat` or boundary time series |
+| ERA5 / CMFD / MSWX | Precipitation and evaporation to Basin forcing | m/s | Convert from source cadence before writing |
+| Observations | Water levels to `LevelBoundary` or validation targets | m | Match datum and timestamp convention |
+
+| Downstream model | Variable exchanged | Unit | Temporal resolution |
+|------------------|--------------------|------|---------------------|
+| CaMa-Flood | Basin outflow / lateral inflow | m³/s | Match downstream routing timestep |
+| DELWAQ | Flows for water quality coupling | m³/s | Match coupling timestep |
+
+---
+
+## 11. Validated Results
+
+This KI has validation status `prototype`; body campaign pending. No validated basin/body campaign result is recorded
+in this SKILL body. Treat validation metrics as pending until a run is executed with the real
+Ribasim binary/package and scored against `docs/validation_convention.yaml`.
+
+### Performance Bars From `docs/validation_convention.yaml`
+
+| Dag variable | Metric | Direction | Convention bar, with citation keys |
+|--------------|--------|-----------|------------------------------------|
+| `flow_rate` | NSE | maximize | very_good ≥ 0.75 (`moriasi2007`, `moriasi2015`, `shrestha2018`); good ≥ 0.65 (`moriasi2007`, `moriasi2015`, `shrestha2018`); satisfactory ≥ 0.5 (`moriasi2007`, `moriasi2015`, `shrestha2018`) |
+| `flow_rate` | PBIAS | zero_centered | very_good ≤ 10 absolute percent bias (`moriasi2015`, `shrestha2018`); good ≤ 15 absolute percent bias (`moriasi2015`, `shrestha2018`); satisfactory ≤ 15 absolute percent bias (`moriasi2015`, `shrestha2018`) |
+| `level` | NSE | maximize | satisfactory: no cited threshold |
+| `storage` | NSE | maximize | satisfactory: no cited threshold |
+
+### Campaign Tracking
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Body / basin validation campaign | Pending | No achieved metric is recorded in this SKILL body. |
+| Headline score target | Pending | `flow_rate` is the dag rank-1 output. |
+| Judgment standard | Available | Use the cited convention bars above; do not invent thresholds for null bands. |
+
+---
+
+## 12. Parameter Selection By Region
+
+Ribasim parameter choices are site- and operations-specific. Use physically informed starting
+points from surveys, DEM/lake morphometry, operational rules and observed inflow/level records;
+then validate against the dag variables and the cited convention bars above. Do not treat these
+starting points as calibration results.
 
 ## Data Preparation
 

@@ -434,7 +434,7 @@ outputs:
   - var: "harvest_index"
     validation_rank: 2
     unit: "dimensionless"
-    description: "Ratio of grain (storage organ) to total above-ground dry matter at harvest."
+    description: "Crop harvest biomass ratio of grain (storage organ) to total above-ground dry matter at harvest."
     emitted_in: "harvest.dlf"
     observability:
       comparable_obs_shapes:
@@ -462,7 +462,7 @@ outputs:
   - var: "Leaching"
     validation_rank: 7
     unit: "kg N/ha"
-    description: "Nitrate-nitrogen leached below the root zone."
+    description: "Soil-profile nitrate-nitrogen leached below the root zone."
     emitted_in: "field_nitrogen.dlf"
     observability:
       comparable_obs_shapes:
@@ -477,7 +477,7 @@ outputs:
   - var: "Denitrification"
     validation_rank: 8
     unit: "kg N/ha"
-    description: "Nitrogen lost via denitrification."
+    description: "Soil mineral nitrogen lost via denitrification."
     emitted_in: "field_nitrogen.dlf"
     observability:
       comparable_obs_shapes:
@@ -568,7 +568,7 @@ outputs:
   - var: "LAI"
     validation_rank: 4
     unit: "m^2/m^2"
-    description: "Leaf area index."
+    description: "Crop canopy leaf area index."
     emitted_in: "<crop>.dlf"
     observability:
       comparable_obs_shapes:
@@ -770,3 +770,21 @@ safety:
       scope: "output units"
       source: "Daisy .dlf log header (unit row) and select_value/select_volume object behavior"
       status: "tentative"
+
+medium_evidence:
+  - var: "harvest_index"
+    source: "SKILL.md"
+    quote: "| `harvest.dlf` | Crop harvest events | stem_DM, leaf_DM, sorg_DM, stem_N, sorg_N, harvest_index | Mg DM/ha, kg N/ha |"
+    note: "Harvest index is a crop harvest biomass ratio involving storage organs and above-ground dry matter."
+  - var: "Leaching"
+    source: "dag.yaml"
+    quote: "Soil mineral nitrogen pools (NH4, NO3) per cell"
+    note: "The mineral nitrogen balance places nitrate/ammonium transport and leaching in the soil profile."
+  - var: "Denitrification"
+    source: "dag.yaml"
+    quote: "Soil mineral nitrogen pools (NH4, NO3) per cell"
+    note: "Denitrification is a sink in the soil mineral-nitrogen balance."
+  - var: "LAI"
+    source: "dag.yaml"
+    quote: "Crop growth and development (phenology, Farquhar photosynthesis, stomatal conductance, dry-matter partitioning, leaf area index, root density, water/N stress)"
+    note: "LAI is a crop canopy variable tied to shoot dry matter and crop development."

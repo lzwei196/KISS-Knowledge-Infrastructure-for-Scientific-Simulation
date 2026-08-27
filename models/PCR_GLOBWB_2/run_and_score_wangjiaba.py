@@ -58,9 +58,11 @@ import numpy as np
 # --------------------------------------------------------------------------
 KI = "KISSPATH_KI_ROOT/PCR_GLOBWB_2/knowledge_infrastructure"
 TOOLS = os.path.join(KI, "tools")
-PCR_PY = (sys.executable)
+PCR_PY = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
+          "PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin/python")
 PCR_BIN = os.path.dirname(PCR_PY)
-MODEL_DIR = ("KISSPATH_BINARIES/PCR_GLOBWB_2/source/repo/model")
+MODEL_DIR = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
+             "PCR_GLOBWB_2/source/repo/model")
 
 OUT = "KISSPATH_OUTPUTS/pcrglobwb2_wangjiaba_huai"
 INPUT_DIR = os.path.join(OUT, "input")

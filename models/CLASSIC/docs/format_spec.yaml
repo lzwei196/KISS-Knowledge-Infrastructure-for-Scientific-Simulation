@@ -1,201 +1,638 @@
-model:
-  name: "CLASSIC"
-  full_name: "Canadian Land Surface Scheme Including Biogeochemical Cycles"
-  version: "CLASS v3.6.2 + CTEM v2.0"
-  domain: "land_surface_biogeochemistry"
-  binary_path: "KISSPATH_BINARIES/CLASSIC/source/repo/bin/CLASSIC_serial"
-  execution_pattern: "bin/CLASSIC_serial <job_options_file> <longitude>/<latitude>"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: CLASSIC
+  language: fortran
+  implementation:
+    id: classic-v100
+    version: v1.0.0
+    provenance: Fortran 2008; ECCC/CCCma stand-alone offline land-surface scheme, run as a serial or MPI-parallel
+      build over point or gridded domains.
+  scientific_reference_version: CLASSIC v1.0 (Melton et al. 2020, GMD 13:2825; CLASS 3.6.2 physics + CTEM
+    v2.0 biogeochemistry lineage)
 inputs:
   forcing:
-    format: "netCDF-4 (one variable per file)"
-    time_encoding: "day as %Y%m%d.%f (absolute date, NOT CF days-since)"
-    variables:
-      - name: "FSS"
-        file_convention: "dswrf*.nc"
-        unit: "W m-2"
-        valid_range: [0.0, 1400.0]
-        description: "Downwelling shortwave radiation"
-      - name: "FDL"
-        file_convention: "dlwrf*.nc"
-        unit: "W m-2"
-        valid_range: [50.0, 600.0]
-        description: "Downwelling longwave radiation"
-      - name: "PRE"
-        file_convention: "pre*.nc"
-        unit: "kg m-2 s-1"
-        valid_range: [0.0, 0.1]
-        description: "Precipitation rate"
-      - name: "TA"
-        file_convention: "tmp*.nc"
-        unit: "deg C"
-        valid_range: [-80.0, 60.0]
-        description: "Air temperature at reference height (CRITICAL: must be Celsius)"
-      - name: "QA"
-        file_convention: "spfh*.nc"
-        unit: "kg kg-1"
-        valid_range: [0.0, 0.04]
-        description: "Specific humidity at reference height"
-      - name: "VMOD"
-        file_convention: "wind*.nc"
-        unit: "m s-1"
-        valid_range: [0.0, 75.0]
-        description: "Wind speed at reference height"
-      - name: "PRES"
-        file_convention: "pres*.nc"
-        unit: "Pa"
-        valid_range: [30000.0, 110000.0]
-        description: "Surface air pressure"
-
+  - name: FSS — downwelling shortwave radiation
+    unit: W m-2
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-variable netCDF-4 (time,lat,lon); non-CF time encoded as 'day as %Y%m%d.%f'
+  - name: FDL — downwelling longwave radiation
+    unit: W m-2
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-variable netCDF-4 (time,lat,lon)
+  - name: PRE — precipitation rate
+    unit: kg m-2 s-1
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-variable netCDF-4 (time,lat,lon)
+    notes: Driver expects a mass flux rate, NOT an mm depth per interval; wrong units silently scale the
+      water balance.
+  - name: TA — air temperature at reference height
+    unit: deg C
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-variable netCDF-4 (time,lat,lon)
+    notes: Driver expects Celsius and converts to Kelvin internally (distinct from init-file TBAR which
+      is Kelvin).
+  - name: QA — specific humidity at reference height
+    unit: kg kg-1
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-variable netCDF-4 (time,lat,lon)
+  - name: VMOD — wind speed at reference height
+    unit: m s-1
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-variable netCDF-4 (time,lat,lon)
+  - name: PRES — surface air pressure
+    unit: Pa
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: per-variable netCDF-4 (time,lat,lon)
+  - name: CO2 — atmospheric CO2 concentration
+    unit: ppmv
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: annual netCDF time series; non-CF 'day as %Y%m%d.%f' encoding
+    notes: Drives photosynthetic CO2 response; required when ctem_on.
+  - name: CH4 — atmospheric CH4 concentration
+    unit: ppmv
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: annual netCDF time series
+  - name: POPD — population density (fire ignition)
+    unit: people km-2
+    category: disturbance
+    source_kind: forcing
+    model_input_format: annual netCDF
+    notes: Optional; consumed only when dofire enabled.
+  - name: LGHT — lightning strike density (fire ignition)
+    unit: strikes km-2 yr-1
+    category: disturbance
+    source_kind: forcing
+    model_input_format: daily netCDF
+    notes: Optional; consumed only when dofire enabled.
+  - name: LUC — prescribed land-use-change PFT fractions
+    unit: fraction
+    category: boundary_driver
+    source_kind: forcing
+    model_input_format: annual netCDF
+    notes: Optional; consumed only when lnduseon enabled.
+  - name: OBSWETF — observed wetland fraction
+    unit: fraction
+    category: boundary_driver
+    source_kind: forcing
+    model_input_format: daily netCDF
+    notes: Optional prescribed wetland extent for CH4 emissions.
   parameters:
-    critical:
-      - name: "SAND"
-        unit: "percent"
-        valid_range: [0, 100]
-        description: "Soil sand fraction per layer (special flags: -2=peat, -3=bedrock, -4=ice)"
-      - name: "CLAY"
-        unit: "percent"
-        valid_range: [0, 100]
-        description: "Soil clay fraction per layer"
-      - name: "ORGM"
-        unit: "percent"
-        valid_range: [0, 100]
-        description: "Soil organic matter fraction per layer"
-      - name: "SDEP"
-        unit: "m"
-        valid_range: [0.1, 100.0]
-        description: "Soil permeable depth (depth to bedrock)"
-      - name: "FCAN"
-        unit: "fraction"
-        valid_range: [0.0, 1.0]
-        description: "CLASS PFT fractional coverage"
-      - name: "fcancmx"
-        unit: "fraction"
-        valid_range: [0.0, 1.0]
-        description: "CTEM PFT fractional coverage"
-      - name: "DELZ"
-        unit: "m"
-        valid_range: [0.01, 10.0]
-        description: "Soil layer thickness"
-      - name: "TBAR"
-        unit: "K"
-        valid_range: [200.0, 350.0]
-        description: "Initial soil temperature per layer"
-      - name: "THLQ"
-        unit: "m3 m-3"
-        valid_range: [0.0, 1.0]
-        description: "Initial liquid soil moisture per layer"
-      - name: "gleafmas"
-        unit: "kgC m-2"
-        valid_range: [0.0, 5.0]
-        description: "Green leaf biomass carbon per PFT"
-      - name: "soilcmas"
-        unit: "kgC m-2"
-        valid_range: [0.0, 200.0]
-        description: "Soil carbon mass per pool"
-
-  ghg:
-    - name: "CO2"
-      unit: "ppmv"
-      valid_range: [200.0, 1500.0]
-      description: "Atmospheric CO2 concentration (annual)"
-    - name: "CH4"
-      unit: "ppmv"
-      valid_range: [0.5, 5.0]
-      description: "Atmospheric CH4 concentration (annual)"
-
+  - name: SAND / CLAY / ORGM — soil texture
+    unit: '% (0-100)'
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: init netCDF (per layer); SAND flags -2=peat, -3=bedrock, -4=ice
+  - name: SDEP — permeable/bedrock depth
+    unit: m
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: init netCDF
+  - name: DRN — drainage index
+    unit: '-'
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: init netCDF (0=bog, 1=free-draining, ~0.005 typical)
+  - name: SOCI — soil colour index (bare-soil albedo)
+    unit: 1-20 index
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: init netCDF
+  - name: DELZ — ground-layer thickness
+    unit: m
+    category: soil
+    source_kind: default
+    model_input_format: init netCDF (>=~0.10 m for explicit-scheme stability)
+  - name: FCAN / ALVC / ALIC / CMAS / LNZ0 / PAMN / PAMX / ROOT — CLASS PFT canopy parameters
+    unit: mixed (fraction, albedo, kg m-2, m, ln(m))
+    category: vegetation
+    source_kind: calibrated
+    model_input_format: init netCDF (per CLASS PFT, icp1)
+  - name: CTEM PFT-specific physiology (vmax, quantum efficiency, specific leaf area, stomatal-conductance,
+      allocation, respiration coefficients)
+    unit: mixed
+    category: vegetation
+    source_kind: calibrated
+    model_input_format: template_run_parameters namelist (per CTEM PFT, icc)
+  - name: ZRFH / ZRFM / ZBLD — reference and blending heights
+    unit: m
+    category: geometry
+    source_kind: user_provided
+    model_input_format: joboptions namelist
+    notes: Must exceed canopy height or surface-atmosphere exchange cannot be solved.
+  - name: grclarea / FARE / GC / MID — cell area, tile fraction, land mask, mosaic id
+    unit: km2 / fraction / index
+    category: grid
+    source_kind: dataset_lookup
+    model_input_format: init netCDF (GC=-1 marks land)
+  initial_conditions:
+  - name: TBAR — soil layer temperature
+    unit: K
+    category: soil_physics
+    source_kind: user_provided
+    model_input_format: init/restart netCDF (per layer)
+    notes: Init file is Kelvin, unlike Celsius forcing TA.
+  - name: THLQ / THIC — liquid / frozen soil moisture
+    unit: m3 m-3
+    category: soil_physics
+    source_kind: user_provided
+    model_input_format: init/restart netCDF (per layer)
+  - name: SNO / TSNO / ALBS / RHOS / WSNO — snowpack mass, temperature, albedo, density, liquid water
+    unit: kg m-2 / K / - / kg m-3 / kg m-2
+    category: snow
+    source_kind: user_provided
+    model_input_format: init/restart netCDF
+  - name: gleafmas / bleafmas / stemmass / rootmass / litrmass / soilcmas — CTEM carbon pools
+    unit: kgC m-2
+    category: carbon
+    source_kind: user_provided
+    model_input_format: init/restart netCDF (per icc; litter/soil per icc+bareground+LUC)
+    notes: Must be pre-spun-up; pools equilibrate only after repeated forcing cycling.
+  - name: fcancmx — CTEM PFT fractional coverage
+    unit: fraction
+    category: vegetation
+    source_kind: user_provided
+    model_input_format: init/restart netCDF (per icc)
+  boundary_conditions:
+  - name: ctem_on — enable CTEM biogeochemistry
+    unit: logical
+    category: control
+    source_kind: user_provided
+    model_input_format: joboptions namelist
+    notes: .false. gives physics-only run with all-zero carbon fluxes.
+  - name: spinfast — soil-carbon spin-up acceleration factor
+    unit: integer
+    category: control
+    source_kind: user_provided
+    model_input_format: joboptions namelist
+    notes: '>1 accelerates decomposition and breaks NEP=GPP-Ra-Rh; set 1 for transient/carbon-budget runs.'
+  - name: metLoop — number of forcing-cycle repeats for spin-up
+    unit: integer
+    category: control
+    source_kind: user_provided
+    model_input_format: joboptions namelist
+  - name: dofire / PFTCompetition / lnduseon — disturbance, competition, land-use switches
+    unit: logical
+    category: control
+    source_kind: user_provided
+    model_input_format: joboptions namelist
+  - name: ITC / ITCG / ITG — surface-temperature iteration scheme
+    unit: 1=bisection | 2=Newton-Raphson
+    category: numerical
+    source_kind: user_provided
+    model_input_format: joboptions namelist
+    notes: Use 1; 2 (Newton-Raphson) diverges to NaN.
+  - name: IDISP / IZREF / ISLFD / IPCP / IWF / isnoalb — physics method switches
+    unit: integer codes
+    category: physics_option
+    source_kind: user_provided
+    model_input_format: joboptions namelist
+  - name: run coordinates (lon/lat or lon/lon/lat/lat box)
+    unit: degrees
+    category: domain
+    source_kind: user_provided
+    model_input_format: second CLI argument
+    notes: Must match init-file grid or model exits with 'No valid gridcells'.
+  - name: PFT counts ican / icc / l2max
+    unit: integer
+    category: config
+    source_kind: user_provided
+    model_input_format: run_parameters namelist
+    notes: Must match init-file ic/icc dimensions or segfault.
+  - name: JMOSTY / JDSTY — monthly/daily output start years
+    unit: year
+    category: output_control
+    source_kind: user_provided
+    model_input_format: joboptions namelist
 outputs:
   primary:
-    - name: "gpp"
-      unit: "kgC m-2 s-1"
-      valid_range: [0.0, 1.2e-7]
-      description: "Gross primary productivity"
-    - name: "npp"
-      unit: "kgC m-2 s-1"
-      valid_range: [-5.0e-9, 8.5e-8]
-      description: "Net primary productivity"
-    - name: "nep"
-      unit: "kgC m-2 s-1"
-      valid_range: [-1.0e-8, 7.1e-8]
-      description: "Net ecosystem productivity"
-    - name: "nbp"
-      unit: "kgC m-2 s-1"
-      valid_range: [-1.2e-8, 6.7e-8]
-      description: "Net biome productivity"
-    - name: "rh"
-      unit: "kgC m-2 s-1"
-      valid_range: [0.0, 2.0e-8]
-      description: "Heterotrophic respiration"
-    - name: "ra"
-      unit: "kgC m-2 s-1"
-      valid_range: [0.0, 3.5e-8]
-      description: "Autotrophic respiration"
-    - name: "hfss"
-      unit: "W m-2"
-      valid_range: [-55.0, 95.0]
-      description: "Sensible heat flux"
-    - name: "hfls"
-      unit: "W m-2"
-      valid_range: [0.0, 135.0]
-      description: "Latent heat flux"
-    - name: "rss"
-      unit: "W m-2"
-      valid_range: [0.0, 265.0]
-      description: "Net shortwave radiation"
-    - name: "rls"
-      unit: "W m-2"
-      valid_range: [-110.0, 20.0]
-      description: "Net longwave radiation"
-    - name: "mrro"
-      unit: "kg m-2 s-1"
-      valid_range: [0.0, 4.5e-5]
-      description: "Total runoff"
-    - name: "evspsbl"
-      unit: "kg m-2 s-1"
-      valid_range: [0.0, 3.2e-5]
-      description: "Evapotranspiration"
-    - name: "snw"
-      unit: "kg m-2"
-      valid_range: [0.0, 500.0]
-      description: "Snow water equivalent"
-    - name: "lai"
-      unit: "m2 m-2"
-      valid_range: [0.0, 12.0]
-      description: "Leaf area index"
-    - name: "cLand"
-      unit: "kgC m-2"
-      valid_range: [0.0, 100.0]
-      description: "Total land carbon stock"
-    - name: "cVeg"
-      unit: "kgC m-2"
-      valid_range: [0.0, 50.0]
-      description: "Vegetation carbon stock"
-    - name: "cSoil"
-      unit: "kgC m-2"
-      valid_range: [0.0, 100.0]
-      description: "Soil carbon stock"
-    - name: "tas"
-      unit: "K"
-      valid_range: [200.0, 330.0]
-      description: "Near-surface air temperature"
-    - name: "tsl"
-      unit: "K"
-      valid_range: [250.0, 320.0]
-      description: "Soil temperature"
-
-  temporal_resolution:
-    - "annual (always produced)"
-    - "monthly (domonthoutput switch)"
-    - "daily (dodayoutput switch)"
-    - "half-hourly (dohhoutput switch)"
-
-  format: "netCDF-4"
-
+  - name: rss
+    unit: W m-2
+    description: Net shortwave radiation at the surface
+    validation_rank: 3
+    emitted_in: per-variable netCDF (rss_hh/_d/_mo/_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Flux-tower radiation components carry instrument and footprint uncertainty.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: hfss
+    unit: W m-2
+    description: Sensible heat flux at the land surface
+    validation_rank: 4
+    emitted_in: per-variable netCDF (hfss_hh/_d/_mo/_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Model enforces surface energy-balance closure; eddy-covariance towers leave a 10-30% closure
+          residual, so do not force the obs LE+H to close.
+      detrending_options:
+      - none
+  - name: hfls
+    unit: W m-2
+    description: Latent heat flux at the land surface (energy equivalent of evapotranspiration)
+    validation_rank: 5
+    emitted_in: per-variable netCDF (hfls_hh/_d/_mo/_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Same energy-balance-closure caveat as hfss; tower LE often the closure-residual term.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: gpp
+    unit: kgC m-2 s-1 (instantaneous) or kgC m-2 month-1 (accumulated)
+    description: Terrestrial ecosystem gross primary productivity
+    validation_rank: 1
+    emitted_in: per-variable netCDF (gpp_d/_mo/_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Tower GPP is a partitioning product (not directly measured); unit varies with output frequency.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: nep
+    unit: kgC m-2 s-1 or kgC m-2 month-1
+    description: Net ecosystem productivity (NEP ~ GPP - Ra - Rh)
+    validation_rank: 6
+    emitted_in: per-variable netCDF (nep_d/_mo/_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Sign convention and tower NEE partitioning; NEP=GPP-Ra-Rh closes only at spinfast=1.
+      detrending_options:
+      - none
+  - name: nbp
+    unit: kgC m-2 s-1 or kgC m-2 yr-1
+    description: Net biome productivity (NEP minus disturbance/land-use carbon losses)
+    validation_rank: 7
+    emitted_in: per-variable netCDF (nbp_mo/_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Global/regional land-sink estimates (e.g. GCB) are themselves model/inversion products; compare
+          decadal means and trend, not inter-annual point matches.
+      detrending_options:
+      - decadal_mean
+      - linear_residual
+  - name: rh
+    unit: kgC m-2 s-1
+    description: Heterotrophic (soil/litter) respiration
+    validation_rank: 8
+    emitted_in: per-variable netCDF (rh_d/_mo/_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Field soil-respiration (e.g. SRDB) mixes autotrophic and heterotrophic components; partitioning
+          needed.
+      detrending_options:
+      - none
+  - name: mrro
+    unit: kg m-2 s-1
+    description: Total runoff (surface + subsurface), grid-cell diagnostic flux
+    validation_rank: 9
+    emitted_in: per-variable netCDF (mrro_d/_mo/_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Runoff is an unrouted grid-cell water-balance flux; CLASSIC has no channel routing, so compare
+          as a flux/water-budget term, not as routed streamflow.
+      detrending_options:
+      - none
+  - name: snw
+    unit: kg m-2
+    description: Snow water equivalent
+    validation_rank: 2
+    emitted_in: per-variable netCDF (snw_d/_mo/_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: pbias
+        caveats:
+        - SWE is highly sensitive to forcing precipitation and sub-grid topography; single-layer snowpack.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Snow-cover-fraction bias in mountains depends on sub-grid topography parameterization.
+      detrending_options:
+      - none
+  - name: lai
+    unit: m2 m-2
+    description: Vegetation canopy leaf area index
+    validation_rank: 10
+    emitted_in: per-variable netCDF (lai_d/_mo/_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - Satellite LAI (e.g. MODIS) saturates at high LAI; PFT-level aggregation differs from per-pixel
+          land cover.
+      detrending_options:
+      - none
+  - name: cSoil
+    unit: kgC m-2
+    description: Soil carbon stock
+    validation_rank: 11
+    emitted_in: per-variable netCDF (cSoil_yr.nc)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Observation-based SOC maps (e.g. WoSIS-derived) carry large structural uncertainty; valid only
+          after carbon spin-up to equilibrium.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Profile depth of the obs must match the modeled soil column depth.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "Temperature forcing MUST be Celsius, not Kelvin — model crashes or produces wrong energy balance"
-  - "Precipitation MUST be kg/m2/s, not mm/day — 86400x error in water balance"
-  - "Time encoding uses absolute date format (day as %Y%m%d.%f), NOT CF-convention days-since"
-  - "Specific humidity must be kg/kg, not g/kg — huge evaporation error if wrong"
-  - "Pressure must be Pa, not hPa or kPa"
-  - "Iteration methods ITC/ITCG/ITG must be 1 (bisection), NOT 2 (Newton-Raphson)"
-  - "fVegLitter and fLitterSoil output units appear anomalous (values >>1 for flux rates)"
+- id: dt_001
+  symptom: Soil temperatures unrealistically high (~300 K). Energy balance completely wrong. Sensible
+    heat flux negative in summer.
+  diagnosis: Air temperature in Kelvin instead of Celsius — CLASSIC driver expects deg C; CLASSIC's meteorological
+    driver expects air temperature in degrees Celsius. Internally the model converts to Kelvin. If the
+    forcing file provides temperature in Kelvin (e.g., 293 K), the model treats it as 293 deg C, result
+  remedy: Subtract 273.15 from temperature values in forcing file; convert_forcing_to_classic; ['Check
+    max temperature in tmp.nc — should be < 60 deg C', 'If values > 100, they are in Kelvin — subtract
+    273.15']; validate_outputs() in convert_forcing_to_classic checks for T > 100
+  severity: silent
+- id: dt_002
+  symptom: Runoff is 86400x too high. Water balance completely broken. Flooding at every timestep.
+  diagnosis: 'Precipitation in mm/day instead of kg m-2 s-1; CLASSIC expects precipitation as a rate in
+    kg m-2 s-1. If forcing data is in mm/day (common in reanalysis products), each timestep receives 86400
+    times too much precipitation. 1 mm/day = 1/86400 kg/m2/s = 1.157e-5 kg/m2/s.
+
+    ; [''convert_forcing_to_classic'
+  remedy: Divide precipitation by 86400 to convert from mm/day to kg/m2/s; convert_forcing_to_classic;
+    ['Check max precip in pre.nc — should be < 0.1 kg/m2/s (~360 mm/hr)', 'If max > 1.0, values are likely
+    in mm/day — divide by 86400', 'If max > 100, values are likely in mm/hr — divide by 3600']; validate_out
+  severity: silent
+- id: dt_003
+  symptom: Evapotranspiration 1000x too high. Soil dries out immediately. Unrealistic latent heat flux.
+  diagnosis: 'Specific humidity in g/kg instead of kg/kg; CLASSIC expects specific humidity in kg/kg (dimensionless
+    mass ratio). Some datasets provide humidity in g/kg. If 10 g/kg is read as 10 kg/kg, the atmosphere
+    appears extremely moist, driving massive evaporation.
+
+    ; [''convert_forcing_to_classic'', ''spfh.nc'']'
+  remedy: Divide specific humidity by 1000 to convert g/kg to kg/kg; convert_forcing_to_classic; ['Check
+    max spfh in spfh.nc — should be < 0.04 kg/kg', 'If max > 1.0, values are in g/kg — divide by 1000'];
+    validate_outputs() checks for QA > 0.06
+  severity: silent
+- id: dt_004
+  symptom: Atmospheric pressure unrealistically low. Wrong air density. Turbulent fluxes computed incorrectly.
+  diagnosis: 'Pressure in hPa or kPa instead of Pa; CLASSIC expects surface pressure in Pascals (Pa).
+    Standard sea-level pressure is ~101325 Pa. If data is in hPa (1013.25) or kPa (101.325), the model
+    computes air density 100x or 1000x too low, affecting all turbulent flux calculations.
+
+    ; [''convert_forcing_to_cla'
+  remedy: Multiply by 100 (hPa) or 1000 (kPa) to convert to Pa; convert_forcing_to_classic; ['Check pressure
+    range in pres.nc — should be 30000-110000 Pa', 'If max < 2000, values are in hPa — multiply by 100',
+    'If max < 200, values are in kPa — multiply by 1000']; validate_outputs() checks for pressure < 3000
+  severity: silent
+- id: dt_005
+  symptom: Model reads wrong dates. Seasonal cycle shifted or absent. Wrong year in output.
+  diagnosis: Time encoding uses CF 'days since' instead of CLASSIC's 'day as %Y%m%d.%f'; CLASSIC uses
+    a non-standard time encoding where the time value is YYYYMMDD.f (e.g., 20010615.5 = noon June 15 2001).
+    Standard CF convention uses 'days since reference_date'. If CF-encoded times are read directly, the
+    model i
+  remedy: Rewrite time axis to YYYYMMDD.f format with units 'day as %Y%m%d.%f'; convert_forcing_to_classic;
+    ['ncdump -v time file.nc | head -20', 'Time values should be > 18000000 (year 1800+)', 'If values
+    are small (< 100000), they are days-since — must convert']; create_classic_met_nc() always writes
+    correc
+  severity: critical
+- id: dt_006
+  symptom: Soil hydraulic properties wrong. Infiltration/drainage rates unrealistic. Sand content appears
+    as 0.
+  diagnosis: Soil texture as fraction (0-1) instead of percentage (0-100); CLASSIC expects SAND, CLAY,
+    ORGM as percentages (0-100). Some global soil datasets (HWSD, SoilGrids) provide texture as mass fractions
+    (0-1). If 0.65 (65% sand) is read as 0.65%, the soil is treated as nearly pure silt with completely
+    wro
+  remedy: Multiply soil texture values by 100; convert_soil_to_classic; ['Check SAND values in init file
+    — mineral soils should have SAND 0-100', 'If max SAND < 1.0, values are fractions — multiply by 100'];
+    validate_inputs() checks for max SAND < 1.0
+  severity: silent
+- id: dt_007
+  symptom: Carbon pools 1000x too large. Soil respiration enormous. NEP hugely negative.
+  diagnosis: Carbon pool initialization in gC/m2 instead of kgC/m2; CLASSIC stores all carbon pools (gleafmas,
+    stemmass, rootmass, litrmass, soilcmas) in kgC/m2. Literature values are often reported in gC/m2 or
+    tC/ha. If 5000 gC/m2 is entered as 5000 kgC/m2, the pool is 1000x too large, causing extreme respirati
+  remedy: 'Divide carbon pool values by 1000 (gC to kgC) or by 100 (tC/ha to kgC/m2); convert_soil_to_classic;
+    [''Typical soilcmas: 1-30 kgC/m2 (temperate), up to 100 kgC/m2 (peatlands)'', ''Typical stemmass:
+    0-20 kgC/m2 (forests)'', ''If values > 1000, likely in gC/m2'']; convert_soil_to_classic initializes
+    with re'
+  severity: silent
+- id: dt_008
+  symptom: Model crashes immediately with 'ZRFM < vegetation height' or similar error.
+  diagnosis: Reference height (ZRFM or ZRFH) set lower than vegetation canopy height; CLASSIC requires
+    the forcing reference height to be above the vegetation canopy. For forests with 20+ m canopy, ZRFM=10
+    will cause a crash. The model cannot compute surface-atmosphere exchange when the reference level
+    is within
+  remedy: 'Increase ZRFM and ZRFH to be above maximum vegetation height; None; [''For forests: set ZRFH
+    = ZRFM = 40-50 m'', ''For grassland: ZRFH = ZRFM = 10-40 m is fine'', ''For GCM data: use model lowest
+    level height'']; Always check PFT heights vs reference heights before running'
+  severity: critical
+- id: dt_009
+  symptom: Init file gets overwritten. Original initialization state lost after first run.
+  diagnosis: rs_file_to_overwrite points to same file as init_file; CLASSIC writes restart data by overwriting
+    the file specified in rs_file_to_overwrite. If this is the same as init_file, the original initialization
+    is destroyed. Subsequent runs start from the end state of the previous run instead of the intend
+  remedy: Copy init_file to a separate restart file before running; None; ['cp init_file.nc rsFile.nc',
+    "Set rs_file_to_overwrite = 'rsFile.nc' in job options"]; Always use separate init and restart file
+    paths
+  severity: critical
+- id: dt_010
+  symptom: Newton-Raphson iteration diverges. Surface temperature oscillates wildly. Model crashes with
+    NaN.
+  diagnosis: ITC, ITCG, or ITG set to 2 (Newton-Raphson) instead of 1 (bisection); The Newton-Raphson
+    iteration scheme (ITC/ITCG/ITG=2) has known instabilities and convergence failures in CLASSIC. The
+    bisection method (=1) is slower but always converges. The CLASSIC documentation explicitly warns against
+    using N
+  remedy: Set ITC = 1, ITCG = 1, ITG = 1 in job options; None; ['Edit job options file', 'Change ITC,
+    ITCG, ITG from 2 to 1']; Template file already uses 1; don't change to 2
+  severity: critical
+- id: dt_011
+  symptom: Segmentation fault on model startup. Array bounds violation in initialization.
+  diagnosis: PFT count mismatch between run_parameters (ican/icc) and init_file dimensions; The run_parameters
+    namelist specifies ican (CLASS PFTs) and icc (CTEM PFTs). These MUST match the dimensions in the initialization
+    file. If the params say ican=4, icc=9 but the init file has ic=5, icc=12 (e.g., shrubs+pea
+  remedy: 'Ensure ican and icc in run_parameters match ic and icc dimensions in init_file; None; ["ncdump
+    -h init_file.nc | grep ''ic\\|icc'' to check dimensions", ''Compare with ican and icc in run_parameters
+    namelist'', ''Use matching template: standard (4/9), peatlands, or shrubs'']; Always use corresponding
+    pair'
+  severity: critical
+- id: dt_012
+  symptom: Model starts but produces no output. Appears to hang or run indefinitely with no progress.
+  diagnosis: Meteorological forcing starts at wrong timestep (not hour 0, minute 0, day 1); CLASSIC requires
+    the first timestep to be at 0 hours, 0 minutes, day 1 of the start year. In main.f90, the model looks
+    for this specific timestep to initialize various variables. If the first timestep is, e.g., 06:00
+    or d
+  remedy: Ensure meteorological data starts exactly at 00:00 on January 1 of readMetStartYear; convert_forcing_to_classic;
+    ['ncdump -v time met_file.nc | head -5', 'First time value should be YYYY0101.0 (midnight Jan 1)'];
+    convert_forcing_to_classic ensures correct start timestep
+  severity: critical
+- id: dt_013
+  symptom: No gridcells found. Model exits immediately with message about no valid points.
+  diagnosis: Specified coordinates do not match any grid cell in the initialization file; When running
+    CLASSIC with lon/lat coordinates, the model searches the init_file for the nearest grid cell. If the
+    specified coordinates are far from any grid cell in the file (e.g., providing lat=45 for a file containing
+    on
+  remedy: Use coordinates that match the init_file grid, or use 0/0 for whole domain; None; ['ncdump -v
+    lat,lon init_file.nc to check available coordinates', 'Use matching lon/lat or 0/0 shorthand']; For
+    site-level (single point), always use 0/0
+  severity: critical
+- id: dt_014
+  symptom: Annual output files exist but monthly/daily files are empty or missing.
+  diagnosis: 'Monthly/daily output start year (JMOSTY/JDSTY) is after the simulation end year; CLASSIC
+    only writes monthly output starting from JMOSTY. If the simulation runs 1991-2000 but JMOSTY=2001,
+    no monthly output is produced. Similarly for daily output with JDSTY/JDENDY.
+
+    ; [''job_options_file'', ''outputManag'
+  remedy: Set JMOSTY within the simulation period (readMetStartYear to readMetEndYear); None; ['Check
+    simulation years in job options', 'Set JMOSTY <= readMetStartYear (or first year of interest)']; Always
+    verify output year ranges match simulation period
+  severity: medium
+- id: dt_015
+  symptom: Carbon flux outputs (GPP, NPP, NEP) are all zero despite vegetation being present.
+  diagnosis: ctem_on = .false. (physics-only mode) but expecting biogeochemistry outputs; When ctem_on
+    is set to .false., CLASSIC runs CLASS physics only. Carbon flux variables (GPP, NPP, NEP, Ra, Rh)
+    are not computed. The output files may be created but contain zeros. LAI and canopy mass follow prescribed
+    seaso
+  remedy: Set ctem_on = .true. in job options for carbon cycle simulation; None; ['Verify ctem_on = .true.
+    in job options', 'Ensure CO2File is specified and exists', 'Ensure init_file has CTEM variables (fcancmx,
+    gleafmas, etc.)']; Use ctem_on = .true. for any carbon-related analysis
+  severity: medium
+- id: dt_016
+  symptom: NEP does not equal GPP - Ra - Rh. Carbon budget does not close.
+  diagnosis: spinfast > 1 accelerates soil carbon decomposition, breaking the carbon balance; When spinfast
+    > 1, CLASSIC artificially accelerates soil carbon pool decomposition to speed up spinup. This means
+    Rh is artificially enhanced and the standard carbon balance (NEP = GPP - Ra - Rh) does not hold. Set
+    spin
+  remedy: Set spinfast = 1 for transient runs and budget analysis; None; ['spinfast > 1 is only for spin-up',
+    'Final spin-up and all transient runs must use spinfast = 1']; Always check spinfast before analyzing
+    carbon budgets
+  severity: medium
+- id: dt_017
+  symptom: 'Linker error: cannot find -lnetcdff. Compilation fails at link stage.'
+  diagnosis: 'NetCDF Fortran development library not installed; CLASSIC requires the netCDF Fortran library
+    (libnetcdff) for reading/writing netCDF files. The development package includes headers and .so files
+    needed for linking. Without it, the linker fails to find the netCDF Fortran symbols.
+
+    ; [''Makefile'', ''fil'
+  remedy: 'Install libnetcdff-dev and verify with nf-config; None; [''sudo apt install libnetcdff-dev'',
+    ''nf-config --all  # verify installation'', ''make clean mode=serial && make mode=serial'']; Check
+    dependencies before first compilation'
+  severity: critical
+- id: dt_018
+  symptom: Shortwave radiation has negative values. NaN appears in temperature calculations.
+  diagnosis: Night-time shortwave not clipped to zero after temporal interpolation; When interpolating
+    coarser-resolution forcing (e.g., 3-hourly) to the model timestep (30 min), linear interpolation across
+    the day-night boundary can produce small negative shortwave values. These negative values can cause
+    numeri
+  remedy: Apply np.maximum(sw, 0.0) after any temporal interpolation; convert_forcing_to_classic; ['Check
+    min shortwave in dswrf.nc — must be >= 0', 'If negative values exist, clip to zero']; convert_forcing_to_classic
+    applies SW >= 0 clipping by default
+  severity: silent

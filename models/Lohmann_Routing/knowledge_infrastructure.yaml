@@ -1,0 +1,77 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
+package:
+  name: Lohmann_Routing
+  language: fortran
+  implementation:
+    id: lohmann-rout-1.0
+    version: route_1.0
+    provenance: Fortran 77; standalone VIC routing post-processor (rout), Lohmann/Lettenmaier lineage,
+      distributed with VIC 4.2.d.
+  scientific_reference_version: Lohmann diffusive-wave routing (Lohmann et al. 1996 Tellus A; Lohmann
+    et al. 1998 VIC-2L coupling)
+  binary:
+    path: KISSPATH_BINARIES/route_1.0/src/rout
+    type: ELF
+pipeline:
+  stages:
+  - s1_vic_routing_input
+  - s5_routing_param
+  - s6_run_and_validate
+tools:
+  count: 2
+  files:
+  - s5_routing_param/run_build_routing_new.py
+  - tools/preprocess_vic_for_routing.py
+inputs:
+  forcing:
+  - name: surface_runoff
+    unit: mm/day
+  - name: baseflow
+    unit: mm/day
+  parameters:
+  - name: velocity (channel wave celerity C)
+    unit: m/s
+  - name: diffusion (channel diffusivity D)
+    unit: m2/s
+  - name: unit_hydrograph (within-cell box UH)
+    unit: dimensionless
+  - name: flow_direction (D8 network)
+    unit: D8_code
+  - name: fraction
+    unit: fraction
+  - name: xmask (flow distance)
+    unit: m
+  initial_conditions:
+  - name: cached source-to-outlet unit hydrograph (.uh_s)
+    unit: dimensionless
+  boundary_conditions:
+  - name: station/outlet location (staloc)
+    unit: grid index + lat,lon
+  - name: simulation and output write windows (rout_global.txt date block)
+    unit: year-month
+  - name: input-file toggles and paths (rout_global.txt)
+    unit: flags/paths
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - discharge_daily
+  - discharge_monthly
+  - discharge_yearly
+  - discharge_daily_mm
+  - discharge_monthly_mm
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.809, KGE=0.794, R=0.947'
+  metrics:
+    best_nse: 0.8086
+    best_kge: 0.7936
+    best_r: 0.9468
+summary:
+  total_tools: 2
+  total_stage_docs: 3
+  total_diagnostic_triplets: 23
+  generated: '2026-08-16'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

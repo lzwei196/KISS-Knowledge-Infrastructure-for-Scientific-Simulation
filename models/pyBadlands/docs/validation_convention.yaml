@@ -1,0 +1,245 @@
+schema_version: 1
+model_id: pyBadlands
+domain: hydrology
+generated_by: "step-b validation convention agent"
+generated_at: 2026-08-14
+
+# pyBadlands / Badlands landscape-evolution validation is not governed by a
+# universal numeric pass/fail table in the fetched literature. The field compares
+# modelled elevation, erosion/deposition, drainage structure, and stratigraphic
+# architecture against independent topography, DoD/denudation/sediment-volume,
+# well/seismic, and drainage-network evidence, usually through RMSE, objective
+# functions, uncertainty envelopes, or qualitative spatial agreement. Therefore
+# all headline pass bands are null and confidence is kept <= 0.4.
+
+references:
+  bayeslands2019:
+    doi: 10.1016/j.cageo.2019.06.012
+    title: "Bayeslands: A Bayesian inference approach for parameter uncertainty quantification in Badlands"
+    venue: "Computers & Geosciences"
+    year: 2019
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.cageo.2019.06.012.txt
+  ptbayeslands2019:
+    doi: 10.1029/2019GC008465
+    title: "Multicore Parallel Tempering Bayeslands for Basin and Landscape Evolution"
+    venue: "Geochemistry, Geophysics, Geosystems"
+    year: 2019
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2019gc008465.txt
+  pybadlands2018:
+    doi: 10.1371/journal.pone.0195557
+    title: "pyBadlands: A framework to simulate sediment transport, landscape dynamics and basin stratigraphic evolution through space and time"
+    venue: "PLOS ONE"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1371_journal.pone.0195557.txt
+  surrogate2020:
+    doi: 10.5194/gmd-13-2959-2020
+    title: "Surrogate-assisted Bayesian inversion for landscape and basin evolution models"
+    venue: "Geoscientific Model Development"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-2959-2020.txt
+  james2017:
+    doi: 10.1002/esp.4125
+    title: "3-D uncertainty-based topographic change detection with structure-from-motion photogrammetry: precision maps for ground control and directly georeferenced surveys"
+    venue: "Earth Surface Processes and Landforms"
+    year: 2017
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_esp.4125.txt
+  temme2017:
+    doi: 10.1002/esp.4162
+    title: "Developing, choosing and using landscape evolution models to inform field-based landscape reconstruction studies"
+    venue: "Earth Surface Processes and Landforms"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_esp.4162.txt
+  shelef2013:
+    doi: 10.1002/jgrf.20127
+    title: "Impact of flow routing on catchment area calculations, slope estimates, and numerical simulations of landscape evolution"
+    venue: "Journal of Geophysical Research: Earth Surface"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_jgrf.20127.txt
+  porta2021:
+    doi: 10.1007/s11004-020-09911-z
+    title: "Stochastic Inverse Modeling and Parametric Uncertainty of Sediment Deposition Processes Across Geologic Time Scales"
+    venue: "Mathematical Geosciences"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s11004-020-09911-z.txt
+
+validation:
+  - dag_variable: elevation
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched pyBadlands/Badlands paper gives a numeric CSI threshold for gridded or TIN elevation-pattern validation."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Bayeslands-style validation reports elevation RMSE, but the acceptable value is scale-, relief-, duration-, and observation-error-dependent."
+        cites: []
+    secondary_metrics:
+      - metric: likelihood
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Bayesian Badlands studies use likelihood/posterior comparison against present-day topography; this supports calibration but is not a fixed validation band."
+        cites: [bayeslands2019, ptbayeslands2019, surrogate2020]
+      - metric: lod95
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Topographic-change studies filter differences through observation uncertainty; this is an observation-side limit, not a universal model-skill threshold."
+        cites: [james2017]
+    validated_when: "UNRESOLVED - require spatial agreement and low elevation RMSE against independent topography, with residuals interpreted relative to observation uncertainty; no fetched paper supplies a numeric CSI/RMSE pass band."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      The dag determining_metric csi is retained, but cached Badlands validation papers use RMSE and likelihood rather than CSI. Bayeslands states that RMSE is used for predicted topography and sediment erosion/deposition; reported RMSE values are benchmark outcomes, not transferable pass/fail bands. James 2017 gives an observation convention: LoD95 is calculated from survey precision. Temme 2017 defines independent validation as comparing model outputs with data not used in calibration.
+
+  - dag_variable: cumdiff
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric CSI threshold for erosion/deposition thickness maps from pyBadlands."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Use RMSE or signed residuals against matched-time erosion/deposition observations, but no universal meter-scale band is cited."
+        cites: []
+    secondary_metrics:
+      - metric: lod95
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Observed topographic change should be interpreted with a 95 percent level-of-detection or comparable uncertainty model before judging erosion/deposition residuals."
+        cites: [james2017]
+      - metric: likelihood
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Bayeslands incorporates successive erosion/deposition values in the likelihood; useful for inversion, not a numeric validation threshold."
+        cites: [bayeslands2019, ptbayeslands2019, surrogate2020]
+    validated_when: "UNRESOLVED - spatial erosion/deposition maps should match independent DoD, denudation, or sediment-thickness evidence over the same time window, with differences judged relative to observation uncertainty; no fetched numeric CSI/RMSE threshold exists."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      The dag determining_metric csi is retained. Bayeslands explicitly evaluates final topography plus selected erosion/deposition through RMSE; PT-Bayeslands repeats the same RMSEelev/RMSEsed convention. James 2017 supports confidence-bounded topographic-change detection, so sub-LoD residuals should not trigger KI fixes.
+
+  - dag_variable: cumdiff
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched source-to-sink or Badlands paper gives a numeric PBIAS tier for basin-integrated denudation, sediment volume, or sediment yield inferred from cumdiff."
+        cites: []
+      - metric: relative_volume_error
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Regional sediment-volume comparison is expected, but the acceptable percent error depends on dating, density, compaction, and sediment-budget uncertainty."
+        cites: []
+    secondary_metrics:
+      - metric: sediment_flux_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "pyBadlands source-to-sink applications compare modelled sediment accumulation and flux patterns with field and subsurface evidence, but without a universal percent-error band."
+        cites: [pybadlands2018]
+    validated_when: "UNRESOLVED - basin-integrated cumdiff should reproduce independent denudation/sediment-volume/sediment-yield estimates after density and time-window conversion; no fetched numeric PBIAS band exists."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag determining_metric pbias is retained. pyBadlands 2018 compares predicted sediment accumulation with seismic/core/backscatter evidence and estimates sediment implications, but does not provide a transferable regional PBIAS tier. Hydrologic NSE/PBIAS discharge tiers are not appropriate because cumdiff is an integrated erosion/deposition thickness, not a gauged hydrograph.
+
+  - dag_variable: stratigraphy
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched stratigraphic-forward-model paper provides a numeric CSI threshold for accepting interpreted layer architecture."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Layer-thickness RMSE should be judged against well/seismic interpretation uncertainty; the fetched paper gives example measurement errors, not a universal pass band."
+        cites: []
+    secondary_metrics:
+      - metric: objective_function
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Stratigraphic inverse modeling minimizes a normalized objective function across output variables such as sediment thickness and facies fraction."
+        cites: [porta2021]
+      - metric: facies_fraction_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Available stratigraphic calibration data include wellbore thickness/sediment distributions and seismic-derived layer geometry; facies agreement is informative but not a numeric pyBadlands pass tier."
+        cites: [porta2021]
+    validated_when: "UNRESOLVED - stratigraphy should reproduce interpreted layer thickness, facies distribution, and architecture from wells/seismic or mapped sections within observation/interpretation uncertainty; no fetched numeric CSI/RMSE threshold exists."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      The dag determining_metric csi is retained. pyBadlands 2018 shows stratigraphic cross-sections and reports agreement with subsurface/backscatter evidence. Porta 2021 states stratigraphic validation is a key limitation and frames calibration against thickness, sediment fraction, and seismic architecture, with convergence tied to measurement-error variance rather than a fixed field-wide band.
+
+  - dag_variable: discharge
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched Badlands paper gives a numeric CSI threshold for the spatial drainage/discharge proxy."
+        cites: []
+      - metric: drainage_area_rms
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Flow-routing benchmarks use RMS or spatial drainage-area differences, but do not provide a universal acceptable threshold for pyBadlands discharge snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "The pyBadlands discharge field is a single-flow-direction drainage-structure proxy, not a gauged hydrograph. Flow-routing choice controls drainage area and channel geometry; SFD routing can collapse channels to single-thread features depending on DEM resolution."
+        cites: [pybadlands2018, shelef2013]
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "NSE-style hydrograph validation is structurally inappropriate for this spatial snapshot because the output is accumulated routed volume per node rather than a time series of observed streamflow."
+        cites: [pybadlands2018, shelef2013]
+    validated_when: "UNRESOLVED - compare only as spatial drainage-network/flow-accumulation structure after matching grid, routing convention, and drainage mask; do not apply hydrograph NSE/PBIAS tiers to this output."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag determining_metric csi is retained. pyBadlands describes discharge as part of width/incision and routed surface-process calculations, while Shelef and Hilley show that flow-routing rules determine drainage area and can strongly alter channel-network geometry. This supports a structural ceiling for hydrograph-style metrics, but supplies no numeric CSI pass band.
+
+deferred_paywalled:
+  - ref: "Applying Pattern Oriented Sampling in current fieldwork practice to enable more efficient model building and validation"
+    doi: 10.1002/esp.4458
+    needed_for: [elevation, cumdiff, stratigraphy]
+  - ref: "Similarity measure of sedimentary successions and its application in inverse stratigraphic modeling (Duan 2017; cited by Porta et al. 2021)"
+    doi: unknown_not_fetched
+    needed_for: [stratigraphy]

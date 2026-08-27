@@ -174,7 +174,7 @@ outputs:
   - var: "node_flooding"
     validation_rank: 3
     unit: "flow m3/s; volume m3"
-    description: "Overflow rate and total flood volume at a node when capacity is exceeded."
+    description: "Surface-water overflow rate and total surface floodwater volume at a drainage-network node when capacity is exceeded."
     emitted_in: ".out (NodeResult FLOOD) and .rpt node flooding summary"
     observability:
       comparable_obs_shapes:
@@ -192,7 +192,7 @@ outputs:
   - var: "link_flow"
     validation_rank: 4
     unit: "m3/s (CMS) or cfs (US)"
-    description: "Flow rate through a conduit/link; outfall discharge equals total inflow at the outfall node."
+    description: "Stormwater flow rate through a drainage-network conduit/link; outfall discharge equals total inflow at the outfall node."
     emitted_in: ".out (LinkResult FLOW) and .rpt outfall loading summary"
     observability:
       comparable_obs_shapes:
@@ -205,7 +205,7 @@ outputs:
   - var: "link_depth_velocity"
     validation_rank: 5
     unit: "depth m; velocity m/s; capacity fraction"
-    description: "Flow depth, velocity, and fraction-of-full capacity in a conduit."
+    description: "Stormwater flow depth, velocity, and fraction-of-full capacity in a drainage-network conduit."
     emitted_in: ".out (LinkResult DEPTH/velocity)"
     observability:
       comparable_obs_shapes:
@@ -257,7 +257,7 @@ outputs:
   - var: "continuity_error"
     validation_rank: 9
     unit: "percent"
-    description: "Runoff-quantity and flow-routing continuity error; primary internal mass-balance/numerical-stability diagnostic."
+    description: "Surface-runoff water and drainage-network water flow-routing continuity errors; primary internal mass-balance/numerical-stability diagnostic."
     emitted_in: ".rpt continuity tables"
     observability:
       comparable_obs_shapes:
@@ -413,3 +413,21 @@ safety:
       scope: "Hydraulic routing and water-quality/LID modules"
       source: "EPA SWMM Reference Manual Vol I (cross-references to Vols II and III)"
       status: "tentative"
+
+medium_evidence:
+  - var: "node_flooding"
+    source: "dag.yaml"
+    quote: "Urban flooding: node surcharging, flooding volumes, and surface ponding"
+    note: "scope_in identifies flooded node water as urban surface ponding."
+  - var: "link_flow"
+    source: "dag.yaml"
+    quote: "Conveyance hydraulic routing through pipes, channels, storage units, pumps, and regulators (steady / kinematic-wave / dynamic-wave)"
+    note: "scope_in places link flow in the drainage-network conveyance medium."
+  - var: "link_depth_velocity"
+    source: "dag.yaml"
+    quote: "Conveyance hydraulic routing through pipes, channels, storage units, pumps, and regulators (steady / kinematic-wave / dynamic-wave)"
+    note: "scope_in places conduit depth and velocity in the drainage-network conveyance medium."
+  - var: "continuity_error"
+    source: "dag.yaml"
+    quote: "Mass-balance closure on water (and on pollutant mass when water quality is active) is the governing principle: surface runoff is a nonlinear-reservoir mass balance on ponded depth d (dd/dt = i - e - f - q), and node/link/groundwater balances are tracked as separate continuity errors (runoff, flow-routing, groundwater, quality)."
+    note: "boundary notes identify continuity as water mass balance across surface runoff and node/link routing media."

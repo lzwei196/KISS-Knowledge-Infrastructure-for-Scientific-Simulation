@@ -87,7 +87,7 @@ This divides the `globrad` column by 100 during reading. Available operators:
 | UseAutomaticIrrigation          | false   | Trigger irrigation at soil water deficit|
 | UseNMinMineralFertilisingMethod | false   | Fertilise based on soil N-min target    |
 | EmergenceFloodingControlOn      | false   | Prevent emergence under waterlogging    |
-| EmergenceMoistureControlOn      | false   | Prevent emergence under dry conditions  |
+| EmergenceMoistureControlOn      | **true** (monica-parameters.h `pc_EmergenceMoistureControlOn{true}`) | Germination only if top-layer moisture > 20 % of capillary water — set **false** for irrigated NCP runs (validated multisite sim.json; dt_30) or a dry autumn seedbed stalls the crop until spring |
 
 ### Automatic Irrigation Parameters
 

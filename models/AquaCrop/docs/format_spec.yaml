@@ -1,251 +1,739 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["crop"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "AquaCrop-OSPy v3.0.12"
-  domain: "crop"
-  secondary_domains: ["water_productivity", "deficit_irrigation"]
-  binary: null
-  package: "aquacrop (pip install aquacrop)"
-  language: "Python"
-  execution: "model = AquaCropModel(...); model.run_model(till_termination=True)"
-  notes: >
-    Pure-Python implementation of FAO AquaCrop v7.1. No compiled binary.
-    All inputs are Python objects, outputs are pandas DataFrames.
-    Unique strength: water productivity analysis and deficit irrigation optimization.
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: AquaCrop
+  language: python
+  implementation:
+    id: aquacrop-ospy
+    version: 3.0.12
+    provenance: Python; AquaCrop-OSPy (Foster et al. 2017) wraps FAO AquaCrop 7.1 numerics in a pure-Python
+      in-memory engine.
+  scientific_reference_version: FAO AquaCrop 7.1 (Reference Manual lineage; Chapter 3 algorithmic spec)
 inputs:
-
   forcing:
-    - name: "temperature_min"
-      column: "MinTemp"
-      unit: "degC"
-      valid_range: [-50.0, 50.0]
-      format: "pandas DataFrame column"
-      conversion_from_cmfd: "K -> degC: subtract 273.15"
-
-    - name: "temperature_max"
-      column: "MaxTemp"
-      unit: "degC"
-      valid_range: [-40.0, 60.0]
-      format: "pandas DataFrame column"
-
-    - name: "precipitation"
-      column: "Precipitation"
-      unit: "mm/day"
-      valid_range: [0.0, 500.0]
-      format: "pandas DataFrame column"
-
-    - name: "reference_et"
-      column: "ReferenceET"
-      unit: "mm/day"
-      valid_range: [0.1, 20.0]
-      format: "pandas DataFrame column"
-      notes: >
-        MUST be > 0 (clipped to 0.1 internally). AquaCrop does NOT compute ET0
-        internally -- this is the #1 difference from DSSAT. If missing from your
-        data source, compute using FAO Penman-Monteith (tools/s3_weather_prep/
-        compute_eto_penman_monteith.py).
-
-    - name: "date"
-      column: "Date"
-      format: "pandas Timestamp"
-      notes: "Must be a datetime index with daily frequency, no gaps."
-
+  - name: Daily minimum air temperature (MinTemp)
+    unit: deg C
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: daily MinTemp at the simulated point
+  - name: Daily maximum air temperature (MaxTemp)
+    unit: deg C
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: daily MaxTemp at the simulated point
+    notes: Engine requires MaxTemp >= MinTemp on every day.
+  - name: Daily precipitation
+    unit: mm/day
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: daily total precipitation at the simulated point
+  - name: Reference evapotranspiration (ET0)
+    unit: mm/day
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: daily ET0 at the simulated point
+    notes: AquaCrop does NOT compute ET internally; ET0 must be pre-computed (FAO-56 Penman-Monteith preferred,
+      Hargreaves-Samani if only T available). Values must be > 0.
+  - name: Atmospheric CO2 concentration
+    unit: ppm
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: annual CO2 value driving the WP* CO2-fertilization multiplier (Crop.fCO2)
   parameters:
-    critical:
-      - name: "crop_type"
-        description: "Built-in crop name or GDD variant"
-        valid_values_calendar: ["Barley", "Cotton", "Maize", "PaddyRice", "Potato", "Soybean", "SugarBeet", "Wheat", "Sorghum", "Sunflower", "Tomato"]
-        valid_values_gdd: ["MaizeGDD", "WheatGDD", "SoybeanGDD", "PaddyRiceGDD", "PotatoGDD", "SorghumGDD", "SunflowerGDD", "TomatoGDD", "BarleyGDD"]
-        notes: "GDD variants preferred -- they adapt phenology to local temperature."
-
-      - name: "planting_date"
-        format: "MM/DD (e.g., '05/01')"
-        notes: "Used in Crop() constructor. Must align with local growing season."
-
-      - name: "simulation_dates"
-        format: "YYYY/MM/DD (slash separator REQUIRED)"
-        silent_error: >
-          Using dashes (YYYY-MM-DD) raises ValueError. Must use slashes.
-          This is checked at model construction time (dt_009).
-
-      - name: "soil_type"
-        description: "Built-in soil name or custom soil with layers"
-        valid_values: ["Clay", "ClayLoam", "Loam", "LoamySand", "Sand", "SandyClay", "SandyClayLoam", "SandyLoam", "Silt", "SiltClay", "SiltClayLoam", "SiltLoam", "Paddy"]
-        notes: >
-          For custom soils, use add_layer_from_texture(). Hydraulic ordering
-          constraint: thWP < thFC < thS must hold for all layers.
-
-      - name: "irrigation_method"
-        description: "Irrigation management strategy"
-        valid_values:
-          0: "Rainfed"
-          1: "Soil Moisture Target (SMT=[s1,s2,s3,s4] as % TAW)"
-          2: "Fixed Interval"
-          3: "Predefined Schedule (DataFrame)"
-          4: "Net Irrigation"
-          5: "Constant Depth"
-
-  files:
-    required:
-      - name: "Weather DataFrame"
-        description: "pandas DataFrame with MinTemp, MaxTemp, Precipitation, ReferenceET, Date columns"
-        notes: >
-          Column names are case-sensitive and must match exactly. Missing columns
-          cause ValueError (dt_007). ReferenceET must be computed externally.
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: Tbase (GDD base temperature)
+    unit: deg C
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter
+  - name: Tupp (GDD upper threshold)
+    unit: deg C
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter
+  - name: WP* (normalized water productivity)
+    unit: g/m^2
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter; conservative across climates after CO2 + ET0 normalization
+  - name: HI0 (reference harvest index)
+    unit: fraction
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter
+  - name: CCx (maximum canopy cover)
+    unit: fraction
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter
+  - name: CGC (canopy growth coefficient)
+    unit: 1/day or 1/GDD
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter
+  - name: CDC (canopy decline coefficient)
+    unit: 1/day or 1/GDD
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter
+  - name: Kc,Tr (basal crop transpiration coefficient at full canopy)
+    unit: '-'
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter
+  - name: Stress-response thresholds (p_up1..p_up4 for canopy expansion, stomatal closure, senescence,
+      harvest index)
+    unit: '-'
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter set
+  - name: Zr,max / Zr,min (maximum and minimum effective rooting depth)
+    unit: m
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter
+  - name: Plant population density (PlantPop)
+    unit: plants/ha
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter
+  - name: Pollination temperature thresholds (heat / cold)
+    unit: deg C
+    category: crop
+    source_kind: calibrated
+    model_input_format: crop parameter
+  - name: Layer wilting-point water content (thWP)
+    unit: m^3/m^3
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: per-layer soil hydraulic parameter; thWP < thFC < thS required
+  - name: Layer field-capacity water content (thFC)
+    unit: m^3/m^3
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: per-layer soil hydraulic parameter
+  - name: Layer saturation water content (thS)
+    unit: m^3/m^3
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: per-layer soil hydraulic parameter
+  - name: Saturated hydraulic conductivity (Ksat)
+    unit: mm/day
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: per-layer soil hydraulic parameter
+  - name: SCS Curve Number (CN)
+    unit: '-'
+    category: soil
+    source_kind: default
+    model_input_format: soil-level runoff parameter (default 61 unless calc_cn enabled)
+  - name: Readily Evaporable Water (REW)
+    unit: mm
+    category: soil
+    source_kind: default
+    model_input_format: soil-level Stage-I evaporation depth (default 9 mm)
+  initial_conditions:
+  - name: Initial soil water content per layer
+    unit: m^3/m^3 or % TAW or proportion of FC/WP/SAT
+    category: soil_state
+    source_kind: user_provided
+    model_input_format: per-layer initial soil water specified as proportion of FC/WP/SAT, absolute volumetric
+      content, or % TAW; layer-wise or depth-wise indexing
+    notes: If specified-layer count != soil.nLayer, all layers silently default to FC.
+  - name: Initial canopy cover at germination (CCo)
+    unit: fraction
+    category: crop_state
+    source_kind: calibrated
+    model_input_format: derived from plant population and seedling canopy
+  - name: Effective rooting depth at planting (Zn)
+    unit: m
+    category: crop_state
+    source_kind: calibrated
+    model_input_format: crop parameter
+  boundary_conditions:
+  - name: Simulation start / end dates
+    unit: date
+    category: simulation_control
+    source_kind: user_provided
+    model_input_format: '''YYYY/MM/DD'' string (slash separators mandatory)'
+  - name: Off-season flag
+    unit: boolean
+    category: simulation_control
+    source_kind: user_provided
+    model_input_format: off_season switch; True carries soil moisture across fallow periods, False skips
+      them
+  - name: Planting date
+    unit: MM/DD
+    category: management
+    source_kind: user_provided
+    model_input_format: Crop.planting_date
+  - name: Irrigation method
+    unit: enum {Rainfed, SMT, Interval, Schedule, Net, Constant}
+    category: management
+    source_kind: user_provided
+    model_input_format: irrigation method enum (rainfed, SMT thresholds per growth stage, fixed interval
+      days, predefined date+depth schedule, net irrigation %TAW target, or constant daily depth)
+  - name: Irrigation system efficiency / wetted surface fraction
+    unit: '% / %'
+    category: management
+    source_kind: user_provided
+    model_input_format: application efficiency (AppEff) and wetted-surface fraction (WetSurf); defaults
+      are 100% (optimistic for drip/sprinkler)
+  - name: Field management options (mulches, bunds, curve-number adjustment, runoff inhibition)
+    unit: mixed
+    category: management
+    source_kind: user_provided
+    model_input_format: z_bund supplied in METERS (engine internally multiplies by 1000 to mm); mulches/bunds/sr_inhb/curve-number-adjustment
+      flags
+  - name: Groundwater table depth (optional)
+    unit: m
+    category: boundary_driver
+    source_kind: user_provided
+    model_input_format: time-varying water-table depth time series; sentinel -999 means no water table
 outputs:
-
   primary:
-    - name: "dry_yield"
-      method: "model.get_simulation_results()"
-      column: "Dry yield (tonne/ha)"
-      unit: "t/ha"
-      valid_range: [0, 25]
-      notes: "Seasonal summary. Convert to kg/ha by multiplying by 1000."
-
-    - name: "fresh_yield"
-      method: "model.get_simulation_results()"
-      column: "Fresh yield (tonne/ha)"
-      unit: "t/ha"
-
-    - name: "seasonal_irrigation"
-      method: "model.get_simulation_results()"
-      column: "Seasonal irrigation (mm)"
-      unit: "mm"
-
-  daily_water:
-    - name: "water_flux"
-      method: "model.get_water_flux()"
-      key_columns: ["Es", "EsPot", "Tr", "TrPot", "IrrDay", "Runoff", "DeepPerc"]
-      unit: "mm/day"
-
-  daily_crop:
-    - name: "crop_growth"
-      method: "model.get_crop_growth()"
-      key_columns: ["canopy_cover", "biomass", "z_root", "harvest_index", "DryYield"]
-      unit: "various"
-
-  water_productivity:
-    - name: "crop_water_productivity"
-      computation: "CWP = DryYield(kg/ha) / ET(mm) = kg/m3"
-      unit: "kg/m3"
-      typical_range: [0.5, 2.5]
-
-    - name: "irrigation_water_use_efficiency"
-      computation: "IWUE = (Yield_irr - Yield_rain) / Irrigation(mm)"
-      unit: "kg/ha/mm"
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: DryYield
+    unit: t/ha
+    description: Final dry above-ground grain (or harvestable organ) yield per growing season.
+    validation_rank: 1
+    emitted_in: final_stats DataFrame (column 'Dry yield')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Field-trial yield assumes co-located weather, soil, and management; mismatch in any input invalidates
+          the comparison.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Multi-year point yields carry a small technology trend even at one site; consider detrending
+          if comparing decades.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/sub-national yield aggregates (e.g., FAOSTAT) are dominated by a technology trend a
+          weather-only model cannot reproduce; raw NSE/r against the inter-annual series is scientifically
+          inappropriate. Use detrended residuals or decadal-mean PBIAS.
+        - AquaCrop-OSPy does not model N limitation, so aggregates from fertilizer-limited regions will
+          be biased high unless WP* and CCx are calibrated down.
+      detrending_options:
+      - none
+      - linear_residual
+      - decadal_mean
+  - name: FreshYield
+    unit: t/ha
+    description: Crop fresh-weight yield = DryYield / (YldWC/100); reflects harvest moisture content.
+    validation_rank: 2
+    emitted_in: final_stats DataFrame (column 'Fresh yield')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Comparable only when the obs reports fresh-weight at the same moisture basis as the model's
+          YldWC parameter.
+      detrending_options:
+      - none
+  - name: biomass
+    unit: t/ha
+    description: Cumulative above-ground dry biomass over the growing season.
+    validation_rank: 3
+    emitted_in: crop_growth DataFrame (daily; final value also in final_stats)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Destructive biomass samples are sparse; compare to interpolated obs only if intermediate values
+          are documented.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+      detrending_options:
+      - none
+  - name: canopy_cover
+    unit: fraction
+    description: Daily green canopy cover from CGC expansion through CCx plateau and CDC decline.
+    validation_rank: 5
+    emitted_in: crop_growth DataFrame (column 'canopy_cover')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Remote-sensing fAPAR / NDVI proxies for CC require a sensor-to-CC mapping; raw NDVI is not directly
+          comparable.
+      - obs_shape: spatial_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Point model cannot match within-pixel spatial variability; compare to pixel-aggregated CC only.
+      detrending_options:
+      - none
+  - name: Tr
+    unit: mm/day
+    description: Actual daily crop transpiration after water, aeration, temperature, and CO2 stress.
+    validation_rank: 6
+    emitted_in: water_flux DataFrame (column 'Tr')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Sap-flow and lysimeter Tr observations have non-trivial measurement uncertainty; magnitude-accuracy
+          thresholds should reflect this.
+      detrending_options:
+      - none
+  - name: Es
+    unit: mm/day
+    description: Actual daily soil evaporation from the FAO two-stage scheme.
+    validation_rank: 7
+    emitted_in: water_flux DataFrame (column 'Es')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Direct Es measurements are rare; ET-partitioning obs typically yield Es as a residual with high
+          uncertainty.
+      detrending_options:
+      - none
+  - name: ET_actual
+    unit: mm/day
+    description: Actual evapotranspiration = Es + Tr (derived sum of soil evaporation and crop transpiration).
+    validation_rank: 4
+    emitted_in: water_flux DataFrame (Es + Tr columns)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance ET often has energy-balance closure issues; flux footprint may not match the
+          point model footprint.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Remote-sensing ET products (e.g., MOD16, GLEAM) carry algorithm-specific biases; treat as a
+          soft constraint.
+      detrending_options:
+      - none
+  - name: Wr
+    unit: mm
+    description: Total water in the root zone, integrated over current rooting depth.
+    validation_rank: 8
+    emitted_in: water_flux DataFrame (column 'Wr')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - In-situ root-zone soil moisture from sensor stacks must be vertically integrated over the same
+          depth as model z_root.
+      detrending_options:
+      - none
+  - name: th_per_compartment
+    unit: m^3/m^3
+    description: Volumetric water content per soil compartment (th1..thN) over the simulated profile.
+    validation_rank: 9
+    emitted_in: water_storage DataFrame (columns th1..thN)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Sensor depth must align with compartment midpoint; calibration of sensor-to-volumetric mapping
+          is non-trivial.
+      - obs_shape: spatial_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Satellite surface soil moisture (e.g., SMAP) corresponds only to the topmost compartment, not
+          the integrated profile.
+      detrending_options:
+      - none
+  - name: Runoff
+    unit: mm/day
+    description: Surface runoff partitioned by SCS curve-number method, modified by FieldMngt options.
+    validation_rank: 10
+    emitted_in: water_flux DataFrame (column 'Runoff')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Field plot runoff measurements are needed; basin-scale gauges integrate signals AquaCrop does
+          not simulate.
+      detrending_options:
+      - none
+  - name: DeepPerc
+    unit: mm/day
+    description: Deep percolation below the soil profile from tau-based drainage.
+    validation_rank: 11
+    emitted_in: water_flux DataFrame (column 'DeepPerc')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Lysimeter drainage is the most direct comparison; basin-scale groundwater recharge mixes contributions
+          from outside the modeled point.
+      detrending_options:
+      - none
+  - name: z_root
+    unit: m
+    description: Current effective crop rooting depth in the soil profile.
+    validation_rank: 12
+    emitted_in: crop_growth DataFrame (column 'z_root')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: pbias
+        caveats:
+        - Destructive root-depth measurements are sparse; compare to envelope traces, not daily values.
+      detrending_options:
+      - none
+  - name: harvest_index
+    unit: fraction
+    description: Reference crop harvest index build-up over the yield-formation window (no stress).
+    validation_rank: 13
+    emitted_in: crop_growth DataFrame (column 'harvest_index')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+      detrending_options:
+      - none
+  - name: harvest_index_adj
+    unit: fraction
+    description: Stress-adjusted harvest index actually used for yield (pollination heat/cold, pre- and
+      post-anthesis water stress).
+    validation_rank: 14
+    emitted_in: crop_growth DataFrame (column 'harvest_index_adj')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+      detrending_options:
+      - none
+  - name: gdd_cum
+    unit: deg C-day
+    description: Cumulative growing degree days from planting.
+    validation_rank: 15
+    emitted_in: crop_growth DataFrame (column 'gdd_cum')
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - timing_accuracy
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Derived from weather; comparison is meaningful only as a consistency check on Tbase/Tupp.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "missing_et0"
-    triplet: "dt_001"
-    description: "Missing or zero ReferenceET column in weather DataFrame"
-    affected_output: "Model fails to run or produces zero transpiration"
-    detection: "ReferenceET column missing or all values <= 0"
-    fix: "Compute ET0 using FAO Penman-Monteith from temperature, radiation, wind, humidity"
-
-  - id: "date_format_dashes"
-    triplet: "dt_009"
-    description: "Simulation dates with dashes (YYYY-MM-DD) instead of slashes (YYYY/MM/DD)"
-    affected_output: "ValueError at model construction"
-    detection: "Dashes in sim_start_time or sim_end_time"
-    fix: "Replace dashes with slashes"
-
-  - id: "soil_hydraulic_ordering"
-    triplet: "dt_003"
-    description: "thWP >= thFC or thFC >= thS in custom soil layers"
-    affected_output: "Assertion error at model construction"
-    detection: "Check thWP < thFC < thS for all layers"
-    fix: "Recompute with Saxton-Rawls pedotransfer or use built-in soil type"
-
-  - id: "pbias_wangjiaba_wheat"
-    description: >
-      AquaCrop wheat yield at Wangjiaba shows PBIAS of -30.3% vs SPAM2020.
-      10-year mean 4210 kg/ha vs observed 6036 kg/ha. High interannual
-      variability (CV=48%). Status: MARGINAL.
-    affected_output: "Wheat yield underestimate for Huai River basin"
-    detection: "PBIAS > 25% for wheat simulations"
-    fix: >
-      May require GDD crop parameter calibration. Bengbu single-site comparison
-      shows 6307 kg/ha (+4.5% PBIAS) suggesting weather forcing differences.
-    scorecard: "aquacrop_wheat_wangjiaba.json (MARGINAL)"
-
-  - id: "yield_zero_silent"
-    triplet: "dt_014"
-    description: "Model runs to completion but yield is zero -- silent crop death"
-    affected_output: "Dry yield = 0 despite no error message"
-    detection: "Yield = 0 in simulation results"
-    fix: "Check planting date (wrong season?), initial water content (too dry?), waterlogging (dt_008)"
-
-  - id: "weather_column_case"
-    triplet: "dt_007"
-    description: "Weather DataFrame column names are case-sensitive"
-    affected_output: "ValueError: required column not found"
-    detection: "'MinTemp' not 'mintemp' or 'MINTEMP'"
-    fix: "Use exact column names: MinTemp, MaxTemp, Precipitation, ReferenceET, Date"
-
-  - id: "gdd_base_temperature"
-    triplet: "dt_002"
-    description: "Wrong GDD base temperature causes incorrect phenology timing"
-    affected_output: "Crop matures too early or too late, wrong yield"
-    detection: "Compare simulated season length with expected crop calendar"
-    fix: "Check GDD_up and GDD_lo parameters in crop definition"
-
-# =========================================================================
-# EXPECTED RANGES (from validated results)
-# =========================================================================
-expected_ranges:
-  bengbu_wheat:
-    yield_kgha: [5000, 7500]
-    reference: "6307 kg/ha (+4.5% PBIAS vs SPAM2020)"
-  bengbu_maize:
-    yield_kgha: [10000, 16000]
-    reference: "14281 kg/ha (uncalibrated, potential overestimate)"
-    notes: "AquaCrop maize tends to overestimate at Bengbu. Cross-check with DSSAT/WOFOST."
-  wangjiaba_wheat:
-    yield_kgha: [3500, 6500]
-    reference: "4210 kg/ha (MARGINAL, -30.3% PBIAS)"
-    scorecard: "aquacrop_wheat_wangjiaba.json"
-  irrigation_test:
-    rainfed_wheat_tha: [3.5, 5.5]
-    deficit_smt50_wheat_tha: [6.0, 8.0]
-    full_smt80_wheat_tha: [6.0, 8.0]
-    scorecard: "core_aquacrop_irrig.json (PASS)"
-
-# =========================================================================
-# CALIBRATION REFERENCE
-# =========================================================================
-calibration_reference:
-  approach: "GDD-based crop parameter calibration"
-  key_parameters:
-    - name: "CCx"
-      description: "Maximum canopy cover"
-      unit: "fraction"
-    - name: "WP"
-      description: "Water productivity normalized for CO2 and ET0"
-      unit: "g/m2"
-    - name: "HI0"
-      description: "Reference harvest index"
-      unit: "fraction"
-    - name: "Emergence, Senescence, Maturity GDD"
-      description: "Phenological timing in growing degree days"
-  notes: >
-    For deficit irrigation optimization, calibrate SMT thresholds (% TAW)
-    across 4 growth stages. IWUE analysis shows diminishing returns above
-    SMT=50% for wheat at Wangjiaba (15.0 vs 9.3 kg/ha/mm).
+- id: dt_001
+  symptom: 'ValueError raised when constructing AquaCropModel: ''Check if all the following columns exist
+    (Date MinTemp MaxTemp Precipitation ReferenceET)'''
+  diagnosis: 'Weather DataFrame is missing the ReferenceET column; Unlike DSSAT which computes evapotranspiration
+    internally from radiation, wind, and humidity variables, AquaCrop requires pre-computed reference
+    ET0 as an input. Most raw weather data sources (VIC forcing, CMFD, MSWX, station data) do not include '
+  remedy: Compute ReferenceET using FAO Penman-Monteith from available met variables (Tmin, Tmax, solar
+    radiation, wind, humidity, elevation, latitude); compute_eto_penman_monteith; ['Check source data
+    for available variables (at minimum need Tmin, Tmax, solar radiation)', 'If only Tmin/Tmax available,
+    use Ha
+  severity: fatal
+- id: dt_002
+  symptom: Model runs successfully but phenological timing is wrong -- crop matures too early or too late
+    compared to observations. Yield may be reasonable but growth stage durations do not match field data.
+  diagnosis: 'GDD base temperature (Tbase) does not match the crop''s actual thermal requirements; Each
+    crop has a specific base temperature below which development does not progress. Using the wrong Tbase
+    causes GDD accumulation to be too fast or too slow, shifting all phenological events. For example,
+    Wheat has '
+  remedy: 'Check and correct Tbase for the target crop species; validate_crop_params; [''Look up Tbase
+    for the crop: Maize=8, Wheat=0, Rice=8, Soybean=5, Barley=0, Cotton=12, Sunflower=6, Potato=2'', "Override
+    if needed: Crop(''MaizeGDD'', planting_date=''05/01'', Tbase=8)", ''Compare simulated phenology dates
+    with f'
+  severity: silent
+- id: dt_003
+  symptom: 'AssertionError when creating custom soil: assertion fails with ''assert 1 == 2'' and message
+    ''wrong soil type'''
+  diagnosis: 'Soil hydraulic parameters violate thWP < thFC < thS ordering, or an invalid soil_type name
+    was used; AquaCrop requires that wilting point (thWP) < field capacity (thFC) < saturation (thS) for
+    all soil layers. This is a physical constraint: WP is the driest point roots can extract water, FC
+    is the wa'
+  remedy: 'Verify thWP < thFC < thS for all layers and check soil_type name spelling; validate_soil_hydraulics;
+    ["Print soil profile: print(soil.profile[[''Layer'',''th_wp'',''th_fc'',''th_s'']])", ''For each layer
+    verify: th_wp < th_fc < th_s'', ''If using custom soil, reorder values correctly'', "If using built-in
+    type,'
+  severity: fatal
+- id: dt_004
+  symptom: Model runs but yield is zero. Canopy cover never develops beyond zero. Crop fails to germinate.
+  diagnosis: Initial soil water content is below the germination threshold; AquaCrop requires a minimum
+    amount of water in the top soil for germination (controlled by crop.GermThr, default 0.2 = 20% of
+    TAW). If initial water content is set below wilting point or at a very low percentage of TAW, the
+    seed never ge
+  remedy: 'Set initial water content to at least field capacity (FC) or 50% TAW; create_initial_water_content;
+    [''Check crop_growth output: if canopy_cover is always 0, germination failed'', "Set IWC to FC: InitialWaterContent(wc_type=''Prop'',
+    value=[''FC''])", "Or use minimum 50% TAW: InitialWaterContent(wc_type='''
+  severity: silent
+- id: dt_005
+  symptom: Model runs but yield is very low or zero. GDD accumulation is extremely slow because temperatures
+    are below Tbase during the planting period.
+  diagnosis: Planting date is set to the wrong season for the target crop and hemisphere; Planting date
+    is specified as MM/DD. For Northern Hemisphere summer crops (maize, soybean), planting should be April-June.
+    For Southern Hemisphere, planting should be October-December. Winter crops (wheat) are planted in
+    au
+  remedy: 'Adjust planting date to the correct growing season for the target location and crop; ; [''Verify
+    hemisphere: Northern (lat > 0) or Southern (lat < 0)'', ''Check crop season: summer crops (maize/soybean)
+    need warm months, winter crops (wheat) planted in autumn'', ''Northern summer: plant 04/01 to 06/15'', '
+  severity: silent
+- id: dt_006
+  symptom: KeyError when accessing output DataFrame columns that worked in a previous version. Column
+    names differ between aquacrop versions.
+  diagnosis: AquaCrop-OSPy output column names changed between package versions; Between major versions
+    of aquacrop (e.g., v2.x to v3.x), output DataFrame column names may change. For example, column naming
+    conventions, capitalization, or the set of output variables may differ. Code that hardcodes column
+    names f
+  remedy: 'Check current column names and update references; ; [''Print column names: print(model.get_simulation_results().columns.tolist())'',
+    ''Update code to use current column names'', ''Pin aquacrop version in requirements.txt to avoid unexpected
+    changes'']; Pin package version: pip install aquacrop==3.0.12. Us'
+  severity: fatal
+- id: dt_007
+  symptom: 'ValueError: ''Error in weather_df format. Check if all the following columns exist (Date MinTemp
+    MaxTemp Precipitation ReferenceET).'''
+  diagnosis: 'Weather DataFrame column names do not exactly match the expected names (case-sensitive);
+    AquaCrop checks for exact column name matches: ''Date'', ''MinTemp'', ''MaxTemp'', ''Precipitation'',
+    ''ReferenceET''. Common mismatches include ''min_temp'' instead of ''MinTemp'', ''ET0'' instead of
+    ''ReferenceET'', ''Precip'' in'
+  remedy: 'Rename DataFrame columns to match exact expected names; validate_weather_df; [''Print current
+    columns: print(weather_df.columns.tolist())'', "Rename to match: weather_df.rename(columns={''tmin'':
+    ''MinTemp'', ''tmax'': ''MaxTemp'', ''precip'': ''Precipitation'', ''et0'': ''ReferenceET'', ''date'':
+    ''Date''}, inplace=True'
+  severity: fatal
+- id: dt_008
+  symptom: Model completes but yield is unexpectedly low or zero despite adequate irrigation. Canopy cover
+    declines prematurely. Soil water storage shows persistent saturation.
+  diagnosis: Prolonged soil saturation causes aeration stress, killing roots and reducing transpiration;
+    AquaCrop simulates aeration stress when soil water content exceeds SAT - Aer (where Aer is typically
+    5% by volume). If soil drainage is poor (low Ksat, clay soils) and irrigation or rainfall is excessive,
+    the
+  remedy: 'Reduce irrigation, improve drainage (increase Ksat), or remove bunds; ; [''Check water_storage
+    output: look for soil compartments consistently at or above th_s'', ''Check water_flux: look for high
+    surface_storage values'', ''If using bunds for non-paddy crop: remove bunds (FieldMngt(bunds=False))'',
+    ''If s'
+  severity: silent
+- id: dt_009
+  symptom: 'ValueError: ''sim_start_time format must be YYYY/MM/DD'' when constructing AquaCropModel'
+  diagnosis: Simulation start or end date uses dashes instead of slashes; AquaCrop-OSPy requires date
+    strings in 'YYYY/MM/DD' format with forward slashes. The ISO-8601 format 'YYYY-MM-DD' with dashes,
+    which is the default for pandas and most Python datetime operations, is NOT accepted. The validation
+    regex speci
+  remedy: 'Replace dashes with slashes in date strings; ; ["Change ''2000-01-01'' to ''2000/01/01''",
+    "If using datetime objects: dt.strftime(''%Y/%m/%d'')", "If using pandas Timestamp: ts.strftime(''%Y/%m/%d'')"];
+    Always use format ''YYYY/MM/DD'' for AquaCrop dates. Create a helper function that converts any date
+    to th'
+  severity: fatal
+- id: dt_010
+  symptom: Multi-year simulation only produces results for one season. Soil moisture resets between seasons
+    instead of carrying over.
+  diagnosis: off_season parameter is set to False (default), skipping fallow periods between growing seasons;
+    With off_season=False (the default), AquaCrop jumps from harvest directly to the next planting date.
+    Soil moisture is not tracked during the fallow period. For multi-year simulations where inter-season
+    s
+  remedy: Set off_season=True for multi-year simulations; ; ['Add off_season=True to AquaCropModel constructor',
+    'Ensure weather data covers the full period including fallow seasons', 'Re-run simulation']; For multi-year
+    simulations, always set off_season=True unless deliberately testing single-season respons
+  severity: degraded
+- id: dt_011
+  symptom: Error during model initialization when using Soil('custom') without calling add_layer(). Profile
+    DataFrame has NaN values in hydraulic columns.
+  diagnosis: 'Soil(''custom'') creates an empty profile; add_layer() was never called; The Soil(''custom'')
+    constructor creates the compartment DataFrame structure but does not populate hydraulic properties
+    (th_wp, th_fc, th_s, Ksat). The user must call add_layer() or add_layer_from_texture() at least once
+    to define '
+  remedy: 'Call add_layer() or add_layer_from_texture() after creating Soil(''custom''); create_soil_profile;
+    ["After Soil(''custom''), call soil.add_layer(thickness, thWP, thFC, thS, Ksat, penetrability)", ''Verify:
+    soil.profile.dropna() should have rows'', ''Check soil.nLayer >= 1'']; Never use Soil(''custom'')
+    withou'
+  severity: fatal
+- id: dt_012
+  symptom: No error raised, but initial water content defaults to field capacity for all soil layers regardless
+    of specified values. Multi-layer soil has uniform initial moisture.
+  diagnosis: 'InitialWaterContent specifies fewer layers than the soil profile has; When a multi-layer
+    custom soil is used but InitialWaterContent only specifies values for one layer (the default), AquaCrop
+    silently sets all layers to field capacity. No warning or error is raised. The user''s specified IWC
+    values '
+  remedy: 'Specify IWC for each soil layer; create_initial_water_content; [''Check soil layer count: soil.nLayer'',
+    "Create IWC with matching layers: InitialWaterContent(wc_type=''Num'', method=''Layer'', depth_layer=[1,2],
+    value=[0.25, 0.30])", "Or use ''Prop'' type which applies to all layers: InitialWaterContent(wc'
+  severity: silent
+- id: dt_013
+  symptom: Error during model initialization or execution when using irrigation_method=3 (predefined schedule).
+    TypeError or KeyError related to Schedule DataFrame.
+  diagnosis: 'Schedule DataFrame does not have correct column names (''Date'', ''Depth'') or correct data
+    types; For irrigation_method=3, the Schedule must be a pandas DataFrame with exactly two columns:
+    ''Date'' (pd.Timestamp type) and ''Depth'' (float, mm). Common errors: using ''date'' instead of ''Date'',
+    using string da'
+  remedy: 'Create Schedule DataFrame with correct column names and types; create_irrigation_management;
+    ["Create DataFrame: schedule = pd.DataFrame({''Date'': pd.to_datetime([''2000/06/15'', ''2000/07/01'']),
+    ''Depth'': [25.0, 30.0]})", "Verify columns: assert list(schedule.columns) == [''Date'', ''Depth'']",
+    ''Verify Date'
+  severity: fatal
+- id: dt_014
+  symptom: Model completes (run_model returns True), but Dry yield is 0.0 in final_stats. No error messages.
+  diagnosis: 'Crop did not complete its growth cycle -- multiple possible causes; Zero yield with successful
+    model completion can result from: (1) crop failed to germinate (initial water too low, dt_004), (2)
+    crop died from water stress (drought, no irrigation on very dry soil), (3) crop died from waterlogging
+    (d'
+  remedy: 'Diagnose the specific cause by examining crop_growth and water_flux outputs; extract_results;
+    [''Check canopy_cover in crop_growth: if always 0, germination failed (see dt_004)'', ''Check gdd_cum:
+    if barely increases, temperature is below Tbase (see dt_002, dt_005)'', ''Check water_storage: if
+    saturated,'
+  severity: silent
+- id: dt_015
+  symptom: Paddy simulation shows unrealistic water ponding or immediate overflow. Bund height appears
+    to be extremely large or negligibly small.
+  diagnosis: 'z_bund was specified in mm instead of meters (or vice versa); The FieldMngt constructor
+    accepts z_bund in METERS but immediately multiplies by 1000 to store internally in mm. If the user
+    passes z_bund=150 (thinking mm), the model stores 150,000 mm = 150 meters of bund height, creating
+    an impossibly '
+  remedy: 'Specify z_bund in meters: 0.05-0.30 m for typical paddy bunds; create_field_management; [''Convert
+    bund height to meters: 150 mm = 0.15 m'', ''Set: FieldMngt(bunds=True, z_bund=0.15)'', ''Verify: field.z_bund
+    should equal 150 (stored in mm internally)'']; Always specify z_bund in METERS. Typical paddy bun'
+  severity: silent
+- id: dt_v001
+  symptom: 'TypeError: ''<'' not supported between instances of ''float'' and ''Timestamp'' in growing_degree_day.py'
+  diagnosis: Weather DataFrame Date column is datetime64[s] instead of datetime64[us]; AquaCrop-OSPy internally
+    uses pd.Timestamp comparisons in its GDD calculation. When the Date column is datetime64[s] (from
+    pd.Timestamp(datetime.date(...))), some internal operations confuse Timestamp objects with float temper
+  remedy: 'Convert Date column: wdf[''Date''] = pd.to_datetime(wdf[''Date'']).astype(''datetime64[us]'');
+    prepare_weather_df; ["After building weather DataFrame, add: wdf[''Date''] = pd.to_datetime(wdf[''Date'']).astype(''datetime64[us]'')",
+    ''Verify with: wdf.dtypes — Date should be datetime64[us]'']; prepare_weather_df to'
+  severity: fatal
+- id: dt_aq_018
+  symptom: CaMa-Flood river channel cell shows 100% flood days across the entire simulation period. Crop
+    yield drops to near zero due to permanent waterlogging.
+  diagnosis: The selected grid cell is on the main river channel, not on agricultural floodplain; CaMa-Flood
+    river channel cells have permanent water depth from channel flow, not agricultural flooding. When
+    these cells are used for the AquaCrop GroundWater coupling, the water table is at the surface every
+    day, c
+  remedy: 'Use agricultural cells away from main channel for crop simulation; apply_cama_flood; [''Check
+    flood day fraction: if >95%, the cell is likely a channel cell'', ''Move lat/lon to an adjacent cell
+    (0.25° offset from river centerline)'', ''Verify new cell has seasonal flood pattern (flood days <
+    50% of year'
+  severity: degraded
+- id: dt_v002
+  symptom: VIC vapor pressure column misidentified as specific humidity, causing ET0 calculation errors
+  diagnosis: VIC forcing column 6 is vapor pressure (kPa), not specific humidity (kg/kg); HydroCraft VIC
+    forcing stores vapor pressure directly in kPa (range 0.1-4.2). If treated as specific humidity and
+    used in Penman-Monteith ET0 calculation, the result is wrong. AquaCrop needs ET0 in mm/day — compute
+    from Har
+  remedy: 'Use Hargreaves ET0: 0.0023*(Tavg+17.8)*sqrt(Tmax-Tmin)*Ra*0.408; compute_eto_penman_monteith;
+    [''Compute ET0 from temperature and radiation only'', ''Do not use VIC column 6 in ET0 formula unless
+    confirmed as specific humidity'']; Always validate ET0 range: 0.5-10 mm/day for most climates'
+  severity: silent
+- id: dt_016_multiyear_faostat_validation
+  symptom: 'Real-case validation against an annual national-yield series (FAOSTAT/GDHY) produces no result/metrics:
+    the run hangs on a ''CPU-bound forcing load'' for a multi-decade window and never emits output, or
+    only a single season''s yield is reported so r/NSE/KGE are undefined.'
+  diagnosis: The KI documents only a single-season workflow; there is no recipe for a multi-year annual-yield
+    series comparison. Agents improvise a per-year or gridded/hourly decade-scale forcing build that hangs,
+    and run_aquacrop reports only the first season (stats[...].iloc[0]).
+  remedy: 'Follow SKILL.md ''Multi-Year National-Yield Validation'' recipe: load_daily_forcing(source,
+    lat, lon, y0, y1) ONCE as a daily point series (cmfd for China, nasa_power single request otherwise),
+    run ONE multi-year AquaCropModel (off_season=False -> one season/year), read the FULL final_stats
+    series (NO'
+- id: dt_faostat_multiyear_forcing_hang
+  symptom: Multi-year national-yield (FAOSTAT) validation run emits no result JSON / hangs; final captured
+    message is about 'still loading ~25 years of forcing'. test_results=null, no r computed.
+  diagnosis: 'load_daily_forcing(''cmfd'', lat, lon, y0, y1) over a multi-decade window is NOT a fast
+    single call: _load_cmfd loops year x 12 months x 6 variables = ~6*12*N_years xr.open_dataset point
+    reads (~1,870 for 26 yr), an IO-bound hang in the same class as load_cmfd_daily_all.'
+  remedy: For the multi-year FAOSTAT recipe load forcing with source='nasa_power' (one bounded HTTP request
+    per year, 1981+, valid for China) and keep the window bounded (~15-20 yr). Read the FULL final_stats.csv
+    series (run_aquacrop reports only season-0 yield) and align by harvest year before compute_metric
+- id: dt_017_aggregate_detrended_r_expected_zero
+  symptom: 'Single-point AquaCrop run vs a national/sub-national yield aggregate (FAOSTAT/GDHY, obs_shape=regional_aggregate_time_series):
+    magnitude_accuracy PBIAS is small/good but detrended_r≈0 (and raw r looks deceptively high from shared
+    trend), tripping a r<0.5 retry.'
+  diagnosis: Not a model or tooling defect. A 0-D single-point weather-only run cannot reproduce a national
+    aggregate's detrended inter-annual residuals (driven by area shifts, irrigation expansion, sub-national
+    heterogeneity, policy) and AquaCrop has no N/technology module, so detrended_r≈0 is the expected,
+    phy
+  remedy: 'For regional_aggregate_time_series, gate ONLY on magnitude_accuracy (decadal PBIAS) + trend_match
+    (sign, slope_ratio) via compute_aggregate_metrics; do NOT retry on detrended_r. Validate interannual
+    weather response against a point_time_series (co-located field trial) instead, where low detrended_r '

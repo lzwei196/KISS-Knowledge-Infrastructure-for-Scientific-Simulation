@@ -1,158 +1,488 @@
-model:
-  name: "TRIGRS"
-  version: "2.1.00c"
-  full_name: "Transient Rainfall Infiltration and Grid-Based Regional Slope-Stability Analysis"
-  domain: "landslide"
-  subdomain: "rainfall-induced shallow landslide susceptibility"
-  binary_path: "KISSPATH_BINARIES/TRIGRS/source/trigrs_full/src/TRIGRS/trg"
-  source: "USGS (Rex L. Baum & Massimiliano Alvioli)"
-  method: "Analytical 1D vertical infiltration + infinite-slope factor-of-safety"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: TRIGRS
+  language: fortran
+  implementation:
+    id: trigrs-2100c
+    version: 2.1.00c (build 02 Feb 2022)
+    provenance: Fortran 90/95; USGS serial TRIGRS (trg) by Baum, Savage & Godt; companion TopoIndex (tpx)
+      preprocessor and optional MPI-parallel build (prg).
+  scientific_reference_version: TRIGRS 2.0 (USGS Open-File Report 2008-1159) infiltration + infinite-slope
+    theory, as realized by the v2.1.00c serial code
 inputs:
   forcing:
-    - name: "rainfall_intensity"
-      symbol: "cri"
-      unit: "m/s"
-      valid_range: [0.0, 1.0e-3]
-      description: "Rainfall intensity per period (ESRI ASCII grid or scalar)"
-      trap: "Common source is mm/hr; must divide by 3.6e6"
-    - name: "initial_infiltration"
-      symbol: "rizero"
-      unit: "m/s"
-      valid_range: [-1.0, 1.0e-4]
-      description: "Initial steady-state infiltration rate (negative = use grid)"
-    - name: "period_boundaries"
-      symbol: "capt"
-      unit: "seconds"
-      valid_range: [0, 1.0e9]
-      description: "Cumulative time at start/end of each rainfall period"
-
-  grids:
-    - name: "dem"
-      format: "ESRI ASCII (.asc)"
-      unit: "m"
-      description: "Digital elevation model"
-    - name: "slope"
-      format: "ESRI ASCII (.asc)"
-      unit: "degrees"
-      valid_range: [0, 90]
-      description: "Slope angle grid"
-    - name: "zones"
-      format: "ESRI ASCII (.asc)"
-      unit: "integer"
-      description: "Property zone ID grid"
-    - name: "zmax"
-      format: "ESRI ASCII (.asc)"
-      unit: "m"
-      valid_range: [0.1, 100]
-      description: "Maximum soil depth grid"
-    - name: "depthwt"
-      format: "ESRI ASCII (.asc)"
-      unit: "m"
-      valid_range: [0, 100]
-      description: "Initial water table depth below surface"
-
+  - name: rainfall_intensity
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: scalar per rainfall period (cri) and/or per-period intensity grids; step-function
+      constant intensity over nper periods
+    notes: Strict m/s; supplied as nper constant-intensity periods. A negative scalar signals that a spatially-variable
+      grid is read. May exceed infiltrability Ks, generating runoff.
+  - name: steady_background_infiltration_rate
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: scalar (rizero) or grid (negative scalar = read grid)
+    notes: Pre-storm steady seepage rate setting the initial pressure-head baseline; should be < Ks. Internally
+      normalized to the background flux ratio rikzero = rizero/Ks, whose sign affects the beta line and
+      upward-seepage path.
   parameters:
-    critical:
-      - name: "cohesion"
-        symbol: "c"
-        unit: "Pa"
-        valid_range: [0, 1.0e6]
-        description: "Soil cohesion (NOT kPa — multiply kPa by 1000)"
-      - name: "friction_angle"
-        symbol: "phi"
-        unit: "degrees"
-        valid_range: [0, 60]
-        description: "Soil internal friction angle"
-      - name: "unit_weight_soil"
-        symbol: "uws"
-        unit: "N/m^3"
-        valid_range: [10000, 30000]
-        description: "Saturated unit weight of soil (typically 19000-22000)"
-      - name: "hydraulic_diffusivity"
-        symbol: "D0"
-        unit: "m^2/s"
-        valid_range: [1.0e-7, 1.0e-2]
-        description: "Saturated hydraulic diffusivity"
-      - name: "hydraulic_conductivity"
-        symbol: "Ks"
-        unit: "m/s"
-        valid_range: [1.0e-9, 1.0e-2]
-        description: "Saturated hydraulic conductivity"
-      - name: "theta_sat"
-        symbol: "ths"
-        unit: "dimensionless"
-        valid_range: [0.2, 0.7]
-        description: "Saturated volumetric water content"
-      - name: "theta_res"
-        symbol: "thr"
-        unit: "dimensionless"
-        valid_range: [0.01, 0.2]
-        description: "Residual volumetric water content"
-      - name: "alpha"
-        symbol: "alpha"
-        unit: "1/m"
-        valid_range: [-100, 100]
-        description: "Gardner parameter (negative = saturated model only)"
-    temporal:
-      - name: "simulation_duration"
-        symbol: "t"
-        unit: "seconds"
-        valid_range: [1, 1.0e9]
-        description: "Total simulation duration (MUST be seconds, not hours)"
-      - name: "mmax"
-        symbol: "mmax"
-        unit: "integer"
-        valid_range: [-1000, 1000]
-        description: "Max iterations; negative = finite-depth model"
-      - name: "nzs"
-        symbol: "nzs"
-        unit: "integer"
-        valid_range: [1, 100]
-        description: "Number of vertical computation points"
-
+  - name: cohesion
+    unit: Pa
+    category: parameter
+    source_kind: calibrated
+    model_input_format: per property-zone scalar (symbol c)
+    notes: Pa, NOT kPa. Typical 0-50000 Pa; physical bound 0-100000.
+  - name: friction_angle
+    unit: degrees
+    category: parameter
+    source_kind: calibrated
+    model_input_format: per property-zone scalar (symbol phi)
+    notes: Typical 15-45 degrees.
+  - name: total_unit_weight_of_soil
+    unit: N/m^3
+    category: parameter
+    source_kind: calibrated
+    model_input_format: per property-zone scalar (symbol uws)
+    notes: N/m^3, NOT kN/m^3. Typical 14000-25000 (18000-22000 common).
+  - name: saturated_hydraulic_conductivity
+    unit: m/s
+    category: parameter
+    source_kind: calibrated
+    model_input_format: per property-zone scalar (symbol Ks)
+    notes: m/s, NOT cm/hr. Typical 1e-8 (clay) to 1e-3 (gravel).
+  - name: saturated_hydraulic_diffusivity
+    unit: m^2/s
+    category: parameter
+    source_kind: calibrated
+    model_input_format: per property-zone scalar (symbol D0/dif); D0 = Ks/Ss
+    notes: Typical 1e-6 to 1e-2.
+  - name: saturated_volumetric_water_content
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: per property-zone scalar (symbol theta_s/ths)
+    notes: Typical 0.2-0.7; must exceed theta_r.
+  - name: residual_volumetric_water_content
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: per property-zone scalar (symbol theta_r/thr)
+    notes: Must satisfy theta_s > theta_r > 0.
+  - name: gardner_alpha
+    unit: 1/m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: per property-zone scalar (symbol alpha)
+    notes: Soil-water characteristic fitting parameter (Gardner 1958). Positive selects the unsaturated
+      model; negative treats the zone as tension-saturated (saturated model). Typical magnitude 0.1-100.
+  - name: unit_weight_of_water
+    unit: N/m^3
+    category: parameter
+    source_kind: default
+    model_input_format: scalar (symbol uww)
+    notes: Typically 9800 N/m^3.
+  - name: property_zone_assignment
+    unit: integer zone ID
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: integer zones grid (zones.asc); each zone carries one uniform parameter set
+  initial_conditions:
+  - name: initial_water_table_depth
+    unit: m
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: scalar or grid (negative scalar = read depthwt grid; symbol depth/d)
+    notes: Depth to the steady-state water table. Results are very sensitive to this; poorly estimated
+      values render results hypothetical.
+  boundary_conditions:
+  - name: DEM_elevation
+    unit: m
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: ESRI/GRASS ASCII grid (dem.asc); must be hydrologically corrected (pits removed)
+      in GIS beforehand
+  - name: slope_angle
+    unit: degrees
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: ESRI ASCII grid (slope.asc); read in degrees, converted internally to radians
+    notes: Degrees, NOT radians or percent. Not recommended above 60 degrees (1-D infiltration assumption
+      breaks down).
+  - name: flow_direction
+    unit: integer D8 code (1-8)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: D8 direction grid (directions.asc) plus TopoIndex routing arrays (nxt, indx, dsc,
+      wf) for optional runoff routing
+  - name: maximum_soil_depth
+    unit: m
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: scalar or grid (zmax; negative scalar = read grid)
+    notes: Depth to the basal boundary / base of potential slide; with the finite-depth model this is
+      the impermeable basal boundary.
+  - name: basal_boundary_depth_model
+    unit: n/a
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'mmax sign switch: positive = finite-depth (impermeable basal boundary at zmax);
+      negative = infinite-depth Iverson solution (internally reset to 20 series terms)'
+    notes: Structural switch selecting the infiltration basal-boundary form. Negative mmax for shallow
+      soils on bedrock prevents non-physical infinite drainage.
+  - name: flow_direction_beta_option
+    unit: n/a
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'flowdir code: ''gener'' (general, eq. 3A), ''slope'' (slope-parallel, beta=cos^2
+      delta), or ''hydro'' (hydrostatic, beta=1)'
+    notes: Selects the beta-line cap on steady pressure head.
+  - name: computation_depth_range
+    unit: m / integer
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: zmin (shallowest depth, ~0.01-0.1), czmax (max depth), nzs (number of vertical
+      increments)
+    notes: zmin=0 produces surface artifacts; set zmin>0.
+  - name: storm_timing
+    unit: seconds
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: total duration t and cumulative period boundaries capt (capt(1)=0, capt(nper+1)=t);
+      nper rainfall periods
+    notes: Seconds, NOT hours.
+  - name: minimum_slope_threshold
+    unit: degrees
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: slomin scalar (also slomax); cells below slomin skip pore-pressure/Fs computation
+      and are assigned Fs=11
+  - name: background_flux_option
+    unit: n/a
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: bkgrof logical switch (.true./.false.)
+    notes: When off, multi-period runs can drive pore pressure below steady-state during dry periods.
+  - name: series_solution_controls
+    unit: integer
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: nmax (max roots/terms in infinite-series solution), tx (output time-step multiplier)
 outputs:
   primary:
-    - name: "factor_of_safety_min"
-      file_pattern: "TRfs_min_SUFFIX_#.asc"
-      unit: "dimensionless"
-      valid_range: [0.0, 100.0]
-      description: "Minimum factor of safety across all depths and times"
-    - name: "depth_at_fs_min"
-      file_pattern: "TRz_at_fs_min_SUFFIX_#.asc"
-      unit: "m"
-      valid_range: [0.0, 100.0]
-      description: "Depth where minimum FS occurs"
-    - name: "pressure_head_at_fs_min"
-      file_pattern: "TRp_at_fs_min_SUFFIX_#.asc"
-      unit: "m"
-      valid_range: [-100.0, 100.0]
-      description: "Pressure head at the depth of minimum FS"
-    - name: "water_table_depth"
-      file_pattern: "TRwater_depth_SUFFIX_#.asc"
-      unit: "m"
-      valid_range: [0.0, 100.0]
-      description: "Water table depth below ground surface"
-  secondary:
-    - name: "infiltration_rate"
-      file_pattern: "TRinfiltration_SUFFIX_#.asc"
-      unit: "m/s"
-      valid_range: [0.0, 1.0e-3]
-    - name: "surface_runoff"
-      file_pattern: "TRrunoff_SUFFIX_#.asc"
-      unit: "m/s"
-      valid_range: [0.0, 1.0e-3]
-  profiles:
-    - name: "depth_pressure_fs_list"
-      file_pattern: "TRlist_z_p_fs_SUFFIX.txt"
-      description: "Per-cell vertical profiles of pressure head and FS"
-
+  - name: minimum_factor_of_safety
+    unit: dimensionless
+    description: Minimum computed factor of safety in the soil column across all computation depths at
+      each cell for a given elapsed time; Fs<1 predicts failure, Fs=1 limiting equilibrium, Fs>=1 stable.
+      Clamped to a maximum of 10; cells below slomin assigned 11.
+    validation_rank: 1
+    emitted_in: TRfs_min_<suffix>_<step>.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Fs is most defensibly compared as a binary stable/unstable classification (Fs<1) against a landslide
+          inventory rather than as a continuous field.
+        - The 10/11 clamps and the flat-cell Fs->infinity artifact must be masked before scoring.
+        - Susceptibility skill depends heavily on the initial water-table depth and shear-strength calibration;
+          mismatch may reflect input uncertainty, not model error.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - At an instrumented/back-analyzed slope, the depth and timing of minimum Fs can be compared,
+          but the infinite-slope Fs is not directly measurable and is typically validated indirectly via
+          observed failure occurrence.
+      detrending_options:
+      - none
+  - name: depth_of_minimum_FS
+    unit: m
+    description: Depth at which the minimum factor of safety occurs at each cell; interpreted as the depth
+      of landslide initiation where Fs first drops below 1.
+    validation_rank: 2
+    emitted_in: TRz_at_fs_min_<suffix>_<step>.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Comparable to observed/back-analyzed rupture-surface depths at well-characterized sites; bounded
+          above by zmax.
+      detrending_options:
+      - none
+  - name: pressure_head_at_min_FS
+    unit: m
+    description: Groundwater pressure head at the depth of minimum factor of safety; the transient pore-pressure
+      response that drives the Fs reduction.
+    validation_rank: 3
+    emitted_in: TRp_at_fs_min_<suffix>_<step>.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: r
+        caveats:
+        - Compared against piezometer / tensiometer pressure-head or pore-pressure time series at an instrumented
+          column; only valid where the 1-D vertical-flow assumption holds (before lateral flow responds).
+        - Pressure head is capped at Z*beta (eq. 3A), so saturated peaks are bounded.
+      detrending_options:
+      - none
+  - name: water_table_depth
+    unit: m
+    description: Computed depth (or elevation, per the watertable output option) of the transient water
+      table below the surface.
+    validation_rank: 4
+    emitted_in: TRwater_depth_<suffix>_<step>.asc / TRwater_eleva_<suffix>_<step>.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: r
+        caveats:
+        - Compared against monitoring-well water-table records at an instrumented site; 1-D vertical assumption
+          limits validity once lateral flow contributes.
+      detrending_options:
+      - none
+  - name: actual_infiltration_rate
+    unit: m/s
+    description: Actual infiltration rate into the soil column, partitioned from rainfall with the excess
+      (where rainfall>Ks) becoming runoff.
+    validation_rank: 5
+    emitted_in: TRinfilratPer<period>_<suffix>.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Comparable to plot/column infiltration measurements; bounded above by Ks.
+      detrending_options:
+      - none
+  - name: surface_runoff
+    unit: m/s
+    description: Rainfall in excess of infiltration capacity, instantaneously routed downslope (when runoff
+      routing enabled).
+    validation_rank: 6
+    emitted_in: TRrunoffPer<period>_<suffix>.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Routing is instantaneous and cannot estimate stream flow; comparison is to a runoff-depth/rate
+          field, not a hydrograph.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    description: "Rainfall in mm/hr entered as m/s causes 3.6M x overestimate"
-  - id: "dt_004"
-    description: "Cohesion in kPa instead of Pa causes FS 1000x too high"
-  - id: "dt_005"
-    description: "mmax sign convention: positive=infinite depth, negative=finite depth"
-  - id: "dk_005"
-    description: "Negative Alpha silently forces saturated model (no warning)"
+- id: dt_001
+  symptom: All cells show FS < 1.0 immediately. Entire domain saturates within first timestep.
+  diagnosis: Rainfall intensity (cri) in mm/hr instead of m/s — 3,600,000x too much; TRIGRS expects rainfall
+    intensity in meters per second (m/s). A common error is entering values in mm/hr directly. For example,
+    20 mm/hr should be entered as 5.56e-6 m/s. Entering 20 instead of 5.56e-6 produces a rainfall rate
+    o
+  remedy: 'Divide rainfall intensity by 3.6e6 to convert mm/hr to m/s; convert_rainfall_to_trigrs; [''Check
+    cri values in tr_in.txt — typical values are 1e-8 to 1e-4 m/s'', ''If cri > 0.001, values are almost
+    certainly in wrong units'', ''Convert: cri(m/s) = cri(mm/hr) / 3600000'']; convert_rainfall_to_trigrs
+    valida'
+  severity: silent
+- id: dt_002
+  symptom: Simulation shows no transient response. FS does not change from initial values.
+  diagnosis: Rainfall intensity (cri) in m/hr or m/day instead of m/s — values too small by 3600x or 86400x;
+    If rainfall is converted to m/hr (e.g., 0.02 m/hr for 20 mm/hr) but entered as m/s, the actual intensity
+    is 3600x too low. TRIGRS will compute with essentially zero rainfall, showing no pore pressure chan
+  remedy: Verify units — m/s requires dividing mm/hr by 3.6e6, not just by 1000; convert_rainfall_to_trigrs;
+    ['Check if cri values are in 1e-5 to 1e-4 range for typical storms', 'If cri < 1e-10, values may be
+    in m/hr or m/day']; convert_rainfall_to_trigrs warns if values are atypically low
+  severity: silent
+- id: dt_003
+  symptom: Storm event appears to last only a few seconds. FS barely changes.
+  diagnosis: 'Time values (t, capt) entered in hours instead of seconds; TRIGRS expects all temporal values
+    in seconds. A 48-hour storm needs t = 172800, not t = 48. Entering hours results in a simulation that
+    runs for 48 seconds, during which negligible infiltration occurs.
+
+    ; [''generate_tr_in'', ''tr_in.txt'']'
+  remedy: 'Multiply all time values by 3600 to convert hours to seconds; generate_tr_in; [''Check t value
+    — should be > 3600 for any realistic storm'', ''Check capt() values — all should be in seconds'',
+    ''Verify: last capt value = t'']; generate_tr_in warns if t < 3600'
+  severity: silent
+- id: dt_004
+  symptom: Factor of safety unrealistically high (>100) at moderate slopes. No instability anywhere.
+  diagnosis: 'Cohesion entered in kPa instead of Pa — 1000x too high; TRIGRS expects cohesion in Pascals
+    (Pa). Published geotechnical values are commonly in kPa. Entering 3.5 kPa as 3.5 instead of 3500 would
+    make FS too low; conversely entering a kPa value (e.g., 35) when you meant Pa gives a much lower cohesion '
+  remedy: 'Verify cohesion units — TRIGRS expects Pa, not kPa; convert_soil_to_trigrs; [''Typical cohesion
+    range: 0-50000 Pa (0-50 kPa)'', ''If cohesion > 100000, likely in wrong units'', ''Convert from kPa
+    to Pa: multiply by 1000'']; convert_soil_to_trigrs --cohesion_unit kpa handles conversion'
+  severity: silent
+- id: dt_005
+  symptom: FS values systematically shifted. Slope stability analysis gives inconsistent results.
+  diagnosis: Unit weight of water (uww) or soil (uws) in kN/m^3 instead of N/m^3; TRIGRS expects uww and
+    uws in N/m^3. uww should be ~9800 N/m^3, not 9.8 kN/m^3. Similarly uws should be ~19000-22000 N/m^3.
+    Entering kN/m^3 values results in pore pressure and driving/resisting forces being 1000x too small,
+    distort
+  remedy: Multiply by 1000 to convert kN/m^3 to N/m^3; convert_soil_to_trigrs; ['Check uww — should be
+    ~9800 N/m^3', 'Check uws — should be 14000-25000 N/m^3', 'If values are 9-25 range, they are in kN/m^3'];
+    generate_tr_in warns if uww < 9000 or > 11000
+  severity: silent
+- id: dt_006
+  symptom: Infiltration timing is wrong. Saturation front arrives too fast or too slow.
+  diagnosis: 'K-sat in cm/hr instead of m/s; TRIGRS expects saturated hydraulic conductivity in m/s. Common
+    sources report Ks in cm/hr. A typical value of 1 cm/hr should be entered as 2.778e-6 m/s. Entering
+    1.0 directly means Ks = 1.0 m/s (3,600,000 cm/hr), which is absurdly high and causes instant drainage.
+
+    ; ['''
+  remedy: 'Convert cm/hr to m/s: multiply by 2.778e-6; convert_soil_to_trigrs; [''Typical Ks range in
+    m/s: 1e-8 (clay) to 1e-3 (gravel)'', ''If Ks > 0.01 m/s, likely in wrong units'', ''From cm/hr: multiply
+    by 2.778e-6'']; convert_soil_to_trigrs --ksat_unit cm/hr handles conversion'
+  severity: silent
+- id: dt_007
+  symptom: All FS values near 1.0 regardless of rainfall. No spatial variation in stability.
+  diagnosis: Slope angle grid in radians instead of degrees; TRIGRS expects slope angle in degrees. If
+    the slope grid is in radians (e.g., 0.5 rad = 28.6 degrees), the tan(slope) calculation uses wrong
+    values. Since radian values are small (<1.5), the driving force is underestimated, producing FS values
+    clustere
+  remedy: Multiply slope grid by 180/pi (57.2958) to convert radians to degrees; UnitConvert; ['Check
+    max slope value — should be < 90 if in degrees', 'If max slope < 1.6, values are likely in radians',
+    'Use UnitConvert with factor 57.2958']; Verify slope units during Stage 1 grid preparation
+  severity: silent
+- id: dt_008
+  symptom: TRIGRS crashes with array bounds error or segmentation fault.
+  diagnosis: Input grids have different dimensions (ncols, nrows) or nodata cell locations; All TRIGRS
+    input grids must have identical dimensions and nodata cell locations. If grids are generated from
+    different sources (e.g., DEM from SRTM, slope from ASTER), they may have slightly different extents
+    or nodata pa
+  remedy: 'Run GridMatch to verify and fix grid congruence; GridMatch; [''Check headers of all grids:
+    ncols, nrows, xllcorner, yllcorner, cellsize must match'', ''Check nodata cell locations are identical'',
+    ''Regenerate all grids from the same DEM'']; Always derive all grids from a single DEM source'
+  severity: fatal
+- id: dt_009
+  symptom: TRIGRS reads wrong number of cells. Output grid has wrong spatial extent.
+  diagnosis: 'TIgrid_size.txt or TRgrid_size.txt has wrong imax, row, col values; TRIGRS looks for grid
+    size files in the DEM directory. If these files exist from a previous run with different data, TRIGRS
+    will use the old dimensions. This causes array allocation errors or incorrect spatial mapping.
+
+    ; [''TIgrid_si'
+  remedy: Delete old grid_size.txt files and re-run TopoIndex; run_trigrs; ['Delete TIgrid_size.txt, TRgrid_size.txt,
+    GMgrid_size.txt from DEM directory', 'Re-run TopoIndex to regenerate', 'Or let TRIGRS auto-detect
+    from DEM']; Always re-run TopoIndex when changing study area
+  severity: fatal
+- id: dt_010
+  symptom: Rainfall pattern does not match topography. Rain falls on wrong cells.
+  diagnosis: 'Rainfall grid has different origin (xllcorner/yllcorner) than DEM; If the rainfall grids
+    have different spatial extents than the DEM, TRIGRS applies rainfall values to the wrong cells. The
+    grids may have the same dimensions but different coordinate origins.
+
+    ; [''rainfall grids'', ''DEM'']'
+  remedy: Ensure rainfall grids have identical headers to DEM; convert_rainfall_to_trigrs; ['Compare xllcorner/yllcorner
+    of rainfall grids with DEM', 'Resample rainfall to DEM grid if necessary']; convert_rainfall_to_trigrs
+    reads DEM header and writes matching grids
+  severity: silent
+- id: dt_011
+  symptom: Large areas with FS = -9999 that should have data.
+  diagnosis: 'NODATA_value in grids is not -9999 or is inconsistent across grids; TRIGRS uses -9999 as
+    the default nodata value. If grids use a different value (e.g., -32768, NaN), TRIGRS may try to compute
+    on nodata cells or skip valid cells.
+
+    ; [''all input grids'']'
+  remedy: Standardize NODATA_value to -9999 in all grid headers; UnitConvert; ['Check NODATA_value in
+    each grid header', 'Replace inconsistent values with -9999']; Standardize nodata during grid export
+    from GIS
+  severity: silent
+- id: dt_012
+  symptom: Unsaturated model not activating. Saturated model used despite unsaturated parameters.
+  diagnosis: Alpha parameter is negative, forcing saturated model; TRIGRS uses the sign of Alpha to select
+    the infiltration model. Negative Alpha = saturated model. Positive Alpha = unsaturated model. This
+    is non-intuitive. If the user wants the unsaturated model but enters a negative Alpha (e.g., from
+    a convent
+  remedy: 'Set Alpha to positive value for unsaturated model; generate_tr_in; [''Check Alpha sign in tr_in.txt
+    zone blocks'', ''For unsaturated model: Alpha > 0, Theta-sat > Theta-res > 0'', ''For saturated model:
+    Alpha < 0 (or set to -0.5)'']; generate_tr_in warns about Alpha sign and model selection'
+  severity: silent
+- id: dt_013
+  symptom: Pore pressure does not decay after rainfall stops. Infinite drainage.
+  diagnosis: mmax is positive (infinite depth model) when finite depth model is needed; When mmax is positive,
+    TRIGRS uses the infinite-depth infiltration model. This model assumes the soil column extends infinitely
+    downward, so water never reaches a bottom boundary. For shallow soils on bedrock, the finite- dep
+  remedy: 'Set mmax to negative value for finite-depth model; generate_tr_in; [''If soil depth is bounded
+    (bedrock at known depth), use negative mmax'', ''Typical: mmax = -100 for finite depth'', ''Positive
+    mmax = infinite depth (for deep soils)'']; generate_tr_in documents mmax sign convention'
+  severity: silent
+- id: dt_014
+  symptom: Soil dries beyond initial conditions during zero-rainfall periods.
+  diagnosis: Background flux option disabled (bkgrof = F) with multi-period simulation; When rainfall
+    stops between periods (cri = 0), the transient solution can drive pore pressures below the initial
+    steady-state condition, producing unrealistic drying. The background flux option adds the steady-state
+    infiltrat
+  remedy: Set background flux option to T (.true.) in tr_in.txt; generate_tr_in; ["Find line 'Add steady
+    background flux...' in tr_in.txt", 'Set to T']; generate_tr_in defaults background_flux to True
+  severity: silent
+- id: dt_015
+  symptom: TRIGRS runs extremely slowly. Some cells take minutes to converge.
+  diagnosis: 'Saturated finite-depth solution does not converge for certain parameter combinations; The
+    error function series used for early-time computation of the finite-depth saturated solution can converge
+    poorly for certain D0/zmax/t combinations. TRIGRS v2.1 added a later-time formula to mitigate this,
+    but '
+  remedy: Increase nmax (max series terms) or adjust parameters; run_trigrs; ['Check TRnon_convrg_*.txt
+    for non-convergent cells', 'Increase nmax from 30 to 100', 'Or use infinite-depth model (positive
+    mmax) if appropriate', 'Or reduce domain to exclude problematic cells']; Start with nmax=100; use
+    parallel v
+  severity: degraded
+- id: dt_016
+  symptom: TRIGRS killed by OS or runs out of memory on large grids.
+  diagnosis: Grid too large for serial processing. Arrays exceed available memory.; TRIGRS stores pressure
+    head, FS, and other arrays for all cells and depth points in memory. For large grids (>1M cells) with
+    many depth points (nzs>20), memory requirements can exceed available RAM. The parallel version distribut
+  remedy: 'Use parallel version (prg) with MPI, or reduce grid size; run_trigrs; [''Estimate memory: ~8
+    bytes * imax * nzs * 5 arrays'', ''For 1M cells, nzs=20: ~800 MB minimum'', ''Use parallel version:
+    mpirun -np 4 ./prg'', ''Or subsample grid (reduce resolution)'']; Use parallel version for grids >
+    500K cells'
+  severity: fatal
+- id: dt_017
+  symptom: Very high FS (>10) in flat areas. Misinterpreted as unconditionally safe.
+  diagnosis: Flat areas (slope ~0) produce FS -> infinity, which is mathematically correct; The infinite-slope
+    FS formula has tan(slope) in the denominator of the driving force term. As slope approaches zero,
+    the driving force approaches zero and FS approaches infinity. This is physically reasonable — flat
+    groun
+  remedy: Apply slomin threshold to exclude flat areas from analysis; parse_trigrs_output; ['Set Min_Slope_Angle
+    in tr_in.txt to exclude flat areas (e.g., 5 degrees)', 'When mapping, mask cells with slope < threshold',
+    'Do not interpret high FS in flat areas as geotechnically meaningful']; Set slomin = 5-10 d
+  severity: silent
+- id: dt_018
+  symptom: Minimum FS depth is at ground surface (z=0) for all cells.
+  diagnosis: 'zmin = 0 and the wetting front has not penetrated below surface; When zmin is set to 0 or
+    near-zero, TRIGRS computes FS at the ground surface. For short-duration simulations with low-conductivity
+    soils, the wetting front may not penetrate significantly, so the minimum FS occurs at the surface.
+    This '
+  remedy: Set zmin > 0 (e.g., 0.01 m) to avoid surface artifacts; generate_tr_in; ['Check zmin value —
+    should be > 0 for saturated model', 'Increase simulation duration to allow deeper penetration', 'Check
+    nzs — more depth points give better resolution']; generate_tr_in defaults zmin to 0.001 m
+  severity: silent

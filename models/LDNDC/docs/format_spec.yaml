@@ -1,323 +1,664 @@
-# format_spec.yaml — LandscapeDNDC v1.37 (enriched with coupling inputs)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: LandscapeDNDC v1.37
-  domain: biogeochemistry
-  secondary_domains:
-  - ghg_emissions
-  - nutrient_leaching
-  - crop_yield
-  - soil_carbon
-  binary: ldndc
-  binary_path: KISSPATH_HOME/LDNDC/bin/ldndc
-  language: C++11
-  execution: $LDNDC_BIN project.xml
-  working_directory: project directory with input/ and output/ subdirectories
-  validated_tool: tools/run_ldndc_bengbu_ghg.py (end-to-end pipeline)
+  name: LDNDC
+  language: c++
+  implementation:
+    id: ldndc-1.37-linux64
+    version: '1.37'
+    provenance: C++11; KIT/IMK-IFU precompiled closed-source linux64 binary (bin/ldndc) realizing the
+      MoBiLE modular framework.
+  scientific_reference_version: LandscapeDNDC 1.37.0 (MoBiLE framework; Models Description Apr 2026),
+    MeTrx soil-biogeochemistry lineage from Arable-DNDC / Forest-DNDC
 inputs:
   forcing:
-  - name: temperature_average
-    file: climate.txt
-    column: tavg
+  - name: tavg (or tmin/tmax)
     unit: degC
-    valid_range:
-    - -60.0
-    - 60.0
-    format: tab-separated with header row
-    silent_error: Temperature in Kelvin runs without error but all biogeochemistry rates are wrong
-  - name: temperature_min
-    file: climate.txt
-    column: tmin
-    unit: degC
-    valid_range:
-    - -70.0
-    - 50.0
-  - name: temperature_max
-    file: climate.txt
-    column: tmax
-    unit: degC
-    valid_range:
-    - -50.0
-    - 60.0
-  - name: precipitation
-    file: climate.txt
-    column: prec
+    category: meteorology
+    source_kind: forcing
+    model_input_format: tab-separated climate.txt, one row per day
+    notes: Must be Celsius; Kelvin is read silently as Celsius and corrupts all temperature-dependent
+      processes. Precip must be the daily SUM of sub-daily steps.
+  - name: prec
     unit: mm/day
-    valid_range:
-    - 0.0
-    - 500.0
-    conversion_from_vic: 'mm/3hr -> mm/day: sum 8 timesteps'
-  - name: wind_speed
-    file: climate.txt
-    column: wind
-    unit: m/s
-    valid_range:
-    - 0.0
-    - 80.0
-  - name: relative_humidity
-    file: climate.txt
-    column: rh
-    unit: '%'
-    valid_range:
-    - 0
-    - 100
-  - name: global_radiation
-    file: climate.txt
-    column: glob
-    unit: W/m2
-    valid_range:
-    - 0.0
-    - 500.0
-    notes: Optional. Can be synthesized internally.
+    category: meteorology
+    source_kind: forcing
+    model_input_format: climate.txt column (rain+snow combined)
+    notes: All precipitation treated as snow when air temperature < TLIMIT=0 degC.
+  - name: grad (incoming global shortwave radiation)
+    unit: W m-2
+    category: meteorology
+    source_kind: forcing
+    model_input_format: climate.txt column
+  - name: lrad (incoming longwave radiation)
+    unit: W m-2
+    category: meteorology
+    source_kind: forcing
+    model_input_format: climate.txt column
+  - name: wind
+    unit: m s-1
+    category: meteorology
+    source_kind: forcing
+    model_input_format: climate.txt column
+  - name: rh / vpd / press (humidity, vapour pressure deficit, air pressure)
+    unit: '% / kPa / mbar'
+    category: meteorology
+    source_kind: forcing
+    model_input_format: climate.txt columns (subset, as available)
+  - name: co2
+    unit: ppm
+    category: atmospheric_chemistry
+    source_kind: forcing
+    model_input_format: tab-separated airchem.txt column
+    notes: Typically 280-600 ppm historical, up to ~1200 ppm future; with airchemistry endless='yes' a
+      single row repeats for all years.
+  - name: N deposition (nh4_dep, no3_dep)
+    unit: kgN/ha/yr
+    category: atmospheric_chemistry
+    source_kind: forcing
+    model_input_format: airchem.txt columns
+    notes: Must be kgN/ha/yr; g/m2/yr is a factor-of-10 silent inflation of the N budget.
   parameters:
-    critical:
-    - name: corg
-      file: site.xml
-      description: Soil organic carbon
-      unit: mass fraction (e.g., 0.015 = 1.5%)
-      valid_range:
-      - 0.001
-      - 0.3
-      silent_error: 'LDNDC expects corg as mass fraction. If provided as percentage (1.5 instead of 0.015), soil C pools will
-        be 100x too large, producing massively inflated CO2 emissions. The model runs without error. (dt_005)
-
-        '
-      conversion_from_hwsd: 'HWSD OC% -> fraction: divide by 100'
-    - name: sks (Ksat)
-      file: site.xml
-      description: Saturated hydraulic conductivity
-      unit: cm/min
-      valid_range:
-      - 1.0e-05
-      - 0.1
-      conversion_from_hwsd: 'mm/hr -> cm/min: divide by 600'
-      silent_error: 'For paddy rice, standard HWSD Ksat is too high. Must use paddy plow pan Ksat (0.0001-0.0003 cm/min) to
-        maintain ponded water for CH4 production.
-
-        '
-    - name: clay_fraction
-      file: site.xml
-      description: Clay content
-      unit: mass fraction
-      valid_range:
-      - 0.0
-      - 1.0
-      conversion_from_hwsd: 'HWSD clay% -> fraction: divide by 100'
-    - name: species_name
-      file: mana.xml
-      description: Crop species identifier
-      valid_values:
-        CORN: Maize
-        WIWH: Winter wheat
-        SWHE: Spring wheat
-        RICE: Rice (abstract base class - DO NOT USE for paddy)
-        PADR: Paddy rice (flooded - USE THIS)
-        UPLR: Upland rice (rainfed)
-        SOYB: Soybean
-        RAPE: Rapeseed
-      silent_error: 'Species name must exactly match parameters_species.xml. Mismatch causes LDNDC to use default parameters
-        or skip the crop entirely. No error raised. For paddy rice: use PADR, NOT RICE (RICE is abstract base, produces zero
-        output).
-
-        '
-    airchemistry:
-    - name: co2_concentration
-      file: airchem.txt
-      unit: ppm
-      valid_range:
-      - 280
-      - 600
-    - name: n_deposition
-      file: airchem.txt
-      unit: kgN/ha/yr
-      valid_range:
-      - 0.5
-      - 50
-      silent_error: 'LDNDC expects kgN/ha/yr. Providing g/m2/yr (factor of 10 different) silently corrupts the N budget. (dt_014)
-
-        '
-  files:
-    required:
-    - name: project.xml
-      description: Master configuration with schedule, source paths, output sinks
-      format: XML
-    - name: site.xml
-      description: Soil profile and canopy definition
-      format: XML
-    - name: setup.xml
-      description: Module selection (physiology, soil chemistry, water cycle)
-      format: XML
-      notes: 'Module combinations matter: paddy rice needs anaerobic-capable modules. Standard dryland MeTrX crashes for paddies.
-
-        '
-    - name: climate.txt
-      description: Daily meteorological forcing
-      format: tab-separated with header
-    - name: airchem.txt
-      description: Atmospheric CO2 and N deposition
-      format: tab-separated
-    - name: mana.xml
-      description: Management events (sowing, fertilizer, harvest, flood/drain for paddy)
-      format: XML
-    - name: parameters_species.xml
-      description: Crop/vegetation physiological parameters
-      format: XML (from LDNDC Lresources)
-  optional:
-  - name: crop_residue_carbon
-    file: mana.xml (event type='residue' or type='harvest' with remains parameter)
+  - name: texture fractions (clay, sand, silt)
+    unit: fraction (0-1)
+    category: soil_profile
+    source_kind: dataset_lookup
+    model_input_format: per-stratum attributes in site.xml
+    notes: Layer-specific soil type assigned only if clay+sand+silt sums to ~1.0; otherwise a profile-wide
+      soil type is used.
+  - name: bulk density (bd)
+    unit: g/cm3
+    category: soil_profile
+    source_kind: dataset_lookup
+    model_input_format: site.xml per-stratum attribute
+    notes: Valid 0.5-2.0; zero/negative bd drives negative porosity (1 - bd/2.65) and segfaults. Must
+      represent stone-free bulk soil.
+  - name: soil organic carbon content (corg)
+    unit: mass fraction
+    category: soil_profile
+    source_kind: dataset_lookup
+    model_input_format: site.xml per-stratum attribute
+    notes: Mass fraction (0.005-0.05 mineral soils), NOT percent; falls back to humus-type/CN-ratio defaults
+      when omitted. Initializes the soil C pool.
+  - name: soil organic nitrogen content (norg)
+    unit: mass fraction
+    category: soil_profile
+    source_kind: dataset_lookup
+    model_input_format: site.xml per-stratum attribute
+  - name: stone/gravel fraction
+    unit: fraction
+    category: soil_profile
+    source_kind: dataset_lookup
+    model_input_format: site.xml per-stratum attribute
+    notes: Handled internally; soil inputs must be the stone-free bulk soil.
+  - name: saturated hydraulic conductivity (sks)
+    unit: cm/min
+    category: soil_profile
+    source_kind: dataset_lookup
+    model_input_format: site.xml per-stratum attribute
+    notes: LDNDC unit is cm/min; mm/hr or m/day left unconverted gives ~600x too-fast drainage.
+  - name: pH
+    unit: '-'
+    category: soil_profile
+    source_kind: dataset_lookup
+    model_input_format: site.xml per-stratum attribute
+    notes: Valid 3.0-10.0; modulates nitrification.
+  - name: crop/vegetation species coefficients
+    unit: various
+    category: species_parameters
+    source_kind: dataset_lookup
+    model_input_format: parameters_species.xml leaf-node entries (e.g. tbase, topt, gdd_maturity, maxlai,
+      cn_leaf, rootdepth, harvest_index)
+    notes: Species name must EXACTLY (case-sensitive) match a runnable leaf node; abstract bases like
+      RICE are silent no-ops. Must come from the same distribution as the binary.
+  - name: site/soil/global biogeochemical defaults (Lresources)
+    unit: various
+    category: site_biogeochemistry
+    source_kind: default
+    model_input_format: compiled-in resource defaults (e.g. DENIFRAC=0.7, DNDC_KMM_NH4_NIT, DNDC_KMM_N_DENIT,
+      DECONIT_FN2O, DIFF_C/DIFF_N, CP_WP/CP_FC)
+    notes: 'Override precedence: compiled defaults < parameters/*.xml < project site.xml.'
+  initial_conditions:
+  - name: initial soil organic C pools
     unit: kgC/ha
-    valid_range:
-    - 0.0
-    - 10000.0
-    format: XML management event in mana.xml
-    notes: 'Crop residue returned to soil after harvest. From DSSAT Summary.OUT CWAM (total biomass) minus HWAM (grain). Converted:
-      residue_kgDM = CWAM - HWAM, residue_kgC = residue_kgDM * 0.45. Affects SOC turnover and N2O emissions.'
-  - name: crop_residue_cn_ratio
-    file: mana.xml (residue properties)
-    unit: ratio
-    valid_range:
-    - 15.0
-    - 80.0
-    format: XML
-    notes: C:N ratio of crop residue. Maize stover ~60, wheat straw ~80, soybean ~25. Controls decomposition rate and N immobilization.
+    category: soil_carbon
+    source_kind: derived
+    model_input_format: initialized from site.xml corg / humus type
+    notes: Sets the starting humus/microbial/litter C pools.
+  - name: initial soil organic and mineral N pools
+    unit: kgN/ha
+    category: soil_nitrogen
+    source_kind: derived
+    model_input_format: initialized from site.xml norg / C:N
+    notes: Sets starting NH4/NO3/organic-N pools.
+  - name: initial per-layer soil water and groundwater state
+    unit: mm / m
+    category: soil_water
+    source_kind: derived
+    model_input_format: initialized from site.xml profile / groundwater settings
+  boundary_conditions:
+  - name: simulation schedule and site geometry (lat, lon, time span)
+    unit: '-'
+    category: schedule
+    source_kind: user_provided
+    model_input_format: project.xml schedule + lat/lon, sourceprefix/sinkprefix blocks
+    notes: Management/event dates must fall within the schedule (out-of-range is fatal).
+  - name: MoBiLE modulelist (ecosystem + process kernel choice)
+    unit: '-'
+    category: module_selection
+    source_kind: user_provided
+    model_input_format: setup.xml <modulelist> (microclimate / watercycle / airchemistry / physiology
+      / soilchemistry kernel ids)
+    notes: Case-sensitive, version-dependent; kernel stack must match ecosystem type (dryland metrx stack
+      vs paddy stack).
+  - name: sowing/planting events
+    unit: '-'
+    category: management
+    source_kind: user_provided
+    model_input_format: mana.xml ldndcevent (species, seedamount)
+  - name: fertilization events
+    unit: kgN/ha
+    category: management
+    source_kind: user_provided
+    model_input_format: mana.xml event (amount, fert_type, depth; mineral/organic, inhibitor options)
+  - name: tillage events
+    unit: m (depth), 0-1 (intensity)
+    category: management
+    source_kind: user_provided
+    model_input_format: mana.xml event
+    notes: Depth in METERS (0.25 = 25 cm); cm values silently mean tens of metres.
+  - name: harvest / cutting / grazing events
+    unit: 0-1 (residue fraction)
+    category: management
+    source_kind: user_provided
+    model_input_format: mana.xml event
+  - name: irrigation events
+    unit: mm
+    category: management
+    source_kind: user_provided
+    model_input_format: mana.xml event
+  - name: flood / drain events
+    unit: mm depth / DOY
+    category: management
+    source_kind: user_provided
+    model_input_format: mana.xml event
+    notes: Required to establish the ponded water layer for paddy/flooded rice; absence yields no CH4
+      and an unrealistic water balance.
+  - name: output sink configuration
+    unit: '-'
+    category: output_selection
+    source_kind: user_provided
+    model_input_format: setup.xml output:{category}:{resolution} entries
+    notes: At least one output module must be declared or no output is written (silent).
 outputs:
   primary:
-  - name: n2o_emission
-    file: soilchemistry-daily.txt
-    unit: kgN/ha/day
-    valid_range:
-    - 0
-    - 0.5
-    aggregation: Annual N2O = sum of daily values
-    notes: Primary biogeochemistry output. IPCC EF1 default is 1% of applied N.
-  - name: co2_heterotrophic
-    file: soilchemistry-daily.txt
-    unit: kgC/ha/day
-    valid_range:
-    - 0
-    - 50
-    notes: Soil heterotrophic respiration (decomposition)
-  - name: ch4_emission
-    file: soilchemistry-daily.txt
-    unit: kgC/ha/day
-    valid_range:
-    - 0
-    - 10
-    notes: Methane from methanogenesis. Requires anaerobic conditions (paddy/wetland).
-  - name: no3_leaching
-    file: soilchemistry-daily.txt
-    unit: kgN/ha/day
-    valid_range:
-    - 0
-    - 1.0
-  - name: crop_yield
-    file: physiology-daily.txt or harvests output
+  - name: dN_n2o_emis
+    unit: kgN/ha
+    description: Daily soil-to-atmosphere nitrous oxide emission expressed as N mass (multiply by 44/28
+      for N2O molecular mass).
+    validation_rank: 2
+    emitted_in: soilchemistry-daily.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Reported as kgN/ha; chamber/flux obs often in gN2O/ha — convert with MW 44/28 before comparison.
+        - Absolute daily N2O is sensitive to phenology/DVS maturity and microbial-turnover parameters;
+          cumulative or relative comparison is more robust than day-to-day match.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - magnitude_accuracy
+        - trend_match
+        determining_metric: pbias
+        caveats:
+        - Site-scale flux upscaled to an inventory aggregate carries land-use/soil heterogeneity not in
+          a single column run.
+      detrending_options:
+      - none
+      - decadal_mean
+  - name: dN_no_emis
+    unit: kgN/ha
+    description: Daily soil-to-atmosphere nitric oxide (NO) emission expressed as N mass.
+    validation_rank: 3
+    emitted_in: soilchemistry-daily.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Reported as kgN/ha (mass of N); convert to NO-molecule mass before comparison if obs are in
+          gNO.
+        - NO emission is sensitive to microbial C/N turnover and nitrification/denitrification parameters;
+          relative/cumulative comparison is more robust than day-to-day match.
+      detrending_options:
+      - none
+  - name: dC_co2_emis_hetero
     unit: kgC/ha
-    notes: Fruit/grain carbon. Multiply by ~2.2 for approximate grain weight.
-  water_cycle:
+    description: Daily heterotrophic soil respiration (SOM decomposition CO2).
+    validation_rank: 4
+    emitted_in: soilchemistry-daily.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Inflated ~100x if soil corg was supplied as percent rather than mass fraction; post-harvest/tillage
+          CO2 can be structurally overestimated.
+      detrending_options:
+      - none
+  - name: dC_ch4_emis
+    unit: kgC/ha
+    description: Daily soil methane flux to the atmosphere (production minus oxidation) as C mass.
+    validation_rank: 5
+    emitted_in: soilchemistry-daily.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Non-zero CH4 requires a flooded/anaerobic configuration (paddy water layer via flood/drain events
+          and a paddy-capable kernel stack); the default aerobic metrx dryland stack yields ~0 CH4.
+      detrending_options:
+      - none
+  - name: dN_no3_leach
+    unit: kgN/ha
+    description: Daily soil nitrate leaching below the profile to groundwater.
+    validation_rank: 6
+    emitted_in: soilchemistry-daily.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Strongly controlled by drainage flux and fertilizer N rate/timing; consistency of the soil profile
+          with the hydrology forcing matters.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - magnitude_accuracy
+        - trend_match
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+      - decadal_mean
   - name: evapotranspiration
-    file: watercycle-daily.txt
-    unit: mm/day
-  - name: drainage
-    file: watercycle-daily.txt
-    unit: mm/day
-  annual_budget:
-  - name: annual_ghg_budget
-    file: soilchemistry-yearly.txt
-    notes: 'Total GHG in CO2eq = CO2 + N2O*298 + CH4*25 (AR4 GWP). Bengbu reference: ~12,234 kgCO2eq/ha/yr.
-
-      '
+    unit: mm
+    description: Daily actual evapotranspiration (transpiration + soil + interception evaporation).
+    validation_rank: 1
+    emitted_in: watercycle-daily.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Temperature in Kelvin (read as Celsius) massively inflates ET; verify forcing units first.
+      detrending_options:
+      - none
+  - name: yield
+    unit: kgC/ha
+    description: Cumulative crop harvested yield as carbon mass (convert to dry matter by ~x2.0 ≈ 45%
+      C).
+    validation_rank: 7
+    emitted_in: physiology-daily.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Not reliably usable without species GDD calibration; a species-name mismatch silently yields
+          zero. Convert kgC/ha to dry matter before comparison.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - magnitude_accuracy
+        - trend_match
+        determining_metric: pbias
+        caveats:
+        - National/regional yield aggregates carry a technology trend a weather-driven process model cannot
+          reproduce; compare detrended levels, not inter-annual r.
+      detrending_options:
+      - none
+      - linear_residual
+      - decadal_mean
+  - name: lai
+    unit: m2/m2
+    description: Canopy leaf area index from the vegetation physiology kernel.
+    validation_rank: 8
+    emitted_in: physiology-daily.txt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Timing depends on GDD phenology calibration.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- id: corg_percentage_not_fraction
-  triplet: dt_005
-  description: Soil organic carbon as percentage (1.5) instead of fraction (0.015)
-  affected_output: CO2 emissions 100x too high
-  detection: corg > 0.30 in site.xml
-  fix: Divide HWSD OC% by 100
-- id: airchemistry_n_deposition_spurious
-  description: 'The airchemistrydndc module can produce spurious N deposition if airchem.txt has wrong units or unrealistic
-    values. This inflates the soil N pool and amplifies N2O emissions.
-
+- id: dt_001
+  symptom: LDNDC reports 'Cannot open file' or 'Source file not found' even though files exist in the
+    project directory
+  diagnosis: The sourceprefix attribute in project.xml does not end with a trailing slash, or uses an
+    absolute path that does not match the actual file location; LDNDC concatenates sourceprefix with each
+    source filename. If sourceprefix is "input" (no trailing slash), the resulting path is "inputsite.xml"
+    not "i
+  remedy: Ensure sourceprefix ends with a trailing slash (e.g., 'input/') and that all source files exist
+    at the concatenated paths; generate_project_xml; ['Open project.xml and check the sourceprefix attribute',
+    "Verify it ends with '/'", 'For each source element, verify the file exists at sourceprefix + sou
+  severity: fatal
+- id: dt_002
+  symptom: LDNDC crashes at initialization with XML parse error or 'invalid soil layer' when reading site.xml
+  diagnosis: 'site.xml has malformed XML structure: unclosed tags, missing required attributes (depth,
+    clay, sand), or layer depths that do not increase monotonically from surface; LDNDC''s XML parser
+    is strict about tag structure. Common mistakes include using self-closing tags where child elements
+    are expected, '
+  remedy: Regenerate site.xml using the generate_site_xml tool which validates all attributes and layer
+    ordering; generate_site_xml; ['Validate site.xml with an XML linter (xmllint --noout site.xml)', 'Check
+    each soil layer has depth, clay, sand, silt, bd, pH, corg attributes', 'Verify layer depths increase
+    m
+  severity: fatal
+- id: dt_003
+  symptom: LDNDC runs successfully but CO2 emissions are 10-100x higher than expected literature values
+    for the ecosystem type
+  diagnosis: Soil organic carbon (corg) is specified as percentage (e.g., 1.5) instead of mass fraction
+    (e.g., 0.015). LDNDC interprets the value as mass fraction, so 1.5 means 150% organic carbon.; HWSD
+    reports organic carbon as percentage (0-60%). LDNDC site.xml expects mass fraction (0-0.60). If the
+    conversio
+  remedy: 'Verify corg values in site.xml are mass fractions (typically 0.005-0.05 for mineral soils).
+    If values are > 0.10 for non-peat soils, divide by 100.; hwsd_to_ldndc_soil; [''Open site.xml and
+    check corg values for each layer'', ''Mineral soils: corg should be 0.005-0.05 (topsoil) and 0.001-0.02
+    (subsoil)'
+  severity: silent
+- id: dt_004
+  symptom: LDNDC crashes with 'Unknown module' or 'Module not registered' error during initialization
+  diagnosis: setup.xml references a module name that does not exist in this LDNDC version, or uses incorrect
+    capitalization; LDNDC module names are case-sensitive and version-dependent. For example, 'soilchemistry:dndc'
+    is not the same as 'SoilchemistryDNDC'. The valid module names change between LDNDC versions.
+  remedy: 'Use generate_setup_xml tool which uses validated module names for the installed LDNDC version;
+    generate_setup_xml; [''Check LDNDC version: ldndc --version'', ''Use exact module names from LDNDC
+    documentation for that version'', ''Common valid names: microclimate:canopyecm, watercycle:dndc, soilchemistry:'
+  severity: fatal
+- id: dt_005
+  symptom: LDNDC runs but simulates no snow in winter and extreme evapotranspiration; hydrograph shape
+    is completely wrong
+  diagnosis: Temperature in climate.txt is in Kelvin (values ~273-310) instead of Celsius. LDNDC interprets
+    these as 273-310 degrees Celsius.; CMFD and some ERA5 products provide temperature in Kelvin. LDNDC
+    expects Celsius. When Kelvin values are fed directly, LDNDC treats them as extreme heat. Snow never
+    forms
+  remedy: Check if tavg values in climate.txt are > 100. If so, subtract 273.15 to convert K to C.; validate_climate_file;
+    ['Read first 5 data lines of climate.txt', 'If tavg > 100, temperatures are in Kelvin', 'Rerun convert_forcing_to_ldndc_climate
+    with correct unit handling']; Always use convert_forcing_to
+  severity: silent
+- id: dt_006
+  symptom: LDNDC reports 'Error reading climate data' or 'Unexpected column count' during initialization
+  diagnosis: 'climate.txt uses comma or space separation instead of tab separation, or the header row
+    column names do not match LDNDC''s expected names; LDNDC''s climate parser expects tab-separated values
+    with specific column names in the header row (tavg, tmin, tmax, prec, wind, rh, glob, lrad). Using
+    CSV format '
+  remedy: 'Regenerate climate.txt with tab separation and LDNDC-standard column names; convert_forcing_to_ldndc_climate;
+    [''Check delimiter: open climate.txt in hex editor, verify tabs (0x09) between columns'', "Check header:
+    first line must be ''#'' followed by tab-separated column names", ''Required names: at lea'
+  severity: fatal
+- id: dt_007
+  symptom: LDNDC runs but N2O emissions are unrealistically high or the soil N balance does not close
+  diagnosis: 'N deposition values in airchem.txt are in g/m2/yr instead of kgN/ha/yr (factor of 10 difference:
+    1 g/m2 = 10 kgN/ha); Different N deposition datasets use different units. EMEP uses mg/m2/yr, some
+    publications report g/m2/yr, while LDNDC expects kgN/ha/yr. A factor of 10 error in N deposition adds
+    si'
+  remedy: 'Verify N deposition units. Typical global range: 1-30 kgN/ha/yr. Values >50 are suspicious.
+    Values >100 almost certainly use wrong units.; generate_airchemistry_file; [''Check airchem.txt deposition
+    values'', ''If values > 50 kgN/ha/yr, verify against published data for the region'', ''Convert if
+    needed:'
+  severity: silent
+- id: dt_008
+  symptom: LDNDC crashes with 'Invalid event date' or 'Event date outside simulation period'
+  diagnosis: Management event dates in mana.xml are outside the simulation schedule defined in project.xml,
+    or use an incorrect date format; LDNDC validates that all management event dates fall within the schedule
+    defined in project.xml. If the simulation runs 2000-2010 but a sowing event is dated 2011-04-15, LD
+  remedy: 'Verify all event dates in mana.xml fall within the project.xml schedule and use YYYY-MM-DD
+    format; generate_management_xml; [''Read schedule from project.xml: start and end dates'', ''Check
+    each event date in mana.xml is within [start, end]'', ''Ensure format is YYYY-MM-DD, not DD/MM/YYYY
+    or MM/DD/YYYY'']'
+  severity: fatal
+- id: dt_009
+  symptom: LDNDC runs but crop yield is zero or near-zero despite correct climate and soil; no harvest
+    output recorded
+  diagnosis: The crop species name in mana.xml sowing event does not exactly match any entry in parameters_species.xml.
+    LDNDC silently skips the sowing and no crop grows.; LDNDC matches crop species by exact string comparison.
+    If mana.xml specifies 'wheat' but parameters_species.xml has 'winter_wheat', the sowin
+  remedy: Run validate_species_params to cross-check species names between mana.xml and parameters_species.xml;
+    validate_species_params; ['Extract species names from all sowing events in mana.xml', 'Check each
+    name exists as a species entry in parameters_species.xml', 'Match must be exact (case-sensitive)',
     '
-  affected_output: N2O and NO3 leaching inflated
-  detection: N deposition > 30 kgN/ha/yr for non-industrial regions
-  fix: 'Verify airchem.txt uses kgN/ha/yr. Typical values: 5-15 for China, 2-10 for US Midwest.'
-- id: paddy_ksat_too_high
-  description: 'Standard HWSD Ksat is too high for paddy rice soils. Without plow pan parameterization (Ksat 0.0001-0.0003
-    cm/min), ponded water drains immediately. CH4 production requires sustained anaerobic conditions.
-
+  severity: silent
+- id: dt_010
+  symptom: LDNDC crashes with segmentation fault during soil initialization
+  diagnosis: site.xml contains zero or negative values for bulk density, or layer depth is zero, causing
+    division by zero in soil initialization; LDNDC computes soil pore volume from bulk density (pore =
+    1 - bd/2.65). If bd <= 0, this produces negative porosity. If a layer has zero thickness, per-layer
+    flux calc
+  remedy: 'Check site.xml for zero/negative bulk density and zero-thickness layers; generate_site_xml;
+    ["Open site.xml and check each layer''s bd attribute: must be 0.5-2.0 g/cm3", ''Check each layer has
+    non-zero thickness (depth_bottom > depth_top)'', ''Regenerate with generate_site_xml if any values
+    are invalid'''
+  severity: fatal
+- id: dt_011
+  symptom: LDNDC runs for some time then crashes with 'NaN detected in soil state' or produces NaN in
+    output
+  diagnosis: Numerical instability in soil water or chemistry solver, typically caused by extreme soil
+    property values (very high Ksat, very low porosity) or extreme climate events (massive single-day
+    precipitation); LDNDC uses daily or sub-daily time stepping for water and biogeochemistry. Extreme
+    parameter com
+  remedy: 'Check site.xml for extreme parameter values and climate.txt for unrealistic precipitation events;
+    ; [''Check soil: Ksat < 1000 cm/day, 0.2 < porosity < 0.8, 3 < pH < 10'', ''Check climate: max daily
+    precip < 500 mm, no negative precip'', ''If a single extreme precip event causes the crash, try increasing'
+  severity: fatal
+- id: dt_012
+  symptom: Parsed N2O emissions appear 1000x too low when compared to literature values reported in g
+    N2O/ha/yr
+  diagnosis: LDNDC reports N2O emissions in kgN/ha (mass of nitrogen), but comparison is against literature
+    values in g N2O/ha (mass of N2O molecule). The molecular weight ratio is N2O/N = 44/28 = 1.571.; LDNDC
+    internally tracks nitrogen mass. Output variable dN_n2o_emis is in kgN/ha, meaning the mass of nitroge
+  remedy: 'When comparing LDNDC N2O output to literature, convert: kgN/ha * 1.571 = kg N2O/ha, or * 1000
+    * 1.571 = g N2O/ha; aggregate_annual_budget; [''Check units of LDNDC output: dN_n2o_emis is kgN/ha'',
+    ''Check units of comparison data: often g N2O/ha/yr or kg N2O-N/ha/yr'', ''Apply conversion: kgN *
+    (44/28) = '
+  severity: silent
+- id: dt_013
+  symptom: 'Annual N budget does not close: total N input (deposition + fertilizer + fixation) minus total
+    N output (harvest + leaching + gaseous) does not equal change in soil N pool'
+  diagnosis: 'Not all N flux components are included in the budget. Common missing terms: (1) N fixation
+    by legumes is in physiology output, not soilchemistry; (2) NH3 volatilization is a separate output
+    variable; (3) NO emissions (as opposed to N2O) are tracked separately.; LDNDC tracks many N species
+    across mul'
+  remedy: Use aggregate_annual_budget tool which includes all N flux terms from both output modules; aggregate_annual_budget;
+    ['Identify all N output variables across soilchemistry and physiology outputs', 'Include N fixation
+    (from physiology), NH3 volatilization, NO emissions', 'Budget residual should be < 5
+  severity: silent
+- id: dt_014
+  symptom: After VIC-to-LDNDC climate conversion, LDNDC simulates no precipitation events -- all days
+    are dry
+  diagnosis: 'VIC forcing stores precipitation as a rate (mm/timestep for 3-hourly data), but the conversion
+    to daily total did not aggregate all 8 timesteps. Result: daily precip = one 3-hour value instead
+    of the sum of eight.; VIC forcing files contain sub-daily values (typically 3-hourly, 8 values per
+    day). Wh'
+  remedy: Verify daily precipitation in converted climate.txt matches VIC daily totals. Sum all sub-daily
+    timesteps.; vic_to_ldndc_climate; ['Read a VIC forcing file for one day (8 lines for 3-hourly)', 'Sum
+    precipitation values across all 8 lines', 'Compare to the corresponding daily value in climate.txt',
     '
-  affected_output: CH4 emission near zero for paddy simulations
-  detection: CH4 < 10 kgC/ha/yr for flooded rice
-  fix: 'Reduce Ksat to 0.0001-0.0003 cm/min for paddy plow pan layer. Also increase bulk density to ~1.51, raise field capacity.
+  severity: silent
+- id: dt_015
+  symptom: VIC and LDNDC simulate the same location but soil texture and depth differ significantly between
+    VIC soil params and LDNDC site.xml
+  diagnosis: VIC and LDNDC soil data were derived from different sources or at different resolutions.
+    VIC may use its own soil parameter file while LDNDC site.xml was generated independently from HWSD.;
+    In coupled VIC-LDNDC simulations, both models should use consistent soil properties. If VIC uses one
+    soil data
+  remedy: Use vic_soil_to_ldndc_site tool to derive LDNDC soil from VIC soil params, ensuring consistency;
+    vic_soil_to_ldndc_site; ['Compare VIC soil param texture (cols for sand, clay) with LDNDC site.xml
+    clay, sand', 'Compare VIC layer depths with LDNDC layer depths', 'If discrepancies > 10%, regenerate
+    LDN
+  severity: silent
+- id: dt_v001
+  symptom: 'LDNDC error: ''Couldn''t open file /home/user/.ldndc/udunits2/udunits2.xml'''
+  diagnosis: install.sh was not run before first LDNDC execution; LDNDC requires udunits2 XML database
+    and configuration files in ~/.ldndc/. The install.sh script copies these from the distribution's dotfiles/
+    directory. Without running install.sh, LDNDC cannot find the unit conversion database and fails immedia
+  remedy: 'Run install.sh from the LDNDC distribution directory before first use; ; [''cd KISSPATH_BINARIES/ldndc/ldndc-1.37.linux64'',
+    ''bash install.sh'', ''Verify: ls ~/.ldndc/udunits2/udunits2.xml'']; verify_ldndc_installation tool
+    checks for ~/.ldndc/udunits2/ existence'
+  severity: fatal
+- id: dt_v002
+  symptom: 'LDNDC error: ''Failed to open project'' — project XML has empty source attributes'
+  diagnosis: Tutorial .ldndc project files are templates with empty source/schedule fields; Tutorial 1
+    and 2 project files (CH_oensingen.ldndc, DE_graswang.ldndc) have empty source="" and schedule="" attributes
+    — they are templates for users to fill in. Only the non-tutorial project files (arable/DE_gebesee,
+    for
+  remedy: 'Use pre-configured project files, not tutorials. Or fill in source/schedule in tutorial XML.;
+    generate_project_xml; [''For testing: use projects/arable/DE_gebesee/DE_gebesee.ldndc'', ''For new
+    basins: use generate_project_xml tool to create valid project XML'', "Schedule format: ''2002-01-01/24
+    -> +3-0-0'
+  severity: fatal
+- id: dt_v003
+  symptom: LDNDC rejects soil type mnemonic — uses full names not abbreviations
+  diagnosis: 'LDNDC soil type mnemonics are LOAM, SAND, CLAY, SILT, SLCL, LOSI etc — not VIC/USDA abbreviations;
+    Valid soil types are defined in the Lresources file at model/ldndc/ldndc-1.37.linux64/Lresources.
+    Common types: SAND, LOSA, SALO, LOAM, SLCL, SLOA, CLAY, CLOA, SACL, SILT, SILO, SICL. Using abbreviatio'
+  remedy: 'Use full LDNDC mnemonics from Lresources. Map USDA texture: Sandy Loam→SALO, Silt Loam→SILO,
+    Clay Loam→CLOA, Loam→LOAM; ; [''Check valid types: grep soil model/ldndc/ldndc-1.37.linux64/Lresources'',
+    ''Map from USDA: Sand→SAND, Loamy Sand→LOSA, Sandy Loam→SALO, Loam→LOAM'']; run_ldndc_bengbu_ghg.py
+    inclu'
+  severity: fatal
+- id: dt_v004
+  symptom: 'Crop species name not recognized — LDNDC uses CORN not :maize:'
+  diagnosis: 'LDNDC species names differ from DSSAT/SWAT+ conventions; LDNDC species database (in Lresources)
+    uses: CORN (maize), WIWH (winter wheat), RICE (rice), SWHE (spring wheat), BARL (barley), RAPE (rapeseed),
+    SOYB (soybean), POTA (potato), SUGB (sugar beet). The :species: syntax seen in some examples uses'
+  remedy: 'Use LDNDC species names: CORN, WIWH, RICE, SWHE, BARL, SOYB, POTA, RAPE; ; [''Check available
+    species: grep -i species model/ldndc/ldndc-1.37.linux64/Lresources'']; run_ldndc_bengbu_ghg.py uses
+    correct names'
+  severity: fatal
+- id: dt_v005
+  symptom: Climate temperature values are 273+ degrees — absurdly high
+  diagnosis: 'VIC forcing temperature is already in Celsius, not Kelvin; Some tool stubs assumed VIC temperature
+    needs K→C conversion (subtract 273.15). HydroCraft VIC forcing stores temperature in °C directly.
+    Subtracting 273.15 produces extreme negative values; NOT subtracting when already Celsius is correct.
 
-    '
-  scorecard: 'test_ldndc_rice_paddy_ch4.json (PASS after fix: 253.7 kgC/ha/yr)'
-- id: rice_species_wrong
-  description: Using RICE instead of PADR for paddy rice
-  affected_output: Zero or minimal output -- RICE is abstract base class
-  detection: physiology output shows no crop growth for rice simulation
-  fix: Use species type='PADR' in mana.xml for paddy rice
-- id: module_mismatch
-  triplet: dt_013
-  description: Incompatible module combination (e.g., forest physiology with crop management)
-  affected_output: Nonsensical output, no error raised
-  detection: Cross-check module selection in setup.xml against land use type
-  fix: Use plamox + metrx for crops; appropriate modules for forest/grassland
-- id: n2o_plamox_underestimate_illinois
-  description: 'LDNDC N2O may underestimate absolute values when plamox phenology does not fully mature in some years. Illinois
-    test: 0.534 kgN/ha/yr vs expected 2-8. Relative changes between scenarios remain valid.
+    ;'
+  remedy: 'Do NOT apply K→C conversion to VIC forcing temperature; convert_forcing_to_ldndc_climate; [''Check
+    VIC forcing values: if tavg range is -10 to 40, it is already Celsius'', ''If tavg range is 260-310,
+    it is Kelvin — subtract 273.15'']; Validate temperature range after conversion: -40 < tavg < 50'
+  severity: silent
+- id: dt_v006
+  symptom: Saturated hydraulic conductivity (sks) unrealistically high in site.xml
+  diagnosis: 'LDNDC sks unit is cm/min, not mm/hr or m/day; HWSD and VIC report Ksat in mm/hr or m/day.
+    LDNDC site.xml expects sks in cm/min. Conversion: sks_cm_min = ksat_mm_hr / 600. Typical values: 0.001
+    cm/min (clay) to 0.5 cm/min (sand). Gebesee example has sks=0.013 cm/min (clay loam).
 
-    '
-  affected_output: N2O absolute values below literature range
-  detection: N2O emission factor < 0.3% of applied N
-  fix: Use LDNDC for relative scenario comparisons. Cross-validate absolute N2O with field data.
-  scorecard: fresh_ldndc_illinois.json (PARTIAL)
-expected_ranges:
-  bengbu_wheat_maize:
-    n2o_kgN_ha_yr:
-    - 1.9
-    - 8.0
-    reference: 5.80 kgN/ha/yr (10-year mean, PASS)
-    emission_factor_pct: 1.4
-    co2_hetero_kgC_ha_yr:
-    - 1000
-    - 4000
-    no3_leach_kgN_ha_yr:
-    - 30
-    - 60
-    scorecard: ldndc_n2o_bengbu.json (PASS)
-  rice_paddy_se_china:
-    ch4_kgC_ha_yr:
-    - 100
-    - 500
-    reference: 253.7 kgC/ha/yr (mature years, PASS)
-    n2o_kgN_ha_yr:
-    - 0.1
-    - 0.5
-    scorecard: test_ldndc_rice_paddy_ch4.json (PASS)
-  illinois_corn_soybean:
-    n2o_kgN_ha_yr:
-    - 0.2
-    - 1.5
-    reference: 0.534 kgN/ha/yr (BELOW literature 2-8, known plamox limitation)
-    co2_hetero_kgC_ha_yr:
-    - 1000
-    - 4000
-    scorecard: fresh_ldndc_illinois.json (PARTIAL)
-calibration_reference:
-  approach: Soil and management parameter adjustment
-  notes: 'LDNDC default parameters with HWSD soil + VIC climate produce publication-quality GHG estimates without calibration
-    for Bengbu wheat-maize. Primary calibration targets: corg (soil organic carbon), Ksat (hydraulic conductivity), clay fraction,
-    fertilizer application rates and timing.
+    ; [''s2_site_config'']'
+  remedy: 'Convert Ksat: cm/min = mm/hr ÷ 600 = m/day ÷ 14400; hwsd_to_ldndc_soil; [''HWSD Ksat is in
+    cm/day → divide by 1440 to get cm/min'', ''Validate: mineral soils should be 0.001-1.0 cm/min''];
+    run_ldndc_bengbu_ghg.py uses correct conversion'
+  severity: silent
+- id: dt_v007
+  symptom: SOC (corg) values 100x too high or too low in site.xml
+  diagnosis: 'HWSD reports OC in percentage, LDNDC site.xml expects fraction; HWSD T_OC/S_OC columns are
+    in % (e.g., 2.3 means 2.3%). LDNDC corg attribute expects fraction (0.023 for 2.3%). Gebesee example:
+    corg="0.023" = 2.3% OC. Using % directly gives corg=2.3 which is 230% OC — physically impossible.
 
-    '
-  key_parameters:
-  - name: corg
-    description: Soil organic carbon fraction -- controls decomposition and CO2
-  - name: sks (Ksat)
-    description: Saturated hydraulic conductivity -- controls anaerobic zone extent
-  - name: fertilizer_n
-    description: N application rate -- primary driver of N2O
-  - name: plow_pan_ksat
-    description: 'For paddy: controls water retention and CH4 production'
+    ; [''s2_si'
+  remedy: 'Divide HWSD OC% by 100: corg = T_OC / 100; hwsd_to_ldndc_soil; [''HWSD OC 2.3% → corg=0.023'',
+    ''Validate: cropland corg typically 0.005-0.05 (0.5-5%)'']; run_ldndc_bengbu_ghg.py applies /100 conversion'
+  severity: silent
+- id: dt_v008
+  symptom: All rice runs produce zero yield and zero emissions. No error message. 10,633 cells affected
+    across 31 scenarios.
+  diagnosis: RICE is an abstract base class in LDNDC parameters_species.xml. It defines the crop type
+    hierarchy but is NOT a runnable species. Must use PADR (paddy rice) or UPLR (upland rice).; LDNDC
+    silently accepts RICE as a species name in management.xml sowing events but treats it as a no-op.
+    The crop is nev
+  remedy: Replace all <plant type='RICE'> with <plant type='PADR'> for paddy rice or <plant type='UPLR'>
+    for upland rice.; validate_species_params; ['grep -r \'type="RICE"\' to find all affected management.xml
+    files', 'sed -i \'s/type="RICE"/type="PADR"/g\' management.xml', 'Re-run all affected cells']; Alway
+  severity: silent
+- id: dt_v009
+  symptom: Rice crashes at first timestep even with correct PADR species. setup.xml uses dryland module
+    stack (physiology:plamox, soilchemistry:metrx).
+  diagnosis: LDNDC's standard dryland modules cannot simulate flooded rice paddies. MeTrX assumes aerobic
+    soil. Rice paddies need anaerobic decomposition, CH4 production, and ponded water layer.; The module
+    stack must be changed for paddy rice to include paddyecm or equivalent anaerobic chemistry module
+    and a wa
+  remedy: Use paddy-specific setup.xml for rice cells. Replace soilchemistry:metrx with paddyecm module.;
+    ; ['Modify setup.xml for rice cells to use paddy module stack', 'Ensure watercycle handles ponded
+    water', 'Test single cell before batch re-run']; Maintain separate setup.xml templates for dryland
+    vs padd
+  severity: fatal
+- id: dt_v010
+  symptom: Paddy rice runs but produces no CH4 and unrealistic water balance. Management.xml missing flood/drain
+    events.
+  diagnosis: 'LDNDC paddy management requires explicit flood and drain events. Without flood events, the
+    paddy water layer is never established. Without drain events, harvest cannot complete.; Flood/drain
+    scheduling: flood ~DOY 135 (transplanting, 50-100mm), mid-season drain ~DOY 195-200, re-flood ~DOY
+    205 (50mm)'
+  remedy: Add flood/drain events to rice management.xml with correct DOY timing for the region.; ; ["Add
+    <event type='flood' doy='135' depth_mm='80'/>", "Add <event type='drain' doy='195'/>", "Add <event
+    type='flood' doy='205' depth_mm='50'/>", "Add <event type='drain' doy='250'/>"]; Use write_management_harb
+  severity: fatal
+- id: dt_v011
+  symptom: 4 cells crash at startup with empty soil cache. HWSD MU 11927/11928 are water bodies (ISSOIL=0).
+  diagnosis: HWSD global database contains water body entries with no soil properties. The VIC-to-LDNDC
+    soil converter silently returns empty results. setup.xml and site.xml are never generated.; Cells
+    V5659001, V6069001, V6359001, V7529001 in Harbin basin sit on HWSD mapping units classified as water.;
+    ['HWSD s
+  remedy: 'Nearest-neighbor soil donor: find closest cell with valid soil (0.25° search), copy parameters.
+    Add ISSOIL≠0 check to soil extraction pipeline.; ; [''Identify failed cells: grep for empty soil_cache
+    directories'', ''Find nearest valid neighbor at same resolution'', ''Copy neighbor soil params to
+    failed c'
+  severity: fatal
+- id: dt_v012
+  symptom: MeTrX solver crashes mid-run with mass balance error. o2_liq_sl reaches tiny negative value
+    (~1e-20). 38 cells affected.
+  diagnosis: Floating-point rounding artifact in the MeTrX solver produces epsilon-negative O2 concentration.
+    The solver's physical bounds check rejects this as an error despite it being numerically insignificant.;
+    Not a real physical error. The solver lacks tolerance for machine-epsilon deviations. Typically cr
+  remedy: Use nearest-neighbor temporal fill for missing years. Or set balance_check='no' in config (if
+    supported). The 17+ complete years before the crash are valid and usable.; ; ['Check how many complete
+    years exist before crash', 'Find nearest valid cell in same scenario', 'Append missing years from
+    neigh
+  severity: degraded

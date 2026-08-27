@@ -358,7 +358,7 @@ outputs:
   - var: "Liquid_Pressure"
     validation_rank: 2
     unit: "Pa"
-    description: "Absolute liquid pressure, the primary solved variable; hydraulic head = (P - P_atm)/(rho*g) + z."
+    description: "Absolute subsurface liquid pressure, the primary solved variable; hydraulic head = (P - P_atm)/(rho*g) + z."
     emitted_in: "HDF5 (.h5) snapshots; observation (-obs-*.tec) time series"
     observability:
       comparable_obs_shapes:
@@ -417,7 +417,7 @@ outputs:
   - var: "Darcy_Velocity"
     validation_rank: 4
     unit: "m/s"
-    description: "Darcy (specific-discharge) velocity field, components X/Y/Z."
+    description: "Subsurface Darcy (specific-discharge) velocity field, components X/Y/Z."
     emitted_in: "HDF5 (.h5)"
     observability:
       comparable_obs_shapes:
@@ -430,7 +430,7 @@ outputs:
   - var: "Solute_Concentration"
     validation_rank: 5
     unit: "mol/L"
-    description: "Aqueous primary/secondary species concentration in reactive-transport mode."
+    description: "Subsurface aqueous primary/secondary species concentration in reactive-transport mode."
     emitted_in: "HDF5 (.h5); observation (-obs-*.tec)"
     observability:
       comparable_obs_shapes:
@@ -650,3 +650,17 @@ safety:
       scope: "reactive-transport mode"
       source: "PFLOTRAN Theory Guide reactive-transport mode page (documentation.pflotran.org)"
       status: "adopted"
+
+medium_evidence:
+  - var: "Liquid_Pressure"
+    source: "dag.yaml"
+    quote: "Variably saturated single-phase isothermal subsurface flow (RICHARDS mode)"
+    note: "boundary.scope_in declares the subsurface flow medium for the pressure output."
+  - var: "Darcy_Velocity"
+    source: "dag.yaml"
+    quote: "Variably saturated single-phase isothermal subsurface flow (RICHARDS mode)"
+    note: "boundary.scope_in declares the subsurface flow medium for the Darcy-velocity output."
+  - var: "Solute_Concentration"
+    source: "docs/papers_index.md"
+    quote: "Reactive transport codes for subsurface environmental simulation"
+    note: "The KI papers index identifies reactive transport concentration evidence as subsurface environmental simulation."

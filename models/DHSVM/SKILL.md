@@ -1,14 +1,3 @@
----
-name: dhsvm
-description: >-
-  DHSVM 3.2. Covers Spatially distributed water and energy balance per grid cell in
-  mountainous watersheds; Energy-balance snow accumulation, melt, canopy snow
-  interception, and snow sliding/avalanche…; Two-layer (overstory/understory) vegetation
-  interception, evaporation, and transpiration; Multi-layer unsaturated soil-moisture
-  column and percolation. Use when the task involves running, configuring, calibrating or
-  interpreting DHSVM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,43 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (14 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_stream_network.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_stream_network.py --help` |
+| `tools/build_terrain.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_terrain.py --help` |
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/generate_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_config.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_dhsvm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_dhsvm.py --help` |
+
+*7 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # DHSVM Knowledge Infrastructure
 
@@ -154,6 +180,30 @@ Stage 6 depends on all of 2-5. Stages 7-9 are sequential.
 
 ---
 
+## 6. Output Description
+
+Source for this section: `dag.yaml`. If this section and `dag.yaml` disagree,
+`dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `Streamflow` — Channel discharge per stream segment at network outlets (`m3/s`)
+
+### Output Unit Table
+
+| Output variable (dag `var`) | Unit | Description / status |
+|-----------------------------|------|----------------------|
+| `Streamflow` | `m3/s` | Channel discharge per stream segment at network outlets |
+| `Swq` | see `dag.yaml` | dag output |
+| `TotalET` | see `dag.yaml` | dag output |
+| `SoilMoist` | see `dag.yaml` | dag output |
+| `TableDepth` | see `dag.yaml` | dag output |
+| `MassError` | see `dag.yaml` | dag output |
+
+Other dag outputs: `Swq`, `TotalET`, `SoilMoist`, `TableDepth`, `MassError`.
+
+---
+
 ## 4. Tools Reference
 
 | Tool | Stage | Script | Lines | Purpose |
@@ -163,6 +213,29 @@ Stage 6 depends on all of 2-5. Stages 7-9 are sequential.
 | Execution Wrapper | s7 | `tools/run_dhsvm.py` | ~180 | Run DHSVM binary with validation |
 | Output Parser | s8 | `tools/parse_output.py` | ~250 | Parse Aggregated.Values and Stream.Flow to CSV |
 | Config Generator | s6 | `tools/generate_config.py` | ~300 | Generate DHSVM input configuration file |
+
+---
+
+## 8. Unit Conversion Table
+
+Source for this section: the KI unit traps and diagnostic IDs below. This is the
+formal unit table for the pipeline; keep it synchronized with `docs/format_spec.yaml`
+and `diagnostics/triplets.yaml`.
+
+| Variable | Source unit / common source | Model unit | Conversion | Diagnostic |
+|----------|-----------------------------|------------|------------|------------|
+| Precipitation | mm/hr (CMFD) | m/timestep | `mm/hr * dt_hr / 1000` | dt_001 |
+| Temperature | K (ERA5) | deg C | `K - 273.15` | dt_002 |
+| Relative Humidity | fraction (0-1) | % (0-100) | `frac * 100` | dt_003 |
+| Wind Speed | km/hr | m/s | `km/hr / 3.6` | dt_004 |
+| Shortwave Radiation | MJ/m2/day | W/m2 | `MJ * 1e6 / 86400` | dt_005 |
+| Longwave Radiation | W/m2 | W/m2 | no conversion | — |
+| Soil Depth | cm | m | `cm / 100` | dt_006 |
+| Hydraulic Conductivity | mm/hr | m/s | `mm/hr / 3.6e6` | dt_007 |
+| Porosity | % | fraction (0-1) | `% / 100` | dt_008 |
+| Elevation (DEM) | feet | m | `ft * 0.3048` | dt_009 |
+| Slope | degrees | radians | `deg * pi/180` | dt_010 |
+| Lapse Rate | C/km | C/m | `C/km / 1000` | dt_011 |
 
 ---
 
@@ -393,6 +466,46 @@ Same format as Aggregated.Values but for individual output pixels.
 | Soil Depth | [SOILS] | 0.5 – 5.0 m | Total storage | High |
 | Porosity | [SOILS] | 0.3 – 0.6 | Soil water capacity | Medium |
 | Field Capacity | [SOILS] | 0.1 – 0.4 | Drainage timing | Medium |
+
+---
+
+## 11. Validated Results
+
+Source for this section: `docs/validation_convention.yaml`. The achieved
+calibration or validation metric values are not asserted in this body; compute
+them with the KI tools and judge them against the cited convention bars below.
+If this section and `docs/validation_convention.yaml` disagree, the convention
+file wins.
+
+### Test Basin
+
+| Property | Value |
+|----------|-------|
+| Name | Chiwawa watershed test case |
+| Status | Validation target named by this KI |
+
+### Performance Metrics — judged against the field's bar, not intuition
+
+| Output | Metric | Direction | Satisfactory band | Good band | Very good band |
+|--------|--------|-----------|-------------------|-----------|----------------|
+| `Streamflow` | `nse` | maximize | `0.5` (`moriasi2015`, `kelleher2017`, `naz2014`) | `0.6` (`moriasi2015`, `kelleher2017`, `naz2014`) | `0.75` (`moriasi2015`, `kelleher2017`, `naz2014`) |
+| `Streamflow` | `pbias` | zero_centered | `15.0` (`moriasi2015`, `naz2014`) | `15.0` (`moriasi2015`, `naz2014`) | `10.0` (`moriasi2015`, `naz2014`) |
+| `Swq` | `nse` | maximize | `0.8` (`kelleher2017`, `du2014`) | no cited threshold | no cited threshold |
+| `Swq` | `swe_volume_error` | zero_centered | `20.0` (`kelleher2017`) | no cited threshold | no cited threshold |
+| `Swq` | `csi` | maximize | no cited threshold | no cited threshold | no cited threshold |
+
+For zero-centered metrics, compare the metric's distance from zero to the cited
+threshold. Do not substitute uncited thresholds for any `no cited threshold` cell.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending run-specific validation | Prepare with `tools/convert_forcing.py` |
+| Soil | Pipeline | Pending run-specific validation | Prepare with `tools/convert_soil_params.py` |
+| Land cover | Pipeline | Pending run-specific validation | Build vegetation map and parameter table |
+| DEM | Pipeline | Pending run-specific validation | Build DEM, mask, slope, and aspect maps |
+| Initial conditions | Pipeline | Pending run-specific validation | Configure for each basin and period |
 
 ---
 

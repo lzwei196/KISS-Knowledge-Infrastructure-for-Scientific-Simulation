@@ -1,0 +1,182 @@
+schema_version: 1
+model_id: KINEROS2
+domain: hydrology
+generated_by: "Step-B validation-convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+# Blocks are keyed by the model's own dag.yaml output names (`dag_variable`), not
+# by an invented/canonical quantity. Numeric discharge bands are transferred from
+# fetched open-access hydrologic model evaluation papers that reproduce Moriasi-
+# style streamflow performance classes; KINEROS2-specific fetched papers document
+# the model's usual event runoff validation practice. Internal water-balance fluxes
+# have no fetched direct-observation threshold, so their bands remain null.
+
+references:
+  goodrich2012:
+    doi: 10.13031/2013.42264
+    title: "KINEROS2/AGWA: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42264.txt
+  nguyen2015:
+    doi: 10.3390/hydrology2040242
+    title: "Flash Flood Prediction by Coupling KINEROS2 and HEC-RAS Models for Tropical Regions of Northern Vietnam"
+    venue: "Hydrology"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_hydrology2040242.txt
+  elharche2021:
+    doi: 10.22161/ijeab.61.34
+    title: "Comparative analysis between KINEROS2 and SWAT for hydrological modeling: A case study from Tleta Watershed in Morocco"
+    venue: "International Journal of Environment, Agriculture and Biotechnology"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.22161_ijeab.61.34.txt
+  leta2023:
+    doi: 10.1007/s10661-023-11337-z
+    title: "Sediment yield estimation and evaluating the best management practices in Nashe watershed, Blue Nile Basin, Ethiopia"
+    venue: "Environmental Monitoring and Assessment"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10661-023-11337-z.txt
+  cirilo2020:
+    doi: 10.1590/2318-0331.252020190106
+    title: "Development and application of a rainfall-runoff model for semi-arid regions"
+    venue: "RBRH, Brazilian Journal of Water Resources"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1590_2318-0331.252020190106.txt
+  wako2019:
+    doi: 10.1007/s42452-019-0347-1
+    title: "Modeling runoff and sediment yield of Kesem dam watershed, Awash basin, Ethiopia"
+    venue: "SN Applied Sciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s42452-019-0347-1.txt
+
+validation:
+  - dag_variable: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Fetched OA papers reproduce Moriasi-style streamflow classes: satisfactory 0.50-0.65, good 0.65-0.75, very good 0.75-1.00."
+        cites: [leta2023, cirilo2020]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "For monthly streamflow/runoff, the reproduced table gives PBIAS < +/-10 very good, +/-10 to +/-15 good, +/-15 to +/-25 satisfactory."
+        cites: [leta2023, cirilo2020]
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "The fetched table rates R2 <0.50 unsatisfactory, 0.50-0.70 satisfactory, 0.70-0.80 good, and >0.80 very good."
+        cites: [leta2023]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Reproduced Moriasi-style tables commonly co-report RSR for hydrologic model evaluation, but the KINEROS2 DAG determining metric is NSE and the cached KINEROS2 benchmarks emphasize NSE/R2."
+        cites: [leta2023, cirilo2020]
+      - metric: peak_runoff_rate
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Goodrich et al. recommend choosing objective functions by application purpose; culvert/bridge sizing should focus on peak runoff rates, detention-structure sizing on runoff volume."
+        cites: [goodrich2012]
+      - metric: runoff_volume
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Goodrich et al. recommend Nash-Sutcliffe efficiency on event runoff volumes and peak runoff rates for limited-event K2 hydrology calibration."
+        cites: [goodrich2012]
+    validated_when: "Daily/monthly outlet discharge is validated when NSE >= 0.50, |PBIAS| <= 25%, and R2 >= 0.50 after unit harmonization and spinup removal; stronger KINEROS2 runoff applications commonly report NSE/R2 well above these minimums."
+    rule:
+      all_of:
+        - {metric: nse, op: gte, value: 0.50}
+        - {metric: pbias, op: abs_lte, value: 25.0}
+        - {metric: r2, op: gte, value: 0.50}
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      The DAG determining metric (nse) is retained and paired with PBIAS/R2 because the fetched hydrology
+      convention papers say model performance is judged using multiple indicators. Leta 2023 reproduces
+      flow/sediment ratings with "0.5 < NSE <= 0.65" satisfactory and "PBIAS < +/- 10" very good; Cirilo
+      2020 likewise lists monthly NSE/PBIAS/RSR classes adapted from Moriasi et al. (2007). KINEROS2-
+      specific support comes from Goodrich 2012, which says K2 calibration/validation commonly uses
+      Nash-Sutcliffe statistics for peak runoff rate and runoff volume, and from Nguyen 2015 and El Harche
+      2021, which report KINEROS2 discharge/runoff validation with NSE/R2 against observed data.
+
+  - dag_variable: infiltration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric direct-observation validation threshold for KINEROS2 infiltration time series; field practice validates its effect through runoff/discharge response."
+        cites: []
+    secondary_metrics:
+      - metric: water_balance_closure
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "KINEROS2/AGWA literature treats infiltration parameters, especially saturated hydraulic conductivity and the suction term, as hydrology calibration controls for runoff volume rather than as directly graded observation products."
+        cites: [goodrich2012]
+      - metric: runoff_response
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Goodrich et al. recommend varying multipliers on saturated hydraulic conductivity and infiltration suction term to optimize Nash-Sutcliffe efficiency for event runoff volumes."
+        cites: [goodrich2012]
+    validated_when: "UNRESOLVED as a direct point_time_series product: no cited numeric infiltration threshold was fetched; use discharge/runoff validation plus water-balance diagnostics."
+    evidence_strength: weak
+    confidence: 0.32
+    notes: >-
+      The DAG lists infiltration as a comparable time series, but its caveat says it is rarely directly
+      observed. The fetched KINEROS2 validation paper discusses infiltration as a process whose parameters
+      are calibrated against event runoff volume and peak runoff rate, not as an output with standalone NSE
+      pass bands. The null band prevents the gate from auto-validating or loosening a requirement on this
+      internal flux.
+
+  - dag_variable: surface_excess
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric direct-observation validation threshold for KINEROS2 infiltration-excess surface runoff before routing."
+        cites: []
+    secondary_metrics:
+      - metric: routed_discharge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched KINEROS2 validation literature evaluates the runoff-generating process after routing as peak runoff rate, event runoff volume, or outlet discharge."
+        cites: [goodrich2012, nguyen2015, elharche2021]
+      - metric: runoff_volume
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For limited observations, Goodrich et al. recommend Nash-Sutcliffe efficiency on event runoff volumes, then roughness calibration for peak runoff rates."
+        cites: [goodrich2012]
+    validated_when: "UNRESOLVED as an unrouted internal flux: validate through outlet discharge/runoff volume and peak response; no fetched standalone surface_excess pass band."
+    evidence_strength: weak
+    confidence: 0.32
+    notes: >-
+      The DAG caveat says surface_excess is an internal flux comparable to observations only after routing
+      to outlet discharge. Cached KINEROS2 benchmark papers report outlet runoff/discharge NSE/R2; none
+      provides a separate field convention for an infiltration-excess time series, so the headline band is null.
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2007 — Model evaluation guidelines for systematic quantification of accuracy in watershed simulations"
+    doi: 10.13031/2013.23153
+    needed_for: [discharge]
+  - ref: "Moriasi et al. 2015 — Hydrologic and water quality models: Performance measures and evaluation criteria"
+    doi: 10.13031/trans.58.10715
+    needed_for: [discharge]

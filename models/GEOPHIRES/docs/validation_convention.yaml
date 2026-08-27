@@ -1,0 +1,160 @@
+schema_version: 1
+model_id: GEOPHIRES
+domain: energy
+generated_by: "step-b fleet agent (OpenAI Codex) — validation-convention campaign"
+generated_at: 2026-08-14
+
+# GEOPHIRES validation literature is mostly case-comparison and model-description evidence, not
+# threshold-convention evidence. Beckers and McCabe (2019) says the example simulations "provide
+# validation" and compares LCOE/LCOH/power/capex against literature ranges and GETEM, but it does
+# not define RMSE/NSE/PBIAS pass bands. The geothermal-reservoir modeling review similarly calls
+# for validation against new field data but gives no numeric GEOPHIRES-specific tiers. Therefore
+# all headline bands below are null and low-confidence: they contextualize only and must never
+# loosen the gate.
+
+references:
+  beckers2019_geophires_v2:
+    doi: 10.1186/s40517-019-0119-6
+    title: "GEOPHIRES v2.0: updated geothermal techno-economic simulation tool"
+    venue: "Geothermal Energy"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1186_s40517-019-0119-6.txt
+  aybar_mejia2025_geothermal_review:
+    doi: 10.61435/ijred.2025.61071
+    title: "A scoping review of numerical modelling studies of geothermal reservoirs: Trends"
+    venue: "International Journal of Renewable Energy Development"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.61435_ijred.2025.61071.txt
+
+validation:
+  - dag_variable: LCOE
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched GEOPHIRES or geothermal techno-economic paper gives a numeric PBIAS acceptance band for LCOE; compare only under matched plant, resource, discount-rate, and cost-boundary assumptions."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — field practice is matched case/range comparison for LCOE, but no fetched numeric PBIAS threshold is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Beckers and McCabe (2019) compare a GEOPHIRES LCOE example with published LCOE ranges and GETEM,
+      noting that cross-study comparison is "not trivial" and that the GETEM result is "comparable".
+      This is qualitative benchmark evidence, not a pass band.
+
+  - dag_variable: LCOH
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS acceptance band for direct-use LCOH; surface infrastructure, utilization, and financing dominate comparability."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — compare against matched direct-use heat studies, but do not auto-validate without a cited numeric band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Beckers and McCabe (2019) explicitly state that validating LCOH is "more complicated" and only
+      that "rough comparisons can be drawn"; no fetched source converts this into a validation threshold.
+
+  - dag_variable: Average Net Power
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS acceptance band for average net power; end-use, plant type, parasitic pumping, and resource assumptions must match."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — use matched plant/resource benchmark comparison only; no cited numeric pass band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The GEOPHIRES v2 electricity example reports average net electricity and states that GETEM results
+      are comparable to GEOPHIRES outputs, but it gives no acceptable percent-bias envelope.
+
+  - dag_variable: geofluid_production_temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched GEOPHIRES/geothermal reservoir validation convention gives an NSE threshold for produced-geofluid temperature decline."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — validate against independent production-temperature field data when available; no cited NSE pass band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Beckers and McCabe (2019) show transient reservoir and wellhead production temperatures for examples
+      but do not report NSE/RMSE bands. The 2025 geothermal-reservoir review says validation should use
+      field data different from calibration data, but provides no numeric threshold.
+
+  - dag_variable: total_capex
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS acceptance band for GEOPHIRES total capex; drilling, surface-plant, and boundary inclusions must match."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — compare to matched cost studies or tools such as GETEM, but no cited numeric pass band exists."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Beckers and McCabe (2019) report total capital costs in the validation examples and compare the
+      electricity case with GETEM, but no fetched source defines a capex bias tier.
+
+  - dag_variable: annual_energy_production
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for annual geothermal electricity or heat delivery time series."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — compare lifetime energy trajectory to matched production/plant data; no cited numeric NSE pass band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The GEOPHIRES v2 examples list average annual heat/electricity delivery, but the field evidence found
+      here is case comparison rather than a time-series skill convention.
+
+deferred_paywalled:
+  - ref: "Beckers et al. 2014 — Levelized costs of electricity and direct-use heat from Enhanced Geothermal Systems"
+    doi: 10.1063/1.4865575
+    needed_for: [LCOE, LCOH, Average Net Power, total_capex, annual_energy_production]
+  - ref: "Beckers et al. 2022 — Techno-economic analysis of Advanced Geothermal Systems (AGS)"
+    doi: 10.1016/j.renene.2022.01.012
+    needed_for: [LCOE, LCOH, Average Net Power, total_capex, annual_energy_production]
+  - ref: "Fleuchaus et al. 2021 — Analysis of Enhanced Geothermal System Development Scenarios for District Heating and Cooling of the Gottingen University Campus"
+    doi: 10.3390/geosciences11080349
+    needed_for: [LCOH, Average Net Power, total_capex, annual_energy_production]
+  - ref: "Wang et al. 2022 — Recurrent neural networks for short-term and long-term prediction of geothermal reservoirs"
+    doi: 10.1016/j.geothermics.2022.102439
+    needed_for: [geofluid_production_temperature, annual_energy_production]
+  - ref: "Wang et al. 2023 — A multiscale recurrent neural network model for predicting energy production from geothermal reservoirs"
+    doi: 10.1016/j.geothermics.2022.102643
+    needed_for: [geofluid_production_temperature, annual_energy_production]
+  - ref: "Sandelin et al. 2022 — The evolving role of geothermal energy for decarbonizing the United States"
+    doi: 10.1039/d1ee02309h
+    needed_for: [LCOE, LCOH, Average Net Power, total_capex, annual_energy_production]

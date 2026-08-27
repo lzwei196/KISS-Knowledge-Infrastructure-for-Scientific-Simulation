@@ -1,0 +1,413 @@
+schema_version: 1
+model_id: OGGM
+domain: cryosphere
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  maussion2019:
+    doi: 10.5194/gmd-12-909-2019
+    title: "The Open Global Glacier Model (OGGM) v1.1"
+    venue: "Geosci. Model Dev."
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-12-909-2019.txt
+  zekollari2019:
+    doi: 10.5194/tc-13-1125-2019
+    title: "Modelling the future evolution of glaciers in the European Alps under the EURO-CORDEX RCM ensemble"
+    venue: "The Cryosphere"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-13-1125-2019.txt
+  eis2021:
+    doi: 10.3389/feart.2021.595755
+    title: "Reconstruction of Past Glacier Changes with an Ice-Flow Glacier Model: Proof of Concept and Validation"
+    venue: "Frontiers in Earth Science"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_feart.2021.595755.txt
+  farinotti2017:
+    doi: 10.5194/tc-11-949-2017
+    title: "How accurate are estimates of glacier ice thickness? Results from ITMIX, the Ice Thickness Models Intercomparison eXperiment"
+    venue: "The Cryosphere"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-11-949-2017.txt
+  farinotti2019:
+    doi: 10.1038/s41561-019-0300-3
+    title: "A consensus estimate for the ice thickness distribution of all glaciers on Earth"
+    venue: "Nature Geoscience"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41561-019-0300-3.txt
+  zemp2013:
+    doi: 10.5194/tc-7-1227-2013
+    title: "Reanalysing glacier mass balance measurement series"
+    venue: "The Cryosphere"
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-7-1227-2013.txt
+  huss2015:
+    doi: 10.3389/feart.2015.00054
+    title: "A new model for global glacier change and sea-level rise"
+    venue: "Frontiers in Earth Science"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_feart.2015.00054.txt
+  luckman2015:
+    doi: 10.1038/ncomms9566
+    title: "Calving rates at tidewater glaciers vary strongly with ocean temperature"
+    venue: "Nature Communications"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_ncomms9566.txt
+  rounce2019:
+    doi: 10.3389/feart.2019.00331
+    title: "Glacier Mass Change in High Mountain Asia Through 2100 Using the Open-Source Python Glacier Evolution Model (PyGEM)"
+    venue: "Frontiers in Earth Science"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_feart.2019.00331.txt
+  rounce2023:
+    doi: 10.1126/science.abo1324
+    title: "Global glacier change in the 21st century: Every increase in temperature matters"
+    venue: "Science"
+    year: 2023
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1126_science.abo1324.txt
+
+validation:
+  - dag_variable: volume
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched glacier-volume paper gives an NSE pass threshold for per-glacier volume time series; volume is judged mainly by relative volume/thickness deviation or ensemble uncertainty."
+        cites: []
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 8.0, satisfactory: 26.0}
+        pass_band: satisfactory
+        band_note: "ITMIX notes seven thickness models with bias below 8%; the global consensus volume is 158 +/- 41 x 10^3 km3, about 26%."
+        cites: [farinotti2017, farinotti2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Per-glacier volume is usually inferred through ice-thickness inversion; Farinotti 2019 describes model validation using held-out ice-thickness deviations, not observed annual volume series."
+        cites: [farinotti2019]
+    validated_when: "Per-glacier volume time series is not auto-validated by NSE; use relative volume bias <= 26% where volume/inventory evidence exists, otherwise defer."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      The dag determining metric is nse, but fetched glacier-volume literature supersedes it with relative
+      ice-thickness/volume deviation. Farinotti 2019: performance is assessed by cross-validation against
+      ice-thickness observations; ITMIX says model bias indicates total ice volume skill.
+
+  - dag_variable: volume
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 8.0, satisfactory: 26.0}
+        pass_band: satisfactory
+        band_note: "Regional/global glacier volume is judged against consensus or intercomparison spread; Farinotti 2019 reports 158 +/- 41 x 10^3 km3 global volume."
+        cites: [farinotti2017, farinotti2019]
+    secondary_metrics:
+      - metric: trend_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Projection papers compare regional volume loss envelopes across studies rather than exact interannual volume trajectories."
+        cites: [rounce2023, zekollari2019]
+    validated_when: "|PBIAS| in regional volume or volume-change magnitude <= 26%, with trend direction consistent with geodetic/projection benchmark."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The 26% band is transferred from the fetched consensus uncertainty of present-day global glacier
+      volume. Rounce 2023 compares 2100 volume/mass losses to multi-model studies and reports agreement
+      in SLE within several scenario envelopes, but not a universal time-series NSE threshold.
+
+  - dag_variable: area
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 0.7, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Zekollari 2019 reports inventory-date geometry matching within 1% and observed area sigma of 0.7%."
+        cites: [zekollari2019]
+    secondary_metrics: []
+    validated_when: "|PBIAS| <= 1% at the inventory-date outline/area snapshot."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      This is a calibration-tied geometry convention rather than independent validation. Zekollari 2019:
+      glaciers are calibrated to match length and volume at inventory date within 1%, and area is closely
+      reproduced with sigma 0.7%.
+
+  - dag_variable: area
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched papers compare regional area-loss rates qualitatively; no fetched paper gives a numeric PBIAS pass band for regional area time series."
+        cites: []
+    secondary_metrics:
+      - metric: area_loss_rate
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Zekollari 2019 reports observed Alps area-loss rates ranging from about 0.5% to 1.5% yr-1 and a modeled rate of 0.8% yr-1, but states direct comparison is difficult."
+        cites: [zekollari2019]
+    validated_when: "UNRESOLVED - require trend direction and rate plausibility; no cited PBIAS threshold for auto-validation."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Zekollari 2019 says modeled area changes are generally slightly lower than observations and that
+      comparison is difficult because periods and size distributions differ. Null band prevents a fabricated gate.
+
+  - dag_variable: length
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: km
+        bands: {very_good: 0.155, good: null, satisfactory: 0.45}
+        pass_band: satisfactory
+        band_note: "Eis 2021 reports mean length RMSE 0.45 km; Zekollari 2019 reports 155 m RMSE for Alps glaciers longer than 8 km."
+        cites: [eis2021, zekollari2019]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Eis 2021 co-reports length correlation but notes negative/low correlations often reflect few observations or non-significance."
+        cites: [eis2021]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Factual convention in fetched length-validation papers is RMSE/MBE/MAE/correlation, not NSE."
+        cites: [eis2021, zekollari2019]
+    validated_when: "Length-change time series RMSE <= 0.45 km, with correlation/retreat trend used as supporting evidence."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      This supersedes the dag determining_metric nse. Eis 2021 validates against 10,420 modeled-observed
+      length pairs and reports RMSE 0.45 +/- 0.40 km; Zekollari 2019 reports RMSE 155 m for large Alps glaciers.
+
+  - dag_variable: specific_mass_balance
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m w.e. yr-1
+        bands: {very_good: 0.71, good: 0.74, satisfactory: 0.79}
+        pass_band: satisfactory
+        band_note: "Fetched OGGM-family benchmarks report annual SMB RMSE 0.71, 0.74, and 0.79 m w.e. yr-1."
+        cites: [eis2021, zekollari2019]
+      - metric: bias
+        direction: zero_centered
+        unit: m w.e. yr-1
+        bands: {very_good: 0.09, good: 0.18, satisfactory: 0.30}
+        pass_band: satisfactory
+        band_note: "Zemp 2013 gives a rule of thumb that differences exceeding about 0.30 m w.e. yr-1 require reanalysis."
+        cites: [zekollari2019, eis2021, zemp2013]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Eis 2021 reports mean mass-balance correlation 0.60 and weighted mean 0.67, but low correlations are tied to short records."
+        cites: [eis2021]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The fetched SMB validation papers report mean misfit/MBE in m w.e. yr-1 rather than percent PBIAS."
+        cites: [zekollari2019, eis2021]
+    validated_when: "Annual specific mass balance is validated when RMSE <= 0.79 m w.e. yr-1 and |bias| <= 0.30 m w.e. yr-1."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      The dag determining_metric pbias is replaced by the field convention: RMSE and mean bias in water
+      equivalent units. Zekollari 2019 says validation observations are independent of calibration and reports
+      RMSE 0.74 and mean misfit -0.09 m w.e. yr-1; Eis 2021 reports RMSE 0.71 and MBE 0.18.
+
+  - dag_variable: specific_mass_balance
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: bias
+        direction: zero_centered
+        unit: m w.e. yr-1
+        bands: {very_good: null, good: 0.26, satisfactory: 0.30}
+        pass_band: satisfactory
+        band_note: "Geodetic snapshot/decadal mass-balance comparisons should be within observation uncertainty; Zemp 2013 gives >0.30 m w.e. yr-1 as a rule-of-thumb flag."
+        cites: [zemp2013]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "For glacier mass balance snapshots, fetched convention reports absolute water-equivalent uncertainty, not percent bias."
+        cites: [zemp2013]
+    validated_when: "Geodetic/snapshot specific mass balance has |bias| <= 0.30 m w.e. yr-1, or is within the stated geodetic uncertainty."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      Zemp 2013 recommends testing whether glaciological and geodetic balances differ significantly and
+      gives >0.30 m w.e. yr-1 as a practical random-error scale; overall uncertainties span about 0.20-0.50.
+
+  - dag_variable: calving
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched calving/frontal-ablation paper gives a percent-bias pass threshold for modeled calving volume time series."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Frontal-ablation validation is data-limited: Luckman 2015 says measurements are difficult, and Huss 2015 says direct observations are scarce and the model is highly sensitive to bed topography near the terminus."
+        cites: [luckman2015, huss2015]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Luckman 2015 reports strong R2 with ocean temperature for observed frontal ablation, but not a model pass band."
+        cites: [luckman2015]
+    validated_when: "UNRESOLVED - require tidewater-only comparison to observed frontal-ablation flux; no cited PBIAS band for auto-validation."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Use only for TermType=1 marine-terminating glaciers. Luckman 2015 reports RMS frontal-ablation-rate
+      error about 0.4 m d-1 for the measurement method and R2 0.80-0.84 with ocean temperature, not a model threshold.
+
+  - dag_variable: melt_on_glacier
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched OGGM/GloGEM/PyGEM paper gives an NSE pass threshold for on-glacier melt component time series."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Surface melt is an internal mass-budget component of calibrated temperature-index schemes; Huss 2015 states seasonal components of mass change cannot be constrained by the calibration procedure."
+        cites: [huss2015]
+    validated_when: "UNRESOLVED - validate through net specific_mass_balance and runoff/component plausibility, not standalone NSE."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Huss 2015 resolves melt as a major component and reports global component magnitudes, but validation is
+      against mass-balance observations/geodetic balances rather than independent melt-gauge time series.
+
+  - dag_variable: melt_off_glacier
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE pass threshold for off-glacier seasonal-snow melt as a standalone OGGM output."
+        cites: []
+    secondary_metrics:
+      - metric: seasonal_timing
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Rounce 2019 uses off-glacier seasonal snowmelt in fixed-gauge glacier runoff component analysis, but does not provide a validation band."
+        cites: [rounce2019]
+    validated_when: "UNRESOLVED - assess as a runoff-component diagnostic only; no cited standalone threshold."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      PyGEM/OGGM-family runoff studies partition glacier runoff into precipitation, snow melt, and glacier
+      melt. The fetched papers do not validate off-glacier melt independently against observations.
+
+  - dag_variable: liq_prcp_on_glacier
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched glacier-model validation paper gives a PBIAS threshold for on-glacier liquid precipitation."
+        cites: []
+    secondary_metrics:
+      - metric: forcing_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Liquid precipitation is determined from climate forcing and phase partitioning; Huss 2015 describes precipitation bias correction but validates net mass balance, not liquid precipitation."
+        cites: [huss2015]
+    validated_when: "UNRESOLVED - validate forcing independently or through mass-balance closure; no standalone glacier-model band."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      This is primarily a forcing/phase-partition diagnostic. Fetched glacier benchmarks calibrate or bias-correct
+      precipitation and validate SMB, but do not set a liquid-precipitation validation threshold.
+
+  - dag_variable: snowfall_on_glacier
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for modeled snowfall-on-glacier time series."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Snowfall/accumulation is computed from precipitation phase and bias-corrected climate input; Huss 2015 states seasonal mass-change components cannot be constrained by calibration."
+        cites: [huss2015]
+    validated_when: "UNRESOLVED - validate snowfall through accumulation/SMB consistency unless independent snow-accumulation observations exist."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The fetched studies report accumulation as a mass-budget component and validate annual SMB. They do
+      not provide an independent snowfall NSE convention.
+
+  - dag_variable: refreezing
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a percent-bias pass band for refreezing as a standalone time series."
+        cites: []
+    secondary_metrics:
+      - metric: component_fraction
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Huss 2015 reports modeled refreezing as a small mass-budget component, 3.6% of total accumulation, but not as an independently validated output."
+        cites: [huss2015]
+    validated_when: "UNRESOLVED - use as an internal mass-budget diagnostic; no cited standalone threshold."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      Refreezing is process-resolved in GloGEM/OGGM-family mass-balance models, but direct component
+      observations and numeric validation thresholds were absent from the fetched set.
+
+deferred_paywalled:
+  - ref: "Hock 2003 - Temperature index melt modelling in mountain areas"
+    doi: 10.1016/S0022-1694(03)00257-9
+    needed_for: [melt_on_glacier, melt_off_glacier, snowfall_on_glacier, liq_prcp_on_glacier, refreezing]
+  - ref: "Rignot et al. 2015 - global glacier frontal ablation estimates used by global projection studies"
+    doi: unknown_not_fetched
+    needed_for: [calving]

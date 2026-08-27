@@ -1,77 +1,141 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:02:02.425007'
-  domain: ocean
   name: COAWST
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: coawst-v38
+    version: v3.8
+    provenance: Fortran 90; USGS (John C. Warner, Woods Hole) coupled binary coawstM joining ROMS ocean,
+      SWAN waves, WRF atmosphere, WW3 open-ocean waves, and USGS Community Sediment Models via the MCT
+      coupler with SCRIP-weighted regridding.
+  scientific_reference_version: COAWST v3.8 (Coupled-Ocean-Atmosphere-Wave-Sediment Transport modeling
+    system; Warner et al. 2010, Ocean Modelling)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/COAWST/source/repo/coawstM
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_grid_generation
+  - s2_forcing_preparation
+  - s5_coupling_setup
+  - s8_execution
+  - s9_output_analysis
+tools:
+  count: 5
+  files:
+  - tools/convert_forcing.py
+  - tools/convert_grid.py
+  - tools/generate_config.py
+  - tools/parse_output.py
+  - tools/run_coawst.py
+inputs:
+  forcing:
+  - name: Uwind / Vwind (10 m wind components)
+    unit: m/s
+  - name: Tair (air temperature)
+    unit: degC
+  - name: Pair (sea-level air pressure)
+    unit: mb
+  - name: Qair (specific humidity)
+    unit: kg/kg
+  - name: rain (precipitation)
+    unit: kg/m2/s
+  - name: swrad (shortwave radiation)
+    unit: W/m2
+  - name: lwrad (longwave radiation)
+    unit: W/m2
+  - name: lateral open-boundary temp/salt/u/v/zeta time series
+    unit: degC, PSU, m/s, m
+  - name: tidal elevation/current constituents (Eamp, Ephase, Cangle, Cphase)
+    unit: m, deg, deg, deg
+  - name: river discharge
+    unit: m3/s
+  - name: open-boundary wave spectra / parameters
+    unit: m, s, deg
+  parameters:
+  - name: theta_s (surface S-coordinate stretching)
+    unit: dimensionless
+  - name: theta_b (bottom S-coordinate stretching)
+    unit: dimensionless
+  - name: Tcline (thermocline stretching depth)
+    unit: m
+  - name: VISC2 (horizontal Laplacian viscosity)
+    unit: m2/s
+  - name: TNU2 (horizontal tracer diffusion)
+    unit: m2/s
+  - name: rdrg2 (quadratic bottom drag coefficient)
+    unit: dimensionless
+  - name: Zob (bottom roughness length)
+    unit: m
+  - name: Znudg (free-surface nudging timescale)
+    unit: day
+  - name: Tnudg (tracer nudging timescale)
+    unit: day
+  - name: rho0 (Boussinesq reference seawater density)
+    unit: kg/m3
+  - name: Cp (specific heat of seawater)
+    unit: J/kg/degC
+  - name: g (gravitational acceleration)
+    unit: m/s2
+  - name: h (bottom depth)
+    unit: m
+  - name: grid metrics (pm, pn, angle, f, mask_rho)
+    unit: 1/m, rad, 1/s, 0/1
+  initial_conditions:
+  - name: initial temp / salt
+    unit: degC, PSU
+  - name: initial u / v / ubar / vbar
+    unit: m/s
+  - name: initial zeta (free surface)
+    unit: m
+  - name: initial sediment bed (thickness, fractions)
+    unit: m, fraction
+  - name: restart record (NRREC)
+    unit: index
+  boundary_conditions:
+  - name: DT (baroclinic timestep)
+    unit: s
+  - name: NDTFAST (barotropic:baroclinic substep ratio)
+    unit: count
+  - name: Vtransform (S-coordinate transformation type)
+    unit: code
+  - name: Vstretching (S-coordinate stretching function)
+    unit: code
+  - name: BULK_FLUXES (bulk vs prescribed surface flux)
+    unit: switch
+  - name: WET_DRY (dynamic wet/dry masking)
+    unit: switch
+  - name: RadNud open-boundary scheme + obcfac
+    unit: scheme, factor
+  - name: TIME_REF (model time epoch)
+    unit: date
+  - name: coupling interval (TI_OCN2WAV etc.)
+    unit: s
+  - name: NtileI x NtileJ tiling and node allocation
+    unit: count
+  - name: SWAN spectral resolution (direction / frequency bins)
+    unit: count
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - zeta
+  - temp
+  - salt
+  - u
+  - v
+  - Hsig
+  - bed_thickness
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: R=0.989, 2 scorecard(s)'
+  metrics:
+    best_r: 0.9889
+summary:
+  total_tools: 5
+  total_stage_docs: 5
+  total_diagnostic_triplets: 17
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

@@ -1,13 +1,3 @@
----
-name: dumux
-description: >-
-  DuMux 3.10. Covers Darcy-scale flow and transport in porous media (single-phase
-  saturated, variably-saturated…; Passive/reactive tracer advection-diffusion driven by
-  the flow solution; Pressure / saturation / composition fields on a structured or
-  unstructured finite-volume grid; Optional non-isothermal heat transport coupled to flow.
-  Use when the task involves running, configuring, calibrating or interpreting DuMux.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +21,40 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_dumux.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_dumux.py --help` |
+| `tools/convert_soil_to_dumux.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_dumux.py --help` |
+| `tools/parse_dumux_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_dumux_output.py --help` |
+| `tools/run_dumux.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_dumux.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # DuMux (DUNE for Multi-Phase/Component/Scale/Physics) — Knowledge Infrastructure
 
 **Package**: `hydrocraft-dumux-groundwater` v1.0.0
@@ -39,6 +63,9 @@ description: >-
 **Created by**: Knowledge Dissection Toolkit
 **Last updated**: 2026-03-25
 **Stats**: 4 tools | 5 skill documents | 22 diagnostic triplets | ~1,500 lines of validated Python | 4 new obs_datasets entries
+
+## 11. Validated Results
+
 **Validation status**: `production_validated` — 4 independent real-case tests (2026-04-29/30)
 
 | Case | Domain | Obs source | Key metric | Output |
@@ -49,6 +76,19 @@ description: >-
 | **HP-depletion** | Same domain | D2WT 2019−1989 change | Obs mean −9.3m, Sim −8.7m; excess depletion map reveals pumping hotspots | `outputs/dumux_cases/case_a/case_a_depletion.png` |
 | **Po Plain** | N Italy 9–11°E 44.5–46°N | 421 NGWMN wells (Zenodo #14013762) | Darcy flux 160mm/yr ✓ (lit 50–300); confined amp < unconfined (p=0.045) ✓; K–amp r=−0.165 ✓ | `outputs/dumux_cases/case_b/case_b_poplain.png` |
 | **NCP** | N China Plain 114–120°E 34–40°N | China TWSA 0.1° 2002–2019 (Zenodo #19502907) | TWSA depletion −22.4mm/yr (r=−0.915) consistent with NCP GW crisis; Darcy 24mm/yr | `outputs/dumux_cases/case_c/case_c_ncp.png` |
+
+### Performance metrics - field convention for rank-1 output
+
+The rank-1 dag output is `pressure`. The convention bars below are restated from
+`docs/validation_convention.yaml`; all three pressure bars have null bands and no citation keys
+listed in the convention. Treat the case metrics above as reported results, not as pass/fail
+verdicts from generic hydrologic thresholds.
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band | Citation key from convention |
+|---|---|---|---|---|---|---|
+| pressure | pbias | zero_centered | no cited threshold | no cited threshold | no cited threshold | none (`cites: []`) |
+| pressure | nse | maximize | no cited threshold | no cited threshold | no cited threshold | none (`cites: []`) |
+| pressure | csi | maximize | no cited threshold | no cited threshold | no cited threshold | none (`cites: []`) |
 
 **Key limitations documented:**
 - Uniform K (GLHYMPS median per domain) — real heterogeneity reduces NSE
@@ -231,6 +271,22 @@ Parameters can be overridden on the command line:
 ```
 
 ---
+
+## 6. Output Description
+
+**Source: `dag.yaml`.** The dag is authoritative for output identity; if this section and
+`dag.yaml` ever disagree, the dag wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `pressure` (Pa) - Subsurface porous-medium phase / fluid pressure field (primary variable). Hydraulic head h = (p - 101325)/(rho*g) + z is derived from it for comparison with groundwater well data.
+
+Other dag outputs: `velocity`, `saturation`, `tracer concentration / mass fraction`,
+`baseflow (derived flux)`.
+
+| Output variable (dag `var`) | Unit | Description |
+|---|---|---|
+| pressure | Pa | Subsurface porous-medium phase / fluid pressure field (primary variable). Hydraulic head h = (p - 101325)/(rho*g) + z is derived from it for comparison with groundwater well data. |
 
 ## Output Format: VTK
 

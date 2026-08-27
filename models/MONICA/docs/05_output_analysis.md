@@ -23,19 +23,36 @@ metrics for crop model evaluation.
 
 ## MONICA Output Format
 
-MONICA outputs have 3–4 header rows before data:
+MONICA writes ONE BLOCK PER OUTPUT EVENT. Every block starts with a bare,
+quoted section-label line (the event key: `"daily"`, `"monthly"`, `"yearly"`,
+`"run"`, `"crop"`), then that block's own header rows and data, and blocks are
+separated by a blank line. A crop/harvest-event file therefore looks like:
 
 ```
+"crop"
+CM-count;Crop;Yield;AbBiom;sowing;harvest
+[];[];[kgDM ha-1];[kgDM ha-1];[];[]
+1;wheat/winter wheat;3595.3;16690.9;1997-09-28;1998-07-02
+```
+
+and a daily block like:
+
+```
+"daily"
 Date,Crop,Yield,LAI,Act_ET,Precip,Mois/1,Mois/2,...
 ,[kg ha-1],[m2 m-2],[mm],[mm],[m3 m-3],[m3 m-3],...
 j:Date,j:Crop,j:Yield,j:LAI,...
 1991-01-01,,0,0,0.5,0,...
 ```
 
-- **Row 1**: Column names
+- **Row 0**: section label (quoted event key) — NOT a header; a parser that
+  takes line 0 as the header reads `columns=["crop"]` and loses every yield
+  (triplet dt_27)
+- **Row 1**: Column names (each block has its OWN header and separator)
 - **Row 2**: Units in brackets
-- **Row 3**: JSON references (j:, m:, c: prefixes)
-- **Row 4+**: Data rows (comma or semicolon separated)
+- **Row 3**: JSON references (j:, m:, c: prefixes) — optional
+- **Row 4+**: Data rows (comma or semicolon separated), until a blank line or
+  the next section label
 
 ## Procedure
 
@@ -64,6 +81,21 @@ j:Date,j:Crop,j:Yield,j:LAI,...
 | Good        | 10–20% of mean    | > 0.7 | ±10–20%   |
 | Fair        | 20–30% of mean    | > 0.5 | ±20–30%   |
 | Poor        | > 30% of mean     | < 0.5 | > ±30%    |
+
+### Metric families by obs_shape — what may be REPORTED, not only computed (2026-08-22, dt_32)
+
+The dag (`dag.yaml` → `outputs.Yield.observability.comparable_obs_shapes`) fixes which metric FAMILIES are valid
+per obs_shape, and the orchestrator's dag_driven_gate rejects a result whose `metrics` / `test_runs` row carries a
+metric outside them:
+
+| obs_shape                        | valid families                            | report on the row                                   | keep as aux only |
+|----------------------------------|-------------------------------------------|-----------------------------------------------------|------------------|
+| point_time_series (trials)       | magnitude_accuracy, temporal_pattern_match | pbias, rmse, nse, kge, r                            | —                |
+| point_snapshot (one season)      | magnitude_accuracy                         | pbias                                               | —                |
+| regional_aggregate_time_series   | magnitude_accuracy, trend_match            | pbias, rmse, trend_error, decadal_pbias, slope_ratio | nse, kge, r, r_detr (`aux_temporal_pattern_not_gate_valid`) |
+
+`trend_error` = slope of (sim − obs) × (n − 1) / mean(obs); `decadal_pbias` = max |PBIAS| of the half-period means;
+FAOSTAT / yearbook / GDHY / SPAM are regional aggregates (fresh weight, ÷0.88 — see SKILL.md Unit notes, dt_31).
 
 ## Key Output Variables to Check
 

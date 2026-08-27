@@ -1,0 +1,496 @@
+schema_version: 1
+model_id: AquaCrop
+domain: crop
+generated_by: "Step-B agent (Codex) - validation-convention campaign"
+generated_at: 2026-08-14
+
+references:
+  umair2017:
+    doi: 10.3389/fpls.2017.01667
+    title: "Evaluation of the CropSyst Model during Wheat-Maize Rotations on the North China Plain for Identifying Soil Evaporation Losses"
+    venue: "Frontiers in Plant Science"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_fpls.2017.01667.txt
+  jin2014:
+    doi: 10.1371/journal.pone.0086938
+    title: "Assessment of the AquaCrop Model for Use in Simulation of Irrigated Winter Wheat Canopy Cover, Biomass, and Grain Yield in the North China Plain"
+    venue: "PLOS ONE"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1371_journal.pone.0086938.txt
+  sandhu2019:
+    doi: 10.1016/j.agwat.2019.105687
+    title: "Performance of AquaCrop model in simulating maize growth, yield, and evapotranspiration under rainfed, limited and full irrigation"
+    venue: "Agricultural Water Management"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agwat.2019.105687.txt
+  toumi2016:
+    doi: 10.1016/j.agwat.2015.09.007
+    title: "Performance assessment of AquaCrop model for estimating evapotranspiration, soil water content and grain yield"
+    venue: "Agricultural Water Management"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agwat.2015.09.007.txt
+  adeboye2019:
+    doi: 10.1016/j.agwat.2018.11.006
+    title: "Performance evaluation of AquaCrop in simulating soil water storage, yield and water productivity"
+    venue: "Agricultural Water Management"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agwat.2018.11.006.txt
+  ran2017:
+    doi: 10.1016/j.agsy.2016.11.001
+    title: "Performance of AquaCrop and SIMDualKc models in evapotranspiration partitioning"
+    venue: "Agricultural Systems"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agsy.2016.11.001.txt
+  bello2016:
+    doi: 10.1071/CP15226
+    title: "Calibration and validation of AquaCrop for pearl millet (Pennisetum glaucum)"
+    venue: "Crop and Pasture Science"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1071_cp15226.txt
+
+validation:
+  - dag_variable: DryYield
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred to single final-yield percent error from the crop-model NRMSE tier convention: excellent <10%, good 10-20%, fair 20-30%, poor >30%."
+        cites: [umair2017, sandhu2019]
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Preferred when multiple fields, years, or treatments are available."
+        cites: [umair2017, sandhu2019, jin2014]
+    validated_when: "|PBIAS| <= 30% for a single final dry-yield comparison, with the same moisture and harvest basis."
+    evidence_strength: strong
+    confidence: 0.72
+    notes: >-
+      Umair 2017 reproduces the Jamieson crop-model NRMSE tiers: "excellent when an NRMSE of <10% ... good ... 10%<20%, fair ... 20%<30%, and poor ... >30%".
+      Sandhu 2019 uses the same tiers and states AquaCrop grain yield had RMSE 0.03 t/ha and maximum deviation 3%; Jin 2014 reports AquaCrop grain-yield RMSE 0.52 t/ha and E 0.92.
+
+  - dag_variable: DryYield
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Magnitude bias retained from the DAG; percent bands are transferred from the fetched crop-model NRMSE tier convention and should be paired with RMSE/NRMSE to avoid cancellation."
+        cites: [umair2017, sandhu2019]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Crop-model validation tier reproduced in fetched OA text."
+        cites: [umair2017, sandhu2019]
+    secondary_metrics:
+      - metric: d
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Willmott agreement index is commonly co-reported; Umair 2017 says 1.0 indicates excellent correspondence."
+        cites: [umair2017]
+    validated_when: "|PBIAS| <= 30% and NRMSE <= 30% across years, treatments, or sites."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Field papers judge crop yield mainly by percent error, RMSE/NRMSE, EF/NSE, R2, and d-index. The DAG's PBIAS is kept as headline, but the cited crop convention is explicitly NRMSE-based.
+
+  - dag_variable: DryYield
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Use on detrended or decadal-mean aggregates; raw annual regional yield trends are not a clean weather-only AquaCrop validation target."
+        cites: [umair2017, sandhu2019]
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Useful after detrending technology and management trends."
+        cites: [umair2017]
+    validated_when: "|PBIAS| <= 30% on detrended residuals or multi-year aggregate means, not raw technology-trend series."
+    evidence_strength: moderate
+    confidence: 0.52
+    notes: >-
+      The numeric band is transferred from field-scale crop-model validation. The skeleton caveat is decisive here: regional aggregates include technology, cultivar, fertilizer, and reporting trends that AquaCrop does not simulate.
+
+  - dag_variable: FreshYield
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred from dry-yield NRMSE/percent-error crop conventions; only valid when observations use the same fresh-weight moisture basis as YldWC."
+        cites: [umair2017, sandhu2019]
+    secondary_metrics: []
+    validated_when: "|PBIAS| <= 30% and the observed harvest moisture basis matches the AquaCrop YldWC conversion."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "Fetched benchmarks validate grain/dry yield, not fresh-weight conversion directly; this is a moisture-basis transfer."
+
+  - dag_variable: biomass
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Magnitude-bias band transferred from crop-model NRMSE percent tiers."
+        cites: [umair2017, sandhu2019]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        cites: [umair2017, sandhu2019]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "AquaCrop biomass benchmarks report EF/E and RMSE; Jin 2014 reports biomass E 0.92-0.96."
+        cites: [jin2014]
+    validated_when: "|PBIAS| <= 30% and NRMSE <= 30% for the sampled above-ground dry biomass trajectory."
+    evidence_strength: strong
+    confidence: 0.76
+    notes: >-
+      Jin 2014 reports AquaCrop biomass RMSE 1.12-1.84 t/ha and E 0.92-0.96 with "good performance"; Umair 2017 reports biomass NRMSE 7.96-9.54% and calls the model effective.
+
+  - dag_variable: biomass
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Single-snapshot biomass percent error uses the same transferred percent tier as final yield."
+        cites: [umair2017, sandhu2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Absolute RMSE is crop- and sampling-design dependent; fetched benchmarks report values but no universal t/ha gate."
+        cites: [jin2014, adeboye2019]
+    validated_when: "|PBIAS| <= 30% for final or destructive-sample above-ground dry biomass."
+    evidence_strength: strong
+    confidence: 0.68
+    notes: "Adeboye 2019 reports dry above-ground biomass RMSE <= 0.25 t/ha and d-index >= 0.98; Jin 2014 reports AquaCrop biomass RMSE and E ranges."
+
+  - dag_variable: canopy_cover
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.83, satisfactory: 0.73}
+        pass_band: satisfactory
+        band_note: "Benchmark-derived EF/NSE bands: Jin 2014 calls E 0.90-0.96 good; Sandhu 2019 calls calibrated CC with EF >0.83 good and validation EF 0.73-0.74 acceptable."
+        cites: [jin2014, sandhu2019]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        cites: [umair2017, sandhu2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Canopy-cover RMSE is reported in percentage points and depends on treatment and senescence sampling."
+        cites: [jin2014, sandhu2019]
+    validated_when: "NSE/EF >= 0.73 and NRMSE <= 30% for daily or sampled green canopy-cover trajectories."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Jin 2014 reports CC RMSE 3.18-7.19% and E 0.90-0.96. Sandhu 2019 says CC simulation was good/acceptable with FIT validation RMSE <8.4%, NRMSE <9.7%, d >0.95, and EF 0.73-0.74; rainfed CC with NRMSE 15.6% was still considered acceptable due field variation.
+
+  - dag_variable: canopy_cover
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred from crop-model percent-error tiers; only valid after remote-sensing fAPAR/NDVI is mapped to canopy cover."
+        cites: [umair2017, sandhu2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Point AquaCrop should be compared with pixel-aggregated canopy cover, not within-pixel heterogeneity."
+        cites: [sandhu2019]
+    validated_when: "|PBIAS| <= 30% after sensor-to-canopy-cover conversion and pixel aggregation."
+    evidence_strength: moderate
+    confidence: 0.48
+    notes: "No fetched paper gives a spatial-snapshot AquaCrop canopy threshold; this transfers field CC percent-error practice to spatial observations."
+
+  - dag_variable: Tr
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Daily transpiration validation is judged with NRMSE/RMSE/d-index in ET-partitioning papers; the DAG's NSE is not the dominant convention."
+        cites: [umair2017, ran2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Transpiration papers co-report R2/d/RMSE/NRMSE rather than a fixed NSE pass threshold."
+        cites: [ran2017]
+    validated_when: "NRMSE <= 30% for daily crop transpiration against sap-flow, lysimeter, or partitioned ET observations."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: "Ran 2017 reports AquaCrop daily T NRMSE 30.5% as close to 30% and acceptable under full irrigation, and 27.9% acceptable under different irrigation treatments."
+
+  - dag_variable: Es
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred from crop-model NRMSE tiers; direct soil-evaporation observations are rare and high-uncertainty."
+        cites: [umair2017, ran2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched ET-partitioning benchmark judges E mainly by NRMSE/RMSE/d and reports unsuccessful E simulation when NRMSE is far above 30%."
+        cites: [ran2017]
+    validated_when: "NRMSE <= 30% for daily soil evaporation; higher values remain unvalidated even if ET_actual is acceptable."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Ran 2017 says AquaCrop soil evaporation simulation was unsuccessful with NRMSE 138.4%, much >30%, and explains micro-lysimeter/plastic-mulch complications."
+
+  - dag_variable: ET_actual
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Daily ET validation is usually judged with RMSE/NRMSE/d/R2; this supersedes the DAG's NSE headline when NSE is unstable for daily ET."
+        cites: [umair2017, ran2017, toumi2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Toumi 2016 reports calibration NSE 0.57-0.77 as relatively good, but one validation field had NSE -0.41 despite RMSE/MBE reporting; use NSE cautiously for daily ET."
+        cites: [toumi2016]
+    validated_when: "NRMSE <= 30% for point daily or seasonal actual ET, with RMSE/MBE reviewed for energy-balance and footprint bias."
+    evidence_strength: strong
+    confidence: 0.7
+    notes: "Ran 2017 reports AquaCrop daily ET overall NRMSE 25.6% as reliable overall; Toumi 2016 reports daily ET RMSE about 0.69-0.78 mm/day in AquaCrop wheat fields."
+
+  - dag_variable: ET_actual
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched AquaCrop or crop-ET paper gives a CSI validation threshold for continuous spatial ET maps."
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "For continuous ET, fetched field papers use NRMSE/RMSE/d/R2 rather than categorical CSI."
+        cites: [ran2017, toumi2016]
+    validated_when: "UNRESOLVED - no cited CSI band for spatial ET; use continuous ET metrics when a mapped benchmark is fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The DAG's CSI metric appears categorical; fetched AquaCrop ET papers evaluate continuous ET time series, not spatial event detection."
+
+  - dag_variable: Wr
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Root-zone water storage should be normalized because RMSE in mm changes with sampled depth."
+        cites: [umair2017, sandhu2019, toumi2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "AquaCrop soil water papers often report poor or variable EF/NSE under water stress, so NRMSE/RMSE and bias carry the validation judgement."
+        cites: [sandhu2019, toumi2016]
+    validated_when: "NRMSE <= 30% for root-zone water integrated over the same depth as the observations."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Toumi 2016 reports total water content RMSE 22 mm, relative error 14%; Sandhu 2019 reports good calibration TSW NRMSE 3-5.2% but poor validation in stressed/extreme years."
+
+  - dag_variable: th_per_compartment
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred from soil-water storage and crop-model NRMSE conventions; sensor depth must match model compartment midpoint."
+        cites: [umair2017, sandhu2019, toumi2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Point soil-water EF/NSE is sensitive to sensor depth, irrigation timing, and stress years; use with RMSE/NRMSE."
+        cites: [sandhu2019, toumi2016]
+    validated_when: "NRMSE <= 30% for volumetric water content at aligned sensor depths or compartment aggregates."
+    evidence_strength: moderate
+    confidence: 0.56
+    notes: "Sandhu 2019 notes AquaCrop could not simulate SWC accurately in some studies, with 8.4-11.7% vol RMSE and low EF; this block is a transferred soil-water convention, not a universal profile threshold."
+
+  - dag_variable: th_per_compartment
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a spatial-snapshot satellite soil-moisture PBIAS threshold for AquaCrop compartments."
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched soil-water thresholds are point/time-series or storage comparisons, while satellite surface soil moisture samples only the top layer."
+        cites: [sandhu2019, toumi2016]
+    validated_when: "UNRESOLVED - compare satellite surface soil moisture only to the top compartment after a fetched spatial benchmark defines the metric."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The skeleton caveat is retained: satellite surface soil moisture is not the integrated profile or arbitrary compartment stack."
+
+  - dag_variable: Runoff
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched AquaCrop field-runoff paper provides a CSI event-detection threshold."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - requires field-plot runoff observations and a fetched event-detection convention."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "OpenAlex search for AquaCrop runoff CSI validation did not return a usable open threshold paper under the campaign cap."
+
+  - dag_variable: DeepPerc
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched lysimeter drainage/deep-percolation paper provides a numeric PBIAS convention for AquaCrop."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - needs lysimeter drainage or recharge benchmark with a cited numeric band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Fetched AquaCrop papers mention deep percolation as a water-balance component, but do not validate DeepPerc with a numeric threshold."
+
+  - dag_variable: z_root
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a root-depth PBIAS threshold for AquaCrop."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - destructive root-depth observations are too sparse for a cited daily threshold in the fetched set."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "OpenAlex root-depth coverage check did not identify a usable open AquaCrop validation convention."
+
+  - dag_variable: harvest_index
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper validates reference harvest-index state with a numeric PBIAS threshold."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - use as a diagnostic state unless a harvest-index benchmark is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Yield and biomass are validated in fetched AquaCrop papers; the internal reference harvest-index state is not separately thresholded."
+
+  - dag_variable: harvest_index_adj
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper validates stress-adjusted harvest index with a numeric PBIAS threshold."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - validate resulting yield/biomass until a stress-adjusted HI convention is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The fetched literature reports final yield and biomass performance, not a separate pass band for harvest_index_adj."
+
+  - dag_variable: gdd_cum
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric validation convention for AquaCrop cumulative GDD; it is weather-derived and parameter-dependent."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - treat as a weather/phenology consistency check, not an independently validated output."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "AquaCrop papers use GDD in parameterization and phenology, but the fetched set does not define a GDD time-series pass band."
+
+deferred_paywalled:
+  - ref: "AquaCrop - The FAO Crop Model to Simulate Yield Response to Water: I. Concepts and Underlying Principles"
+    doi: 10.2134/agronj2008.0139s
+    needed_for: [harvest_index, harvest_index_adj, gdd_cum]
+  - ref: "AquaCrop - The FAO Crop Model to Simulate Yield Response to Water: II. Main Algorithms and Software Description"
+    doi: 10.2134/agronj2008.0140s
+    needed_for: [DeepPerc, z_root, Runoff]

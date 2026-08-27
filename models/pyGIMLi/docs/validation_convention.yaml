@@ -1,0 +1,305 @@
+schema_version: 1
+model_id: pyGIMLi
+domain: geophysics
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+# pyGIMLi produces inverse-model fields and internal diagnostics rather than
+# directly measured environmental state variables. The fetched literature
+# supports masking/appraising inversion products with coverage, sensitivity,
+# resolution, data uncertainty, borehole/lab checks, and data misfit, but it
+# does not provide universal numeric CSI/PBIAS validation pass bands for these
+# dag variables. Per the no-fabrication rule, headline bands are null and low
+# confidence; structural-limit claims cite fetched papers.
+
+references:
+  ren2020:
+    doi: 10.1007/s10712-019-09567-3
+    title: "Uncertainty and Resolution Analysis of 2D and 3D Inversion Models Computed from Geophysical Electromagnetic Data"
+    venue: "Surveys in Geophysics"
+    year: 2020
+    oa: gold
+    resolves: https://doi.org/10.1007/s10712-019-09567-3
+  dimech2023:
+    doi: 10.1038/s41598-023-48100-w
+    title: "A multiscale accuracy assessment of moisture content predictions using time-lapse electrical resistivity tomography in mine tailings"
+    venue: "Scientific Reports"
+    year: 2023
+    oa: gold
+    resolves: https://doi.org/10.1038/s41598-023-48100-w
+  palacios2020:
+    doi: 10.5194/hess-24-2121-2020
+    title: "Time-lapse cross-hole electrical resistivity tomography (CHERT) for monitoring seawater intrusion dynamics in a Mediterranean aquifer"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2020
+    oa: gold
+    resolves: https://doi.org/10.5194/hess-24-2121-2020
+  mollaret2020:
+    doi: 10.3389/feart.2020.00085
+    title: "Petrophysical Joint Inversion Applied to Alpine Permafrost Field Sites to Image Subsurface Ice and Water Contents"
+    venue: "Frontiers in Earth Science"
+    year: 2020
+    oa: gold
+    resolves: https://doi.org/10.3389/feart.2020.00085
+  michels2024:
+    doi: 10.1186/s13007-024-01247-7
+    title: "Quantitative phenotyping of crop roots with spectral electrical impedance tomography: a rhizotron study with optimized measurement design"
+    venue: "Plant Methods"
+    year: 2024
+    oa: gold
+    resolves: https://doi.org/10.1186/s13007-024-01247-7
+  peruzzo2020:
+    doi: 10.1007/s11104-020-04529-w
+    title: "Imaging of plant current pathways for non-invasive root phenotyping using a newly developed electrical current source density approach"
+    venue: "Plant and Soil"
+    year: 2020
+    oa: gold
+    resolves: https://doi.org/10.1007/s11104-020-04529-w
+  isunza2023:
+    doi: 10.1190/geo2022-0133.1
+    title: "Quantitative interpretation of geoelectric inverted data with a robust probabilistic approach"
+    venue: "Geophysics"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1190_geo2022-0133.1.txt
+  singha2022:
+    doi: 10.1007/s10712-022-09731-2
+    title: "A Review on Applications of Time-Lapse Electrical Resistivity Tomography Over the Last 30 Years"
+    venue: "Surveys in Geophysics"
+    year: 2022
+    oa: gold
+    resolves: https://doi.org/10.1007/s10712-022-09731-2
+
+validation:
+  - dag_variable: inverted_resistivity_model
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched pyGIMLi/ERT paper gives a universal numeric CSI threshold for validating inverted resistivity cells against an independent spatial truth map."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Spatial pattern skill must be interpreted only in resolved/covered parts of the mesh: Ren 2020 says reliability depends on 'data coverage and noise' and the model resolution matrix acts as a 'blurring filter'; Palacios 2020 says surface ERT imaging is strongly affected by 'decreasing resolution with depth'; Isunza 2023 uses sensitivity thresholds before classification."
+        cites: [ren2020, palacios2020, isunza2023]
+      - metric: accuracy_score
+        direction: maximize
+        status: supportive
+        ceiling_reason: "A fetched geoelectric interpretation benchmark validates material-category maps against synthetic/borehole truth and reports classification accuracy, but it does not establish a universal pass threshold for pyGIMLi resistivity fields."
+        cites: [isunza2023]
+    validated_when: "UNRESOLVED - no cited numeric CSI band; compare only cells above coverage/sensitivity masks and corroborate with independent borehole, lab, or geological truth."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag determining_metric csi is retained, but all bands are null. Fetched papers support the
+      convention that inversion reliability is judged through sensitivity/resolution appraisal and
+      ground-truth checks, not by a field-wide CSI cutoff. Isunza 2023 reports an accuracy score of
+      0.87 in one classification experiment, which is a case result, not a validation tier.
+
+  - dag_variable: inverted_resistivity_model
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper defines a transferable PBIAS band for a smoothed ERT resistivity cell sampled against a borehole or lab point."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Point-cell comparisons are limited by inverse smoothing and support mismatch: Ren 2020 describes the model resolution matrix as a 'blurring filter', and Dimech 2023 contrasts local point sensors with ERT properties averaged over larger volumes."
+        cites: [ren2020, dimech2023]
+    validated_when: "UNRESOLVED - no cited numeric PBIAS band; judge only as a local corroboration after matching scale/support and masking poorly resolved cells."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The dag determining_metric pbias is retained with a null band. Fetched literature supports
+      qualitative point support and smoothing caveats, but no numeric percent-bias acceptance tier
+      for point-vs-cell resistivity validation.
+
+  - dag_variable: inverted_velocity_model
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched SRT/pyGIMLi paper gives a universal CSI threshold for validating inverted velocity/slowness fields."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Seismic/refraction and joint-inversion spatial skill is limited by coverage, smoothing, and ambiguity: Mollaret 2020 states that resolution and spatial coverage vary significantly and are a source of uncertainty, and Ren 2020 states under- and mixed-determined inversions are non-unique."
+        cites: [mollaret2020, ren2020]
+      - metric: rms
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Mollaret 2020 reports RMS values and chi-square diagnostics as fit/appraisal quantities for joint seismic-resistivity inversion, but not as universal validation bands."
+        cites: [mollaret2020]
+    validated_when: "UNRESOLVED - no cited numeric CSI band; compare velocity/slowness fields only in well-covered regions and corroborate with independent velocity or lithologic control."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag determining_metric csi is retained. The fetched petrophysical joint-inversion paper
+      uses RMS/chi-square and validation data to appraise velocity/resistivity-derived structure,
+      but does not publish a spatial CSI validation tier.
+
+  - dag_variable: inverted_velocity_model
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper defines a numeric PBIAS band for borehole/sonic point checks against a smoothed SRT velocity cell."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "A single inverted velocity cell is a blurred, regularized estimate rather than a point measurement: Ren 2020 calls the resolution matrix a 'blurring filter', and Mollaret 2020 notes smoothness regularization and varying spatial coverage as uncertainty sources."
+        cites: [ren2020, mollaret2020]
+    validated_when: "UNRESOLVED - no cited numeric PBIAS band; use as a support check only after matching velocity/slowness units and spatial support."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The dag caveat about slowness-vs-velocity units is retained in the validation rule. Literature
+      supports the structural caveat but does not provide a percent-bias validation threshold.
+
+  - dag_variable: inverted_conductivity_or_coleCole_model
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched EM/SIP or pyGIMLi paper defines a universal CSI band for conductivity or Cole-Cole parameter maps."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Complex-resistivity/SIP maps are constrained by measurement design and sensitivity: Michels 2024 says resolution characteristics have a significant impact on tomographic reconstruction, and Ren 2020 states inversion reliability depends on data coverage, noise, trade-off parameters, initial model, and constraints."
+        cites: [michels2024, ren2020]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Michels 2024 reports correlations between integrated polarization strength and validation root traits, but those are application-specific skill values rather than a general pyGIMLi validation threshold."
+        cites: [michels2024]
+    validated_when: "UNRESOLVED - no cited numeric CSI band; require sensitivity-aware spatial comparison plus independent petrophysical or borehole constraints."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag determining_metric csi is retained. Fetched SIP/complex-resistivity studies use
+      resolution, sensitivity, and correlations with validation traits; none converts these into a
+      transferable pass/fail CSI threshold for Cole-Cole or conductivity maps.
+
+  - dag_variable: forward_response
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper supports CSI as a numeric pass/fail metric for apparent-resistivity or traveltime forward-response pseudosections."
+        cites: []
+    secondary_metrics:
+      - metric: rms
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Ren 2020 says weighted data misfit is commonly expressed as RMS of forward responses to field measurements; Mollaret 2020 reports RMS and chi-square diagnostics for the fitted data."
+        cites: [ren2020, mollaret2020]
+      - metric: residual_structure
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Forward-response appraisal is principally residual/misfit-based; structured residuals can indicate data-error or physics mismatches, but the fetched set provides no numeric spatial-pattern CSI threshold."
+        cites: [ren2020]
+    validated_when: "UNRESOLVED - keep dag CSI as un-evaluable; prefer error-weighted data residual/RMS checks when the observation-error model is documented."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Literature supersedes CSI as the usual fit diagnostic for forward responses, but without a
+      fetched numeric pass band tied to the supplied error model the headline threshold remains null.
+
+  - dag_variable: data_fit_chi2
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The dag compares this internal diagnostic through PBIAS, but no fetched paper gives a percent-bias validation band for reduced chi-square against an external observation."
+        cites: []
+    secondary_metrics:
+      - metric: reduced_chi2
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Ren 2020 states the weighted data misfit has chi-square expectation N and RMS = sqrt(Qd/N); Mollaret 2020 uses chi-square and RMS to tune data errors, noting that if chi-square is below one a lower data error is set."
+        cites: [ren2020, mollaret2020]
+    validated_when: "UNRESOLVED - chi-square is an internal consistency diagnostic for the assumed error model, not an independent observable with a fetched PBIAS band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The dag determining_metric pbias is retained with null bands. The fetched literature supports
+      using reduced chi-square/RMS for convergence and error-model appraisal, but not a numeric
+      PBIAS validation rule for this dag variable.
+
+  - dag_variable: coverage_sensitivity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Coverage/sensitivity is a derived resolution diagnostic; no fetched paper defines an external-observation CSI validation band for it."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Coverage/sensitivity is not a physical observable but an appraisal of where the inversion is constrained: Ren 2020 describes sensitivity, resolution, and covariance matrices as model-analysis tools, and Palacios 2020 computes coverage using cumulated sensitivity to show where images have higher resolution."
+        cites: [ren2020, palacios2020]
+      - metric: coverage_mask
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Isunza 2023 applies a relative cumulative sensitivity threshold before using tomograms for classification, supporting coverage as a mask rather than an independently validated field."
+        cites: [isunza2023]
+    validated_when: "UNRESOLVED - treat as a mask/appraisal layer for other inversion outputs, not a stand-alone gradeable observation."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      The dag determining_metric csi is retained but null. This variable should gate where other
+      spatial comparisons are meaningful; fetched papers support that role but do not provide a
+      universal spatial overlap threshold for the sensitivity field itself.
+
+deferred_paywalled:
+  - ref: "pyGIMLi: An open-source library for modelling and inversion in geophysics"
+    doi: 10.1016/j.cageo.2017.07.011
+    needed_for: [inverted_resistivity_model, inverted_velocity_model, forward_response, data_fit_chi2]
+  - ref: "Self-Aware Joint Inversion of Multidisciplinary Geophysical Data in Mineral Exploration"
+    doi: 10.3390/min15060623
+    needed_for: [inverted_resistivity_model, inverted_velocity_model, inverted_conductivity_or_coleCole_model, forward_response]
+  - ref: "Geostatistical regularization operators for geophysical inverse problems on irregular meshes"
+    doi: 10.1093/gji/ggy055
+    needed_for: [inverted_resistivity_model, inverted_velocity_model, coverage_sensitivity]
+  - ref: "Quantitative imaging of water, ice and air in permafrost systems through petrophysical joint inversion of seismic refraction and electrical resistivity data"
+    doi: 10.1093/gji/ggz402
+    needed_for: [inverted_resistivity_model, inverted_velocity_model]
+  - ref: "Structural joint inversion on irregular meshes"
+    doi: 10.1093/gji/ggz550
+    needed_for: [inverted_resistivity_model, inverted_velocity_model, inverted_conductivity_or_coleCole_model]

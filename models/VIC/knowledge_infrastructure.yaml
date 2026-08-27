@@ -1,0 +1,186 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
+package:
+  name: VIC
+  language: c
+  implementation:
+    id: vic-classic-510
+    version: 5.1.0
+    provenance: C; UW-Hydro / Computational Hydrology Group VIC-5.1.0 classic driver (per-cell ASCII forcing
+      and flux output).
+  scientific_reference_version: VIC-5 (Hamman et al. 2018, GMD; original Liang et al. 1994 JGR formulation)
+  binary:
+    path: KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/classic/vic_classic.exe
+    type: ELF
+pipeline:
+  stages:
+  - s1_grid
+  - s2_forcing
+  - s3_soil
+  - s4_veg
+  - s5_routing
+  - s6_post
+tools:
+  count: 26
+  files:
+  - s1_grid/make_basin_grid_nc.py
+  - s2_forcing/fix_lwd_1979.py
+  - s2_forcing/forcing_1d.py
+  - s2_forcing/forcing_nasa_power.py
+  - s2_forcing/nasa_power_batch_cache.py
+  - s2_forcing/process_forcing.py
+  - s2_forcing/rechunk_mswx.py
+  - s3_soil/fill_parameters1.py
+  - s3_soil/fill_parameters2.py
+  - s4_veg/process_vegetation_detailed.py
+  - s5_routing/build_routing_param.py
+  - s5_routing/delineate_bengbu.py
+  - s5_routing/run_routing.py
+  - s6_post/compare_runoff_field.py
+  - s6_post/grid_runoff_nc.py
+  - tools/calib_run.py
+  - tools/calib_run_wangjiaba.py
+  - tools/calib_run_wjb_flatrain.py
+  - tools/calibration/run_bengbu_ai_batch10.py
+  - tools/calibration/run_bengbu_ai_calibration.py
+  - tools/check_data.py
+  - tools/config_paths.py
+  - tools/plot/plot_calibration_convergence.py
+  - tools/plot/plot_calibration_validation_comparison.py
+  - tools/plot/plot_discharge_comparison.py
+  - tools/run_vic_pipeline_enhanced.py
+inputs:
+  forcing:
+  - name: AIR_TEMP
+    unit: degC
+  - name: PREC
+    unit: mm per forcing step
+  - name: PRESSURE
+    unit: kPa
+  - name: SWDOWN
+    unit: W/m^2
+  - name: LWDOWN
+    unit: W/m^2
+  - name: VP
+    unit: kPa
+  - name: WIND
+    unit: m/s
+  - name: LAI (optional time-varying)
+    unit: m2/m2
+  - name: CO2 (optional, CARBON mode)
+    unit: ppm
+  parameters:
+  - name: binfilt (b_infilt)
+    unit: '-'
+  - name: Ds
+    unit: fraction of Dsmax
+  - name: Dsmax
+    unit: mm/day
+  - name: Ws
+    unit: fraction of max soil moisture
+  - name: c (baseflow curve exponent)
+    unit: '-'
+  - name: expt (Brooks-Corey exponent per layer)
+    unit: '-'
+  - name: Ksat (saturated hydraulic conductivity per layer)
+    unit: mm/day
+  - name: phi_s (soil moisture diffusion per layer)
+    unit: mm/mm
+  - name: depth (layer thickness per soil layer)
+    unit: m
+  - name: bubble (bubbling pressure per layer)
+    unit: cm
+  - name: quartz (per layer)
+    unit: '-'
+  - name: bulk_density (per layer)
+    unit: kg/m^3
+  - name: soil_density (per layer)
+    unit: kg/m^3
+  - name: Wcr_FRACT (critical-point soil moisture fraction per layer)
+    unit: fraction
+  - name: Wpwp_FRACT (wilting-point soil moisture fraction per layer)
+    unit: fraction
+  - name: resid_moist (residual moisture fraction per layer)
+    unit: fraction
+  - name: avg_T (long-term mean soil temperature at damping depth)
+    unit: degC
+  - name: dp (soil thermal damping depth)
+    unit: m
+  - name: rough (bare-soil surface roughness)
+    unit: m
+  - name: snow_rough (snowpack surface roughness)
+    unit: m
+  - name: annual_prec (long-term mean annual precipitation)
+    unit: mm
+  - name: elev / lat / lon / off_gmt
+    unit: m, deg, deg, hours
+  - name: Nveg / veg_class / Cv
+    unit: count, id, fraction
+  - name: root_depth / root_fract (per root zone)
+    unit: m, fraction
+  - name: LAI / FCANOPY / ALBEDO (monthly schedule)
+    unit: m2/m2, fraction, fraction
+  - name: displacement / roughness / trunk_ratio / rad_atten / wind_atten / rmin / Rgl / overstory
+    unit: varies
+  - name: sigma_slope / lag_one / fetch
+    unit: -, -, m
+  - name: lake parameters (basin depth/area curve, depth_in, mindepth, maxdepth, ...)
+    unit: varies
+  initial_conditions:
+  - name: init_moist (initial layer soil moisture)
+    unit: mm
+  - name: state file (soil moisture and ice per layer; soil-node temperatures; snowpack SWE/temperatures/density/cold-content;
+      canopy snow and dew; lake state; optional carbon pools)
+    unit: varies
+  boundary_conditions:
+  - name: Lower soil thermal boundary
+    unit: degC
+  - name: AreaFract / Elevation / Pfactor per band
+    unit: fraction, m, fraction
+  - name: FULL_ENERGY (water+energy vs water-only mode)
+    unit: boolean
+  - name: FROZEN_SOIL (enable frozen-soil and permafrost module)
+    unit: boolean
+  - name: QUICK_FLUX (analytical vs finite-difference soil thermal solver)
+    unit: boolean
+  - name: LAKES / CARBON / BLOWING / SPATIAL_FROST / SPATIAL_SNOW / ORGANIC_FRACT
+    unit: boolean
+  - name: LAI_SRC (FROM_VEGPARAM | FROM_VEGLIB | FROM_VEGHIST)
+    unit: enum
+  - name: MODEL_STEPS_PER_DAY / FORCE_STEPS_PER_DAY / SNOW_STEPS_PER_DAY / RUNOFF_STEPS_PER_DAY
+    unit: steps/day
+  - name: STARTYEAR/STARTMONTH/STARTDAY and ENDYEAR/ENDMONTH/ENDDAY
+    unit: date
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - OUT_RUNOFF
+  - OUT_BASEFLOW
+  - OUT_DISCHARGE
+  - OUT_EVAP
+  - OUT_SOIL_MOIST
+  - OUT_SWE
+  - OUT_SNOW_MELT
+  - OUT_SOIL_TEMP
+  - OUT_LATENT
+  - OUT_SENSIBLE
+  - OUT_R_NET
+  - OUT_ALBEDO
+  - OUT_ZWT
+  - OUT_GPP
+  - OUT_LAKE_VOLUME
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.897, KGE=0.765, R=0.950, 7 scorecard(s)'
+  metrics:
+    best_nse: 0.897
+    best_kge: 0.765350941706327
+    best_r: 0.95
+summary:
+  total_tools: 26
+  total_stage_docs: 6
+  total_diagnostic_triplets: 31
+  generated: '2026-08-26'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

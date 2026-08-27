@@ -1,0 +1,430 @@
+schema_version: 1
+model_id: CISM
+domain: cryosphere
+generated_by: "Step-B validation convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+# CISM validation practice in the fetched literature is mostly benchmark-RMSE and
+# observation-envelope based, not universal pass/fail tier tables. Numeric bands
+# below are used only where a fetched paper reports a benchmark value, target, or
+# observational uncertainty that the field uses for judging agreement. Null bands
+# are intentional: they mean no fetched numeric threshold was found.
+
+references:
+  cism2019:
+    doi: 10.5194/gmd-12-387-2019
+    title: "Description and evaluation of the Community Ice Sheet Model (CISM) v2.1"
+    venue: "Geosci. Model Dev."
+    year: 2019
+    oa: gold
+    resolves: https://gmd.copernicus.org/articles/12/387/2019/gmd-12-387-2019.pdf
+  goelzer2018:
+    doi: 10.5194/tc-12-1433-2018
+    title: "Design and results of the ice sheet model initialisation experiments initMIP-Greenland"
+    venue: "The Cryosphere"
+    year: 2018
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/12/1433/2018/tc-12-1433-2018.pdf
+  seroussi2019:
+    doi: 10.5194/tc-13-1441-2019
+    title: "initMIP-Antarctica: an ice sheet model initialization experiment of ISMIP6"
+    venue: "The Cryosphere"
+    year: 2019
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/13/1441/2019/tc-13-1441-2019.pdf
+  lipscomb2021:
+    doi: 10.5194/tc-15-633-2021
+    title: "ISMIP6-based projections of ocean-forced Antarctic Ice Sheet evolution using the Community Ice Sheet Model"
+    venue: "The Cryosphere"
+    year: 2021
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/15/633/2021/tc-15-633-2021.pdf
+  berdahl2023:
+    doi: 10.5194/tc-17-1513-2023
+    title: "Exploring ice sheet model sensitivity to ocean thermal forcing and basal sliding using the Community Ice Sheet Model (CISM)"
+    venue: "The Cryosphere"
+    year: 2023
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/17/1513/2023/tc-17-1513-2023.pdf
+  vanakker2025:
+    doi: 10.5194/tc-19-283-2025
+    title: "Present-day mass loss rates are a precursor for West Antarctic Ice Sheet collapse"
+    venue: "The Cryosphere"
+    year: 2025
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/19/283/2025/tc-19-283-2025.pdf
+  seroussi2020:
+    doi: 10.5194/tc-14-3033-2020
+    title: "ISMIP6 Antarctica: a multi-model ensemble of the Antarctic ice sheet evolution over the 21st century"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/14/3033/2020/tc-14-3033-2020.pdf
+  goelzer2020:
+    doi: 10.5194/tc-14-3071-2020
+    title: "The future sea-level contribution of the Greenland ice sheet: a multi-model ensemble study of ISMIP6"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/14/3071/2020/tc-14-3071-2020.pdf
+  howat2014:
+    doi: 10.5194/tc-8-1509-2014
+    title: "The Greenland Ice Mapping Project (GIMP) land classification and surface elevation datasets"
+    venue: "The Cryosphere"
+    year: 2014
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/8/1509/2014/tc-8-1509-2014.pdf
+  helm2014:
+    doi: 10.5194/tc-8-1539-2014
+    title: "Elevation and elevation change of Greenland and Antarctica derived from CryoSat-2"
+    venue: "The Cryosphere"
+    year: 2014
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/8/1539/2014/tc-8-1539-2014.pdf
+  mankoff2020:
+    doi: 10.5194/essd-12-1367-2020
+    title: "Greenland Ice Sheet solid ice discharge from 1986 through March 2020"
+    venue: "Earth Syst. Sci. Data"
+    year: 2020
+    oa: gold
+    resolves: https://essd.copernicus.org/articles/12/1367/2020/essd-12-1367-2020.pdf
+  lei2022:
+    doi: 10.5194/essd-14-5111-2022
+    title: "Processing methodology for the ITS_LIVE Sentinel-1 ice velocity products"
+    venue: "Earth Syst. Sci. Data"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_essd-14-5111-2022.txt
+  talalay2020:
+    doi: 10.5194/tc-14-4021-2020
+    title: "Geothermal heat flux from measured temperature profiles in deep ice boreholes in Antarctica"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/14/4021/2020/tc-14-4021-2020.pdf
+
+validation:
+  - dag_variable: thk
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 34.0, good: 51.8, satisfactory: 92.0}
+        pass_band: satisfactory
+        band_note: >-
+          Conservative benchmark-RMSE convention: CISM transient initialization reports 34 m
+          all-Antarctica thickness RMSE; CISM sensitivity spin-up reports 51.8 m; ISMIP6
+          Antarctica reports a multi-model low-end thickness RMSE near 92 m. These are
+          benchmark values, not a universal formal tier table.
+        cites: [vanakker2025, berdahl2023, seroussi2020]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG metric is CSI, but fetched ice-sheet validation papers evaluate continuous ice thickness snapshots with RMSE against BedMachine/Fretwell-type observations."
+        cites: [seroussi2019, seroussi2020, berdahl2023]
+    validated_when: "Spatial ice thickness is validated when RMSE against a gridded thickness product is <= 92 m; stronger CISM benchmarks are <= 52 m and <= 34 m."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Seroussi 2020 reports RMSE thickness varying "between 92 and 396 m"; Berdahl 2023 reports
+      "root mean square error 51.8 m"; van den Akker 2025 reports "ice thickness RMSE of 34 m".
+      This supersedes CSI for continuous thickness fields.
+
+  - dag_variable: thk
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for spatial time series of ice thickness or dh/dt."
+        cites: []
+      - metric: dhdt_rmse
+        direction: minimize
+        unit: m/yr
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched-paper convention is qualitative pattern/rate agreement with altimetry-derived thickness change, not a numeric RMSE tier."
+        cites: []
+    secondary_metrics:
+      - metric: dhdt_pattern
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Thickness-change validation is tied to satellite-derived surface-elevation or thickness-change patterns and short observational records."
+        cites: [helm2014, vanakker2025]
+    validated_when: "UNRESOLVED - compare dh/dt pattern and trend to altimetry, but no fetched numeric NSE/RMSE pass band was found."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      van den Akker 2025 states modeled mass-change-rate patterns mimic observations, but does
+      not provide a numeric dh/dt RMSE tier. Helm 2014 reports CryoSat-2 elevation-change products
+      and volume-rate uncertainty, not a model pass threshold.
+
+  - dag_variable: usurf
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 8.5, good: 9.1, satisfactory: 24.0}
+        pass_band: satisfactory
+        band_note: >-
+          Observation-envelope convention from GIMP: ice-covered DEM RMS is 8.5 m, overall RMS is
+          9.1 m, and slope-dependent RMS peaks near 24 m. A model-data surface-elevation RMSE
+          larger than this is outside the fetched DEM validation envelope.
+        cites: [howat2014]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is not the fetched convention for continuous surface elevation; DEM validation is reported as RMS elevation error."
+        cites: [howat2014]
+    validated_when: "Surface-elevation RMSE is <= 24 m, with <= 9.1 m matching the GIMP overall validation RMS envelope."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Howat 2014 reports "overall RMS ... ±9.1 m", "ice-covered terrain (±8.5 m)",
+      and RMS peaking at "±24 m" with slope. This is an observation-error envelope,
+      not a CISM-specific pass/fail table.
+
+  - dag_variable: usurf
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for surface-elevation-change time series."
+        cites: []
+      - metric: elevation_change_bias
+        direction: zero_centered
+        unit: m/yr
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "CryoSat/ICESat papers report product uncertainty and volume-change estimates, not a model PBIAS pass tier."
+        cites: []
+    secondary_metrics:
+      - metric: dhdt_uncertainty
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Altimetry-derived dh/dt has spatial gaps and product-dependent volume-rate spread; use as context for time-series validation."
+        cites: [helm2014, goelzer2020]
+    validated_when: "UNRESOLVED - compare dh/dt trend and spatial pattern to altimetry; no fetched numeric pass band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Helm 2014 reports combined Greenland/Antarctica volume change of -503 +/- 107 km3 yr-1
+      and discusses spread in IMBIE volume-rate estimates. Goelzer 2020 treats control-run drift
+      and historical mass change as diagnostics, but gives no NSE/PBIAS tier.
+
+  - dag_variable: velnorm
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/yr
+        bands: {very_good: 99.0, good: 128.7, satisfactory: 156.0}
+        pass_band: satisfactory
+        band_note: >-
+          CISM benchmark convention for surface-speed snapshots: ASE RMSE 99 m/yr,
+          25-member CISM spin-up RMSE 128.7 m/yr, and all-Antarctica CISM map RMSE
+          156 m/yr; van den Akker notes ISMIP6 model RMSEs are comparable over roughly
+          100-400 m/yr.
+        cites: [berdahl2023, vanakker2025]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched ice-sheet papers judge continuous surface velocity fields by RMSE against remote-sensing velocity products, not CSI."
+        cites: [goelzer2018, seroussi2019, vanakker2025]
+    validated_when: "Surface velocity magnitude RMSE is <= 156 m/yr; <= 129 m/yr matches the CISM ensemble spin-up benchmark."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Berdahl 2023 reports "root mean square error between observed and modeled velocity is
+      128.7 m yr-1". van den Akker 2025 reports velocity RMSE 156 m/yr in Fig. 1 and
+      99 m/yr for ASE; the text says this is comparable to ISMIP6 models.
+
+  - dag_variable: uvel
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/yr
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a component-specific u-velocity RMSE pass band; fetched CISM benchmarks report velocity magnitude."
+        cites: []
+    secondary_metrics:
+      - metric: component_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "ITS_LIVE products include vx and vy components, but the fetched model-validation papers report speed magnitude RMSE."
+        cites: [lei2022, berdahl2023, vanakker2025]
+    validated_when: "UNRESOLVED - compare surface-level u component against vx products, but use velocity-magnitude RMSE block for validated CISM speed skill."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Lei 2022 lists vx and vy velocity component products and their errors, while CISM validation
+      papers report RMSE for velocity magnitude. A component-specific pass tier was not found.
+
+  - dag_variable: temp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for borehole or sigma-level internal ice temperature."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Borehole temperature papers report measurement precision and fitted profiles, but no CISM model RMSE tier."
+        cites: []
+    secondary_metrics:
+      - metric: measurement_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Borehole temperature measurement uncertainty is relevant context, but not a model validation threshold."
+        cites: [talalay2020, cism2019]
+    validated_when: "UNRESOLVED - compare interpolated modeled profiles to borehole temperatures; no fetched numeric NSE/RMSE pass band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Talalay 2020 reports sensor and borehole temperature measurement uncertainties, including
+      0.05 degC precision in one borehole and RMSE as a fitting diagnostic. CISM 2019 documents
+      the temperature solver and benchmark tests, but not a borehole-validation tier.
+
+  - dag_variable: bmlt
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: integrated_flux_bias
+        direction: zero_centered
+        unit: Gt/yr
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched-paper convention is agreement with sparse/indirect basal-melt estimates or their range, not a single numeric bias band."
+        cites: []
+    secondary_metrics:
+      - metric: integrated_basal_melt_flux
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "CISM papers compare integrated sub-shelf basal melt flux against Rignot/Depoorter/Adusumilli estimates, but sparse ocean and basal observations prevent a universal spatial threshold."
+        cites: [lipscomb2021, berdahl2023, vanakker2025]
+    validated_when: "UNRESOLVED - require agreement with independent basal-melt estimates and spatial pattern where available; no fetched numeric pass band."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      van den Akker 2025 reports CISM integrated basal melt flux of 106 Gt/yr compared with
+      94 and 149 Gt/yr observational estimates. Lipscomb 2021 and Berdahl 2023 emphasize
+      that CISM spin-up melt rates can be lower than observed because melt parameters compensate
+      for other errors. No formal PBIAS/CSI tier was fetched.
+
+  - dag_variable: ivol
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: mass_equivalent_drift_rate
+        direction: minimize
+        unit: Gt/yr
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "CISM spin-up steady-state criterion: mass change rate must not exceed 1 Gt/yr."
+        cites: [berdahl2023]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG uses PBIAS, but fetched ISMIP6 practice emphasizes drift-corrected volume/sea-level time series and control-run drift diagnostics."
+        cites: [goelzer2020, seroussi2020]
+    validated_when: "Regional ice-volume time series are acceptable for initialized steady state when mass-equivalent drift rate <= 1 Gt/yr; projection skill also requires drift-corrected comparison."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Berdahl 2023 states "mass change rate must not exceed 1 Gt yr-1" to ensure steady state.
+      Goelzer 2020 and Seroussi 2020 diagnose drift and compare historical mass/volume change,
+      but do not give a universal PBIAS tier.
+
+  - dag_variable: imass / imass_above_flotation
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: mass_drift_rate
+        direction: minimize
+        unit: Gt/yr
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "CISM spin-up steady-state criterion: mass change rate must not exceed 1 Gt/yr."
+        cites: [berdahl2023]
+    secondary_metrics:
+      - metric: observed_mass_change_rate
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "For transient present-day validation, CISM papers compare mass-change rates with satellite/altimetry estimates; no fetched PBIAS tier was found."
+        cites: [vanakker2025, goelzer2020]
+    validated_when: "Mass and mass-above-flotation time series are validated for steady initialized states when drift <= 1 Gt/yr; transient runs should also match observed mass-change-rate patterns."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Berdahl 2023 supplies the only fetched numeric criterion. van den Akker 2025 argues that
+      matching present-day observed mass-change rates is important, but reports pattern agreement
+      rather than a numeric PBIAS threshold.
+
+  - dag_variable: iarea / iareag / iareaf
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 3.0}
+        pass_band: satisfactory
+        band_note: "Transferred from GIMP ice-edge/operator uncertainty for ice mask and extent area."
+        cites: [howat2014]
+    secondary_metrics:
+      - metric: grounding_line_position
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Ice area and grounded/floating partitions depend on ice-mask and grounding-line location; CISM papers compare these spatially as well as by aggregate area."
+        cites: [vanakker2025, lipscomb2021]
+    validated_when: "Aggregate ice area bias is within the fetched ice-edge/operator uncertainty, |PBIAS| <= 3%."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Howat 2014 estimates uncertainty from ice-edge ambiguity and operator error as "+/-3%".
+      This is an observation-envelope band for extent/area, not an ice-sheet-model universal tier.
+
+  - dag_variable: calving_flux / gl_flux
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "Transferred from observed Greenland flux-gate discharge uncertainty of about 10%."
+        cites: [mankoff2020]
+    secondary_metrics:
+      - metric: integrated_flux
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Flux-gate comparisons are basin-integrated and sensitive to gate placement, bed topography, ice thickness, and velocity-product coverage."
+        cites: [mankoff2020, berdahl2023]
+    validated_when: "Integrated calving or grounding-line flux bias is within the fetched flux-gate observational uncertainty, |PBIAS| <= 10%."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Mankoff 2020 reports 2010-2019 Greenland discharge of about 487 +/- 49 Gt/yr and says
+      the 10% uncertainty stems primarily from bed-location and thickness uncertainty. Berdahl 2023
+      compares spin-up grounding-line flux and calving flux with observational estimates, but no
+      separate CISM pass tier was fetched.
+
+deferred_paywalled:
+  - ref: "Closed/placeholder CISM-related paper listed in Step-B skeleton; title unavailable"
+    doi: "10.5194/tc-2025-xxxx"
+    needed_for: [thk, usurf, bmlt, "imass / imass_above_flotation"]

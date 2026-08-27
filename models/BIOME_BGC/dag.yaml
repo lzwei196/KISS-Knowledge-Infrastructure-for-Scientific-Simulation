@@ -180,7 +180,7 @@ outputs:
   - var: "daily_npp"
     validation_rank: 2
     unit: "kgC/m2/d"
-    description: "Net primary production = GPP - maintenance - growth respiration"
+    description: "Terrestrial ecosystem net primary production = GPP - maintenance - growth respiration"
     emitted_in: ".dayout; annual ann NPP (gC/m2/yr) in text summary"
     observability:
       comparable_obs_shapes:
@@ -224,7 +224,7 @@ outputs:
   - var: "daily_hr"
     validation_rank: 6
     unit: "kgC/m2/d"
-    description: "Heterotrophic (decomposition) respiration"
+    description: "Soil and litter heterotrophic (decomposition) respiration"
     emitted_in: ".dayout"
     observability:
       comparable_obs_shapes:
@@ -237,7 +237,7 @@ outputs:
   - var: "proj_lai"
     validation_rank: 7
     unit: "m2/m2"
-    description: "Projected leaf area index"
+    description: "Vegetation canopy projected leaf area index"
     emitted_in: ".dayout (binary index 509); annual max LAI in text summary"
     observability:
       comparable_obs_shapes:
@@ -304,7 +304,7 @@ outputs:
   - var: "net_nmin"
     validation_rank: 11
     unit: "kgN/m2/d"
-    description: "Daily net nitrogen mineralization"
+    description: "Soil daily net nitrogen mineralization"
     emitted_in: ".dayout"
     observability:
       comparable_obs_shapes:
@@ -428,3 +428,21 @@ safety:
       scope: "canopy conductance"
       source: "Biome-BGC v4.1.2 User's Guide, epc conductance lines 39-40"
       status: "adopted"
+
+medium_evidence:
+  - var: "daily_npp"
+    source: "DISSECTION_PLAN.md"
+    quote: "BIOME-BGC (BioGeochemical Cycles) is a point-based, daily-timestep model that simulates carbon, nitrogen, and water fluxes through terrestrial ecosystems."
+    note: "NPP is one of the model's terrestrial ecosystem carbon flux outputs."
+  - var: "daily_hr"
+    source: "dag.yaml"
+    quote: "Litter and soil organic matter decomposition (CENTURY-style 4 litter + 4 soil pools)"
+    note: "Heterotrophic respiration is the decomposition respiration from litter and soil organic matter."
+  - var: "proj_lai"
+    source: "dag.yaml"
+    quote: "Computes LAI, sunlit/shaded fractions, SLA, and Beer-law canopy shortwave/PAR interception and transmission"
+    note: "Projected LAI is computed in the canopy radiation-transfer process."
+  - var: "net_nmin"
+    source: "dag.yaml"
+    quote: "potential immobilization and net mineralization update soil mineral N"
+    note: "Net nitrogen mineralization updates the soil mineral nitrogen medium."

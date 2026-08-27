@@ -445,7 +445,7 @@ outputs:
   - var: "pet"
     validation_rank: 3
     unit: "cm/day"
-    description: "Hamon-computed potential evapotranspiration when PET is not supplied as input."
+    description: "Hamon-computed potential evapotranspiration (atmospheric water demand) when PET is not supplied as input."
     emitted_in: "model.dc.pet[outlet] (data collector)"
     observability:
       comparable_obs_shapes:
@@ -479,7 +479,7 @@ outputs:
   - var: "ABM_agent_records"
     validation_rank: 5
     unit: "varies (storage volume, diversion volume)"
-    description: "Agent-specific outputs (e.g., reservoir storage, diversion volume) recorded by user-defined ABM modules via the shared data collector."
+    description: "Agent-specific water-management outputs (e.g., reservoir storage, diversion volume; bookkeeping records, not a single field observable) recorded by user-defined ABM modules via the shared data collector."
     emitted_in: "model.dc.<user-defined field> (data collector)"
     observability:
       comparable_obs_shapes:

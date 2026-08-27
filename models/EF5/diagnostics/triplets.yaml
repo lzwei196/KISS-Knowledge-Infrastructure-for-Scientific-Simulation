@@ -502,3 +502,52 @@
     prevention: "Use state files from a spin-up run instead of IWU for warm starts"
   severity: warning
   cross_references: [dt_012, dt_013]
+
+# ---------------------------------------------------------------------------
+# Triplets added by self-improve runs after the original corpus was published.
+# Recovered 2026-08-12 and merged back; the block above is the published base,
+# byte-for-byte. See REPORT.md.
+# ---------------------------------------------------------------------------
+- id: dt_030_daily_forcing_name_hhuu_silent_zeros
+  symptom:
+    description: EF5 log spams "YYYY-MM-DD HH:MM Missing precip file(.../forcing_YYYYMMDDHHUU.asc)...
+      Assuming zeros." for EVERY timestep, yet the run completes and writes a ts.*.csv. Output looks plausible
+      (near-zero/tiny Q) but is physically meaningless because ALL precip loaded as zero. Happens when
+      control NAME uses YYYYMMDDHHUU (the hourly token pattern from the SKILL.md example) together with
+      FREQ=d.
+  diagnosis:
+    root_cause: 'EF5 DatedName::ProcessName (src/DatedName.cpp) only substitutes date tokens up to the
+      forcing resolution: the loop runs `for i=0; i<=resolution` over [YYYY,MM,DD,HH,UU,SS]. With FREQ=d
+      (resolution=DAYS=2) it substitutes only YYYY/MM/DD and leaves the literal characters "HHUU" in the
+      filename, so EF5 looks for forcing_20050116HHUU.asc which does not exist. convert_forcing_to_ef5.py
+      (load_forcing path) writes daily files as forcing_YYYYMMDD0000.asc (literal 0000 = HH+UU), exactly
+      matching a FREQ=d substitution of forcing_YYYYMMDD0000.asc.'
+  remedy:
+    action: 'For daily forcing (FREQ=d) set NAME=forcing_YYYYMMDD0000.asc in ALL of [PrecipForcing]/[PETForcing]/[TempForcing]
+      (literal 0000, NOT HHUU). The SKILL.md "Complete example" NAME=precip_YYYYMMDDHH.tif is for FREQ=1h
+      only. General rule: the NAME pattern must contain date tokens ONLY down to the FREQ resolution;
+      finer-than-resolution positions must be hard-coded literals matching the files that convert_forcing_to_ef5.py
+      actually wrote (verify with `ls .../precip | head`). The "Missing precip ... Assuming zeros" message
+      is a non-fatal WARNING — EF5 will NOT abort, so always grep the run log for it before trusting metrics.'
+  format_spec_violated: EF5 control NAME date-token convention — substituted tokens must not exceed the
+    forcing FREQ resolution (DatedName::ProcessName loop bound).
+  canonical_intent: ki_local_if_pass
+  added_by_run: EF5_real_case_20260623_05CG004
+- id: dt_029_spatial_flood_extent_out_of_contract
+  symptom:
+    description: Obs is per-event flood EXTENT (e.g. Global Flood Database GeoTIFFs), variable=flood_inundation_extent,
+      obs_shape=spatial_snapshot; metrics come back null/uncomputable and the gate returns REJECT_WRONG_MODEL
+      with _dag_lookup_failed=true.
+  diagnosis:
+    root_cause: 'EF5 KI ships only a temporal point-streamflow scorer (parse_ef5_output.py: NSE/KGE/PBIAS/r/RMSE)
+      and NO spatial CSI/POD/FAR scorer, GFD reader, or SimpleInundation/VCInundation wrapper. Compounded
+      by the dag.yaml being HYPE''s, so the obs-shape gate cannot resolve an EF5 output contract.'
+  remedy:
+    action: SKIP spatial flood-extent obs (out of contract, no retry). Valid metric families for spatial_snapshot
+      extent are spatial_pattern_match / event_detection (CSI/POD/FAR), which this KI cannot deliver.
+      Building the inundation+CSI pipeline is requires_human_engineering; fixing the HYPE-dag is requires_data
+      (upstream source corruption). Documented in SKILL.md 'Scoring Contract & Out-of-Domain Observations'.
+  format_spec_violated: EF5 output contract — dag identity.model_id must equal 'EF5'; scorer metric_family
+    must match obs_shape (temporal metrics only valid for point_time_series, not spatial_snapshot)
+  canonical_intent: ki_local_if_pass
+  added_by_run: EF5_retry1

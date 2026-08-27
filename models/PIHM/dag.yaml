@@ -182,7 +182,7 @@ outputs:
   - var: "ETT"
     validation_rank: 6
     unit: "m/s"
-    description: "Transpiration flux per element."
+    description: "Vegetation (plant) transpiration water flux per element."
     emitted_in: ".ett.dat"
     observability:
       comparable_obs_shapes:

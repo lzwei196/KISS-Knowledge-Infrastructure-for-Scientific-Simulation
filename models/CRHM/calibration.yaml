@@ -1,764 +1,1224 @@
-# Calibration contract for CRHM (CRHMcode 1.3.5) at the TARGET CASE:
+# =============================================================================
+# CRHM calibration contract — TARGET CASE
 #
-#   case_id      GEO:49.4,120.4
-#   obs          ESA Snow_cci MERGED SWE v2.0 — GENUINE snow water equivalent (mm),
-#                clipped and area-averaged over the Hulunbuir open-steppe region
-#                polygon 120.0-120.8 E / 49.1-49.7 N (48 cells @ 0.1 deg)
-#                granules  KISSPATH_DATA/benchmarks/snowcci_swe
-#                cache     outputs/hulunbuir_steppe/obs_snowcci_region_mean.csv
-#   quantity     SWE  (dag var SWE, obs_shape regional_aggregate_time_series,
-#                determining metric NSE)
-#   provenance   CRHM_20260726T164031Z_286796
+#   case_id      OBS:hydat
+#   site         Dore River near McBride, Cariboo Mountains, BC, Canada —
+#                53.309 N, -120.249 W. Deck basin_area 406.52 km2 (Copernicus
+#                GLO-30 delineation) vs the published HYDAT gross drainage
+#                area 409 km2 (-0.6%); 3 equal-area elevation HRUs
+#                (Alpine 2294 / Forest 1912 / Valley 1430 m).
+#   gauge / obs  HYDAT 08KA001 (Canada National Water Data Archive), daily
+#                discharge in m3/s, staged read-only at
+#                KISSPATH_OUTPUTS/crhm_08ka001_dore/obs_08KA001.csv
+#                (complete 2005-01-01..2015-12-31, 4017 days, no gaps).
+#   quantity     discharge — dag var `basinflow_s`, obs_shape
+#                point_time_series, determining_metric NSE
+#   provenance   real_case CRHM_20260629T124938Z (model-dir run_and_score.py):
+#                9-member (obs_elev x ClimChng_precip) grid over the validated
+#                Canoe-08NC004-derived 13-module mountain deck; best member
+#                obs_elev=2100 / ClimChng_precip=1.45 scores FULL 2006-2015
+#                NSE 0.7086 (cal 2006-2010 NSE 0.7000, val 2011-2015 NSE
+#                0.7116, PBIAS -6.48%, KGE 0.8039, r 0.8452, n=3652).
 #
-# THIS IS A SNOW-WATER-EQUIVALENT CASE.  It is NOT discharge.  It is NOT the
-# Yingluoxia / upper Heihe streamflow case (an earlier calibration-dev attempt was
-# REJECTED for pinning itself to that gauge and scoring basinflow), and it is NOT
-# the Bow / Marmot / Belly mountain worked examples SKILL.md also documents.
-# tools/calib_run.py pins the region and DERIVES both __kdt__.case_id and
-# __kdt__.scored_obs from the artifacts it actually used, so scoring anywhere else
-# is detectable rather than mislabelled.
+# THIS IS NOT the Yingluoxia streamflow case, NOT the Hulunbuir SWE case and
+# NOT any of SKILL.md's other showcased HYDAT basins. The target case is fixed
+# by case_id OBS:hydat + provenance CRHM_20260629T124938Z + prior metric
+# nse 0.7086, all of which resolve to the Dore River 08KA001 run whose deck,
+# forcing and obs are staged under outputs/crhm_08ka001_dore/.
 #
-# ---------------------------------------------------------------------------
-# THE ERROR MODE THIS POOL MUST BE ABLE TO CLOSE
-# ---------------------------------------------------------------------------
-# The validated run holds held-out monthly-mean NSE -0.4182 with r 0.8233 and
-# PBIAS +57.00%: the SHAPE is already good (r 0.82 on 47 months), the MASS is not.
-# CRHM carries ~57% too much snow water.  The validated run's own PBSM activity
-# gate says why — frac_subl = cumSubl/cumhru_snow = 0.0305 against the dag's
-# prairie band of 0.15-0.40, i.e. the blowing-snow sublimation sink, which is the
-# DOMINANT winter mass sink on open prairie/steppe, is running at a fifth of its
-# lowest plausible strength.  cumSubl 29.9 mm and cumDrift 6.5 mm against
-# cumhru_snow 980.7 mm (all area-weighted, 2002-2014).
+# -----------------------------------------------------------------------------
+# COMMISSIONED 2026-08-14 (live, this KI, the real CRHM binary at
+# KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm):
 #
-# The pool below is therefore the complete set of REACHABLE mass-sink levers:
-# blowing-snow transport/sublimation magnitude (fetch), the PBSM on/off threshold
-# and its duty cycle (Ht per surface), the vegetation shear partition that gates
-# the threshold (N_S, A_S), and the latent-heat sublimation arm of the melt module
-# (Qe_subl_from_SWE).  Commissioning confirms the headroom is real: one perturbed
-# vector inside these bounds lifts frac_subl 0.0305 -> 0.0977 (3.2x) and moves the
-# held-out score -0.4182 -> -0.3151 with PBIAS +57.0 -> +41.1.
+#  * SCORING REPRODUCES THE VALIDATED RUN. The default vector below IS the
+#    validated best grid member; tools/calib_run.py at the default vector
+#    returns FULL 2006-2015 NSE 0.7086264879690831 / KGE 0.8039 / PBIAS -6.48%
+#    on n=3652 paired days (cal NSE 0.69996, val NSE 0.71157) — identical to
+#    re-scoring the staged out_oe2100_p145.txt, and the injected deck's CRHM
+#    run is bit-identical to the staged validated output.
 #
-# ---------------------------------------------------------------------------
-# WHAT IS DELIBERATELY *NOT* IN THE POOL, AND WHY
-# ---------------------------------------------------------------------------
-# 1. `obs ClimChng_precip` and `obs obs_elev` — the two dag influence edges graded
-#    HIGH into SWE (precipitation->SWE, air_temperature->SWE) act through exactly
-#    these two knobs, and SKILL.md's HARD RULE ("scoring CRHM against a SATELLITE
-#    SWE product", step 3) LOCKS both: SWE is the scored MASS STATE, so a
-#    precipitation multiplier or a fake forcing elevation writes the answer
-#    directly.  That is the 'compensating-errors calibration' hazard dag.yaml
-#    already names (safety.hazards netroute_gw_sink_silent_residual, and the
-#    parameter_silent_clamp_to_range family).  The prior worked example that
-#    reported NSE 0.35 on this domain got there with ClimChng_precip 0.8 and
-#    obs_elev 843 m and was retracted for exactly this reason.  Both are held at
-#    the validated values (1.0 and the 663 m CMFD source cell) in calib_run.py's
-#    FIXED block, they are REFUSED as candidate parameter names, and
-#    assert_deck_integrity() re-reads them out of the generated deck on EVERY eval
-#    and aborts if either moved.  The same lock covers ClimChng_t, catchadjust,
-#    precip_elev_adj and lapse_rate — every `forcing_adjustment` parameter in
-#    dag.yaml inputs.parameters.
-#    The residual +57% bias is a REPORTABLE FINDING (an unresolved attribution
-#    between CMFD cold-season snowfall and a Snow_cci retrieval known to
-#    under-retrieve shallow snow — this domain's obs mean is 12.3 mm), not a
-#    defect to tune away.  Calibration may only close the part of it that the
-#    model's own snow physics can legitimately account for.
+#  * INJECTION IS LIVE. A clearly-perturbed vector (all 26 parameters moved)
+#    takes the FULL NSE from 0.70863 to 0.14531 with applied == requested on
+#    every one of the 26 keys. Single-parameter moves at otherwise-default
+#    values span NSE 0.1063 (runKstorage 40) / 0.3221 (ClimChng_precip 2.0) /
+#    0.3679 (obs_elev 1430) / 0.3965 (Kstorage 4) up to 0.7382 (Lag 12) —
+#    the injected values reach the SCORED run, not merely a file.
 #
-# 2. `pbsm distrib` (inter-HRU drift redistribution).  It is INERT here and would
-#    poison the screen with a flat parameter.  Two reasons, both measured:
-#    (a) frac_drift is 0.0067 — drift is 0.7% of snowfall, two orders below the
-#        sublimation term, so redistributing it cannot move an area-weighted
-#        region mean; (b) Classpbsm.cpp:637-641 NORMALISES the sink weights
-#        (`total += fabs(distrib[jj])`, then contribution = distrib[hh]/total), so
-#        a uniform multiplicative rescaling of the derived weights is an exact
-#        no-op.  The validated run already reported a distrib=0 sensitivity
-#        diagnostic for this reason.
+#  * RANGE-BOUND READ-BACK: all 52 bounds (26 params x lo/hi) apply EXACTLY
+#    (applied == requested, rel_tol 1e-9) in the generated .prj, each with a
+#    FINITE nse/kge/pbias — no bound clamps, so the kit's Morris screen cannot
+#    fail closed on a corner eval. The runner additionally validates every
+#    written value against the deck's own declared `<lo to hi>` window before
+#    writing (CRHM hard-errors rather than clamps; an out-of-window request
+#    exits nonzero with no metrics — verified live with gwLag=20000).
+#    One corner (soil_rechr_max=340) is reachable only through a
+#    constraint-feasible vector (soil_moist_max>=340): with soil_moist_max at
+#    its default 250, CRHM ITSELF hard-errors ("rechr_max cannot be greater
+#    than soil_moist_max in hru = 1") and the runner fails the eval closed —
+#    exactly what the first entry under `constraints` encodes.
 #
-# 3. Melt-side energy parameters — `albedo Albedo_snow` / `Albedo_bare`
-#    (Classalbedo.cpp:56-57) and `ebsm tfactor` / `nfactor` (Classebsm.cpp:105-107)
-#    — are real CRHM knobs but are NOT REACHABLE through this KI: create_prj_file.py
-#    carries no parameter table for the `albedo` module and only one entry
-#    (Qe_subl_from_SWE) for `ebsm`, and that tool's standing rule is that emitting
-#    a parameter name the binary does not declare is worse than emitting none.
-#    Adding them is a TOOL change, out of scope for this contract, and is recorded
-#    here as a known limitation of the pool rather than silently omitted.
+#  * KDT_CALIB_SPLIT is honoured: "calibration" scores 2006-2010 (n=1826,
+#    NSE 0.69996 at default), "holdout" scores 2011-2015 (n=1826, NSE 0.71157),
+#    unset scores the FULL 2006-2015 record (n=3652) — the exact window the
+#    prior validated metric was computed on.
 #
-# 4. `crack fallstat` / `crack Major` / `evap F_Qg` / `evap Zwind` / the Soil and
-#    Netroute stores are reachable but sit strictly DOWNSTREAM of the snowpack:
-#    they partition melt water after SWE has already been decremented and cannot
-#    change the scored state.  The validated run holds them fixed; so does this
-#    contract.
+#  * FAIL-CLOSED verified, each exiting nonzero with NO metrics file written
+#    (a pre-existing stale --out is deleted first): unknown parameter name;
+#    non-finite parameter value; unrecognised KDT_CALIB_SPLIT; a value outside
+#    the deck's declared window; a tampered obs series (+0.1 m3/s on one 2012
+#    day — caught by the file sha256 AND, with the sha deliberately re-pinned,
+#    by the declared holdout mean); an obs file whose name does not carry
+#    station id 08KA001; a swapped/edited template deck (sha256 pin, and
+#    independently the hru_elev/basin_area/gwwhereto identity assert); and a
+#    simulation truncated mid-record (run-health coverage check).
 #
-# ---------------------------------------------------------------------------
-# COMMISSIONED 2026-08-03 (live, this KI, /usr/bin/python3, real CRHM binary)
-# ---------------------------------------------------------------------------
-#   * DEFAULT VECTOR REPRODUCES THE VALIDATED RUN BIT-FOR-BIT on the held-out
-#     block: nse -0.41821090337699984 (== the prior validated metric, exact to the
-#     last digit), kge 0.10262644547581079, r 0.8233382206214267,
-#     pbias 56.99735192373382, n = 47 months, and the PBSM activity gate
-#     frac_subl = 0.030505316671019883 also matches the validated run exactly.
-#     calibration split nse -0.290697 (n 47); both-splits nse -0.325533 (n 94).
-#   * PERTURBED VECTOR MOVES THE METRIC: {fetch_stubble 8000, fetch_open_short
-#     9000, Ht_stubble 0.006, Ht_grass 0.006, Ht_bare 0.001, N_S 60, A_S 0.0012,
-#     Qe_subl_from_SWE 1} -> held-out nse -0.315096, kge 0.2280, pbias +41.14%,
-#     frac_subl 0.0977.  The injected values reach the SCORED run, not just a file.
-#   * RANGE-BOUND READ-BACK: all 16 bounds (8 params x lo/hi) apply EXACTLY
-#     (applied == requested, rel_tol 1e-9, read back out of the generated
-#     basin.prj), with all 8 params echoed and a finite NSE at every corner — no
-#     bound clamps, so the kit's Morris screen cannot fail closed.
-#   * FAIL-CLOSED VERIFIED (nonzero exit, NO metrics file written) for: an unknown
-#     parameter name; a LOCKED parameter name (ClimChng_precip); an out-of-range
-#     value (fetch 20000 -> create_prj_file.py refuses rather than letting CRHM
-#     clamp it silently); and a single corrupted observation (+3 mm on 1 of 2580
-#     days -> the obs_envelope mean assertion fires).  The obs file was restored
-#     bit-identically (md5 c02b467fb862840c8d64301c64b17081).
-#   * READ-ONLY SOURCES: with obs_snowcci_region_mean.csv and swe_obs_screen.json
-#     chmod 444, a full eval still reproduces nse -0.418211.
-#   * COST: 6-9 s wall per eval.
-
+#  * SITE-SPECIFIC STRUCTURE FACTS measured during commissioning (each a
+#    max|Δ daily basinflow| against the default run):
+#      - The GROUNDWATER group is LIVE here, unlike the Yingluoxia case:
+#        gw_K x10 -> 5.6 m3/s, gwKstorage/5 -> 0.73, gwLag/20 -> 0.55,
+#        small gw_max recipe -> 0.35, soil_gw_K -> 9.4. This deck's
+#        `gwwhereto = 3 3 0` cascades HRU1/2 groundwater into HRU3 before the
+#        basingw exit, and the gw store's capacity/level feeds back into the
+#        scored surface/subsurface chain — do not carry the Yingluoxia
+#        "gw inert" note to this site.
+#      - ALL pbsm blowing-snow levers are INERT at this site: fetch (0.0),
+#        distrib flattened (0.0), inhibit_bs everywhere (0.0) — hourly NASA
+#        POWER winds at this forested Cariboo basin never reach transport
+#        threshold. pbsm_fetch is retained UNPRUNED for the dag's MEDIUM
+#        wind_speed edge (literature is a prior, never a pruning oracle) and
+#        the kit's Morris screen will demote it at ~2 s per probe.
+#      - Albedo_snow is a MAJOR melt-energy lever (0.85 -> 0.75 moves daily
+#        basinflow by up to 33 m3/s); tmax_allsnow (38), runKstorage (36),
+#        Lag (22), lower_ssr_K (22) are the other dominant levers.
+#      - ebsm delay_melt and Shared Ht are minor/inert and are NOT in the pool.
+# =============================================================================
 template_version: "calib-0.1"
 model_id: CRHM
+
 identity:
   domain: hydrology
   binding: >
-    CRHMcode 1.3.5 CLI, `prairie_reduced` 13-module chain
-    basin > global > obs > calcsun > intcp > pbsm > albedo > ebsm > netall >
-    crack > evap > Soil > Netroute, 15 HRUs, 3-hourly CMFD forcing,
-    2002-01-01..2014-12-31 (2002 = spin-up)
-  case_id: "GEO:49.4,120.4"
+    CRHM (Cold Regions Hydrological Model) 4.7_16 CLI, 13-module validated
+    cold-region mountain chain: basin > global > obs > calcsun > intcp > pbsm >
+    albedo > ebsm > netall > crack > evap > Soil > Netroute, 3 HRUs, hourly,
+    2005-01-01..2015-12-31 (2005 spin-up, never scored).
+  case_id: "OBS:hydat"
   site: >
-    Hulunbuir open steppe (呼伦贝尔草原), Inner Mongolia, NE China — region bbox
-    120.0-120.8 E / 49.1-49.7 N, 3868.3 km2, 82% treeless by GLCFCS30, relief
-    609-1016 m.  domain_kind = region_bbox (no gauge, no catchment: the obs is a
-    regional aggregate over the IDENTICAL polygon).  15 HRUs = 4 land-cover
-    classes x 5 elevation bands: crop_stubble (1854.6 km2, 47.9%), open_prairie
-    (1383.3 km2, 35.8%), bare_ground (125.9 km2, 3.3%), deciduous_forest
-    (504.4 km2, 13.0%, PBSM-inhibited canopy HRUs).
-  obs_source: snowcci_swe
-  obs_id: "ESA Snow_cci MERGED SWE v2.0, region mean over the Hulunbuir polygon"
-  obs_file: "KISSPATH_KI_ROOT/CRHM/knowledge_infrastructure/outputs/hulunbuir_steppe/obs_snowcci_region_mean.csv"
-  obs_granules: "KISSPATH_DATA/benchmarks/snowcci_swe"
-  target_quantity: swe
+    Dore River near McBride, Cariboo Mountains, BC, Canada (53.309 N,
+    -120.249 W) — clean nival snowmelt basin, single June freshet ~45 m3/s,
+    sustained winter baseflow ~2 m3/s, runoff ~1110 mm/yr; deck basin_area
+    406.52 km2 (-0.6% vs published 409 km2), 3 equal-area elevation HRUs
+    (Alpine 2294 m / Forest 1912 m / Valley 1430 m, 135.51 km2 each).
+  obs_source: hydat
+  obs_id: "HYDAT:08KA001 (Dore River near McBride)"
+  obs_file: "KISSPATH_OUTPUTS/crhm_08ka001_dore/obs_08KA001.csv"
+  obs_unit: "m3/s"
+  forcing: >
+    NASA POWER hourly 2005-2015 at the basin centroid, staged once as
+    outputs/crhm_08ka001_dore/crhm/dore.obs (sha256-pinned by the runner;
+    header t/p/rh/u/Qsi/Qli). The validated run corrects NASA POWER's
+    orographic precipitation deficit inside CRHM via ClimChng_precip.
   baseline_run: >
-    CRHM_20260726T164031Z_286796 (2026-07-27) — held-out 2009-2014 monthly-mean
-    NSE -0.41821090337699984 / KGE 0.1026 / r 0.8233 / PBIAS +57.00%, n = 47
-    months; calibration block 2003-2008 NSE -0.2907; PBSM activity gate FAIL
-    (frac_subl 0.0305 vs the dag band 0.15-0.40); forcing knobs LOCKED
-    (obs_elev 663 m = the CMFD source cell, ClimChng_precip 1.0), no sweep.
+    real_case CRHM_20260629T124938Z — FULL 2006-2015 NSE 0.7086, KGE 0.8039,
+    r 0.8452, PBIAS -6.48%, n=3652 (cal 2006-2010 NSE 0.7000, val 2011-2015
+    NSE 0.7116) at obs_elev 2100, ClimChng_precip 1.45 over the validated
+    Canoe-derived large GW store and light Kstorage recipe.
 
-  # -------------------------------------------------------------------------
-  # OBS ENVELOPE — every field here is READ and ASSERTED by tools/calib_run.py
-  # before a metric is computed (exit nonzero, no metrics file, on any mismatch),
-  # so a changed or corrupted series for the SAME region cannot be silently
-  # scored.  Measured 2026-08-03 from the prepared cache and re-derived live from
-  # the Snow_cci granules for the three spot-check dates.
-  # -------------------------------------------------------------------------
-  obs_envelope:
-    unit: "mm"
-    variable: "swe"
-    columns: ["date", "obs_swe_mm", "valid_frac"]
-    region_bbox: [120.0, 49.1, 120.8, 49.7]      # lon_min, lat_min, lon_max, lat_max
-    region_cells: 48                             # 6 lat x 8 lon @ 0.1 deg, verified live
-    n_records: 2580
-    n_valid: 2580
-    first_date: "2003-01-01"
-    last_date: "2014-12-31"
-    mean_mm: 12.283955
-    p95_mm: 30.544792
-    max_mm: 42.020833
-    min_mm: 0.0
-    sum_mm: 31692.604167
-    min_valid_frac: 1.0                          # every scored day is a full-region retrieval
-    spot_check:                                  # cache vs the raw granule, re-derived every eval
-      "20030115": 16.458333333333332
-      "20091220": 17.937500000000000
-      "20140301": 28.770833333333330
-    flag_handling: >
-      Snow_cci swe flag codes -30 glacier / -20 mountain / -10 water / -1 no_data are
-      MASKED (they are not measurements); 0 is a real observation of zero SWE and is
-      kept.  This region carries no mountain or glacier mask, hence valid_frac 1.0.
+  # --- OBS CONTRACT ---------------------------------------------------------
+  # Every field below is READ and ASSERTED by tools/calib_run.py before any
+  # score is computed; a mismatch exits nonzero with NO metrics file, so a
+  # changed / corrupted / re-issued series for the SAME station can never be
+  # scored silently. The record is COMPLETE (no gaps, no missing sentinel, no
+  # NaN, no negatives), so the declared populations are exact calendar windows.
+  obs_contract:
+    columns: [date, discharge_m3s]
+    station_id: "08KA001"            # asserted from the filename of the file opened
+    station_name: "Dore River near McBride"
+    lat: 53.309
+    lon: -120.249
+    published_drainage_area_km2: 409.0
+    deck_domain_area_km2: 406.52     # asserted inside the pinned template deck
+    domain_vs_published_tolerance_pct: 5.0
+    unit: "m3/s"
+    date_format: "%Y-%m-%d"          # asserted: 0 unparseable dates
+    file_sha256: "1f5dc60f435bbafee263827bbe1fd64d0efb1b003f24cf9c97f491f92c64733b"
+    record:
+      first: "2005-01-01"
+      last: "2015-12-31"
+      n_rows: 4017
+      calendar_gaps: 0
+      duplicates: 0
+      nan: 0
+      negative: 0
+    splits:
+      calibration:
+        window: ["2006-01-01", "2010-12-31"]
+        n_valid_days: 1826
+        first_valid: "2006-01-01"
+        last_valid: "2010-12-31"
+        min: 1.2899999618530273
+        max: 92.30000305175781
+        range: 91.01000308990479
+        mean: 12.849978105523109
+        missing_dates: []
+        series_sha256: "a7f823a7fc05c967d30ed85ace3d61697a3290b3d6b6db9414add4dd791dca3b"
+      holdout:
+        window: ["2011-01-01", "2015-12-31"]
+        n_valid_days: 1826
+        first_valid: "2011-01-01"
+        last_valid: "2015-12-31"
+        min: 1.0299999713897705
+        max: 132.0
+        range: 130.97000002861023
+        mean: 15.554370188373595
+        missing_dates: []
+        series_sha256: "11aa381366085db9b3cafdd74f23341c84743555339fa44e10b68014a34bdd59"
+      full:
+        window: ["2006-01-01", "2015-12-31"]
+        n_valid_days: 3652
+        first_valid: "2006-01-01"
+        last_valid: "2015-12-31"
+        min: 1.0299999713897705
+        max: 132.0
+        range: 130.97000002861023
+        mean: 14.202174146948352
+        missing_dates: []
+        series_sha256: "60aabcc4116cf9644fb527dfb81ef5264666b8124c21cd0f556c76bf331736bb"
 
-  # -------------------------------------------------------------------------
-  # OBS ADMISSIBILITY SCREEN — screen_swe_obs.py's verdict is what decides the
-  # scoring aggregation and the forcing-knob lock, so it too is read and asserted
-  # every eval, and the aggregation is DERIVED from it rather than hardcoded.
-  # -------------------------------------------------------------------------
-  obs_screen:
-    file: "outputs/hulunbuir_steppe/swe_obs_screen.json"
-    mass_inconsistent_pct: 4.32
-    threshold_pct: 2.0
-    daily_scoring_admissible: false
-    forcing_knobs_locked: true
-    shallow_snow_regime: true
-    scoring_aggregation: monthly_mean
-    rationale: >
-      Passive-microwave SWE is a retrieval, not a measurement.  4.32% of cold-season
-      days violate the mass budget the forcing itself allows (worst pair +19.7 mm/d
-      with P = 0.0 mm at Tmax -21.8 C, reversed the next day by -19.6 mm/d), above
-      the 2.0% threshold, so DAILY scoring is inadmissible and the contract scores
-      monthly means (a month needs >= 10 observed days).  SKILL.md RULE 6 further
-      notes that in this shallow-snow regime the magnitude family is
-      reported-but-not-determining and `r` / peak-SWE DOY are the honest determining
-      metrics; the dag's declared determining metric for
-      regional_aggregate_time_series is NSE and this contract optimises NSE as the
-      task specifies, but calib_run.py also emits `r`, so a promoting authority
-      electing to follow RULE 6 can switch the pattern family via the kit's
-      metric_overrides without touching this file or the driver.
-
-# ---------------------------------------------------------------------------
-# The KI REGENERATES basin.prj from hru_config + modules.json + derived_params on
-# every run (tools/s4_parameter_config/create_prj_file.py), so a value written into
-# the deck before the run would be overwritten; and CRHM's per-HRU parameter blocks
-# are whitespace-separated value ROWS under `<module> <param> <min to max>` headers,
-# which no generic address kind addresses field-wise ("the 3rd, 8th, 11th and 14th
-# field of the row under `pbsm Ht`").  => runner mode.  tools/calib_run.py reads
-# KDT_CALIB_PARAMS, expands each zone-scoped name to the per-HRU vector CRHM needs,
-# injects it THROUGH create_prj_file.py's --param_overrides (i.e. as part of the
-# regeneration, so nothing can overwrite it), reads every value BACK out of the
-# generated basin.prj, runs the CRHM binary via run_crhm.py, and echoes
-# __kdt__.applied_params / case_id / scored_obs.
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# INJECTION MODE = runner.
+# This case's validated recipe (model-dir run_and_score.py) REGENERATES the
+# whole .prj deck from a template on every run — there is no stable parameter
+# file a generic applicator could edit, no staged hru_config/modules/
+# derived_params pipeline exists for this basin (the deck was authored as a
+# template), and several calibrated levers are per-HRU elevation TRIPLETS that
+# must move together. tools/calib_run.py therefore injects the model's own
+# way: it rewrites the parameter value rows of a byte-pinned COPY of the
+# validated best deck (dore_oe2100_p145.prj, sha256 fb520544c09cb72d…),
+# validates every written value against the deck's own declared `<lo to hi>`
+# window (CRHM hard-errors rather than clamps), and reads every value BACK out
+# of the generated .prj — the artifact the CRHM binary parses — before the
+# model is allowed to run.
+#
+# `address` below is therefore OPTIONAL DOCUMENTATION of where each value
+# lands (a text_token into the generated basin.prj).
+# -----------------------------------------------------------------------------
 injection:
   mode: runner
 
-# Calibrate toward simulated SWE (dag output, validation_rank 4).  Its
-# regional_aggregate_time_series obs_shape declares metric_families
-# [magnitude_accuracy, temporal_pattern_match] with determining_metric NSE, so
-# NSE (pattern) and PBIAS (magnitude) are the gate-valid objectives; KGE and r are
-# also emitted.  The dag's third SWE family (timing_accuracy) is declared only for
-# the point_time_series shape and is not computed here — the kit keeps only the
-# families the runner actually emits.
+# The dag declares basinflow_s / point_time_series with metric_families
+# [magnitude_accuracy, temporal_pattern_match, timing_accuracy] and
+# determining_metric NSE. calib_run.py emits nse / kge / pbias / rmse / r; it
+# does NOT compute a timing-family day-bias metric, so the kit keeps the two
+# families it can score.
 targets:
-  - var: SWE
+  - var: basinflow_s
     weight: 1.0
 
-# ---------------------------------------------------------------------------
-# POOL.  Seeded from dag.yaml influence.edges.  The edges that reach SWE / Subl
-# through a PARAMETER (not through the locked boundary forcing) are the
-# wind/blowing-snow family:
-#     wind_speed -> SWE   MEDIUM  "wind-exposed HRUs running PBSM"
-#     wind_speed -> Subl  MEDIUM
-#     air_temperature -> Subl MEDIUM
-# and fetch / Ht / N_S / A_S are precisely the parameters through which that
-# influence is realised in Classpbsm.cpp: Ht sets E_StubHt and therefore whether
-# the transport threshold opens at all, N_S and A_S set the vegetation shear
-# partition (Znod, Lambda, Ustn) that scales the threshold wind, and fetch scales
-# both the transport integral and the sublimation loss.  Their citations are
-# carried verbatim from those edges.  dag.yaml's own `influence._caveat` warns
-# that the CRHM sensitivity literature is dominated by scenario/perturbation
-# experiments rather than formal global SA, so these are graded
-# `literature_qualitative` MEDIUM and carry confidence: medium — the kit's Morris
-# screen is what confirms them on THIS site.
+# =============================================================================
+# PARAMETER POOL
 #
-# Qe_subl_from_SWE has NO influence edge (it is a decldiagparam structural switch,
-# not a continuous knob any published SA varied) and is retained UNPRUNED as a
-# residual: literature is a PRIOR, never a pruning oracle.  Commissioning shows it
-# is in fact one of the stronger levers here (-0.4182 -> -0.3390 alone).
+# SEEDED FROM dag.yaml influence.edges. Every HIGH/MEDIUM edge that terminates
+# on basinflow_s (or on a flux/state that feeds it) is represented by the deck
+# lever that actually moves it, and each parameter carries that edge's
+# citations verbatim:
 #
-# RANGES are the model's OWN declared bands (Classpbsm.cpp:116-124,
-# Classebsm.cpp:81 — transcribed into create_prj_file.py's DEFAULT_PARAMS and
-# reproduced in every generated deck's `<min to max>` header) restricted, where
-# the literature is narrower, to the span the shipped Pomeroy prairie projects
-# actually occupy (crhmcode/prj/badlake.prj and smithcreek.prj — the reference
-# PBSM decks).  Every bound was verified LIVE to apply EXACTLY (applied ==
-# requested, read back out of the generated basin.prj) with a finite NSE, so no
-# bound clamps and a screen corner cannot fail closed.  create_prj_file.py refuses
-# any value outside the declared band with a hard error rather than letting CRHM
-# clamp it silently (dt_006), which is a second, independent guard.
+#   HIGH  air_temperature -> basinflow_s / SWE / soil_moist  (he2023, fang2007)
+#         => obs_elev + lapse_rate (CRHM lapses T from obs_elev to each
+#            hru_elev — this IS the temperature lever in a .prj), and the
+#            phase-partition thresholds tmax_allrain / tmax_allsnow /
+#            snow_rain_determination
+#   HIGH  precipitation   -> basinflow_s / SWE / soil_moist  (he2023, fang2007)
+#         => ClimChng_precip (the in-.prj multiplicative precip knob),
+#            precip_elev_adj (orographic gradient)
+#   MEDIUM wind_speed     -> SWE / Subl                      (pomeroy2007, fang2010)
+#         => pbsm fetch (measured INERT at this site — see header — retained
+#            UNPRUNED for the Morris screen)
+#   HIGH  wetland_storage_capacity (Sdmax) -> basinflow_s    (fang2010, he2023)
+#         => Sdmax
+#   MEDIUM fall_soil_moisture (fallstat)   -> snowmeltD      (fang2007, fang2010)
+#         => crack fallstat (+ crack Major, the same module's melt threshold)
+#   MEDIUM frozen_soil_infiltration_choice -> basinflow_s    (pomeroy2007, fang2010)
+#         => the crack-module levers above parameterise the chain's chosen arm
+#   MEDIUM vegetation_cover -> hru_actet                     (fang2007, pomeroy2007)
+#         => evap F_Qg (Granger ground-heat-flux fraction; the deck has no
+#            free canopy/LAI lever)
 #
-# SCOPE.  CRHM parameters are per-HRU.  Freeing 15 values per parameter would be
-# hopeless equifinality (C4), so each is scoped to a LAND-COVER ZONE — the same
-# grouping derive_parameters.py and the SKILL.md PBSM RULE-1 table already use.
-# calib_run.py ASSERTS the zone->HRU map against hru_config.json every eval, so a
-# rebuilt domain cannot silently re-address these parameters.  The five
-# deciduous_forest HRUs carry inhibit_bs = 1 (SKILL.md PBSM RULE 2: PBSM is
-# invalid in canopy, dag safety.validation_limits), which makes every pbsm
-# parameter inert there; they are held at the validated values and are not
-# calibrated.
+# Residual params with NO literature edge are NOT pruned — literature is the
+# PRIOR, not a pruning oracle. Albedo_snow (the ebsm melt-energy lever,
+# measured as one of the two STRONGEST controls at this site), the soil/
+# groundwater store group and the six Netroute routing constants are the
+# levers the KI's own validated-basin library documents as controlling volume
+# partition and recession shape (SKILL.md "groundwater-baseflow lesson",
+# "Blue River lesson"), retained at low/medium confidence for the kit's
+# Morris screen to confirm-or-demote on THIS site (~2 s per probe).
 #
-# DEFAULTS are the validated configuration: fetch/Ht reproduce derive_parameters.py
-# plus the RULE-1 winter exposed heights, and N_S / A_S / Qe_subl_from_SWE are
-# CRHM's own declared defaults (which the validated deck left unwritten, so writing
-# them explicitly at their default is bit-identical).  A staged round that freezes
-# a parameter therefore holds it at a physical, in-range, validated value.
-# ---------------------------------------------------------------------------
+# ERROR MODE THIS POOL MUST BE ABLE TO CLOSE. At the default vector the FULL
+# hydrograph is well-shaped (r 0.845, NSE 0.709) with a moderate volume
+# deficit (PBIAS -6.5%, worse in the holdout years at -7.4%): the residual is
+# part VOLUME, part freshet SHAPE. The pool therefore spans (a) the volume
+# levers (ClimChng_precip, precip_elev_adj, evap_F_Qg, soil_moist_max,
+# soil_gw_K, gw_max, gw_K — the gw group is LIVE here, see header), (b) the
+# freshet timing/energy levers (obs_elev, lapse_rate, tmax_allrain,
+# tmax_allsnow, snow_rain_determination, Albedo_snow, crack levers) and
+# (c) the recession/attenuation levers (Kstorage, Lag, run/ssr/gwKstorage,
+# gwLag, rechr/lower_ssr_K). Commissioning shows real headroom: Lag alone at
+# its lower bound lifts FULL NSE 0.7086 -> 0.7382.
+#
+# RANGES. Each `range` is the LITERATURE / KI-documented CALIBRATION band,
+# kept strictly INSIDE the deck's own declared `<lo to hi>` window (recorded
+# per-parameter as `model_declared_range`, transcribed from the pinned deck,
+# which CRHM validates by HARD-ERROR, never by clamping). For profile-tied
+# parameters the SCALED per-HRU values also stay inside the window at both
+# bounds (e.g. pbsm_fetch lo=1300 keeps the Forest HRU at 325, above the
+# model's 300 m floor). Every bound was verified LIVE to apply EXACTLY in the
+# generated .prj with a finite NSE — no bound clamps.
+#
+# DEFAULTS are the validated real_case optimum, so a staged round that freezes
+# a parameter holds it at the validated value and the calibrator starts from a
+# known-good point.
+# =============================================================================
 parameters:
 
-  # ------------- blowing-snow transport & sublimation magnitude -------------
-  - name: fetch_open_short
+  # ---------------------------------------------------------------------------
+  # A. FORCING TRANSLATION — temperature, precipitation and phase partition.
+  #    dag HIGH edges air_temperature -> basinflow_s / SWE / soil_moist and
+  #    precipitation -> basinflow_s / SWE / soil_moist.
+  # ---------------------------------------------------------------------------
+  - name: obs_elev
     description: >
-      PBSM fetch distance on the SHORT-VEGETATION blowing-snow source HRUs
-      (open_prairie + bare_ground, 1509.2 km2 = 39.0% of the domain).  fetch is
-      the upwind distance over which the saltation/suspension column develops:
-      Classpbsm.cpp:558-560 divides transport by it (Drift = DriftH*Prob/fetch)
-      and passes it into Pbsm() where the sublimation integral SublH grows with
-      it, so a longer fetch converts drift into SUBLIMATION LOSS.  This is the
-      single most direct lever on the frac_subl = 0.0305 deficit that explains the
-      +57% mass bias.
+      Elevation assigned to the forcing station. CRHM lapses air temperature
+      from obs_elev to each hru_elev, so this is the master FRESHET-TIMING
+      knob for a discharge-scored run: HRUs below obs_elev are warmed and melt
+      earlier. SKILL.md's Ghost / Kaslo / Kuskanax lessons make this the
+      single highest-leverage parameter in the KI, and the validated Dore grid
+      swept exactly {1950, 2100, 2250} and settled at 2100.
     type: continuous
     units: "m"
-    default: 2000.0
-    range: [300.0, 10000.0]
-    hard_bounds: [300.0, 10000.0]
-    transform: log                 # spans 1.5 orders of magnitude
-    scope: per-zone
-    zone_key: land_cover_name      # applies to HRUs 3,8,11,14 (open_prairie) + 4,5 (bare_ground)
+    default: 2100.0
+    range: [1430.0, 2600.0]
+    hard_bounds: [0.0, 100000.0]
+    model_declared_range: [0, 100000]
+    transform: identity
+    scope: global                     # one forcing station; written to all rows
     tie: null
     activation: always
-    expected_sensitivity: high
-    confidence: medium
-    range_source: >
-      Classpbsm.cpp:116 declares fetch <300 to 10000> m and CRHM CLAMPS SILENTLY
-      outside it (dag hazard dt_006), so the range IS the declared band.  The
-      shipped Pomeroy prairie decks occupy its lower part (badlake.prj 1500/2000/2000 m;
-      smithcreek.prj 300-1000 m) because those are 1-100 km2 stubble/wetland fields;
-      the Hulunbuir domain is 3868 km2 of continuous treeless steppe (82% treeless,
-      GLCFCS30), so the upper part of the declared band is physically reachable
-      here in a way it is not on Smith Creek.  Verified clamp-free: applied ==
-      requested at 300.0 (nse -0.445681) and at 10000.0 (nse -0.370996), both finite.
-    cite:
-      - pomeroy2007_crhm_platform
-      - fang2010_smithcreek_wetland
-      - fang2009_blowing_snow_wetlands
-      - crhm_classpbsm_declparam
-    address:                       # runner mode: documentation of the effective token
-      kind: runner
-      file: "basin.prj"
-      note: >
-        Fields 3,4,5,8,11,14 (1-based HRU ids) of the value row under the
-        `pbsm fetch <300 to 10000>` header of the regenerated deck.  Injected via
-        create_prj_file.py --param_overrides "pbsm fetch" and read back from
-        basin.prj by tools/calib_run.py.
-
-  - name: fetch_stubble
-    description: >
-      PBSM fetch distance on the crop_stubble HRUs (1854.6 km2 = 47.9% of the
-      domain — the largest surface class).  Same mechanism as fetch_open_short but
-      on the rougher, taller standing-residue surface, where the PBSM duty cycle in
-      the validated run is only 37-41% of snow-covered steps against 67-68% on the
-      grassland HRUs.  Kept separate from fetch_open_short because the two surfaces
-      have different upwind roughness and the validated deck already gives them
-      different derived values (1000 vs 2000 m).
-    type: continuous
-    units: "m"
-    default: 1000.0
-    range: [300.0, 10000.0]
-    hard_bounds: [300.0, 10000.0]
-    transform: log
-    scope: per-zone
-    zone_key: land_cover_name      # applies to HRUs 1,6,9,12 (crop_stubble)
-    tie: null
-    activation: always
-    expected_sensitivity: high
-    confidence: medium
-    range_source: >
-      Same declared band as fetch_open_short (Classpbsm.cpp:116, <300 to 10000> m);
-      badlake.prj/smithcreek.prj stubble HRUs sit at 1000-2000 m.  Verified
-      clamp-free: applied == requested at 300.0 (nse -0.432401) and at 10000.0
-      (nse -0.373937), both finite.
-    cite:
-      - pomeroy2007_crhm_platform
-      - fang2010_smithcreek_wetland
-      - fang2009_blowing_snow_wetlands
-      - crhm_classpbsm_declparam
+    confidence: high
+    cite: >
+      dag.yaml influence edge air_temperature -> basinflow_s, sensitivity_grade
+      HIGH, basis literature_quantitative, citations
+      [he2023_prairie_classification_sensitivity (He et al. 2023,
+      doi 10.5194/hess-27-3525-2023 — streamflow sensitivity -6 to -31% per
+      degree C), fang2007_prairie_drought_sensitivity (Fang & Pomeroy 2007,
+      doi 10.1002/hyp.6796)]. RANGE: the KI's documented obs_elev envelope for
+      a 3-HRU mountain basin — from the Valley HRU (1430 m) to ~300 m above
+      the Alpine HRU (2294 m), where SKILL.md's "raise obs_elev to roughly the
+      ALPINE-HRU elevation, over-shooting loses NSE fast" rule places the
+      optimum. Model-declared <0 to 100000>, so no clamping. Measured
+      single-bound effect: NSE 0.368 (lo) / 0.538 (hi) vs 0.709 default.
     address:
-      kind: runner
+      kind: text_token
       file: "basin.prj"
-      note: >
-        Fields 1,6,9,12 of the value row under `pbsm fetch <300 to 10000>`.
+      pattern: "^obs obs_elev <[^>]*>\\n(\\S+)"
 
-  # ------------- the PBSM on/off threshold (duty cycle) ---------------------
-  - name: Ht_stubble
+  - name: lapse_rate
     description: >
-      Winter EXPOSED vegetation height on the crop_stubble HRUs.  This is PBSM's
-      master switch, not a smooth knob: Classpbsm.cpp:529 forms
-      E_StubHt = Ht - DepthofSnow(SWE) and, whenever E_StubHt > 0.01 m, pins
-      Uten_Prob at 0 (min(0.0, Ustar-Ustn) is identically 0 because Ustn <= Ustar),
-      so the transport threshold never opens and Drift/Subl are EXACTLY zero.
-      Against an obs mean SWE of 12.3 mm the validated 0.10 m leaves PBSM off for
-      ~62% of snow-covered steps on this class.  Lowering it raises the duty cycle
-      and therefore the sublimation sink.  NOTE the parameter is SHARED with the
-      evap module (Classevap.cpp:65 declares the same name), so it is also the
-      aerodynamic vegetation height for evapotranspiration — physically consistent,
-      and winter ET on frozen steppe is negligible.
+      Environmental temperature lapse rate used to translate the forcing
+      temperature from obs_elev to each HRU. Together with obs_elev it sets
+      per-HRU melt energy — the second arm of the dag's HIGH air_temperature
+      edge.
     type: continuous
-    units: "m"
-    default: 0.10
-    range: [0.005, 0.12]
-    hard_bounds: [0.001, 100.0]
-    transform: log                 # switch behaviour is scale-relative, not additive
-    scope: per-zone
-    zone_key: land_cover_name      # HRUs 1,6,9,12
-    tie: null
-    activation: always
-    expected_sensitivity: high
-    confidence: medium
-    range_source: >
-      Classpbsm.cpp:118 declares Ht <0.001 to 100> m (the hard_bounds), but that
-      band spans forest canopies and is far wider than the blowing-snow SOURCE
-      regime.  The calibration range is the span the shipped Pomeroy prairie decks
-      give their blowing-snow source HRUs: badlake.prj 0.05 m (stubble) and
-      smithcreek.prj 0.001 / 0.12 m (fallow / standing stubble); 0.12 m is the
-      largest stubble value in either reference deck and is kept as the ceiling so
-      the parameter cannot wander into the canopy regime where PBSM is invalid
-      (dag safety.validation_limits, SKILL.md PBSM RULE 2 at 2.0 m).  Verified
-      clamp-free: applied == requested at 0.005 (nse -0.393538) and at 0.12
-      (nse -0.418861), both finite.
-    cite:
-      - pomeroy2007_crhm_platform
-      - fang2010_smithcreek_wetland
-      - crhm_classpbsm_declparam
-      - crhm_reference_projects
-    address:
-      kind: runner
-      file: "basin.prj"
-      note: >
-        Fields 1,6,9,12 of the value row under `pbsm Ht <0.001 to 100>`.
-
-  - name: Ht_grass
-    description: >
-      Winter exposed vegetation height on the open_prairie HRUs (dormant / grazed
-      Eurasian steppe grass, 1383.3 km2 = 35.8%).  Same switch mechanism as
-      Ht_stubble; the validated 0.05 m already gives a 67-68% duty cycle, so this
-      class is closer to fully active and the remaining headroom is smaller than on
-      the stubble class.
-    type: continuous
-    units: "m"
-    default: 0.05
-    range: [0.005, 0.12]
-    hard_bounds: [0.001, 100.0]
-    transform: log
-    scope: per-zone
-    zone_key: land_cover_name      # HRUs 3,8,11,14
-    tie: null
-    activation: always
-    expected_sensitivity: medium
-    confidence: medium
-    range_source: >
-      Same source and reasoning as Ht_stubble (Classpbsm.cpp:118 declared band,
-      restricted to the 0.001-0.12 m blowing-snow source span of badlake.prj /
-      smithcreek.prj).  Verified clamp-free: applied == requested at 0.005
-      (nse -0.409941) and at 0.12 (nse -0.436298), both finite.
-    cite:
-      - pomeroy2007_crhm_platform
-      - fang2010_smithcreek_wetland
-      - crhm_classpbsm_declparam
-      - crhm_reference_projects
-    address:
-      kind: runner
-      file: "basin.prj"
-      note: >
-        Fields 3,8,11,14 of the value row under `pbsm Ht <0.001 to 100>`.
-
-  - name: Ht_bare
-    description: >
-      Winter exposed vegetation height on the bare_ground HRUs (125.9 km2 = 3.3%,
-      the most wind-exposed surface in the domain).  Already at a 100% PBSM duty
-      cycle in the validated run, so almost no switch headroom remains and the
-      expected influence is LOW — retained UNPRUNED so the Morris screen can DEMOTE
-      it on THIS site rather than having it assumed away.
-    type: continuous
-    units: "m"
-    default: 0.01
-    range: [0.001, 0.05]
-    hard_bounds: [0.001, 100.0]
-    transform: log
-    scope: per-zone
-    zone_key: land_cover_name      # HRUs 4,5
-    tie: null
-    activation: always
-    expected_sensitivity: low
-    confidence: medium
-    range_source: >
-      Classpbsm.cpp:118 declared minimum 0.001 m is the floor (it is also
-      smithcreek.prj's own value for its two fallow HRUs); the ceiling 0.05 m is
-      badlake.prj's stubble value, above which the surface would no longer be
-      "bare".  Verified clamp-free: applied == requested at 0.001 (nse -0.418255)
-      and at 0.05 (nse -0.419082), both finite — the near-flat response is exactly
-      the low influence the screen is expected to detect.
-    cite:
-      - crhm_classpbsm_declparam
-      - crhm_reference_projects
-    address:
-      kind: runner
-      file: "basin.prj"
-      note: >
-        Fields 4,5 of the value row under `pbsm Ht <0.001 to 100>`.
-
-  # ------------- vegetation shear partition (gates the threshold) -----------
-  - name: N_S
-    description: >
-      Vegetation number density (stalks per m2) in PBSM's Raupach shear-partition.
-      Classpbsm.cpp:534-538 forms Lambda = N_S*A_S*E_StubHt and
-      Znod = Ustar^2/163.3 + 0.5*N_S*E_StubHt*A_S, then
-      Ustn = Ustar*sqrt(Beta*Lambda/(1+Beta*Lambda)): more stalks absorb more of
-      the surface shear, raise the threshold wind and SUPPRESS blowing snow.
-      Lowering it releases transport on the partly-sheltered stubble and grassland
-      HRUs.  Active only on the sheltered branch (E_StubHt > 0.01 m), which is why
-      its influence is entangled with Ht — the screen is what disentangles them.
-    type: continuous
-    units: "1/m^2"
-    default: 320.0
-    range: [1.0, 500.0]
-    hard_bounds: [1.0, 500.0]
-    transform: log                 # spans 2.7 orders of magnitude
-    scope: global                  # written to every HRU; inert on the 5 inhibited canopy HRUs
-    tie: null
-    activation: always
-    expected_sensitivity: low
-    confidence: medium
-    range_source: >
-      Classpbsm.cpp:122 declares N_S <1 to 500> 1/m2 with default [320]; the
-      shipped Pomeroy decks span that band almost fully — badlake.prj 320 (wheat
-      stubble), smithcreek.prj 320 / 100 / 1 across stubble, brush and fallow HRUs
-      — so the declared band IS the literature calibration range here.  Verified
-      clamp-free: applied == requested at 1.0 (nse -0.417825) and at 500.0
-      (nse -0.418318), both finite.
-    cite:
-      - pomeroy2007_crhm_platform
-      - fang2009_blowing_snow_wetlands
-      - crhm_classpbsm_declparam
-      - crhm_reference_projects
-    address:
-      kind: runner
-      file: "basin.prj"
-      note: >
-        All 15 fields of the value row under `pbsm N_S <1 to 500>`.  The parameter
-        is a decldiagparam that the validated deck left unwritten (CRHM then used
-        its built-in [320]); writing 320 explicitly is bit-identical.
-
-  - name: A_S
-    description: >
-      Stalk diameter (m) — the second factor of the same Raupach shear-partition
-      (Lambda = N_S*A_S*E_StubHt).  Physically distinct from N_S (frontal area per
-      element vs number of elements) but enters Lambda multiplicatively with it, so
-      the two are only jointly identifiable; retained UNPRUNED so the screen can
-      rank them rather than having one assumed away.
-    type: continuous
-    units: "m"
-    default: 0.003
-    range: [0.001, 0.010]
+    units: "degC/100m"
+    default: 0.75
+    range: [0.40, 0.98]
     hard_bounds: [0.0, 2.0]
-    transform: log
-    scope: global
-    tie: null
+    model_declared_range: [0, 2]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
     activation: always
-    expected_sensitivity: low
-    confidence: medium
-    range_source: >
-      Classpbsm.cpp:124 declares A_S <0 to 2> m with default [0.003], but 2 m is a
-      numerical ceiling, not a physical one (no vegetation stalk is metres thick),
-      so the calibration range is the span of NON-DEGENERATE values in the shipped
-      Pomeroy decks: badlake.prj 0.003 m (wheat stalk) and smithcreek.prj
-      0.003 / 0.01 m (stubble / brush), with 0.001 m as a conservative floor one
-      step below the smallest.  The degenerate 0.0 (smithcreek's fallow HRUs, which
-      switch the shear partition off entirely) is excluded so the parameter stays
-      log-transformable and cannot silently become a structural switch.  Verified
-      clamp-free: applied == requested at 0.001 (nse -0.418028) and at 0.010
-      (nse -0.418491), both finite.
-    cite:
-      - pomeroy2007_crhm_platform
-      - crhm_classpbsm_declparam
-      - crhm_reference_projects
+    confidence: high
+    cite: >
+      dag.yaml influence edge air_temperature -> basinflow_s / SWE (HIGH,
+      he2023_prairie_classification_sensitivity,
+      fang2007_prairie_drought_sensitivity). RANGE: the physical lapse-rate
+      envelope — saturated adiabatic (~0.4 degC/100 m) to dry adiabatic
+      (~0.98 degC/100 m) — around the KI's documented default 0.75 degC/100 m
+      (Fang et al. 2013, doi 10.5194/hess-17-1635-2013, as recorded in
+      SKILL.md's s4 parameter table). Model-declared <0 to 2>, no clamping.
     address:
-      kind: runner
+      kind: text_token
       file: "basin.prj"
-      note: "All 15 fields of the value row under `pbsm A_S <0 to 2>`."
+      pattern: "^obs lapse_rate <[^>]*>\\n(\\S+)"
 
-  # ------------- the second mass sink: latent-heat sublimation -------------
-  - name: Qe_subl_from_SWE
+  - name: ClimChng_precip
     description: >
-      ebsm's structural switch for where the latent-heat sublimation mass it
-      ALREADY computes (Qe_subl = Qe_ebsm/2.83) goes.  Classebsm.cpp:81: with 0
-      (CRHM's default, and what the validated run ran) that mass is added back into
-      Qmelt and never leaves the snowpack; with 1 it is taken FROM SWE, i.e. it
-      becomes a real mass sink.  This is the only reachable mass sink that is
-      independent of PBSM, and on a domain carrying +57% too much snow water it is
-      exactly the kind of lever the pool must contain.  Declared integer because
-      the binary reads it as a long.
+      Multiplicative precipitation correction applied INSIDE CRHM
+      (ClassObs.cpp), the documented master VOLUME/PBIAS knob. Corrects NASA
+      POWER's orographic precipitation deficit at this windward Cariboo basin
+      without rewriting the .obs. The validated grid swept {1.30, 1.45, 1.60}
+      and settled at 1.45 (PBIAS -6.5%).
+    type: continuous
+    units: "-"
+    default: 1.45
+    range: [1.0, 2.0]
+    hard_bounds: [0.0, 10.0]
+    model_declared_range: [0.0, 10]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: always
+    confidence: high
+    cite: >
+      dag.yaml influence edge precipitation -> basinflow_s, sensitivity_grade
+      HIGH, basis literature_quantitative, citations
+      [he2023_prairie_classification_sensitivity (precipitation elasticity of
+      streamflow 2.3-5.4), fang2007_prairie_drought_sensitivity]. RANGE: from
+      uncorrected NASA POWER (1.0) to a 2x up-scale — brackets the validated
+      grid {1.3, 1.45, 1.6} whose PBIAS crosses zero between 1.45 (-6.5%) and
+      1.6 (+6.6%), and spans the heavy orographic up-scales the KI's wet
+      windward basins document (Canoe/Kuskanax class). Model-declared
+      <0 to 10>, no clamping. Measured: NSE 0.497 (lo) / 0.322 (hi).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^obs ClimChng_precip <[^>]*>\\n(\\S+)"
+
+  - name: precip_elev_adj
+    description: >
+      Orographic precipitation adjustment per metre of elevation difference
+      between obs_elev and each HRU — the spatial arm of the dag's HIGH
+      precipitation edge (ClimChng_precip moves the basin-wide level,
+      precip_elev_adj tilts it with elevation). Calibrated as the ALPINE-HRU
+      value; Forest moves at 0.6x and the Valley HRU stays at 0.0, preserving
+      the validated deck's 0.0005 / 0.0003 / 0.0 profile shape.
+    type: continuous
+    units: "1/m"
+    default: 0.0005
+    range: [0.0, 0.002]
+    hard_bounds: [-1.0, 1.0]
+    model_declared_range: [-1, 1]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "orographic_profile"        # applied as [1.0, 0.6, 0.0] x this value
+    activation: always
+    confidence: medium
+    cite: >
+      dag.yaml influence edge precipitation -> basinflow_s / SWE (HIGH,
+      he2023_prairie_classification_sensitivity,
+      fang2007_prairie_drought_sensitivity). RANGE: from no orographic
+      gradient (0.0) to four times the deck's validated alpine value — the
+      same conservative envelope the KI documents for its Belly River profile
+      ("0.0005 alpine, 0 valley"). Far inside the model-declared <-1 to 1>,
+      no clamping.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^obs precip_elev_adj <[^>]*>\\n(\\S+)"
+
+  - name: tmax_allrain
+    description: >
+      Air temperature at or above which ALL precipitation falls as rain. With
+      tmax_allsnow it defines CRHM's linear rain/snow mixing band — in a nival
+      basin the phase split is the first control on how much of P becomes
+      snowpack and therefore on freshet volume and timing.
+    type: continuous
+    units: "degC"
+    default: 2.0
+    range: [0.5, 6.0]
+    hard_bounds: [-10.0, 10.0]
+    model_declared_range: [-10, 10]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: "snow_rain_determination == 0 (air-temperature threshold)"
+    confidence: medium
+    cite: >
+      dag.yaml influence edges air_temperature -> SWE and precipitation -> SWE
+      (both HIGH, he2023_prairie_classification_sensitivity,
+      fang2007_prairie_drought_sensitivity); the all-rain threshold band
+      0.5-6 degC spans the hydrological-model phase-threshold literature the
+      CRHM obs module encodes (all-rain typically 2-4 degC above the all-snow
+      threshold). Constrained tmax_allsnow <= tmax_allrain (see
+      `constraints`). Model-declared <-10 to 10>, no clamping. Measured:
+      NSE 0.707 (lo) / 0.525 (hi).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^obs tmax_allrain <[^>]*>\\n(\\S+)"
+
+  - name: tmax_allsnow
+    description: >
+      Air temperature at or below which ALL precipitation falls as snow — the
+      lower edge of the rain/snow mixing band and, measured at this site, one
+      of the strongest single levers (moving it to -2 shifts daily basinflow
+      by up to 38 m3/s).
+    type: continuous
+    units: "degC"
+    default: 0.0
+    range: [-3.0, 2.0]
+    hard_bounds: [-10.0, 10.0]
+    model_declared_range: [-10, 10]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: "snow_rain_determination == 0 (air-temperature threshold)"
+    confidence: medium
+    cite: >
+      Same dag HIGH edges as tmax_allrain. RANGE: -3..+2 degC around the CRHM
+      default of 0 degC covers the observed all-snow threshold spread across
+      cold-region basins; the upper bound equals the tmax_allrain default so
+      the ordering constraint stays satisfiable at the corner. Model-declared
+      <-10 to 10>, no clamping.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^obs tmax_allsnow <[^>]*>\\n(\\S+)"
+
+  - name: snow_rain_determination
+    description: >
+      Rain/snow phase partition method: 0 = air-temperature threshold (the
+      validated default), 1 = ice-bulb temperature. A structural switch on the
+      same HIGH temperature/precipitation edges.
     type: integer
     units: "-"
     default: 0
     range: [0, 1]
     hard_bounds: [0, 1]
+    model_declared_range: [0, 2]
     transform: identity
-    scope: global
-    tie: null
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
     activation: always
-    expected_sensitivity: medium
     confidence: medium
-    range_source: >
-      Classebsm.cpp:81 decldiagparam("Qe_subl_from_SWE", NHRU, "[0]", "0", "1") —
-      the parameter is binary by construction, so the range IS the declared band
-      and no clamp is possible.  create_prj_file.py's own table documents it as the
-      "TERTIARY arm of the Hulunbuir over-accumulation fix" and notes it is partly
-      masked because both ebsm daily branches are gated on meltflag == 1
-      (Classebsm.cpp:199,222) while Classalbedo.cpp:150-182 holds meltflag at 0
-      through midwinter — hence MEDIUM, not HIGH.  Verified clamp-free: applied ==
-      requested at 0 (nse -0.418211, the validated value) and at 1 (nse -0.339009),
-      both finite.  NO influence edge in dag.yaml (structural switches are not
-      varied by the perturbation-experiment literature the dag indexes); retained
-      UNPRUNED, and commissioning shows it is in fact one of the stronger single
-      levers here.
-    cite:
-      - crhm_classebsm_declparam
-      - pomeroy2007_crhm_platform
+    cite: >
+      dag.yaml influence edges precipitation -> SWE and air_temperature -> SWE
+      (both HIGH); Pomeroy et al. 2007 (doi 10.1002/hyp.6787) identifies the
+      phase-determination choice as a dominant CRHM structural control.
+      RANGE: the model declares <0 to 2>, but option 2 (Harder psychrometric)
+      requires a humidity input form the staged NASA POWER dore.obs does not
+      carry, so the calibration range is the clamp-free RUNNABLE subset
+      [0, 1] — option 1 verified live (NSE 0.7138, finite, applied exactly).
     address:
-      kind: runner
+      kind: text_token
       file: "basin.prj"
-      note: >
-        All 15 fields of the value row under `ebsm Qe_subl_from_SWE <0 to 1>`.
-        decldiagparam, so the validated deck left it unwritten (CRHM used [0]);
-        writing 0 explicitly is bit-identical.
+      pattern: "^obs snow_rain_determination <[^>]*>\\n(\\S+)"
 
-# ---------------------------------------------------------------------------
-# Hard feasibility — checked on the named vector BEFORE the model runs (C5).
-# ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # B. SNOWMELT ENERGY + BLOWING SNOW
+  # ---------------------------------------------------------------------------
+  - name: Albedo_snow
+    description: >
+      Maximum (fresh) snow albedo in the albedo module, the direct control on
+      the ebsm energy-budget melt rate. Measured as one of the two strongest
+      levers at this site (0.85 -> 0.75 moves daily basinflow by up to
+      33 m3/s). Calibrated as the Alpine/Valley value; the Forest HRU moves at
+      the validated 0.80/0.85 ratio, preserving the deck's canopy-darkened
+      forest snowpack.
+    type: continuous
+    units: "-"
+    default: 0.85
+    range: [0.70, 0.92]
+    hard_bounds: [0.0, 1.0]
+    model_declared_range: [0, 1]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "forest_albedo_profile"     # applied as [1.0, 0.8/0.85, 1.0] x this value
+    activation: always
+    confidence: medium
+    cite: >
+      No dag influence edge of its own — retained UNPRUNED as the lever behind
+      the dag's HIGH air_temperature -> SWE edge (melt energy). The ebsm
+      module is Gray & Landine 1988's energy-budget snowmelt model
+      (pomeroy2007_crhm_platform, doi 10.1002/hyp.6787, section on EBSM);
+      fresh-snow albedo 0.8-0.9 and melt-season decay toward ~0.5 is the
+      standard snow-physics envelope, so [0.70, 0.92] brackets the maximum-
+      albedo parameter without reaching either physical extreme. Declared
+      <0 to 1>, no clamping. Measured: NSE 0.706 (lo) / 0.694 (hi).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^albedo Albedo_snow <[^>]*>\\n(\\S+)"
+
+  - name: pbsm_fetch
+    description: >
+      Blowing-snow fetch distance (Classpbsm.cpp), calibrated as the Valley
+      value with the validated 1500/500/2000 profile (0.75/0.25/1.0).
+      MEASURED INERT at this site — see the commissioning header: fetch,
+      distrib and inhibit_bs all produce a bit-identical scored basinflow,
+      because hourly NASA POWER winds at this forested basin never reach
+      transport threshold. Retained UNPRUNED for the dag's MEDIUM wind_speed
+      edge; the kit's Morris screen will demote it on this site.
+    type: continuous
+    units: "m"
+    default: 2000.0
+    range: [1300.0, 6000.0]
+    hard_bounds: [1200.0, 10000.0]
+    model_declared_range: [300, 10000]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "fetch_profile"             # applied as [0.75, 0.25, 1.0] x this value
+    activation: always
+    confidence: low
+    cite: >
+      dag.yaml influence edges wind_speed -> SWE and wind_speed -> Subl
+      (MEDIUM, literature_qualitative, citations [pomeroy2007_crhm_platform,
+      fang2010_smithcreek_wetland]); Fang & Pomeroy 2009
+      (doi 10.1002/hyp.7348) is the KI's gathered-paper source for PBSM fetch.
+      RANGE: lo=1300 keeps the scaled Forest-HRU value (325 m) above the
+      model's own 300 m floor — SKILL.md's "300 m min for mountains" rule —
+      and hi=6000 m spans long alpine fetches; declared <300 to 10000>, all
+      scaled values clamp-free at both bounds (verified live).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^pbsm fetch <[^>]*>\\n\\S+ \\S+ (\\S+)"
+
+  # ---------------------------------------------------------------------------
+  # C. FROZEN-SOIL INFILTRATION — dag MEDIUM edges fall_soil_moisture ->
+  #    snowmeltD and frozen_soil_infiltration_choice -> basinflow_s (the
+  #    `crack` arm is the one this chain uses).
+  # ---------------------------------------------------------------------------
+  - name: crack_fallstat
+    description: >
+      Fall (pre-freeze-up) soil saturation, in percent, used by Gray's
+      frozen-soil infiltration algorithm to partition snowmelt between
+      infiltration and surface runoff. Calibrated as the Valley value with the
+      validated 10/30/50 elevation profile (0.2/0.6/1.0) — wetter autumn
+      soils => less melt infiltrates => a flashier freshet.
+    type: continuous
+    units: "%"
+    default: 50.0
+    range: [10.0, 90.0]
+    hard_bounds: [-1.0, 100.0]
+    model_declared_range: [-1, 100]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "fallstat_profile"          # applied as [0.2, 0.6, 1.0] x this value
+    activation: always
+    confidence: medium
+    cite: >
+      dag.yaml influence edge fall_soil_moisture (fallstat) -> snowmeltD,
+      sensitivity_grade MEDIUM, citations
+      [fang2007_prairie_drought_sensitivity, fang2010_smithcreek_wetland];
+      physical basis Gray et al. 2001 / Fang & Pomeroy, sourced by SKILL.md as
+      "Fang section 3.2.5 (from autumn SM measurements)". RANGE: 10-90%
+      saturation spans dry to near-saturated autumn soils while staying off
+      the -1 sentinel (a different code path) and the 100% ceiling; scaled
+      Alpine value stays at 2-18%. Declared <-1 to 100>, no clamping.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^crack fallstat <[^>]*>\\n\\S+ \\S+ (\\S+)"
+
+  - name: crack_Major
+    description: >
+      Major-melt threshold: the daily melt rate above which the frozen-soil
+      infiltration algorithm treats the event as a major melt. Controls which
+      spring melt days route as infiltration-excess runoff.
+    type: continuous
+    units: "mm/d"
+    default: 5.0
+    range: [2.0, 20.0]
+    hard_bounds: [1.0, 100.0]
+    model_declared_range: [1, 100]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: always
+    confidence: low
+    cite: >
+      Same dag edge as crack_fallstat (fall_soil_moisture -> snowmeltD,
+      MEDIUM, fang2007_prairie_drought_sensitivity /
+      fang2010_smithcreek_wetland) — Major is the second declared parameter of
+      the same `crack` module, carried UNPRUNED for the kit's Morris screen;
+      the literature gives no calibration band for it. RANGE: conservatively
+      bounded around the KI's documented default of 5 mm/d (SKILL.md s4 table,
+      "Fang section 3.2.5"), well inside the declared <1 to 100>.
+      confidence: low.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^crack Major <[^>]*>\\n(\\S+)"
+
+  # ---------------------------------------------------------------------------
+  # D. EVAPORATION — dag MEDIUM edge vegetation_cover -> hru_actet.
+  # ---------------------------------------------------------------------------
+  - name: evap_F_Qg
+    description: >
+      Fraction of net radiation partitioned to ground heat flux in the Granger
+      evaporation module (evap_type 0). The one free evaporation lever in this
+      chain and therefore the direct control on the ET arm of the water
+      balance.
+    type: continuous
+    units: "-"
+    default: 0.05
+    range: [0.02, 0.30]
+    hard_bounds: [0.0, 1.0]
+    model_declared_range: [0, 1]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: "evap_type == 0 (Granger)"
+    confidence: medium
+    cite: >
+      dag.yaml influence edge vegetation_cover -> hru_actet, sensitivity_grade
+      MEDIUM, citations [fang2007_prairie_drought_sensitivity,
+      pomeroy2007_crhm_platform]. RANGE: 2-30% of net radiation is the
+      ground-heat-flux fraction envelope across land surfaces (Granger & Gray
+      1990, the source the KI's create_prj_file table records); the deck's
+      validated value is 0.05. The HRUs carry fixed cov_type 1/2/1 so per-class
+      canopy structure is not a free lever — F_Qg is how the vegetation_cover
+      edge is actionable here. Declared <0 to 1>, no clamping.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^evap F_Qg <[^>]*>\\n(\\S+)"
+
+  # ---------------------------------------------------------------------------
+  # E. SOIL AND GROUNDWATER STORES — the volume-partition levers.
+  #    Sdmax carries a HIGH dag edge; the rest are the KI's documented
+  #    "groundwater-baseflow lesson" levers. NOTE: unlike the Yingluoxia case,
+  #    the gw group is MEASURED LIVE for basinflow at this site (header).
+  # ---------------------------------------------------------------------------
+  - name: Sdmax
+    description: >
+      Maximum depression (surface) storage — water detained in surface
+      depressions before it can run off. dag's only HIGH-graded PARAMETER edge
+      to basinflow_s. Calibrated as the Valley value with the validated
+      5/10/20 profile (0.25/0.5/1.0).
+    type: continuous
+    units: "mm"
+    default: 20.0
+    range: [0.0, 100.0]
+    hard_bounds: [0.0, 1000.0]
+    model_declared_range: [0, 1000]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "sdmax_profile"             # applied as [0.25, 0.5, 1.0] x this value
+    activation: always
+    confidence: medium
+    cite: >
+      dag.yaml influence edge wetland_storage_capacity (Sdmax) -> basinflow_s,
+      sensitivity_grade HIGH, basis literature_quantitative, citations
+      [fang2010_smithcreek_wetland (depressional storage exerts strong control
+      on snowmelt-derived streamflow), he2023_prairie_classification_
+      sensitivity]; the related MEDIUM edge Sd -> contributing_area shares the
+      citation. RANGE: the literature band is a PRAIRIE/wetland one (Smith
+      Creek depressions hold O(100) mm); this is a steep forested mountain
+      basin, so 0-100 mm lets the screen express the edge while staying far
+      inside the declared <0 to 1000>. Measured: NSE 0.708 (lo) / 0.700 (hi).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Shared Sdmax <[^>]*>\\n\\S+ \\S+ (\\S+)"
+
+  - name: soil_moist_max
+    description: >
+      Maximum total soil-moisture (root-zone) storage, calibrated as the
+      Valley value with the validated 100/200/250 profile (0.4/0.8/1.0). The
+      dominant control on the ET-versus-runoff partition and therefore on
+      streamflow VOLUME.
+    type: continuous
+    units: "mm"
+    default: 250.0
+    range: [130.0, 800.0]
+    hard_bounds: [0.0, 5000.0]
+    model_declared_range: [0, 5000]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "soil_profile"              # applied as [0.4, 0.8, 1.0] x this value
+    activation: always
+    confidence: medium
+    cite: >
+      No dag influence edge of its own — retained UNPRUNED (literature is a
+      PRIOR, never a pruning oracle) as the lever behind the dag's HIGH
+      precipitation -> soil_moist edge and the KI's documented soil-store
+      recipe (SKILL.md s4: "HWSD soil x CRHM porosity table x depth", Fang et
+      al. 2013, doi 10.5194/hess-17-1635-2013). RANGE: the lower bound 130
+      keeps every scaled per-HRU capacity (52/104/130) at or above the deck's
+      fixed soil_moist_init (50/100/120) so the initial condition can never
+      exceed the maximum; 800 mm covers a deep forest regolith. Declared
+      <0 to 5000>, no clamping.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Soil soil_moist_max <[^>]*>\\n\\S+ \\S+ (\\S+)"
+
+  - name: soil_rechr_max
+    description: >
+      Maximum recharge-zone (upper ~30 cm) storage — the layer that supplies
+      direct evaporation and the fast subsurface response. Calibrated as the
+      Valley value with the validated 30/60/80 profile (0.375/0.75/1.0).
+    type: continuous
+    units: "mm"
+    default: 80.0
+    range: [45.0, 340.0]
+    hard_bounds: [0.0, 350.0]
+    model_declared_range: [0, 350]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "rechr_profile"             # applied as [0.375, 0.75, 1.0] x this value
+    activation: always
+    confidence: medium
+    cite: >
+      Same KI source as soil_moist_max (SKILL.md s4, Fang et al. 2013,
+      doi 10.5194/hess-17-1635-2013). RANGE: lo=45 keeps every scaled per-HRU
+      value (16.9/33.75/45) at or above the deck's fixed soil_rechr_init
+      (15/30/40); hi=340 stays 10 mm inside the model's declared 350 ceiling
+      so the value applies EXACTLY rather than clamping. Constrained to stay
+      at or below soil_moist_max (see `constraints`) — CRHM itself hard-errors
+      otherwise ("rechr_max cannot be greater than soil_moist_max", verified
+      live).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Shared soil_rechr_max <[^>]*>\\n\\S+ \\S+ (\\S+)"
+
+  - name: rechr_ssr_K
+    description: >
+      Recharge-zone -> subsurface-runoff drainage rate. With the deck's
+      soil_ssr_runoff = 1 the ssr path feeds the scored basinflow, so this
+      sets how much of the recharge layer bypasses ET into quickflow.
+    type: continuous
+    units: "mm/d"
+    default: 0.01
+    range: [0.001, 5.0]
+    hard_bounds: [0.0, 100.0]
+    model_declared_range: [0, 100]
+    transform: log
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: always
+    confidence: low
+    cite: >
+      No dag influence edge — retained UNPRUNED as a KI-documented soil-store
+      lever (SKILL.md s4 soil table; Fang et al. 2013,
+      doi 10.5194/hess-17-1635-2013). RANGE: three decades either side of the
+      validated 0.01 mm/d, log-transformed; declared <0 to 100>, no clamping.
+      Measured: NSE 0.709 (lo) / 0.681 (hi).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Soil rechr_ssr_K <[^>]*>\\n(\\S+)"
+
+  - name: lower_ssr_K
+    description: >
+      Lower-soil -> subsurface-runoff drainage rate — measured as a strong
+      lever here (raising it to 1 mm/d moves daily basinflow by up to
+      22 m3/s): it opens a fast subsurface path that competes with the
+      soil_gw_K recharge sink.
+    type: continuous
+    units: "mm/d"
+    default: 0.001
+    range: [0.0001, 5.0]
+    hard_bounds: [0.0, 100.0]
+    model_declared_range: [0, 100]
+    transform: log
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: always
+    confidence: low
+    cite: >
+      No dag influence edge — retained UNPRUNED as a KI-documented soil-store
+      lever (same SKILL.md s4 / Fang et al. 2013 source as rechr_ssr_K).
+      RANGE: one decade below to three-plus decades above the validated
+      0.001 mm/d, log-transformed; declared <0 to 100>, no clamping.
+      Measured: NSE 0.709 (lo) / 0.647 (hi).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Soil lower_ssr_K <[^>]*>\\n(\\S+)"
+
+  - name: soil_gw_K
+    description: >
+      Soil -> groundwater RECHARGE rate: how much percolating water is
+      diverted from the fast subsurface path into the slow groundwater store.
+      Together with gw_K it sets the baseflow / quickflow split — and at this
+      deck's gwwhereto topology the gw store level feeds back into the scored
+      chain (measured max|Δ| 9.4 m3/s).
+    type: continuous
+    units: "mm/d"
+    default: 6.0
+    range: [0.5, 30.0]
+    hard_bounds: [0.0, 100.0]
+    model_declared_range: [0, 100]
+    transform: log
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: always
+    confidence: medium
+    cite: >
+      No dag influence edge — retained UNPRUNED as a KI-documented lever.
+      SKILL.md "THE GROUNDWATER-BASEFLOW LESSON" tabulates soil_gw_K 0.001
+      (hydrologically dead) -> 1.5 (Bow), and the validated basins use 3.0
+      (Ghost/Coldwater), 5.0 (Kaslo) and 6.0 (Kuskanax, Canoe and this
+      basin). RANGE: 0.5-30 mm/d, well either side of the documented band,
+      log-transformed; declared <0 to 100>, no clamping. Measured:
+      NSE 0.680 (lo) / 0.678 (hi).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Soil soil_gw_K <[^>]*>\\n(\\S+)"
+
+  - name: gw_max
+    description: >
+      Maximum groundwater storage, calibrated as the MID-elevation HRU value;
+      Alpine and Valley move on the validated 1500/1800/2100 profile
+      (5/6, 1.0, 7/6). gw_init is NOT calibrated: the runner derives it as
+      0.5 x the per-HRU gw_max every run (exactly the validated 750/900/1050),
+      so the store can never be initialised above its own capacity. Sizing the
+      GW store is SKILL.md's highest-leverage documented fix for winter
+      baseflow.
+    type: continuous
+    units: "mm"
+    default: 1800.0
+    range: [500.0, 3000.0]
+    hard_bounds: [0.0, 4285.0]      # 7/6 x hard bound stays under the declared 5000
+    model_declared_range: [0, 5000]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "gw_elevation_profile"     # applied as [5/6, 1.0, 7/6] x this value
+    activation: always
+    confidence: medium
+    cite: >
+      No dag influence edge — retained UNPRUNED as a KI-documented lever.
+      SKILL.md "THE GROUNDWATER-BASEFLOW LESSON": a hydrologically dead GW
+      store gives NO winter baseflow; the KI's four validated GW recipes span
+      mid-HRU 500 ('small' 400/500/600) to 2300 ('xlarge' 1900/2300/2700),
+      this basin's validated choice being 'large' (1500/1800/2100). RANGE:
+      500-3000 spans all four recipes with headroom; the scaled Valley value
+      (7/6 x 3000 = 3500) stays clamp-free inside the declared <0 to 5000>
+      (verified live). MEASURED LIVE at this site (max|Δ| 0.35 m3/s at the
+      'small' recipe) — unlike Yingluoxia, do not assume the gw group inert.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Soil gw_max <[^>]*>\\n\\S+ (\\S+) \\S+$"
+
+  - name: gw_K
+    description: >
+      Groundwater RELEASE rate. A slow release sustains winter baseflow; the
+      KI documents gw_K ~0.001 as "hydrologically dead". Measured LIVE for the
+      scored basinflow at this deck's gwwhereto topology (max|Δ| 5.6 m3/s at
+      gw_K=10).
+    type: continuous
+    units: "mm/d"
+    default: 1.0
+    range: [0.05, 10.0]
+    hard_bounds: [0.0, 100.0]
+    model_declared_range: [0, 100]
+    transform: log
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: always
+    confidence: medium
+    cite: >
+      No dag influence edge — retained UNPRUNED as a KI-documented lever.
+      SKILL.md "THE GROUNDWATER-BASEFLOW LESSON" tabulates gw_K 0.001 (dead)
+      -> 0.3 (Bow), the "GW parameters" rule of thumb gives "gw_K = 2-5 for
+      sustained winter baseflow", and validated basins use 0.3 / 0.6 / 1.0.
+      RANGE: 0.05 (nearly dead, still off the exact-0 boundary) to 10 (an
+      order of magnitude above the documented maximum), log-transformed
+      because the documented values span three decades. Declared <0 to 100>,
+      no clamping. Measured: NSE 0.701 (lo) / 0.709 (hi).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Soil gw_K <[^>]*>\\n(\\S+)"
+
+  # ---------------------------------------------------------------------------
+  # F. NETROUTE STORAGE — the recession-shape / attenuation levers.
+  # ---------------------------------------------------------------------------
+  - name: Kstorage
+    description: >
+      In-channel routing storage constant, calibrated as the MID-elevation HRU
+      value; Alpine and Valley move on the validated 16/24/10 profile
+      (2/3, 1.0, 5/12). SKILL.md's Blue River lesson: Kstorage governs the
+      post-peak RECESSION SHAPE, orthogonal to obs_elev which moves peak
+      TIMING. Measured among the strongest levers here (NSE collapses to
+      ~0.40 at both bounds — the validated 24 sits in a sharp optimum).
+    type: continuous
+    units: "d"
+    default: 24.0
+    range: [4.0, 75.0]
+    hard_bounds: [0.0, 200.0]
+    model_declared_range: [0, 200]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "kstorage_elevation_profile"  # applied as [2/3, 1.0, 5/12] x this value
+    activation: always
+    confidence: medium
+    cite: >
+      No dag influence edge — retained UNPRUNED as a KI-documented lever
+      (SKILL.md s4 sources Netroute storage from "Fang section 14"). RANGE:
+      spans the KI's four Kstorage recipes ('light' 10/16/6 through 'karst'
+      40/50/24, mid-HRU 16-50) extended to 4-75 d to reach the documented
+      long-recession configurations (Ghost 62/74/40 d). Declared <0 to 200>,
+      all scaled values clamp-free at both bounds (verified live).
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Netroute Kstorage <[^>]*>\\n\\S+ (\\S+) \\S+$"
+
+  - name: Lag
+    description: >
+      In-channel routing lag, calibrated as the MID-elevation HRU value on the
+      validated 48/72/24 h profile (2/3, 1.0, 1/3) — the delay between HRU
+      outflow and arrival at the outlet, i.e. the freshet's phase shift.
+      Measured live (max|Δ| 22 m3/s at 2x), and the single largest measured
+      IMPROVEMENT direction: Lag=12 alone lifts FULL NSE 0.7086 -> 0.7382.
+    type: continuous
+    units: "h"
+    default: 72.0
+    range: [12.0, 240.0]
+    hard_bounds: [0.0, 10000.0]
+    model_declared_range: [0, 10000]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "lag_elevation_profile"     # applied as [2/3, 1.0, 1/3] x this value
+    activation: always
+    confidence: medium
+    cite: >
+      No dag influence edge — retained UNPRUNED as a KI-documented lever (same
+      SKILL.md s4 "Fang section 14" source as Kstorage). RANGE: 12 h (half a
+      day, effectively direct arrival for a 400 km2 basin) to 240 h (10 days),
+      bracketing the validated 24/48/72 h profile; declared <0 to 10000>, no
+      clamping.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Netroute Lag <[^>]*>\\n\\S+ (\\S+) \\S+$"
+
+  - name: runKstorage
+    description: >
+      Surface-runoff storage constant — the attenuation applied to the fast
+      overland (infiltration-excess) path before it reaches the channel. The
+      validated deck routes this path UNDAMPED (0); measured as the single
+      strongest degrading lever (NSE 0.106 at 40 d), so its range is where the
+      screen learns the fast path must stay fast.
+    type: continuous
+    units: "d"
+    default: 0.0
+    range: [0.0, 40.0]
+    hard_bounds: [0.0, 200.0]
+    model_declared_range: [0, 200]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: always
+    confidence: low
+    cite: >
+      No dag influence edge — retained UNPRUNED. SKILL.md s4 derives
+      run/ssr/gwKstorage from "elevation sorting + sqrt(area)" (Fang section
+      14); the validated deck holds it at 0. RANGE: 0-40 d, inside the
+      declared <0 to 200>. confidence: low.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Netroute runKstorage <[^>]*>\\n(\\S+)"
+
+  - name: ssrKstorage
+    description: >
+      Subsurface-runoff storage constant. Near-inert at the validated defaults
+      (the ssr flux is tiny while rechr/lower_ssr_K sit at 0.01/0.001) but
+      CONDITIONALLY live: any candidate that opens the ssr path via
+      lower_ssr_K needs this attenuation lever to shape it — the pair is why
+      both stay in the pool.
+    type: continuous
+    units: "d"
+    default: 0.0
+    range: [0.0, 40.0]
+    hard_bounds: [0.0, 200.0]
+    model_declared_range: [0, 200]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: always
+    confidence: low
+    cite: >
+      No dag influence edge — retained UNPRUNED (same SKILL.md s4 "Fang
+      section 14" source). RANGE: 0-40 d inside the declared <0 to 200>.
+      Measured max|Δ| 0.009 m3/s at the DEFAULT soil drainage — conditionally
+      live only, which is exactly what the kit's screen is for.
+      confidence: low.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Netroute ssrKstorage <[^>]*>\\n(\\S+)"
+
+  - name: gwKstorage
+    description: >
+      Groundwater routing storage constant — the slow store's outflow damping
+      and, with gwLag, the control on how flat the winter recession is.
+      Measured LIVE here (max|Δ| 0.73 m3/s — small but nonzero, unlike
+      Yingluoxia).
+    type: continuous
+    units: "d"
+    default: 50.0
+    range: [5.0, 150.0]
+    hard_bounds: [0.0, 200.0]
+    model_declared_range: [0, 200]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: always
+    confidence: medium
+    cite: >
+      No dag influence edge — retained UNPRUNED as a KI-documented lever.
+      SKILL.md "GW parameters: gwKstorage = 50-80 ... for sustained winter
+      baseflow"; every validated mountain basin uses 50. RANGE: 5-150 d — from
+      an almost-undamped store to twice the documented maximum — inside the
+      declared <0 to 200>, no clamping.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Netroute gwKstorage <[^>]*>\\n(\\S+)"
+
+  - name: gwLag
+    description: >
+      Groundwater lag — the delay between recharge and baseflow arrival at the
+      outlet, i.e. how far into winter the previous melt season's water is
+      still being released. Measured live (max|Δ| 0.55 m3/s).
+    type: continuous
+    units: "h"
+    default: 500.0
+    range: [24.0, 2000.0]
+    hard_bounds: [0.0, 10000.0]
+    model_declared_range: [0, 10000]
+    transform: identity
+    scope: per-HRU
+    zone_key: hru_id
+    tie: "uniform_all_hru"
+    activation: always
+    confidence: medium
+    cite: >
+      No dag influence edge — retained UNPRUNED as a KI-documented lever.
+      SKILL.md "GW parameters: gwLag = 500-1000" for sustained winter
+      baseflow. RANGE: 24 h (effectively no lag) to 2000 h (~83 d), inside
+      <0 to 10000>. NOTE (SKILL.md, and the dag's own caveat on basinflow_s):
+      the Netroute lag stores carry NO output state variable, so a large gwLag
+      leaves a structural ~4-5% un-closable storage residual in decadal
+      water-balance checks — a documented diagnostic artefact, not a mass
+      error.
+    address:
+      kind: text_token
+      file: "basin.prj"
+      pattern: "^Netroute gwLag <[^>]*>\\n(\\S+)"
+
+# -----------------------------------------------------------------------------
+# HARD FEASIBILITY — checked BEFORE a run, so an infeasible vector costs
+# nothing.
+# -----------------------------------------------------------------------------
 constraints:
-  # Surface-roughness ordering: bare ground < grazed/dormant steppe grass <
-  # standing crop stubble.  This is the ordering the KI's own WINTER_HT_M table
-  # encodes (bare 0.01 < open_prairie 0.05 < crop_stubble 0.10) and the one the
-  # land-cover classes mean.  The three ranges OVERLAP, so a Morris screen would
-  # otherwise sample corners where bare ground is taller than standing stubble —
-  # a vector with no physical referent whose score would still enter the design
-  # matrix.  Defaults satisfy both with margin.
-  - "Ht_bare <= Ht_grass"
-  - "Ht_grass <= Ht_stubble"
+  # CRHM ITSELF hard-errors on the first ("rechr_max cannot be greater than
+  # soil_moist_max in hru = 1", verified live at this site); the calibrated
+  # scalars are the Valley-HRU values and both profiles keep every other HRU's
+  # ratio weaker than this one, so the scalar inequality covers all 3 HRUs.
+  - "soil_rechr_max <= soil_moist_max"
+  # Ordering of the rain/snow mixing band. CRHM tolerates the inversion
+  # numerically (verified live) but an all-snow threshold above the all-rain
+  # threshold is physically meaningless — the mixing band degenerates.
+  - "tmax_allsnow <= tmax_allrain"
 
-# ---------------------------------------------------------------------------
-# HOW to run + score one candidate.  cwd is the KI path.
-# tools/calib_run.py reads KDT_CALIB_PARAMS, expands the zone-scoped names to
-# per-HRU vectors, regenerates basin.prj through create_prj_file.py with those
-# overrides, reads every value BACK out of the generated deck, runs the CRHM
-# binary via run_crhm.py, parses with parse_crhm_output.py, scores area-weighted
-# region-mean SWE against the Snow_cci region mean with
-# ki_tools_common.metrics.all_metrics at the screen-mandated aggregation, and
-# emits __kdt__.applied_params + case_id + scored_obs (both DERIVED from the
-# artifacts actually used, so a wrong-site run is detectable, not mislabelled).
-# /usr/bin/python3 is the interpreter the validated run used and the one carrying
-# netCDF4 1.7.4 + pandas 3.0.3 + the canonical ki_tools_common.
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# HOW TO RUN + SCORE ONE CANDIDATE
+#
+# runner mode: the kit writes the candidate vector to kdt_params.json in the
+# eval workdir and sets KDT_CALIB_PARAMS. tools/calib_run.py reads it, injects
+# it into a byte-pinned copy of the validated Dore deck, reads every value
+# back out of the generated .prj, runs the real CRHM binary via
+# s5_execution/run_crhm.py, parses via s5_execution/parse_crhm_output.py,
+# scores with ki_tools_common.metrics.all_metrics against the
+# contract-enforced HYDAT 08KA001 series and writes {nse, kge, pbias, rmse,
+# r, ..., "__kdt__": {applied_params, case_id, scored_obs, ...}}. One eval is
+# ~2.2 s wall clock (11 simulated years, 3 HRUs, hourly) because the DEM /
+# delineation / deck template / 11-year hourly NASA POWER dore.obs / HYDAT
+# CSV are all staged once under outputs/crhm_08ka001_dore/ and reused
+# read-only.
+# -----------------------------------------------------------------------------
 runner:
   kind: subprocess
-  command: ["/usr/bin/python3", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  command: ["python3", "tools/calib_run.py", "--workdir", "{workdir}",
+            "--out", "{metrics_json}"]
   metrics_file: "{metrics_json}"
-  timeout: 300                     # measured 6-9 s per eval; generous headroom
+  cwd: "{ki_path}"
+  timeout: 900          # soft hint only; the kit runs unbounded by default
 
+# -----------------------------------------------------------------------------
 strategy:
-  cost_class: moderate             # compiled C++ binary, 13 yr x 3-hourly x 15 HRUs, ~7 s/eval
-  default_algorithm: dds           # single scalarized objective, no gradients
-  max_evaluations: 200
-  staged: true                     # Morris-screen the 8-param pool, then calibrate few, then escalate
-  staged_start: 8                  # tune ALL params from round 1 so Qe_subl_from_SWE (SWE-reduction switch) is explored
-  staged_step: 2                   # escalate two parameters at a time until the holdout passes
-  screen_trajectories: 4
+  cost_class: cheap                 # ~2.2 s per evaluation, fully staged inputs
+  default_algorithm: dds
+  algorithm_rationale: >
+    Single-objective search (one target var, basinflow_s, determining metric
+    NSE — no Pareto trade-off, so nsga2 does not apply) over a 26-parameter
+    pool with CHEAP ~2.2 s evaluations, run through the kit's staged
+    screen-then-calibrate protocol so the active dimension per stage stays
+    small. DDS (Tolson & Shoemaker 2007) is purpose-built for exactly this
+    shape — high-dimensional watershed-model calibration under a bounded
+    evaluation budget, self-scaling its perturbation neighbourhood from
+    global to local as the budget is spent — and commissioning shows a
+    response surface with one sharp basin per lever (Kstorage collapses
+    symmetrically at both bounds) rather than the many-basin ruggedness that
+    would demand sceua's population complexes. Posterior parameter intervals
+    are not this capability's goal, so dream's ~10x budget premium buys
+    nothing the gate scores.
+  max_evaluations: 500
+  staged: true                      # sensitivity screen -> calibrate few -> escalate
+  staged_start: 6
+  staged_step: 4
 
   holdout:
     kind: years
     protocol: blocked_temporal
-    grouping_key: calendar_year
-    generalization_axis: time
-    fraction: 0.5                  # 6 held-out years of the 12 scored years
-    calibration_period: ["2003-01-01", "2008-12-31"]
-    holdout_period:     ["2009-01-01", "2014-12-31"]
+    grouping_key: water_year
+    generalization_axis: temporal
+    fraction: 0.5
+    calibration_window: ["2006-01-01", "2010-12-31"]
+    holdout_window: ["2011-01-01", "2015-12-31"]
     rationale: >
-      obs_shape is regional_aggregate_time_series over ONE fixed polygon, so there
-      is no site or region axis to hold out — the only defensible generalization
-      axis is TIME, and the split must be CONTIGUOUS (blocked), never random days
-      or random months: a snowpack is a memory state, so adjacent days of an
-      accumulation season are almost perfectly autocorrelated and a random split
-      would leak the same winter into both sets (Klemes 1986, the split-sample
-      test; Arsenault et al. 2018 on split length and period sensitivity).  The
-      periods are inherited VERBATIM from the validated run (CAL / VAL in
-      run_and_score_hulunbuir_pbsm.py; 2002 discarded as spin-up), so the held-out
-      2009-2014 block is the very one whose monthly-mean NSE -0.4182 is the prior
-      validated metric and a calibrated holdout score is directly comparable to it.
-      CRHM is deterministic given a parameter vector and costs ~7 s, so
-      calib_run.py simulates the SAME full 2002-2014 record for every split and
-      scores only the requested window: the calibration score is therefore never
-      confounded by a shorter warm-up.  Verified live 2026-08-03 — the default
-      vector reproduces nse_cal -0.290697 and nse_holdout -0.41821090337699984
-      through this runner, on 47 scored months each.
-      A caveat the promoting authority must carry: with 47 months per block and a
-      retrieval whose own mass-consistency screen fails on 4.32% of cold-season
-      days, a holdout improvement smaller than the retrieval noise is not
-      evidence.  That is a property of the observation, not of the split.
-    cite:
-      - klemes1986_operational_testing
-      - arsenault2018_calibration_data_length
+      A contiguous blocked-temporal split is the default for a single-gauge
+      point_time_series streamflow obs (no site or region axis exists), and
+      these two windows are EXACTLY the validated real_case's own cal/val
+      split (cal NSE 0.7000 / val NSE 0.7116 at the default vector), so a
+      calibrated result is directly comparable to the prior metric. The
+      record is complete (1826 valid days in each block, no gaps — both
+      populations asserted exactly by count, first/last date,
+      min/max/range/mean and a sha256 of the scored (date, value) pairs in
+      tools/calib_run.py before any metric is computed), so an even 0.5
+      fraction maximises held-out power; the holdout block spans both the
+      wettest (2012, obs max 132 m3/s) and driest years, giving the split
+      genuine differential character.
+    cite: >
+      Blocked (contiguous) temporal hold-out for a single-gauge daily
+      streamflow series follows the split-sample tradition of Klemes 1986
+      (doi 10.1080/02626668609491024) and the calibration/validation guidance
+      of Moriasi et al. 2015 "Hydrologic and Water Quality Models: Use,
+      Calibration, and Validation" (doi 10.13031/trans.58.10715), in this
+      KI's gathered papers. The window boundaries are inherited from the
+      validated real_case CRHM_20260629T124938Z.
     confidence: high
-
-# ---------------------------------------------------------------------------
-# Citations.  The first five keys are carried VERBATIM from dag.yaml's
-# influence.citation_index (same short_citation and doi); the rest are the model's
-# own source and reference decks, plus the split-sample methodology.
-# ---------------------------------------------------------------------------
-citations:
-  pomeroy2007_crhm_platform:
-    short_citation: "Pomeroy et al. 2007"
-    doi: "10.1002/hyp.6787"
-    note: >
-      Foundational CRHM platform paper — identifies the dominant process modules
-      and their parameter controls on cold-region SWE; the source of dag.yaml's
-      wind_speed->SWE and wind_speed->Subl MEDIUM edges (basis
-      literature_qualitative).
-  fang2010_smithcreek_wetland:
-    short_citation: "Fang et al. 2010"
-    doi: "10.5194/hess-14-991-2010"
-    note: >
-      CRHM on the Smith Creek prairie/wetland basin — the reference prairie
-      application; smithcreek.prj is its shipped deck and the source of the
-      fetch / Ht / N_S / A_S values this contract's ranges are anchored to.
-  fang2009_blowing_snow_wetlands:
-    short_citation: "Fang & Pomeroy 2009"
-    doi: "10.1002/hyp.7348"
-    note: >
-      "Modelling blowing snow redistribution to prairie wetlands" — the PBSM
-      application paper for fetch-driven transport and sublimation partitioning on
-      flat prairie, the landscape class this domain is the Eurasian analogue of.
-  fang2007_prairie_drought_sensitivity:
-    short_citation: "Fang & Pomeroy 2007"
-    doi: "10.1002/hyp.6796"
-    note: >
-      CRHM perturbation experiments on Canadian prairie basins; the source of
-      dag.yaml's precipitation->SWE HIGH edge — an edge this contract deliberately
-      does NOT expose as a lever, because it acts through the LOCKED
-      ClimChng_precip knob.
-  he2023_prairie_classification_sensitivity:
-    short_citation: "He et al. 2023"
-    doi: "10.5194/hess-27-3525-2023"
-    note: >
-      The only formal quantitative SA in the CRHM literature (virtual-basin
-      ensemble across seven prairie classes); ranks peak SWE behind streamflow for
-      T and P sensitivity.  Both of its HIGH edges into SWE are boundary_forcing,
-      i.e. the locked knobs — which is precisely why this pool is built from the
-      MEDIUM parameter-side edges instead.
-  crhm_classpbsm_declparam:
-    short_citation: "CRHMcode 1.3.5, src/modules/Classpbsm.cpp:116-124, 527-562"
-    note: >
-      The model's own declared parameter bands and the code path that uses them:
-      fetch <300 to 10000>, Ht <0.001 to 100>, N_S <1 to 500>, A_S <0 to 2>, and
-      the E_StubHt / Znod / Lambda / Ustn / Uten_Prob threshold logic.  Values
-      outside a declared band are CLAMPED SILENTLY (dag hazard dt_006), which is
-      why every range above sits inside its band and was verified to apply exactly.
-  crhm_classebsm_declparam:
-    short_citation: "CRHMcode 1.3.5, src/modules/Classebsm.cpp:81, 199, 222"
-    note: >
-      decldiagparam("Qe_subl_from_SWE", NHRU, "[0]", "0", "1") and the two
-      meltflag-gated daily branches that partly mask it.
-  crhm_reference_projects:
-    short_citation: "CRHMcode 1.3.5 reference decks, crhmcode/prj/badlake.prj and crhmcode/prj/smithcreek.prj"
-    note: >
-      The shipped Pomeroy prairie projects.  badlake.prj: Ht 0.05/0.25/0.6 m,
-      fetch 1500/2000/2000 m, N_S 320, A_S 0.003.  smithcreek.prj: Ht
-      0.001/0.12/0.4/0.7/0.001/6 m, fetch 300-1000 m, N_S 1/100/320,
-      A_S 0.0/0.003/0.01.  These are the values the PBSM literature actually ran,
-      and they are what pins the Ht and A_S calibration ranges inside their much
-      wider declared bands.
-  klemes1986_operational_testing:
-    short_citation: "Klemes 1986, Hydrol. Sci. J. 31(1), 13-24"
-    doi: "10.1080/02626668609491024"
-    note: "The split-sample test; the basis for a contiguous blocked-temporal holdout."
-  arsenault2018_calibration_data_length:
-    short_citation: "Arsenault et al. 2018, J. Hydrol. 566, 346-362"
-    doi: "10.1016/j.jhydrol.2018.09.027"
-    note: "The hazards of split-sample validation — on split length and period sensitivity."

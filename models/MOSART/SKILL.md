@@ -1,13 +1,3 @@
----
-name: mosart
-description: >-
-  MOSART-WM. Covers Grid-based river routing of land-surface runoff: hillslope overland
-  flow, subnetwork (tributary)…; Reservoir storage and regulated release (including ISTARF
-  statistical target release); Irrigation water-supply allocation from reservoirs/channels
-  to dependent grid cells; Flood routing (excess channel storage shed to ocean). Use when
-  the task involves running, configuring, calibrating or interpreting MOSART.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +21,43 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (12 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_mosart_grid.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_mosart_grid.py --help` |
+| `tools/convert_grid_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_grid_parameters.py --help` |
+| `tools/convert_runoff_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_runoff_forcing.py --help` |
+| `tools/delineate_d8_from_merit.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/delineate_d8_from_merit.py --help` |
+| `tools/frac_to_basin_shp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/frac_to_basin_shp.py --help` |
+| `tools/parse_mosart_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_mosart_output.py --help` |
+| `tools/run_mosartwmpy.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_mosartwmpy.py --help` |
+
+*7 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # MOSART-WM (mosartwmpy) — Knowledge Infrastructure
 
 **Package**: `hydrocraft-mosartwmpy-routing` v1.0.0
@@ -38,8 +65,227 @@ description: >-
 **Repository**: https://github.com/IMMM-SFA/mosartwmpy
 **Created by**: IMMM-SFA / PNNL (Travis Thurber et al.)
 **Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 20 diagnostic triplets | ~2,500 lines of validated Python
-**Validation status**: `infrastructure_complete`
+**Stats**: 7 tools | 5 skill documents | 22 diagnostic triplets | ~2,500 lines of validated Python
+**Validation status**: `validated`
+
+---
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | MOSART-WM (Model for Scale Adaptive River Transport with Water Management) |
+| Implementation | `mosartwmpy` |
+| Version | `hydrocraft-mosartwmpy-routing` v1.0.0; scientific reference version MOSART-WM |
+| Language | Python |
+| License | BSD-3-Clause |
+| Repository | https://github.com/IMMM-SFA/mosartwmpy |
+| Primary domain | Hydrology / river routing and water management |
+| Spatial mode | Distributed gridded river network |
+
+## 2. What This Model Does
+
+MOSART-WM routes externally supplied land-surface runoff through hillslope, tributary,
+main-channel, reservoir, and water-supply components on a regular lat/lon river-network
+grid. It is a routing and water-management model, not a rainfall-runoff generator: QOVER
+and QDRAI runoff fields must come from an upstream land-surface model or equivalent
+runoff product.
+
+## 3. Input Requirements
+
+**Exact shapes live in `docs/format_spec.yaml`** (projected from `dag.yaml` and
+`diagnostics/triplets.yaml`; regenerate it after changing either, never hand-edit it).
+This section explains intent and traps; `docs/format_spec.yaml` is the contract.
+
+### 3.1 Runoff and Demand Forcing
+
+| Variable | Unit model expects | Source dataset / producer | Source unit | Conversion |
+|----------|-------------------|---------------------------|-------------|------------|
+| `QOVER` surface runoff | mm/s | Upstream VIC/CLM/mHM/Livneh runoff, or BMI `surface_runoff_flux` | source-dependent | Use `tools/convert_runoff_forcing.py`; mm/day -> mm/s by division by 86400 |
+| `QDRAI` subsurface runoff | mm/s | Upstream VIC/CLM/mHM/Livneh runoff, or BMI `subsurface_runoff_flux` | source-dependent | Use `tools/convert_runoff_forcing.py`; mm/day -> mm/s by division by 86400 |
+| optional wetland runoff | mm/s | Optional gridded runoff component | source-dependent | Convert to mm/s before routing |
+| `totalDemand` | m3/s | Water-demand NetCDF or ABM demand module | m3/s | Direct rate input; internally accumulated over substeps |
+
+### 3.2 Static Inputs
+
+| Input | Source | Tool that prepares it |
+|-------|--------|----------------------|
+| D8 river network triplet | MERIT-Hydro-derived Lohmann ArcASCII `direc` / `xmask` / `frac` files | `tools/delineate_d8_from_merit.py` |
+| VIC domain bridge | Delineated `frac` grid | `tools/frac_to_basin_shp.py` |
+| MOSART grid domain | Validated D8 network plus MOSART geometry defaults/fills | `tools/build_mosart_grid.py`, then `tools/convert_grid_parameters.py --validate-only` |
+| Reservoir parameters | GRanD reservoir inputs and ISTARF coefficients | `create_grand_parameters` |
+| Mean monthly reservoir flow/demand | Prepared Parquet schedules | External preparation, consumed by mosartwmpy |
+
+### 3.3 Configuration Files
+
+| File | Format | Notes |
+|------|--------|-------|
+| `config.yaml` | YAML | Simulation dates, timestep, output cadence, grid/runoff/demand/reservoir paths, water-management toggles |
+| Restart file | NetCDF | Optional `{name}_restart_{year}_{month}_{day}.nc`; absent restart means zero-initialized state |
+
+## 4. Build Instructions
+
+Install the real package, then run `python preflight_check.py` in this KI directory before
+debugging any model run. On Python 3.12, install `setuptools` with mosartwmpy because
+mosartwmpy imports `pkg_resources`.
+
+```bash
+pip install mosartwmpy setuptools
+# or
+conda install -c conda-forge mosartwmpy
+```
+
+Canonical run environment on this server:
+`KISSPATH_KI_ROOT/MOSART/venv/bin/python`.
+
+## 5. Execution
+
+Read each tool's `--help` before composing a command. The executable chain is:
+
+```bash
+python preflight_check.py
+python tools/convert_runoff_forcing.py --help
+python tools/build_mosart_grid.py --help
+python tools/convert_grid_parameters.py --help
+python tools/run_mosartwmpy.py --help
+python tools/parse_mosart_output.py --help
+```
+
+The normal run order is runoff forcing -> grid preparation -> configuration ->
+`run_mosartwmpy.py` -> `parse_mosart_output.py`. For a new real gauge, first produce
+gridded runoff for the same cells and dates as the MOSART domain.
+
+## 6. Output Description
+
+**Sourced from `dag.yaml`; if this section and the dag ever disagree, the dag wins.**
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `RIVER_DISCHARGE_OVER_LAND_LIQ` — Main-channel outflow / basin river discharge (BMI runoff_land, outgoing_water_volume_transport_along_river_channel); the gauge-comparable streamflow output. (`m3/s`)
+
+Other dag outputs: `channel_outflow`, `STORAGE_LIQ`, `WRM_STORAGE`, `WRM_SUPPLY`,
+`WRM_DEFICIT`.
+
+| Output variable (dag `var`) | Rank | File | Unit | Description |
+|-----------------------------|------|------|------|-------------|
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | 1 | output NetCDF | m3/s | Main-channel outflow / basin river discharge (BMI runoff_land, outgoing_water_volume_transport_along_river_channel); the gauge-comparable streamflow output. |
+| `channel_outflow` | 2 | output NetCDF | m3/s | Outflow from a single grid cell's main channel. |
+| `STORAGE_LIQ` | 3 | output NetCDF | m3 | Total routing storage (channel + subnetwork + hillslope) on the grid; BMI surface_water_amount. |
+| `WRM_STORAGE` | 4 | output NetCDF | m3 | Reservoir storage; BMI reservoir_water_amount. |
+| `WRM_SUPPLY` | 5 | output NetCDF | m3/s | Water supply delivered to a grid cell from reservoir/channel extraction. |
+| `WRM_DEFICIT` | 6 | output NetCDF | m3 | Cumulative unmet water-supply demand for a grid cell. |
+
+## 7. Tool Inventory
+
+| Tool | Purpose | Inputs | Outputs |
+|------|---------|--------|---------|
+| `tools/delineate_d8_from_merit.py` | Build a Lohmann-style D8 network triplet at the target gauge | MERIT-Hydro tiles and gauge location | ArcASCII `direc`, `xmask`, `frac` |
+| `tools/frac_to_basin_shp.py` | Derive the VIC basin shapefile from the delineated `frac` grid | D8 `frac` grid | Basin shapefile for VIC |
+| `tools/convert_runoff_forcing.py` | Convert existing runoff to mosartwmpy forcing | Gridded runoff NetCDF | `QOVER` / `QDRAI` NetCDF in mm/s |
+| `tools/build_mosart_grid.py` | Build a MOSART domain grid from a validated D8 network | D8 network triplet | Full MOSART grid NetCDF |
+| `tools/convert_grid_parameters.py` | Validate/fill an existing MOSART grid domain NetCDF | Grid domain NetCDF | Validated MOSART grid NetCDF |
+| `tools/run_mosartwmpy.py` | Execute the real mosartwmpy model through BMI | `config.yaml` plus prepared inputs | Monthly output NetCDF files and restarts |
+| `tools/parse_mosart_output.py` | Extract output time series for scoring or coupling | MOSART output NetCDF | CSV time series |
+
+## 8. Unit Conversion Table (Unit Table)
+
+**This table records the KI's known unit conversions; verify source NetCDF attributes before
+running a new dataset.**
+
+| Variable / quantity | Source unit (verified or required) | Model / internal unit | Factor or operation | Type |
+|---------------------|-------------------------------------|------------------------|---------------------|------|
+| `QOVER` / `QDRAI` from mm/day runoff | mm/day | mm/s | divide by 86400 | multiplicative |
+| `QOVER` / `QDRAI` from m/s runoff | m/s | mm/s | multiply by 1000 | multiplicative |
+| runoff loaded by mosartwmpy | mm/s | m3/s, then m/s | multiply by 0.001 x `frac` x `area`, then divide by `area` | multiplicative |
+| runoff output finalization | m/s | m3/s | multiply by `area` | multiplicative |
+| demand rate | m3/s | m3 per substep | multiply by subcycle delta-t | multiplicative |
+| supply accumulator | m3 accumulated | m3/s output | divide by timestep | multiplicative |
+| reservoir capacity `CAP_MCM` | million m3 | m3 | multiply by 1e6 | multiplicative |
+| reservoir area `AREA_SKM` | km2 | m2 | multiply by 1e6 | multiplicative |
+| reservoir evaporation | mm/s over km2 | m3 | multiply by 1e6 x delta-t x `AREA_SKM` | multiplicative |
+| hillslope storage | m | m3 | multiply by `area` x `frac` | multiplicative |
+
+## 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| Runoff forcing | Positive input flux in mm/s, split into `QOVER` and `QDRAI` | mm/day runoff rate or accumulated depth | Discharge can be 86400x wrong |
+| River discharge | Absolute flow in m3/s at a grid cell / outlet | Depth per cell | Gauge comparison magnitude is invalid |
+| `WRM_SUPPLY` | Delivered supply rate in m3/s after finalization | Accumulated m3 | Supply bias is scaled by timestep |
+| Reservoir capacity | `CAP_MCM` in million m3 | m3 | Reservoir storage becomes 1e6x too large |
+| Reservoir area | `AREA_SKM` in km2 | m2 | Evaporation becomes 1e6x too large |
+
+## 9. Diagnostic Triplets (Top 5)
+
+The full diagnostic corpus stays in `diagnostics/triplets.yaml`; check it before debugging.
+
+| # | Error | Diagnosis | Remedy |
+|---|-------|-----------|--------|
+| T001 | Discharge is approximately 86400x higher than expected values | Runoff input units are mm/day but config assumes mm/s | Convert runoff to mm/s or use `convert_runoff_forcing.py --source-units mm/day` |
+| T002 | Discharge is approximately 1000x higher than expected | Runoff units are m/s but mosartwmpy expects mm/s | Convert m/s to mm/s or use `convert_runoff_forcing.py --source-units m/s` |
+| T003 | All output variables are zero or NaN | Grid mask excludes all cells, or runoff is zero at grid locations | Check active grid cells, runoff maxima, and exact lat/lon alignment |
+| T021 | River discharge is exactly 0 at the gauge cell, but a neighbouring cell carries the full basin flow | The gauge cell was made the terminal `dnID == -1` outlet | Make interior gauges through-cells; use `build_mosart_grid.py` and score at `scoring_lat` / `scoring_lon` |
+| T022 | No gridded runoff / QOVER-QDRAI file for a China basin; `convert_grid_parameters --source-type merit` produces nothing new | MOSART has no runoff-generation tool, and `convert_grid_parameters` only validates an existing grid | Run the VIC KI first, convert VIC flux to runoff forcing, and build the MOSART grid from the D8 triplet |
+
+## 10. Coupling Interfaces
+
+| Upstream model / producer | Variable exchanged | Unit | Temporal resolution |
+|---------------------------|-------------------|------|---------------------|
+| VIC / CLM / mHM / Livneh or equivalent LSM | `QOVER` surface runoff | mm/s | Model timestep or gridded time series |
+| VIC / CLM / mHM / Livneh or equivalent LSM | `QDRAI` subsurface runoff | mm/s | Model timestep or gridded time series |
+| Water-demand module or ABM | `totalDemand` / BMI `demand_flux` | m3/s | Monthly input, padded to nearest past time |
+
+| Downstream consumer | Variable exchanged | Unit | Temporal resolution |
+|---------------------|-------------------|------|---------------------|
+| Gauge scoring / observed discharge comparison | `RIVER_DISCHARGE_OVER_LAND_LIQ` | m3/s | Output averaging window, commonly daily or monthly |
+| Managed-water analysis | `WRM_SUPPLY`, `WRM_DEFICIT`, `WRM_STORAGE` | m3/s or m3 | Output averaging window |
+
+## 11. Validated Results
+
+**Sourced from `knowledge_infrastructure.yaml` and `docs/validation_convention.yaml`; do
+not loosen, transfer, or invent thresholds. Null convention bands are written as
+"no cited threshold".**
+
+| Source field | Value |
+|--------------|-------|
+| Validation tier | `validated` |
+| Manifest tier justification | measured: NSE=0.837, KGE=0.874, R=0.919, 2 scorecard(s) |
+| Manifest metrics | best_nse=0.8367, best_kge=0.8741, best_r=0.9186 |
+| Rank-1 judged output | `RIVER_DISCHARGE_OVER_LAND_LIQ` |
+
+### Performance Metrics - judged against the field's bar, not intuition
+
+| Dag variable | Metric | Direction | Convention band (cited) | Achieved value in sourced KI files |
+|--------------|--------|-----------|--------------------------|-----------------------------------|
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | nse | maximize | very_good >= 0.75 (`moriasi2007`, `swat_gomti2019`); good >= 0.65 (`moriasi2007`, `swat_gomti2019`); satisfactory >= 0.5 (`moriasi2007`, `swat_gomti2019`) | best_nse=0.8367 in `knowledge_infrastructure.yaml` |
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | pbias | zero_centered | very_good <= 10 absolute percent bias (`moriasi2007`, `swat_gomti2019`); good <= 15 absolute percent bias (`moriasi2007`, `swat_gomti2019`); satisfactory <= 25 absolute percent bias (`moriasi2007`, `swat_gomti2019`) | not supplied by `knowledge_infrastructure.yaml` |
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | nse | maximize | very_good >= 0.75 (`moriasi2007`, `swat_gomti2019`); good >= 0.65 (`moriasi2007`, `swat_gomti2019`); satisfactory >= 0.5 (`moriasi2007`, `swat_gomti2019`) | same convention appears for both point and spatial time-series shapes |
+| `RIVER_DISCHARGE_OVER_LAND_LIQ` | pbias | zero_centered | very_good <= 10 absolute percent bias (`moriasi2007`, `swat_gomti2019`); good <= 15 absolute percent bias (`moriasi2007`, `swat_gomti2019`); satisfactory <= 25 absolute percent bias (`moriasi2007`, `swat_gomti2019`) | same convention appears for both point and spatial time-series shapes |
+| `WRM_SUPPLY` | pbias | zero_centered | no cited threshold | not supplied by `knowledge_infrastructure.yaml` |
+
+The rank-1 NSE value `best_nse=0.8367` exceeds the cited very_good band
+(`moriasi2007`, `swat_gomti2019`) for
+`RIVER_DISCHARGE_OVER_LAND_LIQ`. No achieved PBIAS value is stated in the manifest, so
+do not infer one. For `WRM_SUPPLY`, the convention explicitly has no cited threshold, so
+do not transfer the streamflow PBIAS bands (`moriasi2007`, `swat_gomti2019`).
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Runoff forcing | Upstream LSM runoff converted by `tools/convert_runoff_forcing.py` | Pipeline-supported | MOSART cannot synthesize runoff |
+| Grid topology | D8 triplet converted by `tools/build_mosart_grid.py` | Pipeline-supported | Gauge cell must be a through-cell for interior gauges |
+| Demand | Water-demand NetCDF or ABM | Optional / input-dependent | Active when water management is enabled |
+| Reservoirs | GRanD parameters and schedules | Optional / input-dependent | Units must be MCM and km2 at input |
+| Output parsing | `tools/parse_mosart_output.py` | Pipeline-supported | Score rank-1 discharge at the recorded scoring cell |
+
+## 12. Parameter Selection by Region
+
+MOSART-WM parameterization is dominated by gridded topology, channel geometry, slopes,
+Manning roughness, reservoir geometry, and externally supplied runoff. No separate
+region-specific parameter table is projected in this KI; start from documented MOSART
+defaults and the prepared domain grid, then validate `RIVER_DISCHARGE_OVER_LAND_LIQ`
+against the cited convention bars above.
 
 ---
 
@@ -191,7 +437,7 @@ CLI installed; use `mdb-tools`).
 
 ## Overview
 
-This knowledge infrastructure enables autonomous river routing and water management simulation using mosartwmpy. The 4 validated tools replace manual data preparation with a Python pipeline that integrates directly with HydroCraft's forcing, land surface, and reservoir infrastructure.
+This knowledge infrastructure enables autonomous river routing and water management simulation using mosartwmpy. The 7 validated tools replace manual data preparation with a Python pipeline that integrates directly with HydroCraft's forcing, land surface, and reservoir infrastructure.
 
 **What MOSART-WM does**: Grid-based river routing and water management model. Simulates:
 - Hillslope overland flow (Manning's equation on hillslope surface)

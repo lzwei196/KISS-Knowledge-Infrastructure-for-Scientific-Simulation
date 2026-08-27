@@ -1,318 +1,104 @@
-# ============================================================================
-# TOPMODEL Knowledge Infrastructure v1.0.0
-# ============================================================================
-# TOPMODEL BMI (Beven & Kirkby 1979, NOAA-OWP C implementation)
-# Semi-distributed rainfall-runoff model using topographic wetness index
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: "hydrocraft-topmodel"
-  version: "1.0.0"
-  description: "Knowledge infrastructure for TOPMODEL BMI rainfall-runoff simulation"
-  target_model: "TOPMODEL BMI (NOAA-OWP)"
-  domain: "hydrology"
-  authors:
-    - "Jianyun Zhang Research Group, Hohai University"
-  license: "Public Domain (NOAA)"
-  source_url: "https://github.com/NOAA-OWP/topmodel"
-
+  name: TOPMODEL
+  language: c
+  implementation:
+    id: topmodel-noaa-owp-bmi
+    version: NOAA-OWP topmodel (2021 BMI release)
+    provenance: C; NOAA-OWP BMI port (2021) of Fred Ogden's 2009 C translation of the Beven (1995) TMOD95.02
+      TOPMODEL Fortran reference, distributed at github.com/NOAA-OWP/topmodel.
+  scientific_reference_version: TOPMODEL (Beven & Kirkby 1979; Beven et al. 1995 formulation, TMOD95.02
+    lineage)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TOPMODEL/source/repo/run_bmi
+    type: ELF
 pipeline:
   stages:
-    - id: s0_config
-      name: "Configuration"
-      description: "Select basin, period, forcing source, output options"
-      order: 0
-      depends_on: []
-      skill_document: "docs/s0_configuration.md"
-      tools: []
-      milestones:
-        - id: m0_config_defined
-          description: "Basin, period, and forcing source selected"
-          verification: "Config dict exists with basin_name, start_date, end_date, forcing_dir"
-
-    - id: s1_forcing
-      name: "Forcing preparation"
-      description: "Convert CMFD/MSWX to inputs.dat with unit conversions and PET computation"
-      order: 1
-      depends_on: [s0_config]
-      skill_document: "docs/s1_forcing_preparation.md"
-      tools: [convert_forcing_to_topmodel]
-      milestones:
-        - id: m1_inputs_created
-          description: "inputs.dat exists with correct nstep, rain/pe/qobs in m/hr"
-          verification: "head -1 inputs.dat shows nstep and dt; max(rain) < 0.01"
-
-    - id: s2_twi
-      name: "TWI generation"
-      description: "Compute topographic wetness index distribution from DEM"
-      order: 2
-      depends_on: [s0_config]
-      skill_document: "docs/s2_topographic_index.md"
-      tools: [generate_twi_subcat]
-      milestones:
-        - id: m2_subcat_created
-          description: "subcat.dat exists with TWI histogram and channel data"
-          verification: "TWI values ordered high→low, area fractions sum to ~1.0"
-
-    - id: s3_params
-      name: "Parameter setup"
-      description: "Create params.dat from soil/landcover data or calibration"
-      order: 3
-      depends_on: [s0_config]
-      skill_document: "docs/s3_parameter_setup.md"
-      tools: []
-      milestones:
-        - id: m3_params_created
-          description: "params.dat exists with 12 parameters in correct units"
-          verification: "szm > 0, sr0 <= srmax, all in meters/hours"
-
-    - id: s4_execution
-      name: "Model execution"
-      description: "Build TOPMODEL binary and run simulation"
-      order: 4
-      depends_on: [s1_forcing, s2_twi, s3_params]
-      skill_document: "docs/s4_execution.md"
-      tools: [run_topmodel]
-      milestones:
-        - id: m4_run_complete
-          description: "TOPMODEL exits successfully, topmod.out and hyd.out exist"
-          verification: "test -f topmod.out && test -f hyd.out && grep 'Water Balance' topmod.out"
-
-    - id: s5_output
-      name: "Output analysis"
-      description: "Parse outputs, compute NSE/KGE/PBIAS, generate plots"
-      order: 5
-      depends_on: [s4_execution]
-      skill_document: "docs/s5_output_analysis.md"
-      tools: [parse_topmodel_output]
-      milestones:
-        - id: m5_metrics_computed
-          description: "NSE, KGE, PBIAS computed and recorded"
-          verification: "results.csv exists; NSE > -1 indicates reasonable run"
-
-    - id: s6_calibration
-      name: "Calibration"
-      description: "Optimize parameters against observed streamflow"
-      order: 6
-      depends_on: [s5_output]
-      skill_document: "docs/s6_calibration.md"
-      tools: []
-      milestones:
-        - id: m6_calibrated
-          description: "Calibrated parameter set with improved metrics"
-          verification: "NSE > 0.3 after calibration"
-
+  - s0_configuration
+  - s1_forcing_preparation
+  - s2_topographic_index
+  - s3_parameter_setup
+  - s4_execution
+  - s5_output_analysis
+  - s6_calibration
 tools:
-  - id: convert_forcing_to_topmodel
-    name: "Forcing Converter"
-    description: "Convert CMFD/MSWX NetCDF to TOPMODEL inputs.dat"
-    stage: s1_forcing
-    script_path: "tools/convert_forcing_to_topmodel.py"
-    language: python
-    inputs:
-      - name: forcing_dir
-        type: directory
-        description: "CMFD or MSWX forcing directory"
-        required: true
-      - name: start_date
-        type: string
-        description: "Start date YYYY-MM-DD"
-        required: true
-      - name: end_date
-        type: string
-        description: "End date YYYY-MM-DD"
-        required: true
-      - name: lat
-        type: number
-        description: "Basin center latitude"
-        required: true
-      - name: lon
-        type: number
-        description: "Basin center longitude"
-        required: true
-    outputs:
-      - name: inputs_dat
-        type: file
-        description: "TOPMODEL forcing file"
-        path_pattern: "inputs.dat"
-    preconditions:
-      - "Forcing NetCDF files exist for the period"
-    postconditions:
-      - "rain values in m/hr (max < 0.01)"
-      - "pe values in m/hr (max < 0.001)"
-
-  - id: generate_twi_subcat
-    name: "TWI Generator"
-    description: "Compute TWI distribution from DEM and write subcat.dat"
-    stage: s2_twi
-    script_path: "tools/generate_twi_subcat.py"
-    language: python
-    inputs:
-      - name: dem
-        type: file
-        description: "DEM GeoTIFF"
-        required: true
-      - name: shapefile
-        type: file
-        description: "Basin boundary shapefile"
-        required: false
-    outputs:
-      - name: subcat_dat
-        type: file
-        description: "TOPMODEL subcatchment file"
-        path_pattern: "subcat.dat"
-    preconditions:
-      - "DEM covers basin extent"
-    postconditions:
-      - "TWI ordered high to low"
-      - "Area fractions sum to 1"
-
-  - id: run_topmodel
-    name: "TOPMODEL Runner"
-    description: "Build and execute TOPMODEL binary"
-    stage: s4_execution
-    script_path: "tools/run_topmodel.py"
-    language: python
-    inputs:
-      - name: source_dir
-        type: directory
-        description: "TOPMODEL source repository"
-        required: true
-      - name: run_dir
-        type: directory
-        description: "Simulation run directory"
-        required: true
-    outputs:
-      - name: topmod_out
-        type: file
-        description: "Model state output"
-        path_pattern: "topmod.out"
-      - name: hyd_out
-        type: file
-        description: "Hydrograph output"
-        path_pattern: "hyd.out"
-    preconditions:
-      - "GCC and Make installed"
-      - "inputs.dat, subcat.dat, params.dat in data/"
-    postconditions:
-      - "topmod.out and hyd.out exist with non-zero size"
-
-  - id: parse_topmodel_output
-    name: "Output Parser"
-    description: "Parse TOPMODEL output and compute validation metrics"
-    stage: s5_output
-    script_path: "tools/parse_topmodel_output.py"
-    language: python
-    inputs:
-      - name: hyd_file
-        type: file
-        description: "hyd.out from TOPMODEL"
-        required: true
-    outputs:
-      - name: csv
-        type: file
-        description: "Results CSV"
-        path_pattern: "results.csv"
-    preconditions:
-      - "hyd.out exists and has data"
-    postconditions:
-      - "NSE, KGE, PBIAS computed"
-
-diagnostic_triplets:
-  - id: dt_001
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_002
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_003
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_004
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_005
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_006
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_007
-    stage: s5_output
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_008
-    stage: s2_twi
-    failure_domain: parameter_format
-    severity: fatal
-  - id: dt_009
-    stage: s2_twi
-    failure_domain: parameter_format
-    severity: degraded
-  - id: dt_010
-    stage: s2_twi
-    failure_domain: parameter_format
-    severity: degraded
-  - id: dt_011
-    stage: s3_params
-    failure_domain: parameter_format
-    severity: fatal
-  - id: dt_012
-    stage: s3_params
-    failure_domain: parameter_format
-    severity: degraded
-  - id: dt_013
-    stage: s4_execution
-    failure_domain: path_resolution
-    severity: fatal
-  - id: dt_014
-    stage: s4_execution
-    failure_domain: path_resolution
-    severity: fatal
-  - id: dt_015
-    stage: s4_execution
-    failure_domain: runtime
-    severity: fatal
-  - id: dt_016
-    stage: s4_execution
-    failure_domain: runtime
-    severity: degraded
-  - id: dt_017
-    stage: s3_params
-    failure_domain: silent_error
-    severity: silent
-  - id: dt_018
-    stage: s2_twi
-    failure_domain: silent_error
-    severity: silent
-
+  count: 5
+  files:
+  - tools/calibrate_topmodel.py
+  - tools/convert_forcing_to_topmodel.py
+  - tools/generate_twi_subcat.py
+  - tools/parse_topmodel_output.py
+  - tools/run_topmodel.py
+inputs:
+  forcing:
+  - name: rainfall (rain)
+    unit: m/hr
+  - name: potential evapotranspiration (pe)
+    unit: m/hr
+  - name: observed discharge (Qobs)
+    unit: m/hr
+  parameters:
+  - name: szm
+    unit: m
+  - name: t0 (ln T0)
+    unit: ln(m/hr)
+  - name: td
+    unit: hr
+  - name: chv
+    unit: m/hr
+  - name: rv
+    unit: m/hr
+  - name: srmax
+    unit: m
+  - name: xk0
+    unit: m/hr
+  - name: hf
+    unit: m
+  - name: dth
+    unit: '-'
+  - name: TWI histogram (lnaotb, dist_area_lnaotb)
+    unit: ln(m), -
+  - name: channel network (cum_dist_area, dist_from_outlet)
+    unit: -, m
+  - name: subcatchment area
+    unit: m^2
+  initial_conditions:
+  - name: Q0
+    unit: m/hr
+  - name: sr0
+    unit: m
+  boundary_conditions:
+  - name: infex (infiltration-excess flag)
+    unit: flag (0/1)
+  - name: stand_alone flag
+    unit: flag (0/1)
+  - name: catchment outlet
+    unit: '-'
+  - name: dt (timestep length)
+    unit: hr
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - Q (simulated discharge)
+  - qb (baseflow)
+  - sbar (mean saturation deficit)
+  - contrib_area (saturated contributing-area fraction)
+  - ea (actual evapotranspiration)
+  other:
+  - qof (saturation/Hortonian overland flow)
+  - bal (water-balance residual)
 validation:
-  tier: "real"
-  basin: "Bengbu (station 51080)"
-  period: "1981-1990"
-  observation_path: "KISSPATH_OBS/BB/51080_bengbu.txt"
+  tier: validated
+  tier_justification: 'measured: NSE=0.816, KGE=0.742, R=0.752'
   metrics:
-    NSE: 0.208
-    KGE: 0.496
-    PBIAS: 33.9
-    r: 0.749
-
+    best_nse: 0.81572
+    best_kge: 0.7422219530023484
+    best_r: 0.7516193070423971
 summary:
-  total_tools: 4
-  total_tool_lines: 2000
-  total_skill_documents: 6
-  total_diagnostic_triplets: 18
-  failure_domains:
-    - unit_conversion
-    - parameter_format
-    - path_resolution
-    - runtime
-    - silent_error
-  pipeline_stages: 7
-  pipeline_milestones: 7
+  total_tools: 5
+  total_stage_docs: 7
+  total_diagnostic_triplets: 19
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

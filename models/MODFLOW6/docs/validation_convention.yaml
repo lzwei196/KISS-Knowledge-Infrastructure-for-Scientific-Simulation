@@ -1,183 +1,181 @@
 schema_version: 1
 model_id: MODFLOW6
 domain: groundwater
-generated_by: "self-improve session (Claude Opus 4.8) — validation-convention Step-B, general schema"
+generated_by: self-improve session (Claude Opus 4.8) — validation-convention Step-B, general schema
 generated_at: 2026-07-07
-
-# Grounded in TWO locally-fetched OA full texts. Guillaumot et al. 2022 (GMD; CWatM v1.1 coupled to
-# MODFLOW 6, two regional aquifers Seewinkel + Bhima) is the ONLY fetched paper that reports numeric
-# MODFLOW-6 head/flux skill: water-table-depth RMSE 1.0/5.0 m, a normalized RMSE (RMSE / SD of observed
-# fluctuations, %) of 41-52 % described as a "good criterion on water table fluctuations", a mean-water-
-# table bias of 0.5/1.7 m, a mean-absolute-relative-depth error (Cmean) of 38 %/69 %, and discharge KGE
-# 0.54-0.76. It is the source of the ONE cited head band below. Reinecke et al. 2019 (HESS; G3M global
-# gradient-based groundwater model, MODFLOW-style GHB/river/drain conductance formulation) is a global
-# SENSITIVITY study with NO validation thresholds; it supplies the documented MECHANISM for two ceilings:
-# (a) simulated head is equally sensitive to hydraulic conductivity, recharge, and surface-water-body
-# elevation, with "high variance in simulated head due to numerical instabilities" in mountainous/dry
-# regions "limiting the reliability", and (b) rivers are "either losing or gaining, depending on the
-# parameter combination, indicating a high uncertainty in simulating the direction of flow" — i.e. the
-# stream-aquifer / cell-budget flux DIRECTION is a data/parameter ceiling, not a KI defect.
-# The canonical groundwater NSE/PBIAS tier convention (Moriasi 2007/2015) is CLOSED (no OA) -> deferred;
-# so every NSE/PBIAS headline band here is NULL with confidence <= 0.4. Bands are plain numbers read via
-# `direction` (see VALIDATION_CONVENTION_SCHEMA.md). No number is fabricated to pass a run.
-
 references:
   guillaumot2022:
     doi: 10.5194/gmd-15-7099-2022
-    title: "Coupling a large-scale hydrological model (CWatM v1.1) with a high-resolution groundwater flow model (MODFLOW 6) to assess the impact of irrigation at regional scale"
-    venue: "Geosci. Model Dev."
+    title: Coupling a large-scale hydrological model (CWatM v1.1) with a high-resolution groundwater flow
+      model (MODFLOW 6) to assess the impact of irrigation at regional scale
+    venue: Geosci. Model Dev.
     year: 2022
     oa: gold
     resolves: https://gmd.copernicus.org/articles/15/7099/2022/gmd-15-7099-2022.pdf
   reinecke2019:
     doi: 10.5194/hess-23-4561-2019
-    title: "Spatially distributed sensitivity of simulated global groundwater heads and flows to hydraulic conductivity, groundwater recharge, and surface water body parameterization"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Spatially distributed sensitivity of simulated global groundwater heads and flows to hydraulic
+      conductivity, groundwater recharge, and surface water body parameterization
+    venue: Hydrol. Earth Syst. Sci.
     year: 2019
     oa: gold
     resolves: https://www.hydrol-earth-syst-sci.net/23/4561/2019/hess-23-4561-2019.pdf
-
 validation:
-
-  # ===================== WATER TABLE / hydraulic head, time series (best grounded) =====================
-  - canonical_quantity: water_table
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nrmse            # RMSE / SD(observed water-table fluctuations) x 100, per Guillaumot Eq.3
-        direction: minimize
-        unit: percent
-        bands: {good: 52.0, satisfactory: null}
-        pass_band: good
-        band_note: >-
-          nRMSE is normalized by the standard deviation of the OBSERVED fluctuation signal (Guillaumot
-          Eq. 3), i.e. an RSR-like temporal-fit measure; band = the looser of the two benchmark values
-          (52 % Seewinkel, 41 % Bhima) that the authors call "good". No stricter/looser tier is stated,
-          so no satisfactory band is asserted.
-        cites: [guillaumot2022]
-    secondary_metrics:
-      - metric: r                # dag determining_metric for head time series; co-reported, no cited numeric threshold
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Correlation is the dag determining_metric (temporal_pattern_match) but the fetched MODFLOW-6 benchmark grades the water-table time signal with nRMSE, not r; no numeric r threshold is reported, so r is retained as supportive only."
-        cites: [guillaumot2022]
-      - metric: rmse             # absolute water-table-depth RMSE; magnitude context, site/scale dependent
-        direction: minimize
-        status: supportive
-        ceiling_reason: "Absolute WTD RMSE is site/scale dependent, not a transferable band: Guillaumot report 1.0 m (Seewinkel) and 5.0 m (Bhima) for MODFLOW 6, and cite regional-model RMSEs of 3.8 m (Soltani, ~28000 Danish head stations) and 6.3 m (Jing) as the ambient field range; kept as magnitude context only."
-        cites: [guillaumot2022]
-    validated_when: "nRMSE (RMSE / SD of observed water-table fluctuations) <= 52 % ('good criterion on water table fluctuations', Guillaumot 2022); r co-reported but not numerically bounded"
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      One MODFLOW-6 benchmark (Guillaumot 2022): "Both models successfully reproduce water table
-      fluctuations averaged across all monitoring boreholes ... The nRMSE reaches 52 % and 41 % for the
-      Seewinkel and Bhima models" and "the associated good criterion on water table fluctuations (nRMSE)
-      make us confident that the model simulates rainfall partitioning". This SUPERSEDES the dag
-      determining_metric (r) for head time series, mirroring the GLM-AED temperature precedent (field uses
-      the RMSE-family measure). Moderate (single benchmark, achieved-value-as-band); confidence 0.5 => the
-      gate may contextualize but must not loosen. Reinecke 2019 documents head reliability degrades in
-      mountainous/dry cells ("high variance in simulated head due to numerical instabilities ... limiting
-      the reliability") — a regional caveat on any head comparison. A second peer-reviewed MODFLOW-6 head
-      benchmark would raise this to strong.
-
-  # ===================== WATER TABLE / hydraulic head, snapshot (magnitude, no cited PBIAS tier) ===========
-  - canonical_quantity: water_table
-    obs_shape: point_snapshot
-    headline_metrics:
-      - metric: pbias            # dag determining_metric for head snapshot; retained, NO cited threshold
-        direction: zero_centered
-        unit: percent
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: >-
-          No fetched paper states a PBIAS tier for steady-state / single-period groundwater head. Guillaumot
-          give a magnitude sense only: mean-water-table bias 0.5 m (Seewinkel, "slight") vs 1.7 m (Bhima,
-          "too shallow"), and a mean-absolute-relative-depth error Cmean of 38 % ("reasonably well
-          reproduced") vs 69 % ("more contrast"); these are not a PBIAS threshold, so the band stays null.
-        cites: []
-    secondary_metrics:
-      - metric: rmse
-        direction: minimize
-        status: supportive
-        ceiling_reason: "Steady-state / single-period head magnitude context; Guillaumot MODFLOW-6 WTD RMSE 1.0/5.0 m and bias 0.5/1.7 m, site/scale dependent (no transferable band)."
-        cites: [guillaumot2022]
-    validated_when: "UNRESOLVED numeric target — no cited PBIAS/head-range tier in the fetched set; treat as magnitude context (bias ~0.5 m good, Cmean 38 % reasonable) until Moriasi 2007/2015 or a head scaled-RMSE convention is fetched"
-    evidence_strength: weak
-    confidence: 0.4
-    notes: >-
-      The classic groundwater-head snapshot criterion is a scaled/normalized RMSE (RMSE / observed head
-      range < ~10 %, Anderson, Woessner & Hunt textbook) and Moriasi PBIAS tiers — neither is fetchable
-      (textbook / closed ASABE), so bands are null per the no-fabrication rule and MUST NOT loosen the gate.
-      See deferred_paywalled.
-
-  # ===================== WATER TABLE / spatial water-table surface (no cited CSI convention) =============
-  - canonical_quantity: water_table
-    obs_shape: spatial_snapshot
-    headline_metrics:
-      - metric: csi              # dag determining_metric; spatial water-table-surface overlap; NO cited threshold
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: >-
-          No fetched paper reports a CSI (or POD/FAR/IoU) skill target for an interpolated groundwater
-          water-table surface. CSI tiers exist in flood/extent literature (e.g. CSI >= 0.5) but that
-          convention is a different domain and was not fetched here, so it is NOT transferred.
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited spatial-skill (CSI) threshold for a groundwater water-table surface in the fetched set"
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      Guillaumot compare spatial shallow-water-table fractions (e.g. land fraction with WTD < 1 m: 25 %
-      simulated vs 17 % of wells in Seewinkel) but report no categorical spatial skill score. Band null;
-      never loosen. Reinecke 2019 shows head spatial variance is dominated by Eswb/K/recharge with
-      numerical-instability hotspots, so a spatial head field is only as reliable as those inputs. Mask
-      HDRY (heads > 0.9e30) before contouring (dag caveat).
-
-  # ===================== WATER LEVEL / SFR stream stage, time series (Moriasi NSE deferred) =============
-  - canonical_quantity: water_level
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse              # dag determining_metric for stream stage; retained, NO cited threshold
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: >-
-          The canonical NSE tier for streamflow/stage (Moriasi 2007/2015: NSE > 0.50 satisfactory) is
-          CLOSED (no OA) and was not fetched, so the band stays null. Guillaumot report discharge KGE
-          0.54-0.76 (a related but distinct variable/metric), not stream-stage NSE.
-        cites: []
-    secondary_metrics:
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Guillaumot MODFLOW-6/CWatM discharge KGE 0.54-0.76 across five gauges ('make us confident') — supportive context for SFR surface-water skill, but computed on discharge, not stage, and no KGE tier is asserted here."
-        cites: [guillaumot2022]
-    validated_when: "UNRESOLVED numeric target — retain NSE as headline with null band until Moriasi 2007/2015 (NSE/PBIAS/RSR tiers) is fetched; discharge KGE 0.54-0.76 is supportive context only"
-    evidence_strength: weak
-    confidence: 0.4
-    notes: >-
-      SFR stream stage/exchange is graded by NSE in the dag, but no fetched paper gives an NSE threshold
-      (Moriasi closed). Bands null; MUST NOT loosen. Related flux terms (cell_budget_flux_terms,
-      stream_aquifer_exchange) carry canonical_quantity=null in the dag, so no gradeable block is fabricated
-      for them here; their key structural caveat is captured below: Reinecke 2019 finds rivers are "either
-      losing or gaining, depending on the parameter combination, indicating a high uncertainty in simulating
-      the direction of flow between the two compartments" — i.e. a failing stream-aquifer-exchange sign/skill
-      is a parameter/data ceiling (acquire_data), NOT fix_ki. A fetched Moriasi copy would let this and the
-      flux blocks be graded and would move them to moderate.
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nrmse
+    direction: minimize
+    unit: percent
+    bands:
+      good: 52.0
+      satisfactory: null
+    pass_band: good
+    band_note: nRMSE is normalized by the standard deviation of the OBSERVED fluctuation signal (Guillaumot
+      Eq. 3), i.e. an RSR-like temporal-fit measure; band = the looser of the two benchmark values (52
+      % Seewinkel, 41 % Bhima) that the authors call "good". No stricter/looser tier is stated, so no
+      satisfactory band is asserted.
+    cites:
+    - guillaumot2022
+  secondary_metrics:
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: Correlation is the dag determining_metric (temporal_pattern_match) but the fetched
+      MODFLOW-6 benchmark grades the water-table time signal with nRMSE, not r; no numeric r threshold
+      is reported, so r is retained as supportive only.
+    cites:
+    - guillaumot2022
+  - metric: rmse
+    direction: minimize
+    status: supportive
+    ceiling_reason: 'Absolute WTD RMSE is site/scale dependent, not a transferable band: Guillaumot report
+      1.0 m (Seewinkel) and 5.0 m (Bhima) for MODFLOW 6, and cite regional-model RMSEs of 3.8 m (Soltani,
+      ~28000 Danish head stations) and 6.3 m (Jing) as the ambient field range; kept as magnitude context
+      only.'
+    cites:
+    - guillaumot2022
+  validated_when: nRMSE (RMSE / SD of observed water-table fluctuations) <= 52 % ('good criterion on water
+    table fluctuations', Guillaumot 2022); r co-reported but not numerically bounded
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: 'One MODFLOW-6 benchmark (Guillaumot 2022): "Both models successfully reproduce water table fluctuations
+    averaged across all monitoring boreholes ... The nRMSE reaches 52 % and 41 % for the Seewinkel and
+    Bhima models" and "the associated good criterion on water table fluctuations (nRMSE) make us confident
+    that the model simulates rainfall partitioning". This SUPERSEDES the dag determining_metric (r) for
+    head time series, mirroring the GLM-AED temperature precedent (field uses the RMSE-family measure).
+    Moderate (single benchmark, achieved-value-as-band); confidence 0.5 => the gate may contextualize
+    but must not loosen. Reinecke 2019 documents head reliability degrades in mountainous/dry cells ("high
+    variance in simulated head due to numerical instabilities ... limiting the reliability") — a regional
+    caveat on any head comparison. A second peer-reviewed MODFLOW-6 head benchmark would raise this to
+    strong.'
+  dag_variable: water_table_elevation
+- obs_shape: point_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: 'No fetched paper states a PBIAS tier for steady-state / single-period groundwater head.
+      Guillaumot give a magnitude sense only: mean-water-table bias 0.5 m (Seewinkel, "slight") vs 1.7
+      m (Bhima, "too shallow"), and a mean-absolute-relative-depth error Cmean of 38 % ("reasonably well
+      reproduced") vs 69 % ("more contrast"); these are not a PBIAS threshold, so the band stays null.'
+    cites: []
+  secondary_metrics:
+  - metric: rmse
+    direction: minimize
+    status: supportive
+    ceiling_reason: Steady-state / single-period head magnitude context; Guillaumot MODFLOW-6 WTD RMSE
+      1.0/5.0 m and bias 0.5/1.7 m, site/scale dependent (no transferable band).
+    cites:
+    - guillaumot2022
+  validated_when: UNRESOLVED numeric target — no cited PBIAS/head-range tier in the fetched set; treat
+    as magnitude context (bias ~0.5 m good, Cmean 38 % reasonable) until Moriasi 2007/2015 or a head scaled-RMSE
+    convention is fetched
+  evidence_strength: weak
+  confidence: 0.4
+  notes: The classic groundwater-head snapshot criterion is a scaled/normalized RMSE (RMSE / observed
+    head range < ~10 %, Anderson, Woessner & Hunt textbook) and Moriasi PBIAS tiers — neither is fetchable
+    (textbook / closed ASABE), so bands are null per the no-fabrication rule and MUST NOT loosen the gate.
+    See deferred_paywalled.
+  dag_variable: water_table_elevation
+- obs_shape: spatial_snapshot
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No fetched paper reports a CSI (or POD/FAR/IoU) skill target for an interpolated groundwater
+      water-table surface. CSI tiers exist in flood/extent literature (e.g. CSI >= 0.5) but that convention
+      is a different domain and was not fetched here, so it is NOT transferred.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited spatial-skill (CSI) threshold for a groundwater water-table surface
+    in the fetched set
+  evidence_strength: weak
+  confidence: 0.3
+  notes: 'Guillaumot compare spatial shallow-water-table fractions (e.g. land fraction with WTD < 1 m:
+    25 % simulated vs 17 % of wells in Seewinkel) but report no categorical spatial skill score. Band
+    null; never loosen. Reinecke 2019 shows head spatial variance is dominated by Eswb/K/recharge with
+    numerical-instability hotspots, so a spatial head field is only as reliable as those inputs. Mask
+    HDRY (heads > 0.9e30) before contouring (dag caveat).'
+  dag_variable: water_table_elevation
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: 'The canonical NSE tier for streamflow/stage (Moriasi 2007/2015: NSE > 0.50 satisfactory)
+      is CLOSED (no OA) and was not fetched, so the band stays null. Guillaumot report discharge KGE 0.54-0.76
+      (a related but distinct variable/metric), not stream-stage NSE.'
+    cites: []
+  secondary_metrics:
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: Guillaumot MODFLOW-6/CWatM discharge KGE 0.54-0.76 across five gauges ('make us confident')
+      — supportive context for SFR surface-water skill, but computed on discharge, not stage, and no KGE
+      tier is asserted here.
+    cites:
+    - guillaumot2022
+  validated_when: UNRESOLVED numeric target — retain NSE as headline with null band until Moriasi 2007/2015
+    (NSE/PBIAS/RSR tiers) is fetched; discharge KGE 0.54-0.76 is supportive context only
+  evidence_strength: weak
+  confidence: 0.4
+  notes: 'SFR stream stage/exchange is graded by NSE in the dag, but no fetched paper gives an NSE threshold
+    (Moriasi closed). Bands null; MUST NOT loosen. Related flux terms (cell_budget_flux_terms, stream_aquifer_exchange)
+    carry canonical_quantity=null in the dag, so no gradeable block is fabricated for them here; their
+    key structural caveat is captured below: Reinecke 2019 finds rivers are "either losing or gaining,
+    depending on the parameter combination, indicating a high uncertainty in simulating the direction
+    of flow between the two compartments" — i.e. a failing stream-aquifer-exchange sign/skill is a parameter/data
+    ceiling (acquire_data), NOT fix_ki. A fetched Moriasi copy would let this and the flux blocks be graded
+    and would move them to moderate.'
+  dag_variable: stream_stage
 deferred_paywalled:
-  - ref: "Moriasi et al. 2007 — Model evaluation guidelines for systematic quantification of accuracy in watershed simulations (NSE/PBIAS/RSR tiers, the streamflow/flux convention)"
-    doi: 10.13031/2013.23153
-    needed_for: [water_level]
-  - ref: "Moriasi et al. 2015 — Hydrologic and water quality models: performance measures and evaluation criteria (updated NSE/PBIAS/RSR/R2 tiers)"
-    doi: 10.13031/trans.58.10715
-    needed_for: [water_level, water_table]
-  - ref: "Anderson, Woessner & Hunt 2015 — Applied Groundwater Modeling (2nd ed.): the scaled/normalized RMSE head-calibration target (RMSE / observed head range < ~10 %); textbook, no fetchable DOI"
-    doi: null
-    needed_for: [water_table]
-  - ref: "USGS MODFLOW 6 Groundwater Flow Model documentation (tm6a55) — model/process description; fetch_failed (not a benchmark; would not close a threshold gap but is the primary variable/output reference)"
-    doi: 10.3133/tm6a55
-    needed_for: [water_table]
+- ref: Moriasi et al. 2007 — Model evaluation guidelines for systematic quantification of accuracy in
+    watershed simulations (NSE/PBIAS/RSR tiers, the streamflow/flux convention)
+  doi: 10.13031/2013.23153
+  needed_for:
+  - water_level
+- ref: 'Moriasi et al. 2015 — Hydrologic and water quality models: performance measures and evaluation
+    criteria (updated NSE/PBIAS/RSR/R2 tiers)'
+  doi: 10.13031/trans.58.10715
+  needed_for:
+  - water_level
+  - water_table
+- ref: 'Anderson, Woessner & Hunt 2015 — Applied Groundwater Modeling (2nd ed.): the scaled/normalized
+    RMSE head-calibration target (RMSE / observed head range < ~10 %); textbook, no fetchable DOI'
+  doi: null
+  needed_for:
+  - water_table
+- ref: USGS MODFLOW 6 Groundwater Flow Model documentation (tm6a55) — model/process description; fetch_failed
+    (not a benchmark; would not close a threshold gap but is the primary variable/output reference)
+  doi: 10.3133/tm6a55
+  needed_for:
+  - water_table

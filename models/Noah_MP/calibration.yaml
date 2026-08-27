@@ -572,6 +572,60 @@ commissioning:
     parameter name; unrecognised KDT_CALIB_SPLIT; obs values perturbed +5% for the
     SAME station; one obs day dropped; driver pointed at another station (US-MMS);
     run_noahmp.py return_code forced to None; run_noahmp.py n_output_files forced
-    to None.  A lock-contention run with a stale metrics file already at --out
-    also exits nonzero and REMOVES it (the metrics artifact is cleared as the very
-    first action of main(), before the workdir is created or locked).
+    to None.  A run whose workdir-lock wait TIMES OUT with a stale metrics file
+    already at --out also exits nonzero and REMOVES it (the metrics artifact is
+    cleared as the very first action of main(), before the workdir is created or
+    locked).
+
+  # ------------------------------------------------------------------------
+  # 2026-08-13 DRIVER REPAIR — workdir-lock contention must QUEUE, not fail
+  # ------------------------------------------------------------------------
+  # SYMPTOM: `screen_failed` / baseline {} / "runner produced NO finite objective
+  # metric at DEFAULT params" — even though the 2026-08-04 commissioning above
+  # still reproduces bit-for-bit and that run completed a full 16-evaluation
+  # calibration (best nse 0.7967, holdout_validated, promotable).
+  #
+  # ROOT CAUSE (NOT parameter injection — injection was never broken): the kit
+  # derives the workdir from the MODEL alone (`<models>/calib_<model_id>`), so two
+  # CONCURRENT calibration runs of this model — e.g. the `Noah_MP|SITE:US-Ne1|sceua`
+  # and `Noah_MP|SITE:US-Ne1|dream` entries of one algorithm matrix — are handed the
+  # SAME `--workdir`.  tools/calib_run.py took an EXCLUSIVE NON-BLOCKING flock on it
+  # and raised on contention, so the second run's very first evaluation (the
+  # DEFAULT-params baseline probe in calib._probe_runner_metrics) exited 1 with no
+  # metrics file, calibration_kit/runner.py read {}, and calib.py's fail-closed
+  # baseline gate reported a broken driver for what was purely a scheduling
+  # collision.  Reproduced live: pointing calib_run.py at the workdir held by the
+  # in-flight sceua run gave BlockingIOError [Errno 11] -> rc 1 -> no metrics.
+  #
+  # FIX (tools/calib_run.py `_lock_dir` only — no scoring or injection path
+  # touched): the workdir lock now WAITS for the holder (polled LOCK_NB, bounded by
+  # KDT_CALIB_LOCK_WAIT_S, default 4 h) and fails closed only if that deadline
+  # expires.  Mutual exclusion is unchanged — the waiter never enters the run
+  # directory while another evaluation owns it, and rebuilds <workdir>/run from
+  # scratch when it acquires the lock.  Waiting is safe because the kit imposes no
+  # subprocess timeout by default (calibration_kit/runner.py: "TIME IS NEVER A
+  # CONSTRAINT"); `--out` is still cleared as the first action of main() and on
+  # every failure path, so even a timed-out wait leaves NOTHING behind.
+  #
+  # VERIFICATION (real hrldas.exe, calibration split, n_paired 1821 each):
+  #   (a) RESPONSIVENESS + ISOLATION — two candidates run CONCURRENTLY in
+  #       DIFFERENT workdirs, each scoring its own <workdir>/run/NoahmpTable.TBL:
+  #         default   RSURF_EXP 5.0    MAXSMC 0.439   BB 5.25   SATDK 3.38e-06
+  #                   -> nse 0.6918069105975949  pbias +22.2601  sim LE 63.996
+  #         perturbed RSURF_EXP 3.1209 MAXSMC 0.4771 BB 4.4027 SATDK 2.1491e-06
+  #                   -> nse 0.7967307603222886  pbias  +0.2311  sim LE 52.465
+  #       dNSE = +0.10492.  Both reproduce recorded metrics BIT-EXACTLY: the
+  #       default equals calibration_split_default_metric above, and the perturbed
+  #       vector equals the 2026-08-04 report's own best-vector train nse.
+  #   (b) CONTENTION NOW QUEUES — a helper held the workdir lock for 30 s; the
+  #       driver logged "queueing behind the running evaluation", acquired after
+  #       30 s and completed rc 0.  The pre-fix code exited 1 immediately.
+  #   (c) SAME-WORKDIR CONCURRENCY (the exact failing scenario) — both vectors
+  #       launched simultaneously against ONE shared --workdir: B ran first, A
+  #       queued 460 s then ran; both exited rc 0 and each wrote its OWN metric
+  #       (A 0.6918069105975949, B 0.7967307603222886), bit-identical to the same
+  #       vector's private-workdir run in (a).  No clobber, no cross-contamination.
+  workdir_lock_contention: >-
+    Contention on a shared --workdir QUEUES (KDT_CALIB_LOCK_WAIT_S, default 4 h)
+    instead of exiting 1 with no metrics, so a second concurrent calibration run
+    of this model can no longer manufacture an empty `screen_failed` baseline.

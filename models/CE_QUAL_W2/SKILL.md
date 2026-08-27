@@ -1,14 +1,3 @@
----
-name: ce-qual-w2
-description: >-
-  CE-QUAL-W2 4.5.5. Covers 2D laterally-averaged hydrodynamics (longitudinal + vertical
-  velocities, free-surface); water temperature and density-driven thermal stratification;
-  density-driven inflow placement (plunging / interflow / overflow); selective withdrawal
-  from outlets at specified elevations; multi-branch / multi-waterbody topology with
-  branch junctions and head boundaries. Use when the task involves running, configuring,
-  calibrating or interpreting CE_QUAL_W2.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,52 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (16 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/s10_execution/run_w2.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_execution/run_w2.py --help` |
+| `tools/s11_output_analysis/parse_w2_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s11_output_analysis/parse_w2_output.py --help` |
+| `tools/s11_output_analysis/plot_w2_curtain.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s11_output_analysis/plot_w2_curtain.py --help` |
+| `tools/s11_output_analysis/plot_w2_timeseries.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s11_output_analysis/plot_w2_timeseries.py --help` |
+| `tools/s12_calibration/calibrate_w2.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s12_calibration/calibrate_w2.py --help` |
+| `tools/s13_coupling/w2_to_cama_coupling.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s13_coupling/w2_to_cama_coupling.py --help` |
+| `tools/s1_bathymetry/build_reservoir_grid.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_bathymetry/build_reservoir_grid.py --help` |
+| `tools/s2_branch_topology/build_branch_topology.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_branch_topology/build_branch_topology.py --help` |
+| `tools/s3_met_forcing/convert_met_to_w2.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_met_forcing/convert_met_to_w2.py --help` |
+| `tools/s4_inflow/convert_inflow_to_w2.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_inflow/convert_inflow_to_w2.py --help` |
+| `tools/s4_inflow/generate_distributed_inflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_inflow/generate_distributed_inflow.py --help` |
+| `tools/s5_outflow/configure_w2_outflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_outflow/configure_w2_outflow.py --help` |
+| `tools/s6_init_conditions/build_init_conditions.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_init_conditions/build_init_conditions.py --help` |
+| `tools/s7_hydraulic_params/set_hydraulic_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_hydraulic_params/set_hydraulic_params.py --help` |
+| `tools/s8_wq_config/configure_wq.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_wq_config/configure_wq.py --help` |
+| `tools/s9_control_file/generate_w2_control.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_control_file/generate_w2_control.py --help` |
+
+*16 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -76,6 +111,28 @@ This knowledge infrastructure enables autonomous 2D reservoir simulation using C
 - Turbidity current and density current routing
 
 **When GLM is sufficient**: Compact/round lakes (L:W < 5), quick assessments, global screening.
+
+---
+
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag is the model identity for outputs; if this section and `dag.yaml` disagree, `dag.yaml` wins and this section must be corrected.
+
+**Headline output** (the dag's `validation_rank: 1` variable, used as the primary judging variable):
+
+> `outflow discharge` -- withdrawal/dam-release discharge used for downstream coupling (`m^3/s`)
+
+| Output variable (dag `var`) | Validation rank | Unit | Description / notes |
+|-----------------------------|----------------:|------|---------------------|
+| `outflow discharge` | 1 | `m^3/s` | withdrawal/dam-release discharge used for downstream coupling |
+| `water temperature` | not restated in extracted facts | see `dag.yaml` | Other dag output. |
+| `dam release temperature` | not restated in extracted facts | see `dag.yaml` | Other dag output. |
+| `dissolved oxygen` | not restated in extracted facts | see `dag.yaml` | Other dag output. |
+| `water surface elevation` | not restated in extracted facts | see `dag.yaml` | Other dag output. |
+| `chlorophyll-a / algal biomass` | not restated in extracted facts | see `dag.yaml` | Other dag output. |
+| `ice thickness` | not restated in extracted facts | see `dag.yaml` | Other dag output. |
+
+Use `outflow discharge` for downstream coupling and headline validation decisions unless the dag is intentionally revised and regenerated.
 
 ---
 
@@ -142,6 +199,28 @@ numpy, pandas, xarray, netCDF4, geopandas, shapely, rasterio, matplotlib, scipy
 Stages 1-8 can largely run in parallel after stage 0 (with s2 depending on s1, s4 depending on s3).
 Stage 9 depends on ALL of s1-s8.
 Stage 10 depends on s9. Stages 11-13 depend on s10.
+
+---
+
+## 8. Unit Conversion Table
+
+**Exact I/O shapes live in `docs/format_spec.yaml`**. This table restates unit conversions and unit traps already captured in this KI body and diagnostics; do not add rows from memory. If a needed conversion is absent, read the stage document, `docs/format_spec.yaml`, and the relevant tool before running.
+
+| Variable / field | Source unit or representation | Model / coupling unit or representation | Conversion / handling | Source in this KI |
+|------------------|-------------------------------|------------------------------------------|-----------------------|-------------------|
+| Cloud cover | fraction `0-1` when supplied as a common forcing representation | tenths `0-10` | multiply by `10`; CE-QUAL-W2 reads cloud cover as tenths | `dt_001`; `convert_met_to_w2` stage notes |
+| Vapor pressure for dewpoint | kPa for CMFD | dewpoint temperature, `deg C` | `TDEW = (237.3 * ln(VP/0.6108)) / (17.27 - ln(VP/0.6108))` with `VP` in kPa | `dt_002`; Critical Domain Knowledge |
+| Vapor pressure for dewpoint | Pa for ERA5 | kPa intermediate, then dewpoint temperature, `deg C` | divide by `1000`, then apply the `TDEW` formula | `dt_002`; Critical Domain Knowledge |
+| Julian day | day plus clock time | decimal `JDAY` | `day_of_year + hour/24 + minute/1440` | `dt_005`; Critical Domain Knowledge |
+| Inflow discharge | source-dependent; wrong source units such as `mm/day` are a known trap | `m^3/s` | use `tools/s4_inflow/convert_inflow_to_w2.py`; do not apply a generic factor without source area and source metadata | `dt_003`; Pipeline stage 4 |
+| Outflow / dam release discharge | configured or simulated dam release | `m^3/s` | preserve `m^3/s` for downstream coupling; headline dag output is `outflow discharge` | `dag.yaml`; Pipeline stage 13 |
+| Output file paths | absolute or long paths | Fortran `CHARACTER*72` path fields | use relative paths or basenames to avoid truncation | `dt_008`; Critical Domain Knowledge |
+| Control-file numeric fields | Python numeric values | 8-character fixed-width Fortran fields | format as exactly 8 characters, right-justified, for example `{:>8.2f}` | `dt_006`; Critical Domain Knowledge |
+
+**Output unit verification checklist:**
+- Read `dag.yaml` before interpreting output units; the dag wins over prose.
+- For `outflow discharge`, expect `m^3/s` and treat it as the dam-release discharge used for downstream coupling.
+- Print first values before scoring or coupling; values that imply sudden full drainage or filling are a unit error until proven otherwise.
 
 ---
 
@@ -257,6 +336,36 @@ else:
 | AX | 0.1 - 10 m^2/s | Longitudinal mixing | MEDIUM |
 | CBHE | 0.3 - 1.5 W/m^2/C | Bottom heat exchange | MEDIUM |
 | TSED | 5 - 15 C | Sediment temperature | LOW |
+
+---
+
+## 11. Validated Results
+
+**Validation status**: `binary_only` (pending source compilation and example validation). Do not report a numeric model skill verdict unless the actual CE-QUAL-W2 binary/package has run and the result has been scored against `docs/validation_convention.yaml`.
+
+### Field Convention Bars
+
+These bars restate the KI's validation convention facts. Direction is `minimize`, so lower RMSE is better. Every threshold below carries its convention citation keys; an unstated band is written as `no cited threshold`.
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory |
+|--------------|--------|-----------|-----------|------|--------------|
+| `outflow discharge` | no cited threshold | no cited threshold | no cited threshold | no cited threshold | no cited threshold |
+| `water temperature` | RMSE | minimize | `<= 1.0` (`mi2019`; `shatwell2019`; `shabani2021`) | `<= 1.23` (`mi2019`; `shatwell2019`; `shabani2021`) | `<= 1.5` (`mi2019`; `shatwell2019`; `shabani2021`) |
+| `dam release temperature` | RMSE | minimize | `<= 1.0` (`mi2019`; `shabani2021`) | `<= 1.23` (`mi2019`; `shabani2021`) | `<= 1.5` (`mi2019`; `shabani2021`) |
+
+### Current Validated Runs
+
+| Test basin / run | Headline variable | Achieved metric | Verdict |
+|------------------|-------------------|-----------------|---------|
+| Pending validation run | `outflow discharge` | no cited threshold | no cited threshold |
+
+### Validation Procedure
+
+1. Run `python preflight_check.py` in this KI directory before attempting validation.
+2. Run the actual CE-QUAL-W2 binary/package through `tools/s10_execution/run_w2.py`; do not substitute formulas or simplified scripts.
+3. Parse outputs with `tools/s11_output_analysis/parse_w2_output.py`.
+4. Score against `docs/validation_convention.yaml`; for headline judgement, start from the dag rank-1 variable `outflow discharge`.
+5. If scoring `water temperature` or `dam release temperature`, use the RMSE minimize bands above exactly.
 
 ---
 

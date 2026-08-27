@@ -1,152 +1,499 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "DuMux"
-  version: "3.11-dev"
-  domain: "Groundwater flow and transport in porous media"
-  framework: "DUNE (Distributed and Unified Numerics Environment)"
-  binary_path: "KISSPATH_BINARIES/DuMux/dumux_real_run/example_1ptracer"
-  binary_type: "ELF 64-bit, C++20, dynamically linked"
-  models_supported:
-    - "1p (single-phase Darcy flow)"
-    - "1ptracer (single-phase + tracer transport)"
-    - "2p (two-phase flow)"
-    - "Richards (variably saturated)"
-    - "Non-isothermal coupling"
-
+  name: DuMux
+  language: c++
+  implementation:
+    id: dumux-3.10
+    version: '3.10'
+    provenance: C++ (header-only DUNE module); DuMux project (github.com/dumux/dumux) wrapping DUNE core
+      numerics. Executables are user/example problems compiled against the headers.
+  scientific_reference_version: DuMux 3.10 (DUNE-based finite-volume porous-media flow/transport library;
+    Koch et al. 2021, DuMux 3)
 inputs:
-  config_format: "INI-style .input files with [Section] headers"
-  cli_pattern: "./executable params.input [-Section.Key value]"
-
   forcing:
-    - name: "recharge"
-      unit: "kg/(m²·s)"
-      description: "Neumann BC mass flux for recharge"
-      valid_range: [0.0, 1.0e-4]
-      note: "Convert from mm/day: q = R_mm * 1000 / (86400 * 1000)"
-
+  - name: Recharge / top boundary flux
+    unit: kg/(m2*s)
+    category: forcing
+    source_kind: user_provided
+    model_input_format: Neumann boundary condition returned by the Problem class (per scvf), in kg/(m2*s)
+    notes: 'Sign convention: positive = outward (leaving domain); recharge/inflow must be NEGATIVE. Mass
+      flux, not a volumetric mm/day rate (R[kg/m2/s] = R[mm/day]/86400).'
   parameters:
-    critical:
-      - name: "Permeability"
-        section: "SpatialParams"
-        unit: "m²"
-        valid_range: [1.0e-20, 1.0e-8]
-        description: "Intrinsic permeability of aquifer matrix"
-        trap: "Must be m², NOT darcy or hydraulic conductivity"
-      - name: "PermeabilityLens"
-        section: "SpatialParams"
-        unit: "m²"
-        valid_range: [1.0e-20, 1.0e-8]
-        description: "Permeability of embedded lens feature"
-      - name: "Porosity"
-        section: "SpatialParams"
-        unit: "-"
-        valid_range: [0.01, 0.60]
-        description: "Pore volume fraction"
-
-    grid:
-      - name: "UpperRight"
-        section: "Grid"
-        unit: "m"
-        description: "Domain upper-right corner coordinates"
-      - name: "Cells"
-        section: "Grid"
-        unit: "-"
-        description: "Grid resolution (nx ny [nz])"
-      - name: "LensLowerLeft"
-        section: "SpatialParams"
-        unit: "m"
-        description: "Lower-left corner of lens region"
-      - name: "LensUpperRight"
-        section: "SpatialParams"
-        unit: "m"
-        description: "Upper-right corner of lens region"
-
-    temporal:
-      - name: "DtInitial"
-        section: "TimeLoop"
-        unit: "s"
-        valid_range: [0.001, 86400]
-        description: "Initial time step size"
-        trap: "All times in SECONDS"
-      - name: "TEnd"
-        section: "TimeLoop"
-        unit: "s"
-        valid_range: [1, 3.1536e+10]
-        description: "Simulation end time"
-      - name: "MaxTimeStepSize"
-        section: "TimeLoop"
-        unit: "s"
-        valid_range: [0.001, 86400]
-        description: "Maximum allowed time step"
-
+  - name: Intrinsic permeability K
+    unit: m2
+    category: spatial_parameter
+    source_kind: dataset_lookup
+    model_input_format: SpatialParams.permeabilityAtPos() returning a scalar or tensor K [m2]; or DGF
+      element/node data; or Eclipse PERMX/PERMY keywords
+    notes: Intrinsic permeability in m2, NOT hydraulic conductivity K_h [m/s] or darcy. Typical aquifer
+      range 1e-15 to 1e-8 m2. Must be > 0.
+  - name: Porosity phi
+    unit: '-'
+    category: spatial_parameter
+    source_kind: dataset_lookup
+    model_input_format: SpatialParams.porosityAtPos() returning a fraction; or DGF/Eclipse PORO
+    notes: Pore volume fraction in [0,1]; must be > 0 (zero porosity yields NaN / solver crash). Typical
+      0.01-0.60.
+  - name: van Genuchten alpha (capillary pressure scale)
+    unit: 1/Pa
+    category: spatial_parameter
+    source_kind: dataset_lookup
+    model_input_format: Fluid-matrix-interaction (VanGenuchten/BrooksCorey) parameter consumed by material/fluidmatrixinteractions
+    notes: In 1/Pa, NOT 1/cm H2O (alpha_Pa = alpha_cm/98.0665). Applies to variably-saturated / multi-phase
+      models, not 1p saturated flow.
+  - name: van Genuchten n (pore-geometry index)
+    unit: '-'
+    category: spatial_parameter
+    source_kind: dataset_lookup
+    model_input_format: Fluid-matrix-interaction shape parameter
+    notes: Must be > 1 for a well-defined capillary law (n<=1 makes pc(Sw) undefined / NaN).
+  - name: Residual water saturation Swr
+    unit: '-'
+    category: spatial_parameter
+    source_kind: dataset_lookup
+    model_input_format: Fluid-matrix-interaction regularization parameter
+  - name: Dispersivity
+    unit: m
+    category: spatial_parameter
+    source_kind: calibrated
+    model_input_format: Tracer/transport spatial parameter
+    notes: Used by tracer/compositional transport, not by the flow-only models.
+  - name: Molecular diffusion coefficient
+    unit: m2/s
+    category: spatial_parameter
+    source_kind: default
+    model_input_format: Fluid-system / FicksLaw diffusion coefficient
+    notes: Consumed by compositional and tracer transport (FicksLaw).
+  - name: Newton convergence/control parameters (MaxRelativeShift, TargetSteps, MaxSteps, MaxTimeStepDivisions)
+    unit: '-'
+    category: numerical_parameter
+    source_kind: default
+    model_input_format: '[Newton] group of the parameter tree (in-code defaults: MaxRelativeShift 1e-8,
+      ResidualReduction 1e-5, TargetSteps 10, MaxSteps 18, MaxTimeStepDivisions 10)'
+    notes: By default convergence is judged on relative shift only (EnableResidualCriterion false); residual
+      may not be small even when Newton reports converged.
+  initial_conditions:
+  - name: Initial primary-variable solution
+    unit: model-dependent (Pa for pressure, - for saturation)
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: Problem.initial() per DOF; or restart via Dumux::loadSolution() from a prior VTK
+      solution
+    notes: Restart requires the EXACT same grid (same cells, same ordering); changing resolution silently
+      corrupts the restart. Should be consistent (e.g. hydrostatic) with the Dirichlet BCs to avoid first-step
+      Newton failure.
+  boundary_conditions:
+  - name: Dirichlet boundary (fixed pressure / head)
+    unit: Pa (absolute)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Problem.dirichletAtPos() returning absolute pressure; p = 101325 + rho*g*(head
+      - elevation)
+    notes: Absolute pressure, NOT gauge; surface p ~ 101325 Pa. Gauge use shifts head ~10.3 m.
+  - name: Boundary-type assignment (Dirichlet vs Neumann per segment)
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Problem.boundaryTypesAtPos() classifying each boundary segment
+  - name: Source / sink terms (e.g. pumping wells)
+    unit: kg/(m3*s)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Problem.source()/sourceAtPos() per control volume; required (with transient mode)
+      for pumping wells
+  - name: Gravity switch (Problem.EnableGravity)
+    unit: '-'
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Problem.EnableGravity bool read by the Darcy flux; gravity acts in -z (last coordinate)
+    notes: 'Structural switch: set false for plan-view 2D, true for vertical cross-sections. Read without
+      an in-code default at the TPFA Darcy site; an unset value relies on a property-level default and
+      can silently drop the gravity term.'
+  - name: Grid domain definition (extent, cells, refinement, grid file)
+    unit: m / count
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: '[Grid] group (LowerLeft/UpperRight in meters, Cells, Refinement) consumed by
+      Dumux::GridManager; or DGF / Gmsh MSH v2 / Eclipse GRDECL / VTK grid file'
+    notes: Coordinates in meters. Gmsh meshes must be MSH version 2.
+  - name: Time-loop control (TEnd, DtInitial, MaxTimeStepSize)
+    unit: s
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: '[TimeLoop] group consumed by common/TimeLoop'
+    notes: All in seconds (1 day = 86400 s, 1 year = 31536000 s). DtInitial ~1% of TEnd is a safe start;
+      a large initial dt causes Newton failure.
 outputs:
-  format: "VTK (.vtu unstructured grid, .pvd time series collection)"
-  viewer: "ParaView, or Python with meshio/vtk library"
-
   primary:
-    - name: "p"
-      unit: "Pa"
-      valid_range: [1.0e4, 1.0e8]
-      description: "Fluid pressure field (absolute, not gauge)"
-      model: "1p"
-    - name: "x^tracer_0"
-      unit: "-"
-      valid_range: [0.0, 1.0]
-      description: "Tracer mole fraction"
-      model: "1ptracer"
-    - name: "X^tracer_0"
-      unit: "-"
-      valid_range: [0.0, 1.0]
-      description: "Tracer mass fraction"
-      model: "1ptracer"
-    - name: "velocity_Groundwater (m/s)"
-      unit: "m/s"
-      valid_range: [0.0, 1.0e-2]
-      description: "Darcy velocity vector (requires AddVelocity=true)"
-    - name: "rho"
-      unit: "kg/m³"
-      valid_range: [990, 1100]
-      description: "Fluid density"
-    - name: "permeability"
-      unit: "m²"
-      valid_range: [1.0e-20, 1.0e-8]
-      description: "Intrinsic permeability field"
-      model: "1p"
-
-  grid_info:
-    - name: "points"
-      description: "Node coordinates (n_points × 3)"
-    - name: "cells"
-      description: "Cell connectivity"
-
+  - name: pressure
+    unit: Pa
+    description: Subsurface porous-medium phase / fluid pressure field (primary variable). Hydraulic head
+      h = (p - 101325)/(rho*g) + z is derived from it for comparison with groundwater well data.
+    validation_rank: 1
+    emitted_in: VTK (.vtu per step, .pvd time-series index)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compare at observation-well locations after converting to head; pressure is absolute (Pa), well
+          data are head (m).
+        - Steady-state single-snapshot heads; sign of the lateral gradient must match the simulated flow
+          direction.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Transient runs only; requires recharge/BC forcing time series consistent with the observed period.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against an interpolated/observed head map; uniform-K assumption limits agreement where
+          heterogeneity dominates.
+      detrending_options:
+      - none
+  - name: velocity
+    unit: m/s
+    description: Subsurface porous-medium Darcy / advective velocity field (only emitted when Vtk.AddVelocity
+      = true).
+    validation_rank: 2
+    emitted_in: VTK (.vtu) when AddVelocity enabled
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Direct velocity observations are rare; usually inferred from tracer travel time or gradient-derived
+          baseflow.
+        - Physical range ~1e-9 to 1e-4 m/s; values >1e-2 m/s indicate a permeability unit error.
+      detrending_options:
+      - none
+  - name: saturation
+    unit: '-'
+    description: Subsurface porous-medium phase saturation field (S_w, S_n) for variably-saturated and
+      multi-phase models.
+    validation_rank: 3
+    emitted_in: VTK (.vtu / .pvd)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Applies to Richards / 2p models; compare against moisture-probe or wetting-front-arrival data.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Plume/front geometry comparison (e.g. CO2 or NAPL extent) is sensitive to permeability heterogeneity
+          and capillary parameters.
+      detrending_options:
+      - none
+  - name: tracer concentration / mass fraction
+    unit: mol/m3 (concentration) or - (mass/mole fraction)
+    description: Subsurface porous-medium tracer / component concentration transported by the advection-diffusion
+      equation using the flow velocity field.
+    validation_rank: 4
+    emitted_in: VTK (.vtu / .pvd)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Breakthrough-curve comparison; arrival timing is dispersivity- and velocity-sensitive.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Plume-extent comparison at a fixed time.
+      detrending_options:
+      - none
+  - name: baseflow (derived flux)
+    unit: m3/s
+    description: Groundwater discharge to a stream/boundary, computed from the simulated head gradient
+      across a boundary face (post-processed).
+    validation_rank: 5
+    emitted_in: post-processed from VTK flux fields (not a native VTK field)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Requires a transient coupled run; baseflow is a derived integral over a boundary, not a primary
+          output.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    description: "Permeability must be in m², not darcy or hydraulic conductivity"
-    severity: "critical"
-    impact: "Values ~1e7 too large cause unrealistic flow velocities"
-  - id: "dt_002"
-    description: "All temporal parameters are in seconds, not days/years"
-    severity: "critical"
-    impact: "TEnd=365 means 6 minutes, not 1 year"
-  - id: "dt_003"
-    description: "Pressure is absolute (not gauge) — surface ≈ 101325 Pa"
-    severity: "high"
-  - id: "dt_004"
-    description: "van Genuchten α must be in 1/Pa, not 1/cm H₂O"
-    severity: "high"
-    impact: "Conversion: α_Pa = α_cm / 98.0665"
-  - id: "dt_005"
-    description: "Recharge is mass flux kg/(m²·s), not mm/day"
-    severity: "high"
+- id: dt_001
+  symptom: Flow velocities are enormous (~m/s instead of ~mm/day). Newton solver diverges on first time
+    step. Pressure explodes to extreme values.
+  diagnosis: Hydraulic conductivity K_h [m/s] used as intrinsic permeability [m²] — off by factor ~1e7;
+    DuMux uses intrinsic permeability K in m². Soil databases and pump tests give hydraulic conductivity
+    K_h in m/s. The conversion is K = K_h × μ/(ρg) ≈ K_h × 1e-7. Using K_h = 1e-4 m/s directly gives K
+    = 1e-4 m²
+  remedy: 'Apply conversion: K [m²] = K_h [m/s] × 1.0214e-7; convert_soil_to_dumux; [''Check permeability
+    value — should be 1e-15 to 1e-8 m² for typical aquifers'', "If value > 1e-7, it''s likely K_h not
+    K — apply conversion"]; convert_soil_to_dumux.py validates permeability range and warns'
+  severity: critical
+- id: dt_002
+  symptom: Water table rises unrealistically fast. Recharge appears 86,400× too high.
+  diagnosis: 'Recharge in mm/day used directly as DuMux flux — must convert to kg/(m²·s); DuMux Neumann
+    boundary conditions use mass flux in kg/(m²·s). Recharge of 1 mm/day = 1.157e-5 kg/(m²·s). Using the
+    mm/day value directly (e.g., 2.0) as the BC value gives 2.0 kg/(m²·s), which is equivalent to 173,000
+    mm/day '
+  remedy: 'Convert: R [kg/(m²·s)] = R [mm/day] × 1000 / (86400 × 1000) = R [mm/day] / 86400; convert_forcing_to_dumux;
+    [''Check recharge flux value — should be < 1e-4 kg/(m²·s) for most climates'', "If value > 1, it''s
+    likely still in mm/day — divide by 86400"]; convert_forcing_to_dumux.py automatically converts '
+  severity: silent
+- id: dt_003
+  symptom: Recharge enters domain but water table drops instead of rises.
+  diagnosis: 'Neumann BC sign is positive (outflow) instead of negative (inflow); In DuMux, positive Neumann
+    flux means outward (leaving the domain). Recharge enters from the top, so it must be negative. Using
+    positive recharge values effectively converts recharge into extraction.
 
-validated_run:
-  binary: "example_1ptracer"
-  params: "params.input"
-  grid: "50×50 structured, 1m×1m domain"
-  permeability: 1.0e-13
-  permeability_lens: 7.943282e-15
-  tend: 5000
-  n_timesteps: 11
-  output_pressure_range: [100980, 109902]
-  output_density: 1000
-  output_velocity_max: 7.29e-8
-  output_n_cells: 2500
+    ; [''convert_forcing_to_dumux'', '''
+  remedy: 'Negate recharge values: neumann_flux = -abs(recharge_rate); [''Check sign of Neumann values
+    in Problem class or forcing file'', ''Recharge (inflow) must be negative'', ''Extraction/pumping (outflow)
+    must be positive'']; convert_forcing_to_dumux.py applies negative sign automatically'
+  severity: silent
+- id: dt_004
+  symptom: Capillary pressure curve is completely wrong. Unsaturated zone holds too much or too little
+    water. Two-phase simulation gives incorrect saturations.
+  diagnosis: 'van Genuchten α in 1/cm H₂O used directly — DuMux needs 1/Pa (off by ~100×); ROSETTA and
+    most soil databases give van Genuchten α in 1/cm of water head. DuMux expects α in 1/Pa. The conversion:
+    α_Pa = α_cm / 98.0665. Using α_cm directly (e.g., 0.075) instead of α_Pa (0.000765) shifts the air
+    entry p'
+  remedy: 'Divide α by 98.0665: α [1/Pa] = α [1/cm] / 98.0665; convert_soil_to_dumux; [''Check α value
+    — in 1/Pa should be 1e-5 to 0.01'', ''If α > 0.01, likely in 1/cm — divide by 98.07'']; convert_soil_to_dumux.py
+    validates α range and flags values > 0.01'
+  severity: silent
+- id: dt_005
+  symptom: Absolute pressure in domain is ~10 m (101325 Pa) below expected hydraulic head. Flow directions
+    may be reversed.
+  diagnosis: Gauge pressure (p=0 at surface) used instead of absolute pressure; DuMux uses absolute pressure.
+    At the water table surface, p ≈ 101325 Pa (1 atm). At depth d, p = 101325 + ρgd. Using gauge pressure
+    (p=0 at surface) shifts all pressures by 1 atm, equivalent to ~10.3 m of head error. This can reverse
+  remedy: 'Add atmospheric pressure: p = 101325 + ρ×g×(h - z); [''Check Dirichlet BC values — should be
+    > 100000 Pa for near-surface conditions'', ''Check initial conditions — should follow hydrostatic
+    from surface'']; Use head_to_pressure() helper in convert_forcing_to_dumux.py'
+  severity: silent
+- id: dt_006
+  symptom: Domain is 1000× too small or too large. Flow velocities don't match expected values.
+  diagnosis: 'Grid coordinates in km or cm instead of meters; DuMux Grid section expects coordinates in
+    meters. Using km (UpperRight = 1 1 for a 1km domain) creates a 1m × 1m domain. Using cm creates a
+    domain 100× too large.
+
+    ; [''Grid.UpperRight'', ''Grid.LowerLeft'']'
+  remedy: 'Ensure all Grid coordinates are in meters; [''Verify domain extent: UpperRight - LowerLeft
+    should match expected size in meters'']'
+  severity: silent
+- id: dt_007
+  symptom: Simulation completes almost instantly. TEnd appears to be only a few seconds instead of years.
+  diagnosis: 'TEnd specified in days or years instead of seconds; All DuMux time parameters are in seconds.
+    TEnd = 365 means 365 seconds (~6 minutes), not 1 year. For a 1-year simulation: TEnd = 31536000. For
+    10 years: TEnd = 315360000.
+
+    ; [''TimeLoop.TEnd'', ''TimeLoop.DtInitial'', ''TimeLoop.MaxTimeStepSize'']'
+  remedy: 'Convert all time values to seconds: 1 day = 86400 s, 1 year = 31536000 s; [''Check TEnd value
+    — for groundwater: 86400 (1 day) to 3.15e8 (10 years)'', ''Check DtInitial — start with 1–100 s for
+    daily forcing, 86400 s for steady-state'']; Validate TEnd > 86400 for multi-day simulations'
+  severity: silent
+- id: dt_008
+  symptom: 'Newton solver fails to converge on the very first time step. Error: ''Newton: convergence
+    failed''.'
+  diagnosis: Initial conditions incompatible with boundary conditions, or extreme parameter values; The
+    Newton solver requires a reasonable initial guess. If initial pressure differs wildly from boundary
+    pressures, or if permeability is extremely high/low, the first Newton step produces extreme updates
+    that prev
+  remedy: Ensure initial conditions are physically consistent with BCs; ['Set initial conditions to match
+    Dirichlet BCs (e.g., hydrostatic pressure)', 'Start with uniform permeability, add heterogeneity gradually',
+    'Reduce DtInitial to 1 s and increase gradually', 'Check that permeability is in m² (not m/s)']
+  severity: explicit
+- id: dt_009
+  symptom: Simulation appears to run but time step shrinks to microseconds. Progress is near-zero. Simulation
+    will never reach TEnd.
+  diagnosis: Newton solver repeatedly fails, adaptive time stepping reduces dt indefinitely; DuMux reduces
+    the time step on Newton failure. If the underlying problem persists (bad parameters, sharp fronts,
+    ill-conditioned system), dt keeps shrinking without ever recovering. The simulation appears to run
+    but make
+  remedy: Investigate why Newton fails — usually bad parameters or mesh; ['Check terminal output for pattern
+    of Newton iterations per time step', 'If Newton always takes 15+ iterations, the problem is ill-conditioned',
+    'Refine mesh near sharp contrasts (permeability jumps, boundary layers)', 'Reduce permeabil
+  severity: silent
+- id: dt_010
+  symptom: 'Linear solver diverges. Error: ''ISTLError: solver did not converge'' or ''AMG setup failed''.'
+  diagnosis: 'Ill-conditioned linear system from extreme permeability contrast or bad mesh; The ISTL linear
+    solver (AMG-CG or ILU-BiCGSTAB) struggles with condition numbers > 1e10. High permeability contrast
+    (e.g., 1e-10 vs 1e-15 m²) or distorted mesh elements create ill-conditioned systems.
+
+    ; [''LinearSolver'', ''S'
+  remedy: Improve linear solver settings or reduce problem stiffness; ['Increase MaxIterations in [LinearSolver]
+    (try 50000)', 'Tighten Tolerance (try 1e-14)', 'Reduce permeability contrast between adjacent cells',
+    'Refine mesh near high-contrast boundaries', 'Switch from TPFA to Box scheme']; Keep permeabili
+  severity: explicit
+- id: dt_011
+  symptom: 'Error at startup: ''DGFException'' or ''Error reading grid file''.'
+  diagnosis: 'Malformed DGF grid file — incorrect node/element counts or format errors; DGF (Dune Grid
+    Format) files have strict formatting requirements. Common issues: wrong node count, missing header,
+    incorrect vertex numbering (0-based vs 1-based), or trailing whitespace.
+
+    ; [''Grid.File'']'
+  remedy: Verify DGF file format or use structured grid instead; ['Check node count matches actual number
+    of vertices', 'Verify element connectivity uses correct vertex indices', 'Use a structured grid ([Grid]
+    UpperRight/Cells) to bypass DGF issues']; Use Gmsh with .msh export for complex unstructured grids
+  severity: explicit
+- id: dt_012
+  symptom: 2D plan-view model produces wrong pressure gradients. Hydrostatic pressure appears in a horizontal
+    domain.
+  diagnosis: Gravity enabled in a plan-view 2D model — gravity acts in -y direction; For 2D grids, DuMux
+    applies gravity in the -y direction (second coordinate). In a plan-view model (x-y horizontal), this
+    incorrectly adds a vertical pressure gradient across what should be a horizontal plane. The 'north'
+    side of
+  remedy: Set EnableGravity = false for plan-view 2D models; ["Add 'EnableGravity = false' to [Problem]
+    section", 'For vertical cross-sections, keep gravity enabled']; Document grid orientation in parameter
+    file comments
+  severity: silent
+- id: dt_013
+  symptom: No VTK output files created despite simulation completing successfully.
+  diagnosis: 'VTK writer not configured or Problem.Name mismatch; VTK output requires explicit setup in
+    the C++ main. If the VtkOutputModule is not created or write() is never called, no output is generated.
+    Also, output files are named after Problem.Name — searching for wrong prefix finds nothing.
+
+    ; [''Vtk'', ''Pro'
+  remedy: 'Check Problem.Name and verify VTK writer is configured in C++ source; [''List all files in
+    the working directory: ls *.vtu *.vtk'', ''Check Problem.Name in .input file — output files use this
+    prefix'', ''Verify C++ source contains VtkOutputModule and write() calls'']'
+  severity: silent
+- id: dt_014
+  symptom: VTK files exist but have no velocity field data.
+  diagnosis: 'AddVelocity = true not set in [Vtk] section; DuMux does not output velocity by default.
+    The Vtk.AddVelocity flag must be explicitly set to true. Without it, only primary variables (pressure)
+    are written.
+
+    ; [''Vtk.AddVelocity'']'
+  remedy: 'Add ''AddVelocity = true'' to [Vtk] section in .input file; [''Add to params.input: [Vtk] /
+    AddVelocity = true'', ''Re-run simulation'']'
+  severity: silent
+- id: dt_015
+  symptom: 'CMake error: ''Could NOT find dune-common'' or similar for other DUNE modules.'
+  diagnosis: 'DUNE modules not installed or not in CMake search path; DuMux requires DUNE modules (dune-common,
+    dune-geometry, dune-grid, dune-localfunctions, dune-istl) at version >= 2.10. If not installed or
+    installed in a non-standard location, CMake cannot find them.
+
+    ; [''CMakeLists.txt'', ''CMAKE_PREFIX_PATH'']'
+  remedy: 'Install DUNE modules and set CMAKE_PREFIX_PATH; [''Install DUNE: ./bin/installexternal.py dul'',
+    ''Or: apt install libdune-common-dev libdune-grid-dev ...'', ''Set: cmake .. -DCMAKE_PREFIX_PATH=/path/to/dune/install''];
+    Use DuMux install script to handle DUNE dependencies'
+  severity: explicit
+- id: dt_016
+  symptom: Compilation fails with template errors about concepts, ranges, or C++20 features.
+  diagnosis: 'Compiler does not support C++20 (GCC < 11 or Clang < 14); DuMux 3.x requires C++20 features
+    including concepts, ranges, and structured bindings. GCC < 11 and Clang < 14 do not fully support
+    these features.
+
+    ; [''CMakeLists.txt'', ''compiler'']'
+  remedy: 'Upgrade compiler to GCC >= 11 or Clang >= 14; [''Check: g++ --version (need >= 11)'', ''Install:
+    apt install g++-11 or g++-13'', ''Set: cmake .. -DCMAKE_CXX_COMPILER=g++-13'']'
+  severity: explicit
+- id: dt_017
+  symptom: 'Runtime error: ''Key SomeSection.SomeKey not found in the parameter tree''.'
+  diagnosis: 'Required parameter missing from .input file; DuMux parameters without defaults cause a ParameterException
+    if not found in the .input file or command-line overrides. The error message gives the exact key name
+    that''s missing.
+
+    ; [''params.input'']'
+  remedy: Add the missing parameter to the correct [Section] in .input file; ["Read the error message
+    for the exact key name (e.g., 'SpatialParams.Permeability')", 'Add it to the .input file under the
+    correct [Section]', 'Check the example .input files for typical values']
+  severity: explicit
+- id: dt_018
+  symptom: Simulation produces NaN values. Pressure field contains NaN. Output files have NaN entries.
+  diagnosis: 'Zero porosity, extreme permeability, or division by zero in material law; NaN typically
+    appears when: (1) porosity = 0 causes division by zero in storage term, (2) permeability is so extreme
+    that pressure values overflow Float64, (3) van Genuchten n <= 1 makes the material law undefined,
+    or (4) nega'
+  remedy: Check all spatial parameters for zero/extreme values; ['Verify porosity > 0 everywhere (minimum
+    0.001)', 'Verify permeability > 0 and < 1e-5 m²', 'Verify van Genuchten n > 1.0', 'Check initial conditions
+    are positive absolute pressure']; validate_params() in convert_soil_to_dumux.py catches these
+  severity: critical
+- id: dt_019
+  symptom: R² and NSE are near zero or strongly negative when comparing DuMux simulated heads to Fan WTD-derived
+    water table elevations. Observed 'water table' values include physically impossible negatives (< -100
+    m) or far exceed simulated range.
+  diagnosis: 'Fan WTD (MeanWaterTableDepth_meter.tif) is not a reliable validation reference for confined/artesian
+    basins or mountain-adjacent domains.; Fan et al. global water table depth is calibrated for unconfined
+    shallow aquifers. It fails in two documented cases: (1) Artesian/confined basins (Po Plain, NCP '
+  remedy: 'Use D2WT (Zenodo #5851676) for US unconfined aquifers; use GRACE TWSA trend for basin-scale
+    storage budget; use published regional head maps for confined systems.; [''Check if domain has artesian
+    or confined conditions → if yes, Fan WTD is unusable'', ''Check if domain borders mountains → if boundary
+    e'
+  severity: silent
+- id: dt_020
+  symptom: DuMux 1p validation gives NSE < 0 or R² < 0.1 despite correct physics. Simulated head range
+    is much narrower than observed range (e.g., sim 5–15m, obs 0–90m).
+  diagnosis: Domain or aquifer type is unsuitable for uniform-K 1p steady-state validation. Observed head
+    variation is dominated by local topography, multi-layer stratigraphy, or pumping — not by the lateral
+    Darcy gradient captured by the model.; The DuMux 1p model with uniform K and linear BCs captures only
+    ONE
+  remedy: 'Choose a domain that satisfies the 5 productive-domain conditions before running.; [''CHECK
+    1: Terrain variation < 50m across domain. If not → split domain or use DEM-corrected BCs.'', ''CHECK
+    2: Water table follows a single dominant gradient direction (check obs scatter vs lon AND lat separately;
+    pick'
+  severity: silent
+- id: dt_021
+  symptom: NSE improves dramatically (e.g., -0.21 → +0.26) when flow direction is changed from E-W to
+    N-S or vice versa. The model captures less than 30% of observed head variance.
+  diagnosis: "FlowDirection=0 (E-W) was chosen but the dominant head gradient is N-S (or vice versa).;\
+    \ The modified problem_1p.hh supports three flow directions:\n  FlowDirection=0: E-W (Dirichlet left/right,\
+    \ x-axis). Use for W→E aquifer drainage.\n  FlowDirection=2: N-S (Dirichlet bottom/top, y-axis). Use\
+    \ for Alpi"
+  remedy: 'Compute r(lon, p_obs) and r(lat, p_obs) to determine dominant gradient direction before writing
+    params.input.; [''r_ew = np.corrcoef(lons_w, p_obs)[0,1]  # positive = head increases westward'',
+    ''r_ns = np.corrcoef(lats_w, p_obs)[0,1]  # positive = head increases southward'', ''If |r_ew| > |r_ns|:
+    use Fl'
+  severity: silent
+- id: dt_022
+  symptom: BCs derived from Fan WTD give huge RMSE (>100m) even when restricted to flat plain cells. The
+    simulated head field is correct physically but completely uncorrelated with observations.
+  diagnosis: Fan WTD is unreliable as a BC source for non-High-Plains aquifers. BC errors are larger than
+    the lateral head gradient across the domain, making the simulation physically meaningless.; For the
+    High Plains aquifer, BCs from Fan WTD (via SRTM − WTD) gave head-BC errors of ~10m on a 380m range
+    → errors
+  remedy: 'Use observed piezometric levels at boundary wells as BCs whenever available. Fall back to Fan
+    WTD only if all boundary wells are > 200km from mountains.; [''Identify boundary wells: wells in the
+    leftmost/rightmost 20% of longitude (or lat for N-S flow)'', ''Compute mean observed head for each
+    boundary '
+  severity: critical

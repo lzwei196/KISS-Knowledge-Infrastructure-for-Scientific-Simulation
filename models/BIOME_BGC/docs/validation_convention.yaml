@@ -1,0 +1,494 @@
+schema_version: 1
+model_id: BIOME_BGC
+domain: biogeochem
+generated_by: "Step-B fleet agent (Codex GPT-5)"
+generated_at: 2026-08-14
+
+references:
+  hamm2018:
+    doi: "10.5194/gmd-11-83-2018"
+    title: "Bayesian integration of flux tower data into a process-based simulator for quantifying uncertainty in ecosystem model parameters"
+    venue: "Geosci. Model Dev."
+    year: 2018
+    oa: gold
+    resolves: "https://gmd.copernicus.org/articles/11/83/2018/gmd-11-83-2018.pdf"
+  hidy2016:
+    doi: "10.5194/gmd-9-4405-2016"
+    title: "Terrestrial ecosystem process model Biome-BGCMuSo v4.0: summary of improvements and new modeling possibilities"
+    venue: "Geosci. Model Dev."
+    year: 2016
+    oa: gold
+    resolves: "https://gmd.copernicus.org/articles/9/4405/2016/gmd-9-4405-2016.pdf"
+  luo2012:
+    doi: "10.5194/bg-9-3857-2012"
+    title: "A framework for benchmarking land models"
+    venue: "Biogeosciences"
+    year: 2012
+    oa: gold
+    resolves: "https://bg.copernicus.org/articles/9/3857/2012/bg-9-3857-2012.pdf"
+  moriasi2015:
+    doi: "10.13031/trans.58.10715"
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt"
+  stocker2020:
+    doi: "10.5194/gmd-13-1545-2020"
+    title: "P-model v1.0: an optimality-based light use efficiency model for simulating ecosystem gross primary production"
+    venue: "Geosci. Model Dev."
+    year: 2020
+    oa: gold
+    resolves: "https://gmd.copernicus.org/articles/13/1545/2020/gmd-13-1545-2020.pdf"
+  turner2006:
+    doi: "10.1016/j.rse.2006.02.017"
+    title: "Evaluation of MODIS NPP and GPP products across multiple biomes"
+    venue: "Remote Sensing of Environment"
+    year: 2006
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.rse.2006.02.017.txt"
+  richardson2012:
+    doi: "10.1111/j.1365-2486.2011.02562.x"
+    title: "Terrestrial biosphere models need better representation of vegetation phenology: leaf area index and seasonality"
+    venue: "Global Change Biology"
+    year: 2012
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1111_j.1365-2486.2011.02562.x.txt"
+  yan2019:
+    doi: "10.1186/s40663-019-0171-5"
+    title: "Improved simulation of carbon and water fluxes by assimilating multi-layer soil moisture into a process-based model (Biome-BGC)"
+    venue: "Forest Ecosystems"
+    year: 2019
+    oa: gold
+    resolves: "https://forestecosyst.springeropen.com/articles/10.1186/s40663-019-0171-5"
+  tian2015:
+    doi: "10.1002/2014gb005021"
+    title: "Global patterns and controls of soil organic carbon dynamics as simulated by multiple terrestrial biosphere models"
+    venue: "Global Biogeochemical Cycles"
+    year: 2015
+    oa: manual
+    resolves: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2014gb005021.txt"
+  schurmann2016:
+    doi: "10.5194/gmd-9-2999-2016"
+    title: "Constraining a land-surface model with multiple observations by application of the MPI-Carbon Cycle Data Assimilation System V1.0"
+    venue: "Geosci. Model Dev."
+    year: 2016
+    oa: gold
+    resolves: "https://gmd.copernicus.org/articles/9/2999/2016/gmd-9-2999-2016.pdf"
+
+validation:
+  - dag_variable: daily_gpp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Biome-BGC flux-tower GPP calibration explicitly used NSE >= 0.5 as adequate accuracy."
+        cites: [hamm2018]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hamm 2018 and Stocker 2020 co-report RMSE for GPP, but the absolute RMSE band is site-scale and unit-scale dependent."
+        cites: [hamm2018, stocker2020]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Multi-site GPP benchmarks commonly report explained variance; Stocker 2020 reports 8-day pooled GPP R2 = 0.75."
+        cites: [stocker2020]
+    validated_when: "Daily tower GPP is validated when NSE >= 0.5 against eddy-covariance or FLUXNET-derived GPP at the site."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Hamm 2018 states that "NSE >= 0.5 indicates adequate accuracy" for simulated GPP and reports posterior
+      validation NSE of 0.85 in one Biome-BGC case. Hidy 2016 and Stocker 2020 support the same RMSE/R2
+      evaluation style for carbon-flux models. This retains the dag determining_metric.
+
+  - dag_variable: daily_gpp
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "GPP spatial/time benchmarks use R2 or RMSE, not CSI; Stocker 2020 labels R2 below 0.5 as relatively poor and R2 above 0.8 as very good."
+        cites: [stocker2020]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 20}
+        pass_band: satisfactory
+        band_note: "Turner 2006 reports generally good BigFoot-vs-tower annual GPP agreement within 20% across sites except two footprint/drought cases."
+        cites: [turner2006]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is categorical/spatial CSI, but fetched GPP field benchmarks treat continuous GPP maps and time series with R2, RMSE, and bias."
+        cites: [stocker2020, turner2006]
+    validated_when: "Spatial or gridded GPP is validated by continuous-field skill: R2 >= 0.5 and absolute PBIAS <= 20%."
+    evidence_strength: strong
+    confidence: 0.72
+    notes: >-
+      Literature clearly supersedes the dag csi metric for continuous GPP fields. Stocker 2020 reports R2 = 0.75
+      and RMSE = 1.96 g C m-2 d-1 for 8-day GPP across 126 FLUXNET sites and calls R2 below 0.5 relatively poor,
+      while Turner 2006 provides the 20% BigFoot annual GPP agreement benchmark.
+
+  - dag_variable: daily_npp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: ratio
+        bands: {very_good: 0.13, good: 0.26, satisfactory: 0.53}
+        pass_band: satisfactory
+        band_note: "Turner 2006 reports NPP RMSE/mean ratios from 0.13 to 0.53, with mean 0.26, across cover types and sites."
+        cites: [turner2006]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag asks for NSE, but fetched NPP validation papers emphasize annual inventory magnitude and normalized error rather than daily NSE."
+        cites: [turner2006, hidy2016]
+    validated_when: "NPP is validated when normalized RMSE is within the fetched BigFoot multi-biome benchmark envelope (<= 0.53 of measured mean NPP)."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      Annual NPP is commonly benchmarked against plot or biometric inventory rather than daily eddy flux.
+      Turner 2006 reports mean NPP bias below 5% after BigFoot calibration and RMSE/mean ratios of 0.13-0.53.
+      Hidy 2016 reports NPP in the same R2/RMSE/NRMSE/NSE evaluation family for Biome-BGCMuSo.
+
+  - dag_variable: daily_npp
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Very_good is Turner 2006 BigFoot mean-NPP bias below 5%; satisfactory transfers Moriasi 2015 crop-yield PBIAS within 25% to regional plant-production aggregates."
+        cites: [turner2006, moriasi2015]
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.6}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 reports EPIC/APEX crop-yield satisfactory calibration criteria of R2 >= 0.60."
+        cites: [moriasi2015]
+    secondary_metrics: []
+    validated_when: "Regional aggregate NPP is validated when absolute PBIAS <= 25% and R2 >= 0.60 against regional inventory or data-model product."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The PBIAS and R2 bands are transferred from plant-production and crop-yield regional validation conventions,
+      with Turner 2006 providing a direct NPP benchmark and Moriasi 2015 providing the reproduced crop-yield criteria.
+
+  - dag_variable: daily_nee
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "Yan 2019 reports assimilated Biome-BGC MuSo NEE agreement with EC measurements at R2 = 0.70."
+        cites: [yan2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Yan 2019 reports NEE RMSE = 1.16 g C m-2 d-1, but absolute NEE RMSE is site- and unit-dependent."
+        cites: [yan2019]
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag asks for NSE, but the fetched Biome-BGC NEE benchmark reports R2, RMSE, and seasonal/annual averages rather than an NSE threshold."
+        cites: [yan2019]
+    validated_when: "NEE is validated when the tower time series reaches at least the fetched Biome-BGC MuSo NEE benchmark, R2 >= 0.70."
+    evidence_strength: moderate
+    confidence: 0.52
+    notes: >-
+      This is a single-site benchmark, not a broad field-wide threshold. Yan 2019 reports NEE_DA with R2 = 0.70
+      and RMSE = 1.16 g C m-2 d-1 against eddy-covariance measurements.
+
+  - dag_variable: daily_nep
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE pass band for BIOME-BGC daily NEP at a point."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Carbon-balance studies benchmark net carbon exchange and atmospheric CO2 more often than model-output NEP directly."
+        cites: [schurmann2016, yan2019]
+    validated_when: "UNRESOLVED - no cited numeric NEP threshold; use direct NEE/NBP evidence where appropriate but do not auto-validate NEP from this block."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      NEP is related to NPP minus heterotrophic respiration, but the fetched papers do not define a BIOME-BGC NEP
+      point-time-series acceptance threshold. Bands are null by the no-fabrication rule.
+
+  - dag_variable: daily_hr
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric daily heterotrophic-respiration NSE threshold."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Tian 2015 states that Rh is commonly monitored as a confounded component of soil respiration or ecosystem respiration, so a direct daily HR time series is observationally partition-limited."
+        cites: [tian2015]
+    validated_when: "UNRESOLVED - direct HR validation needs partitioned respiration observations; a failing HR NSE is a data/partition ceiling, not automatically a KI defect."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Tian 2015 calls for more effort to distinguish Rh for benchmarking. No numeric threshold was found in the fetched set.
+
+  - dag_variable: proj_lai
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred temporal-efficiency threshold; Hidy 2016 reports LAI in the NSE/R2/RMSE/NRMSE family and Moriasi 2015 supplies the general NSE > 0.50 satisfactory rule."
+        cites: [hidy2016, moriasi2015]
+    secondary_metrics:
+      - metric: timing_bias_days
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Richardson 2012 evaluates LAI phenology using 20%, 50%, and 80% seasonal-amplitude dates and reports that two-week timing biases are typical in terrestrial biosphere models."
+        cites: [richardson2012]
+    validated_when: "LAI point time series is validated when NSE >= 0.5, with phenological timing diagnostics checked as supporting evidence."
+    evidence_strength: moderate
+    confidence: 0.48
+    notes: >-
+      This is a transferred temporal-efficiency band, not an LAI-specific pass/fail convention. Richardson 2012
+      found that Biome-BGC captured the beginning and end of the season but LAI increased too slowly.
+
+  - dag_variable: proj_lai
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for continuous peak-season LAI maps."
+        cites: []
+    secondary_metrics:
+      - metric: timing_bias_days
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Richardson 2012 supports phenology-threshold timing diagnostics for LAI but does not provide a spatial-snapshot CSI band."
+        cites: [richardson2012]
+    validated_when: "UNRESOLVED - spatial LAI snapshots need a continuous-map metric convention; do not auto-validate CSI."
+    evidence_strength: weak
+    confidence: 0.32
+    notes: >-
+      The dag metric is CSI, but the fetched LAI literature uses phenological transition timing and continuous LAI comparisons.
+      No numeric CSI band was found.
+
+  - dag_variable: vegc
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric vegetation-carbon stock PBIAS threshold for stand inventory validation."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED - compare to stand biomass-carbon inventory, but no cited numeric pass band was fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Schurmann 2016 reports vegetation-carbon estimates and independent global estimates, but it does not define a
+      point-inventory acceptance band for BIOME-BGC vegc.
+
+  - dag_variable: vegc
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for continuous vegetation-carbon maps."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Schurmann 2016 reports that regional gross and net CO2 flux patterns are limited by coarse-scale parameterization, but does not define a vegetation-carbon map threshold."
+        cites: [schurmann2016]
+    validated_when: "UNRESOLVED - continuous biomass-carbon map validation needs a cited R2/RMSE/PBIAS convention, not CSI."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The fetched papers do not provide a vegetation-carbon spatial-snapshot CSI convention. Null band prevents automatic validation.
+
+  - dag_variable: soilc
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric point SOC PBIAS pass band for BIOME-BGC soilc."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Tian 2015 emphasizes that initial NPP, litter, nitrogen limitation, litter composition, and vertical SOC structure are key uncertainty sources."
+        cites: [tian2015]
+    validated_when: "UNRESOLVED - compare to measured SOC stock after spinup, but no cited numeric pass band was fetched."
+    evidence_strength: weak
+    confidence: 0.32
+    notes: >-
+      SOC stock validation is observation- and depth-convention dependent. Tian 2015 reports large model divergence and calls for harmonized benchmarks.
+
+  - dag_variable: soilc
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for continuous SOC maps."
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Tian 2015 reports spatial correlations between modeled and empirical SOC estimates below 0.4 and identifies missing wetlands, peatlands, deep soil carbon, and vertical heterogeneity as major limitations."
+        cites: [tian2015]
+    validated_when: "UNRESOLVED - SOC map validation is structurally and observationally limited; do not auto-validate CSI."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Tian 2015 states that global SOC estimates range widely across TBMs and that spatial correlation with HWSD is poor.
+      The fetched set supports a structural/data ceiling, but not a numeric CSI pass band.
+
+  - dag_variable: soilw
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred hydrologic time-series convention: Moriasi 2015 recommends NSE > 0.50 as satisfactory for watershed-scale flow simulations."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hidy 2016 and Yan 2019 report SWC/soil-water errors, but no absolute soilw RMSE pass band is transferable across depths and units."
+        cites: [hidy2016, yan2019]
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Yan 2019 states that Biome-BGC's single-layer soil module cannot represent vertical variations in soil moisture, and Hidy 2016 notes original Biome-BGC SWC represents a constant value within the entire root zone."
+        cites: [yan2019, hidy2016]
+    validated_when: "Soil water is validated only as a diagnostic when NSE >= 0.5; failures may reflect the documented single-bucket/root-zone structural ceiling."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: >-
+      The NSE band is transferred from hydrologic model convention. The fetched Biome-BGC papers document why soilw
+      should not be treated as an authoritative multi-layer hydrology product.
+
+  - dag_variable: net_nmin
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric net nitrogen mineralization NSE threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Tian 2015 recommends comparing net nitrogen mineralization against site-level observations, but provides no numeric pass band."
+        cites: [tian2015]
+    validated_when: "UNRESOLVED - net N mineralization requires site assays and a cited convention; no auto-validation."
+    evidence_strength: weak
+    confidence: 0.28
+    notes: >-
+      The fetched literature identifies net nitrogen mineralization as a needed benchmark but does not define a numeric threshold.
+
+  - dag_variable: ET
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred hydrologic time-series convention from Moriasi 2015; ET is a water-flux diagnostic in BIOME-BGC."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 recommends PBIAS <= +/-15% as satisfactory for watershed-scale flow simulations; used cautiously for ET magnitude."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Yan 2019 reports ET R2 = 0.81 and RMSE = 0.70 mm d-1 after soil-state assimilation, but this is a single-site benchmark rather than a universal pass band."
+        cites: [yan2019]
+    validated_when: "ET is validated when NSE >= 0.5 and absolute PBIAS <= 15%, interpreted cautiously as a water-flux convention."
+    evidence_strength: moderate
+    confidence: 0.56
+    notes: >-
+      The dag determining_metric is retained. Yan 2019 provides Biome-BGC MuSo ET benchmark skill, while Moriasi 2015
+      provides the numeric NSE/PBIAS hydrologic convention used here with caution.
+
+deferred_paywalled:
+  - ref: "Parameter sensitivity analysis and optimization of carbon and water fluxes in grassland ecosystems based on the Biome-BGCMuSo Model"
+    doi: "10.1007/s11629-025-9753-6"
+    needed_for: [daily_gpp, daily_nee, ET]
+  - ref: "Generalization of a Forest Ecosystem Process Model for Other Biomes, BIOME-BGC, and an Application for Global-Scale Models"
+    doi: "10.1016/b978-0-12-233440-5.50014-2"
+    needed_for: [daily_gpp, daily_npp, vegc, soilc]
+  - ref: "Variance-based sensitivity analysis of BIOME-BGC for gross and net primary production"
+    doi: "10.1016/j.ecolmodel.2014.08.012"
+    needed_for: [daily_gpp, daily_npp]
+  - ref: "Sensitivity analysis of Biome-BGCMuSo for gross and net primary productivity of typical forests in China"
+    doi: "10.1016/j.fecs.2022.100011"
+    needed_for: [daily_gpp, daily_npp]
+  - ref: "Modeling and measuring the effects of disturbance history and climate on carbon and water budgets in evergreen needleleaf forests"
+    doi: "10.1016/s0168-1923(02)00108-9"
+    needed_for: [daily_nee, daily_nep, ET, vegc, soilc]
+  - ref: "Parameterization and Sensitivity Analysis of the BIOME-BGC Terrestrial Ecosystem Model: Net Primary Production Controls"
+    doi: "10.1175/1087-3562(2000)004<0003:pasaot>2.0.co;2"
+    needed_for: [daily_npp]
+  - ref: "Sensitivity Analysis of Biome-BGC for Gross Primary Production of a Rubber Plantation Ecosystem: A Case Study of Hainan Island, China"
+    doi: "10.3390/ijerph192114068"
+    needed_for: [daily_gpp]

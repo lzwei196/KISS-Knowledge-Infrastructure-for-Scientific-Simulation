@@ -1,0 +1,402 @@
+schema_version: 1
+model_id: OpenGeoSys
+domain: groundwater
+generated_by: step-b validation convention agent
+generated_at: 2026-08-14
+references:
+  heldt2023:
+    doi: 10.1186/s40517-023-00255-5
+    title: Parameter identification and range restriction through sensitivity analysis for a high-temperature
+      heat injection test
+    venue: Geothermal Energy
+    year: 2023
+    oa: gold
+    resolves: https://geothermal-energy-journal.springeropen.com/counter/pdf/10.1186/s40517-023-00255-5
+  garitte2017:
+    doi: 10.1007/s12665-017-6662-1
+    title: Modelling the Mont Terri HE-D experiment for the Thermal-Hydraulic-Mechanical response of a
+      bedded argillaceous formation to heating
+    venue: Environmental Earth Sciences
+    year: 2017
+    oa: gold
+    resolves: https://link.springer.com/content/pdf/10.1007/s12665-017-6662-1.pdf
+  chaudhry2019:
+    doi: 10.1002/nag.2998
+    title: Consolidation around a point heat source (correction and verification)
+    venue: International Journal for Numerical and Analytical Methods in Geomechanics
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_nag.2998.txt
+  hokr2016:
+    doi: 10.1007/s12665-016-6061-z
+    title: A real-case benchmark for flow and tracer transport in the fractured rock
+    venue: Environmental Earth Sciences
+    year: 2016
+    oa: gold
+    resolves: https://link.springer.com/content/pdf/10.1007/s12665-016-6061-z.pdf
+  aguila2021:
+    doi: 10.1007/s10596-021-10050-5
+    title: 'Modeling cesium migration through Opalinus clay: a benchmark for single- and multi-species
+      sorption-diffusion models'
+    venue: Computational Geosciences
+    year: 2021
+    oa: gold
+    resolves: https://link.springer.com/content/pdf/10.1007/s10596-021-10050-5.pdf
+  poonoosamy2018:
+    doi: 10.1007/s10596-018-9793-x
+    title: Benchmarking of reactive transport codes for 2D simulations with mineral dissolution-precipitation
+      reactions and feedback on transport parameters
+    venue: Computational Geosciences
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10596-018-9793-x.txt
+  birkholzer2024:
+    doi: 10.1007/s10040-024-02799-7
+    title: The DECOVALEX international collaboration on modeling of coupled subsurface processes and its
+      contribution to radioactive-waste disposal safety
+    venue: Hydrogeology Journal
+    year: 2024
+    oa: gold
+    resolves: https://link.springer.com/content/pdf/10.1007/s10040-024-02799-7.pdf
+  grunwald2022:
+    doi: 10.1007/s40948-022-00394-2
+    title: 'Non-isothermal two-phase flow in deformable porous media: systematic open-source implementation
+      and verification procedure'
+    venue: Geomechanics and Geophysics for Geo-Energy and Geo-Resources
+    year: 2022
+    oa: gold
+    resolves: https://link.springer.com/content/pdf/10.1007/s40948-022-00394-2.pdf
+validation:
+- dag_variable: pressure
+  obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No fetched groundwater pressure/head time-series NSE threshold was found; Mont Terri/DECOVALEX
+      papers judge pressure by experiment agreement and physics capture.
+    cites: []
+  secondary_metrics:
+  - metric: rmse
+    direction: minimize
+    status: supportive
+    ceiling_reason: Garitte 2017 states the agreement between measured and simulated temperature, pore
+      pressure and strain was considered very good, but gives no numeric RMSE band.
+    cites:
+    - garitte2017
+  validated_when: UNRESOLVED - compare co-located pore-pressure time series, but no cited numeric pressure
+    NSE band is available.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: Fetched THM benchmarks emphasize qualitative agreement and process capture. Garitte 2017 says
+    all teams predicted thermally induced pressure generation and that pressure matching depends first
+    on temperature simulation. Numeric NSE criteria from hydrologic flow papers were not transferred to
+    pore pressure.
+- dag_variable: pressure
+  obs_shape: point_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No fetched paper gives a pressure-snapshot PBIAS pass band; pressure head versus absolute
+      pressure requires site-specific unit reconciliation.
+    cites: []
+  secondary_metrics:
+  - metric: relative_difference
+    direction: minimize
+    status: supportive
+    ceiling_reason: Hokr 2016 reports percent-scale code differences for fitted hydraulics as good for
+      this benchmark type, but this is not a pressure PBIAS convention.
+    cites:
+    - hokr2016
+  validated_when: UNRESOLVED - use co-located pressure/head snapshots, but no cited PBIAS band is available.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: Hokr 2016 compared OpenGeoSys against Flow123d and PFLOTRAN in fractured-rock flow; it supports
+    code-verification context, not a general pressure PBIAS gate.
+- dag_variable: temperature
+  obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: The DAG metric is retained, but fetched OpenGeoSys/THM heat-transport papers report NMAE
+      or qualitative agreement rather than NSE bands.
+    cites: []
+  - metric: nmae
+    direction: minimize
+    unit: percent
+    bands:
+      satisfactory: 15
+    pass_band: satisfactory
+    band_note: Heldt 2023 uses 'Model with NMAE < 15%' and calls NMAE an integrated measure of model quality
+      for measured versus simulated temperatures.
+    cites:
+    - heldt2023
+  secondary_metrics:
+  - metric: rmse
+    direction: minimize
+    status: supportive
+    ceiling_reason: Chaudhry 2019 verifies OpenGeoSys temperature, pressure, displacement, and stresses
+      against an analytical THM benchmark but does not state an RMSE pass threshold.
+    cites:
+    - chaudhry2019
+  validated_when: NMAE <= 15% for temperature breakthrough curves when that metric is available; otherwise
+    unresolved for the DAG NSE metric.
+  evidence_strength: moderate
+  confidence: 0.6
+  notes: Heldt 2023 defines NMAE as the average mismatch between simulated and measured temperatures relative
+    to average measured temperature increase, and reports that zero is perfect while larger values are
+    worse. Garitte 2017 and Chaudhry 2019 corroborate THM temperature benchmark practice qualitatively.
+- dag_variable: temperature
+  obs_shape: point_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No fetched paper gives a temperature snapshot PBIAS convention for subsurface porous-medium
+      temperature.
+    cites: []
+  secondary_metrics:
+  - metric: nmae
+    direction: minimize
+    status: supportive
+    ceiling_reason: Heldt 2023 provides a time-series/breakthrough-curve NMAE convention, not a snapshot
+      PBIAS convention.
+    cites:
+    - heldt2023
+  validated_when: UNRESOLVED - snapshot magnitude bias should be checked, but no cited PBIAS band was
+    found.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: The useful numeric threshold found for temperature is NMAE < 15% on breakthrough curves; it was
+    not transferred to point snapshots.
+- dag_variable: displacement
+  obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No fetched mechanics/THM paper gives an NSE threshold for displacement or strain time series.
+    cites: []
+  secondary_metrics:
+  - metric: rmse
+    direction: minimize
+    status: supportive
+    ceiling_reason: Garitte 2017 judges measured versus simulated strain agreement qualitatively as very
+      good while noting experimental uncertainty.
+    cites:
+    - garitte2017
+  - metric: analytical_agreement
+    direction: maximize
+    status: supportive
+    ceiling_reason: Chaudhry 2019 reports excellent agreement between analytical and numerical displacement
+      solutions in an OpenGeoSys verification benchmark.
+    cites:
+    - chaudhry2019
+  validated_when: UNRESOLVED - compare matching displacement component time series, but no cited NSE band
+    is available.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: The fetched literature validates mechanics through analytical benchmark agreement and experiment
+    comparison, not a reusable displacement NSE threshold.
+- dag_variable: darcy_velocity
+  obs_shape: point_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: Direct Darcy-flux observations are rare and no fetched paper gives a PBIAS threshold for
+      point flux snapshots.
+    cites: []
+  secondary_metrics:
+  - metric: relative_difference
+    direction: minimize
+    status: supportive
+    ceiling_reason: Hokr 2016 reports percent-range hydraulic differences between Flow123d and OpenGeoSys
+      as good for the real-case benchmark, but not as an observational flux PBIAS gate.
+    cites:
+    - hokr2016
+  validated_when: UNRESOLVED - compare derived flux against site-specific flux/discharge evidence, but
+    no cited PBIAS band is available.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: Hokr 2016 supports fractured-rock flow benchmark practice; it does not establish a field convention
+    for point Darcy velocity.
+- dag_variable: stress
+  obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No fetched THM or rock-mechanics benchmark gives an NSE threshold for stress time series.
+    cites: []
+  secondary_metrics:
+  - metric: analytical_agreement
+    direction: maximize
+    status: supportive
+    ceiling_reason: Chaudhry 2019 derives corrected stress expressions and verifies them numerically with
+      OpenGeoSys, reporting excellent analytical-numerical agreement except near singular behavior.
+    cites:
+    - chaudhry2019
+  - metric: process_agreement
+    direction: maximize
+    status: supportive
+    ceiling_reason: Garitte 2017 reports that linear elasticity produced adequate pore-pressure and thermal-strain
+      simulations, while damage and plastic behavior should be investigated further.
+    cites:
+    - garitte2017
+  validated_when: UNRESOLVED - no cited stress NSE band; use benchmark/experiment agreement as context
+    only.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: Stress validation in the fetched OpenGeoSys papers is analytical or process-mechanistic rather
+    than an NSE-based observational convention.
+- dag_variable: saturation
+  obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No fetched OpenGeoSys two-phase/Richards benchmark gives an observational NSE threshold
+      for saturation time series.
+    cites: []
+  secondary_metrics:
+  - metric: benchmark_agreement
+    direction: maximize
+    status: supportive
+    ceiling_reason: Grunwald 2022 presents heat-pipe and Liakopoulos-style benchmark tests with liquid
+      saturation as an output, but does not state a numeric validation band.
+    cites:
+    - grunwald2022
+  validated_when: UNRESOLVED - saturation sensors/moisture probes can be compared, but no cited NSE band
+    was found.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: Saturation is well represented in verification test suites, but the fetched texts do not provide
+    a reusable field validation threshold.
+- dag_variable: concentration
+  obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: The DAG metric is retained, but fetched reactive-transport benchmarks report breakthrough
+      differences rather than NSE tiers.
+    cites: []
+  - metric: relative_difference
+    direction: minimize
+    unit: percent
+    bands:
+      satisfactory: 10
+    pass_band: satisfactory
+    band_note: Aguila 2021 reports calculated Cs breakthroughs within less than 10% for concentration
+      levels or breakthrough time in the benchmark comparison.
+    cites:
+    - aguila2021
+  secondary_metrics:
+  - metric: plateau_difference
+    direction: minimize
+    status: supportive
+    ceiling_reason: Aguila 2021 reports cesium concentration plateaus within less than 1%, but this is
+      a benchmark result rather than a separate pass tier.
+    cites:
+    - aguila2021
+  - metric: qualitative_agreement
+    direction: maximize
+    status: supportive
+    ceiling_reason: Poonoosamy 2018 reports good agreement across reactive transport codes including OpenGeoSys-GEM.
+    cites:
+    - poonoosamy2018
+  validated_when: Relative concentration or breakthrough-time difference <= 10% in benchmark-style comparisons
+    when that metric is available; otherwise unresolved for NSE.
+  evidence_strength: moderate
+  confidence: 0.65
+  notes: For reactive transport, fetched benchmarks judge concentration with breakthrough/profile agreement.
+    The 10% value is benchmark agreement, not a broad field NSE tier.
+- dag_variable: concentration
+  obs_shape: spatial_snapshot
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No fetched groundwater plume/spatial concentration paper gives a CSI threshold; one capped
+      OpenAlex query returned no usable plume-CSI convention.
+    cites: []
+  - metric: relative_difference
+    direction: minimize
+    unit: percent
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: Reactive-transport benchmark papers report profile/contour agreement, but no fetched paper
+      gives a reusable numeric threshold for spatial plume snapshots.
+    cites: []
+  secondary_metrics:
+  - metric: csi
+    direction: maximize
+    status: supportive
+    ceiling_reason: The DAG asks for CSI on plume extent, but fetched reactive-transport papers compare
+      profiles, contours, and breakthrough curves rather than categorical plume overlap thresholds.
+    cites:
+    - poonoosamy2018
+  validated_when: UNRESOLVED - no cited spatial concentration or plume-CSI validation threshold was found.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: Reactive-transport benchmarks support qualitative comparison of spatial profiles and contours,
+    but the fetched texts do not provide a numeric CSI or spatial-field threshold.
+deferred_paywalled:
+- ref: 'Moriasi et al. 2015 - Hydrologic and Water Quality Models: Performance Measures and Evaluation
+    Criteria'
+  doi: 10.13031/trans.58.10715
+  needed_for:
+  - darcy_velocity
+  - concentration
+- ref: Moriasi et al. 2007 - Model Evaluation Guidelines for Systematic Quantification of Accuracy in
+    Watershed Simulations
+  doi: 10.13031/2013.23153
+  needed_for:
+  - darcy_velocity
+  - concentration
+- ref: Groundwater-head normalized-RMSE threshold candidate returned by OpenAlex but fetch failed
+  doi: 10.3390/su12104023
+  needed_for:
+  - pressure
+- ref: Design-of-Experiment based history matching for probabilistic integrity analysis - Mont Terri FE
+    experiment
+  doi: 10.1016/j.ress.2023.109903
+  needed_for:
+  - pressure
+  - temperature
+  - displacement
+  - stress

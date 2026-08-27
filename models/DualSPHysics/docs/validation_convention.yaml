@@ -1,0 +1,324 @@
+schema_version: 1
+model_id: DualSPHysics
+domain: ocean
+generated_by: "Step-B agent validation-convention pass"
+generated_at: 2026-08-14
+
+# Grounded only in fetched/open cached full texts. The DualSPHysics coastal/wave
+# validation literature normally reports RMSE, relative error, R2, amplitude/phase
+# factors, Taylor metrics, or skill index rather than NSE/PBIAS. Where the dag's
+# determining_metric is not the field convention, the block says so and uses the
+# reported benchmark metric instead. No numeric band below is uncited.
+
+references:
+  verbrugghe2019:
+    doi: 10.1016/j.cpc.2019.02.003
+    title: "Non-linear wave generation and absorption using open boundaries within DualSPHysics"
+    venue: "Computer Physics Communications"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.cpc.2019.02.003.txt
+  gonzalezcao2019:
+    doi: 10.1016/j.compfluid.2018.11.021
+    title: "On the accuracy of DualSPHysics to assess violent collisions with coastal structures"
+    venue: "Computers & Fluids"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.compfluid.2018.11.021.txt
+  altomare2015:
+    doi: 10.1016/j.coastaleng.2014.11.001
+    title: "Applicability of Smoothed Particle Hydrodynamics for estimation of sea wave impact on coastal structures"
+    venue: "Coastal Engineering"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.coastaleng.2014.11.001.txt
+  crespo2011:
+    doi: 10.1371/journal.pone.0020685
+    title: "GPUs, a New Tool of Acceleration in CFD: Efficiency and Reliability on Smoothed Particle Hydrodynamics Methods"
+    venue: "PLOS ONE"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1371_journal.pone.0020685.txt
+  sato2021:
+    doi: 10.1080/21664250.2021.1991608
+    title: "Validation of the applicability of the particle-based open-source software DualSPHysics to violent flow fields"
+    venue: "Coastal Engineering Journal"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1080_21664250.2021.1991608.txt
+  altomare2018:
+    doi: 10.1016/j.apor.2018.09.013
+    title: "Improved relaxation zone method in SPH-based model for coastal engineering applications"
+    venue: "Applied Ocean Research"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.apor.2018.09.013.txt
+  altomare2014:
+    doi: 10.1016/j.compstruc.2013.10.011
+    title: "Numerical modelling of armour block sea breakwater with smoothed particle hydrodynamics"
+    venue: "Computers & Structures"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.compstruc.2013.10.011.txt
+  zhan2025:
+    doi: 10.1016/j.oceaneng.2025.122413
+    title: "An enhanced numerical wave tank for wave-structure interaction based on DualSPHysics"
+    venue: "Ocean Engineering"
+    year: 2025
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.oceaneng.2025.122413.txt
+
+validation:
+  - dag_variable: pressure
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: normalized_rmse_total_pressure
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.002, good: 0.008, satisfactory: 0.008}
+        pass_band: satisfactory
+        band_note: >-
+          Verbrugghe 2019 reports mean-total-pressure RMSEp values 0.002-0.008
+          and notes that they are low because total, not dynamic, pressure is used.
+        cites: [verbrugghe2019]
+      - metric: relative_amplitude_error
+        direction: minimize
+        unit: fraction
+        bands: {very_good: 0.04, good: 0.07, satisfactory: 0.07}
+        pass_band: satisfactory
+        band_note: >-
+          Crespo 2011 pressure sensors P1/P2 had amplitude factors 1.07 and 1.04
+          for the one-million-particle case; the band is the reported maximum
+          amplitude departure from unity.
+        cites: [crespo2011]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          Pressure time traces near impacts/walls are limited by SPH pressure
+          oscillations, wall-boundary formulation, artificial viscosity, and missing
+          air-phase cushioning; Sato 2021 states mDBC improves DBC pressure
+          disturbance and that excessive artificial viscosity may not adequately
+          reproduce wave pressure, while Zhan 2025 states a single-phase model is
+          unable to capture air-cushioning pressure oscillations and negative
+          pressures.
+        cites: [sato2021, zhan2025]
+    validated_when: >-
+      Mean total pressure normalized RMSE <= 0.008 and pressure amplitude error
+      <= 0.07 after hydrostatic/dynamic-pressure treatment is made consistent with
+      the observation.
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: >-
+      Dag determining_metric nse is superseded for pressure by the fetched
+      DualSPHysics validation papers, which use normalized RMSE and pressure
+      amplitude/phase comparison. Use mDBC for near-wall quantitative pressure,
+      as the dag caveat also states.
+
+  - dag_variable: pressure
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: relative_amplitude_error
+        direction: minimize
+        unit: fraction
+        bands: {very_good: 0.04, good: 0.07, satisfactory: 0.07}
+        pass_band: satisfactory
+        band_note: >-
+          Pressure snapshots/peaks are treated by the same pressure-amplitude
+          convention: Crespo 2011 reports P1/P2 amplitude factors of 1.07 and 1.04.
+        cites: [crespo2011]
+    secondary_metrics:
+      - metric: peak_pressure
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: >-
+          Fetched impact-pressure studies document pressure-noise limits: Sato
+          2021 attributes near-wall pressure disturbance to DBC and excessive
+          artificial viscosity; Zhan 2025 says missing air phase prevents capture
+          of air-cushioning pressure oscillations and negative pressure.
+        cites: [sato2021, zhan2025]
+    validated_when: "Peak/snapshot pressure amplitude error <= 0.07 where the gauge is inside the fluid and pressure definition is matched."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      PBIAS is not the convention in the fetched pressure-impact papers; they
+      compare peak/amplitude and time trace behavior against pressure gauges.
+
+  - dag_variable: water_surface_elevation
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: normalized_rmse_h
+        direction: minimize
+        unit: smoothing_length
+        bands: {very_good: 0.175, good: 0.175, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: >-
+          Verbrugghe 2019 states that this SPH RMSE is non-dimensionalized by
+          smoothing length hSPH and is acceptable below one; achieved surface
+          elevation RMSE values were 0.139-0.175.
+        cites: [verbrugghe2019]
+      - metric: relative_wave_height_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: 3.0, good: 5.0, satisfactory: 12.1}
+        pass_band: satisfactory
+        band_note: >-
+          Altomare 2018 assumes error below 3% for wave generation when Weff/L
+          is adequate and reports irregular-wave Hm0 errors of 4-5%; Zhan 2025
+          reports original DualSPHysics wave-crest errors of 6.26%, 9.72%, and
+          12.10% at three gauges.
+        cites: [altomare2018, zhan2025]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          The dag determining_metric nse is retained only as context. Fetched
+          DualSPHysics wave-validation papers judge surface elevation with RMSE,
+          relative wave-height error, correlation/Taylor metrics, and skill index
+          rather than NSE.
+        cites: [verbrugghe2019, gonzalezcao2019]
+      - metric: correlation
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          Gonzalez-Cao 2019 reports the best free-surface-elevation correlation
+          around 0.99 at high resolution and correlations about 0.9 to 0.8 at
+          coarser resolutions.
+        cites: [gonzalezcao2019]
+    validated_when: "Surface-elevation normalized RMSE <= 1.0 hSPH and relative wave-height/crest error <= 12.1%."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Stronger field convention than NSE: wave gauges are validated by
+      normalized RMSE, reflection/amplitude diagnostics, and crest-height errors.
+      The H/dp guidance in the dag is consistent with the fetched papers.
+
+  - dag_variable: force_on_structure
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: relative_force_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: 3.2, good: 6.6, satisfactory: 6.6}
+        pass_band: satisfactory
+        band_note: >-
+          Altomare 2015 reports 6.6% average error for provoked breaking-wave
+          forces and 3.2% overall average error across 22 analytical or
+          semi-empirical force cases.
+        cites: [altomare2015]
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.99, good: 0.99, satisfactory: 0.99}
+        pass_band: satisfactory
+        band_note: >-
+          Altomare 2015 reports force comparisons with R2 > 0.99 for standing
+          waves and non-breaking vertical-wall force cases.
+        cites: [altomare2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          Time-series NSE is not the force-impact convention in the fetched
+          papers. Gonzalez-Cao 2019 states Taylor diagrams are not well suited
+          for force statistics because pressure sensors poorly reproduce the
+          quasi-static force, and concludes accuracy is lower for forces because
+          of measurement difficulty and stochastic wave impacts.
+        cites: [gonzalezcao2019]
+    validated_when: "Integrated structural force relative error <= 6.6% and R2 >= 0.99 for the comparable wave-force benchmark."
+    evidence_strength: strong
+    confidence: 0.72
+    notes: >-
+      The time-series block borrows the same integrated-force envelope used in
+      force-validation papers because the fetched literature emphasizes peak/
+      integrated force statistics and convergence more than NSE.
+
+  - dag_variable: force_on_structure
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: relative_force_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: 3.2, good: 6.6, satisfactory: 6.6}
+        pass_band: satisfactory
+        band_note: >-
+          Altomare 2015 reports 6.6% average error for ten provoked
+          breaking-wave force simulations and 3.2% overall average error for
+          22 force cases.
+        cites: [altomare2015]
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.99, good: 0.99, satisfactory: 0.99}
+        pass_band: satisfactory
+        band_note: "Altomare 2015 reports R2 > 0.99 for maximum/minimum force comparisons."
+        cites: [altomare2015]
+    secondary_metrics:
+      - metric: peak_force
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: >-
+          Gonzalez-Cao 2019 documents that force accuracy is lower than water
+          elevation because force measurements are difficult and wave impacts are
+          stochastic, while high-resolution runs reach maximum expected accuracy.
+        cites: [gonzalezcao2019]
+    validated_when: "Peak or event-integrated force error <= 6.6% and R2 >= 0.99 against analytical, semi-empirical, or matched laboratory reference."
+    evidence_strength: strong
+    confidence: 0.74
+    notes: >-
+      Point-snapshot force is treated as event peak or event-integrated load,
+      matching the fetched vertical-wall force literature better than PBIAS.
+
+  - dag_variable: velocity
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: normalized_rmse
+        direction: minimize
+        unit: fraction
+        bands: {very_good: 0.015, good: 0.027, satisfactory: 0.043}
+        pass_band: satisfactory
+        band_note: >-
+          Verbrugghe 2019 reports orbital-velocity RMSE values from 1.5% to
+          4.3% for horizontal/vertical wave orbital velocities, proving high
+          accuracy of wave generation, propagation, and absorption.
+        cites: [verbrugghe2019]
+      - metric: relative_wave_height_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: 3.0, good: 5.0, satisfactory: 5.0}
+        pass_band: satisfactory
+        band_note: >-
+          Altomare 2018 uses coupled surface-elevation/orbital-velocity tests
+          and reports that the target wave conditions are accurately predicted
+          with Hm0 error varying between 4% and 5%.
+        cites: [altomare2018]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          The dag determining_metric nse is retained only as contextual support;
+          fetched velocity validations report orbital-velocity RMSE and wave
+          generation/reflection errors instead.
+        cites: [verbrugghe2019, altomare2018]
+    validated_when: "Orbital velocity normalized RMSE <= 0.043 and coupled wave-height error <= 5% for the measurement window."
+    evidence_strength: moderate
+    confidence: 0.66
+    notes: >-
+      Velocity validation is tied to wave orbital velocities at gauges/probes.
+      Large-scale breaking-flow papers report reasonable qualitative velocity
+      agreement but no additional numeric tier was used here.
+
+deferred_paywalled:
+  - ref: "Wendland 1995 compactly supported radial basis functions"
+    doi: 10.1007/bf02123482
+    needed_for: [pressure, water_surface_elevation, velocity]
+  - ref: "Monaghan 1992 Smoothed Particle Hydrodynamics review"
+    doi: 10.1146/annurev.aa.30.090192.002551
+    needed_for: [pressure, force_on_structure]
+  - ref: "Crespo et al. 2007 dynamic boundary conditions"
+    doi: 10.3970/cmc.2007.005.173
+    needed_for: [pressure, force_on_structure]

@@ -269,7 +269,7 @@ outputs:
   - var: "scalarLatHeatTotal"
     validation_rank: 7
     unit: "W m-2"
-    description: "Total latent heat flux (turbulent moisture flux), energy-balance counterpart of total ET."
+    description: "Total latent heat flux to the atmosphere (turbulent moisture flux), energy-balance counterpart of total ET."
     emitted_in: "SUMMA output NetCDF"
     observability:
       comparable_obs_shapes:

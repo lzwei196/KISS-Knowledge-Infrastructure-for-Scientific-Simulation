@@ -453,3 +453,29 @@
     prevention: "validate_outputs() could cross-check with .dai file"
   severity: critical
   cross_references: [dt_002]
+
+# ---------------------------------------------------------------------------
+# Triplets added by self-improve runs after the original corpus was published.
+# Recovered 2026-08-12 and merged back; the block above is the published base,
+# byte-for-byte. See REPORT.md.
+# ---------------------------------------------------------------------------
+- id: dt_019_discharge_wrong_variable_skip
+  symptom:
+    description: Observation is basin channel discharge Q in m3/s at a river gauge (point_time_series),
+      e.g. Bengbu 51080 on the Huai River draining ~121,330 km2. All validation metrics come back null
+      — no sim series exists to pair.
+  diagnosis:
+    root_cause: Daisy is a 1-D mechanistic soil-crop-water column; dag.yaml outputs are per-area field
+      fluxes/states only (yield, ET, Drain/Percolation mm, Theta, etc.). There is NO channel-discharge
+      output; dag.yaml scope_out explicitly excludes 'Lateral flow / catchment-scale routing (1-D column;
+      external linkage to a distributed catchment model such as MIKE/SHE required)'. The nearest analogue
+      (Drain/Percolation) is the wrong variable, wrong units (mm column flux vs m3/s) and wrong scale
+      (point column vs basin), and no point->basin aggregation/routing tool exists in tools/.
+  remedy:
+    action: 'SKIP — structurally uncomputable, no retry can rescue (no cultivar/forcing/parameter change
+      can synthesize a routed-discharge variable in a 1-D column). Route the discharge obs to a distributed/routed
+      hydrology model: VIC+Lohmann/mizuRoute, WRF-Hydro, CaMa-Flood, HYPE, or EF5. Same SKIP family as
+      EPIC GloFAS Huai, TRIGRS, AquaCrop discharge, and tRIBS Bengbu.'
+  format_spec_violated: none (variable-domain / obs-shape mismatch, not a format-spec rule)
+  canonical_intent: ki_local_if_pass
+  added_by_run: Daisy_retry1

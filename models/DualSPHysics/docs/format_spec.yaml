@@ -1,161 +1,441 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "DualSPHysics"
-  version: "5.4.355"
-  domain: "coastal_ocean"
-  description: "3D meshless Smoothed Particle Hydrodynamics (SPH) solver for free-surface flows"
-  binary_path: "KISSPATH_BINARIES/DualSPHysics/source/repo/bin/linux/DualSPHysics5.4CPU_linux64"
-  auxiliary_binaries:
-    gencase: "KISSPATH_BINARIES/DualSPHysics/source/repo/bin/linux/GenCase_linux64"
-    partvtk: "KISSPATH_BINARIES/DualSPHysics/source/repo/bin/linux/PartVTK_linux64"
-    measuretool: "KISSPATH_BINARIES/DualSPHysics/source/repo/bin/linux/MeasureTool_linux64"
-    isosurface: "KISSPATH_BINARIES/DualSPHysics/source/repo/bin/linux/IsoSurface_linux64"
-
+  name: DualSPHysics
+  language: c++
+  implementation:
+    id: dualsphysics-5.4
+    version: v5.4.355
+    provenance: C++/CUDA (OpenMP CPU + CUDA GPU); DualSPHysics group (EPHYSLAB Vigo / Univ. Manchester);
+      WCSPH solver built on the SPHysics lineage.
+  scientific_reference_version: Weakly-compressible SPH (WCSPH) per Crespo et al. 2015 / Dominguez et
+    al. 2022; DualSPHysics v5.4 formulation
 inputs:
-  case_definition:
-    format: "XML"
-    description: "XML file defining geometry, physics, and simulation parameters"
-    sections:
-      - name: "casedef"
-        description: "Case definition: constants, geometry, material markers"
-      - name: "execution"
-        description: "Execution parameters: time, viscosity, kernel, boundary"
-
   forcing:
-    - name: "gravity"
-      unit: "m/s^2"
-      valid_range: [-20.0, 0.0]
-      description: "Gravitational acceleration (z-component)"
-    - name: "wave_height"
-      unit: "m"
-      valid_range: [0.001, 20.0]
-      description: "Input wave height for wave generation cases"
-    - name: "wave_period"
-      unit: "s"
-      valid_range: [0.5, 30.0]
-      description: "Input wave period for wave generation cases"
-
+  - name: wave kinematics (significant height Hs, peak period Tp / spectrum)
+    unit: m, s
+    category: wave
+    source_kind: user_provided
+    model_input_format: XML wavemaker (piston/flap) or spectral definition realized at the paddle/relaxation
+      zone
+    notes: Heights in meters (ocean 0.5-5 m, lab 0.01-0.3 m); cm authoring blows up or vanishes.
+  - name: inlet velocity / current
+    unit: m/s
+    category: flow
+    source_kind: user_provided
+    model_input_format: XML inlet/outlet zone imposed velocity
+    notes: Must be m/s; cm/s or knots can exceed artificial sound speed and destabilize.
+  - name: water level / tide
+    unit: m
+    category: water_level
+    source_kind: user_provided
+    model_input_format: XML still-water level / boundary elevation
   parameters:
-    critical:
-      - name: "dp"
-        unit: "m"
-        valid_range: [0.001, 0.1]
-        description: "Particle spacing — fundamental resolution parameter. Cost scales as dp^-3 in 3D."
-      - name: "rhop0"
-        unit: "kg/m^3"
-        valid_range: [1.0, 13600.0]
-        description: "Reference density (1000 for water)"
-      - name: "gamma"
-        unit: "dimensionless"
-        valid_range: [1.0, 10.0]
-        description: "Polytropic constant for equation of state (typically 7)"
-      - name: "coefsound"
-        unit: "dimensionless"
-        valid_range: [10.0, 40.0]
-        description: "Speed of sound multiplier (10-20x max expected velocity)"
-      - name: "coefh"
-        unit: "dimensionless"
-        valid_range: [0.8, 2.0]
-        description: "Smoothing length coefficient: h = coefh * sqrt(3*dp^2)"
-      - name: "CflNumber"
-        unit: "dimensionless"
-        valid_range: [0.001, 1.0]
-        description: "Courant-Friedrichs-Lewy number"
-
-    execution:
-      - name: "StepAlgorithm"
-        valid_range: [1, 2]
-        description: "1=Verlet, 2=Symplectic time integration"
-      - name: "Kernel"
-        valid_range: [1, 2]
-        description: "1=Cubic spline, 2=Wendland quintic"
-      - name: "ViscoTreatment"
-        valid_range: [1, 3]
-        description: "1=Artificial, 2=Laminar+SPS, 3=Laminar"
-      - name: "Visco"
-        description: "Viscosity coefficient. TRAP: units depend on ViscoTreatment (dimensionless for artificial, m^2/s for laminar)"
-      - name: "Boundary"
-        valid_range: [1, 2]
-        description: "1=DBC (Dynamic), 2=mDBC (Modified Dynamic)"
-      - name: "DensityDT"
-        valid_range: [0, 3]
-        description: "Density Diffusion Term mode (0=off, 2=Fourtakas recommended)"
-      - name: "DensityDTvalue"
-        valid_range: [0.05, 0.2]
-        description: "DDT coefficient (0.1 standard)"
-      - name: "Shifting"
-        valid_range: [0, 3]
-        description: "Particle shifting mode"
-      - name: "TimeMax"
-        unit: "s"
-        valid_range: [0.001, 86400.0]
-        description: "Maximum simulation time"
-      - name: "TimeOut"
-        unit: "s"
-        valid_range: [0.0001, 3600.0]
-        description: "Output save interval"
-
-    density_filters:
-      - name: "RhopOutMin"
-        unit: "kg/m^3"
-        valid_range: [100.0, 999.0]
-        description: "Minimum valid density (default 700)"
-      - name: "RhopOutMax"
-        unit: "kg/m^3"
-        valid_range: [1001.0, 5000.0]
-        description: "Maximum valid density (default 1300)"
-
+  - name: reference fluid density (rhop0)
+    unit: kg/m^3
+    category: physical_constant
+    source_kind: default
+    model_input_format: XML constantsdef rhop0
+    notes: 1000 freshwater, 1025 seawater. g/cm^3 (1.0) corrupts the EOS.
+  - name: gravitational acceleration (gravity)
+    unit: m/s^2
+    category: physical_constant
+    source_kind: default
+    model_input_format: XML constantsdef gravity (x,y,z)
+    notes: Typical (0,0,-9.81); also couples into the density-diffusion term via DDTgz=rhop0*Gravity.z/CteB,
+      so a wrong gravity direction silently alters the DDT2 correction. cm/s^2 authoring is a critical
+      unit error.
+  - name: polytropic constant (gamma)
+    unit: dimensionless
+    category: physical_constant
+    source_kind: default
+    model_input_format: XML constantsdef gamma
+    notes: 7 for water (Tait EOS).
+  - name: speed-of-sound coefficient (coefsound)
+    unit: dimensionless
+    category: numerical
+    source_kind: default
+    model_input_format: XML constantsdef
+    notes: Sets artificial sound speed >=10x max velocity (typical 15-20).
+  - name: smoothing-length coefficient (coefh)
+    unit: dimensionless
+    category: numerical
+    source_kind: default
+    model_input_format: XML constantsdef coefh
+    notes: h = coefh*sqrt(n*dp^2); sets kernel support and neighbor count.
+  - name: particle spacing (dp)
+    unit: m
+    category: resolution
+    source_kind: user_provided
+    model_input_format: XML dp
+    notes: Fundamental resolution; 3-D cost ~dp^-3. mm/cm authoring yields billions of particles / OOM.
+  - name: artificial viscosity coefficient / kinematic viscosity (Visco)
+    unit: dimensionless (artificial 0.01-0.1) OR m^2/s (laminar ~1e-6)
+    category: numerical
+    source_kind: default
+    model_input_format: XML parameters Visco
+    notes: UNITS depend on ViscoTreatment — conditional-unit trap; mismatch is ~10,000x error.
+  - name: density-diffusion coefficient (DensityDTvalue)
+    unit: dimensionless
+    category: numerical
+    source_kind: default
+    model_input_format: XML parameters
+    notes: delta-SPH coefficient, typical 0.1.
+  initial_conditions:
+  - name: initial particle distribution (Case.bi4)
+    unit: m
+    category: geometry
+    source_kind: derived
+    model_input_format: binary bi4 produced by GenCase from the XML geometry (box/sphere/cylinder/prism
+      draw commands, CAD/STL)
+    notes: Particles fill fluid and boundary regions within pointmin/pointmax; geometry outside the box
+      is clipped.
+  - name: initial particle density / velocity
+    unit: kg/m^3, m/s
+    category: field
+    source_kind: default
+    model_input_format: set by GenCase (typically hydrostatic rest state)
+  boundary_conditions:
+  - name: 'boundary method (Boundary: DBC vs mDBC)'
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: XML parameters Boundary (1=DBC, 2=mDBC) + SlipMode
+    notes: mDBC required for quantitative wall pressure; DBC leaves an artificial fluid-wall gap.
+  - name: time integration scheme (StepAlgorithm)
+    unit: '-'
+    category: control
+    source_kind: default
+    model_input_format: XML parameters (1=Verlet, 2=Symplectic)
+  - name: SPH kernel (Kernel)
+    unit: '-'
+    category: control
+    source_kind: default
+    model_input_format: XML parameters (1=Cubic, 2=Wendland)
+  - name: viscosity treatment (ViscoTreatment)
+    unit: '-'
+    category: control
+    source_kind: default
+    model_input_format: XML parameters (1=Artificial, 2=Laminar+SPS, 3=Laminar)
+  - name: density diffusion method (DensityDT)
+    unit: '-'
+    category: control
+    source_kind: default
+    model_input_format: XML parameters (0=None, 1=Molteni, 2/3=Fourtakas)
+  - name: particle shifting mode (Shifting)
+    unit: '-'
+    category: control
+    source_kind: default
+    model_input_format: XML parameters (0-3)
+  - name: CFL number (cflnumber)
+    unit: dimensionless
+    category: control
+    source_kind: default
+    model_input_format: XML parameters
+    notes: Typical 0.1-0.2; >0.5 risks NaN blow-up.
+  - name: density exclusion thresholds (RhopOutMin/Max)
+    unit: kg/m^3
+    category: control
+    source_kind: default
+    model_input_format: XML parameters (default 700/1300)
+    notes: Too-tight range over-excludes particles and terminates early.
+  - name: simulation end / output interval (TimeMax, TimeOut)
+    unit: s
+    category: control
+    source_kind: user_provided
+    model_input_format: XML parameters
+  - name: wave paddle / relaxation-zone & AWAS absorption
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: XML wave generation block
+  - name: rigid/floating-body coupling (RigidAlgorithm; Chrono/DEM)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: XML parameters / floating block
 outputs:
   primary:
-    - name: "position"
-      unit: "m"
-      valid_range: [-1e6, 1e6]
-      description: "Particle positions (x, y, z)"
-    - name: "velocity"
-      unit: "m/s"
-      valid_range: [-100.0, 100.0]
-      description: "Particle velocities (vx, vy, vz)"
-    - name: "density"
-      unit: "kg/m^3"
-      valid_range: [700.0, 1300.0]
-      description: "Particle density (rhop)"
-    - name: "pressure"
-      unit: "Pa"
-      valid_range: [-1e6, 1e8]
-      description: "Particle pressure"
-    - name: "vorticity"
-      unit: "1/s"
-      valid_range: [-1000.0, 1000.0]
-      description: "Vorticity magnitude"
-
-  formats:
-    native:
-      extension: ".bi4"
-      description: "Binary particle data per timestep (Part_XXXX.bi4)"
-    vtk:
-      extension: ".vtk"
-      description: "VTK files via PartVTK post-processing"
-    csv:
-      extension: ".csv"
-      description: "CSV time series via MeasureTool"
-
-  log_files:
-    - name: "Run.out"
-      description: "Main simulation log with timing, particle counts, warnings"
-    - name: "Run.csv"
-      description: "Single-line CSV with execution parameters summary"
-    - name: "RunPARTs.csv"
-      description: "Per-timestep particle statistics"
-
+  - name: pressure
+    unit: Pa
+    description: Per-water-particle pressure from the Tait equation of state; total pressure (hydrostatic
+      + dynamic) unless the rho*g*z component is removed.
+    validation_rank: 2
+    emitted_in: Part_XXXX.bi4 (press field, exported via PartVTK/MeasureTool)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Subtract the hydrostatic component (P_dyn = P_total - rho*g*(SWL-z)) before comparing to pressure
+          transducers.
+        - Use mDBC, not DBC, for quantitative near-wall pressure.
+        - Measurement points must sit inside the fluid (>=2*dp from boundaries, below the free surface).
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Peak impact pressure is sensitive to resolution and over-large DDT smoothing.
+      detrending_options:
+      - none
+  - name: water_surface_elevation
+    unit: m
+    description: Free-surface elevation derived from particle positions / isosurface or a virtual wave
+      gauge (MeasureTool).
+    validation_rank: 1
+    emitted_in: Part_XXXX.bi4 (via IsoSurface / MeasureTool gauge)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Accuracy is dominated by particle resolution (recommended H/dp >= 10 for wave flumes) and artificial-viscosity
+          calibration.
+      detrending_options:
+      - none
+  - name: force_on_structure
+    unit: N
+    description: Integrated wave-water force on a given MK boundary structure (via ComputeForces).
+    validation_rank: 3
+    emitted_in: CSV (via ComputeForces)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Artificial viscosity can overestimate peak horizontal force by ~25% vs laminar+SPS; dissipation
+          scheme matters.
+        - Force accuracy is primarily resolution-controlled.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Peak force magnitude depends on dp and viscosity treatment.
+      detrending_options:
+      - none
+  - name: velocity
+    unit: m/s
+    description: Per-water-particle velocity (and magnitude) interpolated to gauges via MeasureTool.
+    validation_rank: 4
+    emitted_in: Part_XXXX.bi4 (vel field)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Interpolation points must be inside the fluid domain or MeasureTool returns zero/NaN.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "viscosity_trap"
-    severity: "CRITICAL"
-    description: "Switching ViscoTreatment without adjusting Visco value. Artificial uses dimensionless (0.01), laminar uses m^2/s (1e-6). Mismatch gives 10,000x error."
-  - id: "dp_cost_scaling"
-    severity: "HIGH"
-    description: "Halving dp increases particle count 8x in 3D and runtime ~16x. Start coarse for testing."
-  - id: "boundary_gaps"
-    severity: "HIGH"
-    description: "Gaps in boundary particle geometry cause particle leakage. Always visualize initial distribution."
-  - id: "PartsOutMax_deprecated"
-    severity: "LOW"
-    description: "XML option 'PartsOutMax' is deprecated. Use 'MinFluidStop' instead."
+- id: dt_001
+  symptom: Billions of particles generated by GenCase. System runs out of memory.
+  diagnosis: dp specified in mm instead of meters (e.g., dp=10 meaning 10mm, but interpreted as 10m);
+    DualSPHysics expects dp in meters. If dp is given in mm (e.g., 5mm as 0.005 is correct, but if user
+    writes 5 meaning mm), the particle count changes by dp^-3. A 1m^3 domain with dp=0.001m (1mm) produces
+    10^9 par
+  remedy: 'Verify dp is in meters. Typical values: 0.001-0.1m; generate_case_xml; [''Check dp value in
+    XML — should be 0.001-0.1 for typical cases'', ''Estimate particle count: N = Volume / dp^3'', ''If
+    N > 10M, consider increasing dp'']; validate_inputs() checks dp range and warns if outside 0.0005-0.5m'
+  severity: critical
+- id: dt_002
+  symptom: Pressure values are 1000x too high or too low. Density oscillations.
+  diagnosis: rhop0 in g/cm^3 (1.0) instead of kg/m^3 (1000); DualSPHysics expects density in kg/m^3. Water
+    is 1000 kg/m^3, not 1.0. If rhop0=1.0 is used, the equation of state computes wrong pressure (P =
+    B * ((rho/rhop0)^gamma - 1)), and the speed of sound is wrong. Particles will either explode outward
+    or coll
+  remedy: 'Use rhop0=1000 for fresh water, 1025 for seawater; convert_parameters; [''Check rhop0 in XML
+    constantsdef — must be in kg/m^3'', ''Fresh water: 998-1000, Seawater: 1025, Oil: 800-920'']; validate_inputs()
+    warns if rhop0 < 10 (likely g/cm^3)'
+  severity: critical
+- id: dt_003
+  symptom: Fluid is extremely viscous (moves like honey) or has zero viscosity (inviscid chaos).
+  diagnosis: Visco value doesn't match ViscoTreatment type; Artificial viscosity (ViscoTreatment=1) uses
+    a dimensionless coefficient (0.01-0.1). Laminar viscosity (ViscoTreatment=2,3) uses kinematic viscosity
+    in m^2/s (~1e-6 for water). If you switch from artificial to laminar without changing Visco from 0.01
+    to
+  remedy: 'Match Visco value to treatment: 0.01-0.1 for artificial, ~1e-6 for laminar; convert_parameters;
+    [''Check ViscoTreatment and Visco in XML'', ''Artificial (1): Visco = 0.01-0.1 (dimensionless)'',
+    ''Laminar+SPS (2): Visco = 1e-6 m^2/s (water at 20C)'', ''Laminar (3): Visco = 1e-6 m^2/s'']; convert_parameters.p'
+  severity: silent
+- id: dt_004
+  symptom: Waves are invisible (too small) or cause immediate instability (too large).
+  diagnosis: 'Wave height in cm instead of meters; DualSPHysics expects wave height in meters. Significant
+    wave height Hs=1.5m is typical for coastal waves. If input is Hs=150 (cm) but interpreted as 150m,
+    the simulation explodes. If Hs=0.015 (already in meters but treated as cm/100), waves are invisible.
+
+    ; [''con'
+  remedy: 'Ensure all wave heights are in meters; convert_forcing_to_dsph; [''Check wave height values
+    — typical ocean: 0.5-5m, lab: 0.01-0.3m'', ''If values are 50-500, they are likely in cm — divide
+    by 100'']; convert_forcing_to_dsph validates wave height range'
+  severity: high
+- id: dt_005
+  symptom: Inlet velocity is orders of magnitude wrong. Flow is barely moving or supersonic.
+  diagnosis: Velocity in cm/s or knots instead of m/s; DualSPHysics expects velocity in m/s. A current
+    of 1 m/s is typical for rivers. If input is 100 cm/s entered as 100 m/s, the flow is supersonic for
+    the artificial speed of sound, causing massive instability. If 1 knot entered as 1 m/s, it's approximately
+    cor
+  remedy: 'Convert all velocities to m/s before input; convert_forcing_to_dsph; [''cm/s -> m/s: divide
+    by 100'', ''knots -> m/s: multiply by 0.5144'', ''km/h -> m/s: divide by 3.6'', ''ft/s -> m/s: multiply
+    by 0.3048'']; convert_forcing_to_dsph --vel_unit flag handles conversion'
+  severity: high
+- id: dt_006
+  symptom: Simulation produces NaN values. Particles fly to infinity. Immediate crash.
+  diagnosis: 'CFL number too large or coefsound too small; The timestep dt = CFL * h / (c + v_max). If
+    CFL is too large (>0.5) or coefsound is too small (<10), the timestep exceeds stability limits. Particles
+    move further than one kernel support per step, breaking the neighbor search and causing NaN propagation.
+
+    '
+  remedy: Reduce CFL to 0.1-0.2, increase coefsound to 15-20; convert_parameters; ['Set cflnumber to 0.2
+    (default)', 'Set coefsound to 20 (default)', 'If still unstable, try cfl=0.1']; Default values are
+    stable for most cases
+  severity: critical
+- id: dt_007
+  symptom: Pressure field is very noisy. Density fluctuations > 1%. Unphysical oscillations.
+  diagnosis: 'Density Diffusion Term (DDT) not enabled; Weakly compressible SPH is prone to pressure noise
+    without DDT. DensityDT=0 (None) is the default but produces noisy pressure. DDT modes 2 or 3 (Fourtakas)
+    correct density errors and smooth the pressure field without excessive dissipation.
+
+    ; [''execution_para'
+  remedy: Enable DDT mode 2 with DDTvalue=0.1; convert_parameters; ['Set DensityDT=2 in XML parameters',
+    'Set DensityDTvalue=0.1', 'For mDBC boundaries, use mode 3 (full)']; convert_parameters sets DDT=2
+    by default
+  severity: medium
+- id: dt_008
+  symptom: Many particles are excluded. PartsOutMax exceeded. Simulation terminates early.
+  diagnosis: RhopOutMin/Max too tight, or genuine instability; Particles with density outside [RhopOutMin,
+    RhopOutMax] are removed. Default is 700-1300 kg/m^3. If the simulation has density fluctuations (e.g.,
+    near boundaries with DBC), many particles get excluded. If >100% of fluid is excluded, the simulation
+    s
+  remedy: Widen RhopOut range or fix underlying instability; convert_parameters; ['Try RhopOutMin=500,
+    RhopOutMax=1500', 'If still losing particles, check boundary completeness', 'Enable DDT, reduce CFL,
+    switch to mDBC']; Monitor excluded particle count in RUN.out
+  severity: high
+- id: dt_009
+  symptom: Particles leak through walls. Fluid escapes the domain.
+  diagnosis: 'Gaps in boundary particle layer; Boundary particles must form a continuous layer at least
+    2*dp thick. If boxfill is missing a face (e.g., ''bottom|left|right'' without ''front|back''), there''s
+    a gap where fluid can escape. Also occurs if geometry commands create intersecting regions that cancel
+    out.
+
+    ; ['
+  remedy: Add missing boundary faces, visualize initial particles; generate_case_xml; ['Check boxfill
+    includes all needed faces', 'Visualize GenCase VTK output in ParaView', 'Look for gaps in boundary
+    particle layer']; Always use -save:all with GenCase to check VTK
+  severity: high
+- id: dt_010
+  symptom: GenCase produces zero particles or unexpected counts.
+  diagnosis: 'Geometry extends outside pointmin/pointmax domain; GenCase only creates particles within
+    the box defined by pointmin and pointmax in the geometry definition. If the fluid or boundary geometry
+    extends beyond these limits, particles are clipped. If entirely outside, zero particles.
+
+    ; [''case_definition'
+  remedy: Expand pointmin/pointmax to encompass all geometry plus margin; generate_case_xml; ['Check that
+    pointmin is smaller than all geometry points', 'Check that pointmax is larger than all geometry points
+    + sizes', 'Add margin of 5*dp on each side']; generate_case_xml.py auto-calculates domain from geomet
+  severity: high
+- id: dt_011
+  symptom: Unphysical pressure gap between fluid and boundary. DBC artifact.
+  diagnosis: 'Using DBC instead of mDBC for quantitative pressure; Dynamic Boundary Condition (DBC) creates
+    an artificial gap between fluid and boundary particles where pressure is not accurately computed.
+    For quantitative pressure measurements near walls, mDBC (Modified DBC) is required. DBC gives qualitatively '
+  remedy: 'Switch to mDBC boundary condition; convert_parameters; [''Set Boundary=2 in XML or use -mdbc
+    CLI flag'', ''For no-slip: -mdbc_noslip'', ''For free-slip: -mdbc_freeslip'']; Use mDBC for any case
+    requiring pressure accuracy near walls'
+  severity: medium
+- id: dt_012
+  symptom: Solver exits immediately with 'file not found' error.
+  diagnosis: 'Case.bi4 file path incorrect or GenCase was not run; DualSPHysics requires the bi4 file
+    from GenCase as first argument. Common errors: wrong path, forgetting to run GenCase first, or the
+    XML name not matching the GenCase output name.
+
+    ; [''run_dualsphysics'']'
+  remedy: 'Verify GenCase was run and bi4 file exists at specified path; run_dualsphysics; [''Check that
+    GenCase completed successfully'', ''Verify bi4 file exists: ls output/CaseName.bi4'', ''Make sure
+    path matches solver argument'']; run_dualsphysics.py checks file existence before running'
+  severity: critical
+- id: dt_013
+  symptom: Solver crashes with shared library error on startup.
+  diagnosis: 'LD_LIBRARY_PATH not set to bin/linux directory; DualSPHysics uses shared libraries (libChronoEngine.so,
+    libdsphchrono.so). These must be discoverable via LD_LIBRARY_PATH. Without this, the binary fails
+    at startup even before reading any input.
+
+    ; [''run_dualsphysics'']'
+  remedy: Export LD_LIBRARY_PATH to include bin/linux; run_dualsphysics; ['export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/path/to/bin/linux',
+    'Or copy .so files to /usr/local/lib and run ldconfig']; run_dualsphysics.py auto-sets LD_LIBRARY_PATH
+  severity: critical
+- id: dt_014
+  symptom: GPU version fails with CUDA error. Falls back to CPU or crashes.
+  diagnosis: 'CUDA not installed or no compatible GPU; The GPU binary requires CUDA runtime and a compatible
+    NVIDIA GPU. If the system has no GPU or wrong CUDA version, the binary crashes. The CPU binary works
+    on any system without CUDA.
+
+    ; [''run_dualsphysics'']'
+  remedy: 'Use CPU binary (DualSPHysics5.4CPU_linux64) with -cpu flag; run_dualsphysics; [''Check GPU:
+    nvidia-smi'', ''If no GPU, use CPU binary'', ''If GPU exists, check CUDA version matches binary''];
+    run_dualsphysics.py falls back to CPU if GPU fails'
+  severity: medium
+- id: dt_015
+  symptom: MeasureTool produces zero or NaN values for all measurement points.
+  diagnosis: Measurement points are outside the fluid domain; MeasureTool interpolates particle data at
+    specified points. If points are in the boundary region, in air (above free surface), or outside the
+    domain entirely, interpolation returns zero or NaN. Points must be inside the fluid volume for valid
+    results.
+  remedy: Move measurement points inside the fluid domain; parse_dsph_output; ['Visualize particle distribution
+    and point locations', 'Ensure points are at least 2*dp from boundaries', 'Check points are below the
+    free surface']; Use -kcusedummy:0 -kclimit:0.5 for robust interpolation
+  severity: medium
+- id: dt_016
+  symptom: CSV output from MeasureTool has semicolons, not commas. Pandas read fails.
+  diagnosis: 'DualSPHysics default CSV separator is semicolon (;), not comma; DualSPHysics uses semicolon
+    as default CSV separator (configurable via DsphConfig.xml or -csvsep flag). Python pandas.read_csv
+    defaults to comma. This causes either read failure or all data in one column.
+
+    ; [''parse_dsph_output'']'
+  remedy: Use sep=';' in pandas.read_csv, or set -csvsep:1 for comma output; parse_dsph_output; ['Open
+    CSV and check separator character', "Use pandas.read_csv(file, sep=';') for semicolon files", 'Or
+    re-run tool with -csvsep:1 flag']; parse_dsph_output auto-detects separator
+  severity: low
+- id: dt_017
+  symptom: Pressure values are offset from expected. Hydrostatic component included.
+  diagnosis: DualSPHysics pressure includes hydrostatic component; The pressure output from DualSPHysics
+    is total pressure (hydrostatic + dynamic). For comparison with pressure transducers or dynamic pressure
+    analysis, the hydrostatic component (rho*g*z) must be subtracted. This offset depends on the probe
+    depth
+  remedy: 'Subtract hydrostatic pressure: P_dynamic = P_total - rho*g*(SWL-z); parse_dsph_output; [''Get
+    probe depth: h = SWL - z_probe'', ''Hydrostatic: P_h = rhop0 * g * h'', ''Dynamic: P_d = P_measured
+    - P_h'']; Document whether analysis needs total or dynamic pressure'
+  severity: medium
+- id: dt_018
+  symptom: Simulation is extremely slow. Timestep dt is tiny (< 1e-6 s).
+  diagnosis: coefsound set too high, making speed of sound unrealistically large; The timestep is limited
+    by dt = CFL * h / (c + v_max). If coefsound is too large (e.g., 100 instead of 20), the speed of sound
+    c is 5x higher, making dt 5x smaller. The simulation takes 5x longer with no benefit. Default coefsound=
+  remedy: Reduce coefsound to 10-20; convert_parameters; ['Check coefsound in constantsdef — default is
+    20', 'Values above 30 are rarely needed', 'If density fluctuations > 1%, increase coefsound', 'If
+    dt is too small, decrease coefsound']; convert_parameters uses coefsound=20 by default
+  severity: medium

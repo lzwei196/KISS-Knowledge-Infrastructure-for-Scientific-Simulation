@@ -1,20 +1,25 @@
-triplets:
+# ========================================================================
+# RAPID Diagnostic Triplets
+# ========================================================================
+# 21 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+
 - id: dt_001
   stage: s2_lateral_inflow
   failure_domain: unit_conversion
   symptom:
-    description: Simulated discharge is near zero everywhere, orders of magnitude
-      below expected values
-    error_pattern: "Qout max < 0.01 m\xB3/s for a basin that should produce 10\u2013\
-      1000 m\xB3/s"
+    description: Simulated discharge is near zero everywhere, orders of magnitude below expected values
+    error_pattern: Qout max < 0.01 m³/s for a basin that should produce 10–1000 m³/s
     detection_method: value_comparison
   diagnosis:
-    root_cause: "Vlat contains flow rate (m\xB3/s) instead of volume (m\xB3). RAPID\
-      \ divides Vlat by TauR internally, so if Vlat is already a rate, the result\
-      \ is divided by TauR (~10800) twice."
-    explanation: "RAPID expects Vlat as accumulated volume in m\xB3 over the routing\
-      \ period ZS_TauR. The code computes Qlat = Vlat / TauR. If you pass m\xB3/s\
-      \ as Vlat, the effective rate becomes m\xB3/s/s \xD7 TauR = m\xB3/s / 10800."
+    root_cause: Vlat contains flow rate (m³/s) instead of volume (m³). RAPID divides Vlat by TauR internally,
+      so if Vlat is already a rate, the result is divided by TauR (~10800) twice.
+    explanation: RAPID expects Vlat as accumulated volume in m³ over the routing period ZS_TauR. The code
+      computes Qlat = Vlat / TauR. If you pass m³/s as Vlat, the effective rate becomes m³/s/s × TauR
+      = m³/s / 10800.
     affected_components:
     - convert_lsm_to_vlat
     - rapid_read_Vlat_file.F90
@@ -22,8 +27,8 @@ triplets:
     action: Multiply Vlat values by ZS_TauR (e.g., 10800 seconds)
     tool_to_run: convert_lsm_to_vlat
     manual_steps:
-    - "Check units of your LSM output (kg/m\xB2/s, mm/day, m\xB3/s, etc.)"
-    - "Apply correct conversion: Vlat_m3 = runoff_rate \xD7 area_m2 \xD7 TauR_s"
+    - Check units of your LSM output (kg/m²/s, mm/day, m³/s, etc.)
+    - 'Apply correct conversion: Vlat_m3 = runoff_rate × area_m2 × TauR_s'
     - 'Verify: max(Vlat) / TauR should give a plausible flow rate'
     prevention: validate_outputs() checks max equivalent rate
   severity: silent
@@ -34,17 +39,14 @@ triplets:
   stage: s3_parameters
   failure_domain: unit_conversion
   symptom:
-    description: NaN values appear in Qout after the first few time steps, simulation
-      may crash
+    description: NaN values appear in Qout after the first few time steps, simulation may crash
     error_pattern: NaN|Inf|KSP_DIVERGED
     detection_method: runtime_error
   diagnosis:
-    root_cause: Muskingum k parameter is in hours instead of seconds. A k of 2.5 (meaning
-      2.5 hours) should be 9000 seconds. With k=2.5s, the Muskingum coefficients C1,
-      C2, C3 become unstable.
-    explanation: "The Muskingum stability criterion requires k\xD7x \u2264 dt/2 \u2264\
-      \ k\xD7(1-x). With k=2.5s and dt=900s, dt/2=450 >> k\xD7(1-x)=2.25, violating\
-      \ the upper bound."
+    root_cause: Muskingum k parameter is in hours instead of seconds. A k of 2.5 (meaning 2.5 hours) should
+      be 9000 seconds. With k=2.5s, the Muskingum coefficients C1, C2, C3 become unstable.
+    explanation: The Muskingum stability criterion requires k×x ≤ dt/2 ≤ k×(1-x). With k=2.5s and dt=900s,
+      dt/2=450 >> k×(1-x)=2.25, violating the upper bound.
     affected_components:
     - generate_muskingum_params
     - rapid_routing_param.F90
@@ -53,7 +55,7 @@ triplets:
     tool_to_run: generate_muskingum_params
     manual_steps:
     - 'Check k.csv: values should be hundreds to tens of thousands'
-    - "If values are 0.1\u2013100, they are likely in hours \u2014 multiply by 3600"
+    - If values are 0.1–100, they are likely in hours — multiply by 3600
     - 'Re-check stability: k*x <= dt/2 <= k*(1-x)'
     prevention: validate_outputs() warns if min(k) < 60 seconds
   severity: fatal
@@ -68,11 +70,10 @@ triplets:
     error_pattern: Qout contains negative values
     detection_method: value_comparison
   diagnosis:
-    root_cause: "Muskingum x parameter exceeds 0.5, or x is given as percentage (0\u2013\
-      50) instead of fraction (0\u20130.5). With x=10 (instead of 0.1), the C3 coefficient\
-      \ becomes strongly negative."
-    explanation: The Muskingum x must be dimensionless in [0, 0.5]. C3 = (k(1-x) -
-      dt/2) / (k(1-x) + dt/2). If x > 1, the denominator can become negative.
+    root_cause: Muskingum x parameter exceeds 0.5, or x is given as percentage (0–50) instead of fraction
+      (0–0.5). With x=10 (instead of 0.1), the C3 coefficient becomes strongly negative.
+    explanation: The Muskingum x must be dimensionless in [0, 0.5]. C3 = (k(1-x) - dt/2) / (k(1-x) + dt/2).
+      If x > 1, the denominator can become negative.
     affected_components:
     - generate_muskingum_params
     - rapid_routing_param.F90
@@ -80,8 +81,8 @@ triplets:
     action: Divide x values by 100 if they are percentages, or clamp to [0, 0.5]
     manual_steps:
     - 'Check x.csv: all values must be in [0, 0.5]'
-    - "If values are 0\u201350, divide by 100"
-    - "If values are 0.5\u20131.0, they exceed physical bounds"
+    - If values are 0–50, divide by 100
+    - If values are 0.5–1.0, they exceed physical bounds
     prevention: validate_outputs() checks x range
   severity: degraded
   cross_references:
@@ -90,26 +91,23 @@ triplets:
   stage: s2_lateral_inflow
   failure_domain: unit_conversion
   symptom:
-    description: "Simulated discharge is 86400\xD7 or 1e6\xD7 too large, river appears\
-      \ to flood catastrophically"
-    error_pattern: "Qout max > 1e6 m\xB3/s for a normal basin"
+    description: Simulated discharge is 86400× or 1e6× too large, river appears to flood catastrophically
+    error_pattern: Qout max > 1e6 m³/s for a normal basin
     detection_method: value_comparison
   diagnosis:
-    root_cause: "Either (a) mm/day runoff was not divided by 86400 to get mm/s before\
-      \ volume conversion, or (b) catchment area was provided in km\xB2 instead of\
-      \ m\xB2 (factor of 1e6)."
-    explanation: "Both errors inflate Vlat enormously. With area in km\xB2 instead\
-      \ of m\xB2, every reach gets 1,000,000\xD7 too much water."
+    root_cause: Either (a) mm/day runoff was not divided by 86400 to get mm/s before volume conversion,
+      or (b) catchment area was provided in km² instead of m² (factor of 1e6).
+    explanation: Both errors inflate Vlat enormously. With area in km² instead of m², every reach gets
+      1,000,000× too much water.
     affected_components:
     - convert_lsm_to_vlat
   remedy:
-    action: "Verify area units are m\xB2 and runoff time conversion is correct"
+    action: Verify area units are m² and runoff time conversion is correct
     manual_steps:
-    - "Check catchment area file: values should be 1e4\u20131e10 m\xB2 (not 0.01\u2013\
-      10000 km\xB2)"
-    - "If area values are < 1000, they are likely in km\xB2 \u2014 multiply by 1e6"
-    - "Check runoff: mm/day must be \xF7 86400 before \xD7 area \xD7 TauR"
-    prevention: "validate_outputs() warns if max Vlat > 1e9 m\xB3"
+    - 'Check catchment area file: values should be 1e4–1e10 m² (not 0.01–10000 km²)'
+    - If area values are < 1000, they are likely in km² — multiply by 1e6
+    - 'Check runoff: mm/day must be ÷ 86400 before × area × TauR'
+    prevention: validate_outputs() warns if max Vlat > 1e9 m³
   severity: silent
   cross_references:
   - dt_001
@@ -121,19 +119,17 @@ triplets:
     error_pattern: Segmentation fault|SIGBUS|signal 11
     detection_method: runtime_error
   diagnosis:
-    root_cause: riv_bas_id.csv contains reach IDs that are not present in rapid_connect.csv,
-      or IS_max_up in the namelist is smaller than the actual maximum upstream count.
-    explanation: RAPID builds a hash table mapping reach IDs to indices. Missing IDs
-      cause out-of-bounds access. Undersized IS_max_up causes array overrun when reading
-      upstream IDs.
+    root_cause: riv_bas_id.csv contains reach IDs that are not present in rapid_connect.csv, or IS_max_up
+      in the namelist is smaller than the actual maximum upstream count.
+    explanation: RAPID builds a hash table mapping reach IDs to indices. Missing IDs cause out-of-bounds
+      access. Undersized IS_max_up causes array overrun when reading upstream IDs.
     affected_components:
     - rapid_arrays.F90
     - rapid_hsh_mat.F90
   remedy:
     action: Ensure all IDs in riv_bas_id exist in rapid_connect, and IS_max_up matches
     manual_steps:
-    - 'Check: comm -23 <(sort riv_bas_id.csv) <(awk ''{print $1}'' rapid_connect.csv
-      | sort)'
+    - 'Check: comm -23 <(sort riv_bas_id.csv) <(awk ''{print $1}'' rapid_connect.csv | sort)'
     - Should return 0 lines (no missing IDs)
     - 'Check IS_max_up: awk ''{print $3}'' rapid_connect.csv | sort -n | tail -1'
     prevention: generate_namelist.py auto-computes IS_max_up from rapid_connect
@@ -144,16 +140,15 @@ triplets:
   stage: s1_connectivity
   failure_domain: silent_error
   symptom:
-    description: Some reaches have zero discharge despite non-zero Vlat, or output
-      has fewer reaches than expected
+    description: Some reaches have zero discharge despite non-zero Vlat, or output has fewer reaches than
+      expected
     error_pattern: Unexpected zero-discharge reaches in output
     detection_method: value_comparison
   diagnosis:
-    root_cause: Reach ID ordering in riv_bas_id.csv does not match the rivid dimension
-      in Vlat.nc. RAPID reads Vlat by position, not by ID, so mismatched ordering
-      routes inflow to wrong reaches.
-    explanation: If Vlat row 0 corresponds to reach 1001 but riv_bas_id row 0 is reach
-      2005, reach 2005 gets reach 1001's inflow and vice versa.
+    root_cause: Reach ID ordering in riv_bas_id.csv does not match the rivid dimension in Vlat.nc. RAPID
+      reads Vlat by position, not by ID, so mismatched ordering routes inflow to wrong reaches.
+    explanation: If Vlat row 0 corresponds to reach 1001 but riv_bas_id row 0 is reach 2005, reach 2005
+      gets reach 1001's inflow and vice versa.
     affected_components:
     - rapid_read_Vlat_file.F90
     - convert_lsm_to_vlat
@@ -172,21 +167,20 @@ triplets:
   stage: s4_namelist
   failure_domain: parameter_format
   symptom:
-    description: RAPID crashes immediately with 'namelist read error' or 'IOSTAT error'
-      at startup
+    description: RAPID crashes immediately with 'namelist read error' or 'IOSTAT error' at startup
     error_pattern: namelist|IOSTAT|read error|fort.88
     detection_method: runtime_error
   diagnosis:
-    root_cause: 'Fortran namelist syntax error. Common causes: double quotes instead
-      of single quotes for strings, missing & section start, missing / terminator,
-      extra trailing comma, or wrong variable name.'
-    explanation: 'Fortran NAMELIST requires: &section_name ... / format. Strings must
-      use single quotes. Variable names must match exactly as declared in rapid_var.F90.'
+    root_cause: 'Fortran namelist syntax error. Common causes: double quotes instead of single quotes
+      for strings, missing & section start, missing / terminator, extra trailing comma, or wrong variable
+      name.'
+    explanation: 'Fortran NAMELIST requires: &section_name ... / format. Strings must use single quotes.
+      Variable names must match exactly as declared in rapid_var.F90.'
     affected_components:
     - rapid_read_namelist.F90
     - generate_namelist
   remedy:
-    action: "Fix namelist syntax \u2014 use single quotes, check & and / markers"
+    action: Fix namelist syntax — use single quotes, check & and / markers
     manual_steps:
     - Verify &NL_namelist is the first non-comment line
     - Verify / appears on its own line at the end
@@ -200,16 +194,15 @@ triplets:
   stage: s4_namelist
   failure_domain: dependency_mismatch
   symptom:
-    description: RAPID runs but produces wrong number of output time steps, or reads
-      past end of Vlat file
+    description: RAPID runs but produces wrong number of output time steps, or reads past end of Vlat
+      file
     error_pattern: 'NetCDF: Index exceeds dimension bound|wrong time step count'
     detection_method: runtime_error
   diagnosis:
-    root_cause: 'Temporal parameters are inconsistent: ZS_TauM/ZS_TauR does not equal
-      the number of time steps in Vlat.nc, or ZS_TauR does not match the Vlat accumulation
-      period.'
-    explanation: RAPID computes IS_RpM = ZS_TauM/ZS_TauR to determine how many Vlat
-      records to read. If the Vlat file has fewer records, RAPID reads past the end.
+    root_cause: 'Temporal parameters are inconsistent: ZS_TauM/ZS_TauR does not equal the number of time
+      steps in Vlat.nc, or ZS_TauR does not match the Vlat accumulation period.'
+    explanation: RAPID computes IS_RpM = ZS_TauM/ZS_TauR to determine how many Vlat records to read. If
+      the Vlat file has fewer records, RAPID reads past the end.
     affected_components:
     - rapid_main.F90
     - rapid_init.F90
@@ -218,7 +211,7 @@ triplets:
     manual_steps:
     - 'Count Vlat time steps: ncdump -h Vlat.nc | grep ''time ='''
     - 'Verify: ZS_TauM / ZS_TauR == number of Vlat time steps'
-    - "Adjust ZS_TauM if needed: ZS_TauM = n_vlat_steps \xD7 ZS_TauR"
+    - 'Adjust ZS_TauM if needed: ZS_TauM = n_vlat_steps × ZS_TauR'
     prevention: generate_namelist.py checks Vlat dimensions
   severity: degraded
   cross_references:
@@ -231,18 +224,17 @@ triplets:
     error_pattern: KSP_DIVERGED|diverged
     detection_method: runtime_error
   diagnosis:
-    root_cause: "The PETSc Krylov solver cannot converge because the Muskingum system\
-      \ matrix A = I - C1\xD7Net is ill-conditioned. This happens when k is too small\
-      \ relative to dtR."
-    explanation: When k << dtR, C1 approaches 1.0 and A approaches a singular matrix.
-      The iterative solver fails to converge.
+    root_cause: The PETSc Krylov solver cannot converge because the Muskingum system matrix A = I - C1×Net
+      is ill-conditioned. This happens when k is too small relative to dtR.
+    explanation: When k << dtR, C1 approaches 1.0 and A approaches a singular matrix. The iterative solver
+      fails to converge.
     affected_components:
     - rapid_routing.F90
     - rapid_routing_param.F90
   remedy:
     action: Increase k values or decrease ZS_dtR
     manual_steps:
-    - "Check minimum k: should be >= 2 \xD7 ZS_dtR for stability"
+    - 'Check minimum k: should be >= 2 × ZS_dtR for stability'
     - 'Option A: Increase small k values (clamp to minimum)'
     - 'Option B: Decrease ZS_dtR (e.g., from 900 to 300 seconds)'
     - 'Option C: Use IS_opt_routing=2 (traditional loop, more stable)'
@@ -259,10 +251,10 @@ triplets:
     error_pattern: MPI_Init|PetscInitialize|No such file
     detection_method: runtime_error
   diagnosis:
-    root_cause: PETSc environment not properly configured. PETSC_DIR or PETSC_ARCH
-      not set, or MPI libraries not in PATH.
-    explanation: RAPID is linked against PETSc which requires MPI. Even single-process
-      runs need mpiexec and correct library paths.
+    root_cause: PETSc environment not properly configured. PETSC_DIR or PETSC_ARCH not set, or MPI libraries
+      not in PATH.
+    explanation: RAPID is linked against PETSc which requires MPI. Even single-process runs need mpiexec
+      and correct library paths.
     affected_components:
     - rapid_create_obj.F90
   remedy:
@@ -279,15 +271,14 @@ triplets:
   stage: s5_execution
   failure_domain: runtime
   symptom:
-    description: RAPID completes but output NetCDF is empty or has zero-length time
-      dimension
+    description: RAPID completes but output NetCDF is empty or has zero-length time dimension
     error_pattern: time = 0|empty file
     detection_method: value_comparison
   diagnosis:
-    root_cause: IS_opt_run is set to 2 (optimization) but no observation files are
-      provided, or ZS_TauO = 0 in optimization mode.
-    explanation: In optimization mode, RAPID minimizes a cost function against observations.
-      Without obs data, it has nothing to optimize and produces no output.
+    root_cause: IS_opt_run is set to 2 (optimization) but no observation files are provided, or ZS_TauO
+      = 0 in optimization mode.
+    explanation: In optimization mode, RAPID minimizes a cost function against observations. Without obs
+      data, it has nothing to optimize and produces no output.
     affected_components:
     - rapid_main.F90
   remedy:
@@ -307,18 +298,16 @@ triplets:
     error_pattern: Q coefficient of variation < 0.1
     detection_method: value_comparison
   diagnosis:
-    root_cause: Vlat values are all zero or near-zero because the spatial mapping
-      between LSM grid cells and river catchments failed. Alternatively, x=0 everywhere
-      causes maximum attenuation.
-    explanation: If Vlat is zero for all reaches, the only discharge comes from initial
-      conditions (which decay to zero) or boundary forcing. The model runs successfully
-      but produces meaningless output.
+    root_cause: Vlat values are all zero or near-zero because the spatial mapping between LSM grid cells
+      and river catchments failed. Alternatively, x=0 everywhere causes maximum attenuation.
+    explanation: If Vlat is zero for all reaches, the only discharge comes from initial conditions (which
+      decay to zero) or boundary forcing. The model runs successfully but produces meaningless output.
     affected_components:
     - convert_lsm_to_vlat
   remedy:
     action: Check Vlat.nc for non-zero values and verify spatial weight table
     manual_steps:
-    - "ncdump -v Vlat Vlat.nc | tail -20 \u2014 check for non-zero values"
+    - ncdump -v Vlat Vlat.nc | tail -20 — check for non-zero values
     - Verify weight table maps LSM grid cells to catchments
     - Check that catchment polygons overlap with LSM grid
     prevention: validate_outputs() warns if >50% of reaches have zero Vlat
@@ -334,10 +323,10 @@ triplets:
     error_pattern: NSE < -5
     detection_method: value_comparison
   diagnosis:
-    root_cause: Simulated and observed time series are offset in time. Even a 1-day
-      shift can destroy NSE for flashy catchments.
-    explanation: NSE is sensitive to timing errors. A perfect hydrograph shifted by
-      1 day can have NSE < 0 if the observed variance is dominated by peaks.
+    root_cause: Simulated and observed time series are offset in time. Even a 1-day shift can destroy
+      NSE for flashy catchments.
+    explanation: NSE is sensitive to timing errors. A perfect hydrograph shifted by 1 day can have NSE
+      < 0 if the observed variance is dominated by peaks.
     affected_components:
     - parse_rapid_output
   remedy:
@@ -345,7 +334,7 @@ triplets:
     manual_steps:
     - Print first few timestamps from both files
     - 'Check timezone: Vlat might be UTC while obs is local time'
-    - "Try shifting simulated by \xB11 day and recomputing NSE"
+    - Try shifting simulated by ±1 day and recomputing NSE
     prevention: Always compare timestamps directly before computing metrics
   severity: silent
   cross_references: []
@@ -353,15 +342,14 @@ triplets:
   stage: s5_execution
   failure_domain: silent_error
   symptom:
-    description: 'Spinup artifact: discharge is zero for first several time steps
-      then jumps'
+    description: 'Spinup artifact: discharge is zero for first several time steps then jumps'
     error_pattern: Leading zeros in Qout time series
     detection_method: visual_inspection
   diagnosis:
-    root_cause: BS_opt_Qinit = .false., so all reaches start with zero flow. It takes
-      several routing periods for inflow to propagate through the network to the outlet.
-    explanation: Without initial conditions, RAPID starts cold. For large basins,
-      spinup can take days to weeks of simulation time.
+    root_cause: BS_opt_Qinit = .false., so all reaches start with zero flow. It takes several routing
+      periods for inflow to propagate through the network to the outlet.
+    explanation: Without initial conditions, RAPID starts cold. For large basins, spinup can take days
+      to weeks of simulation time.
     affected_components:
     - rapid_init.F90
   remedy:
@@ -381,18 +369,17 @@ triplets:
     error_pattern: Cross-correlation peak at lag != 0
     detection_method: value_comparison
   diagnosis:
-    root_cause: Muskingum k values are systematically too small (peaks arrive early)
-      or too large (peaks arrive late). This usually means the celerity estimate is
-      wrong.
-    explanation: "k = length/celerity controls wave travel time. If celerity is overestimated\
-      \ by 2\xD7, peaks arrive 2\xD7 too early."
+    root_cause: Muskingum k values are systematically too small (peaks arrive early) or too large (peaks
+      arrive late). This usually means the celerity estimate is wrong.
+    explanation: k = length/celerity controls wave travel time. If celerity is overestimated by 2×, peaks
+      arrive 2× too early.
     affected_components:
     - generate_muskingum_params
   remedy:
     action: Adjust k using kfac multiplier or recalibrate celerity
     manual_steps:
     - Compute cross-correlation lag between sim and obs at gage
-    - "If lag > 0 (sim early): multiply k by (1 + lag_days \xD7 86400 / mean_k)"
+    - 'If lag > 0 (sim early): multiply k by (1 + lag_days × 86400 / mean_k)'
     - 'If lag < 0 (sim late): divide k by similar factor'
     - Use TAO optimization (IS_opt_run=2) for systematic calibration
     prevention: Compare travel time against published values for the basin
@@ -407,12 +394,10 @@ triplets:
     error_pattern: High-frequency oscillation in Qout
     detection_method: visual_inspection
   diagnosis:
-    root_cause: Vlat temporal resolution does not match ZS_TauR. For example, daily
-      Vlat with TauR=3h causes each daily volume to be assigned to only the first
-      3h window, creating a pulsed input.
-    explanation: RAPID reads one Vlat record per TauR period. If Vlat is daily but
-      TauR is 3-hourly, the first 3h gets all the daily runoff and the remaining 7
-      windows get zero.
+    root_cause: Vlat temporal resolution does not match ZS_TauR. For example, daily Vlat with TauR=3h
+      causes each daily volume to be assigned to only the first 3h window, creating a pulsed input.
+    explanation: RAPID reads one Vlat record per TauR period. If Vlat is daily but TauR is 3-hourly, the
+      first 3h gets all the daily runoff and the remaining 7 windows get zero.
     affected_components:
     - rapid_main.F90
     - convert_lsm_to_vlat
@@ -430,16 +415,14 @@ triplets:
   stage: s1_connectivity
   failure_domain: silent_error
   symptom:
-    description: Basin-total discharge is correct but individual reach values are
-      wrong
+    description: Basin-total discharge is correct but individual reach values are wrong
     error_pattern: Correct total but wrong spatial distribution
     detection_method: value_comparison
   diagnosis:
-    root_cause: 'Circular references in rapid_connect.csv: a reach lists itself as
-      upstream, or two reaches point to each other as downstream.'
-    explanation: Circular connectivity creates feedback loops in the network matrix.
-      Water recirculates instead of flowing downstream, inflating some reaches and
-      depleting others.
+    root_cause: 'Circular references in rapid_connect.csv: a reach lists itself as upstream, or two reaches
+      point to each other as downstream.'
+    explanation: Circular connectivity creates feedback loops in the network matrix. Water recirculates
+      instead of flowing downstream, inflating some reaches and depleting others.
     affected_components:
     - rapid_net_mat.F90
   remedy:
@@ -460,10 +443,10 @@ triplets:
     error_pattern: Out of memory|killed|slow runtime
     detection_method: runtime_monitoring
   diagnosis:
-    root_cause: "IS_max_up is set much larger than actual maximum (e.g., 100 instead\
-      \ of 4). RAPID allocates arrays of size IS_riv_bas \xD7 IS_max_up."
-    explanation: The upstream index matrix IM_up has dimensions (IS_riv_bas, IS_max_up).
-      Oversizing IS_max_up wastes memory quadratically.
+    root_cause: IS_max_up is set much larger than actual maximum (e.g., 100 instead of 4). RAPID allocates
+      arrays of size IS_riv_bas × IS_max_up.
+    explanation: The upstream index matrix IM_up has dimensions (IS_riv_bas, IS_max_up). Oversizing IS_max_up
+      wastes memory quadratically.
     affected_components:
     - rapid_arrays.F90
   remedy:
@@ -479,49 +462,44 @@ triplets:
   stage: s5_execution
   failure_domain: silent_error
   symptom:
-    description: Discharge at headwater reaches exactly equals Vlat/TauR with no routing
-      effect
+    description: Discharge at headwater reaches exactly equals Vlat/TauR with no routing effect
     error_pattern: Headwater Q = Vlat/TauR for all time steps
     detection_method: value_comparison
   diagnosis:
-    root_cause: "This is actually correct behavior \u2014 headwater reaches with no\
-      \ upstream inflow only have lateral inflow. The Muskingum routing attenuates\
-      \ the signal but for single reaches with no upstream, the effect is minimal."
-    explanation: "For headwater reaches: Q_out \u2248 C1\xD7Q_lat + C2\xD7Q_lat_prev\
-      \ + C3\xD7Q_out_prev. With typical k and x, this closely follows Q_lat."
+    root_cause: This is actually correct behavior — headwater reaches with no upstream inflow only have
+      lateral inflow. The Muskingum routing attenuates the signal but for single reaches with no upstream,
+      the effect is minimal.
+    explanation: 'For headwater reaches: Q_out ≈ C1×Q_lat + C2×Q_lat_prev + C3×Q_out_prev. With typical
+      k and x, this closely follows Q_lat.'
     affected_components:
     - rapid_routing.F90
   remedy:
-    action: This is expected behavior, not a bug. Check downstream reaches for routing
-      effect.
+    action: This is expected behavior, not a bug. Check downstream reaches for routing effect.
     manual_steps:
     - Compare headwater vs downstream reach hydrographs
     - Downstream reaches should show attenuation and time lag
     - If downstream reaches also show no routing effect, check k values
-    prevention: "N/A \u2014 normal behavior"
+    prevention: N/A — normal behavior
   severity: silent
   cross_references: []
 - id: dt_020
   stage: s6_output_analysis
   failure_domain: unit_conversion
   symptom:
-    description: "PBIAS is +100% or -100% \u2014 simulated is exactly double or zero\
-      \ compared to observed"
-    error_pattern: "PBIAS = \xB1100%"
+    description: PBIAS is +100% or -100% — simulated is exactly double or zero compared to observed
+    error_pattern: PBIAS = ±100%
     detection_method: value_comparison
   diagnosis:
-    root_cause: "Observed discharge is in different units than simulated (e.g., cfs\
-      \ vs m\xB3/s, where 1 m\xB3/s \u2248 35.31 cfs), or observed data uses a different\
-      \ convention for missing values."
-    explanation: "USGS gages report in cfs (ft\xB3/s). RAPID outputs in m\xB3/s. A\
-      \ factor of 35.31 would cause PBIAS of ~3400%. A factor of 2 suggests surface\
-      \ runoff only vs total runoff."
+    root_cause: Observed discharge is in different units than simulated (e.g., cfs vs m³/s, where 1 m³/s
+      ≈ 35.31 cfs), or observed data uses a different convention for missing values.
+    explanation: USGS gages report in cfs (ft³/s). RAPID outputs in m³/s. A factor of 35.31 would cause
+      PBIAS of ~3400%. A factor of 2 suggests surface runoff only vs total runoff.
     affected_components:
     - parse_rapid_output
   remedy:
-    action: "Convert observations to m\xB3/s before comparison"
+    action: Convert observations to m³/s before comparison
     manual_steps:
-    - "Check obs units: cfs \u2192 m\xB3/s multiply by 0.02832"
+    - 'Check obs units: cfs → m³/s multiply by 0.02832'
     - Check if obs includes baseflow and RAPID only has surface runoff
     - Verify Qobs_file variable units attribute
     prevention: Always verify obs and sim are in same units before metrics
@@ -530,17 +508,16 @@ triplets:
   - dt_013
 - id: dt_021_s1_derived_table_delimiter
   symptom:
-    description: After Stage-1 build_connectivity runs, generate_muskingum_params
-      raises ValueError int('105,12345.0') and/or all catchment areas read as 0 so
-      Qout collapses to ~0; k.csv/x.csv never produced.
+    description: After Stage-1 build_connectivity runs, generate_muskingum_params raises ValueError int('105,12345.0')
+      and/or all catchment areas read as 0 so Qout collapses to ~0; k.csv/x.csv never produced.
   diagnosis:
-    root_cause: build_connectivity wrote reach_properties.csv / rapid_catchment_file.csv
-      comma-delimited with a column header, but both consumers tokenize with str.split()
-      on whitespace and convert_lsm_to_vlat has no header skip and requires >=2 tokens;
-      comma lines become a single token -> int() crash or silent drop-to-zero.
+    root_cause: build_connectivity wrote reach_properties.csv / rapid_catchment_file.csv comma-delimited
+      with a column header, but both consumers tokenize with str.split() on whitespace and convert_lsm_to_vlat
+      has no header skip and requires >=2 tokens; comma lines become a single token -> int() crash or
+      silent drop-to-zero.
   remedy:
-    action: Write the two Stage-1 derived tables space-delimited and headerless to
-      match rapid_connect.csv/riv_bas_id.csv and docs/format_spec.yaml ('CSV space-delimited').
+    action: Write the two Stage-1 derived tables space-delimited and headerless to match rapid_connect.csv/riv_bas_id.csv
+      and docs/format_spec.yaml ('CSV space-delimited').
   format_spec_violated: 'rapid.static_inputs.delimiter: space-delimited, headerless'
   canonical_intent: ki_local_if_pass
   added_by_run: RAPID_retry3

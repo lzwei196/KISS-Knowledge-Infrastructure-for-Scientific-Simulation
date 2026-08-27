@@ -1,14 +1,3 @@
----
-name: lpj-guess
-description: >-
-  LPJ-GUESS core flux physics (Smith et al. 2001/2014; Sitch et al. 2003; Monteith 1972
-  LUE) — analytic reimplementation of GPP/Ra/Rh/NEE. Covers Gross Primary Production via
-  radiation-driven Light Use Efficiency; Autotrophic respiration (maintenance via Q10,
-  growth as fixed NPP fraction); Heterotrophic respiration (Q10 decomposition of
-  soil/litter organic carbon). Use when the task involves running, configuring,
-  calibrating or interpreting LPJ_GUESS.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_lpjguess.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_lpjguess.py --help` |
+| `tools/convert_parameters_to_lpjguess.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters_to_lpjguess.py --help` |
+| `tools/parse_output_lpjguess.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output_lpjguess.py --help` |
+| `tools/run_lpjguess.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_lpjguess.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # LPJ-GUESS (Lund-Potsdam-Jena General Ecosystem Simulator) -- Knowledge Infrastructure
 
@@ -175,6 +198,39 @@ NEE  = Reco - GPP    # Positive = net source, Negative = net sink
 - **SW radiation**: Must be total incoming shortwave, not net radiation.
 - **Missing values**: FLUXNET uses -9999 as fill value. Must be converted to NaN before processing.
 
+---
+
+## Unit Conversion Table
+
+This table restates the unit conversions documented by this KI body and its source
+data notes. Exact I/O shapes live in `docs/format_spec.yaml`; if a generated spec
+and this prose ever disagree, regenerate this body from the KI sources.
+
+| Variable | Source unit (verified) | Model unit | Factor / operation | Type |
+|----------|------------------------|------------|--------------------|------|
+| Temperature | K (CMFD/MSWX) | deg C | subtract 273.15 | additive |
+| Precipitation | kg/m2/s (CMFD) | mm/day | multiply by 86400 | multiplicative |
+| Precipitation | mm/3hr (MSWX) | mm/day | sum 8 steps per day | temporal aggregation |
+| VPD | kPa (some datasets) | hPa | multiply by 10 | multiplicative |
+| VPD | Pa (some datasets) | hPa | divide by 100 | multiplicative |
+| VPD | hPa (FLUXNET) | hPa | x1 | identity |
+| SW radiation | W/m2 incoming shortwave | W/m2 incoming shortwave | x1 | identity |
+| Missing values | -9999 (FLUXNET fill value) | NaN | replace with NaN before processing | quality-control transform |
+
+### Output Unit Table
+
+This table restates `dag.yaml` for the observable outputs. The dag is authoritative
+for output identity; if this section and `dag.yaml` diverge, `dag.yaml` wins.
+
+| Output variable (dag `var`) | Unit | Description / role |
+|-----------------------------|------|--------------------|
+| GPP | umol/m2/s | Gross Primary Production (terrestrial vegetation carbon assimilation flux). Rank-1 output. |
+| Ra | umol/m2/s | Autotrophic respiration. |
+| Rh | umol/m2/s | Heterotrophic respiration. |
+| Reco | umol/m2/s | Ecosystem respiration (Ra + Rh). |
+| NEE | umol/m2/s | Net Ecosystem Exchange (Reco - GPP). |
+| NPP | umol/m2/s | Net Primary Production (GPP - Ra). |
+
 ### Site/PFT Parameters
 
 | Parameter    | Units         | Description                              |
@@ -234,6 +290,14 @@ parse_output_lpjguess.py  (extracts GPP, NEE, RECO timeseries to CSV)
 | `run_lpjguess.py` | Run the analytic model | Forcing CSV + parameter JSON | Raw model output CSV |
 | `parse_output_lpjguess.py` | Parse and validate output | Raw output CSV | Clean timeseries CSV + summary stats |
 
+### Stage skill documents
+
+- [Stage 1: Preflight](docs/s1_preflight.md)
+- [Stage 2: Convert Forcing](docs/s2_convert_forcing.md)
+- [Stage 3: Convert Parameters](docs/s3_convert_parameters.md)
+- [Stage 4: Run LPJ-GUESS Analytic Model](docs/s4_run_lpjguess.md)
+- [Stage 5: Parse Output](docs/s5_parse_output.md)
+
 ---
 
 ## Validation
@@ -247,6 +311,53 @@ Validation uses FLUXNET2015 eddy-covariance tower observations. The pipeline:
 
 **Preferred validation sites** (in priority order):
 US-Ha1, DE-Tha, US-MMS, FI-Hyy, FR-Pue, IT-Col, US-UMB, BE-Vie, DE-Hai, US-WCr
+
+---
+
+## Validated Results
+
+### Validation Campaign Status
+
+The KI body records the FLUXNET2015 validation workflow, preferred tower sites,
+calibration/validation split, optimization approach, and reported metric names.
+No completed body-level validation campaign table with achieved calibration,
+validation, or full-period metric values is recorded here yet; campaign results
+are pending.
+
+### Headline Output
+
+The dag's rank-1 output is:
+
+> `GPP` -- Gross Primary Production (terrestrial vegetation carbon assimilation flux). (`umol/m2/s`)
+
+Other dag outputs are `Ra`, `Rh`, `Reco`, `NEE`, and `NPP`.
+
+### Performance Metrics -- Field Convention Bars
+
+These bars restate `docs/validation_convention.yaml`. The convention is
+authoritative for metric, direction, pass-bands, and citation keys; null bands are
+written as "no cited threshold" rather than guessed.
+
+| dag variable | Metric | Direction | Satisfactory band | Good band | Very good band |
+|--------------|--------|-----------|-------------------|-----------|----------------|
+| GPP | NSE | maximize | >= 0.0 (walker2014) | no cited threshold (walker2014) | no cited threshold (walker2014) |
+| Ra | NSE | maximize | >= 0.0 (walker2014) | no cited threshold (walker2014) | no cited threshold (walker2014) |
+| Rh | NSE | maximize | >= 0.0 (walker2014) | no cited threshold (walker2014) | no cited threshold (walker2014) |
+
+| Metric | Calibration | Validation | Full Period | Bar (convention, cited) |
+|--------|-------------|------------|-------------|-------------------------|
+| NSE for GPP | pending | pending | pending | satisfactory >= 0.0 (walker2014); good: no cited threshold (walker2014); very good: no cited threshold (walker2014) |
+| NSE for Ra | pending | pending | pending | satisfactory >= 0.0 (walker2014); good: no cited threshold (walker2014); very good: no cited threshold (walker2014) |
+| NSE for Rh | pending | pending | pending | satisfactory >= 0.0 (walker2014); good: no cited threshold (walker2014); very good: no cited threshold (walker2014) |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | FLUXNET2015 / CMFD / MSWX pipeline | Pending | The body documents conversion and validation workflow, but no completed campaign table is recorded. |
+| Site/PFT parameters | JSON or CLI parameters | Pending | Converted by `convert_parameters_to_lpjguess.py`; achieved validation values are pending. |
+| Model execution | Analytic LPJ-GUESS reimplementation | Pending | Run through `run_lpjguess.py`; body-level campaign metrics are pending. |
+| Output parsing | `parse_output_lpjguess.py` | Pending | Parses GPP, NEE, and RECO timeseries; body-level campaign metrics are pending. |
 
 ---
 

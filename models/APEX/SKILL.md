@@ -1,13 +1,3 @@
----
-name: apex
-description: >-
-  APEX (Agricultural Policy/Environmental eXtender); Theoretical Documentation v0604 (BREC
-  #2008-17, 2008) science lineage, run as the v0806 user-guide…. Covers Whole-farm /
-  small-watershed agronomy, hydrology, water quality at daily step; Hydrology: rainfall
-  interception, surface runoff (SCS Curve Number or Green-Ampt), peak rate…. Use when the
-  task involves running, configuring, calibrating or interpreting APEX.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -46,9 +36,50 @@ description: >-
 > Col 5: MACHINE_ID, **Col 6: PLANT_ID** (from CROPCOM.DAT), Col 7: OPV,
 > Col 8: OPV1, Col 9: OPV2. To change crop: modify **column 6**, NOT column 4.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (10 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (9 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (24 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (16 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/quickstart.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/quickstart.py --help` |
+| `tools/s1_setup_workspace.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_setup_workspace.py --help` |
+| `tools/s2_convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_convert_forcing.py --help` |
+| `tools/s3_build_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_build_soil.py --help` |
+| `tools/s4_update_site.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_update_site.py --help` |
+| `tools/s5_update_control.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_update_control.py --help` |
+| `tools/s6_run_apex.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_run_apex.py --help` |
+| `tools/s7_parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_parse_output.py --help` |
+| `tools/s8_update_operations.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_update_operations.py --help` |
+| `tools/s9_generate_crop_opc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_generate_crop_opc.py --help` |
+
+*10 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 ---
 
-# APEX v0806 (Agricultural Policy / Environmental eXtender) — Knowledge Infrastructure
+# APEX 1501 (Agricultural Policy / Environmental eXtender) — Knowledge Infrastructure
 
 **Model**: APEX v0806 (PE32 Windows binary via Wine)
 **Distributor**: Texas A&M AgriLife / Blackland Research and Extension Center
@@ -104,48 +135,52 @@ encoded by `WSA / CHL / RCHL`). EPIC is single-field; APEX is watershed.
 
 ## Installation
 
-### Protected runtime assets
+### Binary (already installed)
 
-This KI runs `reference/APEX0806.exe` through Wine and starts from the
-`examples/ex1_RiselTX/` reference template. These files may be installed in
-GeoForge's shared APEX workspace because they cannot be redistributed in the
-public app bundle. GeoForge automatically carries already installed assets
-into each session KI working copy. Do not ask the user to copy or download them
-again when the shared APEX installation has already been verified.
+```
+APEX 1501 binary:  KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/APEX/source/repo/Apex 1501 - Linux/apex1501
+Version:           APEX1501 v20231214
+Platform:          Linux x86-64, statically linked ELF (no shared lib deps)
+File size:         ~7.3 MB
+Source:            https://epicapex.tamu.edu/media/w0ecjadt/apex-1501-linux.zip
+Manual:            https://epicapex.tamu.edu/media/pkff4m34/the-apex1501-user-manual-november-2023.pdf
+Theory:            https://epicapex.tamu.edu/media/2mwdlhte/the-apex1501-theoretical-documentation-january-2023.pdf
+```
 
-APEX0806 **always** opens inputs from the **current working directory** and
-writes outputs there. `s1_setup_workspace.py` creates a project-local run
-workspace by copying the Riesel template and executable; `s6_run_apex.py` then
-invokes that copy with Wine.
+The binary is statically linked — no installation, just copy it to your run
+directory (or invoke from anywhere). The binary **always** opens its input files
+from the **current working directory** and **always** writes outputs to the current
+working directory. There is no command-line argument parsing.
 
 ### Validation that the binary works
 
 ```bash
-# Run preflight (verifies v0806, Wine, the Riesel template, and a real run)
+# Run preflight (verifies binary, example dataset, control files)
 python preflight_check.py
 ```
 
 Expected output:
 ```
-[OK] APEX0806 binary found at .../reference/APEX0806.exe
-[OK] Wine runtime found at .../wine
-[OK] Riesel reference template found at .../examples/ex1_RiselTX
-[OK] Real APEX0806 Riesel run completed with fresh output
-[OK] preflight passed — APEX0806 is installed and runnable
+[OK] APEX1501 binary found at .../apex1501
+[OK] APEX1501 binary is executable
+[OK] Example dataset found in examples/
+[OK] All required control files present (APEXFILE.DAT, APEXCONT.DAT, ...)
+[OK] preflight passed — APEX is ready to run
 ```
 
 ---
 
 ## File ecosystem (FORTRAN FIXED-WIDTH FORMATS — COPY, DON'T GENERATE)
 
-APEX v0806 is a Fortran-90 model. **Every input file is a Fortran fixed-format
+APEX 1501 is a Fortran-90 model. **Every input file is a Fortran fixed-format
 text file with rigid column positions**. The single most important rule:
 
 > **NEVER WRITE APEX INPUT FILES FROM SCRATCH. ALWAYS COPY FROM
 > `examples/` AND MODIFY SPECIFIC VALUES IN PLACE.**
 
-The installed KI uses the validated cropland reference dataset in
-`examples/ex1_RiselTX/`. Every tool in `tools/` follows the
+The KI ships with a complete validated example dataset in `examples/` derived from
+the USDA-ARS published pyAPEXSCU dataset (Maskey et al., grazing study at Marena
+ARS station, 35.54°N, 98.05°W, OK). Every tool in `tools/` follows the
 copy-template-then-modify pattern.
 
 ### Control / list files (fixed names, single watershed)
@@ -202,6 +237,19 @@ Stage | Tool | Purpose
 **S5** | `tools/s5_update_control.py`      | Edit `APEXCONT.DAT` simulation period & physics options
 **S6** | `tools/s6_run_apex.py`            | Run binary inside workspace; collect outputs; check water balance
 **S7** | `tools/s7_parse_output.py`        | Parse `*.OUT` annual + `*.SAD` daily subarea → CSV
+**S8** | `tools/s8_update_operations.py`   | Edit existing `OPSC*.MGT` / `*.OPC` operation schedules in place
+**S9** | `tools/s9_generate_crop_opc.py`   | Generate APEX0806 crop operation schedules and wire `OPSCCOM.DAT`
+
+Stage skill docs:
+- [S1 setup workspace](docs/s1_setup_workspace.md)
+- [S2 convert forcing](docs/s2_convert_forcing.md)
+- [S3 build soil](docs/s3_build_soil.md)
+- [S4 update site](docs/s4_update_site.md)
+- [S5 update control](docs/s5_update_control.md)
+- [S6 run APEX](docs/s6_run_apex.md)
+- [S7 parse output](docs/s7_parse_output.md)
+- [S8 update operations](docs/s8_update_operations.md)
+- [S9 generate crop OPC](docs/s9_generate_crop_opc.md)
 
 Every tool follows **validate → process → validate**:
 - `validate_inputs()` checks lat/lon ranges, year ranges, file existence
@@ -241,6 +289,47 @@ Every tool follows **validate → process → validate**:
 4. **Daily SRAD in W/m² instead of MJ/m²/day** — multiply W/m² by 0.0864 to get
    MJ/m²/day (mean daytime W/m² × seconds per day / 1e6 ≈ × 0.0864 for daily mean).
 5. **Lat in southern hemisphere positive** — APEX wants negative degrees south.
+
+---
+
+## Unit Conversion Table (template §8)
+
+Exact I/O shapes live in `docs/format_spec.yaml` and the dag. This unit table
+summarizes the conversions and unit traps this KI already documents; do not
+replace it with remembered conventions.
+
+| Variable | Source unit (verified or expected) | APEX model unit | Conversion / handling | Type |
+|---|---|---|---|---|
+| Latitude / longitude | decimal degrees | decimal degrees | use as-is; southern hemisphere is negative | identity |
+| Elevation | ft, m, or source DEM unit | m | ft × 0.3048 when source is feet | multiplicative |
+| Channel length CHL / RCHL | m, km, or mi | km | convert source length to km before writing `*.SUB` | unit conversion |
+| Channel slope CHS | percent, degrees, or fraction | m/m fraction | percent ÷ 100; do not write 5.0 for 5% | unit conversion |
+| Watershed area WSA | m², km², ac, or ha | ha | convert source area to hectares before writing `*.SUB` | unit conversion |
+| Daily precipitation | source forcing native unit | mm/day | CMFD 3-hr kg/m²/s ×10800 per step, sum 8 steps; MSWX 3-hr mm/3hr sum 8 steps | accumulation |
+| Tmax / Tmin | K or °C | °C | K − 273.15; °C unchanged | additive or identity |
+| Solar radiation SRAD | W/m² or MJ/m²/day | MJ/m²/day | daily mean W/m² × 0.0864; MJ/m²/day unchanged | multiplicative |
+| Wind speed | m/s, mph, or km/h | m/s | convert source wind to m/s | unit conversion |
+| Relative humidity | percent or fraction | fraction (0-1) | percent ÷ 100 | unit conversion |
+| CO2 | ppmv or ppm | ppm | ppmv is treated as ppm by volume | identity |
+| Saturated K (Ksat) | source soil hydraulic unit | mm/h | convert to mm/h before writing `*.SOL` | unit conversion |
+| Soil bulk density | kg/m³ or g/cm³ | g/cm³ (= Mg/m³) | kg/m³ ÷ 1000 | multiplicative |
+| Soil organic C | g/kg or percent by weight | percent by weight | g/kg ÷ 10 | multiplicative |
+| Soil pH | dimensionless | dimensionless | use as-is | identity |
+| N applied | lb/ac or kg/ha | kg/ha | lb/ac × 1.12085; kg/ha unchanged | multiplicative |
+| Crop yield output `YLDG` | APEX output | t/ha dry matter | do not compare directly to bu/ac or kg/ha without conversion | output unit |
+| Above-ground biomass output `BIOM` | APEX output | see `dag.yaml` | use dag unit when scoring | output unit |
+| Water yield output `WYLD` | APEX output | mm, or m³ in mass balance block | check output block before scoring | output unit |
+| Evapotranspiration output `ET` | APEX output | see `dag.yaml` / output block | check output block before scoring | output unit |
+| Deep percolation output `DPRK` | APEX output | see `dag.yaml` / output block | check output block before scoring | output unit |
+| Sediment yield output `Y` | APEX output | t/ha | do not compare directly to t/ac or kg/ha without conversion | output unit |
+
+### Sign Conventions and Output Units
+
+APEX reports agronomic and hydrologic annual outputs as positive magnitudes in the
+printed output tables used by `tools/s7_parse_output.py`. For water-balance checks,
+use the documented closure convention:
+
+`PCP ≈ WYLD + ET + DPRK + ΔS` within ±5%.
 
 ---
 
@@ -313,6 +402,30 @@ Annual `*.OUT` rows that matter for water balance verification:
 - **DF** (delta storage)
 
 Closure: `PCP ≈ WYLD + ET + DPRK + ΔS` (within ±5%).
+
+---
+
+## Output Description (template §6)
+
+Source of truth: `dag.yaml`. This section restates the KI's dag facts for readers;
+if this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `YLDG` — Crop grain yield, dry matter (harvest index x above-ground biomass, reduced by water stress and pest factor) (`t/ha`)
+
+| Output variable (dag `var`) | Rank | Unit | Description / role |
+|---|---:|---|---|
+| `YLDG` | 1 | `t/ha` | Crop grain yield, dry matter (harvest index x above-ground biomass, reduced by water stress and pest factor) |
+| `BIOM` | see `dag.yaml` | see `dag.yaml` | Other dag output |
+| `LAI` | see `dag.yaml` | see `dag.yaml` | Other dag output |
+| `WYLD` | see `dag.yaml` | see `dag.yaml` | Other dag output |
+| `ET` | see `dag.yaml` | see `dag.yaml` | Other dag output |
+| `DPRK` | see `dag.yaml` | see `dag.yaml` | Other dag output |
+| `Y` | see `dag.yaml` | see `dag.yaml` | Other dag output |
+| `N losses (leaching / runoff / sediment)` | see `dag.yaml` | see `dag.yaml` | Other dag output |
+| `P losses (soluble runoff / sediment / tile)` | see `dag.yaml` | see `dag.yaml` | Other dag output |
+| `outlet hydrograph (HYC)` | see `dag.yaml` | see `dag.yaml` | Other dag output |
 
 ---
 
@@ -449,6 +562,49 @@ MANDATORY setup rules (dag.yaml `outputs[YLDG].observability`, lines 146-151):
    MEAN targets the GDHY cell mean (~3.4 t/ha) rather than the field-trial validation
    target (5.6-6.2 t/ha). This is a *representativeness* setup choice (dag `scope_in`:
    management/fertilization/irrigation), NOT parameter calibration.
+
+---
+
+## Validated Results (template §11)
+
+### Test case: Bengbu China corn
+
+| Property | Value |
+|---|---|
+| Location | Bengbu, China |
+| Crop | corn |
+| Simulated yield | 6.21 t/ha |
+| Observed yield | 5.6 t/ha |
+| Reported bias | +11% |
+| Validation status | `validated` |
+
+### Performance Metrics — judged against the field's bar, not intuition
+
+Source of truth: `docs/validation_convention.yaml`. The convention wins over
+remembered thresholds. Every band below carries the citation key supplied by the
+convention.
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation key |
+|---|---|---|---:|---:|---:|---|
+| `YLDG` | `pbias` | zero_centered | 5.0 | 10.0 | 15.0 | `jiang2021` |
+| `YLDG` | `nrmse` | minimize | 10.0 | 20.0 | 30.0 | `jiang2021` |
+| `BIOM` | `nrmse` | minimize | 10.0 | 20.0 | 30.0 | `jiang2021` |
+| `BIOM` | `pbias` | zero_centered | 5.0 | 10.0 | 15.0 | `jiang2021` |
+
+For zero-centered `pbias`, compare the absolute bias magnitude to the cited band.
+For minimize `nrmse`, lower values are better. No uncited threshold is implied for
+any metric or output not listed in `docs/validation_convention.yaml`; write
+`no cited threshold` when the convention has a null band.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|---|---|---|---|
+| Forcing | CMFD weather pipeline | validated for the Bengbu China corn case | Prepared through KI tools |
+| Soil | HWSD soil pipeline | validated for the Bengbu China corn case | Prepared through KI tools |
+| Management / crop calendar | GGCMI calendar and APEX0806-compatible operation schedules | validated for the Bengbu China corn case | Use `tools/s9_generate_crop_opc.py` for compatible op and fertilizer codes |
+| Execution binary | `reference/APEX0806.exe` via Wine | validated | Use v0806 for crop-yield work |
+| Parsing and scoring | `tools/s7_parse_output.py`; `docs/validation_convention.yaml` | validated convention available | Score against cited bars, not intuition |
 
 ---
 

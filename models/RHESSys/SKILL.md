@@ -1,13 +1,3 @@
----
-name: rhessys
-description: >-
-  RHESSys 7.4. Covers Daily coupled water, carbon and nitrogen cycling at watershed scale;
-  Soil moisture redistribution, runoff production, saturated subsurface throughflow,
-  overland flow; Evapotranspiration (interception, soil/litter evaporation, canopy
-  transpiration); Snowpack energy-balance accumulation and melt. Use when the task
-  involves running, configuring, calibrating or interpreting RHESSys.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,42 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (24 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/gen_rain_duration.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/gen_rain_duration.py --help` |
+| `tools/init_carbon_pools.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/init_carbon_pools.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_rhessys.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_rhessys.py --help` |
+| `tools/split_kdown.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/split_kdown.py --help` |
+
+*7 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # RHESSys Knowledge Infrastructure
 
@@ -241,16 +267,29 @@ Binary/text routing table specifying patch-to-patch connectivity, gamma
 
 ---
 
-## 5. Output Format
+## 6. Output Description
 
-### 5.1 Legacy Output (ASCII)
+**Source of truth:** `dag.yaml`. This section restates the dag; if this body
+and `dag.yaml` disagree, the dag wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `streamflow` — Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow * basin_area / 86400. (`m/day (depth per unit basin area)`)
+
+Other dag outputs: `evaporation`, `transpiration (sat + unsat zone)`,
+`snowpack.water_equivalent_depth`, `lai (proj_lai / effective_lai)`,
+`cs.net_psn (net photosynthesis / NPP proxy)`,
+`streamflow_NO3 / streamflow_DON`, `soil_cs.totalc / litter_cs.totalc`,
+`sat_deficit / unsat_storage / rz_storage / theta (soil moisture)`.
+
+### 6.1 Legacy Output (ASCII)
 
 Files named `<prefix>_<level>.<timestep>`:
 - `test_basin.daily` — Basin-aggregated daily output
 - `test_patch.daily` — Per-patch daily output
 - `test_basin.yearly` — Basin yearly summaries
 
-### 5.2 CSV Output (via Output Filter)
+### 6.2 CSV Output (via Output Filter)
 
 Configured by YAML filter file (`-of filter.yml`):
 ```yaml
@@ -268,11 +307,11 @@ filter:
       - patch.evaporation
 ```
 
-### 5.3 Key Output Variables
+### 6.3 Key Output Variables
 
 | Variable | Unit | Level | Description |
 |----------|------|-------|-------------|
-| `streamflow` | m/day (per m^2 basin) | basin | Total basin streamflow |
+| `streamflow` | m/day (depth per unit basin area) | basin | Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow * basin_area / 86400. |
 | `evaporation` | m/day | basin/patch | Total evaporation |
 | `transpiration_sat_zone` | m/day | basin/patch | Transpiration from sat zone |
 | `transpiration_unsat_zone` | m/day | basin/patch | Transpiration from unsat zone |
@@ -295,27 +334,7 @@ See `dt_002`.
 
 ---
 
-## 6. Unit Trap Table
-
-| Variable | Model Expects | Common Source Unit | Conversion | Triplet |
-|----------|--------------|-------------------|------------|---------|
-| Precipitation | m/day | mm/day | / 1000 | dt_001 |
-| Streamflow output | m/day/m^2 | m^3/s | * area / 86400 | dt_002 |
-| Temperature | deg C | K | - 273.15 | dt_003 |
-| Soil depth | m | cm | / 100 | dt_004 |
-| Ksat | m/day | cm/hr | * 0.24 | dt_005 |
-| Porosity | m^3/m^3 | % | / 100 | dt_006 |
-| Slope | degrees | radians | * 180/pi | dt_007 |
-| Aspect | degrees | radians | * 180/pi | dt_007 |
-| Area | m^2 | km^2 | * 1e6 | dt_008 |
-| LAI | m^2/m^2 | — | dimensionless | — |
-| Carbon pools | kg C/m^2 | g C/m^2 | / 1000 | dt_009 |
-| Nitrogen pools | kg N/m^2 | g N/m^2 | / 1000 | dt_009 |
-| Psi air entry | m | kPa | context-dependent | dt_010 |
-
----
-
-## 7. Tools Reference
+## 7. Tool Inventory
 
 | Tool | File | Lines | Stage | Purpose |
 |------|------|-------|-------|---------|
@@ -323,6 +342,29 @@ See `dt_002`.
 | `convert_soil_params.py` | `tools/convert_soil_params.py` | ~180 | s3 | Convert HWSD/SoilGrids to `.def` files |
 | `run_rhessys.py` | `tools/run_rhessys.py` | ~160 | s6 | Execute RHESSys binary with validation |
 | `parse_output.py` | `tools/parse_output.py` | ~200 | s7 | Parse RHESSys output to clean CSV |
+
+---
+
+## 8. Unit Table / Unit Conversion Table
+
+This table records the unit conversions and traps used by the pipeline. For
+outputs, `dag.yaml` is the source of truth.
+
+| Variable | From unit | To unit | Conversion | Triplet |
+|----------|-----------|---------|------------|---------|
+| Precipitation | mm/day | m/day | / 1000 | dt_001 |
+| Streamflow output | m/day (depth per unit basin area) | m^3/s discharge target | * basin_area / 86400 | dt_002 |
+| Temperature | K | deg C | - 273.15 | dt_003 |
+| Soil depth | cm | m | / 100 | dt_004 |
+| Ksat | cm/hr | m/day | * 0.24 | dt_005 |
+| Porosity | % | m^3/m^3 | / 100 | dt_006 |
+| Slope | radians | degrees | * 180/pi | dt_007 |
+| Aspect | radians | degrees | * 180/pi | dt_007 |
+| Area | km^2 | m^2 | * 1e6 | dt_008 |
+| LAI | dimensionless | m^2/m^2 | dimensionless | — |
+| Carbon pools | g C/m^2 | kg C/m^2 | / 1000 | dt_009 |
+| Nitrogen pools | g N/m^2 | kg N/m^2 | / 1000 | dt_009 |
+| Psi air entry | kPa | m | context-dependent | dt_010 |
 
 ---
 
@@ -445,6 +487,36 @@ python ki/tools/parse_output.py \
 # Step 6: Validate
 # Compare parsed streamflow to observed data
 ```
+
+---
+
+## 11. Validated Results
+
+**Source of truth for performance bars:** `docs/validation_convention.yaml`.
+This section restates the convention bars; null convention bands are written as
+`no cited threshold`, never filled from memory.
+
+### Validation Context Recorded in This Body
+
+| Item | Value |
+|------|-------|
+| Validation status | HJ Andrews Watershed 8 |
+| Specific comparison caveat retained below | Bengbu 51080 gauge, small-domain RHESSys model 156 km^2 compared to 121,000 km^2 gauge drainage area |
+| Specific comparison period retained below | 1982-1990 |
+| Specific comparison length retained below | 9 years |
+
+### Performance Metrics and Convention Bars
+
+| Variable | Metric | Direction | Convention bar, cited | Achieved value recorded in this body |
+|----------|--------|-----------|------------------------|--------------------------------------|
+| `streamflow` | NSE | maximize | satisfactory >= 0.5 (`das2019`); good >= 0.75 (`das2019`); very good: no cited threshold (`das2019`) | NSE = 0.390 for Cal15 Bengbu specific discharge comparison; below the cited satisfactory threshold |
+| `streamflow` | PBIAS | zero_centered | satisfactory <= +/-25.0% (`das2019`); good: no cited threshold (`das2019`); very good: no cited threshold (`das2019`) | PBIAS = +22.3% for Cal15 Bengbu specific discharge comparison; within the cited satisfactory threshold |
+| `evaporation` | NSE | maximize | satisfactory: no cited threshold; good: no cited threshold; very good: no cited threshold; cites: none in convention | no achieved value recorded in this body |
+| `transpiration (sat + unsat zone)` | r | maximize | satisfactory >= 0.69 (`chen2020`); good: no cited threshold (`chen2020`); very good >= 0.91 (`chen2020`) | no achieved value recorded in this body |
+
+The body also records `r = 0.952` for the Cal15 Bengbu specific discharge
+comparison. That value is retained as a streamflow comparison result here; it is
+not graded against the transpiration convention bar.
 
 ---
 

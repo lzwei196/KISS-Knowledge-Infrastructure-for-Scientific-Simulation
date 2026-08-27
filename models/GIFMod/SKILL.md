@@ -1,14 +1,3 @@
----
-name: gifmod
-description: >-
-  GIFMod. Covers Hydraulic and water-quality performance of stormwater green
-  infrastructure and urban/agricultural…; Variably-saturated flow from surface water
-  through the vadose zone to groundwater across an…; Particle/colloid transport across
-  mobile and attached phases; Dissolved and particle-bound reactive constituent fate and
-  transport with user-defined…. Use when the task involves running, configuring,
-  calibrating or interpreting GIFMod.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (15 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (16 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/parse_gifmod_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_gifmod_output.py --help` |
+| `tools/run_gifmod.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_gifmod.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # GIFMod Knowledge Infrastructure
 
@@ -150,10 +173,12 @@ msbuild GIFMod.vcxproj /p:Configuration=Release
 
 ---
 
-## 4. Unit Trap Table
+## 4. Unit Table and Unit Trap Table
 
 GIFMod uses mixed SI and non-SI units internally. These are the critical unit
 conversions that cause silent failures if wrong:
+
+### 4.1 Unit Table: Critical Input Conversions
 
 | Variable                  | GIFMod Internal Unit | Common Source Unit | Conversion Factor | Trap ID |
 |---------------------------|----------------------|--------------------|--------------------|---------|
@@ -174,6 +199,21 @@ conversions that cause silent failures if wrong:
 
 **Critical**: GIFMod uses **m/day** as the base hydraulic unit (not m/s). Failing to
 convert from cm/s to m/day is the #1 cause of unrealistic flow predictions.
+
+### 4.2 Unit Table: Dag Output Units
+
+This sourced unit table restates the KI dag facts used for output binding. If this
+section and `dag.yaml` disagree, `dag.yaml` wins.
+
+| Dag output variable | Unit stated by dag | Notes |
+|---------------------|--------------------|-------|
+| velocity | m/day | Rank-1 output; water flow velocity within a pipe/stream/overland connector. |
+| head | see `dag.yaml` | Dag output listed; use the dag for authoritative unit metadata. |
+| flow | see `dag.yaml` | Dag output listed; use the dag for authoritative unit metadata. |
+| moisture | see `dag.yaml` | Dag output listed; use the dag for authoritative unit metadata. |
+| storage | see `dag.yaml` | Dag output listed; use the dag for authoritative unit metadata. |
+| concentration | see `dag.yaml` | Dag output listed; use the dag for authoritative unit metadata. |
+| mass_balance_error | see `dag.yaml` | Dag output listed; use the dag for authoritative unit metadata. |
 
 ---
 
@@ -305,7 +345,24 @@ The internal property catalog defines all model parameters with:
 
 ---
 
-## 8. Output Format Specification
+## 8. Output Description and Format Specification
+
+### 8.0 Output Description: Dag-Restated Observable Outputs
+
+This section restates `dag.yaml` for readers. The dag is authoritative for every
+observable output's variable name, unit, description, and validation rank.
+
+**Headline output**: `velocity` -- Water flow velocity within a pipe/stream/overland connector. (`m/day`)
+
+| Dag output variable | Validation role | Unit | Description |
+|---------------------|-----------------|------|-------------|
+| velocity | rank 1 | m/day | Water flow velocity within a pipe/stream/overland connector. |
+| head | other dag output | see `dag.yaml` | Dag output listed in the KI facts. |
+| flow | other dag output | see `dag.yaml` | Dag output listed in the KI facts. |
+| moisture | other dag output | see `dag.yaml` | Dag output listed in the KI facts. |
+| storage | other dag output | see `dag.yaml` | Dag output listed in the KI facts. |
+| concentration | other dag output | see `dag.yaml` | Dag output listed in the KI facts. |
+| mass_balance_error | other dag output | see `dag.yaml` | Dag output listed in the KI facts. |
 
 ### 8.1 Time Series Output
 
@@ -501,9 +558,49 @@ python3 ki/tools/parse_gifmod_output.py \
 
 ---
 
-## 17. Governing Equations
+## 17. Validated Results
 
-### 17.1 Flow Equations
+This section restates `docs/validation_convention.yaml`; do not grade a run from
+intuition. The rank-1 dag output is `velocity`, with unit `m/day` and description
+"Water flow velocity within a pipe/stream/overland connector." No sourced
+convention band for `velocity` is included in the extracted KI facts, so no
+velocity threshold is invented here.
+
+### 17.1 Performance Metrics and Convention Bars
+
+| Dag variable | Metric | Direction | Convention bar, cited |
+|--------------|--------|-----------|-----------------------|
+| head | mae | minimize | very_good <= 0.1 (moriasi2015); good <= 0.15 (moriasi2015); satisfactory <= 0.2 (moriasi2015) |
+| head | nse | maximize | very_good >= 0.75 (moriasi2015); good >= 0.6 (moriasi2015); satisfactory >= 0.4 (moriasi2015) |
+| flow | nse | maximize | very_good >= 0.75 (moriasi2007, saran2022); good >= 0.65 (moriasi2007, saran2022); satisfactory >= 0.5 (moriasi2007, saran2022) |
+| flow | pbias | zero_centered | very_good within +/-10 (moriasi2007, saran2022); good within +/-15 (moriasi2007, saran2022); satisfactory within +/-25 (moriasi2007, saran2022) |
+| moisture | nse | maximize | very_good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold |
+| moisture | rmse | minimize | very_good: no cited threshold; good: no cited threshold; satisfactory: no cited threshold |
+
+### 17.2 Achieved Results Tracking
+
+| Result field | Sourced value in this SKILL |
+|--------------|-----------------------------|
+| Validation status | synthetic (pipeline test) |
+| Calibration metrics | not stated in the supplied KI facts |
+| Validation metrics | not stated in the supplied KI facts |
+| Full-period metrics | not stated in the supplied KI facts |
+
+### 17.3 Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | pipeline | documented | See `convert_forcing.py` and stage `s4_forcing.md`. |
+| Soil | pipeline | documented | See `convert_soil_params.py` and stage `s2_soil_parameters.md`. |
+| Land cover | manual / GUI | documented | See pipeline stage table. |
+| DEM / domain | manual / GUI | documented | See pipeline stage table. |
+| Initial conditions | project file | documented | See input format specification. |
+
+---
+
+## 18. Governing Equations
+
+### 18.1 Flow Equations
 
 **Richards Equation (Soil blocks)**:
 ```
@@ -518,7 +615,7 @@ Q = (1/n) * A * R^(2/3) * S^(1/2)
 ```
 where n = Manning roughness, A = cross-section area, R = hydraulic radius, S = slope.
 
-### 17.2 Transport Equations
+### 18.2 Transport Equations
 
 **Advection-Dispersion-Reaction (ADR)**:
 ```
@@ -527,14 +624,14 @@ d(θC)/dt = d/dz [θD dC/dz] - d(qC)/dz + r(C,T)
 where C = concentration, D = dispersion coefficient, q = Darcy flux,
 r = reaction rate (from Petersen matrix).
 
-### 17.3 Sorption
+### 18.3 Sorption
 
 **Linear isotherm**: S = Kd * C
 where Kd = partition coefficient (L/kg), S = sorbed concentration (mg/kg).
 
 ---
 
-## 18. Known Limitations
+## 19. Known Limitations
 
 1. **GUI-only**: No command-line interface for batch processing; scripting via Duktape JS
 2. **No parallel domain decomposition**: Single-node only (OpenMP for linear algebra)

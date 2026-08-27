@@ -1,153 +1,512 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "OpenGeoSys"
-  version: "6.5.7"
-  domain: "subsurface THMC (Thermo-Hydro-Mechanical-Chemical) processes in porous and fractured media"
-  binary_path: "KISSPATH_BINARIES/OpenGeoSys/venv/bin/ogs"
-  binary_type: "compiled_cpp"
-  input_format: "XML project file (.prj) + VTU meshes"
-  output_format: "VTU (VTK Unstructured Grid) + PVD time series index"
-  unit_system: "strict SI (Pa, K, m, s, kg) — no internal unit conversion"
-
+  name: OpenGeoSys
+  language: c++
+  implementation:
+    id: opengeosys-6
+    version: 6.5.7
+    provenance: C++23; UFZ/OpenGeoSys community FEM multiphysics solver (git a5c00a5, 2026-03), optional
+      Python bindings.
+  scientific_reference_version: OpenGeoSys 6 (OGS-6) THMC finite-element multiphysics; doxygen-stable
+    6.5.7 lineage
 inputs:
-  project_file:
-    format: "XML"
-    extension: ".prj"
-    root_element: "OpenGeoSysProject"
-    required_sections:
-      - "meshes"
-      - "processes"
-      - "media"
-      - "time_loop"
-      - "parameters"
-      - "process_variables"
-      - "nonlinear_solvers"
-      - "linear_solvers"
-
-  mesh:
-    format: "VTU (VTK Unstructured Grid)"
-    description: "Unstructured FEM mesh with boundary submeshes"
-    notes: "Boundary conditions require separate submesh .vtu files"
-
   forcing:
-    - name: "pressure_bc"
-      unit: "Pa"
-      valid_range: [0, 1.0e+8]
-      description: "Dirichlet/Neumann pressure boundary condition"
-    - name: "temperature_bc"
-      unit: "K"
-      valid_range: [200, 500]
-      description: "Temperature boundary condition (must be Kelvin, NOT Celsius)"
-    - name: "recharge"
-      unit: "m/s"
-      valid_range: [0, 1.0e-5]
-      description: "Recharge flux (convert from mm/day: divide by 86400000)"
-    - name: "concentration_bc"
-      unit: "mol/m3"
-      valid_range: [0, 1000]
-      description: "Species concentration boundary condition"
-
+  - name: recharge / surface flux
+    unit: m/s
+    category: forcing
+    source_kind: user_provided
+    model_input_format: Neumann BC on boundary submesh, optionally time-dependent via <curves> (time in
+      s, SI values)
+    notes: OGS is agnostic to the meteorological source; it consumes only SI-unit boundary time series.
+  - name: prescribed head / pressure boundary
+    unit: Pa
+    category: forcing
+    source_kind: user_provided
+    model_input_format: Dirichlet BC on boundary submesh; time-dependent via <curves> or CurveScaledParameter
+  - name: prescribed temperature boundary
+    unit: K
+    category: forcing
+    source_kind: user_provided
+    model_input_format: Dirichlet BC / initial condition on boundary submesh
+  - name: well pumping / injection rate
+    unit: m^3/s
+    category: forcing
+    source_kind: user_provided
+    model_input_format: nodal source_term
   parameters:
-    critical:
-      - name: "permeability"
-        unit: "m2"
-        valid_range: [1.0e-18, 1.0e-8]
-        description: "Intrinsic permeability (NOT hydraulic conductivity m/s). Convert: kappa = K * mu / (rho * g)"
-      - name: "porosity"
-        unit: "dimensionless"
-        valid_range: [0.01, 0.6]
-        description: "Effective porosity"
-      - name: "storage"
-        unit: "1/Pa"
-        valid_range: [1.0e-12, 1.0e-6]
-        description: "Specific storage coefficient. Must be > 0 for transient flow."
-      - name: "density"
-        unit: "kg/m3"
-        valid_range: [998, 1050]
-        description: "Liquid phase density"
-      - name: "viscosity"
-        unit: "Pa.s"
-        valid_range: [1.0e-4, 1.0e-2]
-        description: "Dynamic viscosity"
-      - name: "thermal_conductivity"
-        unit: "W/(m.K)"
-        valid_range: [0.1, 5.0]
-        description: "Thermal conductivity of porous medium"
-      - name: "specific_heat_capacity"
-        unit: "J/(kg.K)"
-        valid_range: [800, 4200]
-        description: "Specific heat capacity"
-    optional:
-      - name: "youngs_modulus"
-        unit: "Pa"
-        valid_range: [1.0e+6, 1.0e+11]
-        description: "Young's modulus for mechanical problems"
-      - name: "poissons_ratio"
-        unit: "dimensionless"
-        valid_range: [0.0, 0.5]
-        description: "Poisson's ratio"
-      - name: "van_genuchten_alpha"
-        unit: "1/Pa"
-        valid_range: [1.0e-6, 1.0e-2]
-        description: "van Genuchten alpha parameter (convert from 1/cm: p_b = rho*g/(alpha*100))"
-      - name: "residual_saturation"
-        unit: "dimensionless"
-        valid_range: [0.0, 0.4]
-        description: "Residual liquid saturation"
-
+  - name: intrinsic permeability
+    unit: m^2
+    category: material
+    source_kind: calibrated
+    model_input_format: MPL medium property (Constant or state-dependent); per-MaterialID
+    notes: Intrinsic permeability kappa, NOT hydraulic conductivity (m/s) nor Darcy; typical 1e-18 to
+      1e-8 m^2.
+  - name: porosity
+    unit: '-'
+    category: material
+    source_kind: calibrated
+    model_input_format: MPL medium property; may evolve (transport_porosity)
+    notes: Must be > 0 for transient storage; typical 0.01 to 0.6.
+  - name: specific storage
+    unit: 1/Pa
+    category: material
+    source_kind: calibrated
+    model_input_format: MPL 'storage' property
+    notes: Specific storage S_s; must be > 0 for transient flow; typical 1e-12 to 1e-6.
+  - name: liquid density
+    unit: kg/m^3
+    category: material
+    source_kind: dataset_lookup
+    model_input_format: MPL AqueousLiquid phase property (Constant or T/p-dependent, e.g. IAPWS97)
+  - name: liquid dynamic viscosity
+    unit: Pa*s
+    category: material
+    source_kind: dataset_lookup
+    model_input_format: MPL AqueousLiquid phase property (Constant or T-dependent)
+  - name: solid density
+    unit: kg/m^3
+    category: material
+    source_kind: dataset_lookup
+    model_input_format: MPL Solid phase property
+  - name: thermal conductivity
+    unit: W/(m*K)
+    category: material
+    source_kind: calibrated
+    model_input_format: MPL medium/phase property; may be anisotropic
+  - name: specific heat capacity
+    unit: J/(kg*K)
+    category: material
+    source_kind: dataset_lookup
+    model_input_format: MPL phase property
+  - name: van Genuchten entry pressure
+    unit: Pa
+    category: material
+    source_kind: calibrated
+    model_input_format: SaturationVanGenuchten MPL capillary-pressure model parameter p_b
+    notes: Entry pressure in Pa, NOT alpha in 1/cm.
+  - name: van Genuchten exponent
+    unit: '-'
+    category: material
+    source_kind: calibrated
+    model_input_format: SaturationVanGenuchten MPL parameter (m = 1 - 1/n)
+  - name: residual liquid saturation
+    unit: '-'
+    category: material
+    source_kind: calibrated
+    model_input_format: SaturationVanGenuchten / RelPermVanGenuchten MPL parameter
+  - name: Biot coefficient
+    unit: '-'
+    category: material
+    source_kind: calibrated
+    model_input_format: MPL/process property; poro-mechanical coupling (per layer)
+    notes: HydroMechanics / poromechanics; controls effective-stress computation.
+  - name: Young's modulus
+    unit: Pa
+    category: material
+    source_kind: calibrated
+    model_input_format: LinearElasticIsotropic solid-model parameter
+  - name: Poisson's ratio
+    unit: '-'
+    category: material
+    source_kind: calibrated
+    model_input_format: LinearElasticIsotropic solid-model parameter
+  - name: thermal expansivity
+    unit: 1/K
+    category: material
+    source_kind: calibrated
+    model_input_format: MPL/solid-model parameter; ThermoMechanics
+  initial_conditions:
+  - name: initial primary-variable fields
+    unit: process-dependent (Pa, K, m, mol/m^3)
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: Per process_variable <initial_condition> in .prj (Constant, mesh field, or function)
+    notes: Every process variable requires an initial condition; a poor IC can make the Newton solver
+      diverge (use Picard or reduced first timestep).
+  boundary_conditions:
+  - name: specific body force (gravity)
+    unit: m/s^2
+    category: control
+    source_kind: user_provided
+    model_input_format: <specific_body_force> vector; must have exactly mesh-dimension components (2D
+      '0 -9.81', 3D '0 0 -9.81')
+  - name: process type
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: <process><type> enum (LIQUID_FLOW, RICHARDS_FLOW, HT, HYDRO_MECHANICS, TH2M, COMPONENT_TRANSPORT,
+      ...)
+    notes: Selects governing equations and the set of primary variables.
+  - name: coupling scheme
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: monolithic vs staggered (operator-split) selection in time_loop
+  - name: time-stepping scheme and window
+    unit: s
+    category: control
+    source_kind: user_provided
+    model_input_format: t_initial/t_end/delta_t (SI seconds) with FixedTimeStepping / IterationNumberBased
+      / EvolutionaryPIDcontroller / SingleStep
+    notes: All time values in seconds (1 day = 86400 s, 1 year ~ 3.1536e7 s).
+  - name: nonlinear solver type
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: <nonlinear_solver> Newton or Picard, with damping and Jacobian-recompute interval
+  - name: convergence criterion and tolerance
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: DeltaX vs Residual criterion with per-variable abstol/reltol
+    notes: Tolerances scale to variable magnitude (e.g. pressure DeltaX abstol ~1e-6, displacement ~1e-10).
+  - name: linear solver
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: Eigen (SparseLU, BiCGSTAB+ILUT) or PETSc
+  - name: FE element order
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: <order> in process_variables (1=linear, 2=quadratic); must match mesh element
+      order
 outputs:
   primary:
-    - name: "pressure"
-      unit: "Pa"
-      valid_range: [0, 1.0e+8]
-      description: "Hydraulic pressure field (node-based)"
-    - name: "temperature"
-      unit: "K"
-      valid_range: [200, 500]
-      description: "Temperature field (node-based)"
-    - name: "displacement"
-      unit: "m"
-      valid_range: [-0.1, 0.1]
-      description: "Displacement vector (node-based)"
-    - name: "darcy_velocity"
-      unit: "m/s"
-      valid_range: [0, 1.0e-3]
-      description: "Darcy velocity (cell-based)"
-    - name: "saturation"
-      unit: "dimensionless"
-      valid_range: [0, 1]
-      description: "Liquid saturation (Richards flow)"
-  output_files:
-    - format: "VTU"
-      pattern: "{prefix}_ts_{timestep}_t_{time}.vtu"
-    - format: "PVD"
-      pattern: "{prefix}.pvd"
-      description: "XML time series index linking timesteps to VTU files"
-    - format: "XDMF/HDF5"
-      description: "Alternative for large parallel runs"
-
-process_types:
-  - "LIQUID_FLOW"
-  - "RICHARDS_FLOW"
-  - "STEADY_STATE_DIFFUSION"
-  - "HEAT_CONDUCTION"
-  - "HT"
-  - "HYDRO_MECHANICS"
-  - "THERMO_MECHANICS"
-  - "SMALL_DEFORMATION"
-  - "LARGE_DEFORMATION"
-  - "RICHARDS_MECHANICS"
-  - "THERMO_RICHARDS_FLOW"
-  - "THERMO_RICHARDS_MECHANICS"
-  - "TH2M"
-  - "COMPONENT_TRANSPORT"
-  - "HEAT_TRANSPORT_BHE"
-
+  - name: pressure
+    unit: Pa
+    description: Subsurface pore/liquid (or gas) pressure in the porous medium at FEM nodes; the primary
+      variable of flow processes.
+    validation_rank: 2
+    emitted_in: '{prefix}_ts_{step}_t_{time}.vtu (PointData), indexed by .pvd'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Observation must be co-located with a mesh node; pressure head vs absolute pressure unit must
+          be reconciled (SI Pa).
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: temperature
+    unit: K
+    description: Subsurface (rock/soil porous-medium) temperature field at FEM nodes; primary variable
+      of thermal/heat-transport processes.
+    validation_rank: 1
+    emitted_in: '{prefix}_ts_{step}_t_{time}.vtu (PointData)'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Observation depth/location must match a mesh node; units in K.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: displacement
+    unit: m
+    description: Nodal displacement vector of the rock/soil solid matrix; primary variable of mechanics
+      processes.
+    validation_rank: 3
+    emitted_in: '{prefix}_ts_{step}_t_{time}.vtu (PointData)'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against extensometer/displacement-sensor records at matching location and component.
+      detrending_options:
+      - none
+  - name: darcy_velocity
+    unit: m/s
+    description: Groundwater Darcy (specific discharge) flux vector in the porous medium, derived from
+      pressure gradient and permeability.
+    validation_rank: 4
+    emitted_in: '{prefix}_ts_{step}_t_{time}.vtu (CellData)'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Cell-based secondary variable derived from the converged primary solution; direct flux observations
+          are rare.
+      detrending_options:
+      - none
+  - name: stress
+    unit: Pa
+    description: Cauchy/effective stress tensor of the rock/soil matrix at integration points (mechanics).
+    validation_rank: 5
+    emitted_in: '{prefix}_ts_{step}_t_{time}.vtu (CellData)'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Effective stress depends on Biot coefficient and pore pressure; compare against in-situ stress/pressure-cell
+          records.
+      detrending_options:
+      - none
+  - name: saturation
+    unit: '-'
+    description: Soil/rock pore liquid saturation from the capillary-pressure-saturation model (Richards/two-phase).
+    validation_rank: 6
+    emitted_in: '{prefix}_ts_{step}_t_{time}.vtu'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against moisture-probe / saturation sensor; bounded in [0,1].
+      detrending_options:
+      - none
+  - name: concentration
+    unit: mol/m^3
+    description: Groundwater solute/component concentration field (component or reactive transport).
+    validation_rank: 7
+    emitted_in: '{prefix}_ts_{step}_t_{time}.vtu'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Breakthrough-curve comparison; sample location must match a mesh node.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Plume-extent comparison against a sampled spatial field on the mesh footprint.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "All units must be strict SI — no internal conversion. Wrong units produce silent garbage."
-  - "Temperature must be in Kelvin, not Celsius."
-  - "Permeability is intrinsic (m2), not hydraulic conductivity (m/s)."
-  - "Time in project files is always in seconds."
-  - "Boundary conditions require separate submesh VTU files."
-  - "Body force vector dimension must match mesh dimension."
-  - "Storage coefficient must be > 0 for transient flow."
-  - "van Genuchten alpha from literature (1/cm) must be converted to 1/Pa."
+- id: dt_001
+  symptom: Pressure values are ~1000× too low. Hydraulic head drops unrealistically. Flow rates negligible.
+  diagnosis: Pressure supplied in kPa instead of Pa; OGS expects all pressure values in Pascals (Pa).
+    Common external sources provide data in kPa (e.g., atmospheric pressure ~101.3 kPa). If kPa values
+    are used directly, the pressure field is 1000× too low, producing negligible flow and unrealistic
+    head distribut
+  remedy: Multiply all pressure values by 1000 to convert kPa to Pa; convert_forcing_to_ogs; ['Check pressure
+    BC values — should be order 1e4 to 1e7 Pa for typical aquifers', 'If max pressure < 1000, likely still
+    in kPa — multiply by 1000']; validate_outputs() checks for pressures below expected range
+  severity: silent
+- id: dt_002
+  symptom: Temperature ~20 instead of ~293. Density and viscosity calculations produce nonsensical results.
+    Thermal expansion wrong.
+  diagnosis: Temperature supplied in degrees Celsius instead of Kelvin; OGS expects temperature in Kelvin.
+    The Celsius-zero constant is 273.15 K (defined in PhysicalConstant.h). Supplying 20 (°C) instead of
+    293.15 K causes water density to be calculated at ~20 K (near absolute zero), producing completely
+    wrong f
+  remedy: Add 273.15 to all temperature values; convert_forcing_to_ogs; ['Check temperature values — should
+    be 273-373 K for typical groundwater', 'If temperatures are 0-100, they are in °C — add 273.15'];
+    validate_outputs() checks for temperatures below 200 K
+  severity: silent
+- id: dt_003
+  symptom: Flow velocity 7-10 orders of magnitude too high. Simulation may become unstable or produce
+    unrealistic pressure distributions.
+  diagnosis: 'Intrinsic permeability supplied in Darcy or hydraulic conductivity (m/s) instead of m²;
+    OGS uses intrinsic permeability κ in m². The conversion from hydraulic conductivity K (m/s) is: κ
+    = K × μ / (ρ × g) ≈ K × 1.02e-7 at 20°C. 1 Darcy = 9.869e-13 m². Supplying K=1e-5 m/s (typical sand)
+    directly as κ'
+  remedy: 'Convert hydraulic conductivity to intrinsic permeability: κ = K × 1.02e-7; convert_soil_to_ogs;
+    [''Check permeability value — should be 1e-18 to 1e-8 m² for natural media'', ''If value > 1e-6, it
+    is likely K (m/s) not κ (m²) — multiply by 1.02e-7'', ''If value > 1e-2, it is likely K (cm/s) — multiply
+    by '
+  severity: silent
+- id: dt_004
+  symptom: Simulation completes in seconds of wall time. Only initial condition and one or two timesteps
+    in output. t_end appears to be reached instantly.
+  diagnosis: 'Time values in days or years instead of seconds; OGS uses seconds for all time quantities:
+    t_initial, t_end, delta_t. Setting t_end=365 (intending 365 days) actually runs for 365 seconds (~6
+    minutes of simulation time). Setting t_end=10 (intending 10 years) runs for 10 seconds. The simulation
+    comple'
+  remedy: 'Multiply time values: days × 86400, years × 31536000; run_ogs; [''Check t_end in .prj — for
+    1-year simulation should be ~31536000'', ''Check delta_t — for daily steps should be 86400'', ''If
+    t_end < 1000 for multi-year simulation, likely in days'']; run_ogs.py warns when t_end < 3600 for
+    non-trivial simul'
+  severity: silent
+- id: dt_007
+  symptom: Richards flow shows wrong capillary pressure curve. Saturation transitions at wrong suctions.
+    Entry pressure wildly off from expected.
+  diagnosis: 'van Genuchten α in 1/cm not converted to entry pressure in Pa; Literature typically reports
+    van Genuchten α in units of 1/cm. OGS uses entry pressure p_b in Pa. The conversion requires two steps:
+    1) Convert α from 1/cm to 1/m: α_m = α_cm × 100 2) Convert to pressure: p_b = ρ×g / α_m Skipping step
+    1 '
+  remedy: 'Convert α: p_b = ρ×g / (α_cm × 100) where ρ×g ≈ 9792 Pa/m; convert_soil_to_ogs; [''Check entry
+    pressure p_b — typical range 500 to 50000 Pa'', ''For sand (α=0.145 /cm): p_b = 9792 / (0.145×100)
+    ≈ 675 Pa'', ''If p_b > 100000, likely missing the ×100 conversion'']; convert_soil_to_ogs.py handles
+    the full α→'
+  severity: silent
+- id: dt_013
+  symptom: Recharge causes extreme pressure buildup. Domain floods. Pressure rises orders of magnitude
+    above hydrostatic.
+  diagnosis: Recharge in mm/day used directly as m/s (86.4 million × too high); Converting mm/day to m/s
+    requires dividing by 86,400,000 (= 1000 × 86400). If only /1000 is applied (mm→m but not day→s), the
+    flux is 86400× too high. If no conversion at all, it is 86,400,000× too high. A typical recharge of
+    1 mm/da
+  remedy: 'Divide mm/day by 86400000 to get m/s; convert_forcing_to_ogs; [''Check Neumann BC flux values
+    — should be < 1e-6 m/s for recharge'', ''Typical recharge range: 1e-9 to 1e-7 m/s'']; convert_forcing_to_ogs
+    validates output flux range'
+  severity: silent
+- id: dt_015
+  symptom: Recharge 86400× too high. Partial conversion applied (mm→m done but day→s missing).
+  diagnosis: 'Precipitation/recharge converted from mm to m but not from per-day to per-second; The full
+    conversion from mm/day to m/s is: value / (1000 × 86400). A common error is to only divide by 1000
+    (converting mm to m) but forgetting that the time unit also changes from day to second. This gives
+    a flux in m'
+  remedy: 'Ensure full conversion: mm/day ÷ 86400000 = m/s; convert_forcing_to_ogs; [''If recharge ~1e-3
+    to 1e-5, likely in m/day not m/s'', ''Divide by additional 86400 to get m/s'']; Use convert_forcing_to_ogs.py
+    with explicit --source_unit and --target_unit'
+  severity: silent
+- id: dt_011
+  symptom: Darcy velocity unrealistically high. Pressure equilibrates almost instantly. Effective permeability
+    1e7× too large.
+  diagnosis: Hydraulic conductivity K (m/s) entered as intrinsic permeability κ (m²); Hydraulic conductivity
+    K [m/s] and intrinsic permeability κ [m²] differ by a factor of μ/(ρg) ≈ 1.02e-7. Sand with K=1e-4
+    m/s has κ≈1e-11 m². Entering K=1e-4 directly as κ gives a material 10 million times too permeable.
+    The si
+  remedy: 'Multiply K by μ/(ρg) ≈ 1.02e-7 to get κ; convert_soil_to_ogs; [''Verify: typical sand κ ≈ 1e-11
+    m², clay κ ≈ 1e-17 m²'', ''If your value looks like a K (1e-3 to 1e-8), convert it'']; Always use
+    convert_soil_to_ogs.py which outputs κ directly'
+  severity: silent
+- id: dt_005
+  symptom: OGS crashes at startup with 'Could not find mesh' or 'boundary condition mesh not found' error.
+  diagnosis: Boundary submesh VTU files missing for boundary condition application; OGS-6 applies boundary
+    conditions on separate submesh files, not on geometry-mesh intersections like OGS-5. Each Dirichlet/Neumann
+    BC needs a matching boundary submesh VTU file listed in the <meshes> section. This is a fundamenta
+  remedy: Extract boundary submeshes from bulk mesh using ExtractBoundary or Gmsh physical groups; ; ['For
+    each BC, create a VTU file containing only the boundary faces/edges', 'List all submeshes in <meshes>
+    section of .prj file', 'Verify submesh nodes are subset of bulk mesh nodes']; Always generate submesh
+  severity: fatal
+- id: dt_006
+  symptom: OGS crashes with 'wrong number of components' or gravity applied in wrong direction.
+  diagnosis: Body force vector dimension does not match mesh dimension; The <specific_body_force> element
+    must have exactly as many components as the mesh spatial dimension. A 2D mesh requires '0 -9.81' (two
+    values), a 3D mesh requires '0 0 -9.81' (three values). If a 3D body force is applied to a 2D mesh,
+    OGS m
+  remedy: 'Match body force components to mesh dimension: 2D=''0 -9.81'', 3D=''0 0 -9.81''; ; [''Count
+    components in <specific_body_force>'', ''Verify mesh dimension (check .vtu for 2D vs 3D elements)''];
+    run_ogs.py checks body force dimension vs mesh dimension'
+  severity: fatal
+- id: dt_010
+  symptom: OGS crashes with 'file not found' error for mesh or geometry files.
+  diagnosis: Mesh file paths are relative but OGS working directory differs from .prj location; OGS resolves
+    mesh file paths relative to the working directory, not the .prj file location. If you run 'ogs path/to/project.prj'
+    from a different directory, relative mesh paths in the .prj file won't resolve correctly
+  remedy: 'Use -m flag to specify mesh directory, or run OGS from .prj directory; run_ogs; [''Run OGS
+    with: ogs project.prj -m /path/to/meshes/ -o /path/to/output/'', ''Or cd to project directory first''];
+    run_ogs.py resolves all paths to absolute before execution'
+  severity: fatal
+- id: dt_014
+  symptom: OGS crashes with 'could not find' or 'unknown tag' error. No output produced.
+  diagnosis: 'XML tag name misspelled — OGS XML tags are case-sensitive; OGS project file tags are case-sensitive.
+    Common errors: <Permeability> vs <permeability>, <BackwardEuler> vs <Backwardeuler>. The XML parser
+    finds the tag but OGS doesn''t recognize the misspelled variant, causing a ''could not find required'''
+  remedy: 'Check tag spelling against OGS documentation or working example files; ; [''Compare .prj tags
+    case-by-case against a known working example'', ''Common corrections: BackwardEuler, FixedTimeStepping,
+    SparseLU'']; Use templates from Tests/Data/ as starting point'
+  severity: fatal
+- id: dt_008
+  symptom: Non-convergence despite reasonable setup. Iteration count hits max_iter every timestep. Timestep
+    repeatedly halved.
+  diagnosis: 'Convergence criterion type or tolerance poorly matched to problem; DeltaX checks the solution
+    increment norm, Residual checks the residual norm. Using DeltaX with a tolerance meant for Residual
+    (or vice versa) causes either false convergence (too loose) or infinite iterations (too tight). Typical:
+    D'
+  remedy: 'Match criterion type and tolerance to variable magnitude; ; [''For pressure (Pa): DeltaX, abstol=1e-6'',
+    ''For displacement (m): DeltaX, abstol=1e-10'', ''For temperature (K): DeltaX, abstol=1e-4'', ''Or
+    use Residual with relative tolerance reltol=1e-8'']; Test with 2-3 timesteps before full simulation'
+  severity: degraded
+- id: dt_009
+  symptom: Pressure field does not change between timesteps. Output at all times is identical to initial
+    condition.
+  diagnosis: Storage coefficient set to zero in transient simulation; For transient LiquidFlow, the time
+    derivative term is S_s × ∂p/∂t where S_s is the specific storage (1/Pa). If S_s=0, the mass matrix
+    M=0 and the transient equation degenerates to a steady-state equation at every timestep. The pressure
+    instant
+  remedy: 'Set storage to physically reasonable value: ~1e-9 to 1e-6 1/Pa; ; [''Check <property><name>storage</name><value>...</value>'',
+    ''If 0.0, set to 1e-9 for confined aquifer, 1e-6 for unconfined'']; run_ogs.py warns when storage=0
+    for transient simulations'
+  severity: silent
+- id: dt_012
+  symptom: Newton solver diverges immediately on first timestep. NaN or Inf in solution vector.
+  diagnosis: Newton solver requires good initial guess; initial condition too far from solution; Newton's
+    method has limited convergence radius. If the initial condition is far from the solution (e.g., zero
+    pressure in a pressurized system), the Jacobian may be singular or produce huge updates. Picard (fixed-poi
+  remedy: Switch to Picard solver for initial timesteps, or use Picard globally; ; ['Change <type>Newton</type>
+    to <type>Picard</type>', 'Or improve initial condition to be closer to expected solution', 'Or reduce
+    first timestep by 100×']; Start with Picard; switch to Newton after verification
+  severity: degraded
+- id: dt_016
+  symptom: OGS crashes or produces wrong results with quadratic elements. Shape function evaluation fails.
+  diagnosis: Mesh element order does not match FE order specified in process_variables; If the mesh contains
+    linear elements (triangles with 3 nodes) but the process variable <order> is set to 2, OGS expects
+    quadratic elements (triangles with 6 nodes). The mismatch causes shape function evaluation to fail
+    or pro
+  remedy: 'Match <order> to mesh element order: linear mesh → order=1, quadratic → order=2; ; [''Check
+    mesh: linear elements have corner nodes only (tri=3, quad=4, tet=4)'', ''Quadratic elements have mid-edge
+    nodes (tri=6, quad=8, tet=10)'', ''Set <order> accordingly in <process_variables>'']; Always verify
+    mesh ele'
+  severity: degraded
+- id: dt_017
+  symptom: No transient behavior in output. Pressure reaches steady state in first timestep.
+  diagnosis: Porosity set to zero, eliminating storage capacity; Porosity enters the storage term. With
+    porosity=0 and no explicit storage term, the porous medium has zero storage capacity. This is similar
+    to dt_009 (storage=0) but originates from the porosity value. The simulation runs but the transient
+    respons
+  remedy: 'Set porosity to physically reasonable value: 0.01 to 0.6; convert_soil_to_ogs; [''Check <property><name>porosity</name><value>'',
+    ''If 0.0 or missing, set to appropriate value for soil type'']; convert_soil_to_ogs always outputs
+    non-zero porosity'
+  severity: silent
+- id: dt_018
+  symptom: OGS crashes with NaN or floating-point exception. Simulation aborts mid-run.
+  diagnosis: Division by zero from zero viscosity, zero density, or zero permeability; Darcy's law involves
+    κ/(μ) where μ is viscosity and κ is permeability. If either viscosity=0 or density=0 is specified
+    (or results from a temperature-dependent model at extreme T), division by zero produces NaN which
+    propagate
+  remedy: 'Verify all fluid properties are positive: density > 0, viscosity > 0; ; [''Check density and
+    viscosity values in <media> section'', ''For water at 20°C: density=998.2 kg/m³, viscosity=1.002e-3
+    Pa·s'', ''If using temperature-dependent properties, check T range is valid'']; run_ogs.py validates
+    all material'
+  severity: fatal

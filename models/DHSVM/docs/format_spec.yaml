@@ -1,164 +1,494 @@
-model:
-  name: "DHSVM"
-  version: "3.2"
-  domain: "Distributed watershed hydrology"
-  language: "C"
-  binary_path: "KISSPATH_BINARIES/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM"
-  description: >
-    Physically-based, spatially distributed hydrological model for mountainous
-    watersheds. Simulates energy and water balance at each grid cell including
-    snow accumulation/melt, multi-layer soil moisture, channel routing, and
-    subsurface lateral flow.
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: DHSVM
+  language: c
+  implementation:
+    id: dhsvm-pnnl-32
+    version: '3.2'
+    provenance: C; University of Washington / PNNL distributed DHSVM-PNNL 3.2 source (github.com/pnnl/DHSVM-PNNL).
+  scientific_reference_version: DHSVM 3.2 (Wigmosta et al. 1994; PNNL/UW release 2018-02-23)
 inputs:
   forcing:
-    - name: "Temperature"
-      unit: "deg C"
-      valid_range: [-50, 50]
-      dhsvm_column: 2
-    - name: "Wind Speed"
-      unit: "m/s"
-      valid_range: [0, 50]
-      dhsvm_column: 3
-    - name: "Relative Humidity"
-      unit: "% (0-100)"
-      valid_range: [0, 100]
-      dhsvm_column: 4
-    - name: "Shortwave Radiation"
-      unit: "W/m2"
-      valid_range: [0, 1400]
-      dhsvm_column: 5
-    - name: "Longwave Radiation"
-      unit: "W/m2"
-      valid_range: [50, 600]
-      dhsvm_column: 6
-    - name: "Precipitation"
-      unit: "m/timestep"
-      valid_range: [0, 0.1]
-      dhsvm_column: 7
-
-  config:
-    format: "INI-style text with bracketed sections"
-    date_format: "MM/DD/YYYY-HH"
-    key_sections:
-      - "[OPTIONS]"
-      - "[AREA]"
-      - "[TIME]"
-      - "[CONSTANTS]"
-      - "[SOILS]"
-      - "[VEGETATION]"
-
-  binary_maps:
-    format: "Flat binary, row-major, 32-bit"
-    types:
-      - name: "DEM"
-        dtype: "float32"
-        unit: "m"
-      - name: "Mask"
-        dtype: "int32"
-        values: "1=inside basin, 0=outside"
-      - name: "Soil type"
-        dtype: "int32"
-        values: "index into soil parameter table"
-      - name: "Vegetation type"
-        dtype: "int32"
-        values: "index into vegetation parameter table"
-
+  - name: Air temperature (Tair)
+    unit: deg C
+    category: forcing
+    source_kind: forcing
+    model_input_format: per-cell ASCII met file data_<lat>_<lon>, column Tair
+    notes: Drives rain/snow partition and turbulent fluxes; supplied in Celsius (Kelvin input silently
+      suppresses all snow).
+  - name: Wind speed
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: per-cell ASCII met file, wind column
+  - name: Relative humidity
+    unit: '% (0-100)'
+    category: forcing
+    source_kind: forcing
+    model_input_format: per-cell ASCII met file, RH column
+    notes: Sets vapor pressure deficit for ET; fraction (0-1) input silently inflates ET.
+  - name: Incoming shortwave radiation (Swin)
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: per-cell ASCII met file, Swin column
+    notes: 0 at night, diurnal peak ~800-1200 W/m2; partitioned into beam/diffuse and visible (VISFRACT)
+      internally.
+  - name: Incoming longwave radiation (Lwin)
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: per-cell ASCII met file, Lwin column
+  - name: Precipitation
+    unit: m/timestep
+    category: forcing
+    source_kind: forcing
+    model_input_format: per-cell ASCII met file, precip column
+    notes: Read as meters per timestep, NOT mm; distributed by inverse-distance weighting plus precipitation
+      lapse rate.
   parameters:
-    critical:
-      - name: "Lateral Conductivity"
-        section: "[SOILS]"
-        unit: "m/s"
-        valid_range: [1.0e-6, 1.0e-2]
-        sensitivity: "High"
-        description: "Controls baseflow magnitude"
-      - name: "Exponential Decrease"
-        section: "[SOILS]"
-        valid_range: [0.5, 5.0]
-        sensitivity: "High"
-        description: "Controls baseflow recession rate"
-      - name: "Soil Depth"
-        section: "[SOILS]"
-        unit: "m"
-        valid_range: [0.5, 5.0]
-        sensitivity: "High"
-        description: "Total soil column depth"
-      - name: "Temperature Lapse Rate"
-        section: "[CONSTANTS]"
-        unit: "C/m"
-        valid_range: [-0.010, -0.003]
-        sensitivity: "High"
-        description: "Temperature change per meter elevation"
-      - name: "Precipitation Lapse Rate"
-        section: "[CONSTANTS]"
-        unit: "m/m"
-        valid_range: [0, 1.0e-4]
-        sensitivity: "High"
-        description: "Orographic precipitation enhancement"
-      - name: "Rain Threshold"
-        section: "[CONSTANTS]"
-        unit: "deg C"
-        valid_range: [-2.0, 1.0]
-        sensitivity: "Medium"
-        description: "Temperature below which precip is mixed rain/snow"
-      - name: "Snow Threshold"
-        section: "[CONSTANTS]"
-        unit: "deg C"
-        valid_range: [-1.0, 3.0]
-        sensitivity: "Medium"
-        description: "Temperature below which precip is all snow"
-      - name: "Porosity"
-        section: "[SOILS]"
-        unit: "fraction (0-1)"
-        valid_range: [0.3, 0.6]
-        sensitivity: "Medium"
-        description: "Soil water holding capacity"
-      - name: "Maximum Infiltration"
-        section: "[SOILS]"
-        unit: "m/s"
-        valid_range: [1.0e-6, 1.0e-3]
-        sensitivity: "Medium"
-        description: "Maximum rate water enters the soil"
-
+  - name: Digital elevation model (DEM)
+    unit: m
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: flat binary float32, row-major, exactly nrows*ncols values
+    notes: Provides elevation for lapse rates; derives slope and aspect; must be projected (UTM).
+  - name: Slope
+    unit: radians
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: flat binary float32
+  - name: Aspect
+    unit: degrees (0=N, 90=E, 180=S, 270=W)
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: flat binary float32
+  - name: Soil type map
+    unit: index into soil parameter table
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: flat binary int32
+  - name: Soil depth / per-layer depths
+    unit: m
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: flat binary float32 map + per-class layer depths in config
+    notes: Layer depths must be monotonically increasing surface-downward; among the most influential
+      calibration parameters.
+  - name: Soil hydraulic & thermal parameters
+    unit: lateral conductivity m/s; exponential decrease (-); max infiltration m/s; porosity, field capacity,
+      wilting point (fraction); pore-size distribution; bubbling pressure; bulk density kg/m3; vertical
+      conductivity m/s; thermal conductivity & capacity (per layer)
+    category: soil
+    source_kind: calibrated
+    model_input_format: SOILS section of config, per USDA soil class
+    notes: Lateral conductivity and its exponential-decrease rate are the dominant streamflow calibration
+      levers.
+  - name: Vegetation type map
+    unit: index into vegetation parameter table
+    category: vegetation
+    source_kind: dataset_lookup
+    model_input_format: flat binary int32
+  - name: Vegetation (overstory/understory) parameters
+    unit: monthly LAI; monthly albedo; height m; min/max stomatal resistance s/m; fractional & hemispheric
+      coverage; trunk space; aerodynamic & radiation attenuation; snow interception capacity & efficiency;
+      mass-release drip ratio; moisture threshold; VPD; Rpc; root-zone count, depths, and fractions
+    category: vegetation
+    source_kind: calibrated
+    model_input_format: vegetation parameter table referenced by config; 12 monthly LAI/albedo values
+      per stratum
+    notes: Vegetation height must exceed the Reference Height constant or the log wind profile yields
+      NaN; LAI and minimum stomatal resistance dominate ET.
+  - name: Channel class properties
+    unit: Manning's n (-); channel geometry (m)
+    category: channel
+    source_kind: calibrated
+    model_input_format: stream.class.dat
+  - name: Lapse rates and rain/snow thresholds
+    unit: temperature lapse rate C/m; precipitation lapse rate m/m; rain & snow threshold C; roughness
+      m; reference height m
+    category: constants
+    source_kind: calibrated
+    model_input_format: CONSTANTS section of config
+    notes: 'Defaults: temperature lapse rate -0.0065 C/m, precipitation lapse rate 3e-6 m/m, rain threshold
+      -0.45 C, snow threshold 0.46 C, reference height 75.0 m.'
+  initial_conditions:
+  - name: Initial snow water equivalent
+    unit: m
+    category: state
+    source_kind: user_provided
+    model_input_format: model state / restart files
+  - name: Initial soil moisture per layer
+    unit: fraction
+    category: state
+    source_kind: user_provided
+    model_input_format: model state / restart files
+  - name: Initial interception storage (canopy rain/snow)
+    unit: m
+    category: state
+    source_kind: user_provided
+    model_input_format: model state / restart files
+    notes: First simulation year(s) reflect spin-up and are commonly excluded from validation metrics.
+  boundary_conditions:
+  - name: Basin mask
+    unit: 0/1 (1 = inside basin)
+    category: domain
+    source_kind: user_provided
+    model_input_format: flat binary int32, row-major, nrows*ncols values
+    notes: Only mask=1 cells are computed; binary map size must equal nrows*ncols*4 bytes.
+  - name: Stream network topology
+    unit: segment connectivity, length (m), slope, width (m)
+    category: domain
+    source_kind: user_provided
+    model_input_format: stream.map.dat (cell->segment) + stream.network.dat (connectivity)
+  - name: Flow-routing method
+    unit: structural switch
+    category: control
+    source_kind: user_provided
+    model_input_format: OPTIONS section; NETWORK channel routing, kinematic-wave overland, D8 (default)
+      vs D4
+    notes: D8 is the default build; D8 gradient routing is documented as experimental.
+  - name: Grid geometry and time-stepping
+    unit: rows, columns, grid spacing (m); timestep (hours); start/end dates
+    category: control
+    source_kind: user_provided
+    model_input_format: AREA + TIME sections; dates in MM/DD/YYYY-HH
+    notes: Config Rows/Columns must match binary-map dimensions or the model segfaults; timestep must
+      match the forcing interval.
 outputs:
   primary:
-    - name: "Streamflow"
-      file: "Stream.Flow"
-      unit: "m3/s"
-      valid_range: [0, 10000]
-      format: "Tab-separated: timestamp, segment_id, flow, ..."
-    - name: "Aggregated Values"
-      file: "Aggregated.Values"
-      unit: "various (mm, m)"
-      format: "Space-separated basin-averaged time series"
-      key_columns:
-        - "Precip(m)"
-        - "Snow(m)"
-        - "Swq (snow water equivalent)"
-        - "TotalET"
-        - "SoilMoist1-4"
-        - "SatFlow"
-        - "TableDepth"
-    - name: "Mass Balance"
-      file: "Mass.Balance"
-      unit: "mm"
-      format: "Running water balance check"
-    - name: "Mass Final Balance"
-      file: "Mass.Final.Balance"
-      unit: "mm"
-      format: "End-of-simulation summary: inflow, outflow, storage change, mass error"
-
-  validation_metrics:
-    - "NSE (Nash-Sutcliffe Efficiency)"
-    - "KGE (Kling-Gupta Efficiency)"
-    - "PBIAS (Percent Bias)"
-
+  - name: Streamflow
+    unit: m3/s
+    description: Channel discharge per stream segment at network outlets
+    validation_rank: 1
+    emitted_in: Stream.Flow
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Gauge location must map to the correct stream segment ID
+        - Skip the spin-up period; first year(s) reflect initialization
+      detrending_options:
+      - none
+  - name: Swq
+    unit: m
+    description: Snow water equivalent per grid cell / basin-averaged
+    validation_rank: 3
+    emitted_in: Aggregated.Values; Pixel time series
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - SNOTEL / snow-course point must fall inside a representative cell
+        - Melt-out date timing is sensitive to temperature lapse rate
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Compare against gridded snow-cover/SWE products at matching resolution
+      detrending_options:
+      - none
+  - name: TotalET
+    unit: m/timestep
+    description: Total actual evapotranspiration (overstory/understory transpiration, interception evaporation,
+      soil evaporation)
+    validation_rank: 2
+    emitted_in: Aggregated.Values; Pixel time series
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Flux-tower footprint must be vegetation-representative of the cell
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Remote-sensing ET products carry retrieval bias; aggregate to model resolution
+      detrending_options:
+      - none
+  - name: SoilMoist
+    unit: fraction
+    description: Volumetric soil moisture per layer
+    validation_rank: 4
+    emitted_in: Aggregated.Values; Pixel time series
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Probe depth must align with the model layer being compared
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Satellite soil-moisture senses only the surface layer
+      detrending_options:
+      - none
+  - name: TableDepth
+    unit: m
+    description: Depth of the water table below the surface
+    validation_rank: 5
+    emitted_in: Aggregated.Values; Pixel time series
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Well location must map to a representative cell; DHSVM water table is a column abstraction
+      detrending_options:
+      - none
+  - name: MassError
+    unit: mm
+    description: End-of-simulation water-balance closure error (Total Inflow - Total Outflow - Storage
+      Change)
+    validation_rank: 6
+    emitted_in: Mass.Final.Balance (stderr)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Internal consistency check, not an observation; closure should be < 1% of total inflow
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_016"
-    description: "Forcing file dates must use MM/DD/YYYY-HH format; ISO or DD/MM causes silent misparse"
-  - id: "dt_012"
-    description: "Met file names must match grid coordinates with exact decimal places (GRID_DECIMAL)"
-  - id: "dt_013"
-    description: "Binary maps must be exactly nrows*ncols*4 bytes; extra/missing bytes shift all pixels"
-  - id: "dt_001"
-    description: "Precipitation must be m/timestep not mm — 1000x silent error if wrong"
+- id: dt_001
+  symptom: Streamflow is 1000x too high; basin floods immediately
+  diagnosis: 'Precipitation fed in mm/timestep instead of m/timestep; DHSVM expects precipitation in meters
+    per timestep. Global datasets like CMFD provide mm/hr or mm/3hr. If you skip the /1000 conversion,
+    a 0.5 mm rain event becomes 0.5 m (500 mm), flooding the basin.
+
+    ; [''MakeLocalMetData'', ''MassEnergyBalance'','
+  remedy: 'Divide precipitation by 1000 in forcing converter; convert_forcing.py; [''Check precip values
+    in forcing files: should be < 0.05 m/step'', ''Rerun convert_forcing.py with correct --source-format''];
+    Always verify precip range < 0.1 m/step after conversion'
+  severity: silent
+- id: dt_002
+  symptom: No snow accumulation even in winter at high elevations
+  diagnosis: 'Temperature in Kelvin instead of Celsius; DHSVM expects Celsius. If Kelvin values (~273)
+    are used, all temperatures are far above freezing. The rain/snow threshold (typically -0.45 to 0.46
+    C) is never triggered for snow.
+
+    ; [''MakeLocalMetData'', ''SnowPackEnergyBalance'']'
+  remedy: 'Subtract 273.15 from temperature; convert_forcing.py; [''Verify temperature range: should be
+    -40 to +40 C typically'', ''Check source dataset documentation for units'']; Add temperature range
+    check in forcing converter'
+  severity: silent
+- id: dt_003
+  symptom: Evapotranspiration is unrealistically high; soil dries immediately
+  diagnosis: 'Relative humidity as fraction (0-1) instead of percent (0-100); DHSVM expects RH as 0-100%.
+    If fraction values are used, RH appears near zero. The vapor pressure deficit becomes enormous, driving
+    extreme evapotranspiration.
+
+    ; [''MakeLocalMetData'', ''EvapoTranspiration'', ''CanopyResistance'']'
+  remedy: 'Multiply RH by 100; convert_forcing.py; [''Check RH values: should be 0-100'', ''If all values
+    are < 1.1, they are fractions'']; Auto-detect: if max(RH) < 1.5, multiply by 100'
+  severity: silent
+- id: dt_004
+  symptom: Turbulent heat fluxes are wrong; ET and snow melt rates incorrect
+  diagnosis: 'Wind speed in km/hr instead of m/s; DHSVM expects m/s. Wind in km/hr is 3.6x too high, amplifying
+    turbulent exchange coefficients. This increases both sensible and latent heat fluxes.
+
+    ; [''MakeLocalMetData'', ''SurfaceEnergyBalance'']'
+  remedy: 'Divide wind speed by 3.6; convert_forcing.py; [''Verify wind range: typically 0-15 m/s'', ''Values
+    > 30 likely in km/hr'']; Check source data documentation'
+  severity: silent
+- id: dt_005
+  symptom: Shortwave radiation unrealistically low or high
+  diagnosis: 'Shortwave radiation in MJ/m2/day instead of W/m2; DHSVM expects instantaneous W/m2. MJ/m2/day
+    values (typically 0-30) are far too low when treated as W/m2. Correct conversion requires dividing
+    by 86400 and multiplying by 1e6.
+
+    ; [''RadiationBalance'', ''MassEnergyBalance'']'
+  remedy: 'Convert MJ/m2/day to W/m2: multiply by 1e6/86400 = 11.574; convert_forcing.py; [''Check SW
+    range: peak should be 800-1200 W/m2 at noon'', ''Should be 0 at night'']; Verify diurnal cycle in
+    shortwave after conversion'
+  severity: silent
+- id: dt_006
+  symptom: Unrealistically deep water table; basin never saturates
+  diagnosis: 'Soil depth specified in cm instead of m; DHSVM expects soil depth in meters. If cm values
+    (e.g., 150) are used directly, the soil column is 150 m deep instead of 1.5 m, providing enormous
+    storage that never fills.
+
+    ; [''InitTables'', ''UnsaturatedFlow'', ''RouteSubSurface'']'
+  remedy: 'Divide soil depth by 100; convert_soil_params.py; [''Check total soil depth: typically 0.5
+    - 5.0 m'', ''Values > 10 are likely in cm'']; Tool auto-warns when depth > 10'
+  severity: silent
+- id: dt_007
+  symptom: Soil drains instantaneously; water table drops to bottom
+  diagnosis: 'Hydraulic conductivity in mm/hr instead of m/s; DHSVM expects Ksat in m/s. If mm/hr values
+    (typically 1-100) are used, conductivity is 3.6e6 times too high. The soil behaves like a sieve.
+
+    ; [''UnsaturatedFlow'', ''RouteSubSurface'']'
+  remedy: 'Divide Ksat by 3,600,000 to convert mm/hr to m/s; convert_soil_params.py; [''Verify Ksat range:
+    typically 1e-7 to 1e-4 m/s'', ''Values > 0.01 are likely in wrong units'']; Tool validates Ksat range
+    in output'
+  severity: silent
+- id: dt_008
+  symptom: Model crashes with porosity error or extreme soil moisture
+  diagnosis: 'Porosity specified as percent (e.g., 45) instead of fraction (0.45); DHSVM expects porosity
+    as a fraction 0-1. Values > 1 may cause assertion failures or nonsensical soil moisture calculations.
+
+    ; [''InitTables'', ''MassEnergyBalance'']'
+  remedy: 'Divide porosity by 100; convert_soil_params.py; [''Check porosity values in config: should
+    be 0.3-0.7'']; Tool validates porosity < 1.0'
+  severity: fatal
+- id: dt_009
+  symptom: Lapse rate corrections wrong; snow at wrong elevations
+  diagnosis: 'DEM elevation in feet instead of meters; DHSVM uses elevation for lapse rate corrections.
+    If DEM is in feet, temperature lapse is applied to wrong elevation differences. A 1000 ft range (305
+    m) gets treated as 1000 m, tripling the lapse correction.
+
+    ; [''InitTerrainMaps'', ''MakeLocalMetData'']'
+  remedy: 'Multiply DEM by 0.3048 to convert feet to meters; [''Check DEM range against known basin elevations'',
+    ''Mountain basins: 500-4000 m typical'']; Verify DEM unit before binary conversion'
+  severity: silent
+- id: dt_010
+  symptom: Radiation balance incorrect; shadows/aspect effects wrong
+  diagnosis: 'Slope angle in degrees instead of radians; DHSVM''s radiation routines expect slope in radians.
+    A 30-degree slope (0.524 rad) treated as 30 radians produces nonsensical trigonometric results in
+    solar geometry calculations.
+
+    ; [''CalcSolar'', ''RadiationBalance'']'
+  remedy: Multiply slope by pi/180; ['Slope values should be 0-1.5 radians (0-85 degrees)', 'Values >
+    2 are likely in degrees']; Check slope range after DEM processing
+  severity: silent
+- id: dt_011
+  symptom: Temperature varies too much/little with elevation
+  diagnosis: 'Temperature lapse rate in C/km instead of C/m; DHSVM expects lapse rate in C/m (e.g., -0.0065).
+    If C/km (-6.5) is used, the correction is 1000x too large. A 100 m elevation difference gets 650 C
+    of correction instead of 0.65 C.
+
+    ; [''MakeLocalMetData'', ''Constants'']'
+  remedy: 'Divide lapse rate by 1000; [''Standard atmospheric: -0.0065 C/m'', ''If value is -6.5, it is
+    in C/km'']; Config generator validates range'
+  severity: silent
+- id: dt_012
+  symptom: DHSVM exits with 'unable to open meteorological data file'
+  diagnosis: 'Met file name decimal places don''t match GRID_DECIMAL; DHSVM constructs met file names
+    as data_<lat>_<lon> using exactly GRID_DECIMAL decimal places. If GRID_DECIMAL=5 but files have 3
+    decimals, the filename won''t match. Even trailing zeros matter.
+
+    ; [''InitMetSources'', ''InitNewStep'']'
+  remedy: 'Regenerate forcing files with correct GRID_DECIMAL; convert_forcing.py; [''Check GRID_DECIMAL
+    in config file'', ''List forcing files: ls forcing/data_*'', ''Count decimal places in filenames''];
+    Match GRID_DECIMAL to forcing file precision'
+  severity: fatal
+- id: dt_013
+  symptom: Pixel values shifted; striping in output maps
+  diagnosis: 'Binary map file size doesn''t match grid dimensions; DHSVM reads binary files as nrows*ncols
+    values of fixed type. If the file has extra or missing bytes, all subsequent pixel positions shift.
+    The model may still run but produce garbage.
+
+    ; [''InitTerrainMaps'', ''all spatial operations'']'
+  remedy: 'Verify file size = nrows * ncols * 4 bytes; [''Check: ls -l dem.bin'', ''Expected: nrows *
+    ncols * 4 bytes'', ''Regenerate from source if wrong'']; Always verify binary file sizes before running'
+  severity: silent
+- id: dt_014
+  symptom: Soil moisture redistribution incorrect between layers
+  diagnosis: 'Soil layer depths not monotonically increasing; DHSVM expects layer depths from surface
+    downward. If depths are not sorted (e.g., 0.5, 0.3, 1.5), the inter-layer flow calculations use wrong
+    thicknesses.
+
+    ; [''UnsaturatedFlow'', ''MassEnergyBalance'']'
+  remedy: 'Sort layer depths in ascending order; [''Check Depth of Layer line in config'', ''Values must
+    increase: e.g., 0.1 0.6 1.5'']; Config generator sorts automatically'
+  severity: degraded
+- id: dt_015
+  symptom: NaN values in output; model may produce garbage or crash
+  diagnosis: 'Vegetation height less than Reference Height in [CONSTANTS]; DHSVM uses a logarithmic wind
+    profile adjustment that includes log(ref_height / veg_height). If veg_height < ref_height, the argument
+    is > 1, producing positive log. But if veg_height approaches zero, the log goes to infinity/NaN.
+
+    ; [''Make'
+  remedy: Set Reference Height below minimum vegetation height; ['Check Reference Height in [CONSTANTS]',
+    'Check all vegetation heights in [VEGETATION]', 'Reference Height should be < minimum veg height'];
+    Config generator validates height constraints
+  severity: fatal
+- id: dt_016
+  symptom: Dates misaligned; wrong forcing data read for each timestep
+  diagnosis: 'Forcing file uses ISO dates (YYYY-MM-DD) instead of MM/DD/YYYY-HH; DHSVM''s date parser
+    expects MM/DD/YYYY-HH format. If ISO format is used, dates are parsed incorrectly. For example, 2020-01-15
+    might be interpreted as month 2020, causing failure or wrong data association.
+
+    ; [''InitMetSources'', ''InitN'
+  remedy: 'Reformat dates to MM/DD/YYYY-HH; convert_forcing.py; [''Check first line of a forcing file'',
+    ''Format must be: 01/15/2020-00'']; Forcing converter always writes DHSVM format'
+  severity: silent
+- id: dt_017
+  symptom: Segmentation fault on startup
+  diagnosis: 'DEM and mask binary files have different dimensions than config; If Number of Rows/Columns
+    in config don''t match the binary file sizes, DHSVM reads past the end of the file array, causing
+    a segfault.
+
+    ; [''InitTerrainMaps'']'
+  remedy: 'Match config dimensions to binary file sizes; [''Check file size: stat dem.bin'', ''Expected:
+    Number of Rows * Number of Columns * 4'', ''Correct config or regenerate binaries'']; run_dhsvm.py
+    checks file sizes before execution'
+  severity: fatal
+- id: dt_018
+  symptom: Forcing data repeats or has gaps; output shows periodic artifacts
+  diagnosis: 'Timestep in config doesn''t match forcing file timestep; If DHSVM config says Time Step
+    = 3 (hours) but forcing files have 6-hour intervals, DHSVM reads every other line expecting 3-hour
+    data, skipping half the records or re-reading lines.
+
+    ; [''InitNewStep'', ''MakeLocalMetData'']'
+  remedy: Match config timestep to forcing file interval; ['Check Time Step in [TIME] section', 'Check
+    time spacing in forcing files', 'Resample if needed']; Forcing converter stamps target timestep in
+    filenames
+  severity: degraded
+- id: dt_019_new_basin_terrain_stream_toolchain_missing
+  symptom: ki_usable=false for a brand-new basin; all metrics null; pipeline halts before Stage 2 forcing
+    preflight even though the DHSVM binary runs and the Chiwawa developer example reproduces. SKILL.md
+    §3 shows '—' (no tool) for Stage 1 Terrain, Stage 4 Veg, Stage 5 Stream Network.
+  diagnosis: DHSVM has no Linux-native tool to build flat-binary terrain maps (DEM/mask/slope/aspect),
+    the veg type map, or the stream.map/network/class triple. The only shipped stream-network builder
+    (createstreamnetwork.py) hard-imports arcpy (ArcGIS, Windows-only, line 18); legacy path is ESRI ArcInfo
+    .aml. k
+  remedy: 'OUT OF SCOPE for self-improve loop (requires_human_engineering, >1 day): port arcpy/AML channel-delineation
+    + segment hydraulic-class logic to a Linux geospatial stack (GDAL + pysheds/whitebox/richdem) to emit
+    stream.map.dat/network/class, plus numpy writers for the flat-binary terrain/veg maps. Unt'
+- id: dt_019
+  symptom: Null metrics / no valid DHSVM run on a large, low-relief, regulated lowland basin (Huai ~121,000
+    km2, DEM 34-238 m)
+  diagnosis: DHSVM (high-res mountainous distributed model) run outside its valid domain on a flat regulated
+    lowland plain; cell count infeasible at native resolution and relief-driven physics invalid
+  remedy: 'Apply SKILL.md 6.9 basin-suitability gate: remap obs to a steep headwater sub-basin in the
+    native domain, or record a wrong-domain SKIP'

@@ -1,13 +1,6 @@
 ---
 name: mhm-hydrocraft
-description: >-
-  mHM (mesoscale Hydrologic Model) v5.13 lineage with Multiscale Parameter Regionalization
-  (MPR); Samaniego, Kumar & Attinger 2010 WRR methodology. Covers Distributed mesoscale
-  catchment water balance across a basin; Canopy interception; Snow accumulation and melt
-  (degree-day); Multi-horizon soil moisture dynamics; Infiltration and direct
-  (sealed/saturation-excess) runoff. Use when the task involves running, configuring,
-  calibrating or interpreting mHM.
-version: 1.0.0
+version: "1.0.0"
 model: mHM v5.13.1
 domain: distributed hydrology with parameter regionalization
 validation_status: binary_only
@@ -35,6 +28,55 @@ validation_status: binary_only
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (19 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (11 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (37 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (17 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/s0_config/configure_mhm_basin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_config/configure_mhm_basin.py --help` |
+| `tools/s10_regionalize/transfer_mpr_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_regionalize/transfer_mpr_params.py --help` |
+| `tools/s1_domain/delineate_basin_merit.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_domain/delineate_basin_merit.py --help` |
+| `tools/s1_domain/generate_latlon_files.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_domain/generate_latlon_files.py --help` |
+| `tools/s1_domain/setup_mhm_domain.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_domain/setup_mhm_domain.py --help` |
+| `tools/s2_morphology/generate_gauge_grid.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_morphology/generate_gauge_grid.py --help` |
+| `tools/s2_morphology/glim_to_mhm_geology.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_morphology/glim_to_mhm_geology.py --help` |
+| `tools/s2_morphology/hwsd_to_mhm_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_morphology/hwsd_to_mhm_soil.py --help` |
+| `tools/s2_morphology/landcover_to_mhm_luse.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_morphology/landcover_to_mhm_luse.py --help` |
+| `tools/s2_morphology/prepare_morpho_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_morphology/prepare_morpho_data.py --help` |
+| `tools/s2_morphology/validate_morph_grids.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_morphology/validate_morph_grids.py --help` |
+| `tools/s3_mpr/generate_mhm_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_mpr/generate_mhm_parameters.py --help` |
+| `tools/s4_forcing/convert_forcing_to_mhm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_forcing/convert_forcing_to_mhm.py --help` |
+| `tools/s5_gauge/prepare_mhm_gauge.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_gauge/prepare_mhm_gauge.py --help` |
+| `tools/s6_namelist/generate_mhm_namelists.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_namelist/generate_mhm_namelists.py --help` |
+| `tools/s7_execute/run_mhm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_execute/run_mhm.py --help` |
+| `tools/s8_postprocess/compare_mhm_vic.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_postprocess/compare_mhm_vic.py --help` |
+| `tools/s8_postprocess/parse_mhm_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_postprocess/parse_mhm_output.py --help` |
+| `tools/s9_calibration/setup_mhm_calibration.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_calibration/setup_mhm_calibration.py --help` |
+
+*19 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -74,6 +116,32 @@ Then convert to mHM NetCDF format using this KI's tool: `tools/s4_forcing/conver
 ### Strategic Value
 
 mHM enables a "calibrate once, apply everywhere" paradigm. Calibrate global parameters on well-gauged basins, then predict discharge for any ungauged basin using the same parameters + local physiographic data. This is transformative for data-sparse regions.
+
+---
+
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag defines what this KI predicts and which
+observable output is used as the headline validation target. If this section and
+`dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `mRM_runoff (routed discharge)` — Routed streamflow discharge on the L11 routing network, extracted at gauge cells. (`m3 s-1`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `mRM_runoff (routed discharge)` | 1 | `m3 s-1` | Routed streamflow discharge on the L11 routing network, extracted at gauge cells. |
+| `aET (actual evapotranspiration)` | other dag output | see `dag.yaml` | Other observable output declared by the dag. |
+| `SM (soil moisture)` | other dag output | see `dag.yaml` | Other observable output declared by the dag. |
+| `total_runoff (Q)` | other dag output | see `dag.yaml` | Other observable output declared by the dag. |
+| `baseflow (QB)` | other dag output | see `dag.yaml` | Other observable output declared by the dag. |
+| `recharge` | other dag output | see `dag.yaml` | Other observable output declared by the dag. |
+
+For HydroCraft coupling, the routed-discharge output is the primary judged
+quantity. ET, soil moisture, total runoff, baseflow, and recharge are exposed for
+diagnostics, cross-model checks, and downstream coupling, but their units and
+observability metadata must be read from `dag.yaml` before binding or scoring.
 
 ---
 
@@ -238,6 +306,41 @@ already shows the routing and forcing are right.
 > PET of 98 mm/day from a synthesised diurnal range (dt_s11). Fixing the inputs
 > moved the *uncalibrated* model from −0.344 to +0.442 before a single parameter
 > was touched.
+
+## 11. Validated Results
+
+**Validation status**: `binary_only`. The KI can execute the real mHM binary and
+records benchmark and Wangjiaba reference results, but the field judgement of a
+run comes from `docs/validation_convention.yaml`, not from intuition.
+
+### Headline Variable Judged by the Dag
+
+The dag's rank-1 output is `mRM_runoff (routed discharge)` with unit `m3 s-1`:
+Routed streamflow discharge on the L11 routing network, extracted at gauge cells.
+
+### Recorded Results in This Body
+
+| Case | Period | Setup | NSE | KGE | r | PBIAS |
+|------|--------|-------|-----|-----|---|-------|
+| Bundled Mosel basin test case | bundled test case | mHM v5.13.1 binary/source noted above | 0.77 | 0.75 | not stated | not stated |
+| Wangjiaba 51030, Huai, 29,638 km2 | full 1981-1990 | German MPR defaults, CMFD 0.25 deg, Oudin PET, L0 0.01 deg / L1 = L11 0.25 deg, spin-up 1980 | 0.442 | 0.456 | 0.861 | +41.2% |
+| Wangjiaba 51030, Huai, 29,638 km2 | cal 1981-1985 | German MPR defaults, CMFD 0.25 deg, Oudin PET, L0 0.01 deg / L1 = L11 0.25 deg, spin-up 1980 | 0.302 | 0.301 | 0.887 | +48.2% |
+| Prior defective Wangjiaba run | not stated | truncated basin plus forcing/PET defects; kept only as a diagnostic anti-example | -0.344 | not stated | not stated | -94.7% |
+
+### Convention Bars from `docs/validation_convention.yaml`
+
+| Dag variable | Metric | Direction | Bands and citation keys |
+|--------------|--------|-----------|-------------------------|
+| `mRM_runoff (routed discharge)` | `nse` | maximize | satisfactory: 0.5 (`moriasi2007`, `moriasi2015`, `arnold2012`); good: 0.65 (`moriasi2007`, `moriasi2015`, `arnold2012`); very_good: 0.75 (`moriasi2007`, `moriasi2015`, `arnold2012`) |
+| `mRM_runoff (routed discharge)` | `pbias` | zero_centered | satisfactory: 25 (`moriasi2007`, `moriasi2015`); good: 15 (`moriasi2007`, `moriasi2015`); very_good: 10 (`moriasi2007`, `moriasi2015`) |
+| `aET (actual evapotranspiration)` | `spaef` | maximize | satisfactory: no cited threshold (`koch2018`, `demirel2018`, `dembele2022`); good: no cited threshold (`koch2018`, `demirel2018`, `dembele2022`); very_good: no cited threshold (`koch2018`, `demirel2018`, `dembele2022`) |
+| `aET (actual evapotranspiration)` | `nse` | maximize | satisfactory: no cited threshold (convention cites no keys) |
+
+For the rank-1 discharge variable, the recorded Wangjiaba default runs do not
+meet the `nse` satisfactory threshold of 0.5 (`moriasi2007`, `moriasi2015`,
+`arnold2012`) and do not meet the `pbias` satisfactory threshold of 25
+(`moriasi2007`, `moriasi2015`). They are useful setup diagnostics, not final
+calibrated validation results.
 
 ### Step 1: Calibrate on a Gauged Basin
 
@@ -507,23 +610,23 @@ the one validated place where source units are normalised (`precip_mm` → mm/da
 
 ## Skill Documents
 
-> **Note**: Skill documents have not yet been created. The procedural guidance
-> for each stage is embedded directly in SKILL.md (this file) and in each
-> tool's docstring. The table below lists planned documents for future expansion.
+The per-stage procedure documents below are thin operational wrappers around
+this `SKILL.md`, `dag.yaml`, `docs/format_spec.yaml`,
+`docs/validation_convention.yaml`, and the validated scripts in `tools/`.
 
-| ID | Stage | Document (planned) | Key Content |
+| ID | Stage | Document | Key Content |
 |----|-------|--------------------|-------------|
-| sd01 | s0 | `docs/s0_config_skill.md` | Resolution selection, PET method, coordinate system |
-| sd02 | s1 | `docs/s1_domain_skill.md` | L0/L1/L11 relationship, grid alignment |
-| sd03 | s2 | `docs/s2_morphology_skill.md` | ASCII grid format, HWSD/GLiM/AVHRR mapping |
-| sd04 | s3 | `docs/s3_mpr_skill.md` | Transfer function theory, parameter ranges, climate presets |
-| sd05 | s4 | `docs/s4_forcing_skill.md` | CMFD/MSWX -> mHM conversion |
-| sd06 | s5 | `docs/s5_gauge_skill.md` | Gauge format, GRDC/HYDAT integration |
-| sd07 | s6 | `docs/s6_namelist_skill.md` | Namelist reference, process selection |
-| sd08 | s7 | `docs/s7_execute_skill.md` | Runtime expectations, error interpretation |
-| sd09 | s8 | `docs/s8_postprocess_skill.md` | Output structure, performance metrics |
-| sd10 | s9 | `docs/s9_calibration_skill.md` | Calibration setup, optimizer selection, convergence |
-| sd11 | s10 | `docs/s10_regionalize_skill.md` | Transfer protocol, data consistency |
+| sd01 | s0 | [`docs/s0_config_skill.md`](docs/s0_config_skill.md) | Resolution selection, PET method, coordinate system |
+| sd02 | s1 | [`docs/s1_domain_skill.md`](docs/s1_domain_skill.md) | True catchment delineation, L0/L1/L11 relationship, grid alignment |
+| sd03 | s2 | [`docs/s2_morphology_skill.md`](docs/s2_morphology_skill.md) | ASCII grid format, HWSD/GLiM/AVHRR mapping, gauge grid |
+| sd04 | s3 | [`docs/s3_mpr_skill.md`](docs/s3_mpr_skill.md) | Transfer function theory, parameter ranges, climate presets |
+| sd05 | s4 | [`docs/s4_forcing_skill.md`](docs/s4_forcing_skill.md) | CMFD/MSWX -> mHM conversion, PET and unit gates |
+| sd06 | s5 | [`docs/s5_gauge_skill.md`](docs/s5_gauge_skill.md) | Gauge format and observed-discharge conversion |
+| sd07 | s6 | [`docs/s6_namelist_skill.md`](docs/s6_namelist_skill.md) | Namelist reference, process selection, calibration flags |
+| sd08 | s7 | [`docs/s7_execute_skill.md`](docs/s7_execute_skill.md) | Runtime expectations, actual binary execution, error interpretation |
+| sd09 | s8 | [`docs/s8_postprocess_skill.md`](docs/s8_postprocess_skill.md) | Output structure, performance metrics, validation convention |
+| sd10 | s9 | [`docs/s9_calibration_skill.md`](docs/s9_calibration_skill.md) | Calibration setup, optimizer selection, convergence |
+| sd11 | s10 | [`docs/s10_regionalize_skill.md`](docs/s10_regionalize_skill.md) | Transfer protocol, data-source consistency |
 
 ---
 

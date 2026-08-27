@@ -1,405 +1,631 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: WRF (Weather Research and Forecasting) Model
-  domain: atmosphere
-  binary_path: ''
-  language: unknown
+  name: WRF
+  language: fortran
+  implementation:
+    id: wrf-arw-471
+    version: 4.7.1
+    provenance: Fortran 90/2003 with C utilities; NCAR/UCAR community WRF-ARW release 4.7.1 (github.com/wrf-model/WRF);
+      MPI + OpenMP parallel; NetCDF I/O.
+  scientific_reference_version: 'Advanced Research WRF (ARW) dynamical core, v4.x lineage; governing equations
+    per the ARW Technical Note (NCAR TN series): fully compressible nonhydrostatic Euler equations in
+    flux form on a terrain-following hybrid hydrostatic-pressure (eta) mass coordinate, Arakawa C-grid'
 inputs:
   forcing:
-  - name: Temperature
-    unit: "K (perturbation \u03B8)"
-    format: ''
-    source: skill_md
-  - name: Pressure
-    unit: Pa
-    format: ''
-    source: skill_md
-  - name: Precipitation
-    unit: mm (accumulated)
-    format: ''
-    source: skill_md
-  - name: Radiation
-    unit: unknown
-    format: ''
-    source: skill_md
+  - name: Global reanalysis/forecast lateral boundary fields (3-D temperature, u/v wind, geopotential
+      height, relative humidity, surface and mean-sea-level pressure)
+    unit: K, m s-1, m, %, Pa
+    category: meteorological_lateral_forcing
+    source_kind: forcing
+    model_input_format: Lateral boundary fields in wrfbdy_d01 (NetCDF), updated at interval_seconds; derived
+      from interpolated met_em fields
+    notes: Drives the domain-1 lateral boundary tendencies throughout the run. interval_seconds must match
+      the driving-data frequency (hourly=3600, 6-hourly=21600). 12-24 h spin-up recommended before the
+      analysis period.
+  - name: Skin/sea-surface temperature, soil moisture and temperature, land-sea mask, 2-m fields
+    unit: K, m3 m-3, 0/1
+    category: meteorological_surface_forcing
+    source_kind: forcing
+    model_input_format: met_em.d0N fields (SKINTEMP, SST, SM000010, ST000010, LANDSEA) consumed by real.exe;
+      optional time-varying SST via wrflowinp with sst_update=1
+    notes: Soil moisture/temperature and SST must be present in the met_em files or real.exe falls back
+      / produces zero-soil fields. SST over water defaults to SKINTEMP when absent.
+  parameters:
+  - name: Terrain elevation, dominant land-use category, dominant soil category (top/bottom), slope category
+    unit: m, category index
+    category: static_terrestrial
+    source_kind: dataset_lookup
+    model_input_format: geo_em.d0N.nc static fields (HGT_M, LU_INDEX, SCT_DOM, SCB_DOM) produced by geogrid
+      from WPS_GEOG (USGS GMTED2010 topo, MODIS 21-cat or USGS 24-cat land use, STATSGO/FAO 16-cat soil)
+    notes: num_land_cat must match the land-use dataset (MODIS=21, USGS=24).
+  - name: Monthly green-vegetation fraction, monthly surface albedo, maximum snow albedo, leaf area index,
+      deep soil temperature
+    unit: fraction, K
+    category: static_terrestrial_seasonal
+    source_kind: dataset_lookup
+    model_input_format: geo_em.d0N.nc (GREENFRAC, ALBEDO12M, SNOALB) and met_em annual-mean deep soil
+      temperature
+  - name: Land-surface, vegetation, soil, and radiation lookup tables
+    unit: scheme-specific
+    category: physics_lookup_tables
+    source_kind: default
+    model_input_format: LANDUSE.TBL, VEGPARM.TBL, SOILPARM.TBL, GENPARM.TBL, RRTM_DATA / RRTMG_LW_DATA
+      / RRTMG_SW_DATA / CAM_ABS_DATA
+    notes: Radiation lookup tables must be present in the run directory at runtime or radiation crashes
+      or uses wrong physics.
+  - name: Scheme tuning coefficients (e.g. Kain-Fritsch entrainment/downdraft multipliers, CAPE consumption
+      time, Noah saturated-soil-water multiplier, PBL momentum-diffusivity profile exponent, radiation
+      scattering tuning)
+    unit: dimensionless / scheme-specific
+    category: tunable_physics_coefficients
+    source_kind: calibrated
+    model_input_format: Scheme-internal coefficients (subset namelist-exposed; many hardwired in module_model_constants.F)
+    notes: These are the levers identified by published WRF sensitivity analyses (see influence). Most
+      are not surfaced in standard namelist tables.
+  initial_conditions:
+  - name: Initial 3-D wind, perturbation potential temperature, geopotential, pressure, dry-air column
+      mass, water-vapor mixing ratio
+    unit: m s-1, K, m2 s-2, Pa, kg kg-1
+    category: atmospheric_initial_state
+    source_kind: derived
+    model_input_format: wrfinput_d0N (NetCDF) variables U, V, W, T, PH/PHB, P/PB, MU/MUB, QVAPOR produced
+      by real.exe vertical interpolation of met_em onto the eta grid plus base-state computation
+  - name: Initial soil temperature and volumetric soil moisture by layer
+    unit: K, m3 m-3
+    category: land_initial_state
+    source_kind: derived
+    model_input_format: wrfinput_d0N TSLB, SMOIS (num_soil_layers consistent with the land-surface scheme)
+  boundary_conditions:
+  - name: Domain dimensions, nesting, projection, and vertical levels
+    unit: grid units, m
+    category: domain_grid_control
+    source_kind: user_provided
+    model_input_format: namelist.input &domains (max_dom, e_we, e_sn, e_vert, dx, dy, parent_grid_ratio,
+      parent_time_step_ratio, i/j_parent_start, feedback) and namelist.wps projection settings
+    notes: parent_grid_ratio must be odd (3,5,7) for real-data nesting; e_vert must be identical across
+      nested domains; dx/dy in meters for real-data cases.
+  - name: Run length, start/end times, integration timestep, boundary-update and history intervals
+    unit: s, min
+    category: time_control
+    source_kind: user_provided
+    model_input_format: namelist.input &time_control (run_days/hours, start/end y/m/d/h, interval_seconds,
+      history_interval, io_form_history) and &domains time_step
+    notes: time_step is CFL-bound (dt <= 6*dx_km) unless use_adaptive_time_step=.true., which overrides
+      it at runtime via observed CFL.
+  - name: Physics parameterization choices (microphysics, LW/SW radiation, surface layer, land-surface
+      model, PBL, cumulus)
+    unit: scheme index
+    category: physics_scheme_selection
+    source_kind: user_provided
+    model_input_format: namelist.input &physics (mp_physics, ra_lw_physics, ra_sw_physics, sf_sfclay_physics,
+      sf_surface_physics, bl_pbl_physics, cu_physics, radt, num_soil_layers, num_land_cat)
+    notes: num_soil_layers must match the LSM (Noah=4, RUC=6, Noah-MP=4, CLM4=10); cu_physics must be
+      0 for domains with dx<5 km; scheme suites (surface layer / PBL / LSM) must be mutually compatible.
+  - name: Dynamical-core and numerics switches (RK order, diffusion, advection order, hybrid coordinate,
+      damping)
+    unit: option index
+    category: dynamics_numerics_control
+    source_kind: user_provided
+    model_input_format: namelist.input &dynamics (rk_ord, diff_opt, km_opt, non_hydrostatic, hybrid_opt,
+      h/v_mom_adv_order, h/v_sca_adv_order, moist_adv_opt, w_damping, damp_opt, zdamp, dampcoef, epssm)
+    notes: Damping/epssm options stabilize strong updrafts over steep terrain (mitigate 'WOULD GO OFF
+      TOP' and NaN growth).
 outputs:
   primary:
-  - name: Temperature
-    unit: "K (perturbation \u03B8)"
-    format: ''
-    source: skill_md
-  - name: Soil_moisture
-    unit: "m\xB3 m\u207B\xB3"
-    format: ''
-    source: skill_md
-  - name: precipitation_rate
-    canonical_id: precipitation_rate
-    unit: mm/day
-  - name: air_temperature
-    canonical_id: air_temperature
-    unit: degC
-  - name: wind_speed
-    canonical_id: wind_speed
-    unit: m/s
-  - name: surface_pressure
-    canonical_id: surface_pressure
+  - name: T2
+    unit: K
+    description: 2-metre air temperature (diagnosed at the surface; already in Kelvin, no base-state offset
+      needed)
+    validation_rank: 1
+    emitted_in: wrfout_d0N
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare to station 2-m temperature at the grid cell containing the station; representativeness
+          error over heterogeneous terrain.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Gridded reanalysis/satellite LST is a proxy for 2-m air temperature, not identical.
+      detrending_options:
+      - none
+  - name: RAINC+RAINNC
+    unit: mm
+    description: Total accumulated atmospheric precipitation at the land/ocean surface (convective RAINC
+      plus grid-scale RAINNC), accumulated from simulation start
+    validation_rank: 3
+    emitted_in: wrfout_d0N
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Difference consecutive output times for interval precip; gauge point vs grid-cell-average mismatch;
+          convective timing/displacement errors dominate at sub-daily scale.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against gridded radar/satellite QPE; displacement of convective cells penalizes point-to-point
+          metrics.
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Threshold-exceedance (heavy-rain) verification via hit rate / false-alarm / CSI is more robust
+          to displacement than magnitude metrics.
+      detrending_options:
+      - none
+      - first_difference
+  - name: U10/V10
+    unit: m s-1
+    description: 10-metre atmospheric wind components (grid-relative on the C-grid; require COSALPHA/SINALPHA
+      rotation to earth-relative for direction comparison)
+    validation_rank: 2
+    emitted_in: wrfout_d0N
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Rotate to earth-relative before direction comparison; wind direction bias of 10-30 deg arises
+          if grid-relative winds are compared directly on projected grids.
+      detrending_options:
+      - none
+  - name: PSFC
     unit: Pa
+    description: Surface pressure (total, in Pa)
+    validation_rank: 4
+    emitted_in: wrfout_d0N
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Reduce to common reference (station vs MSL); elevation mismatch between station and grid-cell
+          terrain height biases magnitude.
+      detrending_options:
+      - none
+  - name: T
+    unit: K
+    description: 3-D atmospheric perturbation potential temperature (theta - 300 K); actual temperature
+      = (T+300)*((P+PB)/100000)^(Rd/cp)
+    validation_rank: 5
+    emitted_in: wrfout_d0N
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Must add 300 K base state and apply Exner function before comparison to radiosonde/aircraft
+          temperature; compare on pressure or height levels after interpolation.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Reanalysis upper-air fields require destaggering and base-state reconstruction first.
+      detrending_options:
+      - none
+  - name: SWDOWN
+    unit: W m-2
+    description: Downward shortwave radiation at the surface
+    validation_rank: 6
+    emitted_in: wrfout_d0N
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Diurnal cycle resolution depends on radt; cloud-radiation interaction errors dominate; compare
+          instantaneous flux, not accumulated.
+      detrending_options:
+      - none
+  - name: TSLB
+    unit: K
+    description: Soil temperature by layer (land-surface state)
+    validation_rank: 7
+    emitted_in: wrfout_d0N
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Match the model soil-layer midpoint depth to the observation depth; strongly conditioned on
+          the initial soil state from the forcing.
+      detrending_options:
+      - none
+  - name: SMOIS
+    unit: m3 m-3
+    description: Volumetric soil moisture by layer (land-surface state)
+    validation_rank: 8
+    emitted_in: wrfout_d0N
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Volumetric fraction (not mm or % saturation); satellite products sense only a shallow surface
+          layer; LSM-scheme-dependent.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Compare top-layer SMOIS against satellite surface soil moisture; depth-support mismatch.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: 'Surface temperatures in wrfout are ~300 K too cold (e.g., T2 shows
-    -27 C when expecting +25 C), or downstream analysis reports temperatures near
-    0 K.
+  symptom: 'Surface temperatures in wrfout are ~300 K too cold (e.g., T2 shows -27 C when expecting +25
+    C), or downstream analysis reports temperatures near 0 K.
 
     '
-  affected_output: The 3D temperature variable T in wrfout is perturbation potential
-    temperature (theta - 300 K). Code is reading T directly without adding the 300
-    K base state. For actual temperature, one must also app
-  detection: The 3D temperature variable T in wrfout is perturbation potential temperature
-    (theta - 300 K). Code is reading T directly without adding the 300 K base state.
-    For actual temperature, one must also app
-  fix: 'Always add 300 to T before any use: theta = T + 300. For actual temperature,
-    compute T_actual = theta * ((P + PB) / 100000.0)^(R_d/c_p). For 2-m temperature,
-    use the T2 variable directly (already in K'
+  diagnosis: 'The 3D temperature variable T in wrfout is perturbation potential temperature (theta - 300
+    K). Code is reading T directly without adding the 300 K base state. For actual temperature, one must
+    also apply the Exner function: T_actual = (T + 300) * (P_total / 100000)^(287/1003.5).
+
+    '
+  remedy: 'Always add 300 to T before any use: theta = T + 300. For actual temperature, compute T_actual
+    = theta * ((P + PB) / 100000.0)^(R_d/c_p). For 2-m temperature, use the T2 variable directly (already
+    in K, not perturbation).
+
+    '
+  severity: critical
 - id: dt_002
-  description: 'Surface pressure values are ~100x too small (e.g., 1013 instead of
-    101300). Downstream calculations using pressure give nonsensical results.
+  symptom: 'Surface pressure values are ~100x too small (e.g., 1013 instead of 101300). Downstream calculations
+    using pressure give nonsensical results.
 
     '
-  affected_output: 'Pressure was read in hPa (millibars) but WRF expects and outputs
-    Pa internally. Alternatively, only the perturbation pressure P was used instead
-    of total pressure P + PB.
+  diagnosis: 'Pressure was read in hPa (millibars) but WRF expects and outputs Pa internally. Alternatively,
+    only the perturbation pressure P was used instead of total pressure P + PB.
 
     '
-  detection: 'Pressure was read in hPa (millibars) but WRF expects and outputs Pa
-    internally. Alternatively, only the perturbation pressure P was used instead of
-    total pressure P + PB.
+  remedy: 'For input data: multiply hPa by 100 to get Pa. For wrfout data: total pressure is P + PB (perturbation
+    + base state). P alone is only ~100-1000 Pa. PSFC is total surface pressure in Pa.
 
     '
-  fix: 'For input data: multiply hPa by 100 to get Pa. For wrfout data: total pressure
-    is P + PB (perturbation + base state). P alone is only ~100-1000 Pa. PSFC is total
-    surface pressure in Pa.
-
-    '
+  severity: critical
 - id: dt_003
-  description: 'Mixing ratios (qv, qc, qr) are 1000x too large, causing unrealistic
-    precipitation or model crash. Total column water exceeds 200 kg/m2.
+  symptom: 'Mixing ratios (qv, qc, qr) are 1000x too large, causing unrealistic precipitation or model
+    crash. Total column water exceeds 200 kg/m2.
 
     '
-  affected_output: 'Input specific humidity or mixing ratio was provided in g/kg instead
-    of the WRF-required kg/kg. A value of 15 g/kg should be 0.015 kg/kg.
+  diagnosis: 'Input specific humidity or mixing ratio was provided in g/kg instead of the WRF-required
+    kg/kg. A value of 15 g/kg should be 0.015 kg/kg.
 
     '
-  detection: 'Input specific humidity or mixing ratio was provided in g/kg instead
-    of the WRF-required kg/kg. A value of 15 g/kg should be 0.015 kg/kg.
+  remedy: 'Divide g/kg values by 1000 before ingestion. Check that qv values are in range 0 to ~0.04 kg/kg
+    (0 to 40 g/kg is extreme tropical).
 
     '
-  fix: 'Divide g/kg values by 1000 before ingestion. Check that qv values are in range
-    0 to ~0.04 kg/kg (0 to 40 g/kg is extreme tropical).
-
-    '
+  severity: critical
 - id: dt_004
-  description: 'Geopotential height values are ~9.81x too large. Model produces unrealistic
-    pressure gradients or crashes during initialization.
+  symptom: 'Geopotential height values are ~9.81x too large. Model produces unrealistic pressure gradients
+    or crashes during initialization.
 
     '
-  affected_output: 'ERA5 provides geopotential in m2/s2, but WRF GHT field expects
-    height in meters. The conversion factor is g = 9.81 m/s2.
+  diagnosis: 'ERA5 provides geopotential in m2/s2, but WRF GHT field expects height in meters. The conversion
+    factor is g = 9.81 m/s2.
 
     '
-  detection: 'ERA5 provides geopotential in m2/s2, but WRF GHT field expects height
-    in meters. The conversion factor is g = 9.81 m/s2.
+  remedy: 'Divide ERA5 geopotential (z) by 9.81 to get geopotential height in meters: GHT = z / 9.81.
 
     '
-  fix: 'Divide ERA5 geopotential (z) by 9.81 to get geopotential height in meters:
-    GHT = z / 9.81.
-
-    '
+  severity: critical
 - id: dt_005
-  description: 'Precipitation totals are always zero or always accumulating without
-    reset. Hourly rainfall rates appear as multi-day totals.
+  symptom: 'Precipitation totals are always zero or always accumulating without reset. Hourly rainfall
+    rates appear as multi-day totals.
 
     '
-  affected_output: WRF RAINC and RAINNC are accumulated from simulation start. To
-    get interval precipitation, you must difference consecutive output times. Additionally,
-    total precipitation requires RAINC + RAINNC (conv
-  detection: WRF RAINC and RAINNC are accumulated from simulation start. To get interval
-    precipitation, you must difference consecutive output times. Additionally, total
-    precipitation requires RAINC + RAINNC (conv
-  fix: 'Compute interval precip: P(t) = (RAINC(t) + RAINNC(t)) - (RAINC(t-1) + RAINNC(t-1)).
-    For the first output time, the accumulation is from simulation start.
+  diagnosis: 'WRF RAINC and RAINNC are accumulated from simulation start. To get interval precipitation,
+    you must difference consecutive output times. Additionally, total precipitation requires RAINC + RAINNC
+    (convective plus grid-scale).
 
     '
+  remedy: 'Compute interval precip: P(t) = (RAINC(t) + RAINNC(t)) - (RAINC(t-1) + RAINNC(t-1)). For the
+    first output time, the accumulation is from simulation start.
+
+    '
+  severity: high
 - id: dt_006
-  description: 'Radiation flux values are wrong by factor of ~86400 or 1e6. Solar
-    radiation appears as 0.005 W/m2 when expecting 500 W/m2.
+  symptom: 'Radiation flux values are wrong by factor of ~86400 or 1e6. Solar radiation appears as 0.005
+    W/m2 when expecting 500 W/m2.
 
     '
-  affected_output: 'Input radiation data was in MJ/m2/day but WRF expects W/m2 (1
-    W = 1 J/s). Conversion: W/m2 = MJ/m2/day * 1e6 / 86400.
+  diagnosis: 'Input radiation data was in MJ/m2/day but WRF expects W/m2 (1 W = 1 J/s). Conversion: W/m2
+    = MJ/m2/day * 1e6 / 86400.
 
     '
-  detection: 'Input radiation data was in MJ/m2/day but WRF expects W/m2 (1 W = 1
-    J/s). Conversion: W/m2 = MJ/m2/day * 1e6 / 86400.
+  remedy: 'Multiply MJ/m2/day by 11.574 to get W/m2. Alternatively, W/m2 = MJ/m2/day * 1000000 / 86400.
 
     '
-  fix: 'Multiply MJ/m2/day by 11.574 to get W/m2. Alternatively, W/m2 = MJ/m2/day
-    * 1000000 / 86400.
-
-    '
+  severity: high
 - id: dt_007
-  description: 'Model crashes within first few timesteps with "cfl" errors in rsl.error.0000.
-    Simulation immediately aborts.
+  symptom: 'Model crashes within first few timesteps with "cfl" errors in rsl.error.0000. Simulation immediately
+    aborts.
 
     '
-  affected_output: 'Time step violates the CFL (Courant-Friedrichs-Lewy) stability
-    condition. The rule of thumb is dt <= 6 * dx(km). For dx=12 km, dt must be <=
-    72 s.
+  diagnosis: 'Time step violates the CFL (Courant-Friedrichs-Lewy) stability condition. The rule of thumb
+    is dt <= 6 * dx(km). For dx=12 km, dt must be <= 72 s.
 
     '
-  detection: 'Time step violates the CFL (Courant-Friedrichs-Lewy) stability condition.
-    The rule of thumb is dt <= 6 * dx(km). For dx=12 km, dt must be <= 72 s.
+  remedy: 'Reduce time_step in namelist.input. Start conservative (dt = 4*dx_km) and increase if stable.
+    Also check parent_time_step_ratio for nested domains.
 
     '
-  fix: 'Reduce time_step in namelist.input. Start conservative (dt = 4*dx_km) and
-    increase if stable. Also check parent_time_step_ratio for nested domains.
-
-    '
+  severity: critical
 - id: dt_008
-  description: 'real.exe or wrf.exe crashes with segmentation fault. No useful error
-    message. Core dump shows crash in land surface module.
+  symptom: 'real.exe or wrf.exe crashes with segmentation fault. No useful error message. Core dump shows
+    crash in land surface module.
 
     '
-  affected_output: 'num_soil_layers does not match the land surface model selection:
-    Noah LSM (sf_surface_physics=2) requires 4, RUC (3) requires 6, Noah-MP (4) requires
-    4, CLM4 (5) requires 10.
+  diagnosis: 'num_soil_layers does not match the land surface model selection: Noah LSM (sf_surface_physics=2)
+    requires 4, RUC (3) requires 6, Noah-MP (4) requires 4, CLM4 (5) requires 10.
 
     '
-  detection: 'num_soil_layers does not match the land surface model selection: Noah
-    LSM (sf_surface_physics=2) requires 4, RUC (3) requires 6, Noah-MP (4) requires
-    4, CLM4 (5) requires 10.
+  remedy: 'Set num_soil_layers to match sf_surface_physics: sf_surface_physics=1→5, =2→4, =3→6, =4→4,
+    =5→10.
 
     '
-  fix: "Set num_soil_layers to match sf_surface_physics: sf_surface_physics=1\u2192\
-    5, =2\u21924, =3\u21926, =4\u21924, =5\u219210.\n"
+  severity: critical
 - id: dt_009
-  description: 'Precipitation is unrealistically high (2-3x observed). Domain 2 (4
-    km) shows much more rain than observations.
+  symptom: 'Precipitation is unrealistically high (2-3x observed). Domain 2 (4 km) shows much more rain
+    than observations.
 
     '
-  affected_output: 'cu_physics (cumulus parameterization) is enabled on a domain with
-    dx < 5 km. At convection-permitting resolution, convection is explicitly resolved,
-    so parameterized + resolved = double-counted.
+  diagnosis: 'cu_physics (cumulus parameterization) is enabled on a domain with dx < 5 km. At convection-permitting
+    resolution, convection is explicitly resolved, so parameterized + resolved = double-counted.
 
     '
-  detection: 'cu_physics (cumulus parameterization) is enabled on a domain with dx
-    < 5 km. At convection-permitting resolution, convection is explicitly resolved,
-    so parameterized + resolved = double-counted.
+  remedy: 'Set cu_physics = 0 for all domains with dx < 5 km. For the parent domain (dx > 10 km), keep
+    cu_physics = 1 (Kain-Fritsch) or 16 (New Tiedtke).
 
     '
-  fix: 'Set cu_physics = 0 for all domains with dx < 5 km. For the parent domain (dx
-    > 10 km), keep cu_physics = 1 (Kain-Fritsch) or 16 (New Tiedtke).
-
-    '
+  severity: high
 - id: dt_010
-  description: 'Nesting interpolation produces checkerboard patterns at nest boundaries.
-    Temperature or wind fields show regular oscillations.
+  symptom: 'Nesting interpolation produces checkerboard patterns at nest boundaries. Temperature or wind
+    fields show regular oscillations.
 
     '
-  affected_output: 'parent_grid_ratio is an even number (2, 4, 6). WRF requires odd
-    ratios (3, 5, 7) for real-data simulations to properly center the interpolation
-    stencil.
+  diagnosis: 'parent_grid_ratio is an even number (2, 4, 6). WRF requires odd ratios (3, 5, 7) for real-data
+    simulations to properly center the interpolation stencil.
 
     '
-  detection: 'parent_grid_ratio is an even number (2, 4, 6). WRF requires odd ratios
-    (3, 5, 7) for real-data simulations to properly center the interpolation stencil.
+  remedy: 'Change parent_grid_ratio to an odd number. Common: 3:1 (12km→4km) or 5:1 (25km→5km).
 
     '
-  fix: "Change parent_grid_ratio to an odd number. Common: 3:1 (12km\u21924km) or\
-    \ 5:1 (25km\u21925km).\n"
+  severity: high
 - id: dt_011
-  description: 'Boundary condition update causes sharp discontinuities or model crash.
-    Temperature jumps every 6 hours at domain boundaries.
+  symptom: 'Boundary condition update causes sharp discontinuities or model crash. Temperature jumps every
+    6 hours at domain boundaries.
 
     '
-  affected_output: interval_seconds in namelist.input does not match the temporal
-    resolution of the forcing data (met_em files). If interval_seconds=3600 but met_em
-    files are 6-hourly, WRF expects files that don't exist
-  detection: interval_seconds in namelist.input does not match the temporal resolution
-    of the forcing data (met_em files). If interval_seconds=3600 but met_em files
-    are 6-hourly, WRF expects files that don't exist
-  fix: 'Set interval_seconds to match the forcing data frequency: ERA5 hourly=3600,
-    GFS/FNL 6-hourly=21600, 3-hourly=10800.
+  diagnosis: 'interval_seconds in namelist.input does not match the temporal resolution of the forcing
+    data (met_em files). If interval_seconds=3600 but met_em files are 6-hourly, WRF expects files that
+    don''t exist.
 
     '
+  remedy: 'Set interval_seconds to match the forcing data frequency: ERA5 hourly=3600, GFS/FNL 6-hourly=21600,
+    3-hourly=10800.
+
+    '
+  severity: high
 - id: dt_012
-  description: 'Model produces NaN values that spread through the domain within 10-20
-    timesteps, eventually crashing or filling output with NaN.
+  symptom: 'Model produces NaN values that spread through the domain within 10-20 timesteps, eventually
+    crashing or filling output with NaN.
 
     '
-  affected_output: 'NaN injection from: (1) division by zero in physics (e.g., near-zero
-    pressure or density), (2) corrupt initial conditions, (3) extreme topography gradient
-    with too-large time step, or (4) inconsistent'
-  detection: 'NaN injection from: (1) division by zero in physics (e.g., near-zero
-    pressure or density), (2) corrupt initial conditions, (3) extreme topography gradient
-    with too-large time step, or (4) inconsistent'
-  fix: '(1) Check wrfinput for NaN: ncdump -v T wrfinput_d01 | grep -i nan. (2) Reduce
-    time_step by 30%. (3) Enable w_damping=1 and epssm=0.1 for steep terrain. (4)
-    Ensure restart uses same precision.
+  diagnosis: 'NaN injection from: (1) division by zero in physics (e.g., near-zero pressure or density),
+    (2) corrupt initial conditions, (3) extreme topography gradient with too-large time step, or (4) inconsistent
+    restart file precision.
 
     '
+  remedy: '(1) Check wrfinput for NaN: ncdump -v T wrfinput_d01 | grep -i nan. (2) Reduce time_step by
+    30%. (3) Enable w_damping=1 and epssm=0.1 for steep terrain. (4) Ensure restart uses same precision.
+
+    '
+  severity: critical
 - id: dt_013
-  description: 'wrf.exe runs but produces no wrfout files. Log shows normal timestep
-    progress but no output is written.
+  symptom: 'wrf.exe runs but produces no wrfout files. Log shows normal timestep progress but no output
+    is written.
 
     '
-  affected_output: 'history_interval is set larger than the total simulation duration,
-    or frames_per_outfile is set to 0, or io_form_history is invalid.
+  diagnosis: 'history_interval is set larger than the total simulation duration, or frames_per_outfile
+    is set to 0, or io_form_history is invalid.
 
     '
-  detection: 'history_interval is set larger than the total simulation duration, or
-    frames_per_outfile is set to 0, or io_form_history is invalid.
+  remedy: 'Verify history_interval (minutes) < total simulation time (minutes). Ensure frames_per_outfile
+    >= 1. Set io_form_history = 2 for netCDF.
 
     '
-  fix: 'Verify history_interval (minutes) < total simulation time (minutes). Ensure
-    frames_per_outfile >= 1. Set io_form_history = 2 for netCDF.
-
-    '
+  severity: high
 - id: dt_014
-  description: 'Model crashes with "WOULD GO OFF TOP" error after several hours. Log
-    shows extreme vertical velocities.
+  symptom: 'Model crashes with "WOULD GO OFF TOP" error after several hours. Log shows extreme vertical
+    velocities.
 
     '
-  affected_output: 'Strong updrafts (from steep terrain or intense convection) push
-    air parcels above the model top. The model domain top (ztop or p_top_requested)
-    is too low, or the upper-level damping is insufficient.
+  diagnosis: 'Strong updrafts (from steep terrain or intense convection) push air parcels above the model
+    top. The model domain top (ztop or p_top_requested) is too low, or the upper-level damping is insufficient.
 
     '
-  detection: 'Strong updrafts (from steep terrain or intense convection) push air
-    parcels above the model top. The model domain top (ztop or p_top_requested) is
-    too low, or the upper-level damping is insufficient.
+  remedy: '(1) Increase ztop (or decrease p_top_requested to lower pressure, e.g., 1000 Pa). (2) Enable
+    Rayleigh damping: damp_opt=3, zdamp=5000, dampcoef=0.2. (3) Reduce time_step if over steep terrain.
 
     '
-  fix: '(1) Increase ztop (or decrease p_top_requested to lower pressure, e.g., 1000
-    Pa). (2) Enable Rayleigh damping: damp_opt=3, zdamp=5000, dampcoef=0.2. (3) Reduce
-    time_step if over steep terrain.
-
-    '
+  severity: high
 - id: dt_015
-  description: 'Simulation is extremely slow. Wall-clock time per timestep is 10x
-    longer than expected for the grid size.
+  symptom: 'Simulation is extremely slow. Wall-clock time per timestep is 10x longer than expected for
+    the grid size.
 
     '
-  affected_output: (1) MPI decomposition inefficient (too few or too many cores).
-    (2) I/O bottleneck from writing too-frequent output. (3) Spectral bin microphysics
-    (mp_physics=30/32) is 100x slower than bulk schemes. (
-  detection: (1) MPI decomposition inefficient (too few or too many cores). (2) I/O
-    bottleneck from writing too-frequent output. (3) Spectral bin microphysics (mp_physics=30/32)
-    is 100x slower than bulk schemes. (
-  fix: '(1) Optimal MPI: ~25x25 grid points per process. (2) Increase history_interval
-    or frames_per_outfile. (3) Use bulk microphysics (mp_physics=8 Thompson) for production.
-    (4) Set radt=15 (minutes) for ra'
+  diagnosis: '(1) MPI decomposition inefficient (too few or too many cores). (2) I/O bottleneck from writing
+    too-frequent output. (3) Spectral bin microphysics (mp_physics=30/32) is 100x slower than bulk schemes.
+    (4) Radiation called every timestep instead of every 15 min.
+
+    '
+  remedy: '(1) Optimal MPI: ~25x25 grid points per process. (2) Increase history_interval or frames_per_outfile.
+    (3) Use bulk microphysics (mp_physics=8 Thompson) for production. (4) Set radt=15 (minutes) for radiation
+    call frequency.
+
+    '
+  severity: medium
 - id: dt_016
-  description: 'real.exe crashes with "not enough levels" or produces wrfinput with
-    all-zero soil fields. Soil temperature shows 0 K.
+  symptom: 'real.exe crashes with "not enough levels" or produces wrfinput with all-zero soil fields.
+    Soil temperature shows 0 K.
 
     '
-  affected_output: 'met_em files are missing soil moisture and temperature fields.
-    This happens when the Vtable doesn''t include soil variables, or the source GRIB
-    data doesn''t contain soil fields.
+  diagnosis: 'met_em files are missing soil moisture and temperature fields. This happens when the Vtable
+    doesn''t include soil variables, or the source GRIB data doesn''t contain soil fields.
 
     '
-  detection: 'met_em files are missing soil moisture and temperature fields. This
-    happens when the Vtable doesn''t include soil variables, or the source GRIB data
-    doesn''t contain soil fields.
+  remedy: '(1) Verify Vtable includes SM and ST fields. (2) Check met_em: ncdump -h met_em.d01.* | grep
+    SM (3) If source data lacks soil, use a separate soil dataset (e.g., ERA5 soil separate from pressure-level
+    data).
 
     '
-  fix: '(1) Verify Vtable includes SM and ST fields. (2) Check met_em: ncdump -h met_em.d01.*
-    | grep SM (3) If source data lacks soil, use a separate soil dataset (e.g., ERA5
-    soil separate from pressure-level'
+  severity: critical
 - id: dt_017
-  description: 'SST is constant at 0 or 300 K everywhere. Ocean surface fluxes are
-    unrealistic. Coastal temperature gradients are wrong.
+  symptom: 'SST is constant at 0 or 300 K everywhere. Ocean surface fluxes are unrealistic. Coastal temperature
+    gradients are wrong.
 
     '
-  affected_output: 'SST field was not extracted from GRIB data, or the Vtable doesn''t
-    map the SST variable correctly. real.exe falls back to using SKINTEMP over water,
-    which may be wrong.
+  diagnosis: 'SST field was not extracted from GRIB data, or the Vtable doesn''t map the SST variable
+    correctly. real.exe falls back to using SKINTEMP over water, which may be wrong.
 
     '
-  detection: 'SST field was not extracted from GRIB data, or the Vtable doesn''t map
-    the SST variable correctly. real.exe falls back to using SKINTEMP over water,
-    which may be wrong.
+  remedy: '(1) Ensure Vtable includes SST mapping. (2) For ERA5, SST is a separate dataset from pressure
+    levels. (3) Verify: ncdump -v SST met_em.d01.* shows realistic ocean temps. (4) For time-varying SST,
+    use wrflowinp with sst_update=1.
 
     '
-  fix: '(1) Ensure Vtable includes SST mapping. (2) For ERA5, SST is a separate dataset
-    from pressure levels. (3) Verify: ncdump -v SST met_em.d01.* shows realistic ocean
-    temps. (4) For time-varying SST, use '
+  severity: high
 - id: dt_018
-  description: 'Temporal interpolation artifacts appear as 6-hourly pulses in temperature
-    or wind. Boundary forcing shows step changes.
+  symptom: 'Temporal interpolation artifacts appear as 6-hourly pulses in temperature or wind. Boundary
+    forcing shows step changes.
 
     '
-  affected_output: 'Gap in met_em temporal coverage. One or more intermediate times
-    are missing, causing WRF to extrapolate or use stale boundaries.
+  diagnosis: 'Gap in met_em temporal coverage. One or more intermediate times are missing, causing WRF
+    to extrapolate or use stale boundaries.
 
     '
-  detection: 'Gap in met_em temporal coverage. One or more intermediate times are
-    missing, causing WRF to extrapolate or use stale boundaries.
+  remedy: '(1) List all met_em files and verify continuous temporal coverage. (2) Rerun ungrib/metgrid
+    to fill gaps. (3) Ensure GRIB data covers full simulation period including end time.
 
     '
-  fix: '(1) List all met_em files and verify continuous temporal coverage. (2) Rerun
-    ungrib/metgrid to fill gaps. (3) Ensure GRIB data covers full simulation period
-    including end time.
-
-    '
+  severity: high
 - id: dt_019
-  description: 'Wind direction comparison with observations shows systematic bias
-    of 10-30 degrees. Wind speed is correct but direction is offset.
+  symptom: 'Wind direction comparison with observations shows systematic bias of 10-30 degrees. Wind speed
+    is correct but direction is offset.
 
     '
-  affected_output: 'U10 and V10 in wrfout are grid-relative, not earth-relative. For
-    Lambert conformal or polar stereographic projections, the grid north differs from
-    true north by the convergence angle.
+  diagnosis: 'U10 and V10 in wrfout are grid-relative, not earth-relative. For Lambert conformal or polar
+    stereographic projections, the grid north differs from true north by the convergence angle.
 
     '
-  detection: 'U10 and V10 in wrfout are grid-relative, not earth-relative. For Lambert
-    conformal or polar stereographic projections, the grid north differs from true
-    north by the convergence angle.
+  remedy: 'Rotate winds using COSALPHA and SINALPHA variables from wrfout: u_earth = U10*COSALPHA - V10*SINALPHA
+    v_earth = V10*COSALPHA + U10*SINALPHA
 
     '
-  fix: 'Rotate winds using COSALPHA and SINALPHA variables from wrfout: u_earth =
-    U10*COSALPHA - V10*SINALPHA v_earth = V10*COSALPHA + U10*SINALPHA
-
-    '
+  severity: high
 - id: dt_020
-  description: 'Spatial plots show half-grid-cell offset between wind and temperature
-    fields. Wind vectors appear shifted relative to the temperature contours.
+  symptom: 'Spatial plots show half-grid-cell offset between wind and temperature fields. Wind vectors
+    appear shifted relative to the temperature contours.
 
     '
-  affected_output: 3D wind components (U, V, W) are on staggered grid faces (Arakawa
-    C-grid). U has an extra point in X, V in Y, W in Z. Plotting raw staggered data
-    against unstaggered mass-point data causes spatial off
-  detection: 3D wind components (U, V, W) are on staggered grid faces (Arakawa C-grid).
-    U has an extra point in X, V in Y, W in Z. Plotting raw staggered data against
-    unstaggered mass-point data causes spatial off
-  fix: 'Destagger before analysis: u_mass = 0.5 * (U[:,:,:-1] + U[:,:,1:]) v_mass
-    = 0.5 * (V[:,:-1,:] + V[:,1:,:])
+  diagnosis: '3D wind components (U, V, W) are on staggered grid faces (Arakawa C-grid). U has an extra
+    point in X, V in Y, W in Z. Plotting raw staggered data against unstaggered mass-point data causes
+    spatial offset.
 
     '
+  remedy: 'Destagger before analysis: u_mass = 0.5 * (U[:,:,:-1] + U[:,:,1:]) v_mass = 0.5 * (V[:,:-1,:]
+    + V[:,1:,:])
+
+    '
+  severity: medium
 - id: dt_021
-  description: 'Vertical profile of pressure shows only small perturbation values
-    (~100-1000 Pa) instead of full atmospheric pressure (~100000 Pa).
+  symptom: 'Vertical profile of pressure shows only small perturbation values (~100-1000 Pa) instead of
+    full atmospheric pressure (~100000 Pa).
 
     '
-  affected_output: 'Only the perturbation pressure variable P was read, ignoring the
-    base-state pressure PB. Total pressure is P + PB.
+  diagnosis: 'Only the perturbation pressure variable P was read, ignoring the base-state pressure PB.
+    Total pressure is P + PB.
 
     '
-  detection: 'Only the perturbation pressure variable P was read, ignoring the base-state
-    pressure PB. Total pressure is P + PB.
+  remedy: 'Always compute total pressure: pressure = P + PB. Similarly, total geopotential: ph_total =
+    PH + PHB.
 
     '
-  fix: 'Always compute total pressure: pressure = P + PB. Similarly, total geopotential:
-    ph_total = PH + PHB.
-
-    '
-unit_conversions: []
+  severity: medium
+- id: dt_022_nasa_power_lst_vs_utc_and_climatology_proxy
+  symptom: WRF T2 (or any sub-daily field) scored against NASA POWER hourly appears anti-correlated (r~-0.05,
+    NSE~-0.9) despite a physically reasonable simulation; OR a deterministic weather snapshot scored against
+    a multi-year monthly climatology gives structurally poor NSE (-7..-10) with a large warm/cold bi
+  diagnosis: 'Two compounding errors: (1) NASA POWER hourly defaults to LST (local solar time) while wrfout
+    Times are UTC, so pairing shifts the diurnal cycle by the lon offset and anti-correlates it; (2) comparing
+    a single 48-h weather realization against a 2015-2022 climatological mean is not time-matched and
+    n'
+  remedy: Score WRF T2 as the dag rank-1 point_time_series against a time-matched, valid-time, independent
+    obs (NASA POWER hourly T2M at the domain centre) requested with time-standard=UTC, paired to the wrfout
+    frames by UTC timestamp. Never score a deterministic snapshot against a multi-year climatology. See
+- id: dt_wrf_snapshot_vs_climatology_spatial_csi
+  symptom: WRF T2 spatial_field_comparison gives CSI ~0.50 with a large uniform warm/cool bias (e.g. +3.8
+    K) and the pre-retry gate REJECTS with wrong-metric-for-obs-shape (nse/kge/r reported for obs_shape=spatial_time_series).
+  diagnosis: A single short WRF weather realization was scored against a multi-year monthly CLIMATOLOGY
+    (temporal-support mismatch), CSI used one ABSOLUTE threshold on both fields so the uniform anomaly
+    dominated it, no spin-up was dropped, and NSE/KGE (temporal families) were reported for a spatial
+    obs shape.
+  remedy: Score against a CONTEMPORANEOUS obs field for the actual sim window (fetch ERA5-Land hourly
+    2m_temperature via cdsapi, average over the post-spin-up window >= start+12h); compute CSI with each
+    field's OWN median as threshold (bias-robust spatial_pattern_match); report only spatial_pattern_match
+    (csi

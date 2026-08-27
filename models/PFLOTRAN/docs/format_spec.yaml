@@ -1,136 +1,826 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "PFLOTRAN"
-  version: "Development Version"
-  domain: "Groundwater flow and reactive transport"
-  description: "Massively parallel simulator for multiphase flow, reactive multicomponent transport, and geomechanics in the subsurface"
-  binary_path: "KISSPATH_BINARIES/PFLOTRAN/source/pflotran_full/src/pflotran/pflotran"
-  execution: "mpirun -n <nproc> pflotran -pflotranin <input_file.in>"
-  dependencies:
-    - "PETSc (v3.18+)"
-    - "MPI (OpenMPI or MPICH)"
-    - "HDF5"
-    - "BLAS/LAPACK"
-
+  name: PFLOTRAN
+  language: fortran
+  implementation:
+    id: hydrocraft-pflotran-subsurface
+    version: package v1.1.0 (PFLOTRAN v6.0 core, PETSc v3.18+)
+    provenance: Fortran 2003/2008; LANL/SNL/ORNL open-source PFLOTRAN built on PETSc for MPI domain decomposition.
+  scientific_reference_version: PFLOTRAN v6.0 (RICHARDS variably-saturated flow + multicomponent reactive
+    transport; van Genuchten/Mualem characteristic curves)
 inputs:
-  input_deck:
-    format: ".in keyword-based block structure"
-    description: "Hierarchical blocks delimited by keywords and END or / terminators"
-
   forcing:
-    - name: "LIQUID_FLUX"
-      unit: "m/s"
-      valid_range: [1.0e-11, 1.0e-6]
-      description: "Recharge / infiltration flux at top boundary (Neumann BC)"
-    - name: "LIQUID_PRESSURE"
-      unit: "Pa"
-      valid_range: [50000.0, 500000.0]
-      description: "Prescribed pressure boundary condition (Dirichlet BC)"
-
+  - name: Recharge / infiltration flux (top boundary)
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: FLOW_CONDITION LIQUID_FLUX NEUMANN; time-varying via FILE or RATE LIST
+    notes: recharge = precipitation * infiltration_fraction - ET; native unit m/s. Inline unit keyword
+      (e.g. 'mm/yr') accepted and converted; bare numbers are interpreted as m/s.
+  - name: Root-zone evapotranspiration sink
+    unit: m^3/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: SOURCE_SINK with RATE SCALED_VOLUMETRIC_RATE VOLUME (distributed)
+    notes: 'Applied as a distributed volumetric sink over the root zone (negative = extraction), not as
+      a negative top Neumann BC, to avoid single-cell depletion. Sign convention: extraction MUST be negative.'
+  - name: River / lake stage (head boundary)
+    unit: Pa
+    category: forcing
+    source_kind: forcing
+    model_input_format: FLOW_CONDITION LIQUID_PRESSURE DIRICHLET
+    notes: P = rho*g*(stage - z_cell) + P_atm; time-varying river stage imposed as a pressure (Dirichlet)
+      lateral boundary.
+  - name: Well pumping / injection rate
+    unit: m^3/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: FLOW_CONDITION RATE SCALED_VOLUMETRIC_RATE + SOURCE_SINK
   parameters:
-    critical:
-      - name: "PERM_ISO"
-        unit: "m^2"
-        valid_range: [1.0e-18, 1.0e-8]
-        description: "Isotropic intrinsic permeability (NOT hydraulic conductivity)"
-      - name: "POROSITY"
-        unit: "dimensionless (fraction)"
-        valid_range: [0.01, 0.60]
-        description: "Matrix porosity (must be fraction 0-1, not percent)"
-      - name: "VG_ALPHA"
-        unit: "1/Pa"
-        valid_range: [1.0e-7, 1.0e-3]
-        description: "van Genuchten alpha parameter (1/Pa, NOT 1/cm)"
-      - name: "VG_M"
-        unit: "dimensionless"
-        valid_range: [0.05, 0.95]
-        description: "van Genuchten m parameter (m = 1 - 1/n)"
-      - name: "LIQUID_RESIDUAL_SATURATION"
-        unit: "dimensionless"
-        valid_range: [0.01, 0.40]
-        description: "Residual liquid saturation for VG curves"
-      - name: "TORTUOSITY"
-        unit: "dimensionless"
-        valid_range: [0.01, 1.0]
-        description: "Matrix tortuosity factor"
-      - name: "DIFFUSION_COEFFICIENT"
-        unit: "m^2/s"
-        valid_range: [1.0e-12, 1.0e-8]
-        description: "Molecular diffusion coefficient (m^2/s, NOT cm^2/s)"
-
-    grid:
-      - name: "NXYZ"
-        description: "Number of grid cells in X, Y, Z directions"
-      - name: "BOUNDS"
-        unit: "m"
-        description: "Domain extent coordinates (x_min y_min z_min to x_max y_max z_max)"
-
-    time:
-      - name: "FINAL_TIME"
-        unit: "s (or with keyword: d, y, h)"
-        description: "Simulation end time"
-      - name: "INITIAL_TIMESTEP_SIZE"
-        unit: "s (or with keyword: d, y, h)"
-        valid_range: [0.001, 86400.0]
-        description: "Starting timestep size"
-      - name: "MAXIMUM_TIMESTEP_SIZE"
-        unit: "s (or with keyword: d, y, h)"
-        description: "Maximum allowed timestep"
-
+  - name: Intrinsic permeability (PERM_ISO)
+    unit: m^2
+    category: parameter
+    source_kind: calibrated
+    model_input_format: MATERIAL_PROPERTY PERMEABILITY
+    notes: Native basis is intrinsic permeability in m^2 (1e-20 to 1e-8), NOT hydraulic conductivity.
+      Highest calibration priority; controls flow magnitude. Tensor (X/Y/Z) supported.
+  - name: Porosity
+    unit: fraction (0-1)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: MATERIAL_PROPERTY
+    notes: Storage and transport-velocity control; 0.01-0.60. Must be a fraction, not percent.
+  - name: Tortuosity
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: MATERIAL_PROPERTY
+  - name: Longitudinal dispersivity
+    unit: m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: MATERIAL_PROPERTY
+  - name: van Genuchten alpha
+    unit: 1/Pa
+    category: parameter
+    source_kind: calibrated
+    model_input_format: CHARACTERISTIC_CURVES SATURATION_FUNCTION VAN_GENUCHTEN
+    notes: Capillary curve scale; native unit 1/Pa (1e-7 to 1e-3), NOT 1/cm. alpha_Pa = alpha_cm / 9804.139.
+  - name: van Genuchten m
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: CHARACTERISTIC_CURVES
+    notes: m = 1 - 1/n (Mualem constraint); 0.05-0.80; requires n > 1.
+  - name: Liquid residual saturation
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: CHARACTERISTIC_CURVES
+    notes: 0.0-0.40; must be < porosity.
+  - name: Molecular diffusion coefficient
+    unit: m^2/s
+    category: parameter
+    source_kind: default
+    model_input_format: FLUID_PROPERTY DIFFUSION_COEFFICIENT
+    notes: Aqueous diffusion ~1e-9 to 1e-10 m^2/s; native unit m^2/s.
+  - name: Reaction parameters (equilibrium constants, kinetic rates, sorption isotherm/ion-exchange/surface-complexation
+      coefficients)
+    unit: various
+    category: parameter
+    source_kind: calibrated
+    model_input_format: CHEMISTRY block
+    notes: Reactive-transport mode only. Mineral kinetics use the transition-state-affinity rate law with
+      optional rate limiters.
+  initial_conditions:
+  - name: Initial liquid pressure / water table
+    unit: Pa
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: INITIAL_CONDITION FLOW_CONDITION LIQUID_PRESSURE HYDROSTATIC with DATUM
+    notes: 'HYDROSTATIC recommended: fully saturated below the datum water table, suction per the vG curve
+      above it. Bad ICs stall the solve at t=0.'
+  - name: Initial temperature
+    unit: C
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: INITIAL_CONDITION (TH/GENERAL)
+    notes: Native input unit Celsius, NOT Kelvin.
+  - name: Initial species concentrations
+    unit: mol/L
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: CONSTRAINT block (reactive transport)
+    notes: Native unit mol/L, NOT mg/L.
+  boundary_conditions:
+  - name: Simulation mode selector
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: SIMULATION / SUBSURFACE_FLOW MODE (RICHARDS | TH | GENERAL | reactive transport
+      | GEOMECHANICS)
+    notes: Structural switch selecting the governing-equation set.
+  - name: Steady-state vs transient flag
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: SUBSURFACE_FLOW STEADY_STATE option
+  - name: Saturation / relative-permeability function choice
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: CHARACTERISTIC_CURVES (VAN_GENUCHTEN / BROOKS_COREY; MUALEM / BURDINE)
+    notes: Method selectors for the retention and relative-permeability laws. SMOOTH option belongs ONLY
+      in PERMEABILITY_FUNCTION, never SATURATION_FUNCTION.
+  - name: Region / material / strata assignment
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: REGION, STRATA, BOUNDARY_CONDITION, INITIAL_CONDITION cards
+    notes: Case-sensitive name binding of conditions and materials to grid regions; STRATA must cover
+      the full domain.
+  - name: Boundary condition types
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: BOUNDARY_CONDITION referencing FLOW_CONDITION (DIRICHLET head, NEUMANN flux, SEEPAGE
+      face, no-flow default)
 outputs:
   primary:
-    - name: "LIQUID_PRESSURE"
-      unit: "Pa"
-      valid_range: [0.0, 1.0e7]
-      description: "Liquid pressure field at cell centers"
-    - name: "LIQUID_SATURATION"
-      unit: "dimensionless"
-      valid_range: [0.0, 1.0]
-      description: "Liquid saturation (0=dry, 1=fully saturated)"
-    - name: "LIQUID_VELOCITY"
-      unit: "m/s"
-      valid_range: [-1.0e-3, 1.0e-3]
-      description: "Darcy velocity components (X, Y, Z)"
-  formats:
-    - "HDF5 (.h5) — primary output with /Time:*/variable structure"
-    - "TecPlot (.tec) — observation point time series"
-    - "VTK (.vtk/.pvd) — ParaView visualization"
-    - "Mass balance (.massbal) — fluid/solute conservation tracking"
-
-unit_system: "SI (internally). Inline unit keywords supported for convenience."
-
-unit_traps:
-  - id: "dt_001"
-    variable: "Permeability"
-    wrong_unit: "Darcy"
-    correct_unit: "m^2"
-    error_factor: 1.0e+12
-  - id: "dt_002"
-    variable: "Recharge flux"
-    wrong_unit: "mm/yr"
-    correct_unit: "m/s"
-    error_factor: 3.15e+10
-  - id: "dt_005"
-    variable: "Porosity"
-    wrong_unit: "percent"
-    correct_unit: "fraction (0-1)"
-    error_factor: 100
-  - id: "dt_006"
-    variable: "VG alpha"
-    wrong_unit: "1/cm"
-    correct_unit: "1/Pa"
-    error_factor: 9804
-
+  - name: Liquid_Pressure
+    unit: Pa
+    description: Absolute subsurface liquid pressure, the primary solved variable; hydraulic head = (P
+      - P_atm)/(rho*g) + z.
+    validation_rank: 2
+    emitted_in: HDF5 (.h5) snapshots; observation (-obs-*.tec) time series
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Subtract atmospheric pressure (101325 Pa) before converting to head, else a systematic ~+10.33
+          m head offset appears.
+        - Compare as head (m) against well observations; model emits pressure (Pa).
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Steady-state or single-time head comparison; same P_atm subtraction caveat.
+      detrending_options:
+      - none
+  - name: Liquid_Saturation
+    unit: '-'
+    description: Fraction of pore space filled with liquid; volumetric water content SWC = Liquid_Saturation
+      * porosity.
+    validation_rank: 3
+    emitted_in: HDF5 (.h5); observation (-obs-*.tec)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare SWC = saturation * porosity, not saturation directly, against soil-moisture sensors.
+        - 1D column SWC carries a structural wet bias where surface runoff is significant (no runoff module)
+          and a dry bias where porosity is underestimated for organic/meadow soils; remove mean bias before
+          judging temporal pattern in those regimes.
+        - For an NXYZ 1 1 N grid, saturation has shape (1,1,N); top sensor cell is index N-1, bottom is
+          index 0.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Gridded saturation/water-table snapshot comparison.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: Hydraulic_Head
+    unit: m
+    description: Derived water-table / piezometric head, (P - P_atm)/(rho*g) + z.
+    validation_rank: 1
+    emitted_in: post-processed from HDF5 Liquid_Pressure
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - Acceptable groundwater-head skill NSE>0.5 / RMSE typically <1-2 m per KI guidance.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: Darcy_Velocity
+    unit: m/s
+    description: Subsurface Darcy (specific-discharge) velocity field, components X/Y/Z.
+    validation_rank: 4
+    emitted_in: HDF5 (.h5)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Rarely directly observed; usually inferred from tracer breakthrough rather than measured.
+      detrending_options:
+      - none
+  - name: Solute_Concentration
+    unit: mol/L
+    description: Subsurface aqueous primary/secondary species concentration in reactive-transport mode.
+    validation_rank: 5
+    emitted_in: HDF5 (.h5); observation (-obs-*.tec)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Breakthrough-curve comparison; timing (first-arrival, peak) is governed by the permeability
+          field.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Plume-extent / concentration-field comparison.
+      detrending_options:
+      - none
+  - name: Cumulative_Mass_Balance
+    unit: kg
+    description: Cumulative inflow, outflow and storage change of the water (or solute) mass budget.
+    validation_rank: 6
+    emitted_in: Mass balance (-mas.dat)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - 'Primarily an internal-consistency diagnostic: water-balance error must stay < ~1% for a trustworthy
+          run, not an observational target.'
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "Mualem-van Genuchten without SMOOTH option triggers warning but runs"
-  - "PETSc version must match build version exactly"
-  - "HDF5 parallel I/O requires matching MPI-enabled HDF5 library"
+- id: dt_001
+  symptom: 'Unrealistic flow velocities; domain drains instantly;
 
-simulation_modes:
-  - name: "RICHARDS"
-    description: "Variably saturated single-phase groundwater flow"
-  - name: "GENERAL"
-    description: "Multiphase (water + gas) flow with phase transitions"
-  - name: "TH"
-    description: "Coupled thermal-hydrologic (heat + flow)"
-  - name: "REACTIVE_TRANSPORT"
-    description: "Aqueous, mineral, sorption, gas-phase chemistry"
+    Darcy velocity orders of magnitude too high.
+
+    '
+  diagnosis: 'Permeability entered in Darcy (D) instead of m^2.
+
+    1 Darcy = 9.869e-13 m^2. Entering 1.0 (meaning 1 D)
+
+    instead of 9.869e-13 gives a 1e12 factor error.
+
+    '
+  remedy: '1. Convert: k_m2 = k_darcy * 9.869233e-13
+
+    2. Or use PFLOTRAN unit keyword: PERM_ISO 1.d0 darcy
+
+    ; k_m2 = k_darcy * 9.869233e-13'
+- id: dt_002
+  symptom: 'Domain floods within first timestep; water table rises to surface;
+
+    saturation jumps to 1.0 everywhere immediately.
+
+    '
+  diagnosis: 'Recharge entered in mm/yr or mm/day instead of m/s.
+
+    100 mm/yr = 3.17e-9 m/s. Entering 100 directly gives
+
+    a 3.15e10 factor error (100 m/s vs 3.17e-9 m/s).
+
+    '
+  remedy: '1. Convert: flux_m_s = flux_mm_yr * 3.171e-11
+
+    2. Convert: flux_m_s = flux_mm_day * 1.1574e-8
+
+    3. Or use PFLOTRAN unit: LIQUID_FLUX 100.d0 mm/yr
+
+    ; flux_m_s = flux_mm_yr * 3.171e-11'
+- id: dt_003
+  symptom: 'No flow despite expected gradient; heads essentially flat;
+
+    boundary conditions appear to have no effect.
+
+    '
+  diagnosis: 'Pressure entered in atm or bar instead of Pa.
+
+    1 atm = 101325 Pa. Entering 1.0 gives 1 Pa instead
+
+    of 101325 Pa — a factor of 1e5 error.
+
+    '
+  remedy: '1. Convert: P_pa = P_atm * 101325
+
+    2. Convert: P_pa = P_bar * 1e5
+
+    3. Or use: LIQUID_PRESSURE 1.d0 atm
+
+    ; P_pa = P_atm * 101325.0'
+- id: dt_004
+  symptom: 'Flow velocities ~86400x too high; water table responds
+
+    unrealistically fast to recharge events.
+
+    '
+  diagnosis: 'Hydraulic conductivity (K, m/s) entered where intrinsic
+
+    permeability (k, m^2) is expected. K = k*rho*g/mu, so
+
+    k = K * mu/(rho*g) = K * 1.022e-7 for water at 20C.
+
+    Entering K=1e-4 m/s gives k=1e-4 m^2 instead of 1e-11 m^2.
+
+    '
+  remedy: '1. k_m2 = K_m_s * 1.022e-7 (at 20C)
+
+    2. k_m2 = K_m_s * mu / (rho * g)
+
+    ; k_m2 = K_m_s * 1.002e-3 / (998.2 * 9.80665)'
+- id: dt_005
+  symptom: 'Immediate solver crash; negative saturation values;
+
+    "ERROR: saturation < 0" in output.
+
+    '
+  diagnosis: 'Porosity entered as percentage (e.g., 35) instead of
+
+    fraction (0.35). Porosity > 1.0 is unphysical and causes
+
+    the saturation function to produce negative values.
+
+    '
+  remedy: 'Divide porosity by 100: phi = phi_percent / 100; porosity = porosity_percent / 100.0'
+- id: dt_006
+  symptom: 'Soil drains instantly; no capillary retention; vadose zone
+
+    completely dry above water table; saturation profile is step function.
+
+    '
+  diagnosis: 'van Genuchten alpha entered in 1/cm (literature convention)
+
+    instead of 1/Pa (PFLOTRAN convention). Alpha in 1/cm is
+
+    ~10000x larger than 1/Pa. Example: Loam alpha=0.036 1/cm
+
+    should be 3.67e-6 1/Pa, but entering 0.036 directly gives
+
+    a factor-of-9804 error.
+
+    '
+  remedy: "alpha_Pa = alpha_cm / (rho_water * g)\n         = alpha_cm / 9804.139\n; alpha_Pa = alpha_cm\
+    \ / 9804.139"
+- id: dt_007
+  symptom: 'Solute plume spreads 100x faster than expected;
+
+    concentration front smears out unrealistically.
+
+    '
+  diagnosis: 'Diffusion coefficient entered in cm^2/s instead of m^2/s.
+
+    Typical molecular diffusion: 1e-9 m^2/s = 1e-5 cm^2/s.
+
+    Entering 1e-5 (meaning cm^2/s) gives 1e-5 m^2/s, which is
+
+    10000x too large.
+
+    '
+  remedy: D_m2_s = D_cm2_s * 1e-4; D_m2_s = D_cm2_s * 1e-4
+- id: dt_008
+  symptom: 'Incorrect fluid density; buoyancy-driven flow artifacts;
+
+    thermal simulation gives wrong temperature distribution.
+
+    '
+  diagnosis: 'Temperature entered in Kelvin instead of Celsius.
+
+    PFLOTRAN uses Celsius for input. 293 K = 20 C.
+
+    Entering 293 gives water at 293 C (supercritical!).
+
+    '
+  remedy: T_C = T_K - 273.15; temp_c = temp_k - 273.15
+- id: dt_009
+  symptom: 'Reaction rates wrong; mineral dissolution/precipitation
+
+    orders of magnitude off; chemistry does not match benchmarks.
+
+    '
+  diagnosis: 'Aqueous concentrations entered in mg/L instead of mol/L
+
+    (molarity). PFLOTRAN uses mol/L for CONSTRAINT blocks.
+
+    Conversion: C_mol = C_mg / (MW * 1000).
+
+    '
+  remedy: C_mol_L = C_mg_L / (molecular_weight_g_mol * 1000); C_mol = C_mg / (MW * 1000.0)
+- id: dt_010
+  symptom: 'Simulation ends almost immediately or never finishes;
+
+    output times don''t match expectations.
+
+    '
+  diagnosis: 'Time entered in years numerically but unit keyword missing
+
+    or wrong. FINAL_TIME 10.d0 without unit = 10 seconds.
+
+    FINAL_TIME 10.d0 y = 10 years = 3.16e8 seconds.
+
+    '
+  remedy: 'Always include unit keyword: s, min, h, d, w, mo, y
+
+    Example: FINAL_TIME 10.d0 y
+
+    ; time_s = time_yr * 3.15576e7'
+- id: dt_011
+  symptom: '"ERROR: region not found" at startup; simulation refuses to start.
+
+    '
+  diagnosis: 'Region name in BOUNDARY_CONDITION, INITIAL_CONDITION, or STRATA
+
+    does not match any defined REGION block. PFLOTRAN region names
+
+    are case-sensitive.
+
+    '
+  remedy: '1. List all REGION definitions and their names
+
+    2. Verify exact name match (case-sensitive) in referencing blocks
+
+    3. Check for trailing spaces or typos
+
+    '
+- id: dt_012
+  symptom: '"ERROR: material not found" at startup; or "Characteristic curves
+
+    not found" error.
+
+    '
+  diagnosis: 'MATERIAL_PROPERTY references a CHARACTERISTIC_CURVES name that
+
+    doesn''t exist, or STRATA references a MATERIAL name that doesn''t
+
+    exist. Names are case-sensitive.
+
+    '
+  remedy: '1. Verify each MATERIAL_PROPERTY has matching CHARACTERISTIC_CURVES
+
+    2. Verify each STRATA references an existing MATERIAL name
+
+    '
+- id: dt_013
+  symptom: '"ERROR: reading input file" with no specific line number;
+
+    parser fails silently or at unexpected location.
+
+    '
+  diagnosis: 'Block nesting error: missing END or /, mismatched block
+
+    delimiters, or incorrect keyword order. PFLOTRAN''s Fortran
+
+    parser is strict about block structure.
+
+    '
+  remedy: '1. Check that every block has matching END or /
+
+    2. Verify SUBSURFACE ... END_SUBSURFACE wrapper
+
+    3. Check for stray characters or incorrect indentation
+
+    4. Use a linter: count opening/closing block pairs
+
+    '
+- id: dt_014
+  symptom: '"SNES_DIVERGED_FNORM_NAN" or "Newton solver DIVERGED";
+
+    simulation crashes after a few timesteps.
+
+    '
+  diagnosis: 'Nonlinear solver divergence, typically caused by:
+
+    1. van Genuchten alpha in wrong units (dt_006)
+
+    2. Inconsistent initial and boundary conditions
+
+    3. Initial timestep too large for problem stiffness
+
+    4. Permeability contrast too sharp between adjacent cells
+
+    '
+  remedy: '1. Reduce INITIAL_TIMESTEP_SIZE by 10x
+
+    2. Check all unit conversions (especially vG alpha, dt_006)
+
+    3. Use HYDROSTATIC initial condition
+
+    4. Smooth permeability transitions between materials
+
+    5. Add NEWTON_SOLVER options: ATOL 1e-12, RTOL 1e-12
+
+    '
+- id: dt_015
+  symptom: 'PFLOTRAN crashes with "Allocated memory exceeded" or OS
+
+    kills the process (OOM killer on Linux).
+
+    '
+  diagnosis: 'Grid too large for available memory per MPI process.
+
+    Each cell needs ~1-10 KB depending on mode and variables.
+
+    1M cells × 10 KB = 10 GB per process.
+
+    '
+  remedy: '1. Increase MPI processes: mpirun -n 8 pflotran ...
+
+    2. Reduce grid resolution (coarsen mesh)
+
+    3. Use domain decomposition effectively
+
+    4. Check available RAM: free -h
+
+    '
+- id: dt_016
+  symptom: 'PFLOTRAN fails immediately with PETSc error about
+
+    incompatible versions or missing libraries.
+
+    '
+  diagnosis: 'PFLOTRAN binary compiled with different PETSc version or
+
+    architecture than the runtime environment. Common when
+
+    using pre-built binaries on a different system.
+
+    '
+  remedy: '1. Verify PETSC_DIR and PETSC_ARCH match compile-time values
+
+    2. Rebuild: cd pflotran/src/pflotran && make clean && make pflotran
+
+    3. Or use Docker: docker run pflotran/pflotran
+
+    '
+- id: dt_017
+  symptom: 'Head values systematically offset by ~10.33 m from observed;
+
+    shape of hydrograph is correct but absolute values are wrong.
+
+    '
+  diagnosis: 'When converting PFLOTRAN output pressure (Pa) to hydraulic head (m),
+
+    atmospheric pressure (101325 Pa) was not subtracted.
+
+    P_atm / (rho*g) = 101325 / 9804 = 10.33 m.
+
+    '
+  remedy: 'head_m = (P_Pa - 101325) / (998.2 * 9.80665) + z_m
+
+    NOT: head_m = P_Pa / (998.2 * 9.80665) + z_m
+
+    ; head = (pressure - 101325.0) / 9804.139 + elevation'
+- id: dt_018
+  symptom: 'Simulation runs but STRATA does not cover all cells; some cells
+
+    have no material assigned; solver may still converge but results
+
+    are physically meaningless in unassigned regions.
+
+    '
+  diagnosis: 'STRATA block regions do not cover the full computational domain.
+
+    PFLOTRAN may assign default properties to uncovered cells (or crash),
+
+    leading to heterogeneous artifacts.
+
+    '
+  remedy: '1. Ensure at least one STRATA with REGION all covers entire domain
+
+    2. Layer-specific STRATA should use Z-coordinate subregions
+
+    3. Check PFLOTRAN startup messages for unassigned cells
+
+    '
+- id: dt_019
+  symptom: "PFLOTRAN exits at startup with:\n  \"SF Smoothing not supported for SATURATION_FUNCTION,VAN_GENUCHTEN\"\
+    \neven though SMOOTH seems to be inside the correct block.\n"
+  diagnosis: 'The SMOOTH keyword is valid ONLY in the PERMEABILITY_FUNCTION
+
+    (MUALEM_VG_LIQ) block, where it smooths Kr→0 near residual
+
+    saturation. It is NOT valid in the SATURATION_FUNCTION
+
+    (VAN_GENUCHTEN) block. Placing SMOOTH in VAN_GENUCHTEN causes
+
+    an immediate fatal error.
+
+    '
+  remedy: "Move SMOOTH to the PERMEABILITY_FUNCTION block ONLY:\nCHARACTERISTIC_CURVES cc_soil\n  SATURATION_FUNCTION\
+    \ VAN_GENUCHTEN\n    ALPHA ...\n    M ...\n    LIQUID_RESIDUAL_SATURATION ...\n  /               \
+    \            ← no SMOOTH here\n  PERMEABILITY_FUNCTION MUALEM_VG_LIQ\n    M ...\n    LIQUID_RESIDUAL_SATURAT"
+- id: dt_020
+  symptom: "1D vadose column run crashes mid-simulation with:\n  \"Newton solver reason: SNES_DIVERGED_MAX_IT\"\
+    \n  \"Stopping: Time step cut criteria exceeded. icut = N, max_time_step_cuts = 16\"\n  \"WARNING:\
+    \ Potential oscillatory convergence\" (repeated 40-50x)\n  \"2x: 1.00E+09 2u: 4.53E+01\" — update\
+    \ norm stuck at same"
+  diagnosis: 'Top cell in 1D vadose column reached near-residual saturation
+
+    (S → S_r ≈ 0.078 for Loam) during a consecutive-dry-day period.
+
+    Van Genuchten capillary pressure P_c = f(S) has dP/dS → ∞ as
+
+    S → S_r + ε, making the Newton Jacobian near-singular. The
+
+    oscillatory pattern (2r stays constant, 2x at maximum)'
+  remedy: "Fix hierarchy (check in order, stop at first success):\n1. Add SMOOTH to PERMEABILITY_FUNCTION\
+    \ MUALEM_VG_LIQ (delays crash,\n   may be sufficient for mild dry spells ≤ 10 consecutive days).\n\
+    2. Check max consecutive P≈0 days at site:\n     python3 -c \"import csv,numpy as np; rows=list(csv.DictReader(ope"
+- id: dt_021
+  symptom: 'Vadose zone column gaining water instead of losing it during ET periods;
+
+    or crash at first timestep with unreasonably large source/sink rate.
+
+    SWC increasing when ET > 0 is applied, or "Total source/sink rate too large".
+
+    '
+  diagnosis: "Two common errors in the SCALED_VOLUMETRIC_RATE VOLUME ET SOURCE_SINK:\n(a) Sign error:\
+    \ ET extraction requires NEGATIVE rate values.\n    Positive rate = injection, not extraction.\n(b)\
+    \ Units mismatch: DATA_UNITS m^3/sec requires rate in m³/s for the\n    entire 1m×1m cross-section\
+    \ column. PFLOTRAN divi"
+  remedy: "Correct ET SOURCE_SINK setup for 1D column (1m × 1m cross-section):\n  et_ms = max(0.0, le_wm2\
+    \ * 86400.0 / 2.45e6) / (1000.0 * 86400.0)\n  # et_ms is positive; negate when writing to deck:\n\
+    \  et_list_block = f\"{day}. {-et_ms:.6e}\"   ← NEGATIVE for extraction\n\nIn deck:\n  FLOW_CONDITION\
+    \ et_extraction\n   "
+- id: dt_022
+  symptom: 'TypeError when calling float() on the extracted Liquid_Saturation value;
+
+    or simulated SWC appears constant / always equals the first cell value.
+
+    Traceback: "TypeError: only size-1 arrays can be converted to Python scalars"
+
+    or "only one element tensors can be converted to Python scalars".
+
+    '
+  diagnosis: 'For a NXYZ 1 1 N structured grid, PFLOTRAN writes Liquid_Saturation
+
+    with shape (1, 1, N) — one value per z-cell, with singleton x and y
+
+    dimensions. Calling float(sat[-1]) on a shape (1,1,40) array returns
+
+    the last (1,1,1) sub-array, not a scalar. The cell order is bottom-to-top
+
+    (cell 0 = bottom, cel'
+  remedy: "Always flatten before indexing:\n  sat = np.array(grp[\"Liquid_Saturation\"], dtype=float).flatten()\n\
+    \  top_sat = float(sat[-1])   # top cell (highest z)\n  bot_sat = float(sat[0])    # bottom cell (lowest\
+    \ z)\n\nThe z-ordering: cell index 0 = z_min (column bottom),\n                 cell index N-1 = z_max\
+    \ ("
+- id: dt_023
+  symptom: 'Van Genuchten alpha appears correctly patched on first run, but on
+
+    subsequent runs (with cached materials.json) the simulated SWC is
+
+    completely wrong — either too dry or too wet compared to first run.
+
+    Symptom: same script, same site, different results run-to-run.
+
+    '
+  diagnosis: 'The convert_soil_to_pflotran.py tool returns alpha in 1/Pa but with
+
+    a systematic factor-of-100 error (divides by 9804 instead of 98.04
+
+    for 1/cm → 1/Pa conversion). A post-processing patch applies ×100
+
+    to correct this. If the patched materials.json is re-read and the
+
+    patch is applied again, alpha bec'
+  remedy: "Apply the ×100 patch EXACTLY ONCE and record it in materials.json:\n  with open(mat_json) as\
+    \ f:\n      data = json.load(f)\n  if not data.get(\"alpha_unit_patch_v1\"):   # idempotency guard\n\
+    \      for mat in data[\"materials\"]:\n          mat[\"vg_alpha_Pa\"] *= 100.0\n      data[\"alpha_unit_patch_v1\"\
+    ] = True "
+- id: dt_024
+  symptom: 'Simulated SWC at alpine meadow or high-altitude grassland sites is
+
+    systematically 25–40% BELOW observed throughout the entire simulation.
+
+    PBIAS = -25% to -50%. The seasonal dynamics (R ≈ 0.7–0.8) look correct
+
+    but the absolute level is far too low. HWSD maps the site as "Loam".
+
+    '
+  diagnosis: 'HWSD classifies many Tibetan Plateau, Qinghai, and high-altitude
+
+    meadow soils as "Loam" (phi=0.43, Sr=0.078). In reality these soils
+
+    are Histosols or organosols with very high organic matter content,
+
+    giving porosity phi=0.55–0.65. Using phi=0.43 underestimates water
+
+    storage capacity and produces sys'
+  remedy: "1. Estimate corrected porosity from FLUXNET SWC observations:\n     phi_est = np.percentile(swc_obs_pct,\
+    \ 95) / 0.95\n2. Or use lookup by elevation + biome:\n     < 2500 m: use HWSD phi (often OK)\n   \
+    \  2500–3500 m, meadow: phi = 0.55–0.60\n     > 3500 m, meadow/bog: phi = 0.60–0.70\n3. Override materials."
+- id: dt_025
+  symptom: 'Python script hangs indefinitely at import or h5py.File() call when
+
+    both h5py and netCDF4 are imported in the same process. OR:
+
+    h5py reads corrupt/partial data silently.
+
+    Occurs only when both libraries are imported; h5py alone works fine.
+
+    '
+  diagnosis: 'netCDF4 and h5py both link to the HDF5 C library. If h5py initializes
+
+    HDF5 global state first, netCDF4''s subsequent H5open() call may conflict.
+
+    The safe order is: netCDF4 first (it initializes HDF5 in a compatible
+
+    state), h5py second (it finds HDF5 already initialized and joins it).
+
+    '
+  remedy: "Always import netCDF4 before h5py at the top of the module:\n  import netCDF4   # FIRST — initializes\
+    \ HDF5 in compatible state\n  import h5py      # SECOND — joins existing HDF5 state\nOr keep them\
+    \ in separate subprocesses if both are needed independently.\n; # Top of any script using both:\n\
+    import netCD"
+- id: dt_026
+  symptom: '1D vadose column simulated SWC is 30–60% above observed (PBIAS > +30%)
+
+    at subtropical monsoon forest sites regardless of root-zone depth choice.
+
+    Increasing root-zone depth from 0.5m to 2.0m only reduces bias from
+
+    +55% to +58% — no combination of root-zone depth eliminates the bias.
+
+    Site characterist'
+  diagnosis: 'PFLOTRAN 1D Richards column applies ALL precipitation as a Neumann
+
+    top-boundary infiltration flux. Real subtropical forest soils generate
+
+    significant surface runoff during high-intensity convective events
+
+    (Hortonian overland flow when P-intensity > K_sat, or saturation
+
+    excess when topsoil saturates)'
+  remedy: "Options (in order of preference):\n1. SITE SELECTION: avoid subtropical monsoon forest sites\
+    \ (P>2 mm/d,\n   heavy convective regime) for 1D Richards validation.\n   PREFER: alpine meadow (CN-HaM\
+    \ type), semi-arid, or temperate\n   sites where P >> ET rarely exceeds K_sat.\n2. RUNOFF FRACTION:\
+    \ scale precip"
+- id: dt_027
+  symptom: '1D vadose column validated against a WINTER / cold-season soil-moisture
+
+    window shows strong ANTI-correlation with the obs (r < 0): simulated SWC
+
+    RISES on the days the column gets precip while the observed root-zone
+
+    moisture slowly DECLINES (or is flat). Forcing T_mean is well below 0 C
+
+    across the sc'
+  diagnosis: 'PFLOTRAN RICHARDS mode is ISOTHERMAL and has NO soil-freezing or snowpack
+
+    physics (it cannot hold frozen pore water or accumulate a snowpack). When
+
+    forcing precip is fed straight to the LIQUID_FLUX NEUMANN top BC, sub-zero
+
+    precip that should fall as snow (no infiltration into frozen ground) is
+
+    appli'
+  remedy: "1. SNOW GATING (degree-day): partition precip by T_mean before building\n   the top-BC LIST.\
+    \ Sub-zero precip accumulates as snowpack; melt + rain\n   infiltrate only when T_mean >= 0:\n   \
+    \  if t < 0:  snowpack += p_mm;  infil_mm = 0.0\n     else:      melt = min(snowpack, 2.0*t); snowpack\
+    \ -= melt\n      "

@@ -1,14 +1,3 @@
----
-name: flopy
-description: >-
-  MODFLOW-family finite-difference groundwater flow/transport (MODFLOW 6,
-  MODFLOW-2005/NWT/USG, MT3D/SEAWAT) as built and post-processed by FloPy. Covers
-  Programmatic construction of MODFLOW simulations: spatial discretization
-  (DIS/DISV/DISU), temporal…; Writing MODFLOW-standard input files and invoking the
-  external MODFLOW-based solver executable. Use when the task involves running,
-  configuring, calibrating or interpreting FloPy.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -32,6 +21,41 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (21 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (13 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_grid_from_dem.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_grid_from_dem.py --help` |
+| `tools/convert_forcing_to_modflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_modflow.py --help` |
+| `tools/convert_soil_to_aquifer.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_aquifer.py --help` |
+| `tools/parse_modflow_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_modflow_output.py --help` |
+| `tools/run_modflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_modflow.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # FloPy v3.11.0 — Knowledge Infrastructure
 
 **Package**: `flopy-groundwater-ki` v1.0.0
@@ -40,6 +64,195 @@ description: >-
 **Last updated**: 2026-03-25
 **Stats**: 5 tools | 7 skill documents | 20 diagnostic triplets | ~1,800 lines of validated Python
 **Validation status**: `validated` (Freyberg aquifer, steady-state + transient)
+
+---
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | FloPy v3.11.0 |
+| Package | `flopy-groundwater-ki` v1.0.0 |
+| Language | Python interface to MODFLOW-family executables |
+| Primary domain | Groundwater flow and transport modeling |
+| Spatial mode | Distributed gridded groundwater model grids |
+| Validation status | `validated` (Freyberg aquifer, steady-state + transient) |
+
+---
+
+## 2. What This Model Does
+
+FloPy scripts MODFLOW-family groundwater models: it creates model packages and input files, invokes the required MODFLOW executable, and reads head, budget, drawdown, concentration, and pathline outputs for analysis. FloPy is a pre/post-processor, not a replacement numerical solver; the actual MODFLOW binary or package must run.
+
+---
+
+## 3. Input Requirements
+
+Exact I/O shapes live in `docs/format_spec.yaml`, projected from `dag.yaml` and `diagnostics/triplets.yaml`; regenerate that file after structural changes and do not hand-edit it. The practical input requirements are the model grid, aquifer properties, forcing and boundary packages, initial conditions, solver configuration, and output-control settings described in the stage documents.
+
+| Input family | Expected role | Preparing reference |
+|--------------|---------------|---------------------|
+| Grid and discretization | DIS/DISV-style spatial domain, layer elevations, cell sizes | `docs/s1_grid_discretization.md`; `tools/build_grid_from_dem.py` |
+| Aquifer properties | Hydraulic conductivity, storage, specific yield, conductance inputs | `docs/s2_aquifer_properties.md`; `tools/convert_soil_to_aquifer.py` |
+| Forcing and boundaries | Recharge, wells, rivers, drains, ET, constant/general-head boundaries | `docs/s3_forcing_boundaries.md`; `tools/convert_forcing_to_modflow.py` |
+| Model assembly | FloPy simulation/model/package objects and MODFLOW input files | `docs/s4_model_assembly.md` |
+| Execution configuration | MODFLOW executable name/path, solver controls, stress periods | `docs/s5_execution.md`; `tools/run_modflow.py` |
+| Observation and output parsing | Head, budget, drawdown, and water-balance extraction | `docs/s6_output_analysis.md`; `tools/parse_modflow_output.py` |
+
+---
+
+## 4. Build Instructions
+
+Install the Python package and the MODFLOW-family executables before attempting a run. Use `preflight_check.py` in this KI directory before debugging any model run; a failed preflight means the environment is not yet a valid execution environment.
+
+```bash
+python preflight_check.py
+pip install flopy
+get-modflow :
+mf6 --version
+```
+
+---
+
+## 5. Execution
+
+Run through the KI tools and the real MODFLOW executable. Do not replace the model with a simplified Python formula, regression equation, or hand-coded approximation.
+
+```bash
+python preflight_check.py
+python tools/run_modflow.py --help
+```
+
+The detailed execution pattern and a MODFLOW 6 example remain below in the existing `Quick Start: MODFLOW 6 Steady-State Example` section.
+
+---
+
+## 6. Output Description
+
+Source for this section: `dag.yaml`. If this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable, and the variable this KI is judged by):
+
+> `hydraulic head` -- Simulated hydraulic head per cell (layer, row, col) and timestep, the primary state of the groundwater-flow solution. (`m`)
+
+| Output variable (dag `var`) | rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `hydraulic head` | 1 | `m` | Simulated hydraulic head per cell (layer, row, col) and timestep, the primary state of the groundwater-flow solution. |
+
+Other dag outputs: `drawdown`, `cell-by-cell flow budget`, `specific discharge`, `solute concentration`, `volumetric water-balance discrepancy`.
+
+---
+
+## 7. Tool Inventory
+
+| Tool | Purpose | Stage |
+|------|---------|-------|
+| `tools/build_grid_from_dem.py` | DEM to MODFLOW DIS grid | s1 |
+| `tools/convert_soil_to_aquifer.py` | HWSD/soil data to K, Ss, Sy arrays | s2 |
+| `tools/convert_forcing_to_modflow.py` | Climate/hydro data to recharge and boundary packages | s3 |
+| `tools/run_modflow.py` | Execute MODFLOW with pre/post checks | s5 |
+| `tools/parse_modflow_output.py` | Convert binary MODFLOW outputs to CSV/arrays/plots | s6 |
+
+---
+
+## 8. Unit Conversion Table
+
+Exact shapes and declared units live in `docs/format_spec.yaml`; this section summarizes the conversions the KI body already calls out as common traps.
+
+| Variable | Source unit | Model unit | Factor or rule | Trap ID |
+|----------|-------------|------------|----------------|---------|
+| Hydraulic conductivity (K) | `m/day` | length/time matching DIS | no conversion if length is meters and time is days | `dt_001` |
+| Recharge | `mm/day` | `m/day` | divide by `1000` | `dt_002` |
+| Well pumping rate | `L/s` | `m3/day` | multiply by `86.4` | `dt_003` |
+| Specific storage (Ss) | `1/m` | `1/length` | must match length unit | `dt_004` |
+| Specific yield (Sy) | dimensionless | dimensionless | no conversion | none stated |
+| River conductance | `m2/day` | `length2/time` | `K x L x W / bed_thickness` | `dt_005` |
+| Head / elevation | `m ASL` | length matching grid datum | must match grid datum | `dt_006` |
+| Time (stress period) | `days` | time matching ITMUNI | depends on ITMUNI setting | `dt_007` |
+| Evapotranspiration | `mm/day` | `m/day` | divide by `1000` | `dt_008` |
+| General head conductance | `m2/day` | `length2/time` | same conductance consistency as river conductance | `dt_005` |
+
+### 8c. Sign Conventions and Output Units
+
+MODFLOW is unit-agnostic. Output-unit verification must confirm that head, drawdown, budget, specific-discharge, concentration, and water-balance outputs are interpreted in the same length, time, and mass conventions used to build the input packages.
+
+| Variable | Convention in this KI | Impact if wrong |
+|----------|-----------------------|-----------------|
+| `hydraulic head` | length in the grid datum; headline dag unit is `m` | RMSE and gradients are computed against the wrong datum or scale |
+| `drawdown` | change in head, same length unit as head | storage response and calibration residuals are misread |
+| `cell-by-cell flow budget` | volume/time in the model's consistent unit system | water-balance checks and boundary fluxes are wrong |
+| `specific discharge` | Darcy flux direction and magnitude from MODFLOW budget terms | flow-vector maps and transport coupling are wrong |
+| `solute concentration` | concentration unit must match the transport setup | transport validation is scaled incorrectly |
+| `volumetric water-balance discrepancy` | volume/time discrepancy from listing/budget outputs | convergence or package errors can be hidden |
+
+---
+
+## 9. Diagnostic Triplets (Top 5)
+
+The full diagnostic corpus is in `diagnostics/triplets.yaml`; check it before writing new debug code. The top operating risks already emphasized by this KI are:
+
+| # | Error | Diagnosis | Remedy |
+|---|-------|-----------|--------|
+| 1 | `dt_001` unit inconsistency | MODFLOW is unit-agnostic and will not warn when K, grid length, and time units disagree | Make K use the same length/time system as DIS and stress periods |
+| 2 | `dt_002` recharge scale error | Recharge supplied as `mm/day` is passed as `m/day` | Divide recharge by `1000` before writing RCH inputs |
+| 3 | `dt_003` pumping scale error | Well rates in `L/s` are not converted to model volume/time | Multiply `L/s` by `86.4` for `m3/day` when using meters and days |
+| 4 | `dt_009` indexing error | MODFLOW references often use one-based layer/row/column, while FloPy uses zero-based indices | Convert `(layer, row, col)` to zero-based before writing package data |
+| 5 | `dt_013` binary precision mismatch | Head or budget files are read with the wrong precision | Check `single` versus `double` precision in FloPy binary readers |
+
+---
+
+## 10. Coupling Interfaces
+
+FloPy/MODFLOW commonly consumes gridded recharge, boundary heads/flows, aquifer properties, and geospatial grid inputs, and it commonly provides groundwater states and fluxes to analysis, transport, water-balance, and particle-tracking workflows.
+
+| Direction | Variable exchanged | Unit convention |
+|-----------|--------------------|-----------------|
+| Upstream to MODFLOW | Recharge | length/time, commonly `m/day` after conversion |
+| Upstream to MODFLOW | Aquifer properties | K in length/time, storage in consistent length units |
+| MODFLOW to downstream tools | `hydraulic head` | `m` |
+| MODFLOW to downstream tools | `cell-by-cell flow budget` | model-consistent volume/time |
+| MODFLOW to downstream tools | `specific discharge` | model-consistent length/time |
+| MODFLOW to downstream tools | `solute concentration` | transport-setup concentration unit |
+
+---
+
+## 11. Validated Results
+
+### Test Basin: Freyberg aquifer
+
+| Property | Value |
+|----------|-------|
+| Validation status | `validated` |
+| Run types stated in this KI | steady-state + transient |
+
+### Performance Metrics -- judged against the field's bar, not intuition
+
+Source for this section: `docs/validation_convention.yaml`. If this section and `docs/validation_convention.yaml` ever disagree, the convention file wins.
+
+The convention bar for the dag's rank-1 variable is:
+
+> Bar for `hydraulic head` (`rmse`, direction `minimize`): very good <= `0.95` (`marker2015`), good <= `1.4` (`marker2015`), satisfactory <= `2.2` (`marker2015`).
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band |
+|--------------|--------|-----------|----------------|-----------|-------------------|
+| `hydraulic head` | `rmse` | minimize | `0.95` (`marker2015`) | `1.4` (`marker2015`) | `2.2` (`marker2015`) |
+
+No achieved RMSE value is stated in this SKILL.md addition. When a run produces `hydraulic head` RMSE, judge it against the cited minimize bands above.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | KI pipeline | validated status is model-level only in this SKILL.md | Use `docs/format_spec.yaml` and stage docs for exact contracts |
+| Aquifer properties | KI pipeline | validated status is model-level only in this SKILL.md | Use `docs/s2_aquifer_properties.md` |
+| Grid/discretization | KI pipeline | validated status is model-level only in this SKILL.md | Use `docs/s1_grid_discretization.md` |
+| Initial/boundary conditions | KI pipeline | validated status is model-level only in this SKILL.md | Use `docs/s3_forcing_boundaries.md` and `docs/s4_model_assembly.md` |
+
+---
+
+## 12. Parameter Selection by Region
+
+This KI does not provide a region-specific calibration table in the sourced facts above. Use physically consistent starting values from the model documentation, stage documents, and site data, then validate against the dag's rank-1 `hydraulic head` output and the `marker2015` RMSE convention bar.
 
 ---
 

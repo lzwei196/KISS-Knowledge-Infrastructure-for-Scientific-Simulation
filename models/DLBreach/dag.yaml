@@ -436,7 +436,7 @@ outputs:
   - var: "breach_discharge"
     validation_rank: 1
     unit: "m3/s"
-    description: "Breach outflow hydrograph (discharge through the breach over time); the primary validation target."
+    description: "Breach water outflow hydrograph (discharge through the breach over time); the primary validation target."
     emitted_in: "casename.out (column 2)"
     observability:
       comparable_obs_shapes:
@@ -456,7 +456,7 @@ outputs:
   - var: "breach_bottom_width"
     validation_rank: 4
     unit: "m"
-    description: "Breach bottom width; grows as erosion progresses, capped at embankment length."
+    description: "Earthen embankment soil-breach bottom width; grows as erosion progresses, capped at embankment length."
     emitted_in: "casename.out (column 7)"
     observability:
       comparable_obs_shapes:
@@ -475,7 +475,7 @@ outputs:
   - var: "breach_top_width"
     validation_rank: 5
     unit: "m"
-    description: "Breach top width derived from bottom width and side slope."
+    description: "Earthen embankment soil-breach top width derived from bottom width and side slope."
     emitted_in: "casename.out (column 8)"
     observability:
       comparable_obs_shapes:
@@ -489,7 +489,7 @@ outputs:
   - var: "breach_bottom_elevation"
     validation_rank: 6
     unit: "m above base"
-    description: "Breach bottom elevation; decreases from crest toward base as the breach erodes downward."
+    description: "Earthen embankment breach-bed elevation; decreases from crest toward base as the breach erodes downward."
     emitted_in: "casename.out (column 6)"
     observability:
       comparable_obs_shapes:
@@ -531,7 +531,7 @@ outputs:
   - var: "time_to_peak_discharge"
     validation_rank: 2
     unit: "hours"
-    description: "Breach characteristic time — elapsed time from breach initiation to peak breach discharge."
+    description: "Breach water-discharge characteristic time — elapsed time from breach initiation to peak water discharge through the breach."
     emitted_in: "casename.out (derived from column 1 at peak of column 2)"
     observability:
       comparable_obs_shapes:
@@ -706,3 +706,25 @@ safety:
       scope: "inputs.boundary_conditions Breach_Mode / Overtopping_Mode"
       source: "HEC-RAS DLBreach Overtopping Erosion Model documentation and DLBreach format spec."
       status: "adopted"
+
+medium_evidence:
+  - var: "breach_discharge"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1061_(asce)hy.1943-7900.0000741.txt"
+    quote: "The calculated peak breach discharges, breach widths, and breach characteristic times agree generally well with the measured data."
+    note: "Wu 2013 identifies this output as breach discharge from dam/levee embankment breaching; the description now names water."
+  - var: "breach_bottom_width"
+    source: "dag.yaml"
+    quote: "Earthen embankment (dam/levee) breach by overtopping"
+    note: "scope_in declares the breach medium as the earthen embankment; the description now names soil."
+  - var: "breach_top_width"
+    source: "dag.yaml"
+    quote: "Earthen embankment (dam/levee) breach by overtopping"
+    note: "scope_in declares the breach medium as the earthen embankment; the description now names soil."
+  - var: "breach_bottom_elevation"
+    source: "dag.yaml"
+    quote: "Breach geometry evolution (bottom width/elevation, top width, side slope, flow area)"
+    note: "scope_in ties bottom elevation to breach geometry; the description now names the breach bed in the earthen embankment."
+  - var: "time_to_peak_discharge"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1061_(asce)hy.1943-7900.0000741.txt"
+    quote: "The calculated peak breach discharges, breach widths, and breach characteristic times agree generally well with the measured data."
+    note: "Wu 2013 identifies breach characteristic time with peak breach discharge; the description now names water discharge."

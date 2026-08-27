@@ -179,7 +179,7 @@ outputs:
   - var: "hfss"
     validation_rank: 4
     unit: "W m-2"
-    description: "Sensible heat flux"
+    description: "Sensible heat flux at the land surface"
     emitted_in: "per-variable netCDF (hfss_hh/_d/_mo/_yr.nc)"
     observability:
       comparable_obs_shapes:
@@ -192,7 +192,7 @@ outputs:
   - var: "hfls"
     validation_rank: 5
     unit: "W m-2"
-    description: "Latent heat flux (energy equivalent of evapotranspiration)"
+    description: "Latent heat flux at the land surface (energy equivalent of evapotranspiration)"
     emitted_in: "per-variable netCDF (hfls_hh/_d/_mo/_yr.nc)"
     observability:
       comparable_obs_shapes:
@@ -210,7 +210,7 @@ outputs:
   - var: "gpp"
     validation_rank: 1
     unit: "kgC m-2 s-1 (instantaneous) or kgC m-2 month-1 (accumulated)"
-    description: "Gross primary productivity"
+    description: "Terrestrial ecosystem gross primary productivity"
     emitted_in: "per-variable netCDF (gpp_d/_mo/_yr.nc)"
     observability:
       comparable_obs_shapes:
@@ -298,7 +298,7 @@ outputs:
   - var: "lai"
     validation_rank: 10
     unit: "m2 m-2"
-    description: "Leaf area index"
+    description: "Vegetation canopy leaf area index"
     emitted_in: "per-variable netCDF (lai_d/_mo/_yr.nc)"
     observability:
       comparable_obs_shapes:
@@ -418,3 +418,21 @@ safety:
       scope: "Vegetation representation"
       source: "Melton et al. 2020, GMD 13:2825 (CTEM component)"
       status: "adopted"
+
+medium_evidence:
+  - var: "hfss"
+    source: "dag.yaml"
+    quote: "Surface exchange of energy, momentum, and water between atmosphere and land (CLASS physics)"
+    note: "boundary.scope_in declares CLASS surface energy exchange as atmosphere-land."
+  - var: "hfls"
+    source: "dag.yaml"
+    quote: "Surface exchange of energy, momentum, and water between atmosphere and land (CLASS physics)"
+    note: "boundary.scope_in declares CLASS surface water and energy exchange as atmosphere-land."
+  - var: "gpp"
+    source: "dag.yaml"
+    quote: "Terrestrial carbon biogeochemistry: photosynthesis, autotrophic/heterotrophic respiration, allocation, phenology, tissue turnover (CTEM)"
+    note: "boundary.scope_in declares CTEM photosynthesis as terrestrial carbon biogeochemistry."
+  - var: "lai"
+    source: "SKILL.md"
+    quote: "Vegetation canopy: temperature, intercepted water, phenology (LAI cycle)"
+    note: "SKILL.md identifies LAI cycle as a vegetation canopy output medium."

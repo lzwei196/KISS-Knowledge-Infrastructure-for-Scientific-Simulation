@@ -4,7 +4,7 @@ model:
   version: 9.0.0
   domain: framework
   type: framework_library
-  binary_path: KISSPATH_BINARIES/ESMF/source/repo/test/testO/Linux.gfortran.64.openmpi.default/ESMF_FieldMeshSMMSTest
+  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ESMF/source/repo/test/testO/Linux.gfortran.64.openmpi.default/ESMF_FieldMeshSMMSTest
   note: ESMF is a coupling framework, not a standalone geophysical model. Test binaries
     validate framework functionality.
 inputs:

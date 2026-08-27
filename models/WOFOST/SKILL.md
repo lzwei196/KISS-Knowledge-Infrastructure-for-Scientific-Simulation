@@ -1,14 +1,3 @@
----
-name: wofost
-description: >-
-  WOFOST 7.2 (Wageningen / WUR, PCSE 6.0 lineage). Covers Daily crop growth and
-  development from sowing/emergence to maturity at field/point scale; Phenological
-  development on a DVS scale 0 (emergence) - 1 (anthesis) - 2 (maturity), including…;
-  Daily gross CO2 assimilation (Spitters 3-point Gauss integration over daytime and canopy
-  depth); Maintenance and growth respiration. Use when the task involves running,
-  configuring, calibrating or interpreting WOFOST.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -33,6 +22,56 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (20 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (8 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (26 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (22 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/s1_crop_params/load_crop_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_crop_params/load_crop_parameters.py --help` |
+| `tools/s1_crop_params/validate_crop_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_crop_params/validate_crop_params.py --help` |
+| `tools/s2_soil_params/convert_hwsd_to_pcse_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_soil_params/convert_hwsd_to_pcse_soil.py --help` |
+| `tools/s2_soil_params/validate_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_soil_params/validate_soil_params.py --help` |
+| `tools/s3_weather_prep/convert_vic_to_pcse_weather.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_weather_prep/convert_vic_to_pcse_weather.py --help` |
+| `tools/s3_weather_prep/create_csv_weather_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_weather_prep/create_csv_weather_file.py --help` |
+| `tools/s3_weather_prep/validate_weather_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_weather_prep/validate_weather_data.py --help` |
+| `tools/s4_agromanagement/generate_agromanagement_yaml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_agromanagement/generate_agromanagement_yaml.py --help` |
+| `tools/s4_agromanagement/validate_agromanagement.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_agromanagement/validate_agromanagement.py --help` |
+| `tools/s5_engine_config/configure_pcse_engine.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_engine_config/configure_pcse_engine.py --help` |
+| `tools/s5_engine_config/validate_engine_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_engine_config/validate_engine_config.py --help` |
+| `tools/s6_execution/check_simulation_status.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_execution/check_simulation_status.py --help` |
+| `tools/s6_execution/run_wofost_simulation.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_execution/run_wofost_simulation.py --help` |
+| `tools/s7_output_parsing/export_output_csv.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_output_parsing/export_output_csv.py --help` |
+| `tools/s7_output_parsing/parse_wofost_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_output_parsing/parse_wofost_output.py --help` |
+| `tools/s8_yield_analysis/compare_wofost_dssat.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_yield_analysis/compare_wofost_dssat.py --help` |
+| `tools/s8_yield_analysis/compute_gridded_yield.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_yield_analysis/compute_gridded_yield.py --help` |
+| `tools/s8_yield_analysis/generate_yield_map.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_yield_analysis/generate_yield_map.py --help` |
+| `tools/s8_yield_analysis/validate_against_faostat.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_yield_analysis/validate_against_faostat.py --help` |
+
+*20 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -115,6 +154,36 @@ print(pcse.__version__)  # Should print 6.0.x
 | 8 | Yield Analysis & Ensemble | [s8_yield_analysis_skill.md](docs/s8_yield_analysis_skill.md) | `compute_gridded_yield`, `compare_wofost_dssat`, `generate_yield_map` |
 
 **Stages 1-4 can run in parallel.** Stage 5 depends on all of 1-4. Stage 6 depends on 5. Stages 7-8 are sequential after 6.
+
+---
+
+## Output Description
+
+**Source of truth**: `dag.yaml`. The dag is the model identity for outputs; if this section and the dag disagree, the dag wins.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `TWSO` — Total crop storage-organ biomass (harvestable yield) (`kg ha-1`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `TWSO` | 1 | `kg ha-1` | Total crop storage-organ biomass (harvestable yield) |
+
+Other dag outputs currently exposed by this KI: `DVS`, `DOA`, `DOM`, `LAI`, `LAIMAX`, `TAGP`, `TWLV`, `TWST`, `TWRT`, `TRA`, `CTRAT`, `SM`, `RD`, `WWLOW`.
+
+---
+
+## Unit Conversion Table
+
+**Exact I/O shapes live in `docs/format_spec.yaml`; output identity and output units live in `dag.yaml`.** This table captures the known unit conversions and output-unit facts that are surfaced in this skill document.
+
+| Variable | Source or context | Source unit | Model or output unit | Conversion / handling |
+|----------|-------------------|-------------|----------------------|-----------------------|
+| `TWSO` | dag output | model output | `kg ha-1` | No conversion stated here; use dag output unit. |
+| `IRRAD` | VIC shortwave radiation | `W/m2` | `J/m2/day` | `IRRAD = SW_W_m2 × 86400`. |
+| `E0` / `ES0` / `ET0` | Hargreaves evapotranspiration output | `mm/day` | `cm/day` | Divide by 10. |
+| `RAIN` | `CSVWeatherDataProvider` CSV column | `mm/day` | internal model variable `cm/day` | PCSE divides the CSV value by 10 internally. |
+| `VAP` | weather input vapor pressure | `hPa` or `mbar` when supplied that way | `kPa` | `1 kPa = 10 hPa = 10 mbar`; convert to kPa before model use. |
 
 ---
 
@@ -226,6 +295,16 @@ Point or few-point WOFOST runs compared to a FAOSTAT NATIONAL yield series are a
 > **CANONICAL TOOL (added 2026-06-08):** Use `tools/s8_yield_analysis/validate_against_faostat.py SIM_CSV CROP COUNTRY OUT_JSON [UNITS]` for FAOSTAT-national validation. It is **obs_shape-aware**: it classifies the comparison as `regional_aggregate_time_series` and reports ONLY the dag-valid metric families — `magnitude_accuracy` (pbias, decadal_mean_pbias, mean_abs_pct_err) and `trend_match` (detrended r, first-difference r, trend-slope ratio). Raw NSE/r/KGE are relegated to an `invalid_for_obs_shape` block (the pre-retry gate REJECTs them as `REJECT_WRONG_METRIC` if reported as the verdict — see triplet dt_faostat_obs_shape). SIM_CSV needs columns `year,sim_tha`. The other s8 tools (compute_gridded_yield / compare_wofost_dssat / generate_yield_map) remain for gridded/cross-model work.
 >
 > **Validated reference (USA Corn Belt maize, 3-pt avg, PP mode, 1991-2023, default Grain_maize_205):** magnitude_accuracy pbias +6.6% (decadal +3.4%); trend_match detrended r=0.506, first-diff r=0.611. This PASSES under the correct framing — raw NSE=-1.4/r=0.09 are structurally meaningless for this obs_shape and must NOT be the verdict.
+
+### Performance Metrics — Convention Bars
+
+**Source of truth**: `docs/validation_convention.yaml`. A null band in the convention is written here as `no cited threshold`; do not substitute remembered thresholds.
+
+| Dag variable | Metric | Direction | Satisfactory band | Citation key |
+|--------------|--------|-----------|-------------------|--------------|
+| `DVS` | `nse` | maximize | no cited threshold | none |
+| `DOA` | `pbias` | zero_centered | no cited threshold | none |
+| `DOM` | `pbias` | zero_centered | no cited threshold | none |
 
 
 ### PCSE 6.0 API Changes (validated 2026-04-10)

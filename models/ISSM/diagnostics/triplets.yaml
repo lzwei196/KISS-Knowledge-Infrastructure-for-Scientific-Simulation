@@ -522,3 +522,22 @@
     prevention: "ISSM defaults are correct — only check if manually overridden"
   severity: silent
   cross_references: [dt_005]
+
+# ---------------------------------------------------------------------------
+# Triplets added by self-improve runs after the original corpus was published.
+# Recovered 2026-08-12 and merged back; the block above is the published base,
+# byte-for-byte. See REPORT.md.
+# ---------------------------------------------------------------------------
+- id: dt_021
+  symptom:
+    description: Verifier metrics all null, _dag_lookup_failed=true; requested obs variable is snowpack
+      SWE at a mid-latitude seasonal-snow site (SNOTEL).
+  diagnosis:
+    root_cause: Structural wrong-variable + wrong-domain mismatch — ISSM (ice-sheet FEM) has no SWE output
+      and the site has no glacier.
+  remedy:
+    action: Reject at dag gate, no retry; reassign to a valid ice-sheet/glacier variable (Vel/Thickness/Surface
+      elevation) over a glaciated domain, or document as out-of-domain.
+  format_spec_violated: dag.yaml outputs set (no SWE variable); SKILL.md NON-PRODUCIBLE VARIABLES guard
+  canonical_intent: ki_local_if_pass
+  added_by_run: ISSM_retry1

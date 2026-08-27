@@ -1,254 +1,268 @@
 schema_version: 1
 model_id: SUMMA
 domain: hydrology
-generated_by: "self-improve session (Claude Opus 4.8) — validation-convention Step-B, general schema"
+generated_by: self-improve session (Claude Opus 4.8) — validation-convention Step-B, general schema
 generated_at: 2026-07-09
-
-# HONESTY SUMMARY --------------------------------------------------------------
-# SUMMA (Structure for Unifying Multiple Modeling Alternatives; Clark et al. 2015)
-# is a physics-based land/hydrology model. It has NO channel routing, so gauged
-# streamflow comparison presumes external routing of per-HRU runoff (dag caveat).
-# Grounding of numeric bands:
-#   * runoff / discharge (point_time_series) = STRONG. Two peer-reviewed threshold
-#     conventions fetched: Moriasi et al. 2007 (Table 4) and Moriasi et al. 2015
-#     give NSE/PBIAS/RSR/R2 tiers for watershed flow. These SUPERSEDE nothing; the
-#     dag determining_metric (nse) is kept as a headline.
-#   * evapotranspiration (point_time_series) = MODERATE. Jimenez et al. 2019
-#     (SWAT satellite-ET, HESS 23-1113) REPRODUCES the Moriasi tiers verbatim FOR
-#     MONTHLY ET: "NSE > 0.50, R2 > 0.60, KGE >= 0.50 and PBIAS <= +/-25 % are the
-#     required satisfactory thresholds". Reproduced-tier grounding for ET.
-#   * swe (point_time_series) = WEAK. The fetched SUMMA snow papers evaluate SWE/
-#     snow with KGE/NSE but report NO universal pass tier; there is no Moriasi-style
-#     snow convention in the fetched set -> headline band NULL, confidence <= 0.4.
-#   * soil_moisture (point_time_series) = WEAK. dag determining_metric is r; the
-#     fetched calibration paper (Lopez Lopez 2017) uses r/KGE as an OBJECTIVE but
-#     states no numeric r pass tier -> headline band NULL, confidence <= 0.4.
-# obs_map binds discharge (nse), SWE_F/ET_corr (nse), rootzone soil moisture (r),
-# and GRACE total_water_storage (r). total_water_storage is NOT a dag validation
-# row, so no block is emitted for it (see notes in the runoff block). snow_depth
-# is a dag row but has NO obs binding in model_obs_map (only SWE is bound) -> no
-# separate block; it is covered by the swe block's notes.
-# Bands are plain NUMBERS read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
-
 references:
   moriasi2007:
     doi: 10.13031/2013.23153
-    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
-    venue: "Transactions of the ASABE"
+    title: Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations
+    venue: Transactions of the ASABE
     year: 2007
     oa: manual
     resolves: https://doi.org/10.13031/2013.23153
   moriasi2015:
     doi: 10.13031/trans.58.10715
-    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
-    venue: "Transactions of the ASABE"
+    title: 'Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria'
+    venue: Transactions of the ASABE
     year: 2015
     oa: manual
     resolves: https://doi.org/10.13031/trans.58.10715
   jimenez2019:
     doi: 10.5194/hess-23-1113-2019
-    title: "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration in a data-sparse catchment in southwestern Africa"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Multi-site calibration and validation of SWAT with satellite-based evapotranspiration in a
+      data-sparse catchment in southwestern Africa
+    venue: Hydrol. Earth Syst. Sci.
     year: 2019
     oa: gold
     resolves: https://hess.copernicus.org/articles/23/1113/2019/
   clark2015b:
     doi: 10.1002/2015wr017200
-    title: "A unified approach for process-based hydrologic modeling: 2. Model implementation and case studies"
-    venue: "Water Resources Research"
+    title: 'A unified approach for process-based hydrologic modeling: 2. Model implementation and case
+      studies'
+    venue: Water Resources Research
     year: 2015
     oa: bronze
     resolves: https://doi.org/10.1002/2015wr017200
   gharari2024:
     doi: 10.5194/hess-28-5331-2024
-    title: "A large-sample modelling approach towards integrating streamflow and evaporation data for a distributed hydrological model"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: A large-sample modelling approach towards integrating streamflow and evaporation data for a
+      distributed hydrological model
+    venue: Hydrol. Earth Syst. Sci.
     year: 2024
     oa: gold
     resolves: https://hess.copernicus.org/articles/28/5331/2024/
   marks2016:
     doi: 10.5194/tc-10-2147-2016
-    title: "How much cryosphere model complexity is just right? Exploration using the conceptual cryosphere hydrology framework"
-    venue: "The Cryosphere"
+    title: How much cryosphere model complexity is just right? Exploration using the conceptual cryosphere
+      hydrology framework
+    venue: The Cryosphere
     year: 2016
     oa: gold
     resolves: https://tc.copernicus.org/articles/10/2147/2016/
   lundquist2022:
     doi: 10.1029/2021wr030852
-    title: "Evaluating Multiple Canopy-Snow Unloading Parameterizations in SUMMA With Time-Lapse Photography"
-    venue: "Water Resources Research"
+    title: Evaluating Multiple Canopy-Snow Unloading Parameterizations in SUMMA With Time-Lapse Photography
+    venue: Water Resources Research
     year: 2022
     oa: bronze
     resolves: https://doi.org/10.1029/2021wr030852
   lopezlopez2017:
     doi: 10.5194/hess-21-3125-2017
-    title: "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration
+      products
+    venue: Hydrol. Earth Syst. Sci.
     year: 2017
     oa: gold
     resolves: https://hess.copernicus.org/articles/21/3125/2017/
-
 validation:
-
-  # =================== RUNOFF -> gauged DISCHARGE / time series (STRONG) ===================
-  - canonical_quantity: runoff
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        cites: [moriasi2007, moriasi2015]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, good: 15, satisfactory: 25}
-        pass_band: satisfactory
-        band_note: "Moriasi 2007 Table 4 streamflow tiers (sat +/-25%). Moriasi 2015 tightens the watershed-flow satisfactory bound to PBIAS <= +/-15% for high-quality data; gate must not loosen below +/-25%."
-        cites: [moriasi2007, moriasi2015]
-      - metric: rsr
-        direction: minimize
-        unit: dimensionless
-        bands: {very_good: 0.50, good: 0.60, satisfactory: 0.70}
-        pass_band: satisfactory
-        cites: [moriasi2007]
-    secondary_metrics:
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "SUMMA large-sample and cryosphere studies calibrate/report streamflow with KGE (decomposed into r, alpha, beta); no universal KGE pass tier is stated, so KGE is informative only."
-        cites: [gharari2024, marks2016]
-      - metric: r2
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Moriasi 2015 co-recommends daily/monthly/annual R2 > 0.60 for watershed flow, reported alongside NSE."
-        cites: [moriasi2015]
-    validated_when: "NSE >= 0.50 (Moriasi 2007/2015 satisfactory) AND |PBIAS| <= 25% (Moriasi 2007 streamflow) AND RSR <= 0.70 (Moriasi 2007)"
-    evidence_strength: strong
-    confidence: 0.8
-    notes: >-
-      Moriasi et al. 2007 Table 4 (monthly): NSE satisfactory 0.50-0.65 / good 0.65-0.75 /
-      very good 0.75-1.00; streamflow PBIAS satisfactory +/-15..25% / good +/-10..15% / very
-      good <+/-10%; RSR satisfactory 0.60-0.70 / good 0.50-0.60 / very good <0.50. Moriasi et
-      al. 2015: watershed-scale flow "satisfactory" if daily/monthly/annual R2 > 0.60, NSE >
-      0.50 and PBIAS <= +/-15%. SUMMA has NO channel routing (dag caveat): scoring against a
-      gauge requires external routing of per-HRU scalarTotalRunoff to the outlet, and 1-2 yr
-      (5+ for groundwater basins) cold-start spinup must be discarded first. Runoff is m/s (a
-      flux) while ET/precip are kg/m2/s -- do not mix unit families in the water balance.
-      NOTE: model_obs_map also binds GRACE total_water_storage (metric r) and MODIS LST, but
-      those quantities are not dag validation rows; no block is emitted for them here.
-
-  # =================== EVAPOTRANSPIRATION / time series (MODERATE, reproduced tier) ===================
-  - canonical_quantity: evapotranspiration
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "Jimenez 2019 reproduces Moriasi 2007/2015 tiers for monthly ET: 'NSE > 0.50 ... satisfactory'."
-        cites: [jimenez2019, moriasi2015]
-      - metric: kge
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: 0.50}
-        pass_band: satisfactory
-        cites: [jimenez2019]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {satisfactory: 25}
-        pass_band: satisfactory
-        cites: [jimenez2019]
-    secondary_metrics:
-      - metric: r2
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Jimenez 2019 lists R2 > 0.60 among the satisfactory ET thresholds, reported alongside NSE/KGE/PBIAS."
-        cites: [jimenez2019]
-    validated_when: "NSE >= 0.50 AND KGE >= 0.50 AND |PBIAS| <= 25% for the ET series (satellite/flux-tower ET), per Jimenez 2019 reproducing Moriasi 2007/2015"
-    evidence_strength: moderate
-    confidence: 0.6
-    notes: >-
-      Jimenez et al. 2019 (HESS 23-1113), satellite-ET calibration, states: "Kouchi et al.
-      (2017) and Moriasi et al. (2007, 2015) stipulate that NSE > 0.50, R2 > 0.60, KGE >= 0.50
-      and PBIAS <= +/-25 % are the required satisfactory thresholds" for MONTHLY ET, and treats
-      NSE > 0.5 as good agreement. This is a reproduced-tier grounding: the tiers originate in
-      the (fetched) Moriasi conventions but are applied to ET by Jimenez 2019. Confidence 0.6:
-      the ET convention is transferred from a SWAT/GLEAM study, not a SUMMA-specific ET
-      benchmark. SUMMA sign convention: negative scalarTotalET is upward (evaporative) flux;
-      the energy-balance counterpart scalarLatHeatTotal (W/m2) validates the same quantity
-      against eddy-covariance latent heat, subject to known observed energy-balance non-closure.
-
-  # =================== SWE / point time series (WEAK, no cited snow tier) ===================
-  - canonical_quantity: swe
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no universal SWE validation tier in the fetched set; Moriasi tiers are defined for streamflow/ET, not snow"
-        cites: []
-    secondary_metrics:
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "SUMMA-family snow studies evaluate SWE/snow with KGE and NSE against SNOTEL/lidar but report no universal pass tier; skill is data- and canopy-scheme dependent (sub-canopy SWE is sensitive to the canopy-snow unloading parameterization)."
-        cites: [clark2015b, lundquist2022, marks2016]
-    validated_when: "UNRESOLVED numerically -- SUMMA snow skill is reported with KGE/NSE but no cited SWE pass threshold exists in the fetched set; treat as data/convention gap, do not auto-validate or loosen"
-    evidence_strength: weak
-    confidence: 0.35
-    notes: >-
-      SWE is bound in model_obs_map (SWE_F, determining_metric nse) and is a well-studied SUMMA
-      output (Clark et al. 2015b case studies; Lundquist/Sturm-style canopy-unloading evaluation
-      with time-lapse photography, Marks 2016 conceptual cryosphere framework). All use KGE/NSE
-      as skill or objective but NONE publish a Moriasi-style satisfactory/good tier for SWE, so
-      the headline band is null per the no-fabrication rule and MUST NOT loosen the gate. Timing
-      of accumulation/melt onset matters as much as peak magnitude. snow_depth (scalarSnowDepth)
-      is a dag row but has no obs binding in model_obs_map (only SWE is bound); it shares this
-      no-cited-tier status. A snow-specific SWE/depth benchmark reporting KGE/NSE/RMSE tiers is
-      needed to raise this to moderate (see deferred_paywalled).
-
-  # =================== SOIL MOISTURE / point time series (WEAK, r has no cited tier) ===================
-  - canonical_quantity: soil_moisture
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: r
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "dag determining_metric is r; no cited numeric r pass tier for soil moisture in the fetched set"
-        cites: []
-    secondary_metrics:
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Lopez Lopez et al. 2017 calibrate a large-scale model with satellite soil moisture using r/KGE and systematically remove mean/variance bias before scoring (CDF matching), because absolute soil-moisture bias is not physically comparable; correlation/anomaly skill is the meaningful signal but is reported without a pass tier."
-        cites: [lopezlopez2017]
-    validated_when: "UNRESOLVED numerically -- correlation r is the routed metric but no cited r threshold exists; satellite surface soil moisture also compares only to near-surface model layers (mLayerVolFracLiq must be matched to the sensing depth)"
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      mLayerVolFracLiq is layer-specific and must be matched to the observation depth. Lopez
-      Lopez et al. 2017 use soil-moisture correlation (with bias/variance removed) as a
-      calibration objective but report no numeric r pass tier, so the headline band is null and
-      confidence <= 0.4; the block may contextualize (suppress a spurious fix_ki on a systematic
-      soil-moisture bias, which is a known data-comparability ceiling) but may never loosen a
-      headline requirement. A soil-moisture benchmark reporting an r or unbiased-RMSE tier is
-      needed to raise this to moderate.
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - moriasi2007
+    - moriasi2015
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      good: 15
+      satisfactory: 25
+    pass_band: satisfactory
+    band_note: Moriasi 2007 Table 4 streamflow tiers (sat +/-25%). Moriasi 2015 tightens the watershed-flow
+      satisfactory bound to PBIAS <= +/-15% for high-quality data; gate must not loosen below +/-25%.
+    cites:
+    - moriasi2007
+    - moriasi2015
+  - metric: rsr
+    direction: minimize
+    unit: dimensionless
+    bands:
+      very_good: 0.5
+      good: 0.6
+      satisfactory: 0.7
+    pass_band: satisfactory
+    cites:
+    - moriasi2007
+  secondary_metrics:
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: SUMMA large-sample and cryosphere studies calibrate/report streamflow with KGE (decomposed
+      into r, alpha, beta); no universal KGE pass tier is stated, so KGE is informative only.
+    cites:
+    - gharari2024
+    - marks2016
+  - metric: r2
+    direction: maximize
+    status: supportive
+    ceiling_reason: Moriasi 2015 co-recommends daily/monthly/annual R2 > 0.60 for watershed flow, reported
+      alongside NSE.
+    cites:
+    - moriasi2015
+  validated_when: NSE >= 0.50 (Moriasi 2007/2015 satisfactory) AND |PBIAS| <= 25% (Moriasi 2007 streamflow)
+    AND RSR <= 0.70 (Moriasi 2007)
+  evidence_strength: strong
+  confidence: 0.8
+  notes: 'Moriasi et al. 2007 Table 4 (monthly): NSE satisfactory 0.50-0.65 / good 0.65-0.75 / very good
+    0.75-1.00; streamflow PBIAS satisfactory +/-15..25% / good +/-10..15% / very good <+/-10%; RSR satisfactory
+    0.60-0.70 / good 0.50-0.60 / very good <0.50. Moriasi et al. 2015: watershed-scale flow "satisfactory"
+    if daily/monthly/annual R2 > 0.60, NSE > 0.50 and PBIAS <= +/-15%. SUMMA has NO channel routing (dag
+    caveat): scoring against a gauge requires external routing of per-HRU scalarTotalRunoff to the outlet,
+    and 1-2 yr (5+ for groundwater basins) cold-start spinup must be discarded first. Runoff is m/s (a
+    flux) while ET/precip are kg/m2/s -- do not mix unit families in the water balance. NOTE: model_obs_map
+    also binds GRACE total_water_storage (metric r) and MODIS LST, but those quantities are not dag validation
+    rows; no block is emitted for them here.'
+  dag_variable: scalarTotalRunoff
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: 'Jimenez 2019 reproduces Moriasi 2007/2015 tiers for monthly ET: ''NSE > 0.50 ... satisfactory''.'
+    cites:
+    - jimenez2019
+    - moriasi2015
+  - metric: kge
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - jimenez2019
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: 25
+    pass_band: satisfactory
+    cites:
+    - jimenez2019
+  secondary_metrics:
+  - metric: r2
+    direction: maximize
+    status: supportive
+    ceiling_reason: Jimenez 2019 lists R2 > 0.60 among the satisfactory ET thresholds, reported alongside
+      NSE/KGE/PBIAS.
+    cites:
+    - jimenez2019
+  validated_when: NSE >= 0.50 AND KGE >= 0.50 AND |PBIAS| <= 25% for the ET series (satellite/flux-tower
+    ET), per Jimenez 2019 reproducing Moriasi 2007/2015
+  evidence_strength: moderate
+  confidence: 0.6
+  notes: 'Jimenez et al. 2019 (HESS 23-1113), satellite-ET calibration, states: "Kouchi et al. (2017)
+    and Moriasi et al. (2007, 2015) stipulate that NSE > 0.50, R2 > 0.60, KGE >= 0.50 and PBIAS <= +/-25
+    % are the required satisfactory thresholds" for MONTHLY ET, and treats NSE > 0.5 as good agreement.
+    This is a reproduced-tier grounding: the tiers originate in the (fetched) Moriasi conventions but
+    are applied to ET by Jimenez 2019. Confidence 0.6: the ET convention is transferred from a SWAT/GLEAM
+    study, not a SUMMA-specific ET benchmark. SUMMA sign convention: negative scalarTotalET is upward
+    (evaporative) flux; the energy-balance counterpart scalarLatHeatTotal (W/m2) validates the same quantity
+    against eddy-covariance latent heat, subject to known observed energy-balance non-closure.'
+  dag_variable: scalarTotalET
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no universal SWE validation tier in the fetched set; Moriasi tiers are defined for streamflow/ET,
+      not snow
+    cites: []
+  secondary_metrics:
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: SUMMA-family snow studies evaluate SWE/snow with KGE and NSE against SNOTEL/lidar
+      but report no universal pass tier; skill is data- and canopy-scheme dependent (sub-canopy SWE is
+      sensitive to the canopy-snow unloading parameterization).
+    cites:
+    - clark2015b
+    - lundquist2022
+    - marks2016
+  validated_when: UNRESOLVED numerically -- SUMMA snow skill is reported with KGE/NSE but no cited SWE
+    pass threshold exists in the fetched set; treat as data/convention gap, do not auto-validate or loosen
+  evidence_strength: weak
+  confidence: 0.35
+  notes: SWE is bound in model_obs_map (SWE_F, determining_metric nse) and is a well-studied SUMMA output
+    (Clark et al. 2015b case studies; Lundquist/Sturm-style canopy-unloading evaluation with time-lapse
+    photography, Marks 2016 conceptual cryosphere framework). All use KGE/NSE as skill or objective but
+    NONE publish a Moriasi-style satisfactory/good tier for SWE, so the headline band is null per the
+    no-fabrication rule and MUST NOT loosen the gate. Timing of accumulation/melt onset matters as much
+    as peak magnitude. snow_depth (scalarSnowDepth) is a dag row but has no obs binding in model_obs_map
+    (only SWE is bound); it shares this no-cited-tier status. A snow-specific SWE/depth benchmark reporting
+    KGE/NSE/RMSE tiers is needed to raise this to moderate (see deferred_paywalled).
+  dag_variable: scalarSWE
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: r
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: dag determining_metric is r; no cited numeric r pass tier for soil moisture in the fetched
+      set
+    cites: []
+  secondary_metrics:
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: Lopez Lopez et al. 2017 calibrate a large-scale model with satellite soil moisture
+      using r/KGE and systematically remove mean/variance bias before scoring (CDF matching), because
+      absolute soil-moisture bias is not physically comparable; correlation/anomaly skill is the meaningful
+      signal but is reported without a pass tier.
+    cites:
+    - lopezlopez2017
+  validated_when: UNRESOLVED numerically -- correlation r is the routed metric but no cited r threshold
+    exists; satellite surface soil moisture also compares only to near-surface model layers (mLayerVolFracLiq
+    must be matched to the sensing depth)
+  evidence_strength: weak
+  confidence: 0.3
+  notes: mLayerVolFracLiq is layer-specific and must be matched to the observation depth. Lopez Lopez
+    et al. 2017 use soil-moisture correlation (with bias/variance removed) as a calibration objective
+    but report no numeric r pass tier, so the headline band is null and confidence <= 0.4; the block may
+    contextualize (suppress a spurious fix_ki on a systematic soil-moisture bias, which is a known data-comparability
+    ceiling) but may never loosen a headline requirement. A soil-moisture benchmark reporting an r or
+    unbiased-RMSE tier is needed to raise this to moderate.
+  dag_variable: mLayerVolFracLiq
 deferred_paywalled:
-  - ref: "HESS 29-4515-2025 (SUMMA-related, closed access) -- could supply a SUMMA-specific streamflow/snow benchmark"
-    doi: 10.5194/hess-29-4515-2025
-    needed_for: [runoff, swe]
-  - ref: "A snow-model SWE/snow-depth evaluation reporting a KGE/NSE/RMSE satisfactory tier (Moriasi-equivalent for snow)"
-    doi: unknown_not_fetched
-    needed_for: [swe]
-  - ref: "A satellite soil-moisture validation convention reporting an r or unbiased-RMSE pass threshold (e.g. SMAP mission accuracy requirement, Entekhabi et al. 2010)"
-    doi: unknown_not_fetched
-    needed_for: [soil_moisture]
+- ref: HESS 29-4515-2025 (SUMMA-related, closed access) -- could supply a SUMMA-specific streamflow/snow
+    benchmark
+  doi: 10.5194/hess-29-4515-2025
+  needed_for:
+  - runoff
+  - swe
+- ref: A snow-model SWE/snow-depth evaluation reporting a KGE/NSE/RMSE satisfactory tier (Moriasi-equivalent
+    for snow)
+  doi: unknown_not_fetched
+  needed_for:
+  - swe
+- ref: A satellite soil-moisture validation convention reporting an r or unbiased-RMSE pass threshold
+    (e.g. SMAP mission accuracy requirement, Entekhabi et al. 2010)
+  doi: unknown_not_fetched
+  needed_for:
+  - soil_moisture

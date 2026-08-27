@@ -1,156 +1,697 @@
-model:
-  name: "PySWMM"
-  version: "2.1.0"
-  domain: "urban hydrology / stormwater management"
-  engine: "EPA SWMM 5.1.14–5.2.4 via swmm-toolkit"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  language: "Python 3.10–3.12"
-  input_format: "SWMM .inp (section-based plain-text)"
-  output_format: "binary .out + plain-text .rpt"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: PySWMM
+  language: python
+  implementation:
+    id: pyswmm
+    version: 2.1.0
+    provenance: Python; PySWMM (OpenWaterAnalytics / Bryant E. McDonnell) binds the compiled EPA SWMM5
+      C engine through swmm.toolkit.solver.
+  scientific_reference_version: EPA SWMM5 (Storm Water Management Model 5.1.14–5.2.4) via the OpenWaterAnalytics
+    swmm-toolkit
 inputs:
   forcing:
-    - name: "rainfall"
-      unit: "mm/hr (SI) or in/hr (US)"
-      valid_range: [0.0, 300.0]
-      description: "Rainfall intensity timeseries — MUST be intensity, not cumulative depth"
-    - name: "evaporation"
-      unit: "mm/day (SI) or in/day (US)"
-      valid_range: [0.0, 15.0]
-      description: "Daily evaporation rate"
-    - name: "temperature"
-      unit: "°C or °F"
-      valid_range: [-40.0, 50.0]
-      description: "Air temperature for snowmelt calculations (optional)"
-
+  - name: Rainfall intensity
+    unit: in/hr (US) | mm/hr (SI)
+    category: meteorology
+    source_kind: forcing
+    model_input_format: '[RAINGAGES] referencing a [TIMESERIES]; Type must be INTENSITY (or VOLUME); gage
+      Interval must match the timeseries resolution'
+    notes: Authored as INTENSITY, not cumulative depth. Authoring mm/day where mm/hr is expected under-drives
+      rainfall by 24x; gage Interval mismatched to the timeseries resolution can yield zero rainfall.
+  - name: Evaporation rate
+    unit: in/day (US) | mm/day (SI)
+    category: meteorology
+    source_kind: forcing
+    model_input_format: '[EVAPORATION]: CONSTANT, monthly, or timeseries; optional DRY_ONLY'
+    notes: Per-DAY rate. Supplying a per-hour value applies 24x the intended evaporation loss.
   parameters:
-    critical:
-      - name: "subcatch_width"
-        section: "[SUBCATCHMENTS]"
-        valid_range: [1.0, 50000.0]
-        unit: "ft (US) or m (SI)"
-        description: "Overland flow width — controls hydrograph peak timing. Width = Area / longest overland flow path"
-      - name: "pct_imperv"
-        section: "[SUBCATCHMENTS]"
-        valid_range: [0.0, 100.0]
-        unit: "percent"
-        description: "Percent impervious area — primary control on runoff volume"
-      - name: "n_imperv"
-        section: "[SUBAREAS]"
-        valid_range: [0.01, 0.03]
-        unit: "dimensionless"
-        description: "Manning's n for impervious surfaces"
-      - name: "s_imperv"
-        section: "[SUBAREAS]"
-        valid_range: [0.02, 0.10]
-        unit: "inches (US) or mm (SI)"
-        description: "Depression storage on impervious area"
-      - name: "infil_maxrate"
-        section: "[INFILTRATION]"
-        valid_range: [1.0, 5.0]
-        unit: "in/hr (US) or mm/hr (SI)"
-        description: "Peak infiltration rate (Horton model)"
-      - name: "infil_minrate"
-        section: "[INFILTRATION]"
-        valid_range: [0.1, 1.0]
-        unit: "in/hr (US) or mm/hr (SI)"
-        description: "Steady-state infiltration rate"
-      - name: "infil_decay"
-        section: "[INFILTRATION]"
-        valid_range: [2.0, 7.0]
-        unit: "hr⁻¹"
-        description: "Horton decay constant"
-      - name: "mannings_n_pipe"
-        section: "[CONDUITS]"
-        valid_range: [0.01, 0.03]
-        unit: "dimensionless"
-        description: "Pipe roughness coefficient"
-      - name: "n_perv"
-        section: "[SUBAREAS]"
-        valid_range: [0.05, 0.80]
-        unit: "dimensionless"
-        description: "Manning's n for pervious surfaces"
-
-    simulation:
-      - name: "flow_units"
-        section: "[OPTIONS]"
-        valid_values: ["CFS", "GPM", "MGD", "CMS", "LPS", "MLD"]
-        description: "Flow unit system — determines all other units"
-      - name: "infiltration_model"
-        section: "[OPTIONS]"
-        valid_values: ["HORTON", "MODIFIED_HORTON", "GREEN_AMPT", "MODIFIED_GREEN_AMPT", "CURVE_NUMBER"]
-        description: "Infiltration calculation method"
-      - name: "routing_model"
-        section: "[OPTIONS]"
-        valid_values: ["DYNWAVE", "KINWAVE", "STEADY"]
-        description: "Flow routing method — DYNWAVE is most accurate but requires small timesteps"
-      - name: "routing_step"
-        section: "[OPTIONS]"
-        valid_range: [1, 300]
-        unit: "seconds"
-        description: "Routing computation timestep — must satisfy Courant condition for DYNWAVE"
-
+  - name: Subcatchment area
+    unit: acres (US) | hectares (SI)
+    category: subcatchment
+    source_kind: user_provided
+    model_input_format: '[SUBCATCHMENTS] Area'
+  - name: Percent impervious
+    unit: '%'
+    category: subcatchment
+    source_kind: calibrated
+    model_input_format: '[SUBCATCHMENTS] %Imperv'
+  - name: Characteristic width
+    unit: ft (US) | m (SI)
+    category: subcatchment
+    source_kind: calibrated
+    model_input_format: '[SUBCATCHMENTS] Width (≈ Area / longest overland flow path)'
+    notes: Controls overland-flow hydrograph shape; most sensitive single subcatchment routing parameter.
+  - name: Subcatchment slope
+    unit: percent
+    category: subcatchment
+    source_kind: user_provided
+    model_input_format: '[SUBCATCHMENTS] Slope (PERCENT, not fraction)'
+  - name: Surface roughness (Manning n, impervious / pervious)
+    unit: dimensionless
+    category: subcatchment
+    source_kind: calibrated
+    model_input_format: '[SUBAREAS] N-Imperv, N-Perv'
+  - name: Depression storage (impervious / pervious)
+    unit: in (US) | mm (SI)
+    category: subcatchment
+    source_kind: calibrated
+    model_input_format: '[SUBAREAS] S-Imperv, S-Perv'
+  - name: Impervious runoff routing fraction (PctZero)
+    unit: '%'
+    category: subcatchment
+    source_kind: calibrated
+    model_input_format: '[SUBAREAS] PctZero (fraction of impervious area with no depression storage /
+      routed directly to outlet)'
+  - name: Infiltration parameters
+    unit: Horton MaxRate/MinRate in/hr or mm/hr, Decay hr⁻¹, DryTime d; Green-Ampt Suction/Conductivity/InitDef;
+      SCS CN
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: '[INFILTRATION] — fields depend on the INFILTRATION method chosen in [OPTIONS]'
+  - name: Conduit Manning's n
+    unit: dimensionless
+    category: channel
+    source_kind: calibrated
+    model_input_format: '[CONDUITS] roughness'
+  - name: Conduit geometry (length, offsets, cross-section)
+    unit: ft / m (length, Geom1-4); dimensionless shape
+    category: channel
+    source_kind: user_provided
+    model_input_format: '[CONDUITS] Length/Offsets + [XSECTIONS] Shape, Geom1-4, Barrels'
+  - name: Control-structure discharge coefficients
+    unit: dimensionless (embeds unit system; rectangular weir ~3.33 US / ~1.84 SI)
+    category: structure
+    source_kind: user_provided
+    model_input_format: '[WEIRS] DischCoeff, [ORIFICES] DischCoeff, [PUMPS] PumpCurve'
+    notes: Weir/orifice coefficients already embed the chosen unit system and must NOT be numerically
+      converted between US and SI.
+  - name: LID layer parameters
+    unit: various (layer thickness, porosity, field capacity, conductivity, drain coefficient/exponent,
+      etc.)
+    category: LID
+    source_kind: calibrated
+    model_input_format: '[LID_CONTROLS] (definition) + [LID_USAGE] (application to subcatchments)'
+  initial_conditions:
+  - name: Initial node depth
+    unit: ft (US) | m (SI)
+    category: network_state
+    source_kind: user_provided
+    model_input_format: '[JUNCTIONS]/[STORAGE] InitDepth'
+  - name: Initial link flow
+    unit: flow units (CFS/CMS …)
+    category: network_state
+    source_kind: user_provided
+    model_input_format: '[CONDUITS] initial flow (q0)'
+  - name: Hotstart state
+    unit: binary
+    category: saved_state
+    source_kind: user_provided
+    model_input_format: Hotstart file (.hsf) loaded via sim.use_hotstart(); captures node depths, link
+      flows, and groundwater states to skip warmup/spin-up
+  boundary_conditions:
+  - name: Flow units
+    unit: enum
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: '[OPTIONS] FLOW_UNITS (CFS/GPM/MGD | CMS/LPS/MLD)'
+    notes: Selects the entire US-Customary vs SI unit system and the units of all outputs.
+  - name: Infiltration method
+    unit: enum
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: '[OPTIONS] INFILTRATION (HORTON | GREEN_AMPT | CURVE_NUMBER)'
+  - name: Flow routing method
+    unit: enum
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: '[OPTIONS] FLOW_ROUTING (STEADY | KINWAVE | DYNWAVE)'
+    notes: KINWAVE cannot represent surcharging, backwater, or pressurized flow; DYNWAVE is required for
+      those regimes but is Courant-limited.
+  - name: Routing / reporting time steps
+    unit: s (routing) / report step
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: '[OPTIONS] ROUTING_STEP, wet/dry runoff steps, VARIABLE_STEP, INERTIAL_DAMPING,
+      REPORT_START'
+  - name: Outfall boundary condition
+    unit: ft / m or stage type
+    category: downstream_boundary
+    source_kind: user_provided
+    model_input_format: '[OUTFALLS] Type (FREE/FIXED/TIDAL) + stage'
+  - name: External / dry-weather inflows
+    unit: flow units
+    category: external_flow
+    source_kind: user_provided
+    model_input_format: '[INFLOWS] (direct/external inflow timeseries at nodes) + [DWF] (dry-weather flow
+      patterns)'
+  - name: Real-time control logic
+    unit: rules / target_setting 0–1
+    category: rtc
+    source_kind: user_provided
+    model_input_format: '[CONTROLS] IF/THEN/ELSE rules, and/or Python callbacks (add_before_step/add_after_step)
+      setting link target_setting (0–1) or injecting node generated_inflow during the run'
+    notes: Python-defined controls take priority over native [CONTROLS] rules and execute after the engine's
+      built-in controls each timestep.
 outputs:
   primary:
-    - name: "subcatch_runoff"
-      unit: "CFS (US) or CMS (SI)"
-      valid_range: [0.0, 10000.0]
-      description: "Subcatchment surface runoff rate"
-    - name: "node_depth"
-      unit: "ft (US) or m (SI)"
-      valid_range: [0.0, 100.0]
-      description: "Water depth at junction/storage nodes"
-    - name: "node_total_inflow"
-      unit: "CFS (US) or CMS (SI)"
-      valid_range: [0.0, 10000.0]
-      description: "Total inflow to a node"
-    - name: "node_flooding"
-      unit: "CFS (US) or CMS (SI)"
-      valid_range: [0.0, 10000.0]
-      description: "Flooding (surcharge) at nodes"
-    - name: "link_flow"
-      unit: "CFS (US) or CMS (SI)"
-      valid_range: [-10000.0, 10000.0]
-      description: "Flow rate in conduits/links (negative = reverse flow)"
-    - name: "link_velocity"
-      unit: "ft/s (US) or m/s (SI)"
-      valid_range: [0.0, 30.0]
-      description: "Flow velocity in conduits"
-    - name: "link_depth"
-      unit: "ft (US) or m (SI)"
-      valid_range: [0.0, 50.0]
-      description: "Water depth in conduits"
-    - name: "system_rainfall"
-      unit: "in/hr (US) or mm/hr (SI)"
-      valid_range: [0.0, 300.0]
-      description: "System-wide average rainfall intensity"
-    - name: "system_runoff"
-      unit: "CFS (US) or CMS (SI)"
-      valid_range: [0.0, 100000.0]
-      description: "Total system runoff"
-    - name: "system_outflow"
-      unit: "CFS (US) or CMS (SI)"
-      valid_range: [0.0, 100000.0]
-      description: "Total outfall discharge"
-
-  diagnostics:
-    - name: "runoff_continuity_error"
-      unit: "percent"
-      valid_range: [-1.0, 1.0]
-      description: "Runoff mass balance error — should be < 1%"
-    - name: "routing_continuity_error"
-      unit: "percent"
-      valid_range: [-1.0, 1.0]
-      description: "Routing mass balance error — should be < 1%"
-
+  - name: runoff_rate
+    unit: CFS (US) | CMS (SI)
+    description: Surface runoff rate generated by a subcatchment.
+    validation_rank: 1
+    emitted_in: model.out (SubcatchSeries); live via Subcatchment.runoff
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Subcatchment is a lumped unit; gauge must represent the same drainage sub-area.
+      detrending_options:
+      - none
+  - name: infiltration_loss
+    unit: in/hr (US) | mm/hr (SI)
+    description: Infiltration loss rate from a subcatchment.
+    validation_rank: 2
+    emitted_in: model.out (SubcatchSeries)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Rarely directly observed; usually inferred from a water balance.
+      detrending_options:
+      - none
+  - name: node_invert_depth
+    unit: ft (US) | m (SI)
+    description: Water depth above invert at a node (junction/storage/outfall).
+    validation_rank: 3
+    emitted_in: model.out (NodeSeries); live via Node.depth
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against a depth/level sensor at the same node; convertible to stage given invert elevation.
+      detrending_options:
+      - none
+  - name: node_total_inflow
+    unit: CFS (US) | CMS (SI)
+    description: Total inflow to a node (lateral + upstream).
+    validation_rank: 4
+    emitted_in: model.out (NodeSeries); live via Node.total_inflow
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: node_flooding
+    unit: CFS (US) | CMS (SI)
+    description: Surface flooding (overflow) rate at a node when capacity is exceeded.
+    validation_rank: 5
+    emitted_in: model.out (NodeSeries flooding_losses); live via Node.flooding; summarized in model.rpt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: pbias
+        caveats:
+        - Flooding volume/duration often the calibration target rather than the rate series.
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Compare flooded vs not-flooded against reported surcharge/flood-incident records.
+      detrending_options:
+      - none
+  - name: link_flow_rate
+    unit: CFS (US) | CMS (SI)
+    description: Drainage-network water flow rate through a conduit/structure link.
+    validation_rank: 6
+    emitted_in: model.out (LinkSeries); live via Link.flow
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Primary discharge calibration variable when a flow gauge exists in-pipe or at an outfall.
+      detrending_options:
+      - none
+  - name: link_flow_depth
+    unit: ft (US) | m (SI)
+    description: Flow depth in a conduit/channel link.
+    validation_rank: 7
+    emitted_in: model.out (LinkSeries); live via Link.depth
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: total_outflow
+    unit: CFS (US) | CMS (SI)
+    description: System or outfall discharge (the catchment outlet hydrograph).
+    validation_rank: 8
+    emitted_in: model.out (SystemSeries outfall_flows / OutfallStats); live via Node.total_outflow at
+      outfalls
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Outlet hydrograph is the standard event-calibration target against an outfall flow gauge.
+      detrending_options:
+      - none
+  - name: runoff_error
+    unit: '% continuity'
+    description: Subcatchment surface-runoff water mass-balance continuity error.
+    validation_rank: 9
+    emitted_in: model.rpt; live via Simulation.runoff_error
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Internal self-check, not an observation; accept < 5% (ideally < 1%).
+      detrending_options:
+      - none
+  - name: flow_routing_error
+    unit: '% continuity'
+    description: Drainage-network conveyance-routing water mass-balance continuity error.
+    validation_rank: 10
+    emitted_in: model.rpt; live via Simulation.flow_routing_error
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Internal self-check, not an observation; accept < 5% (ideally < 1%); large values flag Courant
+          violation.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "UT-001"
-    description: "Rainfall must be intensity (mm/hr), not cumulative depth — produces 10-1000x error"
-  - id: "UT-005"
-    description: "Slope must be percent (e.g. 0.5), not fraction (0.005) — produces 100x error"
-  - id: "UT-013"
-    description: "Weir discharge coefficients differ US (~3.33) vs SI (~1.84) — produces 1.8x flow error"
-  - id: "ENGINE-001"
-    description: "Only ONE Simulation object can exist at a time per process (non-reentrant engine)"
-  - id: "DYNWAVE-001"
-    description: "DYNWAVE routing with large timesteps silently produces incorrect results"
+- id: dt_001
+  symptom: 'Runoff is 24x lower than expected. Subcatchment runoff volumes are
+
+    near zero despite significant rainfall in input data.
+
+    '
+  diagnosis: 'Rainfall provided as depth per day (mm/day) but SWMM expects intensity
+
+    (mm/hr). The model receives 1/24th of the actual rain rate.
+
+    '
+  remedy: 'Convert rainfall from mm/day to mm/hr by dividing by 24. Verify that
+
+    [RAINGAGES] Type is INTENSITY and values are in per-hour units.
+
+    Use convert_forcing_to_inp.py with --input-units mm/day.
+
+    '
+  severity: CRITICAL
+- id: dt_002
+  symptom: 'Subcatchment areas appear correct but total runoff volume is 100-1,000,000x
+
+    wrong. Model runs without errors but mass balance is wildly off.
+
+    '
+  diagnosis: 'Subcatchment area provided in m² or km² instead of acres (US) or
+
+    hectares (SI). SWMM interprets the number as-is in its unit system.
+
+    '
+  remedy: 'Convert areas: 1 km² = 247.1 acres = 100 hectares.
+
+    1 m² = 0.000247 acres. Check [SUBCATCHMENTS] area column matches
+
+    FLOW_UNITS system.
+
+    '
+  severity: CRITICAL
+- id: dt_003
+  symptom: 'Pipe flow velocities are ~3x too fast or too slow. Timing of
+
+    hydrograph peaks at downstream nodes is significantly off.
+
+    '
+  diagnosis: 'Elevations and/or pipe lengths specified in wrong unit system.
+
+    Feet used when meters expected (or vice versa). The 3.28 factor
+
+    propagates through slope calculations.
+
+    '
+  remedy: 'Verify all [JUNCTIONS] elevations and [CONDUITS] lengths are in
+
+    feet (US) or meters (SI) matching FLOW_UNITS. Convert: 1 ft = 0.3048 m.
+
+    '
+  severity: HIGH
+- id: dt_004
+  symptom: 'Weir or orifice flows are approximately 1.8x too high or too low
+
+    compared to hand calculations or observations.
+
+    '
+  diagnosis: 'Weir discharge coefficient uses wrong unit system convention.
+
+    US Cd ≈ 3.33 (includes √(2g) in ft), SI Cd ≈ 1.84 (includes √(2g) in m).
+
+    '
+  remedy: 'Check [WEIRS] discharge coefficient. US standard rectangular weir
+
+    Cd = 3.33, SI Cd = 1.84. Do NOT simply convert between systems —
+
+    the coefficients already embed the unit system.
+
+    '
+  severity: HIGH
+- id: dt_005
+  symptom: 'Subcatchment slope appears correct but runoff timing is wildly wrong.
+
+    Peak runoff occurs too early or too late.
+
+    '
+  diagnosis: 'Slope entered as decimal fraction (0.005) instead of percent (0.5).
+
+    SWMM [SUBCATCHMENTS] expects slope as PERCENT, not fraction.
+
+    '
+  remedy: 'Multiply decimal slope by 100 to get percent. Slope of 0.5% should
+
+    be entered as 0.5, not 0.005.
+
+    '
+  severity: HIGH
+- id: dt_006
+  symptom: 'Simulation crashes immediately with "ERROR 211" or similar error
+
+    code. No output files are generated.
+
+    '
+  diagnosis: 'Malformed .inp file: missing required sections, incorrect column
+
+    count, or tab/space formatting issues. SWMM''s parser is strict
+
+    about section structure.
+
+    '
+  remedy: 'Validate .inp file structure. Each section must have correct number
+
+    of columns. Use SWMM GUI to open and re-save the file, or check
+
+    against template .inp files in pyswmm/tests/data/.
+
+    '
+  severity: CRITICAL
+- id: dt_007
+  symptom: 'Rain gage shows no rainfall during simulation. Subcatchments
+
+    connected to the gage produce zero runoff.
+
+    '
+  diagnosis: 'Rain gage INTERVAL does not match timeseries resolution. If gage
+
+    interval is 0:15 but timeseries has hourly data, SWMM may miss
+
+    data points between interpolation steps.
+
+    '
+  remedy: 'Ensure [RAINGAGES] Interval matches [TIMESERIES] time resolution
+
+    exactly. For 15-min data use 0:15, for hourly use 1:00.
+
+    '
+  severity: HIGH
+- id: dt_008
+  symptom: 'Conduit shows zero flow despite upstream nodes receiving inflow.
+
+    No error messages in report.
+
+    '
+  diagnosis: 'Conduit inlet/outlet node names in [CONDUITS] do not match names
+
+    in [JUNCTIONS] or [OUTFALLS]. SWMM node IDs are case-sensitive.
+
+    '
+  remedy: 'Verify all node references in [CONDUITS], [WEIRS], [PUMPS], etc.
+
+    match exactly (including case) with [JUNCTIONS], [OUTFALLS],
+
+    [STORAGE] definitions.
+
+    '
+  severity: HIGH
+- id: dt_009
+  symptom: 'Subcatchment routes flow to wrong destination. Runoff appears at
+
+    unexpected nodes in the network.
+
+    '
+  diagnosis: '[SUBCATCHMENTS] Outlet column points to wrong node or another
+
+    subcatchment. SWMM allows cascading subcatchment routing.
+
+    '
+  remedy: 'Check [SUBCATCHMENTS] Outlet column. Should reference a node ID
+
+    for direct connection or another subcatchment ID for cascading.
+
+    '
+  severity: MEDIUM
+- id: dt_010
+  symptom: 'Python raises MultiSimulationError when creating a new Simulation
+
+    object. Previous simulation may have crashed without cleanup.
+
+    '
+  diagnosis: 'EPA SWMM engine uses global state. Only ONE Simulation instance
+
+    can exist per Python process. A previous instance was not properly
+
+    closed (missing context manager or exception during cleanup).
+
+    '
+  remedy: 'Always use `with Simulation(...) as sim:` context manager. If
+
+    error persists, restart the Python process. For parallel runs,
+
+    use multiprocessing (separate processes), not threading.
+
+    '
+  severity: CRITICAL
+- id: dt_011
+  symptom: 'Routing continuity error > 10%. Flow balance is severely wrong.
+
+    Flooding or negative depths may appear in results.
+
+    '
+  diagnosis: 'DYNWAVE routing timestep is too large for the network geometry.
+
+    The Courant condition (Δt ≤ Δx / √(gD)) is violated, causing
+
+    numerical instability.
+
+    '
+  remedy: 'Reduce ROUTING_STEP in [OPTIONS]. Start with 1 second for
+
+    small networks. Enable VARIABLE_STEP (0.5–0.75) to let SWMM
+
+    adapt timestep automatically. Consider INERTIAL_DAMPING PARTIAL.
+
+    '
+  severity: HIGH
+- id: dt_012
+  symptom: 'Simulation runs but callbacks (add_before_step, add_after_step)
+
+    never fire. Real-time control logic has no effect on model behavior.
+
+    '
+  diagnosis: 'Using sim.execute() instead of stepping. The execute() method
+
+    runs the entire simulation without returning control to Python
+
+    between steps, so callbacks are never invoked.
+
+    '
+  remedy: 'Use `for step in sim:` iteration pattern, NOT sim.execute(),
+
+    when callbacks are needed. Callbacks fire on each step during
+
+    iteration.
+
+    '
+  severity: HIGH
+- id: dt_013
+  symptom: 'All subcatchments produce zero runoff despite valid rainfall.
+
+    No error or warning messages. Mass balance shows 100% infiltration.
+
+    '
+  diagnosis: 'Infiltration MaxRate is extremely high (wrong units), consuming
+
+    all rainfall. Likely infiltration rate given in mm/hr when SWMM
+
+    expects in/hr for US system, making it 25x too permeable.
+
+    '
+  remedy: 'Check [INFILTRATION] values. For Horton in US: MaxRate typically
+
+    0.5–5.0 in/hr. If values are 10–100+, they''re likely in mm/hr.
+
+    Divide by 25.4 to convert mm/hr → in/hr.
+
+    '
+  severity: CRITICAL
+- id: dt_014
+  symptom: 'Pipe network shows no surcharging despite clearly undersized
+
+    pipes. Water depth never exceeds pipe diameter.
+
+    '
+  diagnosis: 'Using KINWAVE routing which cannot simulate surcharging,
+
+    backwater, or pressurized flow. Only DYNWAVE handles these
+
+    conditions.
+
+    '
+  remedy: 'Change FLOW_ROUTING to DYNWAVE in [OPTIONS] for systems where
+
+    surcharging, backwater, or reverse flow may occur. KINWAVE is
+
+    only appropriate for steep, gravity-flow dominant systems.
+
+    '
+  severity: HIGH
+- id: dt_015
+  symptom: 'Depression storage values seem reasonable but impervious areas
+
+    produce excessive runoff from small storms.
+
+    '
+  diagnosis: 'Depression storage (S-Imperv, S-Perv) entered in wrong units.
+
+    US expects inches, SI expects mm. Using mm values in US system
+
+    makes depression storage ~25x too large (or vice versa).
+
+    '
+  remedy: 'Check [SUBAREAS] S-Imperv and S-Perv values. US typical:
+
+    S-Imperv = 0.02–0.10 inches, S-Perv = 0.10–0.30 inches.
+
+    SI typical: S-Imperv = 0.5–2.5 mm, S-Perv = 2.5–7.5 mm.
+
+    '
+  severity: HIGH
+- id: dt_016
+  symptom: 'Pipe cross-section geometry appears correct but flows are wrong
+
+    by a large factor. Conduit capacity seems off.
+
+    '
+  diagnosis: '[XSECTIONS] Geom1 (diameter/height) specified in inches or mm
+
+    instead of feet (US) or meters (SI). SWMM expects the same
+
+    length unit as the elevation system.
+
+    '
+  remedy: 'Convert pipe dimensions: 12-inch pipe = 1.0 ft (US) or
+
+    0.3048 m (SI). Check [XSECTIONS] Geom1 values match the
+
+    system length unit.
+
+    '
+  severity: MEDIUM
+- id: dt_017
+  symptom: 'Evaporation losses are suspiciously high, consuming most of
+
+    the water in storage nodes or subcatchments.
+
+    '
+  diagnosis: 'Evaporation rate specified in in/hr or mm/hr instead of
+
+    in/day or mm/day. The model applies 24x the intended
+
+    evaporation rate.
+
+    '
+  remedy: 'Check [EVAPORATION] values. Typical rates: 0.1–0.3 in/day (US)
+
+    or 2–8 mm/day (SI). If values are > 1 in/day or > 25 mm/day,
+
+    they may be in per-hour units.
+
+    '
+  severity: MEDIUM
+- id: dt_018
+  symptom: 'Output timeseries extracted from .out file has fewer timesteps
+
+    than expected. Some time periods are missing.
+
+    '
+  diagnosis: 'REPORT_START is later than START_DATE. SWMM only writes output
+
+    from REPORT_START onward. Early simulation period is computed
+
+    but not saved to output file.
+
+    '
+  remedy: 'Check [OPTIONS] REPORT_START_DATE and REPORT_START_TIME. Set
+
+    equal to START_DATE/START_TIME to capture full simulation.
+
+    '
+  severity: LOW

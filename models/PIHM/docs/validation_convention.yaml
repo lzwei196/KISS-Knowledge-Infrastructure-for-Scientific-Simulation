@@ -1,226 +1,251 @@
 schema_version: 1
 model_id: PIHM
 domain: hydrology
-generated_by: "self-improve session (Claude Opus 4.8) — Step-B validation-convention build, general schema"
+generated_by: self-improve session (Claude Opus 4.8) — Step-B validation-convention build, general schema
 generated_at: 2026-07-09
-
-# Grounded in locally-fetched OA full texts only. Headline grounding is strongest for the two
-# top-ranked quantities the task prioritised: DISCHARGE (Moriasi 2007/2015 NSE/PBIAS watershed
-# tiers, corroborated by the PIHM-lineage SHUD benchmark and the Flux-PIHM Shale Hills evaluation)
-# and WATER_TABLE / groundwater head (RMSE convention: multi-objective SW-GW calibration target
-# RMSE_wt < 3 m, corroborated by the North China Plain integrated model RMSE < 4 m and the
-# multivariate DA study RMSE ~1 m). SOIL_MOISTURE has an obs-uncertainty RMSE band (~0.05 m3/m3)
-# plus supportive Flux-PIHM top-layer r 0.91-0.94. EVAPOTRANSPIRATION (latent heat) and SWE have
-# NO tiered numeric threshold in the fetched set -> null bands, low confidence, weak. Bands are
-# plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
-
 references:
   moriasi2007:
     doi: 10.13031/2013.23153
-    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
-    venue: "Transactions of the ASABE"
+    title: Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations
+    venue: Transactions of the ASABE
     year: 2007
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
   moriasi2015:
     doi: 10.13031/trans.58.10715
-    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
-    venue: "Transactions of the ASABE"
+    title: 'Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria'
+    venue: Transactions of the ASABE
     year: 2015
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
   shud2020:
     doi: 10.5194/gmd-13-2743-2020
-    title: "Simulator for Hydrologic Unstructured Domains (SHUD v1.0): numerical modeling of watershed hydrology with the finite volume method"
-    venue: "Geoscientific Model Development"
+    title: 'Simulator for Hydrologic Unstructured Domains (SHUD v1.0): numerical modeling of watershed
+      hydrology with the finite volume method'
+    venue: Geoscientific Model Development
     year: 2020
     oa: gold
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-2743-2020.txt
   shi2013:
     doi: 10.1175/jhm-d-12-0145.1
-    title: "Development of a Coupled Land Surface Hydrologic Model and Evaluation at a Critical Zone Observatory (Flux-PIHM, Shale Hills)"
-    venue: "Journal of Hydrometeorology"
+    title: Development of a Coupled Land Surface Hydrologic Model and Evaluation at a Critical Zone Observatory
+      (Flux-PIHM, Shale Hills)
+    venue: Journal of Hydrometeorology
     year: 2013
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jhm-d-12-0145.1.txt
   swgw2005:
     doi: 10.5194/hess-9-549-2005
-    title: "Multi-objective calibration of a surface water-groundwater flow model in an irrigated agricultural region"
-    venue: "Hydrology and Earth System Sciences"
+    title: Multi-objective calibration of a surface water-groundwater flow model in an irrigated agricultural
+      region
+    venue: Hydrology and Earth System Sciences
     year: 2005
     oa: gold
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-9-549-2005.txt
   qin2013:
     doi: 10.5194/hess-17-3759-2013
-    title: "Integrated hydrological modeling of the North China Plain and implications for sustainable water management"
-    venue: "Hydrology and Earth System Sciences"
+    title: Integrated hydrological modeling of the North China Plain and implications for sustainable
+      water management
+    venue: Hydrology and Earth System Sciences
     year: 2013
     oa: gold
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-17-3759-2013.txt
   da2016:
     doi: 10.5194/hess-20-4341-2016
-    title: "Multivariate hydrological data assimilation of soil moisture and groundwater head"
-    venue: "Hydrology and Earth System Sciences"
+    title: Multivariate hydrological data assimilation of soil moisture and groundwater head
+    venue: Hydrology and Earth System Sciences
     year: 2016
     oa: gold
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-4341-2016.txt
-
 validation:
-
-  # ===================== DISCHARGE / streamflow time series (well grounded) =====================
-  - canonical_quantity: discharge
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "Moriasi 2015 watershed-scale flow: NSE > 0.50 satisfactory; daily-tier NSE >0.75 very good, >0.60 good, >0.40 fair. Moriasi 2007: NSE > 0.50 satisfactory."
-        cites: [moriasi2015, moriasi2007]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 3.0, good: 10.0, satisfactory: 15.0}
-        pass_band: satisfactory
-        band_note: "Moriasi 2015 flow PBIAS tiers: <=+/-3 very good, +/-3 to +/-10 good, +/-10 to +/-15 satisfactory, >+/-15 unsatisfactory (Moriasi 2007 looser bound +/-25%)."
-        cites: [moriasi2015, moriasi2007]
-    secondary_metrics:
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "PIHM-lineage SHUD benchmark reports KGE 0.83 / NSE 0.72 / R2 0.72 at the calibration station (KGE 0.67 / NSE 0.66 at a second station) - achieved skill, not a threshold."
-        cites: [shud2020]
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Flux-PIHM Shale Hills reports hourly-discharge correlation coefficients up to ~0.91 despite the small (0.08 km2) domain; corroborates the temporal-pattern headline."
-        cites: [shi2013]
-    validated_when: "NSE >= 0.50 AND |PBIAS| <= 15% (Moriasi 2015 watershed-scale flow satisfactory tier; confirmed by Moriasi 2007)."
-    evidence_strength: strong
-    confidence: 0.85
-    notes: >-
-      Matches the dag determining_metric (nse). Two independent threshold-convention papers (Moriasi
-      2007 and 2015) plus two PIHM-family benchmarks (SHUD 2020; Flux-PIHM Shi 2013) support the band.
-      Align the END-of-window daily timestamp (-1 day) and discard the pre-spin-up years before scoring
-      (dag caveats), else NSE/PBIAS are biased low.
-
-  # ===================== WATER TABLE / groundwater head time series (RMSE convention) =====================
-  - canonical_quantity: water_table
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: rmse
-        direction: minimize
-        unit: m
-        bands: {good: 1.0, satisfactory: 3.0}
-        pass_band: satisfactory
-        band_note: "Multi-objective SW-GW calibration set the water-table target RMSE_wt < 3 m (achieved steady-state 3.0 m; aquifer-head RMSE_aq < 10 m). Corroborated: North China Plain integrated model most-well RMSE < 4 m; multivariate DA reaches head RMSE ~1 m."
-        cites: [swgw2005, qin2013, da2016]
-    secondary_metrics:
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: "North China Plain integrated-model head correlation R spans 0.36-0.97 across wells (R2 0.93 on monthly means) - well-to-well spread is large, so R contextualises but does not decide."
-        cites: [qin2013]
-      - metric: nse
-        direction: maximize
-        status: supportive
-        ceiling_reason: "The groundwater-head literature reports RMSE (m), not NSE, as the absolute-performance metric; uncalibrated PIHM heads carry a spin-up/offset bias (dag caveat) that depresses NSE while RMSE stays informative. No fetched paper gives a head-NSE threshold."
-        cites: [swgw2005]
-    validated_when: "Groundwater-head RMSE <= 3 m (multi-objective SW-GW calibration target; NCP < 4 m corroboration). RMSE supersedes the dag determining_metric (nse) as the field convention for head - see notes."
-    evidence_strength: strong
-    confidence: 0.75
-    notes: >-
-      dag determining_metric is nse, but the groundwater-head field convention is head RMSE in metres;
-      RMSE is therefore headline and nse is demoted to supportive (as GLM-AED does for temperature).
-      CRITICAL: PIHM .gw.dat is HEAD above aquifer bottom, not depth-to-water below surface - convert
-      via per-element ground elevation before comparison (dag caveat). Core PIHM has no pumping, so it
-      cannot reproduce pumping-driven decline (e.g. China GW Level Yearbook wells) - treat as
-      domain-validity SKIP (triplet dt_022), not a calibration miss.
-
-  # ===================== SOIL MOISTURE / point time series (obs-uncertainty band) =====================
-  - canonical_quantity: soil_moisture
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: rmse
-        direction: minimize
-        unit: m3/m3
-        bands: {satisfactory: 0.05}
-        pass_band: satisfactory
-        band_note: "Multivariate DA study treats ~5% (0.05 m3/m3) volumetric water content as the observation uncertainty and reaches soil-moisture RMSE ~0.028 m3/m3 in the top layer; band = within reported obs uncertainty."
-        cites: [da2016]
-    secondary_metrics:
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Flux-PIHM Shale Hills reports top-layer soil-moisture correlation coefficients 0.91-0.94; skill degrades with depth. No tiered r threshold exists in the fetched set."
-        cites: [shi2013]
-    validated_when: "Soil-moisture RMSE <= 0.05 m3/m3 (within reported ~5% volumetric obs uncertainty). Convert PIHM UNSAT/SOILM column storage (m) to volumetric content before comparison (dag caveat)."
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      dag var UNSAT/SOILM carry canonical_quantity null but bind to volumetric soil-moisture obs, so a
-      soil_moisture block is gradeable. The RMSE band is an obs-uncertainty envelope (not a formal tier
-      table); r is achieved-skill context only. dag determining_metric is nse/r; nse is not conventionally
-      thresholded for point soil moisture, so RMSE is used as the numeric anchor.
-
-  # ===================== EVAPOTRANSPIRATION / latent-heat time series (no cited threshold) =====================
-  - canonical_quantity: evapotranspiration
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no cited numeric ET/latent-heat NSE threshold in the fetched set"
-        cites: []
-      - metric: rmse
-        direction: minimize
-        unit: W/m2
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "within reported eddy-covariance latent-heat error (qualitative; no cited numeric tier). Flux-PIHM Shale Hills achieved LE RMSE ~33-45 W/m2 with winter LE correlation as low as 0.55."
-        cites: []
-    secondary_metrics:
-      - metric: rmse
-        direction: minimize
-        status: supportive
-        ceiling_reason: "Flux-PIHM reports latent-heat RMSE ~33-45 W/m2 against eddy-covariance flux; this is achieved skill, not a validation threshold. Compare EC + ETT + EDIR summed vs tower LE (dag caveat)."
-        cites: [shi2013]
-    validated_when: "UNRESOLVED - no cited ET/LE threshold; treat as a data-gap until an ET benchmark tier table is fetched. LE RMSE ~33-45 W/m2 (Flux-PIHM) is context, not a gate."
-    evidence_strength: weak
-    confidence: 0.4
-    notes: >-
-      dag var ETT (canonical_quantity null) binds to eddy-covariance latent heat (LE). None of the
-      fetched papers give a tiered ET/LE numeric threshold; bands null per no-fabrication rule and MUST
-      NOT loosen the gate. Sum EC + ETT + EDIR before comparing to tower total LE.
-
-  # ===================== SNOW WATER EQUIVALENT / point time series (no cited threshold) =====================
-  - canonical_quantity: swe
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no cited SWE validation threshold in the fetched set; the general watershed NSE>0.5 tier (Moriasi) is for streamflow, not SWE, so it is NOT transferred."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED - no cited SWE threshold; treat as a data-gap until a snow-model SWE benchmark is fetched."
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      SNOW binds to SWE_mm obs. Default PIHM uses a degree-day melt scheme (TSNOW/TRAIN), not
-      energy-balance snow physics, so melt-timing bias is expected in maritime climates (dag caveat).
-      The cached snow paper (hess-21-4053-2017) studies snow-surface forcing of a hydrologic response
-      model, not a PIHM SWE tier table, so no numeric band is grounded. Band null, low confidence.
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: 'Moriasi 2015 watershed-scale flow: NSE > 0.50 satisfactory; daily-tier NSE >0.75 very
+      good, >0.60 good, >0.40 fair. Moriasi 2007: NSE > 0.50 satisfactory.'
+    cites:
+    - moriasi2015
+    - moriasi2007
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 3.0
+      good: 10.0
+      satisfactory: 15.0
+    pass_band: satisfactory
+    band_note: 'Moriasi 2015 flow PBIAS tiers: <=+/-3 very good, +/-3 to +/-10 good, +/-10 to +/-15 satisfactory,
+      >+/-15 unsatisfactory (Moriasi 2007 looser bound +/-25%).'
+    cites:
+    - moriasi2015
+    - moriasi2007
+  secondary_metrics:
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: PIHM-lineage SHUD benchmark reports KGE 0.83 / NSE 0.72 / R2 0.72 at the calibration
+      station (KGE 0.67 / NSE 0.66 at a second station) - achieved skill, not a threshold.
+    cites:
+    - shud2020
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: Flux-PIHM Shale Hills reports hourly-discharge correlation coefficients up to ~0.91
+      despite the small (0.08 km2) domain; corroborates the temporal-pattern headline.
+    cites:
+    - shi2013
+  validated_when: NSE >= 0.50 AND |PBIAS| <= 15% (Moriasi 2015 watershed-scale flow satisfactory tier;
+    confirmed by Moriasi 2007).
+  evidence_strength: strong
+  confidence: 0.85
+  notes: Matches the dag determining_metric (nse). Two independent threshold-convention papers (Moriasi
+    2007 and 2015) plus two PIHM-family benchmarks (SHUD 2020; Flux-PIHM Shi 2013) support the band. Align
+    the END-of-window daily timestamp (-1 day) and discard the pre-spin-up years before scoring (dag caveats),
+    else NSE/PBIAS are biased low.
+  dag_variable: RIVFLX1
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: rmse
+    direction: minimize
+    unit: m
+    bands:
+      good: 1.0
+      satisfactory: 3.0
+    pass_band: satisfactory
+    band_note: 'Multi-objective SW-GW calibration set the water-table target RMSE_wt < 3 m (achieved steady-state
+      3.0 m; aquifer-head RMSE_aq < 10 m). Corroborated: North China Plain integrated model most-well
+      RMSE < 4 m; multivariate DA reaches head RMSE ~1 m.'
+    cites:
+    - swgw2005
+    - qin2013
+    - da2016
+  secondary_metrics:
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: North China Plain integrated-model head correlation R spans 0.36-0.97 across wells
+      (R2 0.93 on monthly means) - well-to-well spread is large, so R contextualises but does not decide.
+    cites:
+    - qin2013
+  - metric: nse
+    direction: maximize
+    status: supportive
+    ceiling_reason: The groundwater-head literature reports RMSE (m), not NSE, as the absolute-performance
+      metric; uncalibrated PIHM heads carry a spin-up/offset bias (dag caveat) that depresses NSE while
+      RMSE stays informative. No fetched paper gives a head-NSE threshold.
+    cites:
+    - swgw2005
+  validated_when: Groundwater-head RMSE <= 3 m (multi-objective SW-GW calibration target; NCP < 4 m corroboration).
+    RMSE supersedes the dag determining_metric (nse) as the field convention for head - see notes.
+  evidence_strength: strong
+  confidence: 0.75
+  notes: 'dag determining_metric is nse, but the groundwater-head field convention is head RMSE in metres;
+    RMSE is therefore headline and nse is demoted to supportive (as GLM-AED does for temperature). CRITICAL:
+    PIHM .gw.dat is HEAD above aquifer bottom, not depth-to-water below surface - convert via per-element
+    ground elevation before comparison (dag caveat). Core PIHM has no pumping, so it cannot reproduce
+    pumping-driven decline (e.g. China GW Level Yearbook wells) - treat as domain-validity SKIP (triplet
+    dt_022), not a calibration miss.'
+  dag_variable: GW
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: rmse
+    direction: minimize
+    unit: m3/m3
+    bands:
+      satisfactory: 0.05
+    pass_band: satisfactory
+    band_note: Multivariate DA study treats ~5% (0.05 m3/m3) volumetric water content as the observation
+      uncertainty and reaches soil-moisture RMSE ~0.028 m3/m3 in the top layer; band = within reported
+      obs uncertainty.
+    cites:
+    - da2016
+  secondary_metrics:
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: Flux-PIHM Shale Hills reports top-layer soil-moisture correlation coefficients 0.91-0.94;
+      skill degrades with depth. No tiered r threshold exists in the fetched set.
+    cites:
+    - shi2013
+  validated_when: Soil-moisture RMSE <= 0.05 m3/m3 (within reported ~5% volumetric obs uncertainty). Convert
+    PIHM UNSAT/SOILM column storage (m) to volumetric content before comparison (dag caveat).
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: dag var UNSAT/SOILM carry canonical_quantity null but bind to volumetric soil-moisture obs, so
+    a soil_moisture block is gradeable. The RMSE band is an obs-uncertainty envelope (not a formal tier
+    table); r is achieved-skill context only. dag determining_metric is nse/r; nse is not conventionally
+    thresholded for point soil moisture, so RMSE is used as the numeric anchor.
+  dag_variable: SOILM
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no cited numeric ET/latent-heat NSE threshold in the fetched set
+    cites: []
+  - metric: rmse
+    direction: minimize
+    unit: W/m2
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: within reported eddy-covariance latent-heat error (qualitative; no cited numeric tier).
+      Flux-PIHM Shale Hills achieved LE RMSE ~33-45 W/m2 with winter LE correlation as low as 0.55.
+    cites: []
+  secondary_metrics:
+  - metric: rmse
+    direction: minimize
+    status: supportive
+    ceiling_reason: Flux-PIHM reports latent-heat RMSE ~33-45 W/m2 against eddy-covariance flux; this
+      is achieved skill, not a validation threshold. Compare EC + ETT + EDIR summed vs tower LE (dag caveat).
+    cites:
+    - shi2013
+  validated_when: UNRESOLVED - no cited ET/LE threshold; treat as a data-gap until an ET benchmark tier
+    table is fetched. LE RMSE ~33-45 W/m2 (Flux-PIHM) is context, not a gate.
+  evidence_strength: weak
+  confidence: 0.4
+  notes: dag var ETT (canonical_quantity null) binds to eddy-covariance latent heat (LE). None of the
+    fetched papers give a tiered ET/LE numeric threshold; bands null per no-fabrication rule and MUST
+    NOT loosen the gate. Sum EC + ETT + EDIR before comparing to tower total LE.
+  dag_variable: ETT
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no cited SWE validation threshold in the fetched set; the general watershed NSE>0.5 tier
+      (Moriasi) is for streamflow, not SWE, so it is NOT transferred.
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED - no cited SWE threshold; treat as a data-gap until a snow-model SWE benchmark
+    is fetched.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: SNOW binds to SWE_mm obs. Default PIHM uses a degree-day melt scheme (TSNOW/TRAIN), not energy-balance
+    snow physics, so melt-timing bias is expected in maritime climates (dag caveat). The cached snow paper
+    (hess-21-4053-2017) studies snow-surface forcing of a hydrologic response model, not a PIHM SWE tier
+    table, so no numeric band is grounded. Band null, low confidence.
+  dag_variable: SNOW
 deferred_paywalled:
-  - ref: "Shi et al. 2015 — Flux-PIHM watershed-scale SWE / snow evaluation with numeric skill (would ground the swe block)"
-    doi: unknown_not_fetched
-    needed_for: [swe]
-  - ref: "A dedicated PIHM/Flux-PIHM ET benchmark reporting a latent-heat RMSE/NSE tier table (vs eddy-covariance)"
-    doi: unknown_not_fetched
-    needed_for: [evapotranspiration]
+- ref: Shi et al. 2015 — Flux-PIHM watershed-scale SWE / snow evaluation with numeric skill (would ground
+    the swe block)
+  doi: unknown_not_fetched
+  needed_for:
+  - swe
+- ref: A dedicated PIHM/Flux-PIHM ET benchmark reporting a latent-heat RMSE/NSE tier table (vs eddy-covariance)
+  doi: unknown_not_fetched
+  needed_for:
+  - evapotranspiration

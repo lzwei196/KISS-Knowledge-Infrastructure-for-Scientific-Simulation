@@ -1,729 +1,137 @@
-# ============================================================================
-# CE-QUAL-W2 Knowledge Infrastructure v1.0.0
-# ============================================================================
-# 2D laterally-averaged hydrodynamic and water quality model
-# for elongated reservoirs, rivers, and estuaries
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: "hydrocraft-cequalw2-reservoir"
-  version: "1.0.0"
-  description: "Knowledge infrastructure for CE-QUAL-W2 2D reservoir simulation within HydroCraft"
-  target_model: "CE-QUAL-W2 v4.5"
-  domain: "2D reservoir hydrodynamics and water quality"
-  authors:
-    - "Jianyun Zhang Research Group, Hohai University"
-  license: "Public Domain (USACE)"
-
+  name: CE_QUAL_W2
+  language: fortran
+  implementation:
+    id: ce-qual-w2-v45
+    version: 4.5.5
+    provenance: Fortran 90; CE-QUAL-W2 (USACE ERDC / Portland State, Cole & Wells) realizing the laterally-averaged
+      2D LARM->GLVHT->W2 lineage; NPT fixed-width-FORMAT I/O contract.
+  scientific_reference_version: CE-QUAL-W2 4.5.5 (PSU User Manual, Wells 2026; ERDC/EcohydrologyTeam v4.5
+    lineage)
+  binary:
+    path: KISSPATH_BINARIES/ce_qual_w2/bin/w2_v5
+    type: null
 pipeline:
   stages:
-    - id: s0_config
-      name: "Configuration"
-      description: "Reservoir selection, simulation period, forcing source, WQ constituent toggle"
-      order: 0
-      depends_on: []
-      skill_document: "docs/s0_configuration_skill.md"
-      tools: []
-      milestones:
-        - id: m0_config_defined
-          description: "Reservoir identified, period set, forcing source selected, WQ on/off decided"
-          verification: "Config parameters confirmed by user"
-
-    - id: s1_bathymetry
-      name: "Bathymetry and grid generation"
-      description: "DEM or idealized geometry to segment-layer grid + bth_wb*.npt files"
-      order: 1
-      depends_on: [s0_config]
-      skill_document: "docs/s1_bathymetry_skill.md"
-      tools: [build_reservoir_grid]
-      milestones:
-        - id: m1_grid_created
-          description: "reservoir_grid.json and bth_wb1.npt exist with valid dimensions"
-          verification: "python -c \"import json; g=json.load(open('reservoir_grid.json')); assert g['n_segments']>=4 and g['n_layers']>=2\""
-
-    - id: s2_branch_topology
-      name: "Branch connectivity"
-      description: "Define branch network: segment ranges, slopes, upstream/downstream linkages"
-      order: 2
-      depends_on: [s1_bathymetry]
-      skill_document: "docs/s2_branch_topology_skill.md"
-      tools: [build_branch_topology]
-      milestones:
-        - id: m2_branches_defined
-          description: "branch_topology.json exists with valid branch connectivity"
-          verification: "python -c \"import json; t=json.load(open('branch_topology.json')); assert t['n_branches']>=1\""
-
-    - id: s3_met_forcing
-      name: "Meteorological forcing conversion"
-      description: "CMFD/MSWX/VIC forcing to CE-QUAL-W2 met format with unit conversions"
-      order: 3
-      depends_on: [s0_config]
-      skill_document: "docs/s3_met_forcing_skill.md"
-      tools: [convert_met_to_w2]
-      milestones:
-        - id: m3_met_created
-          description: "met_wb1.npt exists with JDAY, TAIR, TDEW, WIND, WDIR, CLOUD, SRO columns"
-          verification: "head -3 met_wb1.npt shows comment header and numeric data"
-
-    - id: s4_inflow
-      name: "Inflow preparation"
-      description: "CaMa-Flood/VIC discharge + temperature to W2 inflow files"
-      order: 4
-      depends_on: [s0_config, s3_met_forcing]
-      skill_document: "docs/s4_inflow_skill.md"
-      tools: [convert_inflow_to_w2, generate_distributed_inflow]
-      milestones:
-        - id: m4_inflow_created
-          description: "qin_br1.npt and tin_br1.npt exist with valid data"
-          verification: "wc -l qin_br1.npt > 10"
-
-    - id: s5_outflow
-      name: "Outflow configuration"
-      description: "Dam outlet structures, selective withdrawal elevations, outflow time series"
-      order: 5
-      depends_on: [s0_config, s1_bathymetry]
-      skill_document: "docs/s5_outflow_skill.md"
-      tools: [configure_w2_outflow]
-      milestones:
-        - id: m5_outflow_configured
-          description: "qot_br1.npt and outflow_config.json exist"
-          verification: "test -f qot_br1.npt && test -f outflow_config.json"
-
-    - id: s6_init_conditions
-      name: "Initial conditions"
-      description: "2D initial temperature/WQ fields (uniform, gradient, or stratified)"
-      order: 6
-      depends_on: [s1_bathymetry]
-      skill_document: "docs/s6_init_conditions_skill.md"
-      tools: [build_init_conditions]
-      milestones:
-        - id: m6_init_created
-          description: "init_conditions.json exists with valid ELWS and temperature"
-          verification: "python -c \"import json; c=json.load(open('init_conditions.json')); assert c['elws']>0\""
-
-    - id: s7_hydraulic_params
-      name: "Hydraulic parameters"
-      description: "Set AX, DX, WSC, CBHE, TSED, EXH2O, BETA with auto-estimation"
-      order: 7
-      depends_on: [s1_bathymetry]
-      skill_document: "docs/s7_hydraulic_params_skill.md"
-      tools: [set_hydraulic_params]
-      milestones:
-        - id: m7_params_set
-          description: "hydraulic_params.json exists with all required parameters"
-          verification: "python -c \"import json; p=json.load(open('hydraulic_params.json')); assert 'AX' in p\""
-
-    - id: s8_wq_config
-      name: "Water quality configuration"
-      description: "Activate WQ constituents, set kinetic rates, configure algae groups"
-      order: 8
-      depends_on: [s0_config]
-      skill_document: "docs/s8_wq_config_skill.md"
-      tools: [configure_wq]
-      milestones:
-        - id: m8_wq_configured
-          description: "wq_config.json exists"
-          verification: "test -f wq_config.json"
-
-    - id: s9_control_file
-      name: "Control file assembly"
-      description: "Build w2_con.npt from all upstream outputs with cross-reference validation"
-      order: 9
-      depends_on: [s1_bathymetry, s2_branch_topology, s3_met_forcing, s4_inflow, s5_outflow, s6_init_conditions, s7_hydraulic_params, s8_wq_config]
-      skill_document: "docs/s9_control_file_skill.md"
-      tools: [generate_w2_control]
-      milestones:
-        - id: m9_control_file_created
-          description: "w2_con.npt exists and passes validation checks"
-          verification: "test -f w2_con.npt && wc -l w2_con.npt | awk '{print ($1 > 20)}'"
-
-    - id: s10_execution
-      name: "Model execution"
-      description: "Run CE-QUAL-W2 binary with preflight checks and log monitoring"
-      order: 10
-      depends_on: [s9_control_file]
-      skill_document: "docs/s10_execution_skill.md"
-      tools: [run_w2]
-      milestones:
-        - id: m10_run_complete
-          description: "CE-QUAL-W2 exits 0; output files exist and are non-empty"
-          verification: "test -f w2l.opt && ls snp_*.opt tsr_*.opt 2>/dev/null | wc -l > 0"
-
-    - id: s11_output_analysis
-      name: "Output analysis and visualization"
-      description: "Parse snapshots/profiles/timeseries; generate curtain plots and time series"
-      order: 11
-      depends_on: [s10_execution]
-      skill_document: "docs/s11_output_analysis_skill.md"
-      tools: [parse_w2_output, plot_w2_curtain, plot_w2_timeseries]
-      milestones:
-        - id: m11_results_parsed
-          description: "results_summary.json exists; curtain plot generated"
-          verification: "test -f results_summary.json"
-
-    - id: s12_calibration
-      name: "Calibration"
-      description: "GLUE-style multi-objective calibration against observed temperature profiles"
-      order: 12
-      depends_on: [s11_output_analysis]
-      skill_document: "docs/s12_calibration_skill.md"
-      tools: [calibrate_w2]
-      milestones:
-        - id: m12_calibrated
-          description: "calibration_results.json exists with best parameters and RMSE"
-          verification: "python -c \"import json; r=json.load(open('calibration_results.json')); assert r['best_rmse']<10\""
-
-    - id: s13_coupling
-      name: "Upstream/downstream coupling"
-      description: "CaMa-Flood inflow, GLM comparison, dam release to CaMa-Flood"
-      order: 13
-      depends_on: [s10_execution]
-      skill_document: "docs/s13_coupling_skill.md"
-      tools: [w2_to_cama_coupling]
-      milestones:
-        - id: m13_coupled
-          description: "Coupling output files exist (CSV/NC with dam release)"
-          verification: "test -f cama_lateral_inflow.csv || test -f cama_lateral_inflow.nc"
-
+  - s0_configuration_skill
+  - s10_execution_skill
+  - s11_output_analysis_skill
+  - s1_bathymetry_skill
+  - s3_met_forcing_skill
+  - s9_control_file_skill
 tools:
-  - id: build_reservoir_grid
-    name: "Build reservoir grid"
-    description: "Generate CE-QUAL-W2 segment-layer bathymetry grid from DEM or idealized geometry"
-    stage: s1_bathymetry
-    script_path: "tools/s1_bathymetry/build_reservoir_grid.py"
-    language: python
-    inputs:
-      - name: dem
-        type: file
-        description: "DEM raster file (optional, for DEM mode)"
-        required: false
-        example: "/path/to/dem.tif"
-      - name: reservoir_shp
-        type: file
-        description: "Reservoir extent shapefile (optional, for DEM mode)"
-        required: false
-        example: "/path/to/reservoir.shp"
-      - name: idealized
-        type: string
-        description: "Flag to use idealized geometry (no DEM needed)"
-        required: false
-        example: "--idealized"
-      - name: segment_length
-        type: number
-        description: "Target segment length in meters (default: 1000)"
-        required: false
-        example: "1000"
-      - name: layer_thickness
-        type: number
-        description: "Layer thickness in meters (default: 1.0)"
-        required: false
-        example: "1.0"
-      - name: output_dir
-        type: directory
-        description: "Output directory for grid files"
-        required: true
-        example: "/path/to/output"
-    outputs:
-      - name: grid_json
-        type: file
-        description: "Reservoir grid definition JSON"
-        path_pattern: "{output_dir}/reservoir_grid.json"
-      - name: bathymetry_file
-        type: file
-        description: "CE-QUAL-W2 bathymetry file"
-        path_pattern: "{output_dir}/bth_wb1.npt"
-    preconditions: ["DEM or reservoir parameters available"]
-    postconditions: ["reservoir_grid.json exists", "bth_wb1.npt has correct dimensions"]
-
-  - id: build_branch_topology
-    name: "Build branch topology"
-    description: "Define CE-QUAL-W2 branch connectivity and segment ranges"
-    stage: s2_branch_topology
-    script_path: "tools/s2_branch_topology/build_branch_topology.py"
-    language: python
-    inputs:
-      - name: grid_json
-        type: file
-        description: "Reservoir grid JSON from build_reservoir_grid"
-        required: true
-        example: "reservoir_grid.json"
-    outputs:
-      - name: topology_json
-        type: file
-        description: "Branch topology definition"
-        path_pattern: "branch_topology.json"
-    preconditions: ["reservoir_grid.json exists"]
-    postconditions: ["branch_topology.json exists with valid connectivity"]
-
-  - id: convert_met_to_w2
-    name: "Convert meteorological forcing to W2 format"
-    description: "CMFD/MSWX/VIC forcing to CE-QUAL-W2 met file with critical unit conversions"
-    stage: s3_met_forcing
-    script_path: "tools/s3_met_forcing/convert_met_to_w2.py"
-    language: python
-    inputs:
-      - name: forcing_dir
-        type: directory
-        description: "CMFD/MSWX forcing directory (or --vic_forcing_dir)"
-        required: false
-        example: "data/forcing/Data_forcing_03hr_010deg"
-      - name: lat
-        type: number
-        description: "Latitude of reservoir"
-        required: true
-        example: "32.54"
-      - name: lon
-        type: number
-        description: "Longitude of reservoir"
-        required: true
-        example: "111.51"
-    outputs:
-      - name: met_file
-        type: file
-        description: "CE-QUAL-W2 meteorological input file"
-        path_pattern: "met_wb1.npt"
-    preconditions: ["Forcing data available for the simulation period"]
-    postconditions: ["met_wb1.npt exists with cloud cover in tenths (0-10)"]
-
-  - id: convert_inflow_to_w2
-    name: "Convert inflow to W2 format"
-    description: "CaMa-Flood/VIC discharge to CE-QUAL-W2 inflow files (qin + tin + cin)"
-    stage: s4_inflow
-    script_path: "tools/s4_inflow/convert_inflow_to_w2.py"
-    language: python
-    inputs:
-      - name: discharge_csv
-        type: file
-        description: "CSV with date + discharge columns"
-        required: false
-        example: "routing_output.csv"
-    outputs:
-      - name: qin_file
-        type: file
-        description: "Inflow discharge file"
-        path_pattern: "qin_br1.npt"
-      - name: tin_file
-        type: file
-        description: "Inflow temperature file"
-        path_pattern: "tin_br1.npt"
-    preconditions: ["Discharge data available"]
-    postconditions: ["qin_br1.npt and tin_br1.npt exist with valid JDAY coverage"]
-
-  - id: generate_distributed_inflow
-    name: "Generate distributed tributary inflow"
-    description: "Distribute ungauged local runoff along reservoir segments (qdt + tdt files)"
-    stage: s4_inflow
-    script_path: "tools/s4_inflow/generate_distributed_inflow.py"
-    language: python
-    inputs:
-      - name: grid_json
-        type: file
-        description: "Reservoir grid JSON"
-        required: true
-        example: "reservoir_grid.json"
-    outputs:
-      - name: qdt_file
-        type: file
-        description: "Distributed tributary flow file"
-        path_pattern: "qdt_br1.npt"
-    preconditions: ["reservoir_grid.json exists", "Contributing areas known"]
-    postconditions: ["qdt_br1.npt exists"]
-
-  - id: configure_w2_outflow
-    name: "Configure outflow"
-    description: "Configure dam outlets, selective withdrawal, and outflow time series"
-    stage: s5_outflow
-    script_path: "tools/s5_outflow/configure_w2_outflow.py"
-    language: python
-    inputs:
-      - name: outlet_elevation
-        type: number
-        description: "Outlet elevation in m ASL"
-        required: true
-        example: "120.0"
-    outputs:
-      - name: qot_file
-        type: file
-        description: "Outflow time series file"
-        path_pattern: "qot_br1.npt"
-    preconditions: ["Outlet elevation within bathymetry range"]
-    postconditions: ["qot_br1.npt exists with non-negative outflow values"]
-
-  - id: build_init_conditions
-    name: "Build initial conditions"
-    description: "Generate 2D initial temperature/WQ fields for CE-QUAL-W2"
-    stage: s6_init_conditions
-    script_path: "tools/s6_init_conditions/build_init_conditions.py"
-    language: python
-    inputs:
-      - name: grid_json
-        type: file
-        description: "Reservoir grid JSON"
-        required: true
-        example: "reservoir_grid.json"
-    outputs:
-      - name: init_json
-        type: file
-        description: "Initial conditions JSON"
-        path_pattern: "init_conditions.json"
-    preconditions: ["reservoir_grid.json exists"]
-    postconditions: ["init_conditions.json exists with ELWS >= all ELBOT"]
-
-  - id: set_hydraulic_params
-    name: "Set hydraulic parameters"
-    description: "Set AX, DX, WSC, CBHE, TSED, EXH2O with auto-estimation from geometry"
-    stage: s7_hydraulic_params
-    script_path: "tools/s7_hydraulic_params/set_hydraulic_params.py"
-    language: python
-    inputs:
-      - name: grid_json
-        type: file
-        description: "Reservoir grid JSON"
-        required: true
-        example: "reservoir_grid.json"
-    outputs:
-      - name: params_json
-        type: file
-        description: "Hydraulic parameters JSON"
-        path_pattern: "hydraulic_params.json"
-    preconditions: ["reservoir_grid.json exists"]
-    postconditions: ["hydraulic_params.json exists with all required parameters"]
-
-  - id: configure_wq
-    name: "Configure water quality"
-    description: "Activate WQ constituents and set kinetic rate coefficients"
-    stage: s8_wq_config
-    script_path: "tools/s8_wq_config/configure_wq.py"
-    language: python
-    inputs:
-      - name: preset
-        type: string
-        description: "WQ preset (temperature_only, basic_wq, nutrients, eutrophication, full)"
-        required: false
-        example: "nutrients"
-    outputs:
-      - name: wq_json
-        type: file
-        description: "WQ configuration JSON"
-        path_pattern: "wq_config.json"
-    preconditions: []
-    postconditions: ["wq_config.json exists"]
-
-  - id: generate_w2_control
-    name: "Generate W2 control file"
-    description: "Assemble w2_con.npt from all upstream outputs with strict 8-char fixed-width formatting"
-    stage: s9_control_file
-    script_path: "tools/s9_control_file/generate_w2_control.py"
-    language: python
-    inputs:
-      - name: grid_json
-        type: file
-        description: "Reservoir grid JSON"
-        required: true
-        example: "reservoir_grid.json"
-      - name: met_file
-        type: file
-        description: "Met file path"
-        required: true
-        example: "met_wb1.npt"
-      - name: qin_files
-        type: file
-        description: "Inflow discharge files"
-        required: true
-        example: "qin_br1.npt"
-    outputs:
-      - name: control_file
-        type: file
-        description: "CE-QUAL-W2 master control file"
-        path_pattern: "w2_con.npt"
-    preconditions: ["All upstream tool outputs exist"]
-    postconditions: ["w2_con.npt exists with correct cross-references"]
-
-  - id: run_w2
-    name: "Run CE-QUAL-W2"
-    description: "Execute CE-QUAL-W2 with preflight checks and output validation"
-    stage: s10_execution
-    script_path: "tools/s10_execution/run_w2.py"
-    language: python
-    inputs:
-      - name: run_dir
-        type: directory
-        description: "Directory containing w2_con.npt and all input files"
-        required: true
-        example: "/path/to/run"
-    outputs:
-      - name: output_files
-        type: file
-        description: "Snapshot, time series, and spreadsheet output files"
-        path_pattern: "snp_*.opt, tsr_*.opt, spr_*.opt"
-    preconditions: ["w2_con.npt and all input files in run_dir"]
-    postconditions: ["Exit code 0; output files non-empty"]
-
-  - id: parse_w2_output
-    name: "Parse W2 output"
-    description: "Parse snapshot, time series, and spreadsheet output files into structured data"
-    stage: s11_output_analysis
-    script_path: "tools/s11_output_analysis/parse_w2_output.py"
-    language: python
-    inputs:
-      - name: run_dir
-        type: directory
-        description: "CE-QUAL-W2 run directory with output files"
-        required: true
-        example: "/path/to/run"
-    outputs:
-      - name: summary_json
-        type: file
-        description: "Results summary JSON"
-        path_pattern: "results_summary.json"
-    preconditions: ["Output files from CE-QUAL-W2 run exist"]
-    postconditions: ["results_summary.json exists"]
-
-  - id: plot_w2_curtain
-    name: "Plot curtain (2D lon-vert)"
-    description: "Generate signature CE-QUAL-W2 longitudinal-vertical curtain plots"
-    stage: s11_output_analysis
-    script_path: "tools/s11_output_analysis/plot_w2_curtain.py"
-    language: python
-    inputs:
-      - name: run_dir
-        type: directory
-        description: "Run directory"
-        required: true
-        example: "/path/to/run"
-    outputs:
-      - name: curtain_plot
-        type: file
-        description: "Curtain plot PNG"
-        path_pattern: "curtain_plot.png"
-    preconditions: ["Snapshot output files exist"]
-    postconditions: ["Curtain plot PNG generated"]
-
-  - id: plot_w2_timeseries
-    name: "Plot time series"
-    description: "Generate time series plots at specified locations"
-    stage: s11_output_analysis
-    script_path: "tools/s11_output_analysis/plot_w2_timeseries.py"
-    language: python
-    inputs:
-      - name: run_dir
-        type: directory
-        description: "Run directory"
-        required: true
-        example: "/path/to/run"
-    outputs:
-      - name: timeseries_plot
-        type: file
-        description: "Time series plot PNG"
-        path_pattern: "timeseries.png"
-    preconditions: ["Time series output files exist"]
-    postconditions: ["Time series plot PNG generated"]
-
-  - id: calibrate_w2
-    name: "Calibrate CE-QUAL-W2"
-    description: "GLUE-style calibration against observed temperature profiles"
-    stage: s12_calibration
-    script_path: "tools/s12_calibration/calibrate_w2.py"
-    language: python
-    inputs:
-      - name: run_dir
-        type: directory
-        description: "Run directory"
-        required: true
-        example: "/path/to/run"
-    outputs:
-      - name: calibration_json
-        type: file
-        description: "Calibration results JSON"
-        path_pattern: "calibration_results.json"
-    preconditions: ["Observed temperature profiles available"]
-    postconditions: ["calibration_results.json exists with best parameters"]
-
-  - id: w2_to_cama_coupling
-    name: "W2 to CaMa-Flood coupling"
-    description: "Convert W2 dam release to CaMa-Flood compatible format"
-    stage: s13_coupling
-    script_path: "tools/s13_coupling/w2_to_cama_coupling.py"
-    language: python
-    inputs:
-      - name: qout_file
-        type: file
-        description: "W2 outflow file"
-        required: true
-        example: "qot_br1.npt"
-    outputs:
-      - name: coupling_output
-        type: file
-        description: "CaMa-Flood compatible lateral inflow"
-        path_pattern: "cama_lateral_inflow.csv"
-    preconditions: ["W2 run complete with outflow data"]
-    postconditions: ["Coupling output file exists with discharge in m3/s"]
-
-skill_documents:
-  - id: sd_s0
-    name: "Configuration"
-    stage: s0_config
-    path: "docs/s0_configuration_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 800
-
-  - id: sd_s1
-    name: "Bathymetry and Grid"
-    stage: s1_bathymetry
-    path: "docs/s1_bathymetry_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1200
-
-  - id: sd_s3
-    name: "Meteorological Forcing"
-    stage: s3_met_forcing
-    path: "docs/s3_met_forcing_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1000
-
-  - id: sd_s9
-    name: "Control File Assembly"
-    stage: s9_control_file
-    path: "docs/s9_control_file_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1500
-
-  - id: sd_s10
-    name: "Execution"
-    stage: s10_execution
-    path: "docs/s10_execution_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 800
-
-  - id: sd_s11
-    name: "Output Analysis"
-    stage: s11_output_analysis
-    path: "docs/s11_output_analysis_skill.md"
-    knowledge_type: evaluative_and_sequencing
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 1000
-
-diagnostic_triplets:
-  - id: dt_001
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_002
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_003
-    stage: s4_inflow
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_004
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_005
-    stage: s3_met_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_006
-    stage: s9_control_file
-    failure_domain: parameter_format
-    severity: silent
-  - id: dt_007
-    stage: s1_bathymetry
-    failure_domain: parameter_format
-    severity: fatal
-  - id: dt_008
-    stage: s9_control_file
-    failure_domain: path_resolution
-    severity: fatal
-  - id: dt_009
-    stage: s9_control_file
-    failure_domain: dependency_mismatch
-    severity: fatal
-  - id: dt_010
-    stage: s1_bathymetry
-    failure_domain: grid_geometry
-    severity: fatal
-  - id: dt_011
-    stage: s1_bathymetry
-    failure_domain: grid_geometry
-    severity: fatal
-  - id: dt_012
-    stage: s2_branch_topology
-    failure_domain: grid_geometry
-    severity: fatal
-  - id: dt_013
-    stage: s1_bathymetry
-    failure_domain: grid_geometry
-    severity: silent
-  - id: dt_014
-    stage: s6_init_conditions
-    failure_domain: grid_geometry
-    severity: fatal
-  - id: dt_015
-    stage: s8_wq_config
-    failure_domain: dependency_mismatch
-    severity: silent
-  - id: dt_016
-    stage: s8_wq_config
-    failure_domain: silent_error
-    severity: silent
-  - id: dt_017
-    stage: s8_wq_config
-    failure_domain: silent_error
-    severity: silent
-  - id: dt_018
-    stage: s5_outflow
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_019
-    stage: s5_outflow
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_020
-    stage: s13_coupling
-    failure_domain: coupling
-    severity: silent
-  - id: dt_021
-    stage: s13_coupling
-    failure_domain: coupling
-    severity: silent
-  - id: dt_022
-    stage: s10_execution
-    failure_domain: runtime
-    severity: degraded
-  - id: dt_023
-    stage: s10_execution
-    failure_domain: runtime
-    severity: fatal
-  - id: dt_024
-    stage: s10_execution
-    failure_domain: runtime
-    severity: fatal
-  - id: dt_025
-    stage: s10_execution
-    failure_domain: silent_error
-    severity: silent
-
+  count: 16
+  files:
+  - tools/s10_execution/run_w2.py
+  - tools/s11_output_analysis/parse_w2_output.py
+  - tools/s11_output_analysis/plot_w2_curtain.py
+  - tools/s11_output_analysis/plot_w2_timeseries.py
+  - tools/s12_calibration/calibrate_w2.py
+  - tools/s13_coupling/w2_to_cama_coupling.py
+  - tools/s1_bathymetry/build_reservoir_grid.py
+  - tools/s2_branch_topology/build_branch_topology.py
+  - tools/s3_met_forcing/convert_met_to_w2.py
+  - tools/s4_inflow/convert_inflow_to_w2.py
+  - tools/s4_inflow/generate_distributed_inflow.py
+  - tools/s5_outflow/configure_w2_outflow.py
+  - tools/s6_init_conditions/build_init_conditions.py
+  - tools/s7_hydraulic_params/set_hydraulic_params.py
+  - tools/s8_wq_config/configure_wq.py
+  - tools/s9_control_file/generate_w2_control.py
+inputs:
+  forcing:
+  - name: air temperature (TAIR)
+    unit: deg C
+  - name: dew point temperature (TDEW)
+    unit: deg C
+  - name: wind speed (WIND)
+    unit: m/s
+  - name: wind direction (PHI / WDIR)
+    unit: degrees (0-360) in v4.x+
+  - name: cloud cover (CLOUD)
+    unit: tenths (0-10)
+  - name: shortwave solar radiation (SRO)
+    unit: W/m^2
+  parameters:
+  - name: wind sheltering coefficient (WSC)
+    unit: dimensionless
+  - name: light extinction for pure water (EXH2O)
+    unit: m^-1
+  - name: surface solar absorption fraction (BETA)
+    unit: fraction
+  - name: longitudinal momentum dispersion (AX)
+    unit: m^2/s
+  - name: longitudinal temperature/constituent dispersion (DX)
+    unit: m^2/s
+  - name: bottom (sediment) heat exchange coefficient (CBHE)
+    unit: W/m^2/C
+  - name: sediment temperature (TSED)
+    unit: deg C
+  - name: bottom friction (Chezy / Manning n)
+    unit: Chezy or Manning n (n ~0.02-0.05)
+  - name: water-quality kinetic coefficients (>120; e.g., AG, AR, AM, AT1, ASAT, SOD, LDOMDK)
+    unit: various (1/day, gO2/m^2/day, deg C, etc.)
+  initial_conditions:
+  - name: initial temperature field (T2I / IT2)
+    unit: deg C
+  - name: initial constituent concentrations (IC2 / C2)
+    unit: g/m^3 (mg/L)
+  - name: initial water surface elevation (ELWS)
+    unit: m ASL
+  - name: initial ice thickness (ICETHI / ICE)
+    unit: m
+  - name: restart state (RSIC reading RSOC/rso.opt)
+    unit: state snapshot
+  boundary_conditions:
+  - name: bathymetry (segment widths per layer)
+    unit: m (width), m (elevation)
+  - name: branch topology (US, DS, UHS, DHS, SLOPE)
+    unit: segment indices / slope
+  - name: branch inflow discharge (QIN)
+    unit: m^3/s
+  - name: branch inflow temperature (TIN)
+    unit: deg C
+  - name: branch inflow constituents (CIN)
+    unit: g/m^3 (mg/L), constituent-dependent
+  - name: distributed / tributary inflow (QTR/QDTR, TTR/TDTR) and precipitation (PRC)
+    unit: m^3/s; deg C
+  - name: outflow / withdrawal discharge (QOUT, QWD)
+    unit: m^3/s
+  - name: outlet / withdrawal elevation
+    unit: m ASL
+  - name: external head boundaries (EUH/EDH, TUH/TDH, CUH/CDH)
+    unit: m ASL; deg C; g/m^3
+  - name: simulation period (TMSTRT, TMEND, YEAR)
+    unit: decimal JDAY / year
+  - name: waterbody type (WTYPE freshwater/saltwater)
+    unit: switch
+  - name: method / option switches (turbulence scheme, transport scheme, HEATC, SLHTC, FRICC, constituent
+      ON/OFF)
+    unit: switch
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - water temperature
+  - dam release temperature
+  - dissolved oxygen
+  - water surface elevation
+  - outflow discharge
+  - chlorophyll-a / algal biomass
+  - ice thickness
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.979, KGE=0.942, R=0.994, 5 scorecard(s)'
+  metrics:
+    best_nse: 0.9789
+    best_kge: 0.9423
+    best_r: 0.994
 summary:
   total_tools: 16
-  total_tool_lines: 3434
-  total_skill_documents: 6
-  total_skill_words: 3355
+  total_stage_docs: 6
   total_diagnostic_triplets: 25
-  failure_domains:
-    - unit_conversion
-    - parameter_format
-    - path_resolution
-    - grid_geometry
-    - dependency_mismatch
-    - coupling
-    - runtime
-    - silent_error
-  pipeline_stages: 14
-  pipeline_milestones: 14
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

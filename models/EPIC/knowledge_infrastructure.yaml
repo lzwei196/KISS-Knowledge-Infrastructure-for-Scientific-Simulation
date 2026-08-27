@@ -1,201 +1,111 @@
-model:
-  name: "EPIC"
-  version: "1102 (official release, v2025-05-25)"
-  domain: "agro-ecosystem / crop-soil-water-nutrient / point field-scale"
-  language: "Fortran (compiled PE32 Windows console EXE)"
-  license: "USDA/Texas A&M public domain binary"
-  repository: "https://epicapex.tamu.edu/"
-  citation: "Williams, J.R., 1995. The EPIC model."
-  spatial_mode: "point (field-scale, single homogeneous unit)"
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
-validation_status: "analytic"
-
+package:
+  name: EPIC
+  language: fortran
+  implementation:
+    id: epic-1102
+    version: 1102 (official release v2025-05-25)
+    provenance: Fortran; USDA / Texas A&M Blackland Research Center EPIC 1102 console binary (epic1102-official_release.exe).
+  scientific_reference_version: EPIC 1102 (Environmental Policy Integrated Climate; User's Manual v.1102,
+    Doro et al., 2024)
+  binary:
+    path: KISSPATH_KI_ROOT/EPIC/bin/epic1102-official_release.exe
+    type: PE32_wine
+pipeline:
+  stages: []
+tools:
+  count: 16
+  files:
+  - tools/_common.py
+  - tools/build_control_files.py
+  - tools/build_opc_file.py
+  - tools/build_site_file.py
+  - tools/build_soil_file.py
+  - tools/configure_control.py
+  - tools/configure_irrigation.py
+  - tools/convert_forcing_to_epic.py
+  - tools/edit_opc.py
+  - tools/parse_outputs.py
+  - tools/quickstart.py
+  - tools/resolve_obs_shape.py
+  - tools/run_epic.py
+  - tools/select_crop.py
+  - tools/set_output_types.py
+  - tools/tune_parm.py
 inputs:
   forcing:
-    variables:
-      - name: "precipitation"
-        model_unit: "mm/day"
-        source_unit: "kg m-2 s-1 (CMFD)"
-        conversion_factor: 86400.0
-        conversion_type: "multiplicative"
-      - name: "tmax"
-        model_unit: "degC"
-        source_unit: "K (CMFD)"
-        conversion_factor: -273.15
-        conversion_type: "additive"
-      - name: "tmin"
-        model_unit: "degC"
-        source_unit: "K (CMFD)"
-        conversion_factor: -273.15
-        conversion_type: "additive"
-      - name: "srad"
-        model_unit: "MJ m-2 day-1"
-        source_unit: "W m-2 (CMFD mean)"
-        conversion_factor: 0.0864
-        conversion_type: "multiplicative"
-      - name: "rh"
-        model_unit: "fraction (0-1)"
-        source_unit: "%"
-        conversion_factor: 0.01
-        conversion_type: "multiplicative"
-      - name: "wind"
-        model_unit: "m s-1"
-        source_unit: "m s-1"
-        conversion_factor: 1.0
-        conversion_type: "multiplicative"
-    sources:
-      primary:
-        name: "CMFD"
-        resolution: "0.1 deg"
-        temporal: "3-hourly aggregated to daily"
-        path: "KISSPATH_FORCING/Data_forcing_03hr_010deg"
-      alternatives:
-        - name: "NASA POWER"
-          resolution: "0.5 deg"
-          temporal: "daily"
-        - name: "MSWX"
-          resolution: "0.1 deg"
-          temporal: "3-hourly"
-
-  static:
-    soil:
-      source: "HWSD v1.21"
-      variables: ["sand", "clay", "silt", "bulk_density", "org_c", "ph", "cec"]
-      tool: "tools/build_soil_file.py"
-    landcover:
-      source: "shipped umstead.OPC template; user specifies crop via CROPCOM code"
-      tool: "tools/build_opc_file.py"
-    topography:
-      source: "SRTM / HWSD DEM"
-      resolution: "point"
-      tool: "tools/build_site_file.py"
-    routing:
-      method: "N/A (field-scale point model)"
-      tool: null
-
-  configuration:
-    files:
-      - name: "EPICRUN.DAT"
-        format: "fixed_width Fortran"
-        template: "templates/EPICRUN.DAT"
-        notes: "Single run line: run_name, SIT/WP1/WP5/WND/SOL/OPS/DLY indexes"
-      - name: "EPICCONT.DAT"
-        format: "fixed_width Fortran"
-        template: "templates/EPICCONT.DAT"
-        notes: "Row 1 NBYR IYR0; flag row has IRR at col 8"
-      - name: "<site>.SIT"
-        format: "fixed_width Fortran"
-        template: "templates/umstead.SIT"
-        notes: "Row 4 is lat/lon/elev/slope/CO2"
-      - name: "<site>.SOL"
-        format: "fixed_width Fortran (6*F10.2 per property row, 6 layers)"
-        template: "templates/umstead.SOL"
-        notes: "One row per property — preserve row order"
-      - name: "<site>.OPC"
-        format: "fixed_width Fortran op schedule"
-        template: "templates/umstead.OPC"
-      - name: "<station>.DLY"
-        format: "(3I4,6F6.*) daily weather"
-        template: "templates/NCRDU.DLY"
-        notes: "YR MO DY SRAD TMX TMN PRCP RH WSPD"
-
+  - name: SRAD (solar radiation)
+    unit: MJ m-2 day-1
+  - name: TMX (maximum air temperature)
+    unit: degC
+  - name: TMN (minimum air temperature)
+    unit: degC
+  - name: PRCP / RFV (precipitation, required)
+    unit: mm day-1
+  - name: RH / RHD (relative humidity, fraction) or dew point
+    unit: fraction 0-1
+  - name: WSPD / U10 (wind velocity at 10 m)
+    unit: m s-1
+  - name: CO2 (atmospheric concentration)
+    unit: ppm
+  - name: EVI (vegetation index, optional)
+    unit: dimensionless
+  parameters:
+  - name: Latitude / longitude / elevation / aspect / slope / channel geometry / SCS curve number
+    unit: deg, m, m/m, dimensionless
+  - name: 'Soil profile per layer (up to 10): depth bottom, bulk density, wilting point, field capacity,
+      sand/silt/clay, rock fragment, organic C, pH, CEC, Ksat, albedo, hydrologic group, USLE_K'
+    unit: mixed (m, t/m3, m3/m3, %, cmol/kg, mm/hr)
+  - name: 'Crop parameter database (~58 columns, 150+ crops): harvest index, biomass-energy ratio, leaf-area,
+      heat-unit coefficients'
+    unit: mixed
+  - name: 'Global equation/calibration coefficients (S-curve and 64 general parameters: root growth, N
+      mineralization, denitrification, CENTURY rates, Hargreaves coefficients, etc.)'
+    unit: mixed
+  - name: Fertilizer / tillage-implement / pesticide databases
+    unit: mixed
+  initial_conditions:
+  - name: Initial soil water, nitrate/ammonium, organic C/N pools, residue per layer
+    unit: mm, kg/ha
+  boundary_conditions:
+  - name: 'Operation schedule: plant, fertilize, irrigate, harvest, kill, tillage operations'
+    unit: date + equipment/crop/material codes + OPV1..OPV9 operation values
+  - name: 'Simulation control: NBYR years, start year/month/day, print code IPD, weather-input mode NGN,
+      leap-year flag LPYR'
+    unit: integer flags
+  - name: PET method selector IET (1=Penman-Monteith, 2=Penman, 3=Priestley-Taylor, 4=Hargreaves, 5=Baier-Robertson)
+    unit: method code
+  - name: Water-erosion equation selector DRV (0=MUST, 2=USLE, 3=MUSS, 4=MUSL, 6=RUSL, 7=RUS2)
+    unit: method code
+  - name: Irrigation flag IRR (0=dryland, 1=scheduled, 2=auto-stress, 3=auto-deficit)
+    unit: method code
+  - name: Output variable / output-file selection (32 file-class toggles)
+    unit: print flags
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
 outputs:
-  primary:
-    - variable: "annual crop yield"
-      unit: "t/ha"
-      file: "<run>_0.ACY"
-      frequency: "annual"
-    - variable: "annual water balance"
-      unit: "mm/yr"
-      file: "<run>_0.ANN"
-      frequency: "annual"
-  additional:
-    - variable: "daily water cycle"
-      unit: "mm/day"
-      file: "<run>_0.DWC"
-      frequency: "daily"
-    - variable: "daily C/N cycle"
-      unit: "kg/ha/day"
-      file: "<run>_0.DCN"
-      frequency: "daily"
-    - variable: "annual C and N"
-      unit: "kg/ha/yr"
-      file: "<run>_0.ACN"
-      frequency: "annual"
-    - variable: "erosion (MUSLE/USLE/wind)"
-      unit: "t/ha/yr"
-      file: "<run>_0.ANN"
-      frequency: "annual"
-    - variable: "N2O / denitrification"
-      unit: "kg N/ha/yr"
-      file: "<run>_0.ANN (DN, DN2O)"
-      frequency: "annual"
-
-build:
-  method: "precompiled binary — no build step"
-  dependencies:
-    - "wine (to run Windows PE32 executable on Linux)"
-    - "python 3.x for KI tools"
-    - "ki_tools_common (optional)"
-  binary_path: "KISSPATH_BINARIES/EPIC/epic_workspace/epic1102-official_release.exe"
-  known_issues:
-    - "PE32 binary — requires Wine on Linux"
-    - "All input filenames are read from CWD — must run inside workspace"
-    - "Fortran fixed-width formats — never regenerate, always copy+edit"
-
-tools:
-  - name: "convert_forcing_to_epic.py"
-    purpose: "Load CMFD/NASA POWER daily forcing and write .DLY/.WP1/.WND"
-    inputs: ["lat", "lon", "year1", "year2"]
-    outputs: [".DLY", ".WP1", ".WND"]
-    unit_conversions: true
-  - name: "build_site_file.py"
-    purpose: "Copy umstead.SIT and overwrite lat/lon/elev/slope/CO2"
-    inputs: ["template", "lat", "lon", "elev", "slope"]
-    outputs: ["<name>.SIT"]
-  - name: "build_soil_file.py"
-    purpose: "Copy umstead.SOL and overlay HWSD-derived properties"
-    inputs: ["HWSD"]
-    outputs: ["<name>.SOL"]
-  - name: "build_opc_file.py"
-    purpose: "Copy umstead.OPC and rewrite operation table"
-    inputs: ["crop", "dates", "fert_n"]
-    outputs: ["<name>.OPC"]
-  - name: "select_crop.py"
-    purpose: "Browse CROPCOM.DAT"
-  - name: "configure_irrigation.py"
-    purpose: "Edit EPICCONT.DAT IRR flag"
-  - name: "build_control_files.py"
-    purpose: "Stage templates + rewrite EPICRUN.DAT"
-  - name: "run_epic.py"
-    purpose: "Copy+run under Wine + collect outputs"
-  - name: "parse_outputs.py"
-    purpose: "Parse .ANN/.ACY + water balance check"
-
-diagnostics:
-  n_triplets: 17
-  top_categories:
-    - "format_error"
-    - "unit_conversion"
-    - "runtime_error"
-    - "silent_error"
-
-coupling:
-  upstream: []
-  downstream: []
-
-spinup:
-  required: true
-  length_years: 2
-  reason: "EPIC soil C/N pools and water profile need 1-2 years to equilibrate"
-  discard_from_metrics: true
-
+  observable:
+  - YLDG
+  - BIOM
+  - ET
+  - Q
+  - MUSS/MUST/USLE (water erosion sediment yield)
+  - DN2O / VN2O
+  - QNO3 / SNO3 (nitrate loss / soil nitrate)
+  - YOC / TOC (soil organic carbon)
+  - NPPC
+  other: []
 validation:
-  tier: "analytic"
-  justification: "Shipped umstead (NC corn, 1930-1944) example runs through the binary unmodified; annual .ANN water balance is compared to a closed P=ET+Q+dS budget; ACY yields are compared against published EPIC corn yield ranges (5-10 t/ha) for the US Southeast."
-  benchmark: "umstead example workspace water-balance analytic identity"
+  tier: validated
+  tier_justification: 'measured: NSE=-8.455, KGE=0.065, R=0.211, 6 scorecard(s)'
   metrics:
-    water_balance_residual_mm_yr: null
-    mean_annual_yield_t_ha: null
-    years_simulated: 15
-  independent_obs_available: false
+    best_nse: -8.4547
+    best_kge: 0.0649
+    best_r: 0.2106
+summary:
+  total_tools: 16
+  total_stage_docs: 0
+  total_diagnostic_triplets: 32
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

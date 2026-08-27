@@ -1,0 +1,277 @@
+# 3 entr(ies) RESTORED 2026-08-15 from the format_spec known_issues
+# baseline after a triplet campaign agent dropped them during rewrite.
+
+- id: dt_001
+  symptom: Routing model runs but no output files generated, or only a few cells are processed.
+  diagnosis: Aggregating high-resolution DEM flow directions to the coarse VIC grid can disconnect the
+    network; some cells have no valid downstream neighbor so flow cannot reach the outlet.
+  remedy: Use run_build_routing_new.py's 'calculate first, fix later' algorithm, which detects disconnected
+    cells and reroutes them to the nearest connected neighbor so all cells reach the outlet.
+  severity: high
+- id: dt_002
+  symptom: No output when running routing. Model exits immediately.
+  diagnosis: 'The staloc file must contain exactly two lines (line 1: ''1 XX column row -9999''; line
+    2: UH_S file path or NONE). Wrong format means the routing binary cannot parse the station location.'
+  remedy: 'Ensure staloc has two lines: ''1 XX column row -9999'' then ''NONE'' (NONE recalculates the
+    unit hydrograph; otherwise give the UH_S file path).'
+  severity: high
+- id: dt_003
+  symptom: '''End of file'' error during runtime; error reading UH.all.'
+  diagnosis: UH.all must be 12-line format (index 0-11 plus weight, weights summing to 1.0). Fewer than
+    12 lines or a different format makes the Fortran READ statement fail.
+  remedy: Provide the correct 12-line unit hydrograph format with indices 0-11 and weights summing to
+    1.0.
+  severity: high
+- id: dt_004
+  symptom: 'Error ''Incorrect dimensions: Reset nrow and ncol in main to X Y''.'
+  diagnosis: NROW/NCOL parameters in rout.f are smaller than the basin grid size; the statically allocated
+    Fortran arrays cannot exceed these dimensions.
+  remedy: Edit PARAMETER (NROW=..., NCOL=...) in route_1.0/src/rout.f to fit the basin, then recompile
+    with 'make clean && make'.
+  severity: high
+- id: dt_005
+  symptom: Monthly discharge reaches tens of thousands m3/s, or large negative discharge values appear.
+  diagnosis: The routing model reads incorrect columns from VIC output; preprocessing must extract the
+    correct columns (0,1,2,3,18,16,17, skipping the first 3 rows).
+  remedy: Use preprocess_vic_for_routing.py to extract the correct VIC output columns and verify discharge
+    magnitudes are physically reasonable for the basin area.
+  severity: high
+- id: dt_006
+  symptom: Files exist but reported as 'NOT FOUND'; output is all 0 or NaN.
+  diagnosis: Fortran string length is limited to 60-80 characters; absolute paths longer than this get
+    truncated, so the binary opens wrong or nonexistent files with no clear error.
+  remedy: Use symbolic links and relative paths, or work from a short-path directory like /tmp/rout_work,
+    to keep paths under the Fortran string-length limit.
+  severity: high
+- id: dt_007
+  symptom: Many 'XX.XXXX_YYY.YYYY NOT FOUND, INSERTING ZEROS' messages; output discharge is all zero.
+  diagnosis: Grid coordinates in auxiliary files (xmask, fdir) don't match VIC output filenames; wrong
+    xllcorner/yllcorner make computed filenames not match existing VIC output files.
+  remedy: Verify VIC filename coordinates against the xmask definition and set xllcorner/yllcorner so
+    grid center coordinates match VIC filenames.
+  severity: high
+- id: dt_008
+  symptom: shutil.copytree error 'Too many levels of symbolic links'; directory shows routing_param/routing_param/...
+    infinite nesting.
+  diagnosis: A symlink named routing_param was created inside the routing_param/ directory pointing back
+    to itself, causing infinite recursion; often a side effect of mishandling the Fortran path-length
+    limit (dt_006).
+  remedy: Never create a symlink named routing_param inside routing_param/. Create the routing_param symlink
+    from outside (e.g. /tmp), and inside routing_param only symlink to OTHER directories (vic_in, rout_exe).
+  severity: medium
+- id: dt_009
+  name: Existing UH_S cache blocks rerun
+  symptom: The routing binary reports Cannot open file for a .uh_s file with File exists.
+  diagnosis: MAKE_GRID_UH writes the per-station source-to-outlet unit hydrograph with Fortran OPEN STATUS='NEW';
+    s5_routing_param/run_build_routing_new.py writes staloc line 2 as NONE, so a previous <NAME5>.uh_s
+    cache prevents recomputation.
+  remedy: Delete stale *.uh_s files in the routing work directory before rerunning, or put a valid intended
+    .uh_s path on staloc line 2.
+  severity: fatal
+  stage: s5_routing_param
+  failure_domain: initial_conditions
+  cross_references:
+  - SKILL.md common issue 9
+  - docs/format_spec.yaml cached source-to-outlet unit hydrograph
+  detection: find . -maxdepth 1 -name '*.uh_s' -printf '%f\n'
+- id: dt_010
+  name: Stale UH_S cache silently reused
+  symptom: The run completes, but flood peaks are shifted by days or the hydrograph shape does not match
+    the current basin even though runoff magnitudes look plausible.
+  diagnosis: When staloc line 2 is not NONE, MAKE_GRID_UH reads the supplied .uh_s cache instead of recomputing
+    it; s5_routing_param/run_build_routing_new.py writes NONE for fresh parameter builds, and docs/format_spec.yaml
+    notes that a per-station NAME5 cache from another basin can corrupt source-to-outlet timing.
+  remedy: Set staloc line 2 to NONE and remove old *.uh_s files whenever the basin, station, D8 grid,
+    xmask, velocity, diffusion, or UH.all changes.
+  severity: silent
+  stage: s5_routing_param
+  failure_domain: initial_conditions
+  cross_references:
+  - docs/format_spec.yaml cached source-to-outlet unit hydrograph
+  - dag.yaml safety stale_uh_s_cache
+  detection: sed -n '2p' *_staloc.txt | rg -v '^NONE$'
+- id: dt_011
+  name: Fraction grid contains area units
+  symptom: The run completes, but all m3/s discharge values are inflated by orders of magnitude while
+    timing still looks reasonable.
+  diagnosis: The fraction input must be dimensionless 0 to 1; MAKE_CONVOLUTION computes FACTOR as fraction
+    times spherical cell area divided by 86400, so supplying km2 or m2 cell area in *_frac.txt multiplies
+    the volume conversion twice.
+  remedy: Regenerate *_frac.txt with build_fraction_grid in s5_routing_param/run_build_routing_new.py
+    and verify every positive value is between 0 and 1.
+  severity: silent
+  stage: s5_routing_param
+  failure_domain: unit_conversion
+  cross_references:
+  - docs/format_spec.yaml fraction
+  - dag.yaml safety fraction_unit_confusion
+  detection: awk 'NR>6{for(i=1;i<=NF;i++) if($i<0 || $i>1){print FNR":"$i; bad=1}} END{exit bad}' *_frac.txt
+- id: dt_012
+  name: Flow distance grid in degrees or kilometers
+  symptom: The run completes, but daily peaks arrive too early or too late across the basin while monthly
+    means remain similar.
+  diagnosis: xmask is consumed by MAKE_UHM as a flow length in metres; s5_routing_param/run_build_routing_new.py
+    compute_xmask writes metre distances such as 22849, 27734, and 35956 for the configured 0.25 degree
+    grid.
+  remedy: Regenerate *_xmask.txt with run_build_routing_new.py or convert any external distance grid to
+    metres before routing.
+  severity: silent
+  stage: s5_routing_param
+  failure_domain: unit_conversion
+  cross_references:
+  - docs/format_spec.yaml xmask
+  - dag.yaml MAKE_UHM
+  detection: awk 'NR>6{for(i=1;i<=NF;i++) if($i>0 && $i<1000){print FNR":"$i; bad=1}} END{exit bad}' *_xmask.txt
+- id: dt_013
+  name: Velocity supplied in wrong time unit
+  symptom: Storm peaks are routed almost instantly or are delayed far beyond observed events, with no
+    parser error.
+  diagnosis: Velocity is channel wave celerity in m/s; rout_global.txt uses .false. plus scalar VELOCITY
+    from s5_routing_param/run_build_routing_new.py or .true. plus a grid, and MAKE_UHM applies it directly
+    in the diffusive-wave impulse response.
+  remedy: Use m/s values in the documented 0.5 to 5.0 model-side range, or convert any m/day or km/day
+    source before writing the scalar or velocity grid.
+  severity: silent
+  stage: s5_routing_param
+  failure_domain: unit_conversion
+  cross_references:
+  - docs/format_spec.yaml velocity
+  - dag.yaml influence velocity
+  detection: awk 'prev==".false." && $1+0==$1 && ($1<0.5 || $1>5.0){print FNR":"$1; bad=1} {prev=$1} END{exit
+    bad}' rout_global.txt
+- id: dt_014
+  name: Diffusivity supplied in wrong unit
+  symptom: Daily hydrographs are unrealistically sharp or over-attenuated while total routed volume remains
+    close.
+  diagnosis: Diffusion is channel diffusivity D in m2/s; s5_routing_param/run_build_routing_new.py writes
+    the scalar DIFFUSION value into rout_global.txt, docs/format_spec.yaml lists the calibrated range
+    as roughly 200 to 4000 m2/s, and MAKE_UHM uses it in the impulse-response denominator.
+  remedy: Use m2/s values near the documented calibration range or convert from m2/day before writing
+    rout_global.txt or the diffusion grid.
+  severity: silent
+  stage: s5_routing_param
+  failure_domain: unit_conversion
+  cross_references:
+  - docs/format_spec.yaml diffusion
+  - dag.yaml influence diffusion
+  detection: awk 'prev==".false." && $1+0==$1 && ($1<200 || $1>4000){print FNR":"$1; bad=1} {prev=$1}
+    END{exit bad}' rout_global.txt
+- id: dt_015
+  name: D8 code convention mismatch
+  symptom: The run completes with plausible-looking files, but catchment cells drain in the wrong directions
+    or discharge is near zero at the selected outlet.
+  diagnosis: docs/format_spec.yaml records that READ_DIREC decodes sequential codes 1 through 8 on a left-right-flipped
+    internal grid, while compute_direction_with_fix in s5_routing_param/run_build_routing_new.py uses
+    its own 1=N through 8=NW convention; external ArcGIS power-of-two D8 grids will be silently misread.
+  remedy: Use the local generated *_direc.txt only after checking outlet connectivity, and convert any
+    external D8 product to the routing binary convention before replacing it.
+  severity: silent
+  stage: s5_routing_param
+  failure_domain: grid_coupling
+  cross_references:
+  - docs/format_spec.yaml flow_direction
+  - dag.yaml safety flow_direction_d8_convention_mismatch
+  detection: awk 'NR>6{for(i=1;i<=NF;i++) if($i!=0 && $i!=-88 && ($i<1 || $i>8)){print FNR":"$i; bad=1}}
+    END{exit bad}' *_direc.txt
+- id: dt_016
+  name: rout_global toggle and path mismatch
+  symptom: Changing a velocity, diffusion, xmask, or fraction file has no effect, or the model tries to
+    read a number as a filename.
+  diagnosis: 'rout_global.txt alternates boolean toggles and values: .false. means use the following scalar
+    for velocity or diffusion, while .true. means read the following grid path for xmask or fraction as
+    generated by write_rout_global in s5_routing_param/run_build_routing_new.py.'
+  remedy: Inspect rout_global.txt and make each toggle match the following line type, then rerun the binary
+    from the directory where relative paths resolve.
+  severity: degraded
+  stage: s5_routing_param
+  failure_domain: configuration
+  cross_references:
+  - SKILL.md run checklist
+  - docs/format_spec.yaml input-file toggles and paths
+  detection: nl -ba rout_global.txt | sed -n '4,16p'
+- id: dt_017
+  name: VIC date block mismatch
+  symptom: MAKE_CONVOLUTION stops near the start of routing or reports an unexpected first year and month
+    in a per-cell flux file.
+  diagnosis: The date block in rout_global.txt sets START_YEAR and START_MO, preprocess_vic_for_routing.py
+    preserves the year and month columns from VIC outputs, and docs/format_spec.yaml notes that the first
+    row of every 7-column VIC routing input must match those values.
+  remedy: Edit the two date-window lines in rout_global.txt to match the preprocessed VIC input period,
+    or regenerate the VIC routing input for the configured period.
+  severity: fatal
+  stage: s5_routing_param
+  failure_domain: configuration
+  cross_references:
+  - docs/format_spec.yaml simulation and output write windows
+  - dag.yaml safety vic_date_block_mismatch
+  detection: start=$(awk 'NR==24{print $1" "$2}' rout_global.txt); first=$(awk 'NR==1{print $1" "$2; exit}'
+    vic_in/fluxes_*); test "$start" = "$first"
+- id: dt_018
+  name: Missing routing executable
+  symptom: preflight_check.py fails the binary check or the routing command cannot execute rout.
+  diagnosis: preflight_check.py requires KISSPATH_BINARIES/route_1.0/src/rout to exist,
+    be executable, and print the rout usage message when invoked with no arguments; s5_routing_param/run_build_routing_new.py
+    only builds parameter files and cannot replace the Fortran routing executable.
+  remedy: Restore or rebuild route_1.0/src/rout with gfortran and make it executable with chmod +x, then
+    rerun python preflight_check.py.
+  severity: fatal
+  stage: s5_routing_param
+  failure_domain: dependency
+  cross_references:
+  - preflight_check.py BINARY
+  - SKILL.md compile route_1.0
+  detection: python preflight_check.py | rg 'binary:|run:|PREFLIGHT_REPORT='
+- id: dt_019
+  name: Missing Python geospatial dependency
+  symptom: run_build_routing_new.py fails to import rasterio, geopandas, shapely, whitebox, or numpy before
+    creating routing parameter files.
+  diagnosis: The local routing parameter builder imports rasterio, geopandas, shapely.geometry, whitebox,
+    and numpy at module import time, and preflight_check.py only checks pandas in the HydroCraft Python
+    environment.
+  remedy: Install the missing geospatial package into KISSPATH_PYTHON_ENV or run s5_routing_param/run_build_routing_new.py
+    in an environment that contains rasterio, geopandas, shapely, whitebox, and numpy.
+  severity: fatal
+  stage: s5_routing_param
+  failure_domain: dependency
+  cross_references:
+  - s5_routing_param/run_build_routing_new.py imports
+  - preflight_check.py PYTHON_ENV
+  detection: python -c 'import numpy, rasterio, geopandas, shapely, whitebox'
+- id: dt_020
+  name: Validation unit mismatch
+  symptom: NSE, KGE, or PBIAS is poor for .day_mm or .month_mm even though .day or .month visually matches
+    observed gauge discharge.
+  diagnosis: preprocess_vic_for_routing.py prepares runoff/baseflow inputs in mm/day, WRITE_DATA emits
+    .day in m3/s and .day_mm as FLOW divided by FACTOR_SUM, and docs/validation_convention.yaml requires
+    observed gauge flow to be converted to the same basin-area-normalized mm/day basis before validating
+    *_mm outputs.
+  remedy: Compare .day and .month directly against observed m3/s, or divide observed m3/s by the same
+    basin area normalizer before using .day_mm or .month_mm validation files.
+  severity: silent
+  stage: s5_routing_param
+  failure_domain: validation
+  cross_references:
+  - docs/format_spec.yaml discharge_daily_mm
+  - docs/validation_convention.yaml discharge_daily_mm
+  - dag.yaml outputs discharge_daily_mm
+  detection: head -5 rout_out/*.day rout_out/*.day_mm
+- id: restored_213026_00
+  symptom: The routing binary exits immediately or produces no station output when rout_global.txt points
+    to a *_staloc.txt file.
+  remedy: Regenerate the station file with write_staloc or edit it so line 1 is like 1 HF col row -9999
+    and line 2 is NONE, then rerun the routing binary.
+  diagnosis: The staloc file consumed by rout_global.txt must have line 1 as the station row and column
+    and line 2 as either NONE or a .uh_s path; write_staloc in s5_routing_param/run_build_routing_new.py
+    writes both lines.
+- id: restored_213026_01
+  symptom: Runtime prints End of file while reading UH.all or stops before writing discharge files.
+  remedy: Regenerate UH.all with s5_routing_param/run_build_routing_new.py or replace it with 12 indexed
+    ordinates whose weights sum to 1.0.
+  diagnosis: READ_GRID_UH expects exactly KE=12 daily unit-hydrograph ordinates with index 0 through 11
+    plus a weight; write_uh_file in s5_routing_param/run_build_routing_new.py emits this 12-line contract.
+- id: restored_213026_02
+  symptom: The routing binary prints Incorrect dimensions and asks to reset nrow and ncol in main.
+  remedy: Edit the PARAMETER values for NROW and NCOL in KISSPATH_BINARIES/route_1.0/src/rout.f
+    to cover the generated grid and rebuild with make clean && make.
+  diagnosis: route_1.0/src/rout uses statically allocated NROW and NCOL parameters; READ_DIREC rejects
+    ArcInfo grids whose nrows or ncols exceed those compiled limits.

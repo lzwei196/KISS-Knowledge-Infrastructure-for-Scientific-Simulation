@@ -1,14 +1,3 @@
----
-name: amanzi-ats
-description: >-
-  Amanzi/ATS integrated surface-subsurface thermal hydrology framework. Covers
-  Variably-saturated subsurface flow (Richards equation, van Genuchten/Brooks-Corey
-  retention, Mualem…; Saturated / constant (Darcy) flow; Advective-dispersive reactive
-  solute transport; Geochemistry (sorption, mineral precipitation, decay chains) via
-  native beaker or Alquimia engines. Use when the task involves running, configuring,
-  calibrating or interpreting Amanzi_ATS.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_amanzi.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_amanzi.py --help` |
+| `tools/convert_soil_to_amanzi.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_amanzi.py --help` |
+| `tools/parse_amanzi_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_amanzi_output.py --help` |
+| `tools/run_amanzi.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_amanzi.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # Amanzi / ATS (Advanced Terrestrial Simulator) — Knowledge Infrastructure
 
@@ -241,42 +264,29 @@ Amanzi uses Teuchos XML ParameterList format. Two schema versions exist:
 
 ---
 
-## Unit System
+## 6. Output Description
 
-**Amanzi uses SI units internally:**
+Source: `dag.yaml`. The dag is the authority for output identity; if this section and `dag.yaml` disagree, the dag wins.
 
-| Quantity | Unit | Notes |
-|----------|------|-------|
-| Length | m (meters) | All spatial dimensions |
-| Time | s (seconds) | Internal timestep; input can use y, d, hr |
-| Mass | kg | |
-| Pressure | Pa (Pascals) | Atmospheric = 101325 Pa |
-| Temperature | K (Kelvin) | For energy equation |
-| Concentration | mol/L (molar) | Default; can switch to mol/m³ |
-| Permeability | m² | Intrinsic permeability (NOT hydraulic conductivity) |
-| Viscosity | Pa·s | Water ≈ 0.001 Pa·s |
-| Density | kg/m³ | Water ≈ 998.2 kg/m³ |
-| Flux | kg/m²/s | Mass flux for BCs |
-| Porosity | dimensionless | 0–1 |
-| Saturation | dimensionless | 0–1 |
-| Darcy velocity | m/s | |
+**Headline output** (`validation_rank: 1`):
 
-### Unit Trap Table (CRITICAL)
+RANK-1 OUTPUT (`dag.yaml`): var='hydraulic_head' unit='m' description='Derived hydraulic head / water-table position from pressure (h = (P - P_atm)/(rho*g) + z).'
 
-| Trap | Source Unit | Amanzi Unit | Factor | Silent? |
-|------|-----------|-------------|--------|---------|
-| Precipitation mm→m | mm/hr | m/s | ÷3.6e6 | Yes |
-| Hydraulic conductivity → permeability | m/s (K) | m² (k) | k = K·μ/(ρg) ≈ K × 1.02e-7 | Yes |
-| Temperature C→K | °C | K | +273.15 | Yes |
-| Pressure head → Pa | m (head) | Pa | ×ρg ≈ ×9806.65 | Yes |
-| Recharge cm/yr → kg/m²/s | cm/yr | kg/m²/s | ×998.2/(100×3.156e7) | Yes |
-| van Genuchten α cm⁻¹→m⁻¹ | 1/cm | 1/m | ×100 | Yes |
-| Time yr→s | years | seconds | ×3.156e7 | No |
-| Kd mL/g → m³/kg | mL/g | m³/kg | ×0.001 | Yes |
+> `hydraulic_head` — Derived hydraulic head / water-table position from pressure (h = (P - P_atm)/(rho*g) + z). (`m`)
 
----
+| Output variable (dag `var`) | Rank | Emitted in | Unit | Description |
+|---|---:|---|---|---|
+| `hydraulic_head` | 1 | observation time-series (.out) | m | Derived hydraulic head / water-table position from pressure (h = (P - P_atm)/(rho*g) + z). |
+| `pressure` | 2 | HDF5+XDMF visualization ({base}_data.h5/.xmf) and observation time-series (.out) | Pa | Liquid pressure field (subsurface, and ponded pressure for surface domains); primary flow unknown. |
+| `saturation_liquid` | 3 | HDF5+XDMF visualization | dimensionless (0–1) | Subsurface liquid saturation field derived from pressure via the retention curve. |
+| `darcy_velocity` | 4 | HDF5+XDMF visualization and observation time-series (.out, volumetric_flux) | m/s | Subsurface Darcy flux field; also integrated to volumetric flux / discharge at observation regions. |
+| `total_component_concentration` | 5 | HDF5+XDMF visualization and observation time-series (.out, aqueous_conc) | mol/L | Per-solute aqueous concentration in subsurface water (reactive transport primary unknown). |
+| `temperature` | 6 | HDF5+XDMF visualization and observation time-series (.out) | K | Subsurface/surface temperature field (energy PK); drives ice phase in permafrost runs. |
+| `saturation_ice` | 7 | HDF5+XDMF visualization | dimensionless | Ice saturation field for permafrost / frozen-soil flow. |
 
-## Output Format
+Other dag outputs: `pressure`, `saturation_liquid`, `darcy_velocity`, `total_component_concentration`, `temperature`, `saturation_ice`.
+
+### Output Format
 
 ### Visualization (HDF5/XDMF)
 - Files: `{base_name}_data.h5` + `{base_name}_mesh.h5` + `{base_name}.xmf`
@@ -317,6 +327,45 @@ Amanzi uses Teuchos XML ParameterList format. Two schema versions exist:
   </observations>
 </output>
 ```
+
+---
+
+## 8. Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`; the conversion hazards are projected from `dag.yaml` and `diagnostics/triplets.yaml`. This section records the unit table and the conversion traps that must be checked before interpreting outputs or composing XML inputs.
+
+### Unit Table
+
+**Amanzi uses SI units internally:**
+
+| Quantity | Unit | Notes |
+|----------|------|-------|
+| Length | m (meters) | All spatial dimensions |
+| Time | s (seconds) | Internal timestep; input can use y, d, hr |
+| Mass | kg | |
+| Pressure | Pa (Pascals) | Atmospheric = 101325 Pa |
+| Temperature | K (Kelvin) | For energy equation |
+| Concentration | mol/L (molar) | Default; can switch to mol/m³ |
+| Permeability | m² | Intrinsic permeability (NOT hydraulic conductivity) |
+| Viscosity | Pa·s | Water ≈ 0.001 Pa·s |
+| Density | kg/m³ | Water ≈ 998.2 kg/m³ |
+| Flux | kg/m²/s | Mass flux for BCs |
+| Porosity | dimensionless | 0–1 |
+| Saturation | dimensionless | 0–1 |
+| Darcy velocity | m/s | |
+
+### Unit Trap Table (CRITICAL)
+
+| Trap | Source Unit | Amanzi Unit | Factor | Silent? |
+|------|-----------|-------------|--------|---------|
+| Precipitation mm→m | mm/hr | m/s | ÷3.6e6 | Yes |
+| Hydraulic conductivity → permeability | m/s (K) | m² (k) | k = K·μ/(ρg) ≈ K × 1.02e-7 | Yes |
+| Temperature C→K | °C | K | +273.15 | Yes |
+| Pressure head → Pa | m (head) | Pa | ×ρg ≈ ×9806.65 | Yes |
+| Recharge cm/yr → kg/m²/s | cm/yr | kg/m²/s | ×998.2/(100×3.156e7) | Yes |
+| van Genuchten α cm⁻¹→m⁻¹ | 1/cm | 1/m | ×100 | Yes |
+| Time yr→s | years | seconds | ×3.156e7 | No |
+| Kd mL/g → m³/kg | mL/g | m³/kg | ×0.001 | Yes |
 
 ---
 
@@ -401,6 +450,45 @@ Gravity is specified as a 3D vector, typically (0, 0, -9.81). A positive Z gravi
 | dt_018 | degraded | runtime | Timestep collapse from sharp wetting front |
 
 **Silent error count**: 10/18 (56%) — dominated by unit conversion traps.
+
+---
+
+## 11. Validated Results
+
+Source: `docs/validation_convention.yaml`. No achieved calibration or validation metric values are recorded in this SKILL body; the current validation status remains `NOT_RUNNABLE` because the binary requires an MPI+Trilinos build and the KI tools were validated with a Python surrogate only.
+
+### Rank-1 Output Bar
+
+The rank-1 output in `dag.yaml` is `hydraulic_head` with unit `m` and description: Derived hydraulic head / water-table position from pressure (h = (P - P_atm)/(rho*g) + z).
+
+| Dag variable | Obs shape | Metric | Direction | Convention bar, cited |
+|---|---|---|---|---|
+| `hydraulic_head` | point_time_series | r | maximize | no cited threshold; cites=[] |
+| `hydraulic_head` | point_time_series | rmse | minimize | very_good 0.95 m [marker2015]; good 1.4 m [marker2015]; satisfactory 2.2 m [marker2015] |
+| `hydraulic_head` | point_snapshot | pbias | zero_centered | no cited threshold; cites=[] |
+| `hydraulic_head` | point_snapshot | rmse | minimize | very_good 0.95 m [marker2015]; good 1.4 m [marker2015]; satisfactory 2.2 m [marker2015] |
+
+### Pressure Convention Bars
+
+These are the pressure bars present in `docs/validation_convention.yaml`; pressure is compared through converted hydraulic head where required by the convention.
+
+| Dag variable | Obs shape | Metric | Direction | Convention bar, cited |
+|---|---|---|---|---|
+| `pressure` | point_time_series | nse | maximize | no cited threshold; cites=[] |
+| `pressure` | point_time_series | rmse_head | minimize | very_good 0.95 m [marker2015]; good 1.4 m [marker2015]; satisfactory 2.2 m [marker2015] |
+| `pressure` | point_snapshot | pbias | zero_centered | no cited threshold; cites=[] |
+| `pressure` | point_snapshot | rmse_head | minimize | very_good 0.95 m [marker2015]; good 1.4 m [marker2015]; satisfactory 2.2 m [marker2015] |
+| `pressure` | spatial_snapshot | csi | maximize | no cited threshold; cites=[] |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|---|---|---|---|
+| Forcing | Pipeline | Pending | Use `convert_forcing_to_amanzi`; exact shapes live in `docs/format_spec.yaml`. |
+| Soil/material parameters | Pipeline | Pending | Use `convert_soil_to_amanzi`; verify permeability, retention, and porosity units. |
+| Mesh | External MSTK/Exodus tools | Pending | Exodus labels must match XML regions. |
+| Initial and boundary conditions | XML ParameterList | Pending | Pressure/head and recharge conversions must be explicit. |
+| Output parsing | Pipeline | Pending | Use `parse_amanzi_output`; compare against dag variables and validation convention bars. |
 
 ---
 

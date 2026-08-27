@@ -1,407 +1,853 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: DNDC (DNDCv.CAN)
-  domain: biogeochemistry
-  binary_path: ''
-  language: unknown
+  name: DNDC
+  language: c++
+  implementation:
+    id: dndc-can-960
+    version: 9.6.0
+    provenance: C++ (closed-source UNH/AAFC); Windows PE32 binary DNDC95.exe, no public source; field-scale
+      daily biogeochemistry.
+  scientific_reference_version: DNDCv.CAN 9.6.0 (Canadian branch of DNDC95, Aug-2015 UNH lineage; AAFC
+    Grant & Smith)
 inputs:
   forcing:
-  - name: Precipitation
-    unit: '**cm**'
-    format: ''
-    source: skill_md
-  - name: Radiation
-    unit: Solar radiation
-    format: ''
-    source: skill_md
-  - name: Wind
-    unit: Wind speed
-    format: ''
-    source: skill_md
-  - name: Humidity
-    unit: Relative humidity
-    format: ''
-    source: skill_md
-  - name: Temperature
+  - name: Maximum air temperature (MaxT)
     unit: deg C
-    format: ''
-    source: skill_md
+    category: forcing
+    source_kind: forcing
+    model_input_format: daily climate .txt, one row per Julian day (365/366), no header; column layout
+      set by climate format type
+    notes: must be >= MinT; range -60..60
+  - name: Minimum air temperature (MinT)
+    unit: deg C
+    category: forcing
+    source_kind: forcing
+    model_input_format: daily climate .txt column
+    notes: range -60..60
+  - name: Precipitation (Prec)
+    unit: cm/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: daily climate .txt column
+    notes: centimeters, NOT millimeters; daily total
+  - name: Solar radiation
+    unit: MJ/m2/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: daily climate .txt column (optional by format type)
+    notes: daily integral 0-45, not instantaneous flux; enables internal Penman-Monteith ET
+  - name: Wind speed
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: daily climate .txt column (optional by format type)
+    notes: 0-50
+  - name: Relative humidity
+    unit: '% (0-100)'
+    category: forcing
+    source_kind: forcing
+    model_input_format: daily climate .txt column (optional by format type)
+  - name: Atmospheric CO2 concentration
+    unit: ppm
+    category: forcing
+    source_kind: forcing
+    model_input_format: site CO2 setting (default 360) and/or optional MultiYear CO2 file, one ppm value
+      per simulation year
+    notes: affects photosynthesis; time-varying atmospheric driver
+  - name: N concentration in rainfall
+    unit: mg N/L
+    category: forcing
+    source_kind: forcing
+    model_input_format: atmospheric-boundary setting (default 0.5)
+  - name: Background atmospheric NH3
+    unit: ug N/m3
+    category: forcing
+    source_kind: forcing
+    model_input_format: atmospheric-boundary setting (default 0.06)
+    notes: affects NH3 dry deposition on plants
+  - name: N deposition
+    unit: kg N/ha/yr
+    category: forcing
+    source_kind: forcing
+    model_input_format: atmospheric-boundary setting
+  parameters:
+  - name: Soil layer thickness (per layer, up to 10)
+    unit: m
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .spf profile or inline .dnd soil section
+    notes: thicknesses must sum to exactly 2.0 m
+  - name: Bulk density (per layer)
+    unit: g/cm3
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .spf / inline soil
+    notes: range 0.8-1.8
+  - name: Surface SOC content
+    unit: kgC/kg soil
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .spf / inline soil
+    notes: mass fraction not percent; 0.001-0.30 mineral, surface 0.005-0.06 typical
+  - name: Soil texture class ID
+    unit: integer 1-12 (DNDC class)
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .spf / inline soil
+  - name: Soil pH (H2O)
+    unit: pH
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .spf / inline soil
+    notes: range 3.0-9.0; gates NH4:NH3 equilibrium and denitrification
+  - name: Field capacity
+    unit: WFPS fraction
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .spf / inline soil
+    notes: WFPS = VWC/porosity, not volumetric
+  - name: Wilting point
+    unit: WFPS fraction
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .spf / inline soil
+  - name: Porosity
+    unit: v/v fraction
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .spf / inline soil
+    notes: porosity > FC > WP must hold
+  - name: Saturated hydraulic conductivity
+    unit: m/hr
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .spf / inline soil
+  - name: Clay fraction
+    unit: 0-1
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .spf / inline soil
+  - name: SOC pool partitioning fractions
+    unit: fraction
+    category: parameter
+    source_kind: default
+    model_input_format: .dnd soil section
+    notes: very labile/labile/resistant litter, humads, humus, biochar; must sum to 1.0; default ~97%
+      humus
+  - name: SOC pool C/N ratios (per pool) and bulk C/N
+    unit: '-'
+    category: parameter
+    source_kind: default
+    model_input_format: .dnd soil section
+    notes: bulk default ~10.09
+  - name: Topsoil SOC depth and below-topsoil decrease rate
+    unit: m / factor
+    category: parameter
+    source_kind: default
+    model_input_format: .dnd soil section
+    notes: default uniform depth 0.2 m; decrease rate default 2, range 0.5-5
+  - name: Crop physiological coefficients (per crop type, 18+ built-in)
+    unit: various
+    category: parameter
+    source_kind: default
+    model_input_format: .dnd crop section
+    notes: biomass fractions (sum 1.0), biomass C/N ratios, thermal degree days to maturity, base/optimum
+      temperature, water demand coeff, max root length/depth, LAI max, frostkill temp, residue fraction
+  - name: N fixation index
+    unit: 0-1
+    category: parameter
+    source_kind: default
+    model_input_format: .dnd crop section
+    notes: 1 for legumes (soybean/alfalfa)
+  - name: Perennial winterkill parameters (CHRMX, CDRMX, cTMX, pDFMX)
+    unit: various
+    category: parameter
+    source_kind: default
+    model_input_format: .dnd crop section
+    notes: perennials only
+  - name: Site latitude
+    unit: deg N (-90..90)
+    category: parameter
+    source_kind: user_provided
+    model_input_format: .dnd site section
+    notes: drives daylength / solar geometry / phenology
+  - name: Site longitude and elevation
+    unit: deg E / m
+    category: parameter
+    source_kind: user_provided
+    model_input_format: .dnd site section
+  initial_conditions:
+  - name: Initial NO3 / NH4 at surface
+    unit: mg N/kg
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: .dnd soil section
+    notes: DNDC auto-defaults from SOC if unset
+  - name: Initial soil moisture / WFPS by layer
+    unit: fraction
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: .dnd soil section
+  - name: Initial soil temperature
+    unit: deg C
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: .dnd soil section
+  - name: Initial microbial activity index
+    unit: 0-1
+    category: initial_condition
+    source_kind: default
+    model_input_format: .dnd soil section
+    notes: default 1.0 (normal non-toxic soil)
+  - name: Initial SOC pool stocks / surface litter
+    unit: fraction of total SOC / kgC/ha
+    category: initial_condition
+    source_kind: default
+    model_input_format: .dnd soil section
+    notes: 'equilibrated by spinup: internal reset-after-10-yr or external Result/Inter/soil_* state files;
+      >=10 yr cropland, 50-100 yr natural'
+  boundary_conditions:
+  - name: Number of simulated years and start year
+    unit: integer
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dnd site section
+    notes: 1-100 yr; time-block years must sum to total
+  - name: Climate format type
+    unit: integer 0-8
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dnd model switch
+    notes: must match actual climate-file column layout; type 4/8 enables Penman-Monteith ET
+  - name: Planting / harvest dates and harvest mode
+    unit: calendar date / mode 1|2
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dnd crop section
+    notes: mode 2 (next year) required for fall-planted winter crops
+  - name: Tillage events
+    unit: date, depth cm, mixing efficiency, inversion flag
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dnd management section
+    notes: none/conventional/reduced/no-till
+  - name: Fertilization events
+    unit: kg N/ha per form
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dnd management section
+    notes: elemental N per form (urea, anhydrous NH3, ammonium bicarbonate, nitrate, ammonium, etc.);
+      mode manual/auto/precision/fertigation; inhibitor efficiency/duration; controlled-release days
+  - name: Manure / organic amendment events
+    unit: kgC/ha, kgN/ha
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dnd management section
+    notes: type dairy/beef/swine/poultry/compost/biosolid; C/N ratio, pH, dry matter %; method/depth
+  - name: Irrigation / controlled drainage
+    unit: cm / index 0-1
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dnd management section
+    notes: event amount or trigger index; furrow/sprinkler/drip; controlled-drainage requires dynamic
+      water table
+  - name: Grazing (perennials)
+    unit: heads/ha, hours/day, biomass fractions
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dnd management section
+  - name: Tile drainage / water table configuration
+    unit: flag, depth m, spacing m, drain coeff 1/day, keDrain
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dnd hydrology section
+    notes: 'water-table flag uses REVERSED logic: 0=dynamic WT ON, 1=free drainage'
+  - name: Execution switches
+    unit: flags
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .dnd model-switch / batch
+    notes: record-daily-results 0/1; reset-soil-after-10-yr internal spinup; read-from-spinup-file; preferential-flow
+      toggle; dynamic layer depth (min 1-2 cm)
 outputs:
   primary:
-  - name: SOC
-    unit: kgC/kg soil
-    format: ''
-    source: skill_md
-  - name: Temperature
-    unit: deg C
-    format: ''
-    source: skill_md
-  - name: Evapotranspiration
-    unit: cm
-    format: ''
-    source: skill_md
-  - name: Biomass
-    unit: unknown
-    format: ''
-    source: skill_md
-  - name: Yield
-    unit: unknown
-    format: ''
-    source: skill_md
+  - name: crop_grain_yield
+    unit: kgC/ha
+    description: Carbon mass of harvested grain; multiply by ~2.22 (1/0.45) for dry-matter yield
+    validation_rank: 2
+    emitted_in: Summary_CropYield
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Output is carbon mass; convert to dry matter before comparing to measured yield
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/regional yield aggregates carry a technology trend a weather-driven field model cannot
+          reproduce; compare detrended trends/decadal means, not inter-annual r
+      detrending_options:
+      - none
+      - linear_residual
+      - decadal_mean
+  - name: crop_N_uptake
+    unit: kgN/ha
+    description: Total crop nitrogen uptake over the season
+    validation_rank: 3
+    emitted_in: Summary_CropYield
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: N2O_emission
+    unit: kgN/ha/yr
+    description: Soil nitrous oxide emission, reported as N (x44/28=1.571 for kg N2O)
+    validation_rank: 4
+    emitted_in: Summary (annual N budget) / Day_SoilN (daily)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Model reproduces cumulative N2O far better than daily peaks; chamber daily peaks are often poorly
+          matched
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Best compared as cumulative/annual flux rather than instantaneous flux
+      detrending_options:
+      - none
+  - name: NO_emission
+    unit: kgN/ha/yr
+    description: Soil nitric oxide emission (reported as N)
+    validation_rank: 5
+    emitted_in: Summary (annual N budget)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: N2_emission
+    unit: kgN/ha/yr
+    description: Soil-to-atmosphere dinitrogen emission from complete denitrification (reported as N)
+    validation_rank: 6
+    emitted_in: Summary (annual N budget)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - N2 flux is rarely measured directly; observational constraint is weak
+      detrending_options:
+      - none
+  - name: NH3_volatilization
+    unit: kgN/ha/yr
+    description: Atmospheric ammonia volatilization from soil-applied fertilizer and manure (reported
+      as N)
+    validation_rank: 7
+    emitted_in: Summary (annual N budget)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: CO2_soil_respiration
+    unit: kgC/ha/yr
+    description: Soil heterotrophic respiration / CO2 emission
+    validation_rank: 8
+    emitted_in: Summary (annual C budget)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Field flux observations mix autotrophic + heterotrophic respiration; DNDC reports heterotrophic
+      detrending_options:
+      - none
+  - name: CH4_flux
+    unit: kgC/ha/yr
+    description: Net methane flux (production minus oxidation); relevant for rice/wetland systems
+    validation_rank: 9
+    emitted_in: Summary (annual C budget)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Meaningful only where water-table-driven anaerobic conditions develop (paddy/wetland)
+      detrending_options:
+      - none
+  - name: NO3_leaching
+    unit: kgN/ha/yr
+    description: Nitrate leaching in soil drainage water below the root zone or to tile drains
+    validation_rank: 10
+    emitted_in: Summary (annual N budget)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Leaching pathway depends on the water-table/tile-drainage configuration
+      detrending_options:
+      - none
+  - name: SOC_stock_and_change
+    unit: kgC/ha (stock), kgC/ha/yr (change)
+    description: Soil organic carbon stock and inter-annual change / sequestration
+    validation_rank: 1
+    emitted_in: Summary_SOC
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - trend_match
+        determining_metric: pbias
+        caveats:
+        - SOC change is a small difference of large stocks; multi-year/decadal change is the meaningful
+          signal and depends strongly on spinup equilibration
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+      - first_difference
+  - name: water_balance_components
+    unit: cm/yr
+    description: Annual water-balance terms (precip, irrigation, evaporation, transpiration, runoff, drainage,
+      tile flow, delta storage)
+    validation_rank: 11
+    emitted_in: Summary_WaterBalance
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: soil_temperature_profile
+    unit: deg C (by layer)
+    description: Daily soil temperature by layer (with freeze/thaw, snow)
+    validation_rank: 12
+    emitted_in: Day_Climate / Day_SoilWater
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Daily series emitted only when record-daily-results=1
+      detrending_options:
+      - none
+  - name: soil_water_WFPS_and_water_table
+    unit: fraction / m (by layer)
+    description: Daily water-filled pore space by layer and water-table depth
+    validation_rank: 13
+    emitted_in: Day_SoilWater
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: r
+        caveats:
+        - Daily series emitted only when record-daily-results=1
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: 'Simulated crop yield is near zero or the model reports permanent drought
-    stress even though precipitation inputs look reasonable in the source data.
+  symptom: 'Simulated crop yield is near zero or the model reports permanent drought stress even though
+    precipitation inputs look reasonable in the source data.
 
     '
-  affected_output: 'Precipitation values were supplied in mm (the standard for most
-    reanalysis and station data) but DNDC expects precipitation in cm.  A 50 mm rain
-    event is read as 50 cm, which is physically impossible '
-  detection: 'Precipitation values were supplied in mm (the standard for most reanalysis
-    and station data) but DNDC expects precipitation in cm.  A 50 mm rain event is
-    read as 50 cm, which is physically impossible '
-  fix: 'Divide all precipitation values by 10 (mm -> cm) before writing the DNDC climate
-    input file.  Add an assertion: max daily precip should rarely exceed 30 cm.  Use
-    the convert_forcing_to_dndc tool with '
+  diagnosis: Precipitation values were supplied in mm (the standard for most reanalysis and station data)
+    but DNDC expects precipitation in cm.  A 50 mm rain event is read as 50 cm, which is physically impossible
+    and may saturate the profile, or conversely if the code path treats the number as-is the magnitude
+    i
+  remedy: 'Divide all precipitation values by 10 (mm -> cm) before writing the DNDC climate input file.  Add
+    an assertion: max daily precip should rarely exceed 30 cm.  Use the convert_forcing_to_dndc tool with
+    --precip-unit mm.
+
+    '
+  severity: silent
 - id: dt_002
-  description: 'Crop growth is drastically reduced or photosynthesis is near zero
-    despite realistic temperature and precipitation.  Alternatively, the model produces
-    unreasonably high biomass if radiation is too large.
+  symptom: 'Crop growth is drastically reduced or photosynthesis is near zero despite realistic temperature
+    and precipitation.  Alternatively, the model produces unreasonably high biomass if radiation is too
+    large.
 
     '
-  affected_output: Solar radiation was provided in W/m2 (instantaneous flux) instead
-    of MJ/m2/day (daily integral).  DNDC expects MJ/m2/day.  Typical clear-sky W/m2
-    values (200-400) are an order of magnitude larger than
-  detection: Solar radiation was provided in W/m2 (instantaneous flux) instead of
-    MJ/m2/day (daily integral).  DNDC expects MJ/m2/day.  Typical clear-sky W/m2 values
-    (200-400) are an order of magnitude larger than
-  fix: 'Convert W/m2 to MJ/m2/day by multiplying by 0.0864 (= 86400 s/day / 1e6 J/MJ).  Validate
-    that resulting values fall within 0-35 MJ/m2/day.
+  diagnosis: 'Solar radiation was provided in W/m2 (instantaneous flux) instead of MJ/m2/day (daily integral).  DNDC
+    expects MJ/m2/day.  Typical clear-sky W/m2 values (200-400) are an order of magnitude larger than
+    reasonable MJ/m2/day values (5-30).
 
     '
+  remedy: 'Convert W/m2 to MJ/m2/day by multiplying by 0.0864 (= 86400 s/day / 1e6 J/MJ).  Validate that
+    resulting values fall within 0-35 MJ/m2/day.
+
+    '
+  severity: silent
 - id: dt_003
-  description: 'Model crashes immediately on first time step or produces temperatures
-    above 200 degrees in log output.
+  symptom: 'Model crashes immediately on first time step or produces temperatures above 200 degrees in
+    log output.
 
     '
-  affected_output: 'Temperature was supplied in Kelvin (e.g., 293 K) instead of degrees
-    Celsius.  DNDC expects degrees Celsius for both Tmax and Tmin.
+  diagnosis: 'Temperature was supplied in Kelvin (e.g., 293 K) instead of degrees Celsius.  DNDC expects
+    degrees Celsius for both Tmax and Tmin.
 
     '
-  detection: 'Temperature was supplied in Kelvin (e.g., 293 K) instead of degrees
-    Celsius.  DNDC expects degrees Celsius for both Tmax and Tmin.
+  remedy: 'Subtract 273.15 from all temperature values before writing the climate file.  Assert that Tmin
+    < Tmax and both fall within [-60, 60] C.
 
     '
-  fix: 'Subtract 273.15 from all temperature values before writing the climate file.  Assert
-    that Tmin < Tmax and both fall within [-60, 60] C.
-
-    '
+  severity: fatal
 - id: dt_004
-  description: 'Soil organic carbon decomposition rates are unrealistically high or
-    the model reports SOC values orders of magnitude above literature ranges. Simulated
-    N2O emissions may be 100x expected.
+  symptom: 'Soil organic carbon decomposition rates are unrealistically high or the model reports SOC
+    values orders of magnitude above literature ranges. Simulated N2O emissions may be 100x expected.
 
     '
-  affected_output: 'SOC was entered as a percentage (e.g., 2.5 meaning 2.5%) instead
-    of kgC/kg (e.g., 0.025).  DNDC expects SOC as a mass fraction (kgC/kg).
+  diagnosis: 'SOC was entered as a percentage (e.g., 2.5 meaning 2.5%) instead of kgC/kg (e.g., 0.025).  DNDC
+    expects SOC as a mass fraction (kgC/kg).
 
     '
-  detection: 'SOC was entered as a percentage (e.g., 2.5 meaning 2.5%) instead of
-    kgC/kg (e.g., 0.025).  DNDC expects SOC as a mass fraction (kgC/kg).
+  remedy: 'Divide SOC percentage values by 100 to convert to kgC/kg.  Validate that SOC values fall within
+    0.001-0.30 kgC/kg for mineral soils.
 
     '
-  fix: 'Divide SOC percentage values by 100 to convert to kgC/kg.  Validate that SOC
-    values fall within 0.001-0.30 kgC/kg for mineral soils.
-
-    '
+  severity: silent
 - id: dt_005
-  description: 'Drainage is extremely slow or extremely fast compared to expectations;
-    water table dynamics are unrealistic despite correct water table depth settings.
+  symptom: 'Drainage is extremely slow or extremely fast compared to expectations; water table dynamics
+    are unrealistic despite correct water table depth settings.
 
     '
-  affected_output: 'Hydraulic conductivity was entered in cm/min (a common lab reporting
-    unit) instead of m/hr as DNDC expects.  cm/min and m/hr differ by a factor of
-    0.6 (1 cm/min = 0.6 m/hr).
+  diagnosis: 'Hydraulic conductivity was entered in cm/min (a common lab reporting unit) instead of m/hr
+    as DNDC expects.  cm/min and m/hr differ by a factor of 0.6 (1 cm/min = 0.6 m/hr).
 
     '
-  detection: 'Hydraulic conductivity was entered in cm/min (a common lab reporting
-    unit) instead of m/hr as DNDC expects.  cm/min and m/hr differ by a factor of
-    0.6 (1 cm/min = 0.6 m/hr).
+  remedy: 'Convert hydraulic conductivity from cm/min to m/hr by multiplying by 0.6. Typical Ksat for
+    loam: 0.01-0.1 m/hr; for sand: 0.5-1.0 m/hr.
 
     '
-  fix: 'Convert hydraulic conductivity from cm/min to m/hr by multiplying by 0.6.
-    Typical Ksat for loam: 0.01-0.1 m/hr; for sand: 0.5-1.0 m/hr.
-
-    '
+  severity: silent
 - id: dt_006
-  description: 'Field capacity and wilting point behave unexpectedly; the model simulates
-    either waterlogged or bone-dry conditions that contradict the input values.
+  symptom: 'Field capacity and wilting point behave unexpectedly; the model simulates either waterlogged
+    or bone-dry conditions that contradict the input values.
 
     '
-  affected_output: Field capacity and wilting point were entered as volumetric water
-    content (e.g., 0.33 m3/m3) but DNDC expects water-filled pore space (WFPS) fractions
-    (e.g., FC at WFPS = 0.66 for porosity 0.50).  WFP
-  detection: Field capacity and wilting point were entered as volumetric water content
-    (e.g., 0.33 m3/m3) but DNDC expects water-filled pore space (WFPS) fractions (e.g.,
-    FC at WFPS = 0.66 for porosity 0.50).  WFP
-  fix: 'Divide volumetric water content by soil porosity to obtain WFPS. FC_wfps =
-    FC_vol / porosity.  WP_wfps = WP_vol / porosity.  Validate that 0 < WP_wfps <
-    FC_wfps < 1.0.
+  diagnosis: 'Field capacity and wilting point were entered as volumetric water content (e.g., 0.33 m3/m3)
+    but DNDC expects water-filled pore space (WFPS) fractions (e.g., FC at WFPS = 0.66 for porosity 0.50).  WFPS
+    = VWC / porosity.
 
     '
+  remedy: 'Divide volumetric water content by soil porosity to obtain WFPS. FC_wfps = FC_vol / porosity.  WP_wfps
+    = WP_vol / porosity.  Validate that 0 < WP_wfps < FC_wfps < 1.0.
+
+    '
+  severity: silent
 - id: dt_007
-  description: 'Fertilizer effect on crop yield is far too strong or too weak.  Simulated
-    N surplus is unrealistic.
+  symptom: 'Fertilizer effect on crop yield is far too strong or too weak.  Simulated N surplus is unrealistic.
 
     '
-  affected_output: Fertilizer amount was entered as total product mass (e.g., kgUrea/ha)
-    instead of kgN/ha for each individual N form.  DNDC expects the elemental nitrogen
-    mass per hectare for each fertilizer applicatio
-  detection: Fertilizer amount was entered as total product mass (e.g., kgUrea/ha)
-    instead of kgN/ha for each individual N form.  DNDC expects the elemental nitrogen
-    mass per hectare for each fertilizer applicatio
-  fix: 'Convert fertilizer mass to elemental N: for urea multiply by 0.467 (46.7%
-    N), for ammonium nitrate multiply by 0.340.  Enter each form separately in kgN/ha.
+  diagnosis: 'Fertilizer amount was entered as total product mass (e.g., kgUrea/ha) instead of kgN/ha
+    for each individual N form.  DNDC expects the elemental nitrogen mass per hectare for each fertilizer
+    application event.
 
     '
+  remedy: 'Convert fertilizer mass to elemental N: for urea multiply by 0.467 (46.7% N), for ammonium
+    nitrate multiply by 0.340.  Enter each form separately in kgN/ha.
+
+    '
+  severity: silent
 - id: dt_008
-  description: 'Reported yield is approximately half of expected values when compared
-    to field observations or census data in dry-matter terms.
+  symptom: 'Reported yield is approximately half of expected values when compared to field observations
+    or census data in dry-matter terms.
 
     '
-  affected_output: DNDC reports grain yield in kgC/ha (carbon mass).  Users compare
-    this directly to dry matter yield without applying the carbon-to-dry-matter conversion
-    factor.  Dry matter is approximately 2x the carb
-  detection: DNDC reports grain yield in kgC/ha (carbon mass).  Users compare this
-    directly to dry matter yield without applying the carbon-to-dry-matter conversion
-    factor.  Dry matter is approximately 2x the carb
-  fix: 'Multiply DNDC output yield (kgC/ha) by 2.22 (= 1/0.45) for a more precise
-    dry-matter estimate, or by 2.0 as a common approximation. Document which conversion
-    factor is used.
+  diagnosis: 'DNDC reports grain yield in kgC/ha (carbon mass).  Users compare this directly to dry matter
+    yield without applying the carbon-to-dry-matter conversion factor.  Dry matter is approximately 2x
+    the carbon mass (carbon fraction ~0.45 in grain).
 
     '
+  remedy: 'Multiply DNDC output yield (kgC/ha) by 2.22 (= 1/0.45) for a more precise dry-matter estimate,
+    or by 2.0 as a common approximation. Document which conversion factor is used.
+
+    '
+  severity: silent
 - id: dt_009
-  description: 'Model crashes or produces a soil-profile error message during initialization.  Log
-    may reference "layer depth" or "profile depth".
+  symptom: 'Model crashes or produces a soil-profile error message during initialization.  Log may reference
+    "layer depth" or "profile depth".
 
     '
-  affected_output: 'The soil profile layers do not sum to exactly 2 m total depth.  DNDC
-    requires the complete soil column to be 2 m (200 cm) and will reject or crash
-    if layers sum to a different depth.
+  diagnosis: 'The soil profile layers do not sum to exactly 2 m total depth.  DNDC requires the complete
+    soil column to be 2 m (200 cm) and will reject or crash if layers sum to a different depth.
 
     '
-  detection: 'The soil profile layers do not sum to exactly 2 m total depth.  DNDC
-    requires the complete soil column to be 2 m (200 cm) and will reject or crash
-    if layers sum to a different depth.
+  remedy: 'Ensure all soil layer thicknesses sum to exactly 200 cm (2.0 m). Adjust the deepest layer thickness
+    as a residual to enforce the 2 m constraint.  Validate with: sum(layer_depths) == 200.
 
     '
-  fix: 'Ensure all soil layer thicknesses sum to exactly 200 cm (2.0 m). Adjust the
-    deepest layer thickness as a residual to enforce the 2 m constraint.  Validate
-    with: sum(layer_depths) == 200.
-
-    '
+  severity: fatal
 - id: dt_010
-  description: 'Water table simulation is the opposite of what was intended: the model
-    simulates a high water table when the user intended free drainage, or vice versa.
+  symptom: 'Water table simulation is the opposite of what was intended: the model simulates a high water
+    table when the user intended free drainage, or vice versa.
 
     '
-  affected_output: 'The water table flag in DNDC uses reversed logic: 0 = water table
-    IS present (Yes), 1 = water table is NOT present (No).  Users commonly assume
-    1 = Yes.
+  diagnosis: 'The water table flag in DNDC uses reversed logic: 0 = water table IS present (Yes), 1 =
+    water table is NOT present (No).  Users commonly assume 1 = Yes.
 
     '
-  detection: 'The water table flag in DNDC uses reversed logic: 0 = water table IS
-    present (Yes), 1 = water table is NOT present (No).  Users commonly assume 1 =
-    Yes.
+  remedy: 'Set water_table_flag = 0 to enable water table simulation; set water_table_flag = 1 to disable
+    it (free drainage).  Always verify by inspecting the .dnd XML for the correct Boolean interpretation.
 
     '
-  fix: 'Set water_table_flag = 0 to enable water table simulation; set water_table_flag
-    = 1 to disable it (free drainage).  Always verify by inspecting the .dnd XML for
-    the correct Boolean interpretation.
-
-    '
+  severity: silent
 - id: dt_011
-  description: 'Model crashes or reads incorrect climate data for the first days of
-    the simulation.  Time series appears shifted.
+  symptom: 'Model crashes or reads incorrect climate data for the first days of the simulation.  Time
+    series appears shifted.
 
     '
-  affected_output: The climate input file does not start at Julian day 1 (January
-    1).  DNDC expects the first record to correspond to Jday 1 and reads sequentially.
-    A file starting at Jday 0 or at an arbitrary date will
-  detection: The climate input file does not start at Julian day 1 (January 1).  DNDC
-    expects the first record to correspond to Jday 1 and reads sequentially. A file
-    starting at Jday 0 or at an arbitrary date will
-  fix: 'Ensure the climate file begins with Jday 1 data.  If the source data starts
-    mid-year, pad with synthetic or climatological values for days 1 through start_day-1.  Validate:
-    first_record_jday == 1.
+  diagnosis: 'The climate input file does not start at Julian day 1 (January 1).  DNDC expects the first
+    record to correspond to Jday 1 and reads sequentially. A file starting at Jday 0 or at an arbitrary
+    date will misalign all climate forcing.
 
     '
+  remedy: 'Ensure the climate file begins with Jday 1 data.  If the source data starts mid-year, pad with
+    synthetic or climatological values for days 1 through start_day-1.  Validate: first_record_jday ==
+    1.
+
+    '
+  severity: fatal
 - id: dt_012
-  description: 'Model produces a corrupted or unreadable .dnd file.  GUI may crash
-    when loading the file.  Certain simulation years contain garbage values.
+  symptom: 'Model produces a corrupted or unreadable .dnd file.  GUI may crash when loading the file.  Certain
+    simulation years contain garbage values.
 
     '
-  affected_output: The .dnd file time block structure was not built linearly.  DNDC
-    expects time blocks (year-by-year management sequences) to be written in strict
-    chronological order.  Programmatic generation that inse
-  detection: The .dnd file time block structure was not built linearly.  DNDC expects
-    time blocks (year-by-year management sequences) to be written in strict chronological
-    order.  Programmatic generation that inse
-  fix: Build .dnd time blocks in strictly ascending chronological order (year 1, year
-    2, ..., year N).  Never insert, delete, or reorder year blocks after initial creation.  Validate
-    with a sequential year-c
+  diagnosis: 'The .dnd file time block structure was not built linearly.  DNDC expects time blocks (year-by-year
+    management sequences) to be written in strict chronological order.  Programmatic generation that inserts
+    years out of order or duplicates a year produces a malformed file.
+
+    '
+  remedy: 'Build .dnd time blocks in strictly ascending chronological order (year 1, year 2, ..., year
+    N).  Never insert, delete, or reorder year blocks after initial creation.  Validate with a sequential
+    year-counter check.
+
+    '
+  severity: fatal
 - id: dt_013
-  description: 'Crop biomass parameters produce implausible LAI or harvest index.
-    The model may simulate yields 2x too high or too low relative to literature parameterizations.
+  symptom: 'Crop biomass parameters produce implausible LAI or harvest index. The model may simulate yields
+    2x too high or too low relative to literature parameterizations.
 
     '
-  affected_output: Crop biomass parameters (max biomass production, initial biomass)
-    were entered in kgDM/ha (dry matter) instead of kgC/ha.  DNDC internally tracks
-    carbon, so all biomass parameters must be in carbon un
-  detection: Crop biomass parameters (max biomass production, initial biomass) were
-    entered in kgDM/ha (dry matter) instead of kgC/ha.  DNDC internally tracks carbon,
-    so all biomass parameters must be in carbon un
-  fix: 'Multiply dry-matter biomass values by 0.45 (approximate C fraction of plant
-    tissue) to convert to kgC/ha.  Verify by comparing simulated peak biomass to literature
-    ranges in kgC/ha.
+  diagnosis: 'Crop biomass parameters (max biomass production, initial biomass) were entered in kgDM/ha
+    (dry matter) instead of kgC/ha.  DNDC internally tracks carbon, so all biomass parameters must be
+    in carbon units.
 
     '
+  remedy: 'Multiply dry-matter biomass values by 0.45 (approximate C fraction of plant tissue) to convert
+    to kgC/ha.  Verify by comparing simulated peak biomass to literature ranges in kgC/ha.
+
+    '
+  severity: silent
 - id: dt_014
-  description: 'After editing a heterogeneous soil profile, SOC pool fractions (labile,
-    resistant, humads, humus) silently reset to defaults.  Subsequent simulation starts
-    with wrong initial C pools.
+  symptom: 'After editing a heterogeneous soil profile, SOC pool fractions (labile, resistant, humads,
+    humus) silently reset to defaults.  Subsequent simulation starts with wrong initial C pools.
 
     '
-  affected_output: 'The DNDC GUI resets SOC pool partitioning fractions to default
-    values when any soil property in a heterogeneous (multi-layer) profile is edited.  The
-    reset is silent and not logged.
+  diagnosis: 'The DNDC GUI resets SOC pool partitioning fractions to default values when any soil property
+    in a heterogeneous (multi-layer) profile is edited.  The reset is silent and not logged.
 
     '
-  detection: 'The DNDC GUI resets SOC pool partitioning fractions to default values
-    when any soil property in a heterogeneous (multi-layer) profile is edited.  The
-    reset is silent and not logged.
+  remedy: 'After any soil edit in a heterogeneous profile, manually re-enter or verify SOC pool fractions.  Better:
+    script the .dnd file generation to avoid GUI-induced resets.  Always diff the .dnd before and after
+    GUI edits.
 
     '
-  fix: 'After any soil edit in a heterogeneous profile, manually re-enter or verify
-    SOC pool fractions.  Better: script the .dnd file generation to avoid GUI-induced
-    resets.  Always diff the .dnd before and a'
+  severity: degraded
 - id: dt_015
-  description: 'Model fails to find climate or soil input files.  Error message references
-    a path with mixed separators or backslash characters.
+  symptom: 'Model fails to find climate or soil input files.  Error message references a path with mixed
+    separators or backslash characters.
 
     '
-  affected_output: 'File paths in the .dnd configuration use Windows-style backslashes
-    (C:\data\climate.txt) but the runtime environment expects forward slashes, or
-    vice versa.  This is especially common when .dnd files '
-  detection: 'File paths in the .dnd configuration use Windows-style backslashes (C:\data\climate.txt)
-    but the runtime environment expects forward slashes, or vice versa.  This is especially
-    common when .dnd files '
-  fix: Normalize all paths in the .dnd file to use forward slashes (/). On Linux/Wine,
-    ensure paths are relative or use Unix-style absolute paths.  Use the path normalization
-    utility in the convert_forcing t
+  diagnosis: 'File paths in the .dnd configuration use Windows-style backslashes (C:\data\climate.txt)
+    but the runtime environment expects forward slashes, or vice versa.  This is especially common when
+    .dnd files are prepared on Windows and run on Linux under Wine.
+
+    '
+  remedy: 'Normalize all paths in the .dnd file to use forward slashes (/). On Linux/Wine, ensure paths
+    are relative or use Unix-style absolute paths.  Use the path normalization utility in the convert_forcing
+    tool.
+
+    '
+  severity: fatal
 - id: dt_016
-  description: 'Batch run fails even though individual .dnd files run correctly in
-    the GUI.  Error log shows "file not found" for .dnd paths.
+  symptom: 'Batch run fails even though individual .dnd files run correctly in the GUI.  Error log shows
+    "file not found" for .dnd paths.
 
     '
-  affected_output: The batch control file (.bat or batch list) contains paths that
-    do not match the internal paths stored in each .dnd file.  DNDC resolves some
-    paths relative to the .dnd file location and others relati
-  detection: The batch control file (.bat or batch list) contains paths that do not
-    match the internal paths stored in each .dnd file.  DNDC resolves some paths relative
-    to the .dnd file location and others relati
-  fix: 'Ensure batch file paths are absolute and consistent with the paths embedded
-    inside each .dnd file.  Run a validation script that parses each .dnd and confirms
-    all referenced files exist at the stated '
+  diagnosis: 'The batch control file (.bat or batch list) contains paths that do not match the internal
+    paths stored in each .dnd file.  DNDC resolves some paths relative to the .dnd file location and others
+    relative to the executable.
+
+    '
+  remedy: 'Ensure batch file paths are absolute and consistent with the paths embedded inside each .dnd
+    file.  Run a validation script that parses each .dnd and confirms all referenced files exist at the
+    stated paths.
+
+    '
+  severity: fatal
 - id: dt_017
-  description: 'DNDC fails to launch or immediately exits when run via Wine on Linux.
-    Wine log shows path translation errors or "file not found" for DLLs.
+  symptom: 'DNDC fails to launch or immediately exits when run via Wine on Linux. Wine log shows path
+    translation errors or "file not found" for DLLs.
 
     '
-  affected_output: Wine drive mapping does not translate Unix paths correctly.  The
-    DNDC executable or its .dnd files reference Windows drive letters (e.g., C:\)
-    that are not properly mapped in the Wine prefix, or the Z
-  detection: Wine drive mapping does not translate Unix paths correctly.  The DNDC
-    executable or its .dnd files reference Windows drive letters (e.g., C:\) that
-    are not properly mapped in the Wine prefix, or the Z
-  fix: 'Verify Wine drive mappings with ''wine winecfg''.  Ensure Z:\ maps to /. Convert
-    all .dnd paths to use the Wine drive prefix (e.g., Z:/home/user/data/).  Set WINEPREFIX
-    explicitly before each run.
+  diagnosis: 'Wine drive mapping does not translate Unix paths correctly.  The DNDC executable or its
+    .dnd files reference Windows drive letters (e.g., C:\) that are not properly mapped in the Wine prefix,
+    or the Z:\ drive mapping to / has been removed.
 
     '
+  remedy: 'Verify Wine drive mappings with ''wine winecfg''.  Ensure Z:\ maps to /. Convert all .dnd paths
+    to use the Wine drive prefix (e.g., Z:/home/user/data/).  Set WINEPREFIX explicitly before each run.
+
+    '
+  severity: fatal
 - id: dt_018
-  description: 'Model crashes with a segmentation fault or access violation during
-    soil water dynamics computation.  Crash occurs in the first few time steps.
+  symptom: 'Model crashes with a segmentation fault or access violation during soil water dynamics computation.  Crash
+    occurs in the first few time steps.
 
     '
-  affected_output: The dynamic (adaptive) layer depth in the soil thermal/water solver
-    is set too small (e.g., < 1 cm), causing the numerical solver to create an excessive
-    number of sub-layers that overflow internal arr
-  detection: The dynamic (adaptive) layer depth in the soil thermal/water solver is
-    set too small (e.g., < 1 cm), causing the numerical solver to create an excessive
-    number of sub-layers that overflow internal arr
-  fix: Set the minimum dynamic layer depth to at least 2 cm.  If high resolution is
-    needed, increase gradually and test stability.  Check the .dnd file for the layer_min_depth
-    parameter and ensure it is >= 0
+  diagnosis: 'The dynamic (adaptive) layer depth in the soil thermal/water solver is set too small (e.g.,
+    < 1 cm), causing the numerical solver to create an excessive number of sub-layers that overflow internal
+    array bounds.
+
+    '
+  remedy: 'Set the minimum dynamic layer depth to at least 2 cm.  If high resolution is needed, increase
+    gradually and test stability.  Check the .dnd file for the layer_min_depth parameter and ensure it
+    is >= 0.02 m.
+
+    '
+  severity: fatal
 - id: dt_019
-  description: 'Model runs to completion but simulation time is 10-100x longer than
-    expected.  CPU usage is at 100% for extended periods.
+  symptom: 'Model runs to completion but simulation time is 10-100x longer than expected.  CPU usage is
+    at 100% for extended periods.
 
     '
-  affected_output: The dynamic time-stepping in the soil water solver is thrashing
-    due to conflicting parameter settings (e.g., very high Ksat with very thin layers,
-    or extreme precipitation events with small convergenc
-  detection: The dynamic time-stepping in the soil water solver is thrashing due to
-    conflicting parameter settings (e.g., very high Ksat with very thin layers, or
-    extreme precipitation events with small convergenc
-  fix: 'Review Ksat, layer depth, and convergence tolerance for consistency. Increase
-    minimum dynamic layer depth.  Consider capping extreme precipitation events at
-    physically reasonable daily maxima.
+  diagnosis: 'The dynamic time-stepping in the soil water solver is thrashing due to conflicting parameter
+    settings (e.g., very high Ksat with very thin layers, or extreme precipitation events with small convergence
+    tolerance).  The solver repeatedly halves the time step without converging.
 
     '
+  remedy: 'Review Ksat, layer depth, and convergence tolerance for consistency. Increase minimum dynamic
+    layer depth.  Consider capping extreme precipitation events at physically reasonable daily maxima.
+
+    '
+  severity: degraded
 - id: dt_020
-  description: 'Simulated annual N2O emissions are zero or near-zero despite significant
-    N fertilizer inputs and expected denitrification conditions.
+  symptom: 'Simulated annual N2O emissions are zero or near-zero despite significant N fertilizer inputs
+    and expected denitrification conditions.
 
     '
-  affected_output: DNDC may silently skip denitrification calculations if soil pH
-    is outside the valid range or if the anaerobic balloon fraction is suppressed
-    by incorrect WFPS parameterization.  No error is raised; th
-  detection: DNDC may silently skip denitrification calculations if soil pH is outside
-    the valid range or if the anaerobic balloon fraction is suppressed by incorrect
-    WFPS parameterization.  No error is raised; th
-  fix: Verify soil pH is within 3.5-9.0.  Check that WFPS parameterization allows
-    anaerobic microsites to form (FC_wfps should be > 0.5 for typical soils).  Compare
-    simulated WFPS time series against expecte
+  diagnosis: 'DNDC may silently skip denitrification calculations if soil pH is outside the valid range
+    or if the anaerobic balloon fraction is suppressed by incorrect WFPS parameterization.  No error is
+    raised; the pathway simply produces zero flux.
+
+    '
+  remedy: 'Verify soil pH is within 3.5-9.0.  Check that WFPS parameterization allows anaerobic microsites
+    to form (FC_wfps should be > 0.5 for typical soils).  Compare simulated WFPS time series against expected
+    ranges.
+
+    '
+  severity: silent
 - id: dt_021
-  description: 'Output files contain plausible-looking numbers but cover fewer years
-    than specified in the simulation period.  No error or warning is produced.
+  symptom: 'Output files contain plausible-looking numbers but cover fewer years than specified in the
+    simulation period.  No error or warning is produced.
 
     '
-  affected_output: 'The climate file contains fewer days than the simulation period
-    requests.  DNDC silently truncates the simulation when climate data runs out rather
-    than raising an error.
+  diagnosis: 'The climate file contains fewer days than the simulation period requests.  DNDC silently
+    truncates the simulation when climate data runs out rather than raising an error.
 
     '
-  detection: 'The climate file contains fewer days than the simulation period requests.  DNDC
-    silently truncates the simulation when climate data runs out rather than raising
-    an error.
+  remedy: 'Validate that the climate file contains at least (n_years * 365) records (account for leap
+    years if applicable).  Add a pre-run check that compares climate file line count to expected simulation
+    length.
 
     '
-  fix: Validate that the climate file contains at least (n_years * 365) records (account
-    for leap years if applicable).  Add a pre-run check that compares climate file
-    line count to expected simulation lengt
+  severity: silent
 - id: dt_022
-  description: 'Tillage or harvest events appear to have no effect on simulated SOC
-    or crop residue dynamics.  Management schedule seems to be ignored.
+  symptom: 'Tillage or harvest events appear to have no effect on simulated SOC or crop residue dynamics.  Management
+    schedule seems to be ignored.
 
     '
-  affected_output: 'Management event dates fall outside the crop growing season or
-    on Julian days that do not exist in the climate record.  DNDC silently skips events
-    scheduled for dates beyond the available time series '
-  detection: 'Management event dates fall outside the crop growing season or on Julian
-    days that do not exist in the climate record.  DNDC silently skips events scheduled
-    for dates beyond the available time series '
-  fix: Ensure all management event dates (planting, fertilization, tillage, harvest)
-    fall within Jday 1-365 and within the climate record period. Cross-check event
-    dates against the crop calendar for the tar
-unit_conversions: []
+  diagnosis: 'Management event dates fall outside the crop growing season or on Julian days that do not
+    exist in the climate record.  DNDC silently skips events scheduled for dates beyond the available
+    time series without logging a warning.
+
+    '
+  remedy: 'Ensure all management event dates (planting, fertilization, tillage, harvest) fall within Jday
+    1-365 and within the climate record period. Cross-check event dates against the crop calendar for
+    the target region.
+
+    '
+  severity: silent

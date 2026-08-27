@@ -259,7 +259,7 @@ outputs:
   - var: "depth_averaged_velocity_stations"
     validation_rank: 3
     unit: "m/s"
-    description: "Depth-averaged velocity (u,v) time series at recording stations."
+    description: "Depth-averaged water velocity (u,v) time series at recording stations."
     emitted_in: "fort.62"
     observability:
       comparable_obs_shapes:
@@ -272,7 +272,7 @@ outputs:
   - var: "depth_averaged_velocity_all_nodes"
     validation_rank: 4
     unit: "m/s"
-    description: "Depth-averaged velocity (u,v) time series at all nodes. Also netCDF."
+    description: "Depth-averaged water velocity (u,v) time series at all nodes. Also netCDF."
     emitted_in: "fort.64"
     observability:
       comparable_obs_shapes:
@@ -305,7 +305,7 @@ outputs:
   - var: "max_velocity"
     validation_rank: 6
     unit: "m/s"
-    description: "Maximum velocity magnitude per node over the simulation."
+    description: "Maximum depth-averaged water velocity magnitude per node over the simulation."
     emitted_in: "maxvel.63"
     observability:
       comparable_obs_shapes:
@@ -332,7 +332,7 @@ outputs:
   - var: "wind_velocity_all_nodes"
     validation_rank: 8
     unit: "m/s"
-    description: "Wind stress/velocity across the domain (diagnostic forcing field echoed at all nodes)."
+    description: "Atmospheric wind stress/velocity across the domain (diagnostic forcing field echoed at all nodes)."
     emitted_in: "fort.74"
     observability:
       comparable_obs_shapes:
@@ -359,7 +359,7 @@ outputs:
   - var: "max_wind_velocity"
     validation_rank: 10
     unit: "m/s"
-    description: "Maximum wind speed per node over the simulation."
+    description: "Maximum atmospheric wind speed per node over the simulation."
     emitted_in: "maxwvel.63"
     observability:
       comparable_obs_shapes:
@@ -532,3 +532,25 @@ safety:
       scope: "outputs"
       source: "ADCIRC v52 Output File Descriptions"
       status: adopted
+
+medium_evidence:
+  - var: "depth_averaged_velocity_stations"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous simulation of coastal ocean circulation, storm surge, and tidal dynamics using ADCIRC (ADvanced CIRCulation model)."
+    note: "KI overview places ADCIRC hydrodynamic velocity outputs in coastal ocean water circulation."
+  - var: "depth_averaged_velocity_all_nodes"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous simulation of coastal ocean circulation, storm surge, and tidal dynamics using ADCIRC (ADvanced CIRCulation model)."
+    note: "KI overview places ADCIRC hydrodynamic velocity outputs in coastal ocean water circulation."
+  - var: "max_velocity"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous simulation of coastal ocean circulation, storm surge, and tidal dynamics using ADCIRC (ADvanced CIRCulation model)."
+    note: "KI overview places ADCIRC hydrodynamic velocity outputs in coastal ocean water circulation."
+  - var: "wind_velocity_all_nodes"
+    source: "docs/s4_meteorological_forcing.md"
+    quote: "Prepare wind and atmospheric pressure forcing for ADCIRC storm surge and wind-driven circulation simulations."
+    note: "Meteorological forcing establishes the wind output as atmospheric forcing, not water velocity."
+  - var: "max_wind_velocity"
+    source: "docs/s4_meteorological_forcing.md"
+    quote: "Prepare wind and atmospheric pressure forcing for ADCIRC storm surge and wind-driven circulation simulations."
+    note: "Meteorological forcing establishes the wind output as atmospheric forcing, not water velocity."

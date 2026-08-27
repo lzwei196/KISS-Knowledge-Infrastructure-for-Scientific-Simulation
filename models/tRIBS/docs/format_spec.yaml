@@ -1,159 +1,615 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "tRIBS"
-  version: "5.3.1"
-  full_name: "TIN-based Real-time Integrated Basin Simulator"
-  domain: "distributed watershed hydrology"
-  binary_path: "KISSPATH_BINARIES/tRIBS/source/repo/build/tRIBS"
-  binary_parallel: "tRIBSpar (MPI)"
-  language: "C++17"
-  build_system: "CMake >= 3.20"
-  repository: "https://github.com/tribshms/tRIBS"
-  spatial_representation: "TIN mesh (Delaunay triangulation / Voronoi tessellation)"
-
+  name: tRIBS
+  language: c++
+  implementation:
+    id: tribs-5.3.1
+    version: 5.3.1
+    provenance: C++ (C++17); object-oriented tRIBS distributed hydrologic model (Ivanov/Vivoni/Bras lineage);
+      serial and MPI-parallel (tRIBSpar) binaries.
+  scientific_reference_version: tRIBS 5.3.x (TIN-based Real-time Integrated Basin Simulator; Ivanov et
+    al. 2004 WRR/JoH formulation)
 inputs:
-  control_file:
-    format: ".in keyword-value pairs"
-    description: "Master configuration file with all parameters and file paths"
-
   forcing:
-    - name: "rainfall_rate"
-      unit: "mm/hr"
-      valid_range: [0.0, 300.0]
-      trap: "dt_001 — common sources give mm/day (÷24) or m/s (×3.6e6)"
-    - name: "air_temperature"
-      unit: "°C"
-      valid_range: [-50.0, 60.0]
-      trap: "dt_002 — reanalysis in K, subtract 273.15"
-    - name: "relative_humidity"
-      unit: "fraction (0–1)"
-      valid_range: [0.0, 1.0]
-      trap: "dt_003 — many sources give % (0–100), divide by 100"
-    - name: "atmospheric_pressure"
-      unit: "mb (hPa)"
-      valid_range: [300.0, 1100.0]
-      trap: "dt_004 — reanalysis in Pa, divide by 100"
-    - name: "wind_speed"
-      unit: "m/s"
-      valid_range: [0.0, 50.0]
-    - name: "shortwave_radiation"
-      unit: "W/m²"
-      valid_range: [0.0, 1400.0]
-    - name: "dew_point_temperature"
-      unit: "°C"
-      valid_range: [-60.0, 40.0]
-    - name: "vapor_pressure"
-      unit: "mb (hPa)"
-      valid_range: [0.0, 80.0]
-      trap: "dt_011 — kPa sources need ×10"
-
+  - name: Rainfall
+    unit: mm/hr
+    category: forcing
+    source_kind: forcing
+    model_input_format: point gauge (.gdf) or gridded rainfall, resampled to mesh nodes via Thiessen polygons
+    notes: Rate units are mm/hr; the model applies no unit auto-detection (see safety hazards).
+  - name: Air temperature (TA)
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: station .mdf columnar time series
+  - name: Dew point temperature (TD) / relative humidity
+    unit: degC / fraction (0-1)
+    category: forcing
+    source_kind: forcing
+    model_input_format: station .mdf columnar time series
+  - name: Wind speed (US)
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: station .mdf columnar time series
+  - name: Atmospheric pressure (PA)
+    unit: mb (hPa)
+    category: forcing
+    source_kind: forcing
+    model_input_format: station .mdf columnar time series
+  - name: Incoming shortwave / net radiation (NR)
+    unit: W/m^2
+    category: forcing
+    source_kind: forcing
+    model_input_format: station .mdf columnar time series
+    notes: NR column may carry net radiation or individual SW/LW components depending on configuration.
+  - name: Sky cover (XC)
+    unit: tenths (0-10)
+    category: forcing
+    source_kind: forcing
+    model_input_format: station .mdf columnar time series
+  - name: Surface temperature (TS)
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: station .mdf columnar time series
   parameters:
-    critical:
-      - name: "Ks"
-        unit: "mm/hr"
-        valid_range: [0.1, 100.0]
-        description: "Saturated hydraulic conductivity"
-        trap: "dt_006 — HWSD gives m/s, multiply by 3.6e6"
-      - name: "ThetaS"
-        unit: "dimensionless"
-        valid_range: [0.3, 0.6]
-        description: "Soil porosity"
-        trap: "dt_007 — if source is %, divide by 100"
-      - name: "ThetaR"
-        unit: "dimensionless"
-        valid_range: [0.01, 0.15]
-        description: "Residual soil moisture"
-      - name: "PsiB"
-        unit: "mm"
-        valid_range: [10.0, 1000.0]
-        description: "Air entry (bubbling) pressure"
-      - name: "DEPTHTOBEDROCK"
-        unit: "mm"
-        valid_range: [500.0, 5000.0]
-        description: "Depth to bedrock"
-        trap: "dt_005 — HWSD gives m, multiply by 1000"
-      - name: "SURFACESOILDEPTH"
-        unit: "mm"
-        valid_range: [50.0, 500.0]
-        description: "Surface soil layer depth (default 100)"
-        trap: "dt_005"
-      - name: "ROOTZONEDEPTH"
-        unit: "mm"
-        valid_range: [100.0, 3000.0]
-        description: "Root zone depth (default 1000)"
-        trap: "dt_005"
-      - name: "METSTEP"
-        unit: "hours"
-        valid_range: [0.1, 24.0]
-        description: "Meteorological data time step"
-        trap: "dt_010 — NOT minutes; setting 60 means 60 hours"
-      - name: "LAI"
-        unit: "m²/m²"
-        valid_range: [0.5, 8.0]
-        description: "Leaf area index"
-    routing:
-      - name: "HILLSLOPE_KSE"
-        unit: "m/s"
-        valid_range: [0.001, 0.1]
-        description: "Hillslope routing velocity"
-      - name: "STREAM_KSE"
-        unit: "m/s"
-        valid_range: [0.5, 5.0]
-        description: "Stream routing velocity"
-      - name: "Manning_n"
-        unit: "dimensionless"
-        valid_range: [0.01, 0.1]
-        description: "Channel roughness coefficient"
-
+  - name: Saturated hydraulic conductivity (Ks / K0n)
+    unit: mm/hr
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .sdt soil reclassification table by soil class
+  - name: Soil porosity / saturation moisture content (ThetaS)
+    unit: dimensionless (0-1)
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .sdt soil reclassification table
+  - name: Residual soil moisture (ThetaR)
+    unit: dimensionless (0-1)
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .sdt soil reclassification table
+  - name: Air-entry pressure (PsiB)
+    unit: mm
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .sdt soil reclassification table
+  - name: Pore-size distribution index (lambda_o)
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .sdt soil reclassification table (Brooks-Corey)
+  - name: Conductivity decay parameter (f)
+    unit: 1/mm
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .sdt / control-file soil parameter
+  - name: Anisotropy ratio (ar)
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .sdt / control-file soil parameter
+  - name: Depth to bedrock (DEPTHTOBEDROCK)
+    unit: mm
+    category: parameter
+    source_kind: calibrated
+    model_input_format: control-file scalar or ASCII grid
+  - name: Surface soil depth / root-zone depth
+    unit: mm
+    category: parameter
+    source_kind: default
+    model_input_format: control-file scalars (SURFACESOILDEPTH default 100, ROOTZONEDEPTH default 1000)
+  - name: Interception coefficients (a, b1) and canopy partitioning (P, S, K)
+    unit: varies
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .ldt land-use table by cover class
+  - name: Vegetation fraction (bv / v)
+    unit: dimensionless (0-1)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .ldt land-use table
+  - name: Leaf area index (LAI)
+    unit: m^2/m^2
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .ldt land-use table
+  - name: Stomatal resistance (rs)
+    unit: s/m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .ldt vegetation parameter
+  - name: Optical transmission coefficient (Kt)
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: .ldt vegetation parameter
+  - name: Hillslope velocity coefficient/exponent (cv, r)
+    unit: m/s, dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: control-file routing parameter (HILLSLOPE_KSE)
+  - name: Channel/stream velocity coefficient (STREAM_KSE)
+    unit: m/s
+    category: parameter
+    source_kind: calibrated
+    model_input_format: control-file routing parameter
+  - name: Manning's channel roughness (ne)
+    unit: s/m^(1/3)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: control-file / channel routing parameter
+  - name: TIN mesh geometry (nodes, edges, triangles, elevation)
+    unit: UTM meters / m MSL
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: .nodes/.edges/.tri/.z (or .points) Delaunay-Voronoi mesh
+  - name: Terrain sheltering horizon angles
+    unit: radians
+    category: parameter
+    source_kind: derived
+    model_input_format: computed in preprocessing from the DEM/mesh
+  initial_conditions:
+  - name: Groundwater table depth (Nwt)
+    unit: mm
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: ASCII grid (6-line header)
+  - name: Initial soil moisture / unsaturated storage (Mu)
+    unit: mm
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: control-file / restart state
+  - name: Initial snow water equivalent (liqWEq / iceWEq)
+    unit: mm
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: control-file / restart state
+  - name: Reservoir initial water-surface elevation
+    unit: m
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: .res reservoir polygon file
+  - name: Full model state for warm start
+    unit: mixed
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: binary restart file (RESTARTFILE)
+  boundary_conditions:
+  - name: Node boundary code
+    unit: code
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'per-node code in mesh: 0 interior, 1 closed, 2 open/outlet, 3 stream'
+  - name: Simulation start/end and time stepping (STARTDATE, ENDDATE, METSTEP, RAINFALL step)
+    unit: date / hours
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: control-file keywords (METSTEP in hours)
+  - name: Evapotranspiration method switch (OPTEVAP)
+    unit: enum
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'control-file: 1=Penman-Monteith, 2=Deardorff, 3=Priestley-Taylor, 4=Pan'
+  - name: Interception scheme switch (OPTINTERC)
+    unit: enum
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'control-file: 1=Gray, 2=Rutter'
+  - name: Snow module toggle (OPTSNOW)
+    unit: enum
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'control-file: 0=off, 1=on'
+  - name: Groundwater module toggle (OPTGROUNDWATER, GFLUXOPTION)
+    unit: enum
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: control-file
+  - name: Mesh input mode (OPTMESHINPUT)
+    unit: enum
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'control-file: 0=scratch, 1=points, 2=grid, 8=tRIBS files, 9=meshbuilder'
+  - name: Restart mode (RESTARTMODE)
+    unit: enum
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: 'control-file: 0=new, 1=continue, 2=restart from file, 3=restart with preprocessing'
+  - name: Reservoir operations rule set
+    unit: elevation-discharge-storage
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: .eds elevation-discharge-storage data (optional)
 outputs:
   primary:
-    - name: "discharge"
-      unit: "m³/s"
-      valid_range: [0.0, 100000.0]
-      file: ".qout (outlet hydrograph)"
-    - name: "soil_moisture"
-      unit: "dimensionless (0–1)"
-      valid_range: [0.0, 1.0]
-      file: ".pixel (node time series)"
-    - name: "evapotranspiration"
-      unit: "mm/hr"
-      valid_range: [0.0, 2.0]
-      file: ".pixel"
-    - name: "water_table_depth"
-      unit: "mm"
-      valid_range: [0.0, 10000.0]
-      file: ".pixel (Nwt variable)"
-    - name: "snow_water_equivalent"
-      unit: "mm"
-      valid_range: [0.0, 5000.0]
-      file: ".pixel"
-      trap: "dt_012"
-  spatial:
-    - name: "voronoi_snapshots"
-      description: "Spatial output at specified intervals (OPTSPATIAL=1)"
-  basin_average:
-    - name: "mean_response_file"
-      file: ".mrf"
-      description: "Basin-averaged water balance variables over time"
-
-execution:
-  serial: "./tRIBS <input_file.in>"
-  parallel: "mpirun -np <N> ./tRIBSpar <input_file.in>"
-  options:
-    - flag: "-A"
-      description: "Automatic listing of rainfall files"
-    - flag: "-K"
-      description: "Validate input file"
-    - flag: "-V"
-      description: "Verbose mode"
-
+  - name: Discharge at outlet (Qstrm)
+    unit: m^3/s
+    description: Streamflow discharge at the basin outlet node(s) from kinematic-wave channel routing.
+    validation_rank: 1
+    emitted_in: .qout (Outlet hydrograph)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Hydrograph timing is sensitive to uncalibrated routing velocities (HILLSLOPE_KSE/STREAM_KSE);
+          compare against gauged discharge at the outlet only.
+      detrending_options:
+      - none
+  - name: Channel stage (HLevel)
+    unit: m
+    description: Water-surface level in the channel at the outlet/reach.
+    validation_rank: 3
+    emitted_in: .qout
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Requires a stage-rating reference at the same cross-section.
+      detrending_options:
+      - none
+  - name: Total evapotranspiration (EvpTtrs / EvapoTranspiration)
+    unit: mm/hr
+    description: Total actual evapotranspiration (wet-canopy + dry-canopy transpiration + soil evaporation)
+      at a node.
+    validation_rank: 4
+    emitted_in: .pixel (per-node) and .mrf (basin-mean MET)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Flux-tower comparison requires footprint to align with the Voronoi cell; sub-daily flux noise
+          limits achievable r.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Gridded ET products (e.g. remote-sensing latent heat) need Voronoi-to-grid resampling.
+      detrending_options:
+      - none
+  - name: Depth to groundwater table (Nwt)
+    unit: mm
+    description: Water-table depth below the surface at each TIN node.
+    validation_rank: 5
+    emitted_in: .pixel and .mrf (mean MGW) and spatial snapshots
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against well observations co-located with a node; absolute datum reconciliation required.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: Soil moisture (top 10 cm / root zone)
+    unit: m^3/m^3 (dimensionless)
+    description: Volumetric soil moisture in the surface (top 10 cm) and root-zone (top 1 m) layers.
+    validation_rank: 6
+    emitted_in: .pixel and .mrf (MSM100 / MSMRt) and spatial snapshots
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Match observation support depth to the model layer; in-situ probes are point measurements within
+          a Voronoi cell.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - ranking_quality
+        determining_metric: csi
+        caveats:
+        - Satellite soil-moisture is a near-surface retrieval; compare to the top-10-cm layer only.
+      detrending_options:
+      - none
+  - name: Snow water equivalent (SnWE; liqWEq/iceWEq)
+    unit: cm (output) / mm (internal)
+    description: Snowpack water equivalent (sum of ice and liquid) at a node when OPTSNOW=1.
+    validation_rank: 7
+    emitted_in: .pixel and .mrf (AvSWE, SCA) and spatial snapshots
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - SNOTEL-style point SWE; timing of melt-out is a key skill axis.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Snow-covered-area products compare to SCA, not depth; binary presence/absence.
+      detrending_options:
+      - none
+  - name: Runoff-mechanism hydrograph separation (Hsrf, Sbsrf, Psrf, Satsrf)
+    unit: m^3/s
+    description: 'Discharge partitioned by generation mechanism: infiltration-excess, saturation-excess,
+      perched return flow, and groundwater exfiltration.'
+    validation_rank: 2
+    emitted_in: .rft (runoff-type file)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Mechanism separation is rarely directly observable; usually a diagnostic against tracer/conceptual
+          baseflow separation rather than a direct gauge.
+      detrending_options:
+      - none
+  - name: Mean areal precipitation and basin-averaged water-balance terms
+    unit: mm/hr and m^3/s
+    description: Basin-averaged MAP, surface runoff, mean soil moisture, mean groundwater depth, and mean
+      ET over the simulation.
+    validation_rank: 8
+    emitted_in: .mrf (mean response file)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Basin-aggregate diagnostic; use to check water-balance closure (P = ET + Q + dStorage within
+          ~1%).
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    description: "Rainfall unit mismatch (mm/day or m/s instead of mm/hr) produces plausible but wrong hydrographs"
-  - id: "dt_005"
-    description: "Soil depths in m instead of mm cause instant saturation and unrealistic runoff"
-  - id: "dt_006"
-    description: "Ks in m/s instead of mm/hr causes infiltration failure"
-  - id: "dt_008"
-    description: "Coordinates in lat/lon degrees instead of UTM meters produce ~1m domain"
-  - id: "dt_010"
-    description: "METSTEP in minutes instead of hours causes massive data gaps"
+- id: dt_001
+  symptom: Discharge hydrograph is scaled by factor of 24× or 3.6e6× compared to observations
+  diagnosis: 'Rainfall rate not in mm/hr; tRIBS expects rainfall in mm/hr. ERA5 provides mm/day (divide
+    by 24), CMFD provides m/s (multiply by 3.6e6). Using raw values without conversion produces hydrographs
+    that are systematically too high or too low with no error message from the model.
+
+    ; [''tRainfall'', ''tHydroM'
+  remedy: 'Convert rainfall to mm/hr before creating forcing files; convert_met_forcing.py; [''Check source
+    rainfall units in metadata'', ''Apply: mm/day ÷ 24 = mm/hr, OR m/s × 3,600,000 = mm/hr'', ''Verify
+    peak rainfall is in plausible range (1–100 mm/hr for most regions)'']; Always check rainfall units
+    when switch'
+  severity: silent
+- id: dt_002
+  symptom: Evapotranspiration is extremely high or zero; snow never forms even in winter
+  diagnosis: 'Temperature in Kelvin instead of Celsius; tRIBS expects temperature in °C. Reanalysis data
+    (ERA5, CMFD) provides temperature in K (~293 K = 20°C). Using K values makes tRIBS think the air temperature
+    is ~293°C, producing enormous ET and preventing snow.
+
+    ; [''tEvapoTrans'', ''tSnowPack'', ''tHydroMet'']'
+  remedy: Subtract 273.15 from all temperature fields; convert_met_forcing.py; ['T_celsius = T_kelvin
+    - 273.15', 'Verify temperatures are in plausible range (-40 to +50°C)']; Check first few temperature
+    values after conversion
+  severity: silent
+- id: dt_003
+  symptom: ET wildly exceeds precipitation; soil moisture drops to zero within hours
+  diagnosis: 'Relative humidity in percent (0–100) instead of fraction (0–1); tRIBS expects RH as a fraction
+    (0–1). Providing RH=65 (meaning 65%) is interpreted as RH=65 (6500%), producing enormous vapor pressure
+    deficit and evaporative demand. The model does not clamp RH.
+
+    ; [''tEvapoTrans'', ''tHydroMet'']'
+  remedy: 'Divide RH by 100 to convert from percent to fraction; convert_met_forcing.py; [''RH_frac =
+    RH_pct / 100'', ''Verify all RH values are between 0.0 and 1.0'']; Add validation check: if max(RH)
+    > 1.0, divide by 100'
+  severity: silent
+- id: dt_004
+  symptom: Psychrometric calculations produce wrong values; ET has systematic bias
+  diagnosis: 'Atmospheric pressure in Pa instead of mb (hPa); tRIBS expects pressure in mb (hPa). ERA5
+    provides Pa (×100 larger). Using 101325 instead of 1013.25 corrupts the psychrometric constant calculation,
+    leading to wrong Penman-Monteith ET estimates.
+
+    ; [''tEvapoTrans'']'
+  remedy: 'Divide pressure by 100 to convert Pa to mb; convert_met_forcing.py; [''PA_mb = PA_Pa / 100'',
+    ''Verify pressure is in range 500–1050 mb'']; Check pressure magnitude: if > 2000, likely in Pa'
+  severity: degraded
+- id: dt_005
+  symptom: Immediate soil saturation; massive surface runoff from first timestep; unrealistic runoff ratio
+    >0.9
+  diagnosis: 'Soil depth in meters instead of millimeters; HWSD reports bedrock depth in meters. tRIBS
+    expects mm. DEPTHTOBEDROCK=2 means 2mm (not 2m), giving an impossibly thin soil column that saturates
+    from the first rainfall pulse. No error raised.
+
+    ; [''tHydroModel'', ''tCNode'']'
+  remedy: 'Multiply all depth values by 1000 (m → mm); convert_soil_params.py; [''DEPTHTOBEDROCK: multiply
+    by 1000'', ''SURFACESOILDEPTH: multiply by 1000'', ''ROOTZONEDEPTH: multiply by 1000'', ''Typical
+    values: DEPTHTOBEDROCK 1000–5000 mm'']; Validate: if depth < 10, likely in meters'
+  severity: silent
+- id: dt_006
+  symptom: No infiltration; 100% surface runoff; discharge equals rainfall
+  diagnosis: 'Saturated hydraulic conductivity (Ks) in m/s instead of mm/hr; HWSD reports Ks in m/s (typical:
+    1e-6 to 1e-4). tRIBS expects mm/hr (typical: 0.1–200). Using raw m/s values gives Ks ~ 1e-6 mm/hr,
+    meaning essentially zero infiltration capacity.
+
+    ; [''tHydroModel'', ''infiltration'']'
+  remedy: 'Multiply Ks by 3,600,000 (3.6e6) to convert m/s → mm/hr; convert_soil_params.py; [''Ks_mmhr
+    = Ks_ms × 3.6e6'', ''Verify: sand ~120 mm/hr, clay ~0.6 mm/hr, loam ~13 mm/hr'']; Check Ks range against
+    texture class defaults'
+  severity: silent
+- id: dt_007
+  symptom: Negative soil moisture; unrealistic ET; model may crash
+  diagnosis: 'Porosity (ThetaS) in percent instead of fraction; tRIBS expects porosity as a fraction (0–1).
+    Providing ThetaS=43 (meaning 43%) is interpreted as porosity of 43 (4300%), allowing the soil to hold
+    impossibly large amounts of water, distorting all moisture accounting.
+
+    ; [''tHydroModel'', ''tCNode'']'
+  remedy: 'Divide porosity by 100; [''ThetaS_frac = ThetaS_pct / 100'', ''Verify: 0.25 < ThetaS < 0.65''];
+    Validate: if ThetaS > 1.0, divide by 100'
+  severity: silent
+- id: dt_008
+  symptom: Domain is ~0.001 km²; all nodes within meters of each other
+  diagnosis: 'Mesh coordinates in degrees (lat/lon) instead of meters (UTM); tRIBS expects mesh coordinates
+    in UTM meters. Supplying lat/lon in degrees produces nodes at coordinates like (33.5, 117.2) which
+    tRIBS interprets as a ~33m × ~117m domain.
+
+    ; [''tMesh'', ''tFlowNet'', ''tResample'']'
+  remedy: Reproject all mesh coordinates from lat/lon to UTM; ['Determine UTM zone for the study area',
+    'Use GDAL/pyproj to reproject coordinates', 'Verify X and Y values are in 100,000–900,000 range'];
+    Always check coordinate magnitude before mesh generation
+  severity: silent
+- id: dt_009
+  symptom: Slopes are approximately 3× too low; flow velocities wrong
+  diagnosis: 'Elevation in feet instead of meters; tRIBS expects elevation in meters. US datasets may
+    provide feet. Using feet directly gives slopes that are ~3× too gentle (1 ft = 0.3048 m), affecting
+    flow routing and soil moisture dynamics.
+
+    ; [''tMesh'', ''tFlowNet'']'
+  remedy: Multiply elevation by 0.3048 to convert feet to meters; ['elev_m = elev_ft × 0.3048']; Check
+    DEM metadata for vertical units
+  severity: degraded
+- id: dt_010
+  symptom: Large gaps in forcing; interpolation artifacts; wrong ET
+  diagnosis: 'METSTEP given in minutes instead of hours; METSTEP=60 means tRIBS expects data every 60
+    hours, not every 60 minutes. With hourly data, tRIBS reads only every 60th record, creating large
+    time gaps and interpolation errors.
+
+    ; [''tSimulator'', ''tEvapoTrans'']'
+  remedy: Set METSTEP in hours (e.g., 1 for hourly data); ['METSTEP should be 1 for hourly, 0.5 for 30-min,
+    3 for 3-hourly', 'Never use 60 (that means 60 hours)']; Verify METSTEP matches actual data interval
+  severity: silent
+- id: dt_011
+  symptom: Dew point calculation is wrong; ET has bias
+  diagnosis: 'Vapor pressure in kPa instead of mb (hPa); tRIBS expects vapor pressure in mb. Providing
+    kPa values (10× smaller) gives wrong dewpoint and vapor pressure deficit calculations.
+
+    ; [''tEvapoTrans'', ''tHydroMet'']'
+  remedy: 'Multiply vapor pressure by 10 (kPa → mb); [''VP_mb = VP_kPa × 10'']; Check VP magnitude: typical
+    5–40 mb'
+  severity: degraded
+- id: dt_012
+  symptom: Snow water equivalent is 1000× too small
+  diagnosis: 'SWE initialized in meters instead of millimeters; tRIBS snow module uses mm internally.
+    Initializing SWE in meters gives negligible snowpack that melts instantly.
+
+    ; [''tSnowPack'']'
+  remedy: Multiply SWE by 1000 (m → mm); ['SWE_mm = SWE_m × 1000']; Verify SWE initialization units
+  severity: silent
+- id: dt_013
+  symptom: Crash at startup with 'Cannot open file' or segmentation fault
+  diagnosis: 'OPTMESHINPUT does not match available file format; Setting OPTMESHINPUT=8 (tRIBS format)
+    when only a DEM grid is available causes the model to look for .nodes/.edges/.tri files that don''t
+    exist. Similarly, option 9 (meshbuilder) requires specially formatted partition files.
+
+    ; [''tMesh'', ''tListInputDa'
+  remedy: 'Match OPTMESHINPUT to the file format available; [''Option 8: requires .nodes, .edges, .tri,
+    .z files'', ''Option 9: requires meshbuilder partition files'', ''Option 2: requires a raster grid'',
+    ''Verify all required files exist before running'']; Run preflight check with -K flag'
+  severity: fatal
+- id: dt_014
+  symptom: Model reads wrong station data; met variables are for different location
+  diagnosis: 'Station metadata file (.sdf) points to wrong data files; The .sdf file lists station IDs,
+    locations, and paths to .mdf data files. If paths are wrong or point to data from a different basin,
+    tRIBS silently uses incorrect forcing.
+
+    ; [''tEvapoTrans'', ''tHydroMet'']'
+  remedy: Verify all file paths in .sdf are correct and accessible; ['Check each path in .sdf exists',
+    'Verify station coordinates match basin location', 'Spot-check temperature and pressure ranges'];
+    Use absolute paths in .sdf; run preflight validation
+  severity: silent
+- id: dt_015
+  symptom: Simulation dates don't match forcing data; gaps or extrapolation
+  diagnosis: 'STARTDATE/ENDDATE in .in file doesn''t match forcing data period; If the simulation period
+    extends beyond the forcing data, tRIBS may use zero values or extrapolate, producing wrong results
+    without a clear error message.
+
+    ; [''tSimulator'', ''tRainfall'', ''tEvapoTrans'']'
+  remedy: Ensure simulation dates are within forcing data period; ['Check first and last dates in .mdf
+    files', 'Set STARTDATE and ENDDATE within that range']; Validate date overlap before running
+  severity: degraded
+- id: dt_016
+  symptom: NaN values appear in output; model may crash mid-simulation
+  diagnosis: 'NaN in forcing data propagates through calculations; Missing or corrupt values in met/rainfall
+    forcing files appear as NaN in the input. These propagate through ET, soil moisture, and routing calculations,
+    eventually producing NaN in all outputs.
+
+    ; [''all'']'
+  remedy: Fill gaps in forcing data before running; ['Check all .mdf files for NaN or missing values',
+    'Interpolate gaps or use gap-filling', 'Re-run the model']; Add NaN-check to forcing conversion pipeline
+  severity: fatal
+- id: dt_017
+  symptom: Process killed by OS; 'Killed' or OOM error
+  diagnosis: 'Mesh too large for available memory; Each TIN node stores 50+ double-precision variables.
+    A mesh with 1 million nodes requires ~400 MB RAM for node data alone, plus edge/triangle storage.
+    Large meshes can exceed available memory.
+
+    ; [''tMesh'', ''tCNode'']'
+  remedy: 'Reduce mesh resolution or use parallel version; [''Coarsen mesh to reduce node count'', ''Or
+    compile parallel version: cmake -Dparallel=ON'', ''Run with mpirun: mpirun -np N ./tRIBSpar input.in''];
+    Estimate memory: ~500 bytes/node × N_nodes'
+  severity: fatal
+- id: dt_018
+  symptom: Simulation hangs or runs extremely slowly
+  diagnosis: 'Convergence failure in Newton solver or infinite flow loop; The unsaturated zone solver
+    uses Newton iteration (LambertW/Newton methods in tHydroModel). Extreme parameter combinations can
+    prevent convergence, causing the solver to iterate indefinitely. Also, circular flow paths in the
+    mesh can cause '
+  remedy: Check soil parameters and mesh topology; ['Verify Ks, ThetaS, PsiB are in valid ranges', 'Check
+    mesh for circular flow paths', 'Try running with -V flag to identify problematic node', 'Consider
+    reducing simulation time step']; Validate parameter ranges before running
+  severity: fatal
+- id: dt_019
+  symptom: 'Hydrograph shape is wrong: peaks too early/late, recession too fast/slow'
+  diagnosis: 'Routing velocity parameters (HILLSLOPE_KSE, STREAM_KSE) are wrong; HILLSLOPE_KSE and STREAM_KSE
+    control how fast water moves through the basin. Too high = peaks arrive too early; too low = peaks
+    arrive too late and are attenuated. These have no default validation.
+
+    ; [''tKinemat'', ''tFlowNet'']'
+  remedy: 'Calibrate routing velocities against observed hydrographs; [''HILLSLOPE_KSE: typical 0.001–0.1
+    m/s'', ''STREAM_KSE: typical 0.5–5.0 m/s'', ''Adjust until peak timing matches observations'']; Use
+    literature values for initial estimates'
+  severity: degraded
+- id: dt_020
+  symptom: Water balance does not close; cumulative error grows over time
+  diagnosis: 'Numerical precision issues or output time step mismatch; tRIBS tracks water balance internally,
+    but output files may use different time steps than the internal computation, leading to apparent imbalance
+    in post-processed results. Also, very large or very small time steps can cause numerical drift.
+
+    ;'
+  remedy: 'Compare internal water balance report to post-processed values; [''Check tRIBS internal water
+    balance output'', ''Ensure output interval matches analysis interval'', ''If numerical: reduce computational
+    time step'']; Always check water balance closure as first validation step'
+  severity: degraded

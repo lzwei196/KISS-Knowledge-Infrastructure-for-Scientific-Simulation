@@ -1,0 +1,407 @@
+schema_version: 1
+model_id: Daisy
+domain: crop
+generated_by: "Step-B agent (Codex) -- literature-grounded validation convention"
+generated_at: 2026-08-14
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  moriasi2012:
+    doi: 10.13031/2013.42265
+    title: "Hydrologic and Water Quality Models: Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42265.txt
+  delhez2026:
+    doi: 10.5194/bg-23-2079-2026
+    title: "Interpreting carbon-water trade-offs in Daisy crop model using Pareto-based calibration"
+    venue: "Biogeosciences"
+    year: 2026
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-23-2079-2026.txt
+  whcns2021:
+    doi: 10.1016/j.eja.2021.126429
+    title: "Bayesian calibration and uncertainty analysis of an agroecosystem model under different N management practices"
+    venue: "European Journal of Agronomy"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.eja.2021.126429.txt
+  kersebaum2011:
+    doi: 10.1016/j.eja.2011.05.001
+    title: "Simulation of winter wheat yield and its variability in different climates of Europe"
+    venue: "European Journal of Agronomy"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.eja.2011.05.001.txt
+  kollas2016:
+    doi: 10.1017/s0021859615001124
+    title: "Comparing the performance of 11 crop simulation models in predicting yield response to nitrogen fertilization"
+    venue: "The Journal of Agricultural Science"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1017_s0021859615001124.txt
+  wofost2021:
+    doi: 10.3390/agronomy11122480
+    title: "Performance Evaluation of the WOFOST Model for Estimating Evapotranspiration, Soil Water Content, Grain Yield"
+    venue: "Agronomy"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_agronomy11122480.txt
+  hu2016:
+    doi: 10.1016/j.mex.2016.04.008
+    title: "Integrated modelling of crop production and nitrate leaching with the Daisy model"
+    venue: "MethodsX"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.mex.2016.04.008.txt
+  salazar2017:
+    doi: 10.1016/j.agwat.2016.12.005
+    title: "Evaluation of the DAISY model for predicting nitrogen leaching in coarse-textured soil"
+    venue: "Agricultural Water Management"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agwat.2016.12.005.txt
+
+validation:
+  - dag_variable: "sorg_DM"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred crop-yield magnitude gate; Moriasi 2015 lists crop yield PBIAS as 'Within 25%' for EPIC/APEX."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [whcns2021, wofost2021, kersebaum2011]
+    validated_when: "|PBIAS| <= 25% for harvested storage-organ dry matter, with grain yield compared to sorg_DM only."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      The dag determining metric pbias is retained. Crop-model papers commonly co-report RMSE, CV(RMSE), NRMSE, MBE, and IA; Kersebaum 2011 found DAISY among the lowest yield-RMSE models in a 49-season wheat comparison.
+
+  - dag_variable: "sorg_DM"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Same crop-yield PBIAS convention as point snapshots; assess after excluding spinup and matching harvest dates/seasons."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [whcns2021, kollas2016]
+      - metric: ia
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [kersebaum2011, kollas2016]
+    validated_when: "|PBIAS| <= 25% across measured harvest seasons at one field, excluding the declared spinup years."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Kollas 2016 reports well-calibrated crop models with grain-yield RMSE below 500 kg/ha and IA above 0.8 during calibration; DAISY retained good independent-year performance with RMSE below 700 kg/ha and IA close to 0.9.
+
+  - dag_variable: "sorg_DM"
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred crop-yield PBIAS gate; regional aggregate comparisons must be detrended before applying it."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [hu2016, moriasi2015]
+    validated_when: "|PBIAS| <= 25% after detrending technology/management change and comparing regional grain yield to sorg_DM."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Hu 2016 re-validates Daisy against county-level statistical crop yields and calls the regional performance acceptable, but the fetched text does not provide a clean numeric table value for this aggregate block.
+
+  - dag_variable: "harvest_index"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a harvest-index PBIAS validation threshold; the dag cereal range is a plausibility caveat, not a validation band."
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [kersebaum2011]
+    validated_when: "UNRESOLVED -- no cited numeric harvest-index validation threshold in the fetched set."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Kersebaum 2011 discusses high and low harvest index outcomes among crop models, including low values for DAISY, but does not provide an accept/reject threshold for harvest_index itself.
+
+  - dag_variable: "Harvest_N"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: 15.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Crop-model convention from WHCNS: NRMSE <15% good, 15-30% moderate, >30% poor."
+        cites: [whcns2021]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [kollas2016]
+    validated_when: "NRMSE <= 30% for harvested biomass nitrogen across plots/treatments; PBIAS remains informative but lacks a fetched crop-N uptake band."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      The dag pbias metric is superseded here because fetched crop-N papers validate N uptake with RMSE/NRMSE/IA. Kollas 2016 reports grain N uptake RMSE ranges and IA near 0.8, but no PBIAS threshold.
+
+  - dag_variable: "Leaching"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Daisy leaching work reproduced Moriasi 2007 E tiers: 0.50-0.65 satisfactory, 0.65-0.75 good, 0.75-1.00 very good."
+        cites: [salazar2017, moriasi2007]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [moriasi2015]
+    validated_when: "NSE >= 0.50 for nitrate-N leaching time series after spinup; PBIAS should be inspected as a nutrient-load magnitude diagnostic."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Salazar 2017 calibrated DAISY soil water and mineral N with Nash-Sutcliffe E and explicitly cites Moriasi ratings. Moriasi 2007 also states models are satisfactory if 'NSE > 0.50' and sets wider nutrient PBIAS allowances.
+
+  - dag_variable: "Denitrification"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a denitrification NSE validation threshold for Daisy or comparable crop-model chamber-flux data."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [hu2016]
+    validated_when: "UNRESOLVED -- require a denitrification or N2O/N-gas benchmark with a cited numeric threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Fetched Daisy papers discuss N-balance components and calibration, but not a numeric denitrification validation convention. The capped OpenAlex search did not return a directly usable Daisy denitrification threshold.
+
+  - dag_variable: "Evapotranspiration"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Daisy carbon-water calibration states validation is acceptable if EF is greater than 0.5; EF is NSE."
+        cites: [delhez2026]
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [wofost2021]
+    validated_when: "NSE/EF >= 0.50 for ET or latent-heat flux time series, with RMSE/NRMSE reported as supporting diagnostics."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: >-
+      Delhez 2026 reports latent-energy validation and says the EF criterion is acceptable above 0.5, but its own LE simulations show the water-flux tradeoff can be hard to satisfy.
+
+  - dag_variable: "Drain / Percolation"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Drainage/percolation is treated as a hydrologic flux; Moriasi 2007 monthly-flow NSE tiers are transferred."
+        cites: [moriasi2007, moriasi2015]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [moriasi2015]
+    validated_when: "NSE >= 0.50 for drainage/percolation time series, with water-balance PBIAS inspected where available."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Moriasi 2012 identifies Daisy validation statistics as observed/predicted means and standard deviations, model efficiency, RMSE, and index of agreement; no Daisy-specific drainage tier was fetched.
+
+  - dag_variable: "Theta"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Salazar 2017 applied Moriasi E performance ratings directly to Daisy soil water content."
+        cites: [salazar2017, moriasi2007]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [wofost2021, moriasi2012]
+    validated_when: "NSE >= 0.50 for volumetric soil-water content at matched depths; check the Daisy output unit before computing the metric."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Salazar 2017 says observed and predicted water content was in satisfactory agreement and reports E values across depths/sites; WOFOST 2021 reports SM RMSE/NRMSE as common soil-moisture diagnostics.
+
+  - dag_variable: "Theta"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for distributed Daisy soil-water spatial-time-series validation."
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [wofost2021]
+    validated_when: "UNRESOLVED -- spatial soil-water CSI cannot be auto-graded without a fetched categorical/spatial threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Fetched soil-moisture papers use RMSE, NRMSE, R2, IA, and NSE rather than CSI. The capped OpenAlex search did not identify a directly usable CSI convention.
+
+  - dag_variable: "Soil temperature"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched Daisy or crop-model paper gives a soil-temperature NSE validation threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [moriasi2012]
+    validated_when: "UNRESOLVED -- require a soil-temperature benchmark with RMSE/NSE acceptance criteria."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Daisy includes a soil-heat process, but the fetched validation texts did not provide a numeric soil-temperature convention. OpenAlex mostly returned unrelated soil-moisture or generic hydrologic-model papers.
+
+  - dag_variable: "DS"
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: rmse_days
+        direction: minimize
+        unit: days
+        bands: {very_good: null, good: null, satisfactory: 8.0}
+        pass_band: satisfactory
+        band_note: "Phenology convention transferred from crop-model event-date RMSE; Kollas 2016 calls 6-8 days fairly satisfactory."
+        cites: [kollas2016]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: []
+    validated_when: "Anthesis/maturity stage-transition dates have RMSE <= 8 days; CSI is not used as a headline metric because fetched crop papers validate phenology by event-date RMSE."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      The dag csi metric is superseded for DS categorical_event because the fetched crop-model benchmark evaluates phenology as date RMSE rather than categorical overlap.
+
+  - dag_variable: "LAI"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "WHCNS crop-model paper states NSE >= 0 is the minimum threshold for crop variables; use with RMSE/NRMSE diagnostics."
+        cites: [whcns2021]
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [wofost2021]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [kollas2016]
+    validated_when: "NSE >= 0 for LAI time series, with NRMSE/RMSE used to judge magnitude and peak-timing quality."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The dag nse metric is retained using the fetched crop-variable minimum. WOFOST 2021 gives NRMSE precision tiers, and Kollas 2016 reports DAISY among models with LAI-curve RMSE below 1.0 for a test-year N treatment.
+
+deferred_paywalled:
+  - ref: "Hansen et al. 2012 -- Daisy: Model use, calibration, and validation"
+    doi: 10.13031/2013.42244
+    needed_for: [sorg_DM, harvest_index, Harvest_N, Leaching, Denitrification, Evapotranspiration, "Drain / Percolation", Theta, "Soil temperature", DS, LAI]
+  - ref: "Performance assessment of nitrate leaching models for highly vulnerable soils"
+    doi: 10.1016/j.scitotenv.2014.07.002
+    needed_for: [Leaching, Denitrification]
+  - ref: "Leveraging temporal variability in global sensitivity analysis of the Daisy soil-plant-atmosphere model"
+    doi: 10.1016/j.eja.2025.127533
+    needed_for: [Theta, "Soil temperature", Evapotranspiration]

@@ -1,0 +1,377 @@
+schema_version: 1
+model_id: FATES
+domain: terrestrial_ecosystem
+generated_by: "Codex GPT-5 Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+# FATES papers and land-model benchmarking papers define benchmark datasets, metric
+# families, and reported model-data comparisons. They do not define field-wide
+# pass/fail numeric bands for these FATES dag outputs. Therefore every headline
+# pass band is null and confidence is <= 0.4, per the no-fabrication rule.
+
+references:
+  luo2012:
+    doi: 10.5194/bg-9-3857-2012
+    title: "A framework for benchmarking land models"
+    venue: "Biogeosciences"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-9-3857-2012.txt
+  collier2018:
+    doi: 10.1029/2018ms001354
+    title: "The International Land Model Benchmarking (ILAMB) System: Design, Theory, and Implementation"
+    venue: "Journal of Advances in Modeling Earth Systems"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018ms001354.txt
+  lawrence2019:
+    doi: 10.1029/2018ms001583
+    title: "The Community Land Model Version 5 (CLM5): Description of New Features, Benchmarking, and Impact of Forcing Uncertainty"
+    venue: "Journal of Advances in Modeling Earth Systems"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018ms001583.txt
+  massoud2019:
+    doi: 10.5194/gmd-12-4133-2019
+    title: "Identification of key parameters controlling demographically structured vegetation dynamics in a land surface model (CLM4.5-FATES)"
+    venue: "Geoscientific Model Development"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-12-4133-2019.txt
+  huang2020:
+    doi: 10.5194/bg-17-4999-2020
+    title: "Assessing impacts of selective logging on water, energy, and carbon budgets and ecosystem dynamics in Amazon forests using ELM-FATES"
+    venue: "Biogeosciences"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-17-4999-2020.txt
+  longo2020:
+    doi: 10.1029/2020jg005677
+    title: "Impacts of Degradation on Water, Energy, and Carbon Cycling of the Amazon Tropical Forests"
+    venue: "Journal of Geophysical Research: Biogeosciences"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2020jg005677.txt
+  negron2020:
+    doi: 10.5194/bg-17-6185-2020
+    title: "Landsat near-infrared (NIR) band and ELM-FATES sensitivity to forest disturbances and regrowth in the central Amazon"
+    venue: "Biogeosciences"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-17-6185-2020.txt
+  lambert2023:
+    doi: 10.1029/2022ms003333
+    title: "Integration of a Frost Mortality Scheme Into the Demographic Vegetation Model FATES"
+    venue: "Journal of Advances in Modeling Earth Systems"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2022ms003333.txt
+
+validation:
+  - dag_variable: FATES_VEGC
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an acceptable PBIAS cutoff for FATES live vegetation carbon; evaluate against inventory or biomass-product uncertainty."
+        cites: []
+    secondary_metrics:
+      - metric: observed_range_overlap
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Massoud 2019 and Huang 2020 compare simulated biomass with observed ranges or inventories, but do not set a pass band."
+        cites: [massoud2019, huang2020]
+    validated_when: "UNRESOLVED - vegetation carbon is benchmarked against forest inventories or biomass products, but no cited numeric pass band was fetched."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: "Massoud 2019 used a qualitative comparison to literature ranges; Huang 2020 reports AGB observations and simulations in Table 5. Luo 2012 lists plant biomass as a candidate carbon-pool benchmark and says thresholds must be justified."
+
+  - dag_variable: FATES_VEGC
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "CSI is the dag spatial-pattern metric, but fetched land-model benchmark papers use bias, RMSE, spatial distribution, and ILAMB scores rather than a CSI cutoff for biomass."
+        cites: []
+      - metric: ilamb_overall_score
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "ILAMB scores are on [0,1], but no fetched paper defines a FATES biomass score threshold for validation."
+        cites: []
+    secondary_metrics:
+      - metric: spatial_distribution_score
+        direction: maximize
+        status: supportive
+        ceiling_reason: "ILAMB integrates bias, RMSE, interannual variability, spatial pattern, and related scores; plant biomass is listed as a benchmark variable."
+        cites: [collier2018, luo2012, lawrence2019]
+    validated_when: "UNRESOLVED - use biomass-product spatial benchmarking, but do not auto-pass without a cited score cutoff."
+    evidence_strength: moderate
+    confidence: 0.35
+    notes: "Collier 2018 says ILAMB produces maps, time series, and metrics; Lawrence 2019 warns overall scores mix several metrics."
+
+  - dag_variable: FATES_GPP
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The dag metric is retained, but fetched FATES and land-model papers did not give a GPP NSE validation threshold."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: kgC/m2/time
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Field papers report RMSE or normalized errors against flux towers; no numeric acceptable RMSE cutoff was fetched."
+        cites: []
+    secondary_metrics:
+      - metric: bias_vs_observed_variability
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Longo 2020 judged GPP by biases relative to tower estimates and errors less than observed variability."
+        cites: [longo2020]
+    validated_when: "UNRESOLVED - compare converted GPP time series to flux-tower benchmarks using RMSE/bias/correlation, but no cited pass band exists."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: "Longo 2020 reports GPP showed small biases and relatively small errors; Huang 2020 reports reasonable GPP values against observations."
+
+  - dag_variable: FATES_GPP
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "CSI is retained from the dag, but fetched terrestrial GPP benchmark papers use ILAMB bias/RMSE/phase/spatial metrics instead of CSI thresholds."
+        cites: []
+      - metric: ilamb_overall_score
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper states a minimum ILAMB GPP score that validates FATES."
+        cites: []
+    secondary_metrics:
+      - metric: bias_rmse_phase_spatial_score
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Collier 2018 defines bias, centralized RMSE, phase shift, interannual variability, and spatial distribution scores for GPP-like variables."
+        cites: [collier2018, lawrence2019]
+    validated_when: "UNRESOLVED - use ILAMB-style GPP benchmark scores, but leave the automatic gate undecidable until a cited score cutoff is fetched."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: "Collier 2018 maps zero error to score 1 and reduces scores as error grows; Lawrence 2019 applies ILAMB to GPP and climate relationships."
+
+  - dag_variable: FATES_NPP
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched FATES or land-model paper gives a point-time-series NPP NSE validation threshold."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: kgC/m2/time
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "NPP is benchmarked against site or gridded products, but no acceptable RMSE cutoff was fetched."
+        cites: []
+    secondary_metrics:
+      - metric: observed_range_overlap
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Massoud 2019 reports simulated and observed NPP ranges; Huang 2020 compares NPP to observation-based estimates."
+        cites: [massoud2019, huang2020]
+    validated_when: "UNRESOLVED - compare NPP to observed ranges or products, but do not auto-pass on NSE/RMSE without a cited band."
+    evidence_strength: moderate
+    confidence: 0.35
+    notes: "Luo 2012 lists NPP as a candidate benchmark for carbon influx; Huang 2020 notes its selected parameter set overestimates NPP."
+
+  - dag_variable: FATES_NPP
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper defines an acceptable regional NPP PBIAS cutoff for FATES."
+        cites: []
+      - metric: ilamb_overall_score
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "ILAMB supports regional/global NPP evaluation, but no minimum score threshold was fetched."
+        cites: []
+    secondary_metrics:
+      - metric: global_total_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Lawrence 2019 compares global NPP and carbon-cycle fluxes with data products; Luo 2012 lists yearly global NPP benchmarks."
+        cites: [lawrence2019, luo2012]
+    validated_when: "UNRESOLVED - use regional or global NPP bias/score diagnostics, but no cited pass band was fetched."
+    evidence_strength: moderate
+    confidence: 0.35
+    notes: "Luo 2012 treats NPP as a carbon-influx benchmark; Lawrence 2019 reports global carbon fluxes against available data products."
+
+  - dag_variable: FATES_LAI
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The dag metric is retained, but fetched LAI benchmarks do not give an NSE pass cutoff."
+        cites: []
+      - metric: phase_shift
+        direction: zero_centered
+        unit: days
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Phenology timing is important, but no fetched FATES/ILAMB paper gives an acceptable day-of-year phase error cutoff."
+        cites: []
+    secondary_metrics:
+      - metric: rmse_against_modis
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Lawrence 2019 reports LAI RMSE against MODIS by PFT; Massoud 2019 compares LAI with MODIS-derived ranges."
+        cites: [lawrence2019, massoud2019]
+    validated_when: "UNRESOLVED - compare LAI seasonality and magnitude with MODIS or site observations, but no cited threshold was fetched."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: "Lawrence 2019 says CLM5 reduced RMSE compared to MODIS LAI for nine of 14 PFTs, but this is comparative, not a pass band."
+
+  - dag_variable: FATES_LAI
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "CSI is retained from the dag, but fetched LAI literature uses RMSE, bias, phase, spatial distribution, and ILAMB scores."
+        cites: []
+      - metric: ilamb_overall_score
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper defines a minimum ILAMB LAI score that validates FATES."
+        cites: []
+    secondary_metrics:
+      - metric: rmse_against_modis
+        direction: minimize
+        status: supportive
+        ceiling_reason: "CLM/FATES-adjacent benchmarking uses MODIS LAI RMSE and ILAMB functional relationships."
+        cites: [lawrence2019, collier2018]
+    validated_when: "UNRESOLVED - benchmark spatial LAI with MODIS/ILAMB diagnostics, but leave the pass gate undecidable without a cited cutoff."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: "Collier 2018 includes phase and RMSE scoring; Lawrence 2019 applies ILAMB and MODIS LAI diagnostics."
+
+  - dag_variable: FATES_NPLANT
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an acceptable PBIAS cutoff for FATES stem density."
+        cites: []
+    secondary_metrics:
+      - metric: size_class_distribution_match
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Huang 2020 compares simulated and observed stem density by DBH class and judges size structure qualitatively."
+        cites: [huang2020]
+    validated_when: "UNRESOLVED - compare stems/ha and size-class distributions to inventory, but no cited PBIAS band was fetched."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: "Huang 2020 reports 471 simulated trees/ha versus 459 observed for DBH >=10 cm, then evaluates distribution across size classes qualitatively."
+
+  - dag_variable: FATES_MORTALITY
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched FATES demography paper defines a mortality NSE validation threshold."
+        cites: []
+      - metric: observed_interval_overlap
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Massoud 2019 compares simulated mortality with observed confidence intervals, but no scalar pass cutoff is stated."
+        cites: []
+    secondary_metrics:
+      - metric: cohort_size_stratified_mortality
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Mortality evaluation is size-structured; Massoud 2019 separates small, medium, large, and very small cohorts, while Lambert 2023 focuses on frost-mortality mechanism."
+        cites: [massoud2019, lambert2023]
+    validated_when: "UNRESOLVED - evaluate mortality by size class and mechanism against inventory intervals, but no cited NSE/pass band was fetched."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: "Massoud 2019 reports medium and large tree mortality close to observed intervals and discusses high small-tree mortality; this is not a numeric metric threshold."
+
+  - dag_variable: FATES_DISTURBANCE_RATE_FIRE
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper defines a FATES fire-disturbance-rate NSE threshold; SPITFIRE-specific DOI fetch failed."
+        cites: []
+      - metric: burned_area_bias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Land-model frameworks identify burned area as the benchmark, but no acceptable bias cutoff was fetched."
+        cites: []
+    secondary_metrics:
+      - metric: burned_area_relationship_score
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Luo 2012 lists fire burned area and vegetation change as vegetation-dynamics benchmarks; Lawrence 2019 discusses burned-area ILAMB relationships."
+        cites: [luo2012, lawrence2019]
+    validated_when: "UNRESOLVED - compare annual or seasonal burned-area/fire-rate time series to regional fire products, but no cited pass band was fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Luo 2012 says disturbance-regime benchmarking remains challenging; the directly relevant SPITFIRE DOI did not fetch and is deferred."
+
+deferred_paywalled:
+  - ref: "Fang et al. 2019 - An overview of global leaf area index (LAI): methods, products, validation, and applications"
+    doi: 10.1029/2018rg000608
+    needed_for: [FATES_LAI]
+  - ref: "Anav et al. 2013 - Evaluating the land and ocean components of the global carbon cycle in the CMIP5 Earth System Models"
+    doi: 10.1175/jcli-d-12-00417.1
+    needed_for: [FATES_GPP, FATES_NPP, FATES_VEGC]
+  - ref: "Thonicke et al. 2010 - The influence of vegetation, fire spread and fire behaviour on biomass burning and trace gas emissions"
+    doi: 10.5194/bg-7-1991-2010
+    needed_for: [FATES_DISTURBANCE_RATE_FIRE]
+  - ref: "A fetched FATES/SPITFIRE or FireMIP evaluation paper with explicit burned-area pass thresholds"
+    doi: unknown_not_fetched
+    needed_for: [FATES_DISTURBANCE_RATE_FIRE]

@@ -1,14 +1,3 @@
----
-name: dndc
-description: >-
-  DNDCv.CAN 9.6.0. Covers Crop growth and development (phenology, biomass accumulation,
-  C/N partitioning to…; Soil organic carbon decomposition and turnover (multi-pool: litter
-  sub-pools, humads, humus…; Nitrogen cycling (mineralization, nitrification,
-  denitrification, leaching, NH3 volatilization); Trace-gas emissions (N2O, NO, N2, CO2,
-  CH4) from soil biogeochemical processes. Use when the task involves running,
-  configuring, calibrating or interpreting DNDC.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_dndc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_dndc.py --help` |
+| `tools/convert_soil_to_dndc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_dndc.py --help` |
+| `tools/generate_dnd_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_dnd_file.py --help` |
+| `tools/parse_dndc_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_dndc_output.py --help` |
+| `tools/run_dndc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_dndc.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # DNDC (DNDCv.CAN) — DeNitrification-DeComposition Model Knowledge Infrastructure
 
@@ -92,6 +116,32 @@ developed by Agriculture and Agri-Food Canada for Canadian cropping systems.
 - Inversion tillage conceptualization
 - Dynamic soil layer depth capability
 - Preferential flow toggle with soil cracking/retreat sensitivity
+
+---
+
+## 6. Output Description (from `dag.yaml`)
+
+This section restates the KI's `dag.yaml`. If this section and `dag.yaml`
+ever disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `SOC_stock_and_change` -- Soil organic carbon stock and inter-annual change / sequestration (`kgC/ha (stock), kgC/ha/yr (change)`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `SOC_stock_and_change` | 1 | `kgC/ha (stock), kgC/ha/yr (change)` | Soil organic carbon stock and inter-annual change / sequestration |
+
+**Other dag outputs**:
+
+`crop_grain_yield`, `crop_N_uptake`, `N2O_emission`, `NO_emission`,
+`N2_emission`, `NH3_volatilization`, `CO2_soil_respiration`, `CH4_flux`,
+`NO3_leaching`, `water_balance_components`, `soil_temperature_profile`,
+`soil_water_WFPS_and_water_table`.
+
+Agents must bind observations and scoring targets by these dag variable names,
+not by informal output labels. The dag variable `SOC_stock_and_change` is the
+rank-1 variable this KI is judged by.
 
 ---
 
@@ -322,6 +372,35 @@ The `.spf` file defines soil layer properties for the 200 cm profile.
 | 12 | Silt | 6 | 87 | 7 |
 
 ---
+
+## 8. Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`; conversion traps are also
+tracked in `diagnostics/triplets.yaml`. This table is the high-level unit
+checklist an agent should use before assembling `.dnd` files or interpreting
+headline outputs.
+
+| Variable | Source unit (verified or common) | DNDC / KI unit | Conversion | Type |
+|----------|----------------------------------|----------------|------------|------|
+| Precipitation | mm/day | cm/day | divide by 10 | multiplicative |
+| Precipitation | m/day | cm/day | multiply by 100 | multiplicative |
+| Precipitation | kg/m2/s | cm/day | multiply by 8640 | multiplicative |
+| Solar radiation | W/m2 daily mean | MJ/m2/day | multiply by 0.0864 | multiplicative |
+| Solar radiation | kJ/m2/day | MJ/m2/day | divide by 1000 | multiplicative |
+| Temperature | K | deg C | subtract 273.15 | additive |
+| Humidity | fraction (0-1) | % (0-100) | multiply by 100 | multiplicative |
+| Wind speed | km/h | m/s | divide by 3.6 | multiplicative |
+| SOC concentration | % (g/100g) | kgC/kg soil | divide by 100 | multiplicative |
+| SOC concentration | g/kg | kgC/kg soil | divide by 1000 | multiplicative |
+| Bulk density | kg/m3 | g/cm3 | divide by 1000 | multiplicative |
+| Layer thickness | cm | m | divide by 100 | multiplicative |
+| Hydraulic conductivity | cm/hr | m/hr | divide by 100 | multiplicative |
+| Hydraulic conductivity | um/s (SSURGO) | m/hr | multiply by 0.0036 | multiplicative |
+| Clay fraction | percent (0-100) | fraction (0-1) | divide by 100 | multiplicative |
+| Fertilizer rate | lb N/ac | kgN/ha | multiply by 1.121 | multiplicative |
+| Porosity | percent | v/v (0-1) | divide by 100 | multiplicative |
+| Field capacity | volumetric (cm3/cm3) | WFPS (0-1) | divide by porosity | derived |
+| `SOC_stock_and_change` | model output | `kgC/ha (stock), kgC/ha/yr (change)` | no conversion stated here | output unit from `dag.yaml` |
 
 ## Unit Trap Table
 
@@ -561,6 +640,50 @@ See `diagnostics/triplets.yaml` for the full set. Key entries:
 | dt_07 | Crop yield is zero but biomass grows | Harvest date before crop maturity (insufficient thermal degree days) |
 | dt_08 | Radiation-driven variables all wrong | Radiation in W/m2 instead of MJ/m2/day |
 | dt_09 | Wine execution fails silently | Missing DLL files or wrong Wine architecture (need 32-bit) |
+
+---
+
+## 11. Validated Results
+
+The body validation campaign is pending in this SKILL body. Do not invent
+calibration, validation, or full-period metric values. When judging model skill,
+use `docs/validation_convention.yaml` for the cited convention bars and
+`dag.yaml` for the target variable identity.
+
+**Rank-1 validation target from `dag.yaml`**:
+
+| dag variable | Unit | Description | Status in this body |
+|--------------|------|-------------|---------------------|
+| `SOC_stock_and_change` | `kgC/ha (stock), kgC/ha/yr (change)` | Soil organic carbon stock and inter-annual change / sequestration | Body campaign pending |
+
+### Performance Metrics -- Convention Bars
+
+These bars restate the KI convention facts. For `SOC_stock_and_change`, no
+extracted convention bar is stated in this body; consult
+`docs/validation_convention.yaml` before assigning a verdict for the rank-1
+variable.
+
+| dag variable | Metric | Direction | Very good band | Good band | Satisfactory band |
+|--------------|--------|-----------|----------------|-----------|-------------------|
+| `crop_grain_yield` | `pbias` | `zero_centered` | `5.0` (`jiang2021`, `cui2014`, `zhang2019`) | `10.0` (`jiang2021`, `cui2014`, `zhang2019`) | `15.0` (`jiang2021`, `cui2014`, `zhang2019`) |
+| `crop_grain_yield` | `nrmse` | `minimize` | `10.0` (`jiang2021`) | `20.0` (`jiang2021`) | `30.0` (`jiang2021`) |
+| `crop_N_uptake` | `pbias` | `zero_centered` | `5.0` (`jiang2021`) | `10.0` (`jiang2021`) | `15.0` (`jiang2021`) |
+| `crop_N_uptake` | `nrmse` | `minimize` | `10.0` (`jiang2021`) | `20.0` (`jiang2021`) | `30.0` (`jiang2021`) |
+
+The extracted convention facts include duplicate `crop_grain_yield` `pbias`
+and `nrmse` rows with the same bands and citations shown above. Treat those
+duplicates as the same cited bars unless `docs/validation_convention.yaml`
+is changed and the KI projections are regenerated.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending | Prepare through `tools/convert_climate_to_dndc.py`; run `python preflight_check.py` before model execution. |
+| Soil | Pipeline | Pending | Prepare through `tools/convert_soil_to_dndc.py`; preserve DNDC units from the unit conversion table. |
+| Crop and management | Pipeline/manual template | Pending | Assemble into `.dnd` with `tools/assemble_dnd_file.py` or documented templates. |
+| Model execution | DNDC95.exe via native Windows or Wine | Pending | The mandatory execution policy requires the actual model binary. |
+| Output parsing | Pipeline | Pending | Parse with `tools/parse_dndc_output.py`; bind scored outputs by dag variable names. |
 
 ---
 

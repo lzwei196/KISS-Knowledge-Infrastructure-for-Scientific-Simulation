@@ -1,166 +1,627 @@
-model:
-  name: "openAMUNDSEN"
-  domain: "cryosphere — snow accumulation, ablation, energy balance in mountain regions"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  binary_type: "python_package"
-  cli_command: "openamundsen config.yml"
-  version: "0.0.post1+gb501171df"
-  language: "Python (Numba JIT)"
-  license: "MIT"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: openAMUNDSEN
+  language: python
+  implementation:
+    id: openamundsen-py
+    version: openamundsen Python package (1.x; HydroCraft KI package hydrocraft-openamundsen-snow)
+    provenance: Python (Numba-JIT-accelerated); openAMUNDSEN distributed snow-hydrological framework from
+      github.com/openamundsen/openamundsen.
+  scientific_reference_version: openAMUNDSEN v1.0 (Strasser, Warscher, Rottler & Hanzer, GMD 17:6775,
+    2024)
 inputs:
   forcing:
-    - name: "temp"
-      unit: "K"
-      valid_range: [200, 330]
-      description: "Air temperature (Kelvin, NOT Celsius)"
-    - name: "precip"
-      unit: "kg m-2 per timestep"
-      valid_range: [0, 100]
-      description: "Precipitation accumulation per timestep (CSV) or rate kg m-2 s-1 (NetCDF)"
-    - name: "rel_hum"
-      unit: "%"
-      valid_range: [0, 100]
-      description: "Relative humidity as percent (0-100, NOT 0-1 fraction)"
-    - name: "sw_in"
-      unit: "W m-2"
-      valid_range: [0, 1400]
-      description: "Incoming shortwave radiation"
-    - name: "wind_speed"
-      unit: "m s-1"
-      valid_range: [0, 50]
-      description: "Wind speed"
-    - name: "cloud_fraction"
-      unit: "%"
-      valid_range: [0, 100]
-      description: "Cloud cover fraction (percent, auto-converts from 0-1 if max<=1)"
-
-  grids:
-    - name: "DEM"
-      format: "Arc/Info ASCII (.asc)"
-      naming: "dem_{domain}_{resolution}.asc"
-      unit: "m"
-      description: "Digital elevation model (meters)"
-    - name: "ROI"
-      format: "Arc/Info ASCII (.asc)"
-      naming: "roi_{domain}_{resolution}.asc"
-      description: "Region of interest mask (optional)"
-    - name: "SVF"
-      format: "Arc/Info ASCII (.asc)"
-      naming: "svf_{domain}_{resolution}.asc"
-      description: "Sky view factor (optional, computed if missing)"
-
+  - name: temp (air temperature)
+    unit: K
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: station CSV column or NetCDF variable tas; valid 200-330 K
+    notes: Internal T0=273.15 K. Values <200 K (e.g. Celsius input) are silently set to NaN by the input
+      filter.
+  - name: precip (precipitation)
+    unit: kg m-2 per timestep (CSV) / kg m-2 s-1 (NetCDF rate)
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: station CSV column (accumulation) or NetCDF variable pr (flux)
+    notes: CSV is per-timestep accumulation; NetCDF is a rate auto-converted to accumulation ONLY when
+      the units attribute is set to kg m-2 s-1. Phase split mutates this field in place (precip rewritten
+      as snowfall+rainfall).
+  - name: rel_hum (relative humidity)
+    unit: '%'
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: station CSV column or NetCDF variable hurs; valid 1-100%
+    notes: Fraction (0-1) input is silently set to NaN by the min=1 filter.
+  - name: sw_in (incoming shortwave radiation)
+    unit: W m-2
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: station CSV column or NetCDF variable rsds; valid 0-1500 W m-2
+    notes: Power units, not energy. Energy units (J/MJ) are 1000-86400x too high.
+  - name: wind_speed
+    unit: m s-1
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: station CSV column or NetCDF variable wss; valid 0-50 m s-1, runtime floor 0.1
+      m s-1
+    notes: Drives undercatch correction; km/h input overscales correction ~3.6x.
+  - name: wind_direction
+    unit: degrees
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: station CSV column / NetCDF (optional)
+  - name: cloud_fraction
+    unit: '% (0-100)'
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: station CSV column / NetCDF (optional)
+    notes: Auto-conversion from 0-1 is fragile (only when max<=1 and len>10); used to cloud-adjust shortwave/longwave
+      when interpolation is off.
+  - name: lw_in (incoming longwave radiation)
+    unit: W m-2
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: station CSV / NetCDF (optional)
+    notes: If absent, longwave is parameterized from temperature/humidity/cloudiness.
   parameters:
-    critical:
-      - name: "snow.albedo.max"
-        valid_range: [0.75, 0.95]
-        default: 0.85
-        description: "Fresh snow albedo"
-      - name: "snow.albedo.min"
-        valid_range: [0.40, 0.65]
-        default: 0.55
-        description: "Old snow albedo"
-      - name: "snow.albedo.cold_snow_decay_timescale"
-        valid_range: [100, 1000]
-        default: 480
-        unit: "h"
-        description: "Albedo aging rate for cold snow"
-      - name: "snow.albedo.melting_snow_decay_timescale"
-        valid_range: [50, 500]
-        default: 200
-        unit: "h"
-        description: "Albedo aging rate for melting snow"
-      - name: "snow.albedo.refresh_snowfall"
-        valid_range: [0.1, 2.0]
-        default: 0.5
-        unit: "kg m-2 h-1"
-        description: "Snowfall amount to reset albedo"
-      - name: "snow.thermal_conductivity"
-        valid_range: [0.1, 0.5]
-        default: 0.24
-        unit: "W m-1 K-1"
-        description: "Snow thermal conductivity"
-      - name: "meteo.precipitation_phase.threshold_temp"
-        valid_range: [272, 275]
-        default: 273.65
-        unit: "K"
-        description: "Rain/snow partition temperature threshold"
-
+  - name: snow.albedo.max (fresh-snow albedo)
+    unit: '-'
+    category: snow_albedo
+    source_kind: calibrated
+    model_input_format: YAML config
+    notes: Range 0.75-0.95, default 0.85.
+  - name: snow.albedo.min (old-snow albedo)
+    unit: '-'
+    category: snow_albedo
+    source_kind: calibrated
+    model_input_format: YAML config
+    notes: Range 0.40-0.65, default 0.55.
+  - name: snow.albedo.cold_snow_decay_timescale
+    unit: h
+    category: snow_albedo
+    source_kind: calibrated
+    model_input_format: YAML config
+    notes: Range 100-1000 h, default 480.
+  - name: snow.albedo.melting_snow_decay_timescale
+    unit: h
+    category: snow_albedo
+    source_kind: calibrated
+    model_input_format: YAML config
+    notes: Range 50-500 h, default 200.
+  - name: snow.albedo.refresh_snowfall
+    unit: kg m-2 h-1
+    category: snow_albedo
+    source_kind: calibrated
+    model_input_format: YAML config
+    notes: Snowfall rate that resets albedo; default 0.5.
+  - name: snow.thermal_conductivity
+    unit: W m-1 K-1
+    category: snow_thermal
+    source_kind: calibrated
+    model_input_format: YAML config
+    notes: Range 0.1-0.5, default 0.24.
+  - name: snow.melt.degree_day_factor
+    unit: mm degC-1 d-1
+    category: melt
+    source_kind: calibrated
+    model_input_format: YAML config
+    notes: Range 0.5-6.0. Applies ONLY to temperature-index / enhanced-temperature-index melt, not the
+      energy_balance default.
+  - name: meteo.interpolation.temperature.lapse_rate
+    unit: K m-1
+    category: interpolation
+    source_kind: calibrated
+    model_input_format: YAML config (monthly)
+    notes: Order 0.0026-0.0065 K/m; entering K/km values (e.g. 6.5) corrupts elevation gradients.
+  - name: meteo.interpolation.precipitation.lapse_rate
+    unit: fraction m-1 (monthly)
+    category: interpolation
+    source_kind: calibrated
+    model_input_format: YAML config (monthly)
+    notes: Precipitation elevation gradient.
+  - name: DEM (digital elevation model)
+    unit: m
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: Arc/Info ASCII Grid dem_{domain}_{resolution}.asc in projected CRS
+    notes: 'Required. Filename must exactly match domain+resolution. Source: SRTM/ASTER/LiDAR.'
+  - name: land cover grid
+    unit: class
+    category: terrain
+    source_kind: dataset_lookup
+    model_input_format: Arc/Info ASCII Grid lc_{domain}_{resolution}.asc
+    notes: 'Required when canopy or ET modules enabled. Source: CORINE/ESA CCI.'
+  - name: soil texture / parameters grid
+    unit: class
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: Arc/Info ASCII Grid soil_{domain}_{resolution}.asc or YAML
+    notes: 'Required for ET module. Source: HWSD.'
+  - name: soil layer thicknesses
+    unit: m
+    category: soil
+    source_kind: default
+    model_input_format: YAML config
+    notes: Typical [0.1,0.2,0.4,0.8] m; cm input makes soil heat flux 100x off.
+  - name: station metadata (id, name, x, y, alt)
+    unit: x/y in meteo.crs; alt in m
+    category: station
+    source_kind: dataset_lookup
+    model_input_format: stations.csv (CSV meteo mode) or per-file NetCDF attributes
+    notes: At least one station must fall inside the grid extent.
+  initial_conditions:
+  - name: snow.swe (initial snow water equivalent)
+    unit: kg m-2
+    category: snow
+    source_kind: user_provided
+    model_input_format: config/state initialization
+    notes: Default zero (snow-free start).
+  - name: initial snow density / layer structure
+    unit: kg m-3 / m
+    category: snow
+    source_kind: user_provided
+    model_input_format: config/state initialization
+    notes: g/cm3 input yields effectively massless layers (1000x error).
+  - name: soil temperature profile
+    unit: K
+    category: soil
+    source_kind: user_provided
+    model_input_format: config/state initialization
+    notes: surface.temp is seeded from the top soil layer temperature at init.
+  boundary_conditions:
+  - name: domain
+    unit: '-'
+    category: domain
+    source_kind: user_provided
+    model_input_format: YAML config
+    notes: Identifies the catchment and matches input filenames.
+  - name: start_date / end_date
+    unit: date
+    category: time
+    source_kind: user_provided
+    model_input_format: YAML config
+    notes: Simulation window, typically a water year.
+  - name: resolution
+    unit: m (integer)
+    category: grid
+    source_kind: user_provided
+    model_input_format: YAML config
+    notes: Must be meters matching DEM cellsize; km input collapses grid to 1-2 cells.
+  - name: timestep
+    unit: pandas frequency string
+    category: time
+    source_kind: user_provided
+    model_input_format: YAML config (h, 3h, D)
+    notes: Seconds/minutes/integers are invalid and fatal at config parse.
+  - name: crs (model grid) / input_data.meteo.crs (stations)
+    unit: EPSG
+    category: crs
+    source_kind: user_provided
+    model_input_format: YAML config
+    notes: Grid/DEM must be projected; station CSV coords are in meteo.crs (often WGS84). Conflating the
+      two yields 'no stations in grid extent'.
+  - name: snow model scheme (multilayer | cryolayers)
+    unit: '-'
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: YAML config
+    notes: Switching schemes invalidates calibrated snow parameters.
+  - name: melt method (energy_balance | temperature_index | enhanced_temperature_index)
+    unit: '-'
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: YAML config
+  - name: snow compaction method (Anderson 1976 | empirical)
+    unit: '-'
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: YAML config
+  - name: meteo interpolation method (regression+IDW | fixed/fractional lapse | MicroMet)
+    unit: '-'
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: YAML config
+  - name: canopy.enabled / evapotranspiration.enabled / glaciers.enabled
+    unit: '-'
+    category: module_toggle
+    source_kind: user_provided
+    model_input_format: YAML config
+    notes: Enable optional modules; canopy/ET require land cover, ET requires soil texture.
+  - name: meteo.precipitation_phase.threshold_temp
+    unit: K
+    category: precip_phase
+    source_kind: user_provided
+    model_input_format: YAML config
+    notes: Rain/snow 50%-snow threshold (default 273.65 K); temp or wet-bulb basis.
 outputs:
   primary:
-    - name: "swe"
-      unit: "kg m-2"
-      valid_range: [0, 3000]
-      description: "Snow water equivalent"
-    - name: "snow_depth"
-      unit: "m"
-      valid_range: [0, 15]
-      description: "Snow depth"
-    - name: "melt"
-      unit: "kg m-2"
-      valid_range: [0, 50]
-      description: "Snow melt per timestep"
-    - name: "runoff"
-      unit: "kg m-2"
-      valid_range: [0, 50]
-      description: "Runoff per timestep"
-    - name: "sublimation"
-      unit: "kg m-2"
-      valid_range: [-5, 5]
-      description: "Snow sublimation (negative = condensation)"
-    - name: "surface_temp"
-      unit: "K"
-      valid_range: [200, 330]
-      description: "Surface temperature"
-    - name: "surface_albedo"
-      unit: "-"
-      valid_range: [0.1, 0.95]
-      description: "Surface albedo"
-    - name: "snow_density"
-      unit: "kg m-3"
-      valid_range: [50, 917]
-      description: "Bulk snow density"
-    - name: "soil_temp"
-      unit: "K"
-      valid_range: [250, 310]
-      description: "Soil temperature"
-  radiation:
-    - name: "sw_in"
-      unit: "W m-2"
-      valid_range: [0, 1400]
-    - name: "sw_out"
-      unit: "W m-2"
-      valid_range: [0, 1200]
-    - name: "lw_in"
-      unit: "W m-2"
-      valid_range: [100, 500]
-    - name: "lw_out"
-      unit: "W m-2"
-      valid_range: [150, 500]
-  turbulent:
-    - name: "sens_heat_flux"
-      unit: "W m-2"
-      valid_range: [-500, 600]
-    - name: "lat_heat_flux"
-      unit: "W m-2"
-      valid_range: [-400, 200]
-
+  - name: swe
+    unit: kg m-2
+    description: Snow water equivalent — mass of snow per unit area (CF surface_snow_amount).
+    validation_rank: 1
+    emitted_in: point CSV / gridded NetCDF (user-selected output variables)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Point gauge/snow-pillow SWE must be co-located with a grid cell of matching elevation/aspect;
+          sub-grid terrain heterogeneity limits achievable skill.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Airborne-laser-scan or remote SWE retrievals must share the model grid CRS and resolution.
+      detrending_options:
+      - none
+  - name: snow_depth
+    unit: m
+    description: Snow depth (CF surface_snow_thickness).
+    validation_rank: 2
+    emitted_in: point CSV / gridded NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Depth depends on modeled density; co-location and elevation matching required.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: snow_cover (area fraction / extent)
+    unit: '-'
+    description: Snow-covered area fraction; derivable snow-cover duration and snow-disappearance day.
+    validation_rank: 3
+    emitted_in: gridded NetCDF / GeoTIFF (derived from snow_area_fraction)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Compare against Landsat/MODIS binary snow extent; cloud gaps and the model fractional-vs-binary
+          mismatch require a threshold.
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - Snow-disappearance-day comparison is sensitive to spatial resolution in complex terrain.
+      detrending_options:
+      - none
+  - name: snow_melt
+    unit: kg m-2
+    description: Snowmelt flux (CF surface_snow_melt_amount).
+    validation_rank: 4
+    emitted_in: point CSV / gridded NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Melt is rarely observed directly; usually inferred from lysimeter or runoff.
+      detrending_options:
+      - none
+  - name: snow_runoff
+    unit: kg m-2
+    description: Snow runoff (rain + meltwater released from the snowpack).
+    validation_rank: 5
+    emitted_in: point CSV / gridded NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Catchment runoff comparison requires external routing; the model does not route streamflow.
+      detrending_options:
+      - none
+  - name: snow_density
+    unit: kg m-3
+    description: Bulk/layer snow density.
+    validation_rank: 6
+    emitted_in: point CSV / gridded NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Density observations are sparse (snow-pit measurements).
+      detrending_options:
+      - none
+  - name: evapotranspiration
+    unit: kg m-2
+    description: Evapotranspiration from snow-free surfaces (FAO Penman-Monteith; optional module).
+    validation_rank: 7
+    emitted_in: point CSV / gridded NetCDF (when evapotranspiration.enabled)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Comparable only to eddy-covariance/lysimeter ET over snow-free periods.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    description: "Temperature in Celsius silently clipped to NaN (expects Kelvin)"
-    severity: "silent"
-  - id: "dt_002"
-    description: "Precipitation unit mismatch (rate vs accumulation) causes massive SWE errors"
-    severity: "silent"
-  - id: "dt_003"
-    description: "Relative humidity as fraction (0-1) silently clipped to NaN"
-    severity: "silent"
-  - id: "dt_009"
-    description: "DEM filename must match domain/resolution in config exactly"
-    severity: "fatal"
-  - id: "dt_013"
-    description: "Lapse rate in K/km instead of K/m crashes temperatures"
-    severity: "silent"
-  - id: "dt_014"
-    description: "Station coordinates in wrong CRS causes spatial mismatch"
-    severity: "fatal"
+- id: dt_001
+  symptom: 'All temperature values become NaN after input filtering. Snow never forms. Model may run without
+    error but produces zero SWE everywhere.
+
+    '
+  diagnosis: 'Temperature provided in Celsius (°C) instead of Kelvin (K); openAMUNDSEN expects temperature
+    in Kelvin. The default input filter rejects values outside 200-330 K. Celsius values (e.g., -10 to
+    +30) are all below 200 K threshold and silently replaced with NaN. No error is raised.
+
+    ; [''convert_meteo_for'
+  remedy: 'Add 273.15 to all temperature values before input; convert_meteo_forcing.py --temp-unit celsius;
+    [''Check max temperature in input data'', ''If max temp < 100, values are in Celsius'', ''Apply: temp_K
+    = temp_C + 273.15'']; validate_outputs() checks for temp < 200'
+  severity: silent
+- id: dt_002
+  symptom: 'SWE accumulates far too rapidly (e.g., 10,000+ kg/m² in one month) or barely accumulates at
+    all (< 1 kg/m² over entire winter).
+
+    '
+  diagnosis: 'Precipitation unit mismatch: rate vs accumulation or wrong time scale; CSV format expects
+    precipitation as kg m⁻² per timestep (= mm per timestep). NetCDF format expects kg m⁻² s⁻¹ (rate)
+    with auto-conversion. Common errors: providing mm/day for hourly timestep (24x too high), providing
+    kg m⁻² s⁻¹ i'
+  remedy: 'Match precipitation units to format and timestep; convert_meteo_forcing.py --precip-unit mm_per_day;
+    [''For CSV hourly: precip should be mm/hour (0-20 typical)'', ''For CSV 3-hourly: precip should be
+    mm/3h (0-50 typical)'', ''For NetCDF: use kg m⁻² s⁻¹ with units attribute set'', ''Check: daily sum
+    should '
+  severity: silent
+- id: dt_003
+  symptom: 'Relative humidity is all NaN. Vapor pressure calculations return zero. Latent heat flux and
+    sublimation are incorrect.
+
+    '
+  diagnosis: 'Relative humidity provided as fraction (0-1) instead of percent (0-100); openAMUNDSEN expects
+    relative humidity in percent (0-100%). The default input filter has min=1, max=100. Fraction values
+    (0.0-1.0) are below the min=1 threshold and silently replaced with NaN.
+
+    ; [''convert_meteo_forcing'', ''inter'
+  remedy: 'Multiply relative humidity by 100; convert_meteo_forcing.py --rh-unit fraction; [''Check max
+    relative humidity value'', ''If max <= 1.0, values are fractions'', ''Apply: rh_percent = rh_fraction
+    * 100'']; validate_outputs() checks for rh_max <= 1.0'
+  severity: silent
+- id: dt_004
+  symptom: 'Shortwave radiation values are unrealistically high (>10,000 W/m²) or snow melts too fast/slow
+    due to radiation imbalance.
+
+    '
+  diagnosis: Shortwave radiation in energy units (J/m², MJ/m²/day) instead of power (W/m²); openAMUNDSEN
+    expects instantaneous shortwave radiation in W m⁻². ERA5 provides accumulated J m⁻² per timestep.
+    MSWX and some datasets use MJ m⁻² day⁻¹. Using energy values directly as power causes radiation 1000-86400x
+    to
+  remedy: 'Convert energy to power: W/m² = J/(m²·seconds) or MJ/m²/day ÷ 0.0864; convert_meteo_forcing.py
+    --sw-unit mj_m2_day; [''Check max shortwave value'', ''If max > 1500, likely wrong units'', ''ERA5:
+    divide J/m² by timestep_seconds'', ''MJ/m²/day: divide by 0.0864'']; Filter max=1500 W/m² catches
+    most cases'
+  severity: silent
+- id: dt_005
+  symptom: 'Precipitation correction factors are too aggressive. Corrected precipitation is 3-4x higher
+    than raw input. Excessive snow accumulation at exposed sites.
+
+    '
+  diagnosis: Wind speed in km/h instead of m/s; openAMUNDSEN expects wind speed in m/s. Wind-based precipitation
+    corrections (WMO, Kochendorfer) scale with wind speed. Using km/h (3.6x higher) causes the correction
+    factor to be much too large, especially at high wind speeds. The filter clips at 50 m/s, but 50 km
+  remedy: 'Divide wind speed by 3.6 to convert km/h to m/s; convert_meteo_forcing.py --wind-unit kmh;
+    [''Check typical wind speed values'', ''Mountain stations: 2-15 m/s typical, 7-50 km/h typical'',
+    ''If values commonly > 20, likely km/h'']; validate_outputs() flags mean wind > 15 m/s'
+  severity: degraded
+- id: dt_006
+  symptom: 'Cloud fraction values inconsistent. Some timesteps treated as clear sky when actually cloudy.
+    Longwave radiation too low.
+
+    '
+  diagnosis: Cloud fraction auto-conversion from 0-1 to 0-100 fails; openAMUNDSEN auto-converts cloud
+    fraction from 0-1 to 0-100 only when max(cloud_fraction) <= 1 AND len(data) > 10. Short time series,
+    data with max < 1 but some values > 1 (already percent), or data where units attribute is not set
+    to '1' may b
+  remedy: Explicitly multiply cloud fraction by 100 if data is 0-1; ['Check cloud fraction range in input
+    data', 'If max ≤ 1.0, multiply by 100 before input', 'Do not rely on auto-conversion']; Always convert
+    to percent explicitly
+  severity: silent
+- id: dt_007
+  symptom: 'NetCDF precipitation is treated as accumulation (kg/m² per timestep) when it is actually a
+    rate (kg/m² s⁻¹). Precipitation is 3600x too low.
+
+    '
+  diagnosis: 'NetCDF precipitation variable missing units attribute; openAMUNDSEN auto-converts precipitation
+    rates (kg m⁻² s⁻¹) to accumulations only when the NetCDF variable has units=''kg m-2 s-1''. Without
+    this attribute, the values are treated as already being accumulations, resulting in precipitation
+    that is '
+  remedy: 'Set units attribute on NetCDF precipitation variable; ["Open NetCDF: ds = xr.open_dataset(''station.nc'')",
+    "Check: print(ds[''pr''].attrs)", "If no units: ds[''pr''].attrs[''units''] = ''kg m-2 s-1''", ''Re-save
+    the file'']; Always verify NetCDF variable attributes'
+  severity: silent
+- id: dt_008
+  symptom: 'Temperature interpolation produces unrealistic values. Lapse rate corrections are orders of
+    magnitude wrong. Valley stations show same temp as peaks.
+
+    '
+  diagnosis: 'Station altitude in wrong unit (feet, km) instead of meters; Station altitude is used for
+    lapse rate corrections in temperature interpolation. If altitude is in feet (3281 ft = 1000 m) or
+    km (1.0 km), the elevation difference calculation is wrong, producing incorrect temperature gradients.
+
+    ; [''inter'
+  remedy: 'Convert station altitudes to meters; [''Check altitude values in stations.csv or NetCDF'',
+    ''Alpine stations: 500-4000 m typical'', ''If values are 1600-13000, likely feet (divide by 3.281)'',
+    ''If values are 0.5-4.0, likely km (multiply by 1000)'']; validate_inputs() flags altitude < 10 or
+    > 9000'
+  severity: silent
+- id: dt_009
+  symptom: 'Fatal error at initialization: ''DEM file not found'' or ''FileNotFoundError: No such file
+    or directory''.
+
+    '
+  diagnosis: 'DEM filename does not match config domain and resolution; openAMUNDSEN constructs the DEM
+    path as: {grids_dir}/dem_{domain}_{resolution}.asc If the domain name or resolution in the config
+    don''t exactly match the filename, the file is not found. Common issues: space in domain name, resolution
+    as floa'
+  remedy: 'Ensure DEM filename exactly matches: dem_{domain}_{resolution}.asc; [''Check config: domain
+    and resolution values'', ''Check filename: ls input/grid/dem_*.asc'', ''Rename file or update config
+    to match'']; preflight_checks() validates DEM path'
+  severity: fatal
+- id: dt_010
+  symptom: 'Grid has only 1-2 cells. Model runs but produces meaningless results. Or fatal error due to
+    insufficient grid cells for interpolation.
+
+    '
+  diagnosis: 'Resolution specified in km instead of meters; The config resolution parameter is in meters.
+    Specifying 0.05 (km) instead of 50 (m) creates a grid cell size of 0.05 m, which with a typical DEM
+    extent of ~10 km creates a 200,000×200,000 grid (OOM) or, if the DEM is already at 50m, results in
+    1 cell.
+
+    ;'
+  remedy: 'Use resolution in meters (e.g., 50, not 0.05); [''Check config: resolution value'', ''Typical
+    values: 10, 25, 50, 100, 250'', ''Must match DEM cellsize exactly'']; preflight_checks() warns if
+    resolution < 1'
+  severity: fatal
+- id: dt_011
+  symptom: 'Soil heat flux is 100x too high or too low. Ground heat contribution to snowmelt is unrealistic.
+
+    '
+  diagnosis: 'Soil thickness specified in cm instead of meters; openAMUNDSEN expects soil layer thicknesses
+    in meters. Using centimeters (e.g., [10, 20, 40, 80] instead of [0.1, 0.2, 0.4, 0.8]) creates unrealistically
+    thick soil layers, affecting heat conduction calculations.
+
+    ; [''soil'', ''heatconduction'']'
+  remedy: 'Divide soil thickness values by 100; [''Check config: soil.thickness values'', ''Typical values:
+    [0.1, 0.2, 0.4, 0.8] meters'', ''If values are [10, 20, 40, 80], divide by 100'']; convert_soil_params.py
+    validates thickness range'
+  severity: silent
+- id: dt_012
+  symptom: 'Initial snow density is unrealistically low (e.g., 0.3 kg/m³ instead of 300 kg/m³). Snow depth
+    calculations are 1000x too large.
+
+    '
+  diagnosis: 'Snow density in g/cm³ instead of kg/m³; openAMUNDSEN uses kg/m³ for density internally.
+    Fresh snow: 50-150 kg/m³, old snow: 200-500 kg/m³, ice: 917 kg/m³. Using g/cm³ (0.05-0.5) creates
+    layers that are effectively massless.
+
+    ; [''snow model'', ''density evolution'']'
+  remedy: 'Multiply density by 1000 to convert g/cm³ to kg/m³; [''Check any custom density initializations'',
+    ''Typical new snow: 100 kg/m³'', ''Typical old snow: 350 kg/m³'']; Range check: density should be
+    30-917 kg/m³'
+  severity: silent
+- id: dt_013
+  symptom: 'Interpolated temperatures are completely unrealistic. Mountain peaks show temperatures thousands
+    of degrees different from valleys. Or no temperature gradient at all.
+
+    '
+  diagnosis: Temperature lapse rate in K/km instead of K/m; openAMUNDSEN expects lapse rates in K/m. Standard
+    atmospheric lapse rate is 0.0065 K/m (= 6.5 K/km). If 6.5 is entered directly, it means 6500 K/km
+    — a 1000m elevation difference creates a 6500 K temperature offset. The model does not validate lapse
+    rat
+  remedy: 'Divide lapse rate by 1000 if values are O(1-10); [''Check config: meteo.interpolation.temperature.lapse_rate'',
+    ''Values should be O(0.001-0.01) K/m'', ''If values are O(1-10), divide by 1000'', ''Standard: [0.0026,
+    0.0035, 0.0047, 0.0056, 0.0060, 0.0064, 0.0065, 0.0062, 0.0054, 0.0041, 0.0032, 0.0025]'']; '
+  severity: silent
+- id: dt_014
+  symptom: 'Fatal error: ''No stations within grid extent'' or stations plot far from the DEM domain on
+    a map.
+
+    '
+  diagnosis: Station coordinates in projected CRS but config says WGS84, or vice versa; In CSV mode, station
+    coordinates in stations.csv must match the CRS specified in input_data.meteo.crs. If stations.csv
+    has UTM coordinates (e.g., x=682500, y=5215000) but crs is set to epsg:4326 (lon/lat), the model interpret
+  remedy: 'Set input_data.meteo.crs to match the actual CRS of station coordinates; [''Check stations.csv:
+    x/y column values'', "If values are O(1-180), likely WGS84 degrees → crs: ''epsg:4326''", "If values
+    are O(100000-900000), likely UTM → crs: ''epsg:326XX''", ''Or convert coordinates in stations.csv
+    to WGS84'']; '
+  severity: fatal
+- id: dt_015
+  symptom: 'ValueError or TypeError at configuration parsing: ''invalid frequency'' or ''cannot convert
+    timestep''.
+
+    '
+  diagnosis: 'Timestep specified as seconds/minutes/integer instead of pandas frequency string; openAMUNDSEN
+    uses pandas frequency strings for timestep. Valid examples: ''h'' (hourly), ''3h'' (3-hourly), ''D''
+    (daily), ''30min'' (30 minutes). Invalid: 3600 (seconds), 60 (minutes), ''1hour'', ''hourly''.
+
+    ; [''configuration'', '''
+  remedy: 'Use pandas frequency string format; [''Hourly: timestep: h'', ''3-hourly: timestep: 3h'', ''30-minute:
+    timestep: 30min'', ''Daily: timestep: D'']; preflight_checks() validates timestep parsing'
+  severity: fatal
+- id: dt_016
+  symptom: 'Model accuracy degrades significantly after switching snow model type (multilayer ↔ cryolayers)
+    while keeping the same calibrated parameters.
+
+    '
+  diagnosis: 'Snow model switch invalidates calibration parameters; The multilayer and cryolayers models
+    have different internal representations: multilayer uses explicit thickness-based layers, cryolayers
+    uses categorical transitions (new snow → old snow → firn → ice). Parameters tuned for one model are
+    not tran'
+  remedy: Re-calibrate all snow parameters when switching model type; ['Document current calibrated parameter
+    set', 'Switch model type in config', 'Re-run calibration with same observed data', 'Verify NSE/KGE
+    metrics are acceptable']; Always calibrate for the specific snow model being used
+  severity: degraded
+- id: dt_017
+  symptom: 'Fatal error during initialization: ''No meteorological stations within grid extent'' or empty
+    station dataset.
+
+    '
+  diagnosis: 'All stations fall outside the model grid boundaries; openAMUNDSEN requires at least one
+    meteorological station within (or near) the model grid extent. This fails when: (1) station CRS is
+    wrong (dt_014), (2) grid extent is too small, (3) bounds=''grid'' excludes all stations, or (4) all
+    stations are in'
+  remedy: 'Ensure at least one station falls within the grid or use bounds: global; [''Plot station locations
+    and grid extent on a map'', ''Check coordinate systems match'', ''Try: bounds: global (uses all stations
+    regardless of location)'', ''Or: extend_roi_with_stations: true'']; preflight_checks() validates station'
+  severity: fatal
+- id: dt_018
+  symptom: 'Canopy interception is zero even in forested areas. Warning about missing land cover classes
+    in log output.
+
+    '
+  diagnosis: 'Canopy module enabled but no land cover classification grid provided; The canopy module
+    requires a land cover grid to identify forested pixels. Without it, all pixels are treated as open
+    terrain and canopy interception, sublimation, and radiation modification are skipped. The model runs
+    but ignores '
+  remedy: 'Either provide land cover grid or disable canopy module; [''Option 1: Set canopy.enabled: false
+    in config'', ''Option 2: Provide land cover grid matching DEM extent/resolution'', ''Land cover grid
+    uses integer class codes (CORINE, ESA CCI)'']; preflight_checks() warns if canopy enabled without
+    land cover'
+  severity: degraded

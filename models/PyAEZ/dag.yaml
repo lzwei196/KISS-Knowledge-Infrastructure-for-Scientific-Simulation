@@ -358,7 +358,7 @@ outputs:
   - var: "thermal_zone"
     validation_rank: 6
     unit: "class 1-12"
-    description: "Thermal climate / thermal zone classification."
+    description: "Atmospheric thermal climate / thermal zone classification."
     emitted_in: "GeoTIFF raster (Module I)"
     observability:
       comparable_obs_shapes:
@@ -371,7 +371,7 @@ outputs:
   - var: "pet_daily"
     validation_rank: 4
     unit: "mm/day"
-    description: "Penman-Monteith reference evapotranspiration (ETo)."
+    description: "Atmospheric Penman-Monteith reference-crop evapotranspiration (ETo)."
     emitted_in: "GeoTIFF raster (Module I)"
     observability:
       comparable_obs_shapes:
@@ -402,7 +402,7 @@ outputs:
   - var: "yield_irr"
     validation_rank: 2
     unit: "kg/ha"
-    description: "Irrigated maximum attainable yield (moisture limitation removed)."
+    description: "Irrigated crop maximum attainable yield (moisture limitation removed)."
     emitted_in: "GeoTIFF raster (Module II)"
     observability:
       comparable_obs_shapes:
@@ -446,7 +446,7 @@ outputs:
   - var: "net_revenue"
     validation_rank: 8
     unit: "currency/ha"
-    description: "Net revenue per pixel (clamped >= 0) from the economic break-even analysis."
+    description: "Net revenue per land pixel (clamped >= 0) from the crop economic break-even analysis."
     emitted_in: "GeoTIFF raster (Module VI)"
     observability:
       comparable_obs_shapes:
@@ -645,3 +645,21 @@ safety:
       scope: "yield units across the suitability-to-economics handoff"
       source: "PyAEZ EconomicSuitability.getNetRevenue input expectation"
       status: "adopted"
+
+medium_evidence:
+  - var: "thermal_zone"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.4060_cb4744en.txt"
+    quote: "Thermal zone (TZ) classes reflect actual temperature conditions (see also Chapter 3, section 3.3.2) and are used to characterize and sub-divide major thermal climate classes into more specific temperature regime classes (TRC)."
+    note: "GAEZ defines thermal zones as actual atmospheric temperature-regime classes."
+  - var: "pet_daily"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.4060_cb4744en.txt"
+    quote: "The calculation of reference evapotranspiration (ETo), i.e., the rate of evapotranspiration from a hypothetic reference crop with an assumed crop height of 12 cm, a canopy resistance of 70 ms-1 and an albedo of 0.23 (closely resembling the evapotranspiration from an extensive surface of green grass), is done according to the Penman-Monteith equation (Monteith, 1965, 1981; FAO, 1992b)."
+    note: "GAEZ defines ETo as reference-crop evapotranspiration calculated by Penman-Monteith."
+  - var: "yield_irr"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_agronomy15040878.txt"
+    quote: "The optimal plating dates are computed automatically which leads to maximum attainable yields for both rainfed and irrigated conditions."
+    note: "PyAEZ yield outputs are crop maximum attainable yields under rainfed or irrigated crop conditions."
+  - var: "net_revenue"
+    source: "docs/s5_terrain_economic.md"
+    quote: "**Module VI** evaluates economic viability through net revenue analysis based on production costs and farm-gate prices."
+    note: "Module VI net revenue is the land/crop economic suitability output derived from crop yield, cost, and price."

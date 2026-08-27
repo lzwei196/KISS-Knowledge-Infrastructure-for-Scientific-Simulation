@@ -1,206 +1,597 @@
-model:
-  name: "HydroTrend"
-  version: "3.0.5"
-  domain: "Geomorphology / Fluvial Sediment Transport"
-  binary_path: "KISSPATH_BINARIES/HydroTrend/source/repo/_build/hydrotrend"
-  language: "C"
-  time_step: "daily"
-  spatial_scale: "lumped basin"
-  cli_usage: "hydrotrend --in-dir=./input --out-dir=./output --prefix=HYDRO"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: HydroTrend
+  language: c
+  implementation:
+    id: hydrotrend-3.0
+    version: 3.0.5
+    provenance: C (ANSI-standard) with built-in CSDMS BMI; csdms-contrib/hydrotrend release; epoch/year
+      driver in hydrotrend.c.
+  scientific_reference_version: HydroTrend v3.0 (Kettner & Syvitski 2008); BQART sediment-flux relation
+    per Syvitski & Milliman 2007
 inputs:
   forcing:
-    - name: "monthly_temperature"
-      unit: "degC"
-      description: "Monthly mean temperature (HYDRO.IN lines 12-23, column 2)"
-      valid_range: [-50, 50]
-    - name: "monthly_temperature_stddev"
-      unit: "degC"
-      description: "Within-month standard deviation of temperature (lines 12-23, column 3)"
-      valid_range: [0, 20]
-    - name: "monthly_precipitation"
-      unit: "mm"
-      description: "Monthly total precipitation (lines 12-23, column 4). Model divides by 1000 internally."
-      valid_range: [0, 2000]
-    - name: "monthly_precipitation_stddev"
-      unit: "mm"
-      description: "Standard deviation of monthly precipitation (lines 12-23, column 5)"
-      valid_range: [0, 500]
-    - name: "annual_precipitation"
-      unit: "m/yr"
-      description: "Annual precipitation sum (line 9). NO internal conversion — already in meters."
-      valid_range: [0.01, 15.0]
-    - name: "annual_temperature"
-      unit: "degC"
-      description: "Annual mean temperature start value (line 8)"
-      valid_range: [-30, 50]
-
+  - name: Monthly mean temperature (12 months)
+    unit: degC
+    category: climate
+    source_kind: forcing
+    model_input_format: '{PREFIX}.IN lines 12-23, field 2 of 5'
+  - name: Monthly temperature std dev (12 months)
+    unit: degC
+    category: climate
+    source_kind: forcing
+    model_input_format: '{PREFIX}.IN lines 12-23, field 3 of 5'
+    notes: Near-zero std collapses the stochastic weather generator to a flat hydrograph
+  - name: Monthly total precipitation (12 months)
+    unit: mm
+    category: climate
+    source_kind: forcing
+    model_input_format: '{PREFIX}.IN lines 12-23, field 4 of 5'
+    notes: Divided by 1000 to m internally; supplying m instead of mm gives 1000x-low discharge
+  - name: Monthly precipitation std dev (12 months)
+    unit: mm
+    category: climate
+    source_kind: forcing
+    model_input_format: '{PREFIX}.IN lines 12-23, field 5 of 5'
+  - name: Annual temperature trend (T_start, T_change, T_std)
+    unit: degC, degC/yr, degC
+    category: climate
+    source_kind: forcing
+    model_input_format: '{PREFIX}.IN line 8'
+  - name: Annual precipitation trend (P_start, P_change, P_std)
+    unit: m/yr, m/yr^2, m/yr
+    category: climate
+    source_kind: forcing
+    model_input_format: '{PREFIX}.IN line 9'
+    notes: NO internal conversion; annual P is m/yr here while monthly P is mm — supplying mm/yr gives
+      1000x-high discharge
+  - name: Optional daily climate override (T, P time series)
+    unit: degC, m/day
+    category: climate
+    source_kind: forcing
+    model_input_format: '{PREFIX}.CLIMATE'
+    notes: Overrides the stochastic weather generator when present
   parameters:
-    critical:
-      - name: "lapse_rate"
-        unit: "degC/km"
-        valid_range: [3.0, 12.0]
-        description: "Temperature lapse rate (line 24). Model divides by 1000. Use -9999 for default."
-      - name: "basin_length"
-        unit: "km"
-        valid_range: [1, 10000]
-        description: "River basin length (line 28). Model multiplies by 1000 to get meters."
-      - name: "basin_area"
-        unit: "km2"
-        description: "Cumulative basin area from hypsometry file (HYDRO0.HYPS)"
-        valid_range: [1, 1000000]
-      - name: "basin_relief"
-        unit: "m"
-        description: "Maximum elevation minus minimum elevation from hypsometry"
-        valid_range: [1, 9000]
-      - name: "sediment_formula"
-        unit: "flag"
-        valid_range: [0, 2]
-        description: "0=QRT, 1=ART, 2=BQART (line 42)"
-      - name: "lithology_factor"
-        unit: "dimensionless"
-        valid_range: [0.3, 3.0]
-        description: "BQART lithology factor B (line 43). Hard=0.3, weak=3.0."
-      - name: "anthropogenic_factor"
-        unit: "dimensionless"
-        valid_range: [0.5, 8.0]
-        description: "BQART human disturbance factor Eh (line 44)"
-      - name: "grain_size_proportions"
-        unit: "fractions"
-        description: "Fraction of sediment in each grain size (line 7). Must sum to 1.0."
-      - name: "glacier_ela"
-        unit: "m"
-        valid_range: [0, 9000]
-        description: "Starting glacier equilibrium line altitude (line 25)"
-      - name: "velocity_coeff"
-        unit: "dimensionless"
-        description: "River mouth velocity coefficient k (line 30). v=kQ^m"
-      - name: "velocity_exponent"
-        unit: "dimensionless"
-        description: "River mouth velocity exponent m (line 30)"
-      - name: "width_coeff"
-        unit: "dimensionless"
-        description: "River mouth width coefficient a (line 31). w=aQ^b"
-      - name: "width_exponent"
-        unit: "dimensionless"
-        description: "River mouth width exponent b (line 31)"
-    optional:
-      - name: "reservoir_volume"
-        unit: "km3"
-        valid_range: [0, 1000]
-        description: "Mean reservoir volume (line 29). 0 = no reservoir."
-      - name: "base_flow"
-        unit: "m3/s"
-        valid_range: [0, 10000]
-        description: "Constant annual base flow (line 11)"
-      - name: "groundwater_storage_max"
-        unit: "m3"
-        description: "Maximum groundwater storage (line 33)"
-      - name: "groundwater_storage_min"
-        unit: "m3"
-        description: "Minimum groundwater storage (line 33)"
-      - name: "hydraulic_conductivity"
-        unit: "mm/day"
-        valid_range: [1, 10000]
-        description: "Saturated hydraulic conductivity Ko (line 36). Model divides by 1000."
-      - name: "canopy_interception_alpha"
-        unit: "mm/d"
-        valid_range: [-1, 5]
-        description: "Canopy interception alpha (line 26a). Model divides by 1000."
-      - name: "evapotranspiration_alpha"
-        unit: "mm/d"
-        valid_range: [1, 30]
-        description: "Groundwater pole ET alpha (line 26b). Model divides by 1000."
-      - name: "bedload_rating"
-        unit: "dimensionless"
-        valid_range: [0.1, 10]
-        description: "Bedload rating term (line 27a). -9999 resets to 1.0."
-      - name: "delta_gradient"
-        unit: "m/m"
-        valid_range: [0.0001, 0.1]
-        description: "Delta plain gradient (line 27)"
-
-  files:
-    - name: "HYDRO.IN"
-      format: "47-line ASCII, one parameter per line"
-      required: true
-    - name: "HYDRO0.HYPS"
-      format: "ASCII elevation-area hypsometric curve"
-      required: true
-    - name: "HYDRO.CLIMATE"
-      format: "Daily T/P time series override"
-      required: false
-    - name: "HYDRO.QUAKE"
-      format: "Earthquake event specifications"
-      required: false
-
+  - name: Hypsometry (elevation vs cumulative area)
+    unit: m, km2
+    category: morphology
+    source_kind: dataset_lookup
+    model_input_format: '{PREFIX}0.HYPS'
+    notes: Must be monotonically increasing in both columns, first-bin area 0; defines basin area, relief,
+      and snow/ice/lapse zones. Area in km2 (m2 inflates Qs ~1000x via A^0.5)
+  - name: Basin (river) length
+    unit: km
+    category: morphology
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 31'
+    notes: Multiplied by 1000 to m internally
+  - name: Delta plain gradient
+    unit: m/m
+    category: morphology
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 29'
+  - name: Lithology factor B (L)
+    unit: '-'
+    category: sediment
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 46'
+    notes: BQART range ~0.3-3.0; multiplicative on long-term sediment load
+  - name: Anthropogenic factor Eh
+    unit: '-'
+    category: sediment
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 47'
+    notes: BQART range ~0.5-8.0; soil-erosion/management term
+  - name: Number of grain sizes
+    unit: '-'
+    category: sediment
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.IN line 6, range 1-10'
+  - name: Grain-size proportions
+    unit: fraction
+    category: sediment
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.IN line 7'
+    notes: Must sum to exactly 1.0; model does NOT renormalize
+  - name: Bedload rating term
+    unit: '-'
+    category: sediment
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 30'
+    notes: Sentinel -9999 resets to 1.0
+  - name: Sediment filter
+    unit: '-'
+    category: sediment
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 44, range 0-0.9'
+  - name: Lapse rate
+    unit: degC/km
+    category: snow_glacier
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 24'
+    notes: Divided by 1000 to degC/m internally; sentinel -9999 triggers global default. Positive value
+      => T decreases with altitude
+  - name: Glacier ELA change
+    unit: m/yr
+    category: snow_glacier
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 25 (second field)'
+  - name: Dry-precipitation evaporation fraction
+    unit: '-'
+    category: evaporation
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 26, range 0-1'
+  - name: Canopy interception alpha/beta
+    unit: mm/d, -
+    category: evaporation
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 27'
+    notes: alpha divided by 1000 to m/d internally
+  - name: Evapotranspiration alpha/beta
+    unit: mm/d, -
+    category: evaporation
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 28'
+    notes: alpha divided by 1000 to m/d internally
+  - name: Groundwater storage max/min
+    unit: m3
+    category: groundwater
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 36'
+  - name: Subsurface storm flow coefficient/exponent
+    unit: '-'
+    category: groundwater
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 38'
+  - name: Saturated hydraulic conductivity Ko
+    unit: mm/day
+    category: groundwater
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 39'
+    notes: Divided by 1000 to m/day internally
+  - name: Constant annual baseflow
+    unit: m3/s
+    category: groundwater
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 11'
+    notes: baseflowtot per epoch must be < epoch-mean discharge Qbartotal, else fatal
+  - name: Velocity coefficient k and exponent m
+    unit: m/s, -
+    category: hydraulics
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 33'
+  - name: Width coefficient a and exponent b
+    unit: m, -
+    category: hydraulics
+    source_kind: calibrated
+    model_input_format: '{PREFIX}.IN line 34'
+    notes: 'Depth derived: depcof=1/(velcof*widcof), deppow=1-velpow-widpow; exponents must satisfy m+b+f=1'
+  - name: Reservoir volume and parameter-type flag
+    unit: km3, flag
+    category: reservoir
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.IN line 32'
+    notes: Volume 0 = no reservoir; a/altitude or d/drainage-area flag
+  initial_conditions:
+  - name: Initial groundwater storage
+    unit: m3
+    category: groundwater
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.IN line 37'
+    notes: Must lie between GW_min and GW_max; carried across years via gwlast
+  - name: Starting glacier ELA
+    unit: m
+    category: snow_glacier
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.IN line 25 (first field)'
+  boundary_conditions:
+  - name: Sediment-formula selection (0=QRT / 1=ART / 2=BQART)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.IN line 45'
+  - name: ASCII output flag (ON/OFF)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.IN line 2'
+    notes: OFF writes only the binary .DIS; no human-readable output
+  - name: Number of outlets and outlet fractions
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.IN lines 41-42'
+    notes: Outlet fractions must sum to 1 for multi-outlet deltas
+  - name: Event specification (events/yr or Qpeak threshold)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.IN line 43 (n# or q#)'
+  - name: Optional earthquake events (year, energy, distance, duration)
+    unit: '-'
+    category: forcing_external
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.QUAKE'
+  - name: River mouth longitude/latitude
+    unit: decimal degrees
+    category: control
+    source_kind: user_provided
+    model_input_format: '{PREFIX}.IN line 40'
+    notes: Latitude + basin Tbar select the climate-zone ART/QRT coefficient lookup
 outputs:
   primary:
-    - name: "discharge"
-      file: "HYDROASCII.Q"
-      unit: "m3/s"
-      valid_range: [0, 100000]
-      description: "Daily water discharge at river mouth"
-    - name: "suspended_sediment"
-      file: "HYDROASCII.QS"
-      unit: "kg/s"
-      valid_range: [0, 100000]
-      description: "Daily suspended sediment load"
-    - name: "bedload"
-      file: "HYDROASCII.QB"
-      unit: "kg/s"
-      valid_range: [0, 10000]
-      description: "Daily bedload transport"
-    - name: "sediment_concentration"
-      file: "HYDROASCII.CS"
-      unit: "kg/m3"
-      valid_range: [0, 500]
-      description: "Daily suspended sediment concentration"
-    - name: "velocity_width_depth"
-      file: "HYDROASCII.VWD"
-      unit: "m/s, m, m"
-      description: "Daily velocity, width, depth (three columns)"
-  summary:
-    - name: "annual_summary"
-      file: "HYDRO.TRN1"
-      description: "Annual discharge statistics"
-    - name: "annual_peak"
-      file: "HYDRO.TRN2"
-      description: "Annual peak Q per outlet"
-    - name: "comprehensive_annual"
-      file: "HYDRO.TRN3"
-      description: "Multi-column annual data"
-
-unit_conversion_traps:
-  - parameter: "monthly_precipitation"
-    user_provides: "mm"
-    model_converts: "÷1000 to m"
-    trap: "Providing m instead of mm gives 1000x too small"
-  - parameter: "lapse_rate"
-    user_provides: "degC/km"
-    model_converts: "÷1000 to degC/m"
-    trap: "Providing degC/m instead of degC/km gives 1000x too small"
-  - parameter: "basin_length"
-    user_provides: "km"
-    model_converts: "×1000 to m"
-    trap: "Providing m instead of km gives 1000x too large"
-  - parameter: "annual_precipitation"
-    user_provides: "m/yr"
-    model_converts: "none"
-    trap: "Providing mm/yr instead of m/yr gives 1000x too large"
-  - parameter: "canopy_interception_alpha"
-    user_provides: "mm/d"
-    model_converts: "÷1000 to m/d"
-    trap: "Providing m/d gives 1000x too small"
-  - parameter: "hydraulic_conductivity"
-    user_provides: "mm/day"
-    model_converts: "÷1000 to m/day"
-    trap: "Providing m/day gives 1000x too small"
-
+  - name: Q
+    unit: m3/s
+    description: 'Daily water discharge at the river mouth (BMI: channel_exit_water__volume_flow_rate)'
+    validation_rank: 1
+    emitted_in: '{PREFIX}ASCII.Q'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Daily timestep with a stochastic weather generator and fixed 365-day year; sub-daily and exact-date
+          events not resolvable. Lumped outlet — compare at the basin outlet gauge only.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - For multi-decadal/paleo runs, compare decadal/annual means or trends rather than inter-annual
+          correlation, since daily realizations are stochastic.
+      detrending_options:
+      - none
+      - decadal_mean
+  - name: Qs
+    unit: kg/s
+    description: 'Daily suspended sediment flux at the river mouth (BMI: channel_exit_water_sediment~suspended__mass_flow_rate)'
+    validation_rank: 2
+    emitted_in: '{PREFIX}ASCII.QS'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Suspended load is an empirical long-term rating (Morehead 2003) normalized to a BQART/ART/QRT
+          mean; daily values carry stochastic lognormal variability and should be compared as load-vs-discharge
+          rating or aggregated, not point-by-point.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - magnitude_accuracy
+        - trend_match
+        determining_metric: pbias
+        caveats:
+        - Long-term mean sediment load is the calibration target; multi-year mean Qs is the defensible
+          comparison.
+      detrending_options:
+      - none
+      - decadal_mean
+  - name: Qb
+    unit: kg/s
+    description: 'Daily bedload flux at the river mouth (BMI: channel_exit_water_sediment~bedload__mass_flow_rate)'
+    validation_rank: 3
+    emitted_in: '{PREFIX}ASCII.QB'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Bedload field measurements are rare and uncertain; compare order-of-magnitude long-term means,
+          not daily series.
+      detrending_options:
+      - none
+      - decadal_mean
+  - name: Cs
+    unit: kg/m3
+    description: 'Daily suspended sediment concentration at the river mouth (BMI: channel_exit_water_sediment~suspended__mass_concentration);
+      typical 0.001-100 kg/m3'
+    validation_rank: 4
+    emitted_in: '{PREFIX}ASCII.CS'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Concentration = Qs/Q; inherits the empirical sediment-rating variability. Hyperpycnal threshold
+          ~40 kg/m3 is a hardwired plume-behavior flag, not a clamp on Cs.
+      detrending_options:
+      - none
+  - name: velocity_width_depth
+    unit: m/s, m, m
+    description: 'River-mouth flow velocity, channel width, and channel depth from Leopold-Maddock hydraulic
+      geometry (BMI: channel_exit_water_flow__speed, channel_exit_water_x-section__width, channel_exit_water_x-section__depth)'
+    validation_rank: 5
+    emitted_in: '{PREFIX}ASCII.VWD'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Diagnostic power-law functions of discharge (v=kQ^m, w=aQ^b, depth derived); accuracy is bounded
+          by the user-supplied hydraulic-geometry coefficients, not independent physics.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "ASCII output requires line 2 = ON or no text output is produced"
-  - "Grain size proportions (line 7) must sum exactly to 1.0 — model does not normalize"
-  - "BQART formula changes behavior at T=2°C threshold (doubles coefficient, drops T term)"
-  - "Hypsometry bin 0 must have area 0"
-  - "Reservoir trapping uses different formulas above/below 0.5 km³ (hard-coded cutoff)"
-  - "Depth coefficient is derived from velocity and width coefficients — do not set independently"
+- id: dt_001
+  symptom: Simulated discharge is near zero or only baseflow contributes even though monthly precipitation
+    looks nonzero.
+  diagnosis: HydroTrend expects monthly precipitation in HYDRO.IN lines 12-23 field 4 in mm and divides
+    by 1000 internally; values already supplied in m become 1000x too small. This unit trap is documented
+    in SKILL.md, docs/01_climate_preparation.md, docs/03_input_file_assembly.md, and tools/convert_climate_to_h
+  remedy: Put monthly precipitation totals in mm on HYDRO.IN lines 12-23, or regenerate those 12 lines
+    with tools/convert_climate_to_hydrotrend.py using the correct --precip-units. Check that typical monthly
+    wet-season totals are 5-500, not 0.005-0.5.
+  severity: silent
+- id: dt_002
+  symptom: Qbar and annual runoff are about 1000x too high, with extreme flooding in most years.
+  diagnosis: HYDRO.IN line 9 expects annual precipitation trend terms in m/yr, m/yr^2, and m; unlike monthly
+    precipitation, line 9 is not internally divided by 1000. Supplying mm/yr makes the annual water term
+    1000x too large.
+  remedy: Divide annual precipitation terms by 1000 before writing HYDRO.IN line 9. Cross-check that sum(lines
+    12-23 monthly P in mm)/1000 is approximately the first value on line 9 in m/yr.
+  severity: silent
+- id: dt_003
+  symptom: Snow and ice melt are negligible, or elevation has almost no effect on temperature in a high-relief
+    basin.
+  diagnosis: HYDRO.IN line 24 expects lapse rate in degC/km and HydroTrend divides by 1000 to get degC/m
+    internally. Supplying degC/m such as 0.0065 is divided again and becomes nearly zero.
+  remedy: Use a positive degC/km value such as 6.5 on line 24, or use -9999 for HydroTrend's default.
+    Re-run and confirm the snow/glacier seasonal signal changes.
+  severity: silent
+- id: dt_004
+  symptom: Canopy interception or evapotranspiration has almost no effect after changing HYDRO.IN lines
+    27-28.
+  diagnosis: The canopy interception alpha on line 27 and evapotranspiration alpha on line 28 are user-facing
+    mm/d values; HydroTrend divides these alpha terms by 1000 internally. Pre-converted m/d values are
+    therefore 1000x too small.
+  remedy: Enter alpha values in mm/d on lines 27-28, for example ET alpha near 5-15 mm/d rather than 0.005-0.015.
+    Then rerun and compare mean Q or runoff ratio.
+  severity: silent
+- id: dt_005
+  symptom: Travel times and peak attenuation are unrealistic; logs or calibration imply a basin length
+    1000x too large.
+  diagnosis: HYDRO.IN line 31 expects basin length in km and the C model multiplies it by 1000 internally.
+    Supplying meters makes the internal length 1000x too large and distorts the routing spread used by
+    HydroTrend.
+  remedy: Write basin length in km on line 31. For a 100 km basin, enter 100, not 100000. Re-run and check
+    peak-to-mean ratio and timing.
+  severity: silent
+- id: dt_006
+  symptom: Subsurface storm flow and groundwater response are negligible despite a permeable basin setup.
+  diagnosis: HYDRO.IN line 39 expects saturated hydraulic conductivity Ko in mm/day and HydroTrend divides
+    it by 1000 internally. Supplying m/day gives a Ko value 1000x too small in the groundwater module.
+  remedy: Enter Ko in mm/day on line 39. For 0.25 m/day, write 250. Re-run and inspect baseflow and hydrograph
+    recession.
+  severity: silent
+- id: dt_007
+  symptom: Suspended sediment load is orders of magnitude too high while discharge magnitude looks plausible.
+  diagnosis: '{PREFIX}0.HYPS area values must be cumulative area in km2. HydroTrend uses this area directly
+    in BQART/ART sediment formulas; m2 values inflate basin area by 1e6 and can inflate BQART Qs by about
+    1000x through A^0.5.'
+  remedy: Regenerate the HYPS file with tools/build_hypsometry.py or divide m2 areas by 1e6 before use.
+    Confirm the last HYPS area matches the known basin area in km2.
+  severity: silent
+- id: dt_008
+  symptom: Monthly T_mean values are around 270-310 and sediment or snow/glacier behavior is nonsensical.
+  diagnosis: ERA5 and CMFD temperatures may be Kelvin, but HydroTrend monthly climate lines 12-23 require
+    degC. tools/convert_climate_to_hydrotrend.py handles this only when --temp-units K is specified.
+  remedy: Regenerate the monthly climate block with --temp-units K, or subtract 273.15 before writing
+    HYDRO.IN. Verify all monthly T_mean values are physically plausible in degC.
+  severity: silent
+- id: dt_009
+  symptom: Parameters after the monthly climate block are read as the wrong values, or HydroCheckInput
+    fails after a hand-edited HYDRO.IN.
+  diagnosis: HydroTrend reads each monthly line with a scanf format that consumes trailing whitespace
+    until it sees a non-whitespace character. This KI's tools/convert_climate_to_hydrotrend.py deliberately
+    appends a trailing tab marker to lines 12-23 so the reader does not swallow the next line and shift
+    downstr
+  remedy: Regenerate lines 12-23 with tools/convert_climate_to_hydrotrend.py or add trailing descriptive
+    text after the fifth value on every monthly climate line. Then verify lines 24-47 still contain the
+    intended parameters.
+  severity: fatal
+- id: dt_010
+  symptom: A run using HYDRO.CLIMATE aborts with insufficient climate data or drifts out of phase after
+    leap years.
+  diagnosis: HydroTrend uses fixed 365-day years. The KI's write_hydro_climate routine in tools/convert_climate_to_hydrotrend.py
+    drops Feb 29 and writes exactly 365 records per model year after six headers and a count line. A hand-built
+    HYDRO.CLIMATE with leap days has the wrong day index.
+  remedy: Generate HYDRO.CLIMATE with tools/convert_climate_to_hydrotrend.py --climate-out and matching
+    --climate-start-year/--climate-end-year, or remove Feb 29 so the record count is exactly 365 times
+    the number of years.
+  severity: fatal
+- id: dt_011
+  symptom: Run aborts with a hypsometric elevation not interpolated message for an inland or upland basin.
+  diagnosis: HydroTrend's hypsometry interpolation starts elevation bins at 0 above the river mouth. This
+    KI's tools/build_hypsometry.py shifts the curve down to a first elevation of 0 unless --no-anchor
+    is used. Absolute sea-level elevations with a first bin hundreds of meters above zero leave low model
+    bins un
+  remedy: Regenerate HYDRO0.HYPS with tools/build_hypsometry.py without --no-anchor, or subtract the first
+    elevation from all HYPS elevations while preserving relief and cumulative areas.
+  severity: fatal
+- id: dt_012
+  symptom: Run aborts with hydroreadhypsom.c reporting that the elevation bin size is not equal at bin
+    N.
+  diagnosis: hydroreadhypsom.c computes bin size from the first two HYPS rows and requires every later
+    elevation difference to match within masscheck. Older hand-rounded manual curves can alternate differences
+    such as 26.6 and 26.7 m. This KI's current build_hypsometry.py keeps full float precision in manual
+    mod
+  remedy: Regenerate HYDRO0.HYPS with the current tools/build_hypsometry.py, or choose min/max/n_bins
+    that produce a constant exact bin size. Verify all consecutive elevation differences are constant
+    to about 1e-5 m.
+  severity: fatal
+- id: dt_013
+  symptom: The model exits successfully but parse_hydrotrend_output.py reports the discharge file is missing,
+    or the output directory has no HYDROASCII.Q/QS/QB/CS/VWD files.
+  diagnosis: HYDRO.IN line 2 controls ASCII output. If it is OFF, HydroTrend writes binary .DIS only.
+    run_hydrotrend.py warns on this flag, and parse_hydrotrend_output.py requires {PREFIX}ASCII.Q.
+  remedy: Set HYDRO.IN line 2 to ON, ensure the output directory in HYDRO.IN line 3 exists and is writable,
+    rerun tools/run_hydrotrend.py, and confirm the five ASCII files are non-empty.
+  severity: degraded
+- id: dt_014
+  symptom: run_hydrotrend.py reports Main input file not found or Hypsometry file not found although similarly
+    named files exist.
+  diagnosis: HydroTrend and this KI's run_hydrotrend.py look for exact-case {PREFIX}.IN and {PREFIX}0.HYPS
+    in --in-dir. On case-sensitive filesystems, hydro.in, Hydro.IN, or HYDRO.HYPS will not satisfy prefix
+    HYDRO.
+  remedy: Rename the files to match the prefix exactly, for example HYDRO.IN and HYDRO0.HYPS for --prefix
+    HYDRO, or pass the prefix that matches the files.
+  severity: fatal
+- id: dt_015
+  symptom: Sediment mass is biased even though the run completes and no parser error is raised.
+  diagnosis: HYDRO.IN line 7 grain-size proportions are user-provided fractions and HydroTrend does not
+    renormalize them. Sums below 1 lose sediment mass; sums above 1 create excess sediment allocation.
+  remedy: Edit HYDRO.IN line 7 so the number of fractions matches line 6 and their sum is exactly 1.0
+    within rounding tolerance.
+  severity: silent
+- id: dt_016
+  symptom: stderr contains NaN in HydroSedload, or output Qs/Cs contain nan values.
+  diagnosis: The suspended sediment rating divides by epoch-mean discharge Qbartotal. If precipitation/runoff
+    is effectively zero, or if extreme parameters drive Qbar to zero, HydroTrend can hit division by zero
+    or invalid powers in the sediment calculation.
+  remedy: 'Fix the upstream water balance first: check monthly precipitation units, annual precipitation,
+    ET alpha, ELA/lapse rate, and hypsometry area. Rerun and confirm mean Q is positive before validating
+    Qs or Cs.'
+  severity: fatal
+- id: dt_017
+  symptom: The model aborts during water-balance setup or reports impossible baseflow relative to Qbar.
+  diagnosis: dag.yaml notes that constant annual baseflow on HYDRO.IN line 11 must be lower than epoch-mean
+    discharge Qbartotal. If baseflow is larger than available water from climate and basin area, HydroTrend
+    cannot rescale the water budget consistently.
+  remedy: Lower HYDRO.IN line 11 or increase the physically justified precipitation/runoff inputs. After
+    rerun, compare parsed mean Q against the baseflow value.
+  severity: fatal
+- id: dt_018
+  symptom: Groundwater storage behaves erratically or HydroTrend fails input checks near initialization.
+  diagnosis: HYDRO.IN line 37 initial groundwater storage must lie between the GW_min and GW_max values
+    on line 36. The dag lists this as an initial condition carried across years via gwlast.
+  remedy: Set line 37 to a value between the two numbers on line 36. Re-run and confirm no groundwater
+    initialization warning appears.
+  severity: fatal
+- id: dt_019
+  symptom: CMake configure fails with a bmi-c or bmic library not found message.
+  diagnosis: HydroTrend v3.0.5 includes a C BMI interface and the source CMake configuration can require
+    the bmi-c dependency. This is documented in SKILL.md and docs/04_model_execution.md; run_hydrotrend.py
+    reports the cmake_configure stage stderr.
+  remedy: Install bmi-c and expose it with CMAKE_PREFIX_PATH or PKG_CONFIG_PATH, or build a standalone
+    executable with BMI disabled if the source tree supports that option. Then rerun tools/run_hydrotrend.py.
+  severity: fatal
+- id: dt_020
+  symptom: Parsed dates after a leap year are one day later than HydroTrend's fixed 365-day model calendar.
+  diagnosis: HydroTrend output has no date column and every model year has exactly 365 days. tools/parse_hydrotrend_output.py
+    reconstructs dates by adding Python timedelta days to January 1, which introduces Gregorian Feb 29
+    dates in leap years.
+  remedy: For exact model-calendar validation, rebuild dates as start_year plus 365-day model years rather
+    than Gregorian dates, or aggregate to monthly/annual summaries before comparing. Confirm raw line
+    count remains N_years times 365.
+  severity: silent
+- id: dt_021
+  symptom: Multi-outlet delta discharge or sediment totals do not match the single-outlet basin total
+    even though the model completes.
+  diagnosis: HYDRO.IN line 41 selects outlet count and line 42 provides outlet fractions. The dag notes
+    that multi-outlet fractions must sum to 1; HydroTrend partitions Q and Qs by these fractions and does
+    not infer a corrected total.
+  remedy: If line 41 is greater than 1 or variable outlet mode is active, edit line 42 so the active outlet
+    fractions sum to exactly 1.0. Rerun and compare summed outlet totals with the basin total.
+  severity: silent
+- id: dt_022
+  symptom: Sediment trapping efficiency changes abruptly near reservoir volume 0.5 km3 or does not match
+    a Brune curve expectation.
+  diagnosis: HydroTrend's ReservoirTrapping module uses Brown's method below 0.5 km3 and Vorosmarty's
+    method at or above 0.5 km3. The hard cutoff is in the model behavior described by this KI, so TE can
+    jump when line 32 crosses that threshold.
+  remedy: Check HYDRO.IN line 32 reservoir volume and parameter flag, document which trapping method applies,
+    and validate long-term Qs with that method in mind. Adjust only if the reservoir representation is
+    scientifically justified.
+  severity: warning
+- id: dt_023
+  symptom: BQART suspended sediment load doubles unexpectedly when basin mean temperature is near 2 degC.
+  diagnosis: 'The HydroTrend/Syvitski-Milliman BQART implementation has a cold-basin threshold: below
+    about 2 degC the coefficient changes and the temperature behavior differs. A small lapse-rate or climate-unit
+    error can move Tbar across this discontinuity.'
+  remedy: Confirm HYDRO.IN line 45 selects BQART, then inspect monthly temperatures and lapse rate. Treat
+    the threshold as intended model behavior once the temperature inputs are correct, and validate aggregated
+    Qs rather than interpreting it as a crash.
+  severity: warning
+- id: dt_024
+  symptom: Daily Q is in phase with observations but peaks are 2-5x too high and NSE is negative after
+    mean PBIAS is calibrated.
+  diagnosis: HydroTrend is a lumped basin model and its daily attenuation depends strongly on routing
+    travel time from basin length on line 31 and average river velocity on line 35. A short length or
+    fast velocity can dump runoff too quickly in large lowland basins compared with routed products.
+  remedy: Calibrate the L/v travel time with physically plausible basin length and average velocity, then
+    use tools/parse_hydrotrend_output.py to recheck NSE, KGE, PBIAS, and peak-to-mean ratio.
+  severity: degraded
+- id: dt_025
+  symptom: Daily Q correlation remains low and NSE negative in a low-relief seasonal snow basin even after
+    magnitude and peak size are calibrated.
+  diagnosis: HydroTrend's lumped degree-day snowmelt structure releases melt broadly by temperature threshold
+    and lacks explicit distributed routing, frozen-soil storage, and snowpack ripening. The KI boundary
+    states the model is lumped and not spatially distributed routing, so daily timing can be structurally
+    l
+  remedy: Treat this as a validation-domain limit. Compare monthly or seasonal Q and long-term sediment
+    yield, or reserve daily-Q validation for basins where lumped outlet timing is defensible.
+  severity: degraded
+- id: dt_026
+  symptom: Monthly or seasonal output appears too small when compared with observed monthly totals.
+  diagnosis: HYDRO.IN line 5 controls output averaging as D, M, S, or Y. HydroTrend computes daily internally,
+    but docs/05_output_analysis.md states that M output values represent monthly averages, not monthly
+    totals.
+  remedy: If line 5 uses M, compare against observed monthly mean discharge/load rates, or convert rates
+    to volumes/loads using the number of days in each month. Use D output when tools/parse_hydrotrend_output.py
+    daily parsing is required.
+  severity: silent
+- id: dt_027
+  symptom: python3 tools/generate_hydro_in.py fails with No such file or directory, or a workflow stops
+    at HYDRO.IN assembly.
+  diagnosis: SKILL.md lists generate_hydro_in.py in the pipeline table, but the same KI later states that
+    no generate_hydro_in.py tool ships. The actual tools directory contains climate conversion, hypsometry
+    building, model execution, and output parsing only.
+  remedy: Assemble HYDRO.IN by adapting a shipped or prior working HYDRO.IN example, then use docs/03_input_file_assembly.md
+    as the 47-line checklist. Confirm the file has the expected 47 control lines before running tools/run_hydrotrend.py.
+  severity: fatal
+- id: dt_028
+  symptom: The run completes but output files are missing from the expected directory or filenames appear
+    concatenated with the output path.
+  diagnosis: docs/03_input_file_assembly.md requires HYDRO.IN line 3 to end with a slash. HydroTrend uses
+    the line 3 path while writing outputs, so a missing trailing slash can redirect files to an unintended
+    concatenated path.
+  remedy: Edit HYDRO.IN line 3 so the output directory exists, is writable, and ends with '/'. Rerun tools/run_hydrotrend.py
+    and verify HYDROASCII.Q, HYDROASCII.QS, HYDROASCII.QB, HYDROASCII.CS, and HYDROASCII.VWD exist in
+    that directory.
+  severity: degraded
+- id: dt_029
+  symptom: Daily discharge metrics are poor against an observed gauge even though annual or monthly magnitudes
+    look reasonable.
+  diagnosis: HydroTrend's default weather generator is stochastic, so the default daily sequence is not
+    date-aligned to observed events. tools/convert_climate_to_hydrotrend.py documents that a HYDRO.CLIMATE
+    daily override is required for point_time_series validation against a gauge.
+  remedy: Generate HYDRO.CLIMATE with tools/convert_climate_to_hydrotrend.py --climate-out plus --climate-start-year
+    and --climate-end-year, then rerun HydroTrend and parse outputs with the matching start year. If no
+    daily override is used, validate annual, decadal, monthly, or frequency behavior instead of e
+  severity: silent

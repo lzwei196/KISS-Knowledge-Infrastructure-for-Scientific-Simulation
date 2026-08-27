@@ -150,7 +150,8 @@ outputs:
           caveats: ["Field-scale point quantity; flux-tower ET partitioning into T/E carries its own uncertainty."]
       detrending_options: ["none"]
   - var: "actual_soil_evaporation"
-    validation_rank: 1
+    validation_rank: 2
+    rank_evidence: "DEMOTED 2026-08-22 (rank audit): component of actual ET with no convention bands of its own; the field grades total ET and SWC profiles."
     unit: "cm"
     description: "Actual bare-soil evaporation from the surface compartment."
     emitted_in: ".inc / .wba"
@@ -163,7 +164,8 @@ outputs:
           caveats: ["Only separable from transpiration when the obs provides partitioned ET."]
       detrending_options: ["none"]
   - var: "evapotranspiration"
-    validation_rank: 2
+    validation_rank: 1
+    rank_evidence: "PROMOTED 2026-08-22 (rank audit): convention grades actual ET with MRE bands (wang2020); L2-bound. Soil evaporation alone carries no convention bands."
     unit: "cm/d"
     description: "Total actual evapotranspiration (transpiration + soil evaporation + interception)."
     emitted_in: ".inc / .wba"
@@ -196,7 +198,7 @@ outputs:
   - var: "pressure_head_profile"
     validation_rank: 4
     unit: "cm"
-    description: "Depth-resolved matric pressure head h per compartment."
+    description: "Depth-resolved vadose-zone soil matric pressure head h per compartment."
     emitted_in: ".vap"
     observability:
       comparable_obs_shapes:
@@ -222,7 +224,7 @@ outputs:
   - var: "drainage_flux"
     validation_rank: 7
     unit: "cm"
-    description: "Net lateral drainage discharge (and per-level drainage in .blc)."
+    description: "Net lateral soil-water drainage discharge from the subsurface column (and per-level drainage in .blc)."
     emitted_in: ".inc / .wba / .blc"
     observability:
       comparable_obs_shapes:
@@ -235,7 +237,7 @@ outputs:
   - var: "bottom_flux"
     validation_rank: 8
     unit: "cm"
-    description: "Net vertical flux across the lower boundary of the column."
+    description: "Net vertical soil-water flux across the lower boundary of the soil column."
     emitted_in: ".inc / .wba"
     observability:
       comparable_obs_shapes:
@@ -248,7 +250,7 @@ outputs:
   - var: "solute_concentration_output"
     validation_rank: 9
     unit: "mg/cm3"
-    description: "Solute concentration / cumulative solute balance components."
+    description: "Soil pore-water solute concentration / cumulative solute balance components in the soil profile."
     emitted_in: ".sba / .vap"
     observability:
       comparable_obs_shapes:
@@ -544,3 +546,21 @@ safety:
       scope: "version provenance"
       source: "SWAP version 4 manual (WENR Report 2780, 2017) and www.swap.alterra.nl downloads page"
       status: tentative
+
+medium_evidence:
+  - var: "pressure_head_profile"
+    source: "dag.yaml"
+    quote: "1-D vertical transport of water in the variably saturated vadose zone (Richards equation, Mualem-van Genuchten hydraulics)"
+    note: "scope_in declares the soil/vadose-zone medium for depth-resolved pressure head."
+  - var: "drainage_flux"
+    source: "dag.yaml"
+    quote: "Surface runoff, interflow, and lateral drainage (Hooghoudt/Ernst, tabulated flux-GWL, multi-level resistance)"
+    note: "scope_in places drainage in the field-column soil-water/drainage system, not an open-water or regional channel medium."
+  - var: "bottom_flux"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.18174_416321.txt"
+    quote: "Flux at soil profile bottom"
+    note: "The manual output summary names the bottom-flux medium as the soil profile bottom."
+  - var: "solute_concentration_output"
+    source: "SKILL.md"
+    quote: "SWAP has no ocean compartment and its solute state is soil pore-water concentration in mg/cm³ on a land column."
+    note: "Observation compatibility explicitly identifies the solute medium as soil pore water on a land column."

@@ -1,14 +1,3 @@
----
-name: geophires
-description: >-
-  GEOPHIRES-X (object-oriented v3 lineage). Covers Reservoir thermal drawdown / transient
-  production-temperature simulation; Wellbore heat-loss and pressure-drop / pumping-power
-  modeling; Surface-plant energy conversion (electricity ORC/flash, direct-use heat,
-  cogeneration); Techno-economic estimation: capital cost, O&M cost, LCOE/LCOH, NPV, IRR
-  over plant lifetime. Use when the task involves running, configuring, calibrating or
-  interpreting GEOPHIRES.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,42 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (2 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_reservoir_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_reservoir_params.py --help` |
+| `tools/convert_site_economics.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_site_economics.py --help` |
+| `tools/generate_input_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_input_file.py --help` |
+| `tools/parse_geophires_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_geophires_output.py --help` |
+| `tools/run_geophires.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_geophires.py --help` |
+| `tools/validate_geophires_results.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/validate_geophires_results.py --help` |
+
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # GEOPHIRES-X Knowledge Infrastructure
 
@@ -200,7 +225,39 @@ GEOPHIRES generates two output files:
 
 ---
 
-## 6. Critical Domain Knowledge
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag is the model identity for observable outputs; if this section ever disagrees with `dag.yaml`, the dag wins.
+
+**Headline output**: the dag's `validation_rank: 1` variable, and the output this model is judged by:
+
+> `geofluid_production_temperature` -- Year-by-year subsurface produced-geofluid temperature profile reflecting thermal drawdown. (`degC`)
+
+### Dag Outputs
+
+| Output variable (dag `var`) | Rank | Unit | Description / note |
+|-----------------------------|------|------|--------------------|
+| `geofluid_production_temperature` | 1 | `degC` | Year-by-year subsurface produced-geofluid temperature profile reflecting thermal drawdown. |
+| `LCOE` | dag output | see `dag.yaml` | Listed by the dag as an additional observable output. |
+| `LCOH` | dag output | see `dag.yaml` | Listed by the dag as an additional observable output. |
+| `Average Net Power` | dag output | see `dag.yaml` | Listed by the dag as an additional observable output. |
+| `total_capex` | dag output | see `dag.yaml` | Listed by the dag as an additional observable output. |
+| `annual_energy_production` | dag output | see `dag.yaml` | Listed by the dag as an additional observable output. |
+
+### Output Unit Table
+
+| Output variable | Unit stated by KI source | Source |
+|-----------------|--------------------------|--------|
+| `geofluid_production_temperature` | `degC` | `dag.yaml` |
+| `LCOE` | cents/kWh | Existing GEOPHIRES validation summary in this file |
+| `LCOH` | $/MMBTU or cents/kWh(th) | Existing GEOPHIRES validation summary in this file |
+| `Average Net Power` | see `dag.yaml` | Dag output name supplied without a unit in this body |
+| `total_capex` | see `dag.yaml` | Dag output name supplied without a unit in this body |
+| `annual_energy_production` | see `dag.yaml` | Dag output name supplied without a unit in this body |
+
+---
+
+## 6b. Critical Domain Knowledge
 
 ### DK-1: Reservoir Depth in km, NOT meters
 GEOPHIRES expects `Reservoir Depth` in **kilometers**. Common trap: providing depth in meters
@@ -259,7 +316,9 @@ nonlinear due to thermal drawdown over time.
 
 ---
 
-## 7. Unit Trap Table
+## 7. Unit Conversion Table (Unit Table)
+
+This is the unit table for GEOPHIRES inputs and pipeline conversions. Exact I/O shapes live in `docs/format_spec.yaml`; for observable output units, use `dag.yaml` first and the output unit table in Section 6 as the body restatement.
 
 | Parameter | GEOPHIRES Unit | Common Mistake | Factor | Symptom |
 |-----------|---------------|----------------|--------|---------|
@@ -349,7 +408,9 @@ Computes domain-appropriate metrics and generates comparison figures.
 
 ---
 
-## 12. Validation Summary
+## 12. Validated Results
+
+**Source of truth**: `docs/validation_convention.yaml` for field bars, and `dag.yaml` for the output names. The convention wins over remembered thresholds. Null bands are written as `no cited threshold`; do not substitute Moriasi-style or other thresholds unless the convention file cites them for this dag variable.
 
 ### Built-in Examples Tested
 | Example | Type | LCOE/LCOH | Status |
@@ -365,6 +426,18 @@ Computes domain-appropriate metrics and generates comparison figures.
 - **NPV** (Net Present Value): MUSD
 - **IRR** (Internal Rate of Return): %
 - **Capacity Factor**: fraction (0.85–0.95 typical for geothermal)
+
+### Performance Metrics -- Convention Bars
+
+The supplied convention entries for these GEOPHIRES outputs use `pbias` with `zero_centered` direction. Their `very_good`, `good`, and `satisfactory` bands are null in the convention, and the convention lists no citation keys.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Convention cites |
+|--------------|--------|-----------|-------------------|-----------|----------------|------------------|
+| `LCOE` | `pbias` | `zero_centered` | no cited threshold | no cited threshold | no cited threshold | none listed |
+| `LCOH` | `pbias` | `zero_centered` | no cited threshold | no cited threshold | no cited threshold | none listed |
+| `Average Net Power` | `pbias` | `zero_centered` | no cited threshold | no cited threshold | no cited threshold | none listed |
+
+No convention band for `geofluid_production_temperature` is stated in this body; the rank-1 output is still the dag's `validation_rank: 1` variable and must be checked against `docs/validation_convention.yaml` before assigning any pass/fail verdict.
 
 ---
 

@@ -1,173 +1,476 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "pyBadlands"
-  full_name: "Basin and Landscape Dynamics"
-  domain: "geomorphology"
-  subdomain: "landscape_evolution"
-  language: "Python + Fortran + C"
-  build_system: "meson + mesonpy"
-  binary_type: "python_package"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  venv_path: "KISSPATH_BINARIES/pyBadlands/venv"
-  invocation: "from badlands.model import Model; m = Model(); m.load_xml('input.xml'); m.run_to_time(T)"
-  validated_sites: 2
-  validation_stats:
-    multi_site_r: 0.71
-    multi_site_nse: 0.48
-    multi_site_kge: 0.51
-    multi_site_rmse_mm_kyr: 4.9
-    multi_site_pbias_pct: 6.3
-  validated_runs:
-    - site: "Pearl River, MS/LA, USA"
-      db_row: 3060
-      denudation_model_mm_kyr: 21.5
-      denudation_obs_mm_kyr: 21.5
-      pbias_pct: 0.0
-      obs_source: "USGS WQP SSC 02489500+02492000"
-      dominant_process: "hillslope_diffusion"
-    - site: "Modder River, Free State, South Africa"
-      db_row: 3061
-      denudation_model_mm_kyr: 12.76
-      denudation_obs_mm_kyr: "5-20 (10Be cosmogenic)"
-      pbias_pct: 2.1
-      obs_source: "Codilean et al. 2014"
-      dominant_process: "SPL_fluvial_incision"
-
+  name: pyBadlands
+  language: python
+  implementation:
+    id: pybadlands
+    version: hydrocraft-badlands-geomorph v1.0.0 (Badlands 2.x lineage)
+    provenance: Python driver over Fortran90 + C surface-process kernels; Tristan Salles / University
+      of Sydney (badlands-model/badlands).
+  scientific_reference_version: Badlands landscape evolution model (Salles, Ding & Brocard 2018, PLOS
+    ONE 10.1371/journal.pone.0195557; detachment-limited stream-power + diffusion formulation)
 inputs:
-  config:
-    - name: "input.xml"
-      format: "XML"
-      description: "Master configuration file defining grid, time, forcing, erosion, and output parameters"
-
   forcing:
-    - name: "rainfall"
-      xml_path: "precipitation/rain/rval"
-      unit: "m/year"
-      valid_range: [0.0, 10.0]
-      description: "Uniform rainfall rate (or spatially variable via rainfall map)"
-      trap: "dt_001 — common datasets use mm/day; convert via rain_mm_day * 365.25 / 1000"
-
-    - name: "sea_level"
-      xml_path: "sea/curve"
-      unit: "years, metres"
-      description: "Two-column file: time (years) and sea-level elevation (metres)"
-      trap: "dt_004 — time must be in years, not ka"
-
-    - name: "tectonic_displacement"
-      xml_path: "tectonic/disp/ufile"
-      unit: "metres (total)"
-      description: "Vertical displacement map — cumulative total, NOT rate"
-      trap: "dt_005 — must be total displacement, not m/year rate"
-
-    - name: "dem"
-      xml_path: "grid/demfile"
-      format: "CSV (x, y, z columns)"
-      unit: "metres"
-      description: "Digital elevation model raster"
-      trap: "dt_003 — elevation must be in metres, not cm/mm/ft"
-
+  - name: uniform rainfall rate (rval)
+    unit: m/year
+    category: forcing
+    source_kind: forcing
+    model_input_format: XML <precipitation>/<rain>/<rval> scalar
+    notes: Units are m/year, NOT mm/year or mm/day; convert mm/day via *365.25/1000. rval=0 yields zero
+      runoff and no fluvial erosion.
+  - name: spatial rainfall map
+    unit: m/year
+    category: forcing
+    source_kind: forcing
+    model_input_format: CSV (x y rainfall_m_per_year) referenced by <map>
+  - name: orographic rainfall parameters (ortime, rbgd, rmin, rmax, windx, windy)
+    unit: m/year, m
+    category: forcing
+    source_kind: forcing
+    model_input_format: XML orographic <rain> child elements
+    notes: Elevation-dependent precipitation recomputed every ortime interval; couples topography back
+      to rainfall.
+  - name: sea-level curve
+    unit: years, m
+    category: forcing
+    source_kind: forcing
+    model_input_format: 2-column file (time_years sealevel_m) via <curve>
+    notes: Time column in years, NOT ka/Ma.
+  - name: tectonic vertical (uplift/subsidence) displacement map (ufile)
+    unit: m (total over event)
+    category: forcing
+    source_kind: forcing
+    model_input_format: single-column z-value displacement map, no header, per displacement event
+    notes: Map holds TOTAL displacement over the event duration, NOT a rate (m/year).
+  - name: tectonic horizontal (3D) displacement map (dfile)
+    unit: m (total over event)
+    category: forcing
+    source_kind: forcing
+    model_input_format: single-column displacement map referenced by <disp3d>; triggers TIN mesh reconstruction
+  - name: river point input (rQw discharge, rQs sediment load, rposX/rposY)
+    unit: m^3/s; Mt/year; m
+    category: forcing
+    source_kind: forcing
+    model_input_format: XML <rivers>/<river> entries
+    notes: rQw in m^3/s (NOT L/s); rQs in Mt/year (internally qs_m3 = rQs*1e9/rhoS, so kg/year is 1e9x
+      too large).
   parameters:
-    critical:
-      - name: "erodibility"
-        xml_path: "sp_law/erodibility"
-        unit: "m^(1-2m)/year"
-        valid_range: [1.0e-8, 1.0e-3]
-        description: "Stream Power Law erodibility coefficient (Kd)"
-        sensitivity: "VERY HIGH"
-        trap: "dt_006 — units depend on m,n exponents"
-
-      - name: "SPL_m"
-        xml_path: "sp_law/m"
-        unit: "dimensionless"
-        valid_range: [0.3, 0.7]
-        description: "Discharge exponent in Stream Power Law"
-        sensitivity: "HIGH"
-
-      - name: "SPL_n"
-        xml_path: "sp_law/n"
-        unit: "dimensionless"
-        valid_range: [0.7, 2.0]
-        description: "Slope exponent in Stream Power Law"
-        sensitivity: "HIGH"
-
-    secondary:
-      - name: "caerial"
-        xml_path: "creep/caerial"
-        unit: "m²/year"
-        valid_range: [0.001, 1.0]
-        description: "Subaerial hillslope diffusion coefficient"
-        trap: "dt_007 — literature often reports m²/kyr"
-
-      - name: "cmarine"
-        xml_path: "creep/cmarine"
-        unit: "m²/year"
-        valid_range: [0.001, 5.0]
-        description: "Submarine hillslope diffusion coefficient"
-
-      - name: "boundary"
-        xml_path: "grid/boundary"
-        valid_values: ["slope", "flat", "wall", "fixed", "outlet"]
-        description: "Edge boundary condition type"
-        trap: "dt_008 — must match DEM geometry"
-
-      - name: "maxdt"
-        xml_path: "time/maxdt"
-        unit: "years"
-        valid_range: [1000, 1.0e6]
-        description: "Maximum adaptive timestep"
-
+  - name: SPL discharge/area exponent m (SPLm)
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <sp_law>/<m>
+    notes: Default 0.5 when absent; canonical XML tag is <sp_law>/<m> (not <SPLm>).
+  - name: SPL slope exponent n (SPLn)
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <sp_law>/<n>
+    notes: Default 1.0 when absent.
+  - name: SPL erodibility coefficient Kd (SPLero)
+    unit: m^(1-2m)/year
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <sp_law>/<erodibility>
+    notes: Default 0.0 -> NO fluvial erosion unless set (silent no-op). Units are dimensionally m-dependent;
+      literature Kd must be calibrated with the same m,n. Bedrock ~1e-8-1e-5, alluvial ~1e-5-1e-3.
+  - name: precipitation exponent l
+    unit: dimensionless
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML SPL form parameter
+    notes: Default 0 (off); climate-dependent weathering term, secondary.
+  - name: aerial (subaerial) hillslope diffusion coefficient (caerial)
+    unit: m^2/year
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <creep>/<caerial>
+    notes: m^2/year NOT m^2/kyr. Dominant denudation control on low-relief (<200 m) domains.
+  - name: marine (submarine) hillslope diffusion coefficient (cmarine)
+    unit: m^2/year
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <creep>/<cmarine>
+  - name: critical slope Sc (non-linear diffusion threshold, cslp)
+    unit: m/m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <creep>/<cslp>
+  - name: river sediment diffusion coefficient (criver)
+    unit: m^2/year
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <creep>/<criver>
+  - name: mass-failure threshold slope (sfail) and failure diffusion coefficient (cfail)
+    unit: m/m; m^2/year
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <creep>/<sfail>, <creep>/<cfail>
+  - name: transport-capacity coefficients (kt, mt, nt, modeltype)
+    unit: variable
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML transport-law elements; modeltype selects detachment vs transport-limited
+      variant
+  - name: flexural isostasy parameters (dmantle, dsediment, youngMod, poisson, elasticH)
+    unit: kg/m^3, Pa, m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <flexure> elements
+    notes: elasticH in metres NOT km (typical 5e3-100e3 m); youngMod default 6.5e10 Pa, dmantle ~3300,
+      dsediment ~2500 kg/m^3.
+  - name: sediment porosity / compaction (poro0, poroC) and grain density (rhoS)
+    unit: dimensionless, /km; kg/m^3
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML porosity (Athy) elements; <rivers> rhoS
+    notes: poro0/poroC default 0 disables compaction -> stratigraphic thickness 2-3x too large. rhoS default
+      2650 kg/m^3.
+  - name: wave parameters (wbase, d50, hs, dir, wEro)
+    unit: m; m; m; degrees; m/year
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <waveglobal> / wave-series elements
+    notes: d50 in metres NOT mm/um (sand 1e-4-1e-3 m); hs in metres NOT cm; wbase default 20 m.
+  - name: carbonate growth rates (growth_sp1, growth_sp2) and depth/sediment/wave control curves
+    unit: m/year
+    category: parameter
+    source_kind: calibrated
+    model_input_format: XML <carb>/<species*> elements
+    notes: depthControl curve must be monotonic peaking in the shallow photic zone (0-20 m).
+  - name: multi-lithology erodibility layers (erocst/eromap, thcst/thmap, actlay)
+    unit: Kd m^(1-2m)/year; thickness m
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: XML <erocoeff>/<erolay> with spatial maps and layer thicknesses
+    notes: When active, per-node erodibility is dynamically updated from net erosion depth each step (not
+      static).
+  initial_conditions:
+  - name: initial topography (DEM)
+    unit: m
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: GeoTIFF/netCDF/regular-grid CSV (x y z) via <grid>/<demfile>; converted to TIN
+    notes: Elevation must be in metres with no NoData/NaN; regular uniform grid. cm/mm/feet silently corrupt
+      all slope-dependent erosion.
+  - name: initial erodibility/thickness layers
+    unit: m thickness
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: XML <erolayers>/<thcst>/<thmap>/<actlay>
+  - name: restart checkpoint (rfolder, rstep)
+    unit: dimensionless
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: XML <time>/<restart> referencing a prior output step
+  boundary_conditions:
+  - name: domain boundary type
+    unit: category
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: XML <grid>/<boundary> in {slope, flat, wall, fixed, outlet}
+    notes: Must match domain geometry; 'fixed'/'wall' on an open landscape ponds water at edges and prevents
+      erosion. 'slope' for open domains, 'outlet' for single-outlet catchments.
+  - name: flexure edge boundary conditions (boundary_W/E/S/N)
+    unit: category
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: XML <flexure> per-edge boundary elements
+  - name: resolution factor (resfactor)
+    unit: dimensionless
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: XML <grid>/<resfactor> integer DEM sub-sampling (1-10)
+    notes: Too large drops effective resolution below feature scale; keep key features > 3x (DEM_res *
+      resfactor).
+  - name: simulation time window and adaptive timestep bounds (start, end, display, mindt, maxdt)
+    unit: years
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: XML <time> elements
+    notes: mindt default 1.0, maxdt default 1e6 yr; maxdt too large with high Kd causes numerical overshoot/NaN
+      and checkerboard oscillation.
 outputs:
   primary:
-    - name: "elevation"
-      file: "h5/tin.timeN.hdf5 → coords[:, 2]"
-      unit: "m"
-      valid_range: [-11000, 9000]
-      description: "Current topographic elevation at each TIN node"
-
-    - name: "cumdiff"
-      file: "h5/tin.timeN.hdf5 → cumdiff"
-      unit: "m"
-      valid_range: [-10000, 10000]
-      description: "Cumulative erosion (negative) / deposition (positive)"
-
-    - name: "discharge"
-      file: "h5/tin.timeN.hdf5 → discharge"
-      unit: "m³/year"
-      valid_range: [0, 1.0e12]
-      description: "Water discharge at each node"
-
-    - name: "cumhill"
-      file: "h5/tin.timeN.hdf5 → cumhill"
-      unit: "m"
-      description: "Cumulative hillslope diffusion change"
-
-    - name: "sedload"
-      file: "h5/flow.timeN.hdf5 → sedload"
-      unit: "m³/year"
-      description: "Sediment transport load in flow network"
-
-    - name: "chi"
-      file: "h5/flow.timeN.hdf5 → chi"
-      unit: "m"
-      description: "Chi index (steady-state proxy for landscape evolution)"
-
-  format:
-    type: "HDF5 + XDMF"
-    directory_structure: "output/{h5,xmf}/ with tin.timeN.hdf5, flow.timeN.hdf5, sed.timeN.hdf5"
-    time_series: "tin.series.xdmf, flow.series.xdmf"
-
+  - name: elevation
+    unit: m
+    description: Current topographic surface elevation at each TIN node (z column of coords array).
+    validation_rank: 2
+    emitted_in: h5/tin.time*.hdf5
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Modelled on an irregular TIN in a projected CRS; resample to the observation grid before comparison.
+        - Geological-scale model; absolute elevation match is meaningful only for long-integration steady
+          or paleo-reconstructed surfaces.
+      detrending_options:
+      - none
+  - name: cumdiff
+    unit: m
+    description: Cumulative total landscape-surface erosion (negative) and deposition (positive) thickness
+      at each TIN node.
+    validation_rank: 3
+    emitted_in: h5/tin.time*.hdf5
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Erosion/deposition thickness over a finite interval; the observation must integrate the same
+          time window.
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Basin-integrated denudation or sediment yield compares to the volume-aggregated cumdiff; convert
+          to a rate using the integration interval.
+      detrending_options:
+      - none
+  - name: stratigraphy
+    unit: m
+    description: Deposited sediment / stratigraphic layer thicknesses (multi-rock and carbonate meshes).
+    validation_rank: 4
+    emitted_in: h5/sed.time*.hdf5 (and carb mesh hdf5)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Reported thickness depends on porosity/compaction (poro0/poroC); uncompacted layers are 2-3x
+          too thick.
+        - Compare against interpreted seismic/well stratigraphic architecture, not raw point logs.
+      detrending_options:
+      - none
+  - name: discharge
+    unit: m^3/year
+    description: Accumulated water discharge per node from SFD drainage routing.
+    validation_rank: 1
+    emitted_in: h5/flow.time*.hdf5
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Output discharge is m^3/year and is clamped (<1.0 set to 1.0, 0 below sea level) in the HDF5
+          writer; treat as a drainage-structure proxy, not a gauged hydrograph.
+        - Single-flow-direction routing concentrates flow; not comparable to multi-flow accumulation.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    severity: "silent"
-    description: "Rainfall must be m/year, not mm/day — 1000x error if unconverted"
-  - id: "dt_005"
-    severity: "silent"
-    description: "Tectonic displacement is cumulative total, not rate"
-  - id: "dt_006"
-    severity: "degraded"
-    description: "Erodibility units are dimensionally complex — depend on m,n"
-  - id: "dt_009"
-    severity: "fatal"
-    description: "Output folder must exist before run"
-  - id: "dt_018"
-    severity: "fatal"
-    description: "numpy >= 2 is incompatible with current Fortran extensions"
+- id: dt_001
+  symptom: Extremely rapid landscape denudation in first few timesteps; entire mountain range erased
+  diagnosis: Rainfall specified in mm/year or mm/day instead of m/year; pyBadlands expects rainfall in
+    m/year. Providing mm/day (common in ERA5, CMFD) without conversion yields 365,000× over-estimate.
+    Even mm/year gives 1000× too much.; ['precipitation', 'flowNetwork', 'erosion']
+  remedy: 'Convert rainfall: m/year = mm/day × 365.25 / 1000; convert_forcing_to_badlands; [''Check rval
+    in XML — should be 0.1–5.0 for most climates'', ''If using rain map, check max value in CSV'']; Always
+    verify rainfall range before running. Tool includes range check.'
+  severity: silent
+- id: dt_002
+  symptom: River source produces impossibly large sediment plume; basin fills instantly
+  diagnosis: 'Sediment load rQs specified in kg/year instead of Mt/year; Code converts rQs internally:
+    qs_kg = rQs × 1e9, then qs_m3 = qs_kg / rhoS. If rQs is already in kg, result is 1e9× too large.;
+    [''rivers'', ''buildFlux'', ''sediment_transport'']'
+  remedy: 'Convert to Mt/year: rQs_Mt = rQs_kg / 1e9; convert_forcing_to_badlands; [''Typical river Qs:
+    0.001 (small) to 100 (Amazon) Mt/year'', ''Values > 1000 Mt/year are almost certainly wrong units''];
+    Document unit in XML comment; validate range in pre-flight.'
+  severity: silent
+- id: dt_003
+  symptom: Erosion rates are orders of magnitude off; landscape morphology unrealistic
+  diagnosis: DEM elevation in cm, mm, or feet instead of metres; Model performs no unit detection on the
+    DEM. All SPL and diffusion equations assume z in metres. Wrong z-units change all computed slopes.;
+    ['grid', 'buildMesh', 'erosion', 'creep']
+  remedy: 'Convert DEM to metres before ingestion; None; [''Check z-range: typical land surface -500 to
+    +8000 m'', ''If z > 100000, likely in cm → divide by 100'', ''If z > 1000000, likely in mm → divide
+    by 1000'']; Include z-range check in DEM preparation step.'
+  severity: silent
+- id: dt_004
+  symptom: Sea-level changes occur 1000× too rapidly; coastal zones oscillate wildly
+  diagnosis: Sea-level curve time column in ka (kiloyears) instead of years; Model expects time in years.
+    A curve with time in ka (e.g., -500 to 0) spans only 500 years instead of 500,000 years of intended
+    history.; ['sea', 'coastline', 'carbonate_growth']
+  remedy: 'Multiply time column by 1000: time_years = time_ka × 1000; convert_forcing_to_badlands; [''Check
+    time range covers simulation span'', ''If time range is -500 to 0, it is likely in ka'']; Compare
+    sea-level curve time range to simulation start/end.'
+  severity: silent
+- id: dt_005
+  symptom: Tectonic uplift produces negligible topographic change over simulation
+  diagnosis: Displacement map contains rate (m/year) instead of total displacement (m); pyBadlands ufile/dfile
+    specify TOTAL displacement over the event duration. A rate of 0.001 m/year is interpreted as 0.001
+    m total, not 5000 m over 5 Myr.; ['tectonic', 'buildMesh']
+  remedy: 'Multiply rate by event duration: disp_m = rate_m_per_yr × (dend - dstart); convert_forcing_to_badlands;
+    [''Check if max displacement matches expected total uplift'', ''For 0.001 m/yr over 5 Myr, total should
+    be 5000 m'']; Always compute total displacement from rate × duration.'
+  severity: silent
+- id: dt_006
+  symptom: Erosion rate several orders of magnitude different from expected
+  diagnosis: SPL erodibility Kd from literature uses different m,n than configured; Kd has units m^(1-2m)/year.
+    A Kd calibrated for m=0.5 cannot be used with m=0.3 without rescaling. The dimensional dependence
+    on m makes direct comparison invalid.; ['erosion', 'flowNetwork']
+  remedy: 'Verify literature Kd was calibrated with same m,n values; convert_soil_params; [''Record m,n
+    alongside every Kd value'', ''If changing m, recalibrate Kd'', ''Approximate: Kd_new ≈ Kd_old × 10^((m_old
+    - m_new) × 2)'']; Tool includes m,n in output metadata.'
+  severity: degraded
+- id: dt_007
+  symptom: Hillslopes become completely smooth; no ridge-valley topography develops
+  diagnosis: Diffusion coefficient in m²/kyr instead of m²/year; Literature often reports κ in m²/kyr.
+    Using these values directly gives 1000× too much diffusion, flattening the landscape.; ['creep', 'diffLinear']
+  remedy: 'Divide by 1000: κ_m2_per_year = κ_m2_per_kyr / 1000; None; [''Typical aerial κ: 0.001–1.0 m²/year'',
+    ''If κ > 10 m²/year, likely in kyr units'']; Check units in source paper; document conversion.'
+  severity: silent
+- id: dt_008
+  symptom: Water accumulates at domain boundary; unrealistic lakes form along edges
+  diagnosis: Boundary type 'fixed' or 'wall' used on open landscape; Fixed/wall boundaries prevent water
+    outflow. On an open landscape, all water pools at the boundary, creating artificial lakes and preventing
+    erosion.; ['grid', 'flowNetwork', 'buildMesh']
+  remedy: 'Use ''slope'' for open landscapes or ''outlet'' for single-outlet basins; None; [''Inspect
+    DEM edges: does a natural outlet exist?'', "For catchment studies: use ''outlet'' with proper outlet
+    positioning", "For regional studies: use ''slope''"]; Match boundary type to domain geometry during
+    setup.'
+  severity: fatal
+- id: dt_009
+  symptom: Model crashes or hangs at first output timestep
+  diagnosis: Output folder specified in XML does not exist; Some pyBadlands versions do not auto-create
+    the output directory. When the model tries to write the first HDF5 file, it fails.; ['checkPoints',
+    'model']
+  remedy: 'Create output directory before running: mkdir -p output; run_badlands; [''Check outfolder value
+    in XML'', ''Create directory: mkdir -p <outfolder>'']; Execution wrapper creates directory automatically.'
+  severity: fatal
+- id: dt_010
+  symptom: Wave sediment transport produces unrealistic longshore drift
+  diagnosis: Wave D50 grain size specified in mm instead of m; d50 parameter expects metres. A value of
+    0.1 (intended as 0.1 mm) is interpreted as 0.1 m = 100 mm = gravel, completely changing transport
+    behaviour.; ['waveglobal', 'waveSed']
+  remedy: 'Convert mm to m: d50_m = d50_mm / 1000; None; [''Typical sand d50: 0.0001–0.001 m (0.1–1.0
+    mm)'', ''If d50 > 0.01, likely in mm'']; Document unit conversion alongside value.'
+  severity: silent
+- id: dt_011
+  symptom: River source has negligible effect on landscape; no visible delta
+  diagnosis: Discharge rQw specified in L/s instead of m³/s; A river with 500 L/s = 0.5 m³/s is a small
+    stream. If intended as 500 m³/s (a large river), the 1000× error makes it ineffective.; ['rivers',
+    'buildFlux']
+  remedy: 'Convert L/s to m³/s: rQw_m3s = rQw_Ls / 1000; None; [''Typical large river: 100–10000 m³/s'',
+    ''Typical small stream: 0.01–1 m³/s'']; Verify discharge magnitude matches river size.'
+  severity: silent
+- id: dt_012
+  symptom: Output contains NaN values; elevation array is garbage
+  diagnosis: Numerical instability from too-large timestep or extreme parameters; When maxdt is large
+    and Kd is high, the implicit solver can overshoot, producing negative areas or infinite slopes that
+    propagate NaN through the mesh.; ['flowNetwork', 'flowalgo', 'erosion']
+  remedy: 'Reduce maxdt by factor of 10; reduce Kd if needed; None; [''Check if NaN appears at first step
+    (likely DEM issue) or mid-run (timestep issue)'', ''If first step: check DEM for NoData/NaN values'',
+    ''If mid-run: reduce maxdt, check if erosion exceeds elevation'']; Start with conservative maxdt;
+    increase gr'
+  severity: fatal
+- id: dt_013
+  symptom: Important topographic features are missing from simulation
+  diagnosis: resfactor too large, reducing DEM resolution below feature scale; resfactor=5 on a 90 m DEM
+    yields 450 m resolution. Features smaller than ~1 km are lost. For landscape evolution this may be
+    acceptable, but for specific valleys it is not.; ['grid', 'buildMesh']
+  remedy: 'Reduce resfactor or use higher-resolution DEM; None; [''Check effective resolution: DEM_res
+    × resfactor'', ''Ensure key features are > 3× effective resolution'']; Compute effective resolution
+    before running.'
+  severity: degraded
+- id: dt_014
+  symptom: Wave erosion is extremely weak or extremely strong
+  diagnosis: Wave height (hs) specified in cm instead of m; Wave significant height expects metres. A
+    value of 150 (intended as 150 cm = 1.5 m) is interpreted as 150 m waves — physically impossible.;
+    ['waveglobal', 'waveSed']
+  remedy: 'Convert: hs_m = hs_cm / 100; None; [''Typical ocean waves: 0.5–5.0 m'', ''Storm waves: up to
+    15 m'', ''If hs > 20, likely in cm'']; Validate wave height range in XML.'
+  severity: silent
+- id: dt_015
+  symptom: Flexural isostasy produces no response or extreme tilting
+  diagnosis: Elastic thickness in km instead of m; elasticH expects metres. A value of 30 (intended as
+    30 km) is interpreted as 30 m — an impossibly thin lithosphere that flexes dramatically.; ['flexure',
+    'isoFlex', 'gFlex']
+  remedy: 'Convert km to m: elasticH_m = elasticH_km × 1000; None; [''Typical elastic thickness: 5000–100000
+    m (5–100 km)'', ''If elasticH < 1000, likely in km'']; Document unit as metres in XML comment.'
+  severity: silent
+- id: dt_016
+  symptom: Model produces oscillating elevation values; checkerboard pattern
+  diagnosis: Maximum timestep too large for the erosion rate; The CFL-like stability condition requires
+    dt ≤ dx²/(2κ) for diffusion and smaller steps for high Kd. Exceeding this causes oscillation.; ['flowNetwork',
+    'diffLinear']
+  remedy: Reduce maxdt by factor of 10; None; ['If using high Kd (> 1e-5), set maxdt < 10000', 'If using
+    high κ (> 0.1), set maxdt < 1000', 'Start conservative, increase until instability appears']; Estimate
+    stable dt from parameters before running.
+  severity: fatal
+- id: dt_017
+  symptom: No erosion occurs; landscape is static despite long simulation
+  diagnosis: No precipitation section in XML or rval=0; Without rainfall, there is no runoff, no discharge,
+    and no fluvial erosion. Only hillslope diffusion operates (if enabled). Easy to miss if the <precipitation>
+    section is absent.; ['precipitation', 'flowNetwork', 'erosion']
+  remedy: 'Add <precipitation> section to XML with realistic rval; None; [''Check XML has <precipitation>
+    with <climates> > 0'', ''Verify rval > 0 or map file exists'', ''For humid climate: rval ≈ 1.0–2.0
+    m/year'']; Pre-flight check should verify precipitation is defined.'
+  severity: degraded
+- id: dt_018
+  symptom: ImportError or TypeError when importing badlands
+  diagnosis: numpy >= 2.0 installed, but Fortran extensions compiled against numpy < 2; pyBadlands requires
+    numpy < 2 (specified in pyproject.toml). numpy 2.0 changed the C API, causing Fortran extension import
+    failures.; ['all Fortran extensions']
+  remedy: 'Install numpy < 2: pip install ''numpy<2''; None; ["pip install ''numpy<2''", ''Rebuild extensions:
+    pip install --no-build-isolation -e .'']; Pin numpy<2 in requirements.'
+  severity: fatal
+- id: dt_019
+  symptom: Carbonate reef growth produces unrealistic patterns
+  diagnosis: Depth control curve is non-monotonic or has wrong sign; The depthControl file maps water
+    depth to growth multiplier (0-1). If the curve is inverted (growth at depth, not shallow), reefs grow
+    in deep water.; ['carb', 'carbGrowth', 'species1', 'species2']
+  remedy: 'Verify depth control curve: maximum growth at shallow depths; None; [''Plot depthControl file:
+    x=depth, y=growth rate'', ''Growth should peak at 0–20 m depth for most reef types'', ''Growth should
+    be zero below photic zone (~100 m)'']; Plot and verify control curves before running.'
+  severity: degraded
+- id: dt_020
+  symptom: Stratigraphic layers have unrealistic thickness; no compaction
+  diagnosis: Porosity parameters poro0 and poroC left at default 0; When poro0=0 and poroC=0.47, compaction
+    is effectively disabled. Stratigraphic output shows uncompacted thicknesses, which can be 2-3× too
+    large.; ['strata', 'underland']
+  remedy: 'Set physically realistic porosity: poro0=0.63, poroC=0.51 (typical); None; [''poro0: surface
+    porosity (0.4–0.8 depending on sediment type)'', ''poroC: compaction coefficient (0.3–0.6)'']; Always
+    set porosity if using stratigraphic output.'
+  severity: silent
+- id: dt_021
+  symptom: Increasing Kd by orders of magnitude has no effect on denudation rate in a low-relief domain
+  diagnosis: In low-relief landscapes (<200 m), hillslope diffusion (caerial) dominates over SPL fluvial
+    incision; The SPL term E = Kd·A^m·S^n requires slope S. On flat coastal plains, S is near zero, making
+    SPL erosion negligible regardless of Kd. Hillslope diffusion (caerial) becomes the primary sediment
+    trans
+  remedy: 'For low-relief domains, calibrate caerial (not Kd). Use unconsolidated class: caerial=0.1-0.5
+    m2/yr.; None; [''Check domain relief: max_elev - min_elev'', ''If relief < 200 m: focus on caerial,
+    set Kd to a reasonable default (5e-5)'', ''If relief > 500 m: focus on Kd, keep caerial low (0.005-0.02)'',
+    ''Mix'
+  severity: silent
+- id: dt_022
+  symptom: Model denudation 10-100x higher than published rates in high-relief bedrock domain
+  diagnosis: Kd set too high for well-lithified rock; used generic sandstone class instead of site-appropriate
+    value; Well-lithified Karoo-type sandstones require Kd ~8e-7, between granite (1e-7) and generic limestone
+    (1e-6). The generic sandstone value (5e-6) is for friable/weakly cemented sandstone and gives 1
+  remedy: 'Reduce Kd to 5e-7 to 1e-6 for well-lithified sedimentary rocks; None; [''Check if study lithology
+    is well-cemented/indurated vs friable'', ''Well-lithified sandstone/mudstone: Kd = 5e-7 to 1e-6'',
+    ''Friable/weakly cemented: Kd = 5e-6 to 5e-5'', ''Run Kd sweep: test 3-4 values spanning one order
+    of magnitud'
+  severity: silent

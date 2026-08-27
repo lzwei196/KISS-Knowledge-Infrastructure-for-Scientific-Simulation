@@ -1,0 +1,316 @@
+schema_version: 1
+model_id: Elmer-Ice
+domain: cryosphere
+generated_by: "Step-B validation-convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+# Blocks are keyed by the model's own dag.yaml output names. Continuous ice-flow
+# fields are usually judged with RMSE/misfit diagnostics rather than categorical
+# CSI; categorical/line-position scoring is retained only for the grounding mask.
+# Null bands mean the cached/fetched literature did not provide a numeric
+# validation threshold for that metric.
+
+references:
+  gagliardini2013:
+    doi: 10.5194/gmd-6-1299-2013
+    title: "Capabilities and performance of Elmer/Ice, a new-generation ice sheet model"
+    venue: "Geosci. Model Dev."
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-6-1299-2013.txt
+  zhao2018:
+    doi: 10.5194/tc-12-2637-2018
+    title: "Basal friction of Fleming Glacier, Antarctica - Part 1: Sensitivity of inversion to temperature and bedrock uncertainty"
+    venue: "The Cryosphere"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-12-2637-2018.txt
+  seroussi2019:
+    doi: 10.5194/tc-13-1441-2019
+    title: "initMIP-Antarctica: an ice sheet model initialization experiment of ISMIP6"
+    venue: "The Cryosphere"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-13-1441-2019.txt
+  goelzer2018:
+    doi: 10.5194/tc-12-1433-2018
+    title: "Design and results of the ice sheet model initialisation experiments initMIP-Greenland"
+    venue: "The Cryosphere"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-12-1433-2018.txt
+  pattyn2012:
+    doi: 10.5194/tc-6-573-2012
+    title: "Results of the Marine Ice Sheet Model Intercomparison Project, MISMIP"
+    venue: "The Cryosphere"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-6-573-2012.txt
+  cornford2020:
+    doi: 10.5194/tc-14-2283-2020
+    title: "Results of the third Marine Ice Sheet Model Intercomparison Project (MISMIP+)"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-14-2283-2020.txt
+  helm2014:
+    doi: 10.5194/tc-8-1539-2014
+    title: "Elevation and elevation change of Greenland and Antarctica derived from CryoSat-2"
+    venue: "The Cryosphere"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-8-1539-2014.txt
+  schroder2019:
+    doi: 10.5194/tc-13-427-2019
+    title: "Four decades of Antarctic surface elevation changes from multi-mission satellite altimetry"
+    venue: "The Cryosphere"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-13-427-2019.txt
+  licciulli2019:
+    doi: 10.1017/jog.2019.82
+    title: "A full Stokes ice-flow model to assist the interpretation of millennial-scale ice cores"
+    venue: "Journal of Glaciology"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1017_jog.2019.82.txt
+  defleurian2018:
+    doi: 10.1017/jog.2018.78
+    title: "SHMIP The subglacial hydrology model intercomparison Project"
+    venue: "Journal of Glaciology"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1017_jog.2018.78.txt
+  werder2013:
+    doi: 10.1002/jgrf.20146
+    title: "Modeling channelized and distributed subglacial drainage in two dimensions"
+    venue: "J. Geophys. Res. Earth Surf."
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_jgrf.20146.txt
+  mcarthur2023:
+    doi: 10.5194/tc-17-4705-2023
+    title: "Basal conditions of Denman Glacier from glacier hydrology and ice dynamics modelling"
+    venue: "The Cryosphere"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-17-4705-2023.txt
+
+validation:
+  - dag_variable: SSAVelocity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/a
+        bands: {very_good: 7.31, good: 47.5, satisfactory: 94.5}
+        pass_band: satisfactory
+        band_note: >-
+          Continuous velocity fields are benchmarked with speed misfit/RMSE, not CSI. Seroussi 2019
+          reports data-assimilating Antarctic models with surface-speed RMSE from 47.5 to 94.5 m yr-1;
+          McArthur 2023 reports Denman inversion RMSE values near 6-7 m a-1.
+        cites: [seroussi2019, mcarthur2023]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is categorical, but the fetched Elmer-Ice and ISMIP6 velocity evaluations report absolute/log speed misfit rather than a CSI threshold."
+        cites: [seroussi2019, goelzer2018, zhao2018]
+    validated_when: "Observed-vs-modelled surface speed RMSE <= 94.5 m/a after converting VTU m/s to m/a; use tighter site-scale expectations where inversion targets the same velocity product."
+    evidence_strength: strong
+    confidence: 0.72
+    notes: >-
+      The pass band is the upper end of the initMIP-Antarctica data-assimilation velocity RMSE range,
+      while the very_good band reflects a high-resolution Denman catchment inversion. Zhao 2018 also
+      judges Fleming Glacier inversions by mismatch between observed and modelled surface velocity and
+      RMSD, with boundary-condition uncertainty concentrated near the ice front/grounding line.
+
+  - dag_variable: SSAVelocity
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched Elmer-Ice/ISMIP paper gives an NSE threshold for transient spatial velocity fields."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Snapshot velocity RMSE is the established diagnostic in initMIP; no time-series pass band was found for velocity evolution."
+        cites: [seroussi2019, goelzer2018]
+    validated_when: "UNRESOLVED - transient velocity validation needs a cited time-series skill convention; do not auto-validate from the null NSE band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Cached and capped OpenAlex searches did not yield a DOI-native OA threshold paper for Elmer-Ice
+      transient velocity NSE. The field evidence found here supports spatial velocity RMSE snapshots,
+      not a temporal NSE gate.
+
+  - dag_variable: H
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 91.2, good: 160.0, satisfactory: 320.8}
+        pass_band: satisfactory
+        band_note: >-
+          initMIP-Antarctica reports observed-vs-modelled ice-thickness RMSE, with 91.2-320.8 m for
+          models using data assimilation or present-day geometry as an initialization target.
+        cites: [seroussi2019]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For continuous ice thickness, the intercomparison diagnostic is thickness RMSE; no CSI threshold was found."
+        cites: [seroussi2019, goelzer2018]
+    validated_when: "Ice-thickness RMSE <= 320.8 m against an accepted present-day thickness product; tighter expectations apply for regional inversions or direct geometry assimilation."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Goelzer 2018 uses the same observed-vs-modelled thickness RMSE diagnostic for Greenland and warns
+      that formal scoring must account for the observation data set used during initialization.
+
+  - dag_variable: DHDT
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/a
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: >-
+          This is an observation-uncertainty proxy, not a model-tier table: Schroder 2019 screens
+          altimetry trend cells where the rate standard deviation is higher than 0.5 m yr-1.
+        cites: [schroder2019]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Elevation-change validation is reported as trend/rate agreement with uncertainty estimates, not as a categorical CSI threshold."
+        cites: [schroder2019, helm2014]
+    validated_when: "RMSE of modeled dh/dt against altimetry-derived dh/dt <= 0.5 m/a on cells that pass the altimetry uncertainty screen, with sign and spatial pattern checked separately."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      Helm 2014 states that elevation changes can validate prognostic ice-sheet models. Schroder 2019
+      provides the clearest numeric quality cutoff in the fetched set, but it is an altimetry screening
+      criterion rather than a community model-validation tier.
+
+  - dag_variable: Zs
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 1.5, good: 3.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: >-
+          Transferred from CryoSat-2 DEM uncertainty: Helm 2014 reports Antarctic CryoSat-2-to-ICESat
+          median difference below 0.2 m +/- 1.5 m and 80% DEM uncertainty below 3 m +/- 15 m.
+        cites: [helm2014]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Surface elevation is a continuous DEM comparison; no fetched paper gives a CSI threshold for Zs."
+        cites: [helm2014, goelzer2018]
+    validated_when: "Surface-elevation RMSE <= 15 m against a modern DEM, interpreted as an observation-uncertainty transfer rather than a universal model pass tier."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      This block is intentionally conservative: the numeric band comes from altimetry DEM validation,
+      not from a formal Elmer-Ice model score. Use it to flag clearly inconsistent Zs fields, not to
+      claim high model skill.
+
+  - dag_variable: GroundedMask
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: grounding_line_position_error
+        direction: minimize
+        unit: km
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: >-
+          MISMIP+ designed the Ice0 grounding-line target as xgl = 450 +/- 10 km and later used
+          450 +/- 15 km for its main submitted-model subset.
+        cites: [cornford2020]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          Grounding-line mask CSI is resolution-sensitive. MISMIP reports that low horizontal
+          resolution greater than 1 km can fail to reproduce grounding-line advance/retreat and that
+          grounding-line schemes require hundreds-of-metres resolution or explicit parameterization.
+        cites: [pattyn2012, cornford2020]
+    validated_when: "Grounding-line position error <= 15 km for a snapshot boundary comparison; categorical mask CSI is supportive only and must be interpreted with mesh resolution near the grounding line."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      The dag uses CSI for the grounded/floating mask, but the fetched marine ice-sheet convention is
+      a grounding-line-position tolerance and a resolution requirement. MISMIP+ focuses on models with
+      dx <= 1 km near the grounding line; MISMIP found low-resolution results could be unusable.
+
+  - dag_variable: Temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: deg C
+        bands: {very_good: 0.1, good: 0.1, satisfactory: 0.1}
+        pass_band: satisfactory
+        band_note: "Licciulli 2019 reports borehole temperature agreement below the zero-annual-amplitude depth typically within 0.1 K."
+        cites: [licciulli2019]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched borehole-temperature validation reports profile agreement in kelvin, not NSE; seasonal near-surface fluctuations are not reproduced when forcing uses annual means."
+        cites: [licciulli2019]
+    validated_when: "Borehole ice-temperature profile RMSE <= 0.1 deg C below the zero-annual-amplitude depth; do not require NSE unless a time-series threshold is independently cited."
+    evidence_strength: weak
+    confidence: 0.55
+    notes: >-
+      This is a single full-Stokes Elmer/Ice ice-core interpretation benchmark. It validates measured
+      englacial temperature profiles and explicitly excludes seasonal near-surface variability from
+      the reported good agreement.
+
+  - dag_variable: Effective Pressure
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched GlaDS/Elmer-Ice paper gives an NSE threshold for effective-pressure time series."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: Pa
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric Pa-scale RMSE pass band against borehole water-pressure records."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          SHMIP states that no established theory and no sufficiently dense data sets prevent validation
+          of subglacial hydrology models; Werder 2013 likewise says the model needs quantitative field
+          comparison. A failed effective-pressure NSE can therefore be a data/observability ceiling.
+        cites: [defleurian2018, werder2013]
+    validated_when: "UNRESOLVED - effective pressure requires site-specific borehole water-pressure comparison; null bands must not auto-validate or loosen the gate."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      McArthur 2023 uses GlaDS effective pressure as an input to ice-dynamics inversions and compares
+      resulting surface-speed RMSE, but it does not validate point effective-pressure time series.
+      Capped OpenAlex discovery did not find a usable OA numeric NSE/RMSE convention for this output.
+
+deferred_paywalled: []

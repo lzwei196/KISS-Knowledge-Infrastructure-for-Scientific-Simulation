@@ -1,14 +1,3 @@
----
-name: swan
-description: >-
-  SWAN Cycle III version 41.51 (Delft University of Technology User Manual; wave action
-  balance with sources/sinks). Covers Wind-generated surface gravity waves in coastal
-  areas, lakes and estuaries; Wave generation by wind (GEN1/GEN2/GEN3); Whitecapping
-  dissipation; Bottom-friction dissipation; Depth-induced wave breaking; Nonlinear
-  quadruplet wave-wave interactions (DIA approximation). Use when the task involves
-  running, configuring, calibrating or interpreting SWAN.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,43 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (7 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (26 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (14 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_bathymetry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_bathymetry.py --help` |
+| `tools/convert_boundary_spectra.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_boundary_spectra.py --help` |
+| `tools/convert_wind_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_wind_forcing.py --help` |
+| `tools/fetch_gridded_wind.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/fetch_gridded_wind.py --help` |
+| `tools/parse_swan_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_swan_output.py --help` |
+| `tools/read_ndbc_buoy.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/read_ndbc_buoy.py --help` |
+| `tools/run_swan.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_swan.py --help` |
+
+*7 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # PySWaN (SWAN I/O Toolbox) — Knowledge Infrastructure
 
@@ -186,6 +212,34 @@ Two traps this stage hides, both handled inside `fetch_gridded_wind`:
 
 ---
 
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. This section restates the dag facts for the
+reader; scoring, observation binding, and "what does this model predict?"
+questions must use the dag when there is any disagreement.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `HSIGN` -- Significant wave height, Hm0 = 4*sqrt(m0) (`m`)
+
+| Output variable (dag `var`) | rank | Unit | Description / status |
+|-----------------------------|------|------|----------------------|
+| `HSIGN` | 1 | `m` | Significant wave height, Hm0 = 4*sqrt(m0) |
+| `RTP` | dag output | see `dag.yaml` | Other dag output |
+| `TM01` | dag output | see `dag.yaml` | Other dag output |
+| `TM02` | dag output | see `dag.yaml` | Other dag output |
+| `PDIR` | dag output | see `dag.yaml` | Other dag output |
+| `DSPR` | dag output | see `dag.yaml` | Other dag output |
+| `E(f,theta)` | dag output | see `dag.yaml` | Other dag output |
+| `E(f)` | dag output | see `dag.yaml` | Other dag output |
+
+The rank-1 output is the validated headline variable for this KI. The other
+dag outputs are available model outputs, but their units and detailed dag
+metadata should be read directly from `dag.yaml` before binding observations or
+writing a run report.
+
+---
+
 ## Spectral Data Classes
 
 ### Spec0 — Parametric (0D)
@@ -328,6 +382,35 @@ STOP
 
 ---
 
+## 8. Unit Conversion Table
+
+**Exact I/O shapes live in `docs/format_spec.yaml`; dag output units live in
+`dag.yaml`.** This unit table records the conversions and unit checks that the
+pipeline must respect when preparing SWAN inputs or parsing SWAN/PySWaN outputs.
+
+| Variable | Source unit (verified in this KI) | Model / output unit | Factor or conversion | Type |
+|----------|-----------------------------------|---------------------|----------------------|------|
+| `HSIGN` / Hsig / Hm0 | `m` | `m` | `x1` | none |
+| `HSIGN` from spectral moment | `m0` from integrated wave energy | `m` | `Hm0 = 4*sqrt(m0)` | formula |
+| Energy density, 2D | `m²/Hz/rad` in some buoy data | `m²/Hz/deg` | multiply by `pi/180` | angular-density conversion |
+| Energy density, 1D | `m²/Hz` | `m²/Hz` | `x1` | none |
+| Direction, nautical | degrees clockwise from North, direction FROM which waves come | `NDIR` / degrees | `x1` | convention check |
+| Direction, Cartesian | degrees true, direction TO which waves propagate | `CDIR` / degrees | `x1` | convention check |
+| Frequency | `rad/s` in some source models | `Hz` | divide by `2*pi` | angular-frequency conversion |
+| Frequency | `Hz` | `Hz` | `x1` | none |
+| Peak period | `s` | `s` | `Tp = 1/fp` when deriving from peak frequency | formula |
+| Time | datetime / ISO-like inputs | `YYYYMMDD.HHMMSS` when `timecoding=1` | format only | formatting |
+| Bathymetry | elevation may be positive-up | depth positive down | convert sign so water depth is positive | sign convention |
+| Wind speed | knots in some sources | `m/s` | `1 knot = 0.5144 m/s` | multiplicative |
+| Wind direction | meteorological degrees FROM | degrees | `x1` after convention verification | convention check |
+
+When a conversion is listed as a convention check, do not change magnitudes
+until the source metadata has been read. Direction, bathymetry sign, and
+frequency representation are the silent failure modes most likely to make a run
+look numerically plausible while scoring the wrong physical quantity.
+
+---
+
 ## Spectral Moments and Parameters
 
 Key formulas used in the codebase:
@@ -435,6 +518,49 @@ with open('boundary.tpar', 'w') as fid:
 # (after running SWAN binary)
 # parse_swan_output.py reads .crv files → DataFrame
 ```
+
+---
+
+## 11. Validated Results
+
+### Current KI Validation State
+
+| Property | Value |
+|----------|-------|
+| Validation status | `tested` |
+| Validated workflow | round-trip JONSWAP spectrum generation, write, read, Hm0 verification |
+| Headline dag variable | `HSIGN` |
+| Headline dag unit | `m` |
+| Headline dag description | Significant wave height, Hm0 = 4*sqrt(m0) |
+
+### Performance Metrics -- judged against the field's bar, not intuition
+
+**Source of truth**: `docs/validation_convention.yaml`. The bars below restate
+the convention entries for the dag rank-1 variable `HSIGN`; every stated band
+keeps its citation key. Do not replace missing achieved values with remembered
+benchmarks or generic hydrology thresholds.
+
+| Variable | Metric | Direction | Convention bands, cited | Achieved value in this body | Verdict |
+|----------|--------|-----------|-------------------------|-----------------------------|---------|
+| `HSIGN` | `scatter_index` | minimize | very_good: `0.1` (`du2019`); good: `0.15` (`du2019`); satisfactory: `0.2` (`du2019`) | not stated | pending run-specific score |
+| `HSIGN` | `bias` | zero_centered | good: `0.15` (`du2019`); satisfactory: `0.35` (`du2019`) | not stated | pending run-specific score |
+| `HSIGN` | `d_index` | maximize | good: `0.9` (`lei2023`) | not stated | pending run-specific score |
+| `HSIGN` | `scatter_index` | minimize | good: `0.15` (`du2019`); satisfactory: `0.2` (`du2019`) | not stated | pending run-specific score |
+
+The repeated `scatter_index` rows are both convention facts for `HSIGN` and are
+therefore preserved as separate entries. A run report may add achieved values
+only after comparing SWAN output against observations with an independent wind
+field and the dag-bound `HSIGN` variable.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Boundary spectra | Pipeline | available | Prepared by `convert_boundary_spectra.py` |
+| Bathymetry | Pipeline | available | Prepared by `convert_bathymetry.py` |
+| Wind forcing | Pipeline | available | Prefer independent gridded wind via `fetch_gridded_wind.py` for validation |
+| SWAN execution | Pipeline | available | Run through `run_swan.py` after `python preflight_check.py` |
+| Output parsing | Pipeline | available | Parse TABLE/SPEC outputs with `parse_swan_output.py` |
 
 ---
 

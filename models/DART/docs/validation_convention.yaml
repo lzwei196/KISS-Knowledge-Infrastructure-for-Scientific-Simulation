@@ -1,0 +1,309 @@
+schema_version: 1
+model_id: DART
+domain: data_assimilation
+generated_by: "Step-B agent (GPT-5/Codex)"
+generated_at: 2026-08-14
+
+references:
+  anderson2009dart:
+    doi: 10.1175/2009bams2618.1
+    title: "The Data Assimilation Research Testbed: A Community Facility"
+    venue: "Bull. Amer. Meteor. Soc."
+    year: 2009
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_2009bams2618.1.txt
+  raeder2012:
+    doi: 10.1175/jcli-d-11-00395.1
+    title: "DART/CAM: An Ensemble Data Assimilation System for CESM Atmospheric Models"
+    venue: "Journal of Climate"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jcli-d-11-00395.1.txt
+  arellano2007:
+    doi: 10.5194/acp-7-5695-2007
+    title: "Evaluating model performance of an ensemble-based chemical data assimilation system during INTEX-B field mission"
+    venue: "Atmos. Chem. Phys."
+    year: 2007
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_acp-7-5695-2007.txt
+  rubin2016:
+    doi: 10.5194/acp-16-3927-2016
+    title: "Development of the Ensemble Navy Aerosol Analysis Prediction System (ENAAPS) and its application of the Data Assimilation Research Testbed (DART) in support of aerosol forecasting"
+    venue: "Atmos. Chem. Phys."
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_acp-16-3927-2016.txt
+  huang2017:
+    doi: 10.5194/hess-21-635-2017
+    title: "Evaluation of snow data assimilation using the ensemble Kalman filter for seasonal streamflow prediction in the western United States"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-21-635-2017.txt
+  karspeck2018:
+    doi: 10.1002/qj.3308
+    title: "A global coupled ensemble data assimilation system using the Community Earth System Model and the Data Assimilation Research Testbed"
+    venue: "Q. J. R. Meteorol. Soc."
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_qj.3308.txt
+  ling2019:
+    doi: 10.1029/2019ms001634
+    title: "Assimilation of Remotely Sensed Leaf Area Index Into the Community Land Model With DART"
+    venue: "J. Adv. Model. Earth Syst."
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2019ms001634.txt
+  fortin2014:
+    doi: 10.1175/mwr-d-12-00111.1
+    title: "Why Should Ensemble Spread Match the RMSE of the Ensemble Mean? (Assessing the Ensemble Spread-Error Relationship)"
+    venue: "Journal of Hydrometeorology"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_mwr-d-12-00111.1.txt
+  grimit2007:
+    doi: 10.1175/mwr3262.1
+    title: "Measuring the Ensemble Spread-Error Relationship with a Probabilistic Approach: Stochastic Ensemble Results"
+    venue: "Monthly Weather Review"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_mwr3262.1.txt
+  hamill2001:
+    doi: 10.1175/1520-0493(2001)129<0550:iorhfv>2.0.co;2
+    title: "Interpretation of Rank Histograms for Verifying Ensemble Forecasts"
+    venue: "Monthly Weather Review"
+    year: 2001
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_1520-0493(2001)1290550_iorhfv2.0.co;2.txt
+  waller2016:
+    doi: 10.1002/qj.2661
+    title: "Theoretical insight into diagnosing observation error correlations using observation-minus-background and observation-minus-analysis statistics"
+    venue: "Q. J. R. Meteorol. Soc."
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_qj.2661.txt
+
+validation:
+  - dag_variable: "analysis ensemble mean (posterior state)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DART validation paper gives a universal NSE pass tier; DART point-series validation is usually reported as posterior-vs-prior RMSE, bias, correlation, and consistency with independent or withheld observations."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: host-model state units
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "RMSE is central, but acceptable magnitude is variable-specific and observation-error-specific; no model-wide DART numeric RMSE threshold was fetched."
+        cites: []
+      - metric: bias
+        direction: zero_centered
+        unit: host-model state units
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Near-zero bias is required qualitatively; no universal host-model-unit tolerance is reported in the fetched DART benchmark set."
+        cites: []
+    secondary_metrics:
+      - metric: prior_to_posterior_rmse_reduction
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DART studies judge the analysis mean by whether posterior/analysis departures are smaller than prior/background departures against observations."
+        cites: [arellano2007, karspeck2018, raeder2012]
+      - metric: independent_observation_skill
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Independent or withheld observations are preferred because assimilated observations can otherwise make validation circular."
+        cites: [rubin2016, arellano2007]
+    validated_when: "After spinup, compare the posterior ensemble mean to withheld or independent observations in the host-model units; posterior RMSE and bias should improve over prior/open-loop skill and be interpreted against observation error, but no universal NSE/RMSE/bias pass band is available."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      The dag's NSE headline is retained, but the DART literature mainly reports RMSE, bias, correlation,
+      and prior-to-posterior improvement. Arellano 2007 reports that predicted variables improved in
+      "RMSEs and bias"; Karspeck 2018 states updated analyses allow error reductions to be monitored;
+      Rubin 2016 validates posterior AOT against AERONET observations that were not assimilated.
+
+  - dag_variable: "analysis ensemble mean (posterior state)"
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DART paper gives a general CSI threshold; CSI is only appropriate after converting a continuous field to a thresholded event or extent."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: host-model state units
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Continuous gridded DART fields are benchmarked by RMSE against raw observations, reanalyses, or gridded products; acceptable magnitude remains variable- and product-specific."
+        cites: []
+      - metric: spatial_correlation
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Spatial or anomaly correlation is reported as pattern evidence, but the fetched DART papers do not define a universal pass tier."
+        cites: []
+    secondary_metrics:
+      - metric: benchmark_comparison
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For continuous spatial fields, DART/CESM papers use comparison with established reanalyses or observation products rather than event-contingency CSI."
+        cites: [karspeck2018, raeder2012, anderson2009dart]
+      - metric: no_assim_or_control_improvement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Spatial analyses are judged by improvement over a no-assimilation/control simulation and by agreement with observations or reanalysis products."
+        cites: [karspeck2018, ling2019]
+    validated_when: "For continuous host-model fields, use RMSE/bias/correlation or Taylor-style pattern metrics against independent gridded observations or established reanalyses, plus improvement over a no-assimilation/control run. Treat CSI as unresolved unless the run defines a thresholded event and fetches an event-verification convention."
+    evidence_strength: moderate
+    confidence: 0.35
+    notes: >-
+      The dag's CSI metric is not a standard DART-wide field-validation gate in the fetched literature.
+      Karspeck 2018 uses "multiple lines of evidence" and compares CESM/DART to reanalyses and raw
+      observations; Ling 2019 evaluates gridded LAI with RMSE, relative bias, innovations, and residuals.
+
+  - dag_variable: "analysis ensemble spread (posterior sd)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The spread-skill target is qualitative spread/RMSE consistency, not a fetched universal percent-bias tolerance."
+        cites: []
+      - metric: spread_error_ratio
+        direction: zero_centered
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Ideal reliability centers spread/RMSE near 1, but the fetched literature does not specify a universal absolute tolerance around 1."
+        cites: []
+    secondary_metrics:
+      - metric: rank_histogram_uniformity
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Rank histograms are used with spread-error diagnostics to assess ensemble reliability and distinguish underdispersion, overdispersion, and bias."
+        cites: [hamill2001, grimit2007, rubin2016]
+      - metric: correct_average_spread
+        direction: minimize
+        status: supportive
+        ceiling_reason: "The field compares RMSE with the square root of average ensemble variance; using average standard deviation can falsely diagnose underdispersion."
+        cites: [fortin2014]
+    validated_when: "Compare posterior ensemble spread with RMSE of the ensemble mean after spinup; a reliable ensemble has spread comparable to RMSE, stable regional spread, and rank histograms consistent with the observations. No universal percent tolerance is available."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Fortin 2014 says reliability assessment commonly compares ensemble-mean RMSE to average ensemble
+      spread and warns about the computation. Rubin 2016 calls small RMSE comparable to total spread a
+      benchmark of a good ensemble system. Hamill 2001 cautions that rank histograms are necessary but
+      not sufficient, so this block is supportive and non-numeric.
+
+  - dag_variable: "observation-space innovations and QC (obs_seq.final)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DART observation-space diagnostic paper gives an NSE pass tier; innovations are normally judged by RMSE, bias, prior-to-posterior reduction, residuals, and QC behavior."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: observation units
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Observation-space RMSE is variable- and observation-error-specific; no universal DART threshold was fetched."
+        cites: []
+      - metric: bias
+        direction: zero_centered
+        unit: observation units
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Bias should be near zero or physically explained, but no universal observation-unit tolerance was fetched."
+        cites: []
+    secondary_metrics:
+      - metric: residual_smaller_than_innovation
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Observation-minus-analysis residuals should be smaller than observation-minus-background innovations when the assimilation is working."
+        cites: [ling2019, waller2016, arellano2007]
+      - metric: qc_rejection_fraction
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Unexpectedly different observations should be rejected by QC, but persistent or unstable rejection indicates model, operator, or observation-error problems."
+        cites: [raeder2012, rubin2016]
+    validated_when: "Filter DART missing sentinels before statistics; compare observation-minus-background and observation-minus-analysis departures, RMSE, bias, total spread, observation counts, and QC flags. Posterior residuals should be smaller than innovations and QC rejection should be stable and physically explainable, but no NSE pass band is available."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Ling 2019 states that small residuals compared with innovations indicate a working LDAS; Waller
+      2016 grounds observation-minus-background and observation-minus-analysis residual diagnostics.
+      Raeder 2012 describes DART QC discarding observations unexpectedly different from the ensemble.
+
+  - dag_variable: "binned observation-space diagnostics (bias, rmse, totalspread)"
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched DART binned-diagnostics paper gives an NSE pass tier; regional bins are judged by RMSE, bias, total spread, and counts against observations."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: observation units
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Regional aggregate RMSE is observation-type-specific; no universal DART pass threshold was fetched."
+        cites: []
+      - metric: totalspread_rmse_ratio
+        direction: zero_centered
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Total spread should be comparable to RMSE, but no universal numeric tolerance around equality was fetched."
+        cites: []
+    secondary_metrics:
+      - metric: regional_spread_rmse_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DART and ensemble-forecast literature use binned RMSE, bias, spread, and observation counts to diagnose regional reliability."
+        cites: [rubin2016, raeder2012, fortin2014]
+      - metric: posterior_error_reduction
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Binned observation-space diagnostics compare prior/background and posterior/analysis departures so error reductions can be monitored through time and region."
+        cites: [karspeck2018, arellano2007]
+    validated_when: "Aggregate only valid observations after spinup; regional bins should show posterior RMSE and bias no worse than prior/background, total spread comparable to RMSE, adequate counts, and stable QC. No universal NSE/RMSE/total-spread numeric pass band is available."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Rubin 2016 explicitly evaluates regions with RMSE, bias, ensemble/total spread, assimilated counts,
+      and rank histograms. Raeder 2012 explains total spread as the expected model-mean/observation
+      difference. Karspeck 2018 uses observation-space diagnostics to monitor assimilation error reduction.
+
+deferred_paywalled:
+  - ref: "Anderson 2001 - An Ensemble Adjustment Kalman Filter for Data Assimilation"
+    doi: 10.1175/1520-0493(2001)129<2884:aeakff>2.0.co;2
+    needed_for: ["analysis ensemble mean (posterior state)", "observation-space innovations and QC (obs_seq.final)"]
+  - ref: "Anderson and Anderson 1999 - A Monte Carlo Implementation of the Nonlinear Filtering Problem to Produce Ensemble Assimilations and Forecasts"
+    doi: 10.1175/1520-0493(1999)127<2741:amciot>2.0.co;2
+    needed_for: ["analysis ensemble spread (posterior sd)"]
+  - ref: "Anderson 2009 - Spatially and Temporally Varying Adaptive Covariance Inflation for Ensemble Filters"
+    doi: 10.1111/j.1600-0870.2008.00361.x
+    needed_for: ["analysis ensemble spread (posterior sd)", "binned observation-space diagnostics (bias, rmse, totalspread)"]
+  - ref: "Anderson 2012 - Localization and Sampling Error Correction in Ensemble Kalman Filter Data Assimilation"
+    doi: 10.1175/mwr-d-11-00013.1
+    needed_for: ["analysis ensemble mean (posterior state)", "analysis ensemble spread (posterior sd)"]

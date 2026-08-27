@@ -1,0 +1,245 @@
+schema_version: 1
+model_id: mizuRoute
+domain: hydrology
+generated_by: "Step-B validation-convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+# Literature-grounded validation conventions for mizuRoute DAG outputs. Blocks are keyed by
+# dag_variable, not an invented canonical quantity. Numeric bands are only used where a fetched
+# paper gives a threshold or benchmark floor; diagnostic/storage quantities without such a
+# convention keep null bands and low confidence.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  mizukami2016:
+    doi: 10.5194/gmd-9-2223-2016
+    title: "mizuRoute version 1: a river network routing tool for a continental domain water resources applications"
+    venue: "Geoscientific Model Development"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-9-2223-2016.txt
+  cortes2023:
+    doi: 10.5194/hess-27-3505-2023
+    title: "To what extent does river routing matter in hydrological modeling?"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-27-3505-2023.txt
+  vanderkelen2022:
+    doi: 10.5194/gmd-15-4163-2022
+    title: "Evaluating a reservoir parametrization in the vector-based global routing model mizuRoute (v2.0.1) for Earth system model coupling"
+    venue: "Geoscientific Model Development"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-15-4163-2022.txt
+  chuphal2023:
+    doi: 10.1038/s41597-023-02618-w
+    title: "Hydrological model-based streamflow reconstruction for Indian sub-continental river basins (1951-2021)"
+    venue: "Scientific Data"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41597-023-02618-w.txt
+  gharari2024:
+    doi: 10.1029/2022WR032400
+    title: "A Flexible Framework for Simulating the Water Balance of Lakes and Reservoirs From Local to Global Scales: mizuRoute-Lake"
+    venue: "Water Resources Research"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2022wr032400.txt
+  hosseini2025:
+    doi: 10.5194/hess-29-4073-2025
+    title: "The value of observed reservoir storage anomalies for improving the simulation of reservoir dynamics in large-scale hydrological models"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-29-4073-2025.txt
+  bindas2024:
+    doi: 10.1029/2023WR035337
+    title: "Improving River Routing Using a Differentiable Muskingum-Cunge Model and Physics-Informed Machine Learning"
+    venue: "Water Resources Research"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2023wr035337.txt
+  mizukami2021:
+    doi: 10.1029/2020MS002434
+    title: "A Vector-Based River Routing Model for Earth System Models: Parallelization and Global Applications"
+    venue: "Journal of Advances in Modeling Earth Systems"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2020ms002434.txt
+
+validation:
+  - dag_variable: routed_discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow criteria list: 'Flow D-M-A NSE > 0.80', '0.70 < NSE <= 0.80', and '0.50 < NSE <= 0.70'; Moriasi 2007 gives the older satisfactory rule NSE > 0.50."
+        cites: [moriasi2007, moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow criteria list: 'PBIAS < +/-5', '+/-5 <= PBIAS < +/-10', and '+/-10 <= PBIAS < +/-15' for daily-monthly-annual flow."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "mizuRoute routing papers often report KGE; Cortes-Salazar et al. use KGE, NSE, NSE-log, and high-flow bias to evaluate daily discharge, and Vanderkelen et al. state KGE above -0.41 is better than the mean-flow benchmark."
+        cites: [cortes2023, vanderkelen2022]
+      - metric: timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Routing primarily adjusts hydrograph timing and attenuation. Bindas et al. state routing accounts for mass balance and flood-wave speed; mizuRoute v1 describes hillslope and channel routing of runoff to streamflow."
+        cites: [mizukami2016, bindas2024]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "A volume bias should first be traced to forcing/runoff inputs before changing routing parameters: Vanderkelen et al. attribute limited reservoir-streamflow skill to runoff biases, and Bindas et al. note mass-balance routing prevents adding or removing mass to remove bias."
+        cites: [vanderkelen2022, bindas2024]
+    validated_when: "Daily, monthly, or annual routed discharge at mapped gauges has NSE >= 0.50 and |PBIAS| <= 15%; use hydrographs/timing or KGE as supportive diagnostics."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      This is the best-grounded mizuRoute output. Moriasi 2015 provides the watershed-scale flow
+      convention; Moriasi 2007 independently states streamflow is satisfactory if NSE > 0.50 and
+      PBIAS is within +/-25% for monthly flow, but the 2015 update is stricter for flow PBIAS
+      (+/-15%). mizuRoute-specific studies report benchmark skill rather than universal pass tiers:
+      Cortes-Salazar et al. report best daily KGE spanning 0.69-0.81 when routing is included, and
+      Chuphal and Mishra report monthly R2/NSE above 0.70 for more than 60% of stations.
+
+  - dag_variable: routed_discharge
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 daily-monthly-annual flow PBIAS criteria; a single instant remains timing-sensitive, so this is a magnitude screen, not a full validation."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Single-time discharge can fail from phase error even when volume is acceptable; mizuRoute and routing benchmarks emphasize flood-wave speed/timing and hydrograph comparison."
+        cites: [mizukami2016, bindas2024]
+    validated_when: "For a discharge snapshot or event-magnitude check, |PBIAS| <= 15% is a transferred flow convention; prefer the point_time_series block when observations allow."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      No fetched paper provides a true instantaneous-discharge pass tier. The PBIAS threshold is
+      therefore transferred from daily/monthly/annual streamflow conventions and should not
+      override a better time-series comparison.
+
+  - dag_variable: basRunoff
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Use only when basRunoff is compared to an observed or reconstructed reach/basin flow time series; Moriasi 2015 flow criteria are transferred because basRunoff is not usually a directly gauged output."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 watershed-scale flow PBIAS criteria; use alongside mass-conservation diagnostics."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: mass_balance_residual
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "mizuRoute v1 describes remapped runoff routed through hillslopes and channels to streamflow; Mizukami et al. 2021 show runoff input has larger impacts on discharge than routing/network choices."
+        cites: [mizukami2016, mizukami2021]
+    validated_when: "If basRunoff is treated as a flow-like basin/reach diagnostic, require NSE >= 0.50 and |PBIAS| <= 15%; also check mass conservation because direct observations are uncommon."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: >-
+      The DAG caveat is important: basRunoff is primarily a routed runoff and mass-balance diagnostic,
+      not a standard gauge product. Bands are transferred from flow conventions and should be used only
+      when a defensible basin/reach flow observation or reconstruction is available.
+
+  - dag_variable: REACH_VOL
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric validation tier for channel water storage per reach; direct observations are rare and often inferred."
+        cites: []
+    secondary_metrics:
+      - metric: water_balance_residual
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "mizuRoute and mizuRoute-Lake define storage through water-balance/routing equations, but the fetched papers do not provide a universal REACH_VOL skill threshold."
+        cites: [mizukami2016, gharari2024]
+    validated_when: "UNRESOLVED - compare to independently inferred reach storage only with study-specific uncertainty; do not auto-validate on NSE without a cited threshold."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      REACH_VOL is a model state rather than a commonly validated hydrologic observable. Fetched
+      mizuRoute papers support mass-balance interpretation, but no numeric field convention for
+      reach-storage NSE/RMSE was found in the cached literature.
+
+  - dag_variable: lake_outflow_storage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: kge
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: -0.41}
+        pass_band: satisfactory
+        band_note: "Vanderkelen et al. state KGE values above -0.41 are better than the mean-flow benchmark; this is a minimum benchmark floor, not a strong reservoir operations tier."
+        cites: [vanderkelen2022]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is NSE, but fetched mizuRoute reservoir papers evaluate outflow and storage with KGE and absolute PBIAS rather than providing NSE tiers."
+        cites: [vanderkelen2022, hosseini2025]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Vanderkelen et al. evaluate global reservoir outflow and storage with absolute PBIAS and KGE, but do not provide a pass/fail PBIAS tier for storage."
+        cites: [vanderkelen2022]
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hosseini-Moghari and Doll compare reservoir storage/outflow algorithms with nRMSE distributions, but do not state a universal nRMSE pass band."
+        cites: [hosseini2025]
+    validated_when: "Reservoir/lake outflow-storage behavior is at least benchmark-skillful when KGE >= -0.41; assess outflow and storage separately with KGE, |PBIAS|, hydrographs, and storage-anomaly diagnostics where data exist."
+    evidence_strength: moderate
+    confidence: 0.50
+    notes: >-
+      Literature supersedes the DAG's NSE headline for this combined reservoir/lake output. Vanderkelen
+      et al. evaluate mizuRoute reservoir outflow and storage with KGE and absolute PBIAS and report
+      that skill statistics are limited by biases in simulated runoff from CLM. Hosseini-Moghari and
+      Doll show that reservoir storage and outflow validation depends on scarce in situ data or storage
+      anomalies, with many reservoirs requiring reservoir-specific calibration. Treat KGE >= -0.41 as a
+      weak benchmark floor, not proof of good reservoir operations.
+
+deferred_paywalled: []

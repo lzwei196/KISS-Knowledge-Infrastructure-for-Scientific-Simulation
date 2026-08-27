@@ -164,7 +164,7 @@ outputs:
   - var: "npp"
     validation_rank: 2
     unit: "gC/m2/month"
-    description: "Net primary production."
+    description: "Vegetation carbon-cycle net primary production."
     emitted_in: "npp.bin (output registry, monthly)"
     observability:
       comparable_obs_shapes:
@@ -182,7 +182,7 @@ outputs:
   - var: "gpp"
     validation_rank: 3
     unit: "gC/m2/month"
-    description: "Gross primary production."
+    description: "Vegetation carbon-cycle gross primary production."
     emitted_in: "gpp.bin (output registry, monthly)"
     observability:
       comparable_obs_shapes:
@@ -454,3 +454,13 @@ safety:
       scope: "energy closure"
       source: "Schaphoff et al. 2018 GMD 11:1343 (energy balance / permafrost section); update_soil_thermal_state in source"
       status: "adopted"
+
+medium_evidence:
+  - var: "npp"
+    source: "SKILL.md"
+    quote: "LPJmL (Lund-Potsdam-Jena managed Land) is a process-based dynamic global vegetation model that simulates vegetation dynamics, carbon and nitrogen cycling, hydrology, and crop yields on a global 0.5-degree grid."
+    note: "DAG boundary.scope_in also lists Carbon cycle (GPP, NPP, autotrophic and heterotrophic respiration; vegetation/soil/litter carbon pools)."
+  - var: "gpp"
+    source: "SKILL.md"
+    quote: "LPJmL (Lund-Potsdam-Jena managed Land) is a process-based dynamic global vegetation model that simulates vegetation dynamics, carbon and nitrogen cycling, hydrology, and crop yields on a global 0.5-degree grid."
+    note: "DAG boundary.scope_in also lists Carbon cycle (GPP, NPP, autotrophic and heterotrophic respiration; vegetation/soil/litter carbon pools)."

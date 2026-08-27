@@ -1,255 +1,696 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: COSIPY
-  version: 2.0.2
-  domain: cryosphere
-  subdomain: glacier and snowpack energy/mass balance
-  binary_path: KISSPATH_PYTHON_ENV/bin/python
-  entry_point: COSIPY.py
-  source_repo: https://github.com/cryotools/cosipy
-  config_format: TOML
-  io_format: netCDF
+  language: python
+  implementation:
+    id: cosipy-202
+    version: v2.0.2
+    provenance: Python (numba-accelerated); cryotools/COSIPY, GPL-3.0; per-grid-cell 1D column with netCDF
+      I/O and Dask parallelism.
+  scientific_reference_version: COSIPY v1.3 (Sauter, Arndt & Schneider 2020, GMD) science spec, as realized
+    by the v2.0.2 codebase
 inputs:
   forcing:
   - name: T2
     unit: K
-    description: 2-m air temperature
-    valid_range:
-    - 223.16
-    - 316.16
+    category: forcing
+    source_kind: forcing
+    model_input_format: netCDF4 (time,lat,lon)
+    notes: 2-m air temperature; valid 223.16-316.16 K. Celsius input silently forces 100% rain in the
+      tanh snow/rain partition.
   - name: RH2
-    unit: '%'
-    description: 2-m relative humidity
-    valid_range:
-    - 0
-    - 100
+    unit: '% (0-100)'
+    category: forcing
+    source_kind: forcing
+    model_input_format: netCDF4 (time,lat,lon)
+    notes: 2-m relative humidity. Supplying a 0-1 fraction collapses latent heat flux to ~0.
   - name: U2
     unit: m s^-1
-    description: 2-m wind speed
-    valid_range:
-    - 0
-    - 50
+    category: forcing
+    source_kind: forcing
+    model_input_format: netCDF4 (time,lat,lon)
+    notes: Wind speed expected at the 2-m measurement height z; 10-m reanalysis wind without log-profile
+      correction overestimates turbulent fluxes.
   - name: G
     unit: W m^-2
-    description: Incoming shortwave radiation
-    valid_range:
-    - 0
-    - 1600
+    category: forcing
+    source_kind: forcing
+    model_input_format: netCDF4 (time,lat,lon)
+    notes: Instantaneous incoming shortwave; valid 0-1600. Accumulated J m^-2 is ~3600x too high.
   - name: PRES
     unit: hPa
-    description: Surface air pressure
-    valid_range:
-    - 200
-    - 1080
+    category: forcing
+    source_kind: forcing
+    model_input_format: netCDF4 (time,lat,lon)
+    notes: Surface air pressure; Pa input makes air density and turbulent fluxes ~100x too large.
   - name: RRR
-    unit: mm
-    description: Total precipitation per time step
-    valid_range:
-    - 0
-    - 20
+    unit: mm per timestep
+    category: forcing
+    source_kind: forcing
+    model_input_format: netCDF4 (time,lat,lon)
+    notes: Total (liquid+solid) precipitation per timestep; the model uses the raw value and does NOT
+      divide by dt. Required unless SNOWFALL supplied.
   - name: N
-    unit: fraction
-    description: Cloud cover fraction
-    valid_range:
-    - 0
-    - 1
+    unit: fraction (0-1)
+    category: forcing
+    source_kind: forcing
+    model_input_format: netCDF4 (time,lat,lon)
+    notes: Cloud cover, used to parametrize incoming longwave when LWin is absent. Required unless LWin
+      given; percent input inflates LWin.
   - name: LWin
     unit: W m^-2
-    description: Incoming longwave radiation (optional if N given)
-    valid_range:
-    - 0
-    - 400
+    category: forcing
+    source_kind: forcing
+    model_input_format: netCDF4 (time,lat,lon)
+    notes: Optional measured incoming longwave; when absent it is parametrized from T2, RH2 (vapour pressure)
+      and N via a Konzelmann-type clear-sky emissivity blended with an overcast term.
   - name: SNOWFALL
-    unit: m
-    description: Snowfall in snow height per timestep (optional if RRR given)
-    valid_range:
-    - 0
-    - 0.05
-  static:
-  - name: HGT
-    unit: m
-    description: Elevation (DEM)
-  - name: ASPECT
-    unit: degrees
-    description: Slope aspect
-  - name: SLOPE
-    unit: degrees
-    description: Terrain slope angle
-  - name: MASK
-    unit: boolean
-    description: Glacier mask (0/1)
+    unit: m snow height per timestep
+    category: forcing
+    source_kind: forcing
+    model_input_format: netCDF4 (time,lat,lon)
+    notes: Optional direct snowfall as SNOW HEIGHT (not w.e.); units differ from the w.e. SNOWFALL output.
+      mm or m-w.e. input creates hundreds of layers and hits max_layers.
   parameters:
-    critical:
-    - name: dt
-      unit: s
-      valid_range:
-      - 900
-      - 86400
-      default: 3600
-      description: "Time step \u2014 must match input data frequency"
-    - name: max_layers
-      valid_range:
-      - 10
-      - 500
-      default: 200
-      description: Maximum number of vertical layers
-    - name: albedo_method
-      valid_values:
-      - Oerlemans98
-      - Bougamont05
-      default: Oerlemans98
-      description: Albedo parameterization scheme
-    - name: stability_correction
-      valid_values:
-      - Ri
-      - MO
-      default: Ri
-      description: Atmospheric stability correction method
-    - name: initial_snowheight_constant
-      unit: m
-      valid_range:
-      - 0
-      - 10
-      default: 0.2
-      description: Initial snow depth
-    - name: initial_glacier_height
-      unit: m
-      valid_range:
-      - 0
-      - 1000
-      default: 40.0
-      description: Glacier ice thickness
-    - name: temperature_bottom
-      unit: K
-      valid_range:
-      - 250
-      - 275
-      default: 270.16
-      description: Bottom boundary temperature
-    - name: albedo_fresh_snow
-      valid_range:
-      - 0.7
-      - 0.95
-      default: 0.85
-      description: Fresh snow albedo
-    - name: albedo_firn
-      valid_range:
-      - 0.4
-      - 0.7
-      default: 0.55
-      description: Firn albedo
-    - name: albedo_ice
-      valid_range:
-      - 0.15
-      - 0.45
-      default: 0.3
-      description: Ice albedo
+  - name: albedo_fresh_snow / albedo_firn / albedo_ice
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: constants.toml
+    notes: Endpoint albedos (defaults 0.85 / 0.55 / 0.30) for the aging decay.
+  - name: albedo decay timescales
+    unit: days
+    category: parameter
+    source_kind: calibrated
+    model_input_format: constants.toml
+    notes: Snow-aging and depth-decay timescales of the Oerlemans98 / Bougamont05 schemes.
+  - name: roughness lengths (fresh snow / firn / ice)
+    unit: m (mm in config)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: constants.toml
+    notes: Moelg12 interpolates z0 between surface types by snow age; constant for ice, time-dependent
+      for snow. Code divides the Moelg result by 1000 (mm->m).
+  - name: snow/rain transfer temperature threshold and spread
+    unit: K
+    category: parameter
+    source_kind: calibrated
+    model_input_format: constants.toml
+    notes: Center/width of the tanh snow-fraction transfer function.
+  - name: densification coefficients (Boone / Vionnet / empirical)
+    unit: various
+    category: parameter
+    source_kind: default
+    model_input_format: in-source (cosipy/modules/densification.py)
+    notes: Boone (c1=2.8e-6, eta0=3.7e7, rho0=150, ...) and Vionnet constants are hardcoded in-source,
+      not in constants.toml.
+  - name: fresh-snow density coefficients
+    unit: kg m^-3
+    category: parameter
+    source_kind: default
+    model_input_format: in-source (cosipy/cpkernel/cosipy_core.py)
+    notes: Empirical fit max(109 + 6*(T2-273.16) + 26*sqrt(U2), 50) with hardcoded coefficients and a
+      50 kg/m^3 floor; active unless densification_method=='constant'.
+  - name: Bintanja shortwave extinction coefficients (snow 17.1, ice 2.5)
+    unit: m^-1
+    category: parameter
+    source_kind: default
+    model_input_format: in-source (cosipy/modules/penetratingRadiation.py)
+    notes: Hardcoded extinction coefficients for subsurface shortwave penetration.
+  - name: thermal conductivity / heat-equation stability factor
+    unit: various
+    category: parameter
+    source_kind: default
+    model_input_format: in-source (cosipy/modules/heatEquation.py)
+    notes: Explicit-conduction Courant safety factor c_stab=0.8 hardcoded; conductivity derived per-layer
+      in Node.
+  - name: turbulent Prandtl number
+    unit: '-'
+    category: parameter
+    source_kind: default
+    model_input_format: in-source (cosipy/modules/surfaceTemperature.py)
+    notes: Pr=0.8 hardcoded in the Monin-Obukhov bulk flux scheme.
+  - name: remesh density/temperature thresholds
+    unit: kg m^-3 / K
+    category: parameter
+    source_kind: calibrated
+    model_input_format: constants.toml
+    notes: Merge thresholds (density_threshold_merging, merge_max) controlling adaptive layer merging.
+  - name: measurement height z
+    unit: m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: constants.toml
+    notes: Height at which forcing is assumed representative (default 2.0 m).
+  initial_conditions:
+  - name: initial_snowheight_constant
+    unit: m
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: constants.toml or restart netCDF
+    notes: Default 0.2 m; HIGH influence on first months. Zero snowheight with no early snowfall pins
+      albedo at the ice value 0.3.
+  - name: initial_glacier_height
+    unit: m
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: constants.toml or restart netCDF
+    notes: Default 40 m; assumed thick enough that the column does not melt through.
+  - name: initial_top_density_snowpack / initial_bottom_density_snowpack
+    unit: kg m^-3
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: constants.toml or restart netCDF
+    notes: Defaults 300 / 600 kg/m^3 setting the initial density profile.
+  - name: temperature_bottom
+    unit: K
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: constants.toml
+    notes: Bottom-boundary column temperature (default 270.16 K).
+  - name: initial_surface_temperature
+    unit: K
+    category: initial_condition
+    source_kind: default
+    model_input_format: in-source (cosipy/cpkernel/cosipy_core.py)
+    notes: Hardcoded 270.0 K seed for the across-timestep surface_temperature scalar; read by the Bougamont05
+      albedo decay and used as the first energy-balance iteration guess. Not in constants.toml. Distinct
+      from temperature_bottom (270.16 K bottom-boundary column temperature).
+  - name: restart column state
+    unit: various
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: restart netCDF
+    notes: Full layer-resolved heights/densities/temperatures/LWC from a spinup of >=1 year; recommended
+      for production runs.
+  boundary_conditions:
+  - name: MASK (glacier mask)
+    unit: boolean (0/1)
+    category: boundary_condition
+    source_kind: dataset_lookup
+    model_input_format: static netCDF (lat,lon)
+    notes: Only MASK=1 cells are simulated. All-zero mask yields empty output; NaN forcing in a MASK=1
+      cell aborts the run.
+  - name: HGT (elevation/DEM)
+    unit: m
+    category: boundary_condition
+    source_kind: dataset_lookup
+    model_input_format: static netCDF (lat,lon)
+    notes: Elevation field defining the domain.
+  - name: SLOPE / ASPECT
+    unit: degrees
+    category: boundary_condition
+    source_kind: dataset_lookup
+    model_input_format: static netCDF (lat,lon)
+    notes: Terrain slope and aspect (0=North); used for radiation geometry. Declared in the code/KI static
+      set but not in the readthedocs static-field list.
+  - name: albedo_method
+    unit: switch
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: config/constants.toml
+    notes: Oerlemans98 (default) vs Bougamont05 albedo evolution scheme.
+  - name: stability_correction
+    unit: switch
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: config/constants.toml
+    notes: Ri (default) vs MO Monin-Obukhov stability correction for turbulent fluxes.
+  - name: densification_method
+    unit: switch
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: config/constants.toml
+    notes: Boone (default) / Vionnet / empirical / constant compaction scheme.
+  - name: sfc_temperature_method
+    unit: switch
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: config/constants.toml
+    notes: Secant (default) / L-BFGS-B / SLSQP solver for the surface energy balance; L-BFGS-B and SLSQP
+      can give different (potentially wrong) results since a Feb 2024 update.
+  - name: remesh_method
+    unit: switch
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: config/constants.toml
+    notes: log_profile (default, fast/smoothed) vs adaptive_profile (detailed, costlier) layer remeshing.
+  - name: dt (time step)
+    unit: s
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: constants.toml
+    notes: Default 3600 s; MUST equal input forcing resolution because all flux-to-mass conversions use
+      raw per-step values.
+  - name: WRF dimension flag
+    unit: switch
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: config.toml [DIMENSIONS]
+    notes: Selects south_north/west_east WRF dimension names instead of lat/lon.
 outputs:
   primary:
   - name: MB
     unit: m w.e.
-    description: Total mass balance per timestep
-    valid_range:
-    - -0.01
-    - 0.01
+    description: Total surface + internal mass balance per timestep (positive = mass gain).
+    validation_rank: 1
+    emitted_in: output_internal (result netCDF)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Stake/cumulative-MB observations are point/glaciological; compare cumulative or seasonally-aggregated
+          MB rather than noisy per-step values.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - magnitude_accuracy
+        - trend_match
+        determining_metric: pbias
+        caveats:
+        - Geodetic / glacier-wide annual MB carries multi-year geometry signal; compare decadal means
+          or specific annual balances, not interannual r.
+      detrending_options:
+      - none
+      - decadal_mean
   - name: surfMB
     unit: m w.e.
-    description: Surface mass balance per timestep
-    valid_range:
-    - -0.01
-    - 0.01
-  - name: intMB
-    unit: m w.e.
-    description: Internal mass balance per timestep
-    valid_range:
-    - -0.001
-    - 0.001
+    description: Surface mass balance per timestep (snowfall + melt + sublimation + deposition + evaporation).
+    validation_rank: 2
+    emitted_in: output_internal (result netCDF)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Surface stakes measure surface ablation/accumulation; internal MB is not captured by surface
+          stakes.
+      detrending_options:
+      - none
   - name: SNOWHEIGHT
     unit: m
-    description: Total snow height
-    valid_range:
-    - 0
-    - 20
-  - name: TOTALHEIGHT
-    unit: m
-    description: Total column height (snow + ice)
-    valid_range:
-    - 0
-    - 100
+    description: Total snow height above the ice surface.
+    validation_rank: 4
+    emitted_in: output_internal (result netCDF)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Sonic-ranger / snow-depth sensors measure height; settling and densification confound direct
+          depth comparison.
+      detrending_options:
+      - none
   - name: TS
     unit: K
-    description: Surface temperature
-    valid_range:
-    - 200
-    - 280
+    description: Surface skin temperature, constrained to <= 273.16 K.
+    validation_rank: 3
+    emitted_in: output_atm (result netCDF)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - IR surface temperature retrievals saturate at the melt cap 273.16 K; bias is one-sided near
+          melting.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Satellite LST is clear-sky only and at coarser resolution than the per-cell column.
+      detrending_options:
+      - none
   - name: ALBEDO
     unit: '-'
-    description: Surface albedo
-    valid_range:
-    - 0.1
-    - 0.95
+    description: Surface broadband albedo (~0.85 fresh snow to ~0.30 ice).
+    validation_rank: 5
+    emitted_in: output_atm (result netCDF)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - AWS pyranometer-pair albedo is daytime/clear-sky; brief snowfall events reset albedo and must
+          be timed correctly.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - MODIS/Sentinel albedo products differ in spectral band integration from the model broadband
+          albedo.
+      detrending_options:
+      - none
   - name: Q
     unit: m w.e.
-    description: Runoff per timestep
-    valid_range:
-    - 0
-    - 0.01
-  - name: ME
-    unit: W m^-2
-    description: Melt energy
-    valid_range:
-    - 0
-    - 500
-  - name: snow_water_equivalent
-    canonical_id: snow_water_equivalent
-    unit: mm
-  - name: glacier_volume
-    canonical_id: glacier_volume
-    unit: km3
-  - name: snowmelt
-    canonical_id: snowmelt
-    unit: mm/day
-  - name: ice_thickness
-    canonical_id: ice_thickness
-    unit: m
-  energy_fluxes:
+    description: Meltwater runoff leaving the column per timestep.
+    validation_rank: 6
+    emitted_in: output_internal (result netCDF)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Per-cell column runoff is not routed; gauged discharge requires external lateral routing and
+          basin aggregation before comparison.
+      detrending_options:
+      - none
   - name: H
     unit: W m^-2
-    description: Sensible heat flux
-    valid_range:
-    - -200
-    - 200
+    description: Turbulent sensible heat flux between air and the glacier snow/ice surface.
+    validation_rank: 7
+    emitted_in: output_atm (result netCDF)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance flux towers measure H directly; bulk-aerodynamic estimate is sensitive to z0
+          and stability-correction choice.
+      detrending_options:
+      - none
   - name: LE
     unit: W m^-2
-    description: Latent heat flux
-    valid_range:
-    - -200
-    - 200
-  - name: LWin
-    unit: W m^-2
-    description: Incoming longwave radiation
-    valid_range:
-    - 0
-    - 400
-  - name: LWout
-    unit: W m^-2
-    description: Outgoing longwave radiation
-    valid_range:
-    - -400
-    - 0
-  - name: B
-    unit: W m^-2
-    description: Ground heat flux
-    valid_range:
-    - -50
-    - 50
+    description: Turbulent latent heat flux between air and the glacier snow/ice surface (sublimation/evaporation).
+    validation_rank: 8
+    emitted_in: output_atm (result netCDF)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Skin-layer-saturation assumption can bias LE; compare against eddy-covariance latent flux.
+      detrending_options:
+      - none
+  - name: layer profiles (T, RHO, theta_i, theta_w, porosity)
+    unit: K, kg m^-3, -, -, -
+    description: Per-layer subsurface vertical profiles of temperature, density, ice fraction, liquid
+      water content and porosity (only when full_field output enabled).
+    validation_rank: 9
+    emitted_in: output_full (result netCDF, 4-D time,lat,lon,layer)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Snow-pit / firn-core density and temperature profiles are sparse in time; compare profile snapshots
+          at the pit date and depth.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: r
+        caveats:
+        - Thermistor-string subsurface temperatures need depth-to-layer alignment under an evolving adaptive
+          mesh.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- id: restart_array_bug
-  description: Restart writing crashes with 'setting an array element with a sequence'
-    on xarray/numpy >=2.0
-  severity: medium
-  workaround: Set restart_output = false in config.toml or pin numpy<2.0
-- id: unit_traps
-  description: "10 silent unit conversion traps documented in SKILL.md \u2014 T2(K),\
-    \ RH2(%), PRES(hPa), etc."
-  severity: high
-  workaround: Use convert_forcing tool which validates all units
+- id: dt_001
+  symptom: Zero snowfall even during winter. All precipitation classified as rain. Snow height remains
+    zero.
+  diagnosis: Temperature in degrees Celsius instead of Kelvin; COSIPY expects T2 in Kelvin. The snow/rain
+    transfer function uses tanh((T2 - 273.16 - center) * spread). If T2 is in Celsius (e.g., -5), then
+    T2 - 273.16 = -278.16, making tanh() = -1, so 0.5*(-(-1)+1) = 1.0 which means 100% rain fraction.
+    All precip
+  remedy: Add 273.16 to temperature values if they are in Celsius; convert_forcing; ['Check T2 range —
+    values should be 220-320 K, not -50 to +50', 'If max T2 < 100, values are in Celsius — add 273.16'];
+    convert_forcing validates T2 range 223.16 to 316.16 K
+  severity: silent
+- id: dt_002
+  symptom: Near-zero latent heat flux. No sublimation or evaporation. Mass balance dominated by melt only.
+  diagnosis: 'Relative humidity as fraction (0-1) instead of percentage (0-100); COSIPY expects RH2 in
+    percentage (0-100%). The saturation vapor pressure computation uses RH2 directly. If RH2=0.7 instead
+    of 70, the specific humidity at 2m is ~100x too low, making latent heat flux negligible.
+
+    ; [''convert_forcing'','
+  remedy: Multiply RH2 by 100 if values are in 0-1 range; convert_forcing; ['Check max RH2 — should be
+    60-100 for most climates', 'If max RH2 < 1.5, values are fraction — multiply by 100']; convert_forcing
+    checks for RH2 < 2.0 and warns
+  severity: silent
+- id: dt_003
+  symptom: Model crashes or turbulent fluxes are unrealistically large (sensible heat > 1000 W/m2).
+  diagnosis: 'Pressure in Pa instead of hPa; COSIPY expects PRES in hPa. ERA5 provides Pa (e.g., 50000
+    Pa = 500 hPa). The bounds check is 200-1080 hPa. Values of 50000+ will pass no bounds check, and air
+    density rho = p / (R * T) will be ~100x too high, causing turbulent heat fluxes to be 100x too large.
+
+    ; [''conv'
+  remedy: Divide pressure by 100 to convert Pa to hPa; convert_forcing; ['Check PRES range — should be
+    200-1080 hPa', 'If PRES > 2000, values are in Pa — divide by 100']; convert_forcing validates PRES
+    range
+  severity: crash_or_silent
+- id: dt_004
+  symptom: Precipitation 24x too much or too little. Unrealistic snowfall accumulation or no snow buildup.
+  diagnosis: Precipitation in wrong temporal units (mm/day vs mm/timestep); COSIPY expects RRR in mm per
+    model timestep (default 1 hour). If the input is mm/day, the model receives 24x too little precipitation
+    per step. If the input is mm/3hr but treated as mm/hr, precipitation is 3x too much. COSIPY does NOT
+    di
+  remedy: 'Convert precipitation to mm per model timestep before writing netCDF; convert_forcing; [''Identify
+    source temporal resolution'', ''Scale: mm/day -> mm/hr = /24; mm/3hr -> mm/hr = /3'']; convert_forcing
+    checks RRR bounds 0-20 mm/hr'
+  severity: silent
+- id: dt_005
+  symptom: All mass balance terms wrong by a constant factor. Melt, runoff, sublimation all scale linearly
+    wrong.
+  diagnosis: 'dt in constants.toml does not match input data temporal resolution; The constant dt (default
+    3600s) is used to convert energy fluxes to mass (melt = melt_energy * dt / (1000 * L_f)). If dt=3600
+    but input is 3-hourly, melt will be 1/3 of the correct value. All mass-flux calculations scale with
+    dt.
+
+    ; '
+  remedy: Set dt in constants.toml to match input time step in seconds; None; ['Check input netCDF time
+    coordinate spacing', 'Set dt = time_spacing_in_seconds in constants.toml']; run_cosipy preflight checks
+    dt vs input time resolution
+  severity: silent
+- id: dt_006
+  symptom: Snowfall height unrealistically large (meters per hour). Hundreds of new layers created each
+    timestep.
+  diagnosis: 'SNOWFALL in mm or m w.e. instead of m snow height; COSIPY expects SNOWFALL as meters of
+    snow height per timestep (not water equivalent). If SNOWFALL is in mm (e.g., 5 mm) the model interprets
+    it as 5 m of snow per timestep, creating many new layers and quickly exceeding max_layers (200).
+
+    ; [''convert'
+  remedy: 'Convert SNOWFALL to meters of snow: m_snow = mm_we / (density / 1000); convert_forcing; [''Check
+    SNOWFALL range — should be 0-0.05 m per hourly timestep'', ''If max SNOWFALL > 0.1, values are likely
+    in mm — divide by 1000'']; convert_forcing validates SNOWFALL range 0-0.05'
+  severity: crash
+- id: dt_007
+  symptom: Incoming longwave radiation > 500 W/m2. Extreme surface warming and melt even in winter.
+  diagnosis: 'Cloud cover N in percentage (0-100) instead of fraction (0-1); COSIPY expects cloud cover
+    N as a fraction 0-1. The longwave parameterization uses N directly in the Stefan-Boltzmann equation.
+    If N=80 instead of 0.8, the computed LWin will be astronomically large, causing unrealistic warming.
+
+    ; [''conv'
+  remedy: Divide N by 100 if values exceed 1.0; convert_forcing; ['Check N range — should be 0.0 to 1.0',
+    'If max N > 1.5, values are percentage — divide by 100']; convert_forcing validates N range 0-1
+  severity: silent
+- id: dt_008
+  symptom: Shortwave radiation values of 10^6 W/m2. Model blows up with extreme melt.
+  diagnosis: Shortwave radiation in J/m2 (accumulated) instead of W/m2 (instantaneous); ERA5 provides
+    shortwave radiation as accumulated J/m2 per accumulation period. To get W/m2, divide by the number
+    of seconds in the accumulation period. If raw J/m2 values (e.g., 3.6e6 = 1000 W/m2 * 3600s) are used
+    directly, r
+  remedy: 'Divide accumulated radiation by dt_seconds: W/m2 = J_m2 / dt_s; convert_forcing; [''Check G
+    range — should be 0-1600 W/m2'', ''If max G > 2000, values may be accumulated J/m2'']; convert_forcing
+    checks G bounds 0-1600'
+  severity: crash
+- id: dt_009
+  symptom: Model reads wrong input file or crashes with 'No such file' error.
+  diagnosis: input_netcdf path in config.toml is relative to data_path, not cwd; The full input path is
+    data_path + 'input/' + input_netcdf. For example, data_path='./data/' and input_netcdf='Zhadang/Zhadang_ERA5_2009.nc'
+    resolves to './data/input/Zhadang/Zhadang_ERA5_2009.nc'. The 'input/' subdirectory is autom
+  remedy: Set input_netcdf relative to data_path/input/ (not absolute); None; ['Verify the file exists
+    at <data_path>/input/<input_netcdf>']; run_cosipy preflight checks file existence
+  severity: crash
+- id: dt_010
+  symptom: Unrealistic mass balance in first 3-6 months. Large initial melt or accumulation before reaching
+    steady state.
+  diagnosis: Initial conditions (snowheight, glacier height, temperature) do not match site conditions;
+    COSIPY initializes with initial_snowheight_constant (default 0.2m) and initial_glacier_height (default
+    40m). If the actual snowpack is 2m deep, the model starts with too little snow and shows rapid melt.
+    The b
+  remedy: Set initial conditions to match site observations or use a spinup period; None; ['Set initial_snowheight_constant
+    to observed snow depth', 'Set initial_glacier_height to glacier thickness', 'Run 1+ year spinup before
+    analysis period']; Use restart files from spinup simulation
+  severity: silent
+- id: dt_011
+  symptom: WRF-format input fails with KeyError on 'lat' or 'lon' dimensions.
+  diagnosis: 'WRF flag not set in config.toml for WRF-format input data; WRF output uses dimensions ''south_north''
+    and ''west_east'' instead of ''lat'' and ''lon''. Setting WRF=true in config.toml switches COSIPY
+    to use WRF dimension names. Without this flag, xarray cannot find the lat/lon dimensions in WRF data.
+
+    ; [''co'
+  remedy: Set WRF = true in config.toml [DIMENSIONS] section; None; ['Check input file dimension names
+    with ncdump -h', 'Set WRF=true if dimensions are south_north/west_east']; run_cosipy preflight checks
+    dimension names
+  severity: crash
+- id: dt_012
+  symptom: Model hangs at 'Starting clients and submitting jobs' with no progress.
+  diagnosis: 'Dask cluster cannot allocate workers — port conflict or resource exhaustion; COSIPY uses
+    Dask distributed for parallel execution. If the default port (8786) is already in use, or if the system
+    lacks memory for the requested workers, the cluster initialization hangs indefinitely.
+
+    ; [''COSIPY.py'', ''con'
+  remedy: 'Change local_port in config.toml or reduce workers count; None; [''Check if port 8786 is in
+    use: lsof -i :8786'', ''Change local_port to an unused port (e.g., 8787)'', ''Set workers to a smaller
+    number (e.g., 4)'']; run_cosipy checks port availability before starting'
+  severity: hang
+- id: dt_013
+  symptom: '''ERROR! There are NaNs in the dataset'' — model stops at grid check.'
+  diagnosis: Input forcing data contains NaN values in masked (glacier) grid cells; COSIPY checks each
+    grid cell with MASK=1 for NaN values before processing. If any forcing variable (T2, RH2, U2, G, PRES,
+    RRR) has NaN in a masked cell, the model exits with this error. This commonly happens when the input
+    grid d
+  remedy: Fill NaN values in the input netCDF for all cells where MASK=1; convert_forcing; ['Open input
+    file and check for NaN in masked cells', 'Use xarray fillna or interpolation to remove NaN']; convert_forcing
+    validates no NaN in masked cells
+  severity: crash
+- id: dt_014
+  symptom: '''Maximum number of layers reached'' — model crashes during simulation.'
+  diagnosis: Too much snowfall without adequate merging — layer count exceeds max_layers; Each snowfall
+    event adds a new layer. If the remeshing (merging) parameters are too restrictive or snowfall is unrealistically
+    high, the layer count exceeds max_layers (default 200). This is often caused by SNOWFALL unit er
+  remedy: Check SNOWFALL units and adjust remeshing parameters; None; ['Check max SNOWFALL per timestep
+    — should be < 0.05 m', 'Increase max_layers in constants.toml (e.g., 500)', 'Increase merge_max or
+    relax density_threshold_merging']; Validate SNOWFALL units before running
+  severity: crash
+- id: dt_015
+  symptom: Surface temperature solver does not converge. Surface temperature oscillates or goes to NaN.
+  diagnosis: Extreme forcing values cause energy balance residual to be non-convergent; The Secant/Newton
+    method for surface temperature may fail to converge if the forcing values produce extreme energy imbalance
+    (e.g., G=5000 W/m2 from unit error, or PRES=101325 Pa instead of hPa). The solver oscillates between
+  remedy: Fix forcing data units — usually G, PRES, or LWin is wrong; convert_forcing; ['Check all forcing
+    variable ranges against bounds in check_data()', 'Verify G < 1600, PRES in 200-1080 hPa, LWin < 400'];
+    convert_forcing validates all bounds
+  severity: crash
+- id: dt_016
+  symptom: MASK is all zeros — model skips all grid cells and produces empty output.
+  diagnosis: 'Glacier shapefile does not overlap with DEM extent; create_static_file uses the glacier
+    shapefile to create the MASK variable. If the shapefile extent does not overlap with the DEM tile
+    coordinates (longitude_upper_left etc.), all MASK values will be 0, and no grid cell is processed.
+
+    ; [''create_stat'
+  remedy: Check that DEM tile and shapefile extents overlap; convert_static; ['Plot DEM extent and shapefile
+    boundaries', 'Adjust coordinate bounds in utilities_config.toml']; convert_static validates MASK has
+    at least one cell = 1
+  severity: silent
+- id: dt_017
+  symptom: Static file has wrong resolution — too few or too many grid cells.
+  diagnosis: 'aggregate_degree in utilities_config.toml does not match desired resolution; When aggregate=true,
+    create_static_file resamples the DEM to the specified aggregate_degree (default 0.003 degrees). If
+    this is too coarse, glacier features are lost. If too fine, computation is slow.
+
+    ; [''utilities_config.t'
+  remedy: 'Set aggregate_degree to match glacier size and desired detail; convert_static; [''For small
+    glaciers (< 1 km2): use 0.001 degree'', ''For medium glaciers: use 0.003 degree'', ''For large ice
+    caps: use 0.01 degree'']; Check static file dimensions after creation'
+  severity: silent
+- id: dt_018
+  symptom: Output netCDF is empty or contains only NaN values.
+  diagnosis: 'MASK is all zeros, or simulation period is outside input data range; If time_start/time_end
+    in config.toml is outside the input netCDF time range, xarray selects an empty time slice. The model
+    runs zero timesteps and writes NaN-filled arrays.
+
+    ; [''config.toml'', ''io.py'']'
+  remedy: 'Verify simulation period overlaps with input data time range; None; [''Check input netCDF time
+    range: ncdump -v time input.nc | tail'', ''Set time_start and time_end within the input time range''];
+    run_cosipy preflight validates time overlap'
+  severity: silent
+- id: dt_019
+  symptom: Albedo is constant 0.3 (ice albedo) from the start. No snow albedo evolution.
+  diagnosis: 'Initial snowheight is zero and no snowfall occurs; If initial_snowheight_constant = 0 and
+    the model period starts in summer with no snowfall, the surface is bare ice from the start. The albedo
+    stays at albedo_ice (0.3), increasing melt significantly.
+
+    ; [''constants.toml'', ''albedo.py'']'
+  remedy: Set initial_snowheight_constant > 0 if snow is present at start; None; ['Check if snow exists
+    at simulation start date', 'Set initial_snowheight_constant to estimated snow depth']; Use restart
+    files for realistic initialization
+  severity: silent
+- id: dt_020
+  symptom: Wind speed at 2m is 30-50% too high. Turbulent fluxes overestimated.
+  diagnosis: 'Wind speed at 10m used directly without height correction; ERA5 and most reanalysis products
+    provide wind at 10m height. COSIPY expects U2 at 2m (the measurement height z=2.0 in constants.toml).
+    Using 10m wind directly overestimates turbulent transfer by 30-50% via the log wind profile: U2 =
+    U10 * l'
+  remedy: 'Apply logarithmic wind profile correction from 10m to 2m; convert_forcing; [''U2 = U10 * ln(2/z0)
+    / ln(10/z0), with z0 ~ 0.001 m'', ''Typical correction factor: U2 ~ 0.75 * U10'']; convert_forcing
+    applies height correction by default'
+  severity: silent
+- id: dt_021
+  symptom: 'surfaceTemperature.py get_subsurface_temperature/interp_subT raises ''IndexError: list index
+    out of range'' at run time, on a column that started with initial_snowheight=0 or that ablated to
+    near-zero snow/ice.'
+  diagnosis: The subsurface-temperature interpolation indexes thin near-surface layers that do not exist
+    when the column has no (or vanishingly thin) snow layers; this is distinct from dt_015 (solver non-convergence/NaN
+    from extreme forcing units).
+  remedy: For point/seasonal-snow setups, in constants.toml set initial_snowheight_constant=0.2 and a
+    thick ice base (initial_glacier_height ~= 70 m) so the column always retains thin near-surface layers;
+    do NOT run with initial_snowheight=0 on a 1x1 point column.
+- id: dt_022
+  symptom: 'xr.open_dataset / to_netcdf with the default (netcdf4) engine raises ''OSError: [Errno -101]
+    NetCDF: HDF error'' when reading the COSIPY forcing file, writing output, or even on the shipped Zhadang
+    input. Reproducible in the shared python_env (libnetcdf 4.9.3 / HDF5 1.14.6); a trivial 1-var file
+    may s'
+  diagnosis: The python_env netCDF4/HDF5 backend is broken on this host (regressed after 2026-06-19).
+    It is NOT a file-locking or filesystem issue (HDF5_USE_FILE_LOCKING has no effect; a /tmp copy fails
+    identically). The previously-documented dedicated venv (auto_dissect/_work/COSIPY/venv) no longer
+    exists.
+  remedy: 'Run COSIPY through tools/run_cosipy.py, which injects tools/_netcdf_shim/sitecustomize.py onto
+    PYTHONPATH and sets COSIPY_FORCE_H5NETCDF=1 so COSIPY''s default-engine xarray I/O routes through
+    h5netcdf (no model-source edit). run_cosipy validation and parse_output both already use an engine-fallback '
+- id: dt_023
+  symptom: run_cosipy.py preflight reports "Input file not found" for a relative data_path even though
+    the file exists and COSIPY itself runs fine. Triggered when run_cosipy is invoked from the KI directory
+    (or anywhere) with --source-dir pointing at the COSIPY repo, while config.toml uses a relative data_path
+  diagnosis: validate_config/validate_input_data/validate_output joined the relative data_path against
+    the process cwd instead of --source-dir (where COSIPY actually resolves it). Path-base mismatch, not
+    a missing file.
+  remedy: Fixed in tools/run_cosipy.py — added _resolve_data_path(data_path, source_dir) which normalizes
+    a relative data_path against source_dir, and threaded --source-dir into all three validators. Relative
+    configs now preflight correctly from any cwd. (If you hit this on an older copy, either pass an absol

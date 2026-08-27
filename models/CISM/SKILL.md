@@ -1,14 +1,3 @@
----
-name: cism
-description: >-
-  CISM 2.1. Covers Ice thickness evolution via mass continuity (incremental remapping /
-  upwind transport /…; Ice velocity via shallow-ice (Glide) or higher-order (Glissade:
-  Blatter-Pattyn, SSA, L1L2, DIVA)…; Prognostic internal ice temperature / enthalpy
-  evolution; Basal sliding/traction and basal hydrology (till water, effective pressure);
-  Marine-margin calving and grounding-line dynamics. Use when the task involves running,
-  configuring, calibrating or interpreting CISM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (8 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (21 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (26 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_cism.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_cism.py --help` |
+| `tools/generate_cism_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_cism_config.py --help` |
+| `tools/generate_input_nc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_input_nc.py --help` |
+| `tools/parse_cism_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_cism_output.py --help` |
+| `tools/run_cism.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_cism.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # CISM v2.1 (Community Ice Sheet Model) -- Knowledge Infrastructure
 
@@ -163,6 +187,35 @@ Stages 5, 6, 7 depend on 4 (need output).
 
 ---
 
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag is the model identity for observable
+outputs: if this section and `dag.yaml` disagree, `dag.yaml` wins and this
+section must be corrected.
+
+**Headline output** (dag `validation_rank: 1`, verbatim):
+
+> var='velnorm' unit='m/yr' description='Horizontal ice-velocity magnitude'
+
+| Output variable (dag `var`) | Rank | Unit | Description / family |
+|-----------------------------|------|------|----------------------|
+| `velnorm` | 1 | m/yr | Horizontal ice-velocity magnitude |
+| `thk` | see `dag.yaml` | see `dag.yaml` | Ice thickness output family |
+| `usurf` | see `dag.yaml` | see `dag.yaml` | Upper ice surface output family |
+| `uvel` | see `dag.yaml` | see `dag.yaml` | Horizontal velocity component output family |
+| `temp` | see `dag.yaml` | see `dag.yaml` | Ice temperature output family |
+| `bmlt` | see `dag.yaml` | see `dag.yaml` | Basal melt output family |
+| `ivol` | see `dag.yaml` | see `dag.yaml` | Ice volume output family |
+| `imass / imass_above_flotation` | see `dag.yaml` | see `dag.yaml` | Ice mass output family |
+| `iarea / iareag / iareaf` | see `dag.yaml` | see `dag.yaml` | Ice area output family |
+| `calving_flux / gl_flux` | see `dag.yaml` | see `dag.yaml` | Margin and grounding-line flux output family |
+
+Use the NetCDF output file selected in the `[CF output]` configuration section
+for these variables. The common example in this KI writes `output.nc` and the
+dome test writes `dome.out.nc`; the configured output filename is authoritative.
+
+---
+
 ## Configuration File Format (.config)
 
 CISM uses INI-style configuration files. Key sections:
@@ -241,6 +294,57 @@ xtype = double
 | `generate_cism_config` | s3 | `tools/generate_cism_config.py` | Assemble .config file from parameters |
 | `run_cism` | s4 | `tools/run_cism.py` | Execute cism_driver with preflight checks |
 | `parse_cism_output` | s5 | `tools/parse_cism_output.py` | Extract results to CSV from NetCDF output |
+
+---
+
+## 8. Unit Conversion Table
+
+**Contract**: exact I/O shapes live in `docs/format_spec.yaml`; observable
+outputs live in `dag.yaml`. This table summarizes the units and conversions
+already used by this KI so post-processing does not silently change magnitude
+or sign. When there is any disagreement, `dag.yaml` and `docs/format_spec.yaml`
+win over this prose.
+
+### 8.1 Model Input Unit Table
+
+| Variable | Model unit | Source / pipeline unit | Conversion | Notes |
+|----------|------------|------------------------|------------|-------|
+| `topg` | m | m | x1 | Bedrock topography; negative values are below sea level. |
+| `thk` | m | m | x1 | Initial ice thickness. |
+| `artm` | deg C | deg C | x1 | Annual mean surface air temperature. |
+| `acab` | m/yr | mm/yr, when supplied that way | divide by 1000 | Surface mass balance; using mm/yr directly causes unbounded ice growth. |
+| `beta` | Pa yr/m | Pa yr/m | x1 | Basal traction coefficient on the staggered grid. |
+| `bheatflx` | W/m^2 | W/m^2 | x1 | Negative is upward basal heat flux in CISM convention. |
+| `uvel` | m/yr | m/yr | x1 | Restart x-velocity. |
+| `vvel` | m/yr | m/yr | x1 | Restart y-velocity. |
+| `kinbcmask` | 0/1 | 0/1 | x1 | Velocity boundary-condition mask. |
+
+### 8.2 Output Unit Table
+
+| Variable | Output unit | Unit source | Post-processing note |
+|----------|-------------|-------------|----------------------|
+| `velnorm` | m/yr | `dag.yaml` rank-1 output | Horizontal ice-velocity magnitude. |
+| `thk` | m | CISM NetCDF output reference | Judge RMSE/NSE/dhdt_RMSE against `docs/validation_convention.yaml`. |
+| `usurf` | m | CISM NetCDF output reference | Judge RMSE against `docs/validation_convention.yaml`. |
+| `uvel` | m/yr | CISM NetCDF output reference | Output is in m/yr; internal SI velocity handling must not be reported as m/s. |
+| `vvel` | m/yr | CISM NetCDF output reference | Output is in m/yr; internal SI velocity handling must not be reported as m/s. |
+| `temp` | deg C | CISM NetCDF output reference | Ice temperature output. |
+| `btemp` | deg C | CISM NetCDF output reference | Basal temperature output. |
+| `acab` | m/yr | CISM NetCDF output reference | Surface mass balance output. |
+| `bmlt` | m/yr | CISM NetCDF output reference | If supplied or compared as m/s, apply factor `scyr=31536000 s/yr`. |
+| `iarea` | km^2 | CISM NetCDF output reference | Total ice area output. |
+| `imass` | kg | CISM NetCDF output reference | Total ice mass output. |
+| `ivol` | km^3 | CISM NetCDF output reference | Total ice volume output. |
+
+### 8.3 Output Unit Verification Checklist
+
+- Read each variable's NetCDF `units` attribute before scoring.
+- Print the first values for each scored output and check order of magnitude.
+- Confirm whether a field is on the scalar grid (`x1`, `y1`) or staggered grid
+  (`x0`, `y0`) before interpolating to observations.
+- Treat basal heat flux sign explicitly: CISM uses negative for upward heat flux.
+- For velocities, report output fields in m/yr unless the NetCDF attributes say
+  otherwise.
 
 ---
 
@@ -345,6 +449,46 @@ Priority order for calibration (highest impact first):
 | Slab | `tests/slab/` | Glissade | Inclined slab (DIVA) |
 | EISMINT-1 | `tests/EISMINT/` | Glide | Moving-margin experiments |
 | EISMINT-2 | `tests/EISMINT/` | Glide/Glissade | Fixed-margin thermodynamic |
+
+---
+
+## 11. Validated Results
+
+**Source of truth for bars**: `docs/validation_convention.yaml`. A metric value
+without the field's cited pass-band is not a verdict. The convention wins over
+remembered thresholds or generic hydrology/glaciology rules.
+
+### 11.1 Current Validation Status
+
+| Property | Value |
+|----------|-------|
+| Validation status | `synthetic_validated` |
+| Built-in validated case named in this KI | Dome test case |
+| Headline dag output | `velnorm` (`m/yr`) -- Horizontal ice-velocity magnitude |
+| Achieved scalar score stated here | Not asserted in this section; score actual runs from parsed output against the convention below. |
+
+### 11.2 Performance Metrics -- Convention Bars
+
+| Dag variable | Metric | Direction | Band | Threshold | Citation key(s) |
+|--------------|--------|-----------|------|-----------|-----------------|
+| `thk` | rmse | minimize | very_good | <= 34.0 | `vanakker2025`, `berdahl2023`, `seroussi2020` |
+| `thk` | rmse | minimize | good | <= 51.8 | `vanakker2025`, `berdahl2023`, `seroussi2020` |
+| `thk` | rmse | minimize | satisfactory | <= 92.0 | `vanakker2025`, `berdahl2023`, `seroussi2020` |
+| `thk` | nse | maximize | satisfactory | no cited threshold | no citation key in convention |
+| `thk` | dhdt_rmse | minimize | satisfactory | no cited threshold | no citation key in convention |
+| `usurf` | rmse | minimize | very_good | <= 8.5 | `howat2014` |
+| `usurf` | rmse | minimize | good | <= 9.1 | `howat2014` |
+| `usurf` | rmse | minimize | satisfactory | <= 24.0 | `howat2014` |
+
+### 11.3 How to Apply These Results
+
+For a CISM run, parse the NetCDF output with `tools/parse_cism_output.py`, align
+the parsed variables to observations on the correct grid, compute the metric in
+the table, then compare using the stated direction. For `minimize` metrics,
+lower values are better; for `maximize` metrics, higher values are better. Any
+metric-band pair listed as `no cited threshold` must be reported without a pass
+or fail threshold unless `docs/validation_convention.yaml` is updated from a
+cited source.
 
 ---
 

@@ -314,16 +314,33 @@ def rasterize_subbasins(subbasin_shp, ref_profile, ref_transform, ref_crs, shape
     if gdf.empty:
         raise RuntimeError(f"Subbasin shapefile is empty: {subbasin_shp}")
 
-    if "sub_id" in gdf.columns:
-        gdf = gdf.sort_values("sub_id").reset_index(drop=True)
-        sub_ids = [int(v) for v in gdf["sub_id"].tolist()]
-    else:
-        logger.warning("No 'sub_id' column in %s -- using 1..N in file order. "
-                       "This MUST match the sub_id ordering used by "
-                       "generate_hru_from_global.py or channel numbering will "
+    # sub_id resolution MUST be byte-identical to s2/generate_hru_from_global.py
+    # (_load_flow_network_subbasins): same candidate list, same order, same sort.
+    # It accepts VALUE/FID/DN; this tool used to look for "sub_id" ONLY and fell
+    # back to 1..N in file order. On a whitebox raster_to_vector_polygons output
+    # (columns FID/VALUE, no sub_id) the two tools therefore produced DIFFERENT
+    # sub_ids from the SAME shapefile -- topology 1..11 vs HRU VALUE 5,7,10,11,...
+    # -- and S2 aborted with "Channel topology sub_id ordering does not match".
+    # Fixed 2026-08-20 (Rio San Pedro Mezquital).
+    id_col = next((c for c in ("sub_id", "SUB_ID", "VALUE", "value", "FID", "DN")
+                   if c in gdf.columns), None)
+    if id_col is None:
+        logger.warning("No id column (sub_id/VALUE/FID/DN) in %s -- using 1..N "
+                       "in file order. This MUST match the sub_id ordering used "
+                       "by generate_hru_from_global.py or channel numbering will "
                        "desynchronize from the HRU grouping.", subbasin_shp)
-        sub_ids = list(range(1, len(gdf) + 1))
-        gdf["sub_id"] = sub_ids
+        gdf["sub_id"] = range(1, len(gdf) + 1)
+    else:
+        gdf["sub_id"] = gdf[id_col].astype(int)
+        if id_col != "sub_id":
+            logger.info("Using '%s' as sub_id (matching "
+                        "generate_hru_from_global.py)", id_col)
+    if gdf["sub_id"].duplicated().any():
+        dups = sorted(gdf.loc[gdf["sub_id"].duplicated(), "sub_id"].unique())
+        raise RuntimeError(
+            f"Duplicate sub_id values in {subbasin_shp}: {dups[:10]}")
+    gdf = gdf.sort_values("sub_id").reset_index(drop=True)
+    sub_ids = [int(v) for v in gdf["sub_id"].tolist()]
 
     if ref_crs is not None and gdf.crs is not None and gdf.crs != ref_crs:
         gdf = gdf.to_crs(ref_crs)
@@ -504,18 +521,52 @@ def build_topology(args):
     logger.info("Terminal (scored outlet) channel: cha%d", outlet_id)
 
     # ---- acyclicity ----
-    for cid in downstream:
-        seen = set()
-        cur = cid
-        while cur is not None:
-            if cur in seen:
-                logger.error("Cycle detected in channel topology starting at cha%d "
-                             "(revisited cha%d). The deck would route water in a "
-                             "loop.", cid, cur)
-                sys.exit(2)
-            seen.add(cur)
-            cur = downstream[cur]
-    logger.info("Acyclicity check passed (%d channels)", len(downstream))
+    # The adjacency-based repair above assigns each spurious terminal to a
+    # geometric neighbour that is not (yet) upstream of it AT THE TIME OF THAT
+    # ASSIGNMENT. Two terminals repaired independently can still close a cycle
+    # between them once both edges exist (the per-edge is_upstream_of check
+    # cannot see an edge added by a LATER iteration of the same loop). Break
+    # any such cycle by cutting its weakest edge (smallest local_area_ha,
+    # i.e. the edge least likely to be a real reach) and reattaching that
+    # channel directly to the true outlet -- same "not flow-network-derived,
+    # boundary artifact" caveat as the adjacency/fallback repairs above.
+    areas_by_cid = {r["channel_id"]: r["local_area_ha"] for r in records}
+    n_cycles_broken = 0
+    while True:
+        cycle_edge = None
+        for cid in downstream:
+            seen = []
+            cur = cid
+            while cur is not None:
+                if cur in seen:
+                    cycle = seen[seen.index(cur):] + [cur]
+                    logger.warning("Cycle detected: %s",
+                                   " -> ".join(f"cha{c}" for c in cycle))
+                    # weakest edge = smallest-area channel among the cycle
+                    # members (excluding the designated true outlet, which
+                    # must never gain a downstream of its own)
+                    candidates = [c for c in cycle[:-1] if c != outlet_id]
+                    cut = min(candidates, key=lambda c: areas_by_cid.get(c, 0.0))
+                    cycle_edge = cut
+                    break
+                seen.append(cur)
+                cur = downstream[cur]
+            if cycle_edge is not None:
+                break
+        if cycle_edge is None:
+            break
+        logger.warning("REPAIR (cycle-break): cutting cha%d's downstream edge and "
+                       "reattaching it directly to the true outlet cha%d. NOT "
+                       "flow-network-derived -- verify the DEM clip.",
+                       cycle_edge, outlet_id)
+        downstream[cycle_edge] = outlet_id
+        n_cycles_broken += 1
+        if n_cycles_broken > len(downstream):
+            logger.error("Cycle-breaking did not converge after %d cuts -- "
+                         "aborting rather than looping forever.", n_cycles_broken)
+            sys.exit(2)
+    logger.info("Acyclicity check passed (%d channels, %d cycle(s) broken)",
+               len(downstream), n_cycles_broken)
 
     # ---- network-accumulated upstream area (topological, NOT id order) ----
     local = {r["channel_id"]: r["local_area_ha"] for r in records}
@@ -651,6 +702,21 @@ def repair_terminals(downstream, terminals, records, facc, outlet_cells):
                        "the DEM edge); attached to adjacent cha%d. This edge is "
                        "NOT flow-network-derived -- verify the DEM clip.",
                        cid, target)
+
+    # Last-resort fallback: a handful of border channels can still fail the
+    # adjacency repair above (every geometric neighbour is already upstream of
+    # them, i.e. a true topological dead-end at the basin edge). Physically,
+    # any such straggler still drains somewhere inside a single-outlet basin,
+    # so wire it directly to the designated true outlet rather than leaving a
+    # second terminal. This is NOT flow-network-derived either -- same caveat
+    # as the adjacency repair above, just one step further for the residual
+    # that adjacency alone cannot fix.
+    still_failed = [cid for cid in terminals if cid != keep and downstream[cid] is None]
+    for cid in still_failed:
+        downstream[cid] = keep
+        logger.warning("REPAIR (fallback): cha%d had no adjacent non-upstream "
+                       "neighbour at all; wired directly to the true outlet cha%d. "
+                       "NOT flow-network-derived -- verify the DEM clip.", cid, keep)
     return downstream
 
 

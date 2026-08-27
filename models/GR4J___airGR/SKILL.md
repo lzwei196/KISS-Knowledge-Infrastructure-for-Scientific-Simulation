@@ -1,13 +1,3 @@
----
-name: gr4j-airgr
-description: >-
-  GR4J. Covers Daily lumped catchment rainfall-runoff transform (P, PE -> Qsim);
-  Production (soil-moisture) store with interception, evaporation, percolation; Two unit
-  hydrographs (UH1 slow 90%, UH2 fast direct 10%); Nonlinear routing store;
-  Inter-catchment groundwater exchange (X2). Use when the task involves running,
-  configuring, calibrating or interpreting GR4J___airGR.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (17 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_catchment_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_catchment_params.py --help` |
+| `tools/convert_forcing_to_gr4j.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_gr4j.py --help` |
+| `tools/parse_gr4j_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_gr4j_output.py --help` |
+| `tools/run_gr4j.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_gr4j.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # GR4J (airGR) — Knowledge Infrastructure
 
@@ -104,7 +128,8 @@ data(L0123001)  # Built-in fictional catchment
   Period:    1984-01-01 to 2005-12-31 (daily)
 ```
 
-**Validated**: GR4J runs successfully on L0123001 data. Calibration yields NSE > 0.90.
+**Validated**: GR4J runs successfully on L0123001 data. Judge performance against
+`docs/validation_convention.yaml`, not remembered thresholds.
 
 ---
 
@@ -156,7 +181,11 @@ Stage 6 depends on 5.
 
 ---
 
-## Input/Output Specification
+## 3. Input Requirements and I/O Specification
+
+**Exact shapes live in `docs/format_spec.yaml`** (projected from dag + triplets;
+regenerate it, never hand-edit). This section explains intent, units, and traps;
+the spec file is the contract.
 
 ### Inputs (all catchment-average, daily)
 
@@ -198,7 +227,33 @@ PE_Oudin(JD, Temp, Lat, LatUnit="deg")
 
 ---
 
-## Unit Trap Table (CRITICAL)
+## 6. Output Description
+
+**Source: `dag.yaml`.** The dag is the model's identity for observable outputs:
+if this section and `dag.yaml` disagree, the dag wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `Qsim` — Simulated total catchment discharge at the outlet, QR (routing branch) + QD (direct branch). (`mm/day`)
+
+| Output variable (dag `var`) | Rank / role | Unit | Dag description |
+|-----------------------------|-------------|------|-----------------|
+| Qsim | 1 / headline validation output | mm/day | Simulated total catchment discharge at the outlet, QR (routing branch) + QD (direct branch). |
+
+Other dag outputs: `AE`, `Prod`, `AExch`.
+
+The airGR per-timestep output table below provides the operational parser names
+used by the tools; `dag.yaml` remains the source of truth for validation identity,
+units, observability, and rank.
+
+---
+
+## 8. Unit Conversion Table
+
+The model uses catchment-average daily water depths. Every forcing and observed
+discharge conversion must preserve that convention before execution or validation.
+
+### Unit Trap Table (CRITICAL)
 
 These unit mismatches cause **silent failures** — the model runs but produces garbage.
 
@@ -215,7 +270,7 @@ These unit mismatches cause **silent failures** — the model runs but produces 
 
 ---
 
-## Tools Reference
+## 7. Tool Inventory
 
 | Tool | Stage | Script Path | Lines | Purpose |
 |------|-------|-------------|------:|---------|
@@ -240,7 +295,7 @@ These unit mismatches cause **silent failures** — the model runs but produces 
 
 ---
 
-## Critical Domain Knowledge
+## 9. Diagnostic Triplets and Critical Domain Knowledge
 
 These non-obvious facts cause **silent failures** if violated. Each has a corresponding diagnostic triplet.
 
@@ -376,6 +431,34 @@ For each daily time step:
 | Humid temperate | 200-500 | 0.5-2.0 | 50-150 | 1.5-2.5 |
 | Semi-arid | 500-1200 | -2.0-1.0 | 100-300 | 1.5-3.0 |
 | Tropical wet | 100-400 | 1.0-3.0 | 20-100 | 1.0-2.0 |
+
+---
+
+## 11. Validated Results
+
+### Test Basin
+
+| Property | Value |
+|----------|-------|
+| Dataset | airGR `L0123001` built-in dataset |
+| Period | 1984-01-01 to 2005-12-31 (daily) |
+| Status | GR4J executes successfully on the built-in dataset |
+
+### Performance Metrics — judged against the field's bar, not intuition
+
+**Source: `docs/validation_convention.yaml`.** The bars below restate the
+convention file. Do not substitute uncited thresholds.
+
+| Dag variable | Metric | Direction | Convention bar, cited |
+|--------------|--------|-----------|-----------------------|
+| Qsim | nse | maximize | very_good >= 0.75 (`moriasi2007`, `moriasi2015`); good >= 0.65 (`moriasi2007`, `moriasi2015`); satisfactory >= 0.5 (`moriasi2007`, `moriasi2015`) |
+| Qsim | pbias | zero_centered | very_good <= +/-10 (`moriasi2007`, `moriasi2015`); good <= +/-15 (`moriasi2007`, `moriasi2015`); satisfactory <= +/-25 (`moriasi2007`, `moriasi2015`) |
+| AE | nse | maximize | satisfactory: no cited threshold |
+| Prod | r | maximize | satisfactory: no cited threshold |
+
+`Qsim` is the rank-1 validation output from `dag.yaml`; `AE`, `Prod`, and
+`AExch` are additional dag outputs. A reported run should include achieved metric
+values separately and compare them to the cited bars above.
 
 ---
 

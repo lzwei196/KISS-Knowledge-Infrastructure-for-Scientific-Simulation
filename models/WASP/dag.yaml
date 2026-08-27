@@ -310,7 +310,7 @@ outputs:
   - var: "temperature_profile"
     validation_rank: 5
     unit: "deg C"
-    description: "1-D vertical temperature profile vs depth (logistic thermocline)."
+    description: "1-D vertical lake/reservoir water-column temperature profile vs depth (logistic thermocline)."
     emitted_in: "WASP output (profile mode)"
     observability:
       comparable_obs_shapes:
@@ -323,7 +323,7 @@ outputs:
   - var: "do_profile"
     validation_rank: 2
     unit: "mg/L"
-    description: "1-D vertical DO profile vs depth (epilimnion/hypolimnion)."
+    description: "1-D vertical lake/reservoir water-column DO profile vs depth (epilimnion/hypolimnion)."
     emitted_in: "WASP output (profile mode)"
     observability:
       comparable_obs_shapes:
@@ -336,7 +336,7 @@ outputs:
   - var: "do_saturation"
     validation_rank: 3
     unit: "mg/L"
-    description: "Benson-Krause DO saturation as a function of temperature."
+    description: "Benson-Krause DO saturation in lake/reservoir water as a function of water temperature."
     emitted_in: "WASP output (diagnostic)"
     observability:
       comparable_obs_shapes:
@@ -349,7 +349,7 @@ outputs:
   - var: "TSI"
     validation_rank: 6
     unit: "dimensionless"
-    description: "Carlson Trophic State Index from Chl-a, Secchi, and/or TP (Carlson 1977 scale)."
+    description: "Carlson Trophic State Index for lake/reservoir water from Chl-a, Secchi, and/or TP (Carlson 1977 scale)."
     emitted_in: "WASP output (TSI mode)"
     observability:
       comparable_obs_shapes:
@@ -419,3 +419,21 @@ safety:
       scope: "TSI output."
       source: "Carlson (1977) Trophic State Index; WASP SKILL.md TSI section."
       status: "tentative"
+
+medium_evidence:
+  - var: "temperature_profile"
+    source: "dag.yaml"
+    quote: "Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain lineage) for lakes and reservoirs."
+    note: "identity.implementation.provenance declares this implementation as lake/reservoir water quality."
+  - var: "do_profile"
+    source: "dag.yaml"
+    quote: "Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain lineage) for lakes and reservoirs."
+    note: "identity.implementation.provenance declares this implementation as lake/reservoir water quality."
+  - var: "do_saturation"
+    source: "dag.yaml"
+    quote: "Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain lineage) for lakes and reservoirs."
+    note: "identity.implementation.provenance declares this implementation as lake/reservoir water quality."
+  - var: "TSI"
+    source: "dag.yaml"
+    quote: "Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain lineage) for lakes and reservoirs."
+    note: "identity.implementation.provenance declares this implementation as lake/reservoir water quality."

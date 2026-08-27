@@ -1,145 +1,686 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: PISM
-  full_name: Parallel Ice Sheet Model
-  version: '2.3'
-  domain: cryosphere
-  binary_path: KISSPATH_BINARIES/PISM/build/pism_ssa_test_j
-  main_binary: KISSPATH_BINARIES/PISM/build/pism
-  language: C++
-  parallelism: MPI via PETSc
-  io_format: NetCDF (CF-compliant)
-  license: GPL-3.0
+  language: c++
+  implementation:
+    id: pism-2.3.0
+    version: 2.3.0
+    provenance: C++; PISM (University of Alaska Fairbanks + Potsdam Institute for Climate Impact Research),
+      parallel via PETSc/MPI, CF-NetCDF I/O.
+  scientific_reference_version: PISM 2.3.x (Parallel Ice Sheet Model; User's Manual v2.3.1)
 inputs:
   forcing:
-  - name: ice_surface_temp
+  - name: air_temp
     unit: K
-    valid_range:
-    - 200.0
-    - 280.0
-    description: Near-surface air temperature
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: CF-NetCDF time series (monthly or finer); near-surface air temperature consumed
+      by the PDD/temperature-index surface model
+    notes: Distinct from ice_surface_temp used by the 'surface given' mode; supplying the wrong one for
+      the chosen surface model is a silent error. degC accepted ONLY if the units attribute is set correctly,
+      else +273.15 must be applied.
   - name: precipitation
-    unit: kg m^-2 year^-1
-    valid_range:
-    - 0.0
-    - 10000.0
-    description: Mean annual precipitation
-  - name: climatic_mass_balance
-    unit: kg m^-2 year^-1
-    valid_range:
-    - -91000.0
-    - 91000.0
-    description: Surface mass balance (accumulation/ablation) rate
-  - name: bheatflx
-    unit: W m^-2
-    valid_range:
-    - 0.0
-    - 0.15
-    description: Basal (geothermal) heat flux
-  geometry:
-  - name: topg
+    unit: kg m-2 s-1
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: CF-NetCDF time series; total precipitation, phase split by air temperature (>2C
+      rain, <0C snow) in the PDD scheme
+    notes: Manual/source canonical flux unit is kg m-2 s-1; the bootstrap/per-year convenience unit kg
+      m-2 year-1 is also accepted via UDUNITS. m w.e. year-1 is a fatal 1000x trap.
+  - name: air_temp_sd
+    unit: K
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: CF-NetCDF; standard deviation of daily temperature variation used by the PDD scheme
+  - name: theta_ocean
+    unit: degC
+    category: ocean
+    source_kind: forcing
+    model_input_format: CF-NetCDF time series; potential temperature on the continental shelf (PICO ocean
+      model input)
+    notes: PICO expects degC, not kelvin; supplying kelvin is a silent trap.
+  - name: salinity_ocean
+    unit: g kg-1 (PSU)
+    category: ocean
+    source_kind: forcing
+    model_input_format: CF-NetCDF time series; shelf salinity (PICO ocean model input)
+  - name: delta_SL
     unit: m
-    valid_range:
-    - -5000.0
-    - 5000.0
-    description: Bedrock surface elevation
+    category: ocean
+    source_kind: forcing
+    model_input_format: scalar time series; sea-level offset relative to present
+  - name: delta_T
+    unit: K
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: scalar paleo time series; relative temperature anomaly applied to the surface
+      forcing
+    notes: 'An anomaly: degC and K are equivalent here; adding 273.15 double-converts (silent ~273 K offset).'
+  - name: frac_P / delta_P
+    unit: 1 or kg m-2 s-1
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: scalar time series; multiplicative or additive precipitation scaling
+  parameters:
+  - name: SIA enhancement factor (stress_balance.sia.enhancement_factor)
+    unit: '1'
+    category: rheology
+    source_kind: calibrated
+    model_input_format: config parameter (-sia_e); model default 1.0
+    notes: Model's own default is E=1.0 (pism_config.cdl). Multiplies internal shear deformation; the
+      single strongest control on ice volume and a primary control on flow speed.
+  - name: SSA enhancement factor (stress_balance.ssa.enhancement_factor)
+    unit: '1'
+    category: rheology
+    source_kind: calibrated
+    model_input_format: config parameter (-ssa_e); model default 1.0
+    notes: Scales membrane (shelf/stream) flow.
+  - name: pseudo-plastic sliding exponent q (basal_resistance.pseudo_plastic.q)
+    unit: '1'
+    category: basal
+    source_kind: calibrated
+    model_input_format: config parameter (-pseudo_plastic_q); model default 0.25
+    notes: q=0 is purely plastic, q=1 is linear-viscous. With q=0 and no till friction parameterization,
+      basal yield stress can collapse to zero (infinite sliding).
+  - name: till effective fraction of overburden (basal_yield_stress.mohr_coulomb.till_effective_fraction_overburden)
+    unit: '1'
+    category: basal
+    source_kind: calibrated
+    model_input_format: config parameter; model default 0.02 (delta in Bueler & van Pelt 2015)
+  - name: till friction angle parameterization (topg_to_phi)
+    unit: degrees (with m breakpoints)
+    category: basal
+    source_kind: calibrated
+    model_input_format: config option (-topg_to_phi phi_min,phi_max,topg_min,topg_max); maps bed elevation
+      to till friction angle
+    notes: Low bed elevation -> low friction angle -> weak till -> fast sliding.
+  - name: PDD factor for ice (surface.pdd.factor_ice)
+    unit: m degC-1 day-1 (water equiv.)
+    category: surface
+    source_kind: calibrated
+    model_input_format: config parameter; default ~0.008
+  - name: PDD factor for snow (surface.pdd.factor_snow)
+    unit: m degC-1 day-1 (water equiv.)
+    category: surface
+    source_kind: calibrated
+    model_input_format: config parameter; default ~0.003
+  - name: ice density (constants.ice.density)
+    unit: kg m-3
+    category: earth
+    source_kind: default
+    model_input_format: physical constant; default 910
+  - name: sea water density (constants.sea_water.density)
+    unit: kg m-3
+    category: earth
+    source_kind: default
+    model_input_format: physical constant; default 1028 (sets flotation / grounding-line criterion)
+  - name: adaptive timestep ratio (time_stepping.adaptive_ratio)
+    unit: '1'
+    category: numerics
+    source_kind: default
+    model_input_format: config parameter; default 0.12 (safety ratio for the diffusivity-limited SIA timestep)
+  initial_conditions:
   - name: thk
     unit: m
-    valid_range:
-    - 0.0
-    - 5000.0
-    description: Ice thickness
-  parameters:
-    critical:
-    - name: sia_e
-      valid_range:
-      - 1.0
-      - 5.0
-      default: 3.0
-      description: SIA enhancement factor
-    - name: ssa_e
-      valid_range:
-      - 0.5
-      - 1.5
-      default: 1.0
-      description: SSA enhancement factor
-    - name: pseudo_plastic_q
-      valid_range:
-      - 0.1
-      - 1.0
-      default: 0.25
-      description: Pseudo-plastic sliding exponent
-    - name: till_effective_fraction_overburden
-      valid_range:
-      - 0.01
-      - 0.05
-      default: 0.02
-      description: Till effective fraction of overburden pressure
+    category: geometry
+    source_kind: dataset_lookup
+    model_input_format: CF-NetCDF bootstrap field (standard_name land_ice_thickness); required, cannot
+      be missing
+  - name: topg
+    unit: m
+    category: geometry
+    source_kind: dataset_lookup
+    model_input_format: CF-NetCDF bootstrap field (standard_name bedrock_altitude); required, cannot be
+      missing
+  - name: enthalpy
+    unit: J kg-1
+    category: thermal
+    source_kind: dataset_lookup
+    model_input_format: optional 3D bootstrap field; if absent it is established by spinup. Restart files
+      MUST carry it or sub-models re-thermalize.
+  - name: tillwat
+    unit: m
+    category: hydrology
+    source_kind: dataset_lookup
+    model_input_format: optional 2D bootstrap field; till water layer thickness, else initialized to default
+  - name: ice_surface_temp
+    unit: K
+    category: thermal
+    source_kind: dataset_lookup
+    model_input_format: bootstrap surface temperature; ice temperature at the surface below firn (used
+      by 'surface given')
+  - name: climatic_mass_balance
+    unit: kg m-2 s-1
+    category: mass-balance
+    source_kind: dataset_lookup
+    model_input_format: bootstrap surface mass balance flux into the ice (used by 'surface given'); m
+      w.e. year-1 is a fatal 1000x trap
+  - name: previous spinup state (restart)
+    unit: mixed
+    category: geometry
+    source_kind: dataset_lookup
+    model_input_format: full PISM output read with -i FILE (no -bootstrap); preserves thermal/dynamic
+      equilibrium from a 10k-200k year spinup
+  boundary_conditions:
+  - name: bheatflx
+    unit: W m-2
+    category: geothermal
+    source_kind: dataset_lookup
+    model_input_format: 2D field; geothermal heat flux applied at the base of the bedrock thermal layer
+      (or ice base if no bedrock layer). mW m-2 is a silent 1000x trap.
+  - name: domain / grid specification
+    unit: m (extent), count (points)
+    category: grid
+    source_kind: user_provided
+    model_input_format: grid extent and resolution (-Mx/-My/-Lx/-Ly/-dx/-dy horizontal; -Mz/-Lz ice, -Mbz/-Lbz
+      bedrock vertical); Lz MUST exceed maximum ice thickness or the run crashes
+  - name: map projection (PROJ)
+    unit: n/a
+    category: grid
+    source_kind: user_provided
+    model_input_format: PROJ string global attribute (polar stereographic for ice sheets); required for
+      lon/lat recomputation
+  - name: grid registration
+    unit: n/a
+    category: grid
+    source_kind: user_provided
+    model_input_format: corner vs center registration switch; must match input data convention or a half-cell
+      offset results
+  - name: stress-balance model selection
+    unit: n/a
+    category: physics-choice
+    source_kind: user_provided
+    model_input_format: 'structural switch: SIA | SSA | SIA+SSA hybrid | Blatter first-order (hybrid recommended
+      for whole ice sheets)'
+  - name: energy model selection
+    unit: n/a
+    category: physics-choice
+    source_kind: user_provided
+    model_input_format: 'structural switch (-energy): enthalpy (default, polythermal) | cold (temperature-based)
+      | none'
+  - name: subglacial hydrology selection
+    unit: n/a
+    category: physics-choice
+    source_kind: user_provided
+    model_input_format: 'structural switch (-hydrology): null (default, not map-plane mass-conserving)
+      | routing (mass-conserving) | steady'
+  - name: surface (SMB) model selection
+    unit: n/a
+    category: physics-choice
+    source_kind: user_provided
+    model_input_format: 'structural switch: pdd | debm_simple (energy-balance) | given (prescribed SMB)'
+  - name: ocean model selection
+    unit: n/a
+    category: physics-choice
+    source_kind: user_provided
+    model_input_format: 'structural switch: constant | pico | th (three-equation) | given'
+  - name: calving / front-retreat selection
+    unit: n/a
+    category: physics-choice
+    source_kind: user_provided
+    model_input_format: 'structural switch: eigen_calving | thickness_calving | vonmises_calving | hayhurst_calving
+      | float_kill (combinable)'
+  - name: bed deformation selection
+    unit: n/a
+    category: physics-choice
+    source_kind: user_provided
+    model_input_format: 'structural switch (-bed_def): none (default) | lc (Lingle-Clark) | given; advised
+      for runs >1000 yr'
+  - name: time axis / calendar
+    unit: n/a
+    category: calendar
+    source_kind: user_provided
+    model_input_format: UDUNITS time units + calendar matching the forcing files; forcing axis must cover
+      the run period or interpolation fails (fatal)
 outputs:
   primary:
   - name: thk
     unit: m
-    valid_range:
-    - 0.0
-    - 5000.0
     description: Ice thickness
+    validation_rank: 3
+    emitted_in: spatial output NetCDF (-o / -extra_file)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Equilibrium thickness depends on spinup adequacy; transient drift confounds comparison if spinup
+          is short.
+      - obs_shape: spatial_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Meaningful only against thickness-change observations over a matched forcing period.
+      detrending_options:
+      - none
+      - linear_residual
   - name: usurf
     unit: m
-    valid_range:
-    - 0.0
-    - 5000.0
     description: Ice surface elevation
+    validation_rank: 4
+    emitted_in: spatial output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Surface elevation = bed + thickness; bed errors propagate directly.
+      detrending_options:
+      - none
   - name: velsurf_mag
-    unit: m year^-1
-    valid_range:
-    - 0.0
-    - 15000.0
-    description: Surface ice speed
+    unit: m year-1
+    description: Surface ice speed magnitude
+    validation_rank: 1
+    emitted_in: spatial output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        - ranking_quality
+        determining_metric: csi
+        caveats:
+        - Fast-flow features span orders of magnitude; log-space or rank metrics often more informative.
+          Primary observable used to calibrate sliding/enhancement parameters.
+      detrending_options:
+      - none
   - name: velbase_mag
-    unit: m year^-1
-    valid_range:
-    - 0.0
-    - 15000.0
-    description: Basal sliding speed
-  - name: glacier_volume
-    canonical_id: glacier_volume
-    unit: km3
-  - name: ice_thickness
-    canonical_id: ice_thickness
-    unit: m
-  scalar_diagnostics:
+    unit: m year-1
+    description: Grounded-ice basal sliding speed magnitude
+    validation_rank: 5
+    emitted_in: spatial output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Rarely directly observed; usually inferred, so comparison is indirect.
+      detrending_options:
+      - none
+  - name: mask
+    unit: categorical
+    description: Cell type (ice-free / grounded / floating / ocean), encodes grounding-line and ice extent
+    validation_rank: 6
+    emitted_in: spatial output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Grounding-line position and ice extent compared as classified regions; sub-grid grounded fraction
+          matters near the GL.
+      detrending_options:
+      - none
   - name: ice_volume_glacierized
-    unit: m^3
-    valid_range:
-    - 0.0
-    - 3.0e16
-    description: Total ice volume
-  - name: ice_area_glacierized
-    unit: m^2
-    valid_range:
-    - 0.0
-    - 2.0e13
-    description: Total ice-covered area
-  - name: ice_mass
-    unit: kg
-    valid_range:
-    - 0.0
-    - 3.0e19
-    description: Total ice mass
-  - name: max_hor_vel
-    unit: m year^-1
-    valid_range:
-    - 0.0
-    - 15000.0
-    description: Maximum horizontal velocity
+    unit: m3
+    description: Total glacierized ice volume (convertible to sea-level equivalent)
+    validation_rank: 7
+    emitted_in: scalar time-series NetCDF (-ts_file)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Absolute volume is spinup-dependent; volume CHANGE (mass balance) is the more defensible comparison.
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+      - first_difference
+  - name: tendency_of_ice_mass
+    unit: Gt year-1
+    description: Total ice mass change rate (net mass balance)
+    validation_rank: 2
+    emitted_in: scalar time-series NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compared against gravimetric (GRACE-class) or input-output mass-balance estimates; transient
+          observations strongly constrain calibration.
+      detrending_options:
+      - none
+      - first_difference
+  - name: tendency_of_ice_mass_due_to_discharge
+    unit: Gt year-1
+    description: Mass loss to calving and frontal/sub-shelf melt (ice discharge)
+    validation_rank: 8
+    emitted_in: scalar time-series NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Discharge partitioning is model/calving-law dependent; minor in millennial-scale uncertainty
+          budgets.
+      detrending_options:
+      - none
+  - name: tillwat
+    unit: m
+    description: Effective till water thickness (subglacial hydrology state)
+    validation_rank: 9
+    emitted_in: spatial output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Not directly observable; comparison is qualitative against inferred hydrology.
+      detrending_options:
+      - none
+  - name: temppabase
+    unit: K
+    description: Pressure-adjusted basal temperature (thermal state at the bed)
+    validation_rank: 10
+    emitted_in: spatial output NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Comparable to borehole basal temperature at isolated sites; sparse coverage.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: 'Precipitation units: PISM expects kg m^-2 year^-1, common sources
-    use m w.e. year^-1 (multiply by 1000)'
+  symptom: Precipitation field is 1000× too low — ice sheet receives almost no accumulation
+  diagnosis: Precipitation in m w.e./year instead of kg m^-2 year^-1; PISM expects precipitation in kg
+    m^-2 year^-1. SeaRISE and many reanalysis datasets provide precipitation in m water equivalent per
+    year. Since water density is 1000 kg/m³, the conversion factor is ×1000. Without this conversion,
+    the ice sheet
+  remedy: Multiply precipitation by 1000.0 (water density); convert_climate_forcing.py; ["ncap2 -O -s
+    'precipitation=precipitation*1000.0' input.nc input.nc", "ncatted -O -a units,precipitation,m,c,'kg
+    m^-2 year^-1' input.nc"]; The convert_climate_forcing.py tool handles this automatically with --precip-units
   severity: fatal
 - id: dt_002
-  description: Temperature must be in kelvin, not degC
+  symptom: PISM crashes with negative kelvin temperature or no ice forms
+  diagnosis: Temperature provided in °C but PISM expects kelvin; PISM's internal temperature calculations
+    use kelvin. If Celsius temperatures (e.g., -30°C) are provided, PISM interprets them as -30 K, which
+    is physically impossible. For ice_surface_temp in bootstrap mode, PISM accepts degree_Celsius if the
+    units
+  remedy: Add 273.15 to convert °C to kelvin; convert_climate_forcing.py; ["ncap2 -O -s 'air_temp=air_temp+273.15'
+    forcing.nc forcing.nc", "ncatted -O -a units,air_temp,m,c,'kelvin' forcing.nc"]; Use --temp-units
+    celsius flag in convert_climate_forcing.py
   severity: fatal
 - id: dt_003
-  description: 'Geothermal heat flux: PISM expects W m^-2, common sources use mW m^-2
-    (multiply by 0.001)'
+  symptom: Basal temperatures everywhere at pressure melting point, excessive basal melt
+  diagnosis: Geothermal heat flux in mW/m² instead of W/m²; Shapiro & Ritzwoller (2004) and most geothermal
+    datasets provide heat flux in mW/m² (typical values 40–100 mW/m²). PISM expects W/m². Without dividing
+    by 1000, a typical value of 50 mW/m² becomes 50 W/m² — roughly 1000× the actual flux, producing unreal
+  remedy: Divide heat flux by 1000 (mW → W); convert_geometry.py; ["ncap2 -O -s 'bheatflx=bheatflx*0.001'
+    input.nc input.nc", "ncatted -O -a units,bheatflx,m,c,'W m-2' input.nc"]; Use --bheatflx-units mW/m2
+    in convert_geometry.py
   severity: silent
+- id: dt_004
+  symptom: Ice sheet geometry appears shifted or distorted relative to observations
+  diagnosis: 'Missing or incorrect projection metadata in input file; PISM needs the map projection (PROJ
+    string) to correctly interpret x,y coordinates and compute longitude/latitude. Without the proj global
+    attribute, PISM cannot recompute coordinates, and any visualization with lon/lat will be incorrect.
+
+    ; [''g'
+  remedy: Add proj global attribute to NetCDF file; convert_geometry.py; ["ncatted -O -a proj,global,c,c,'+proj=stere
+    +lat_0=90 ...' input.nc"]; Always include --projection flag in convert_geometry.py
+  severity: degraded
+- id: dt_005
+  symptom: Surface mass balance 1000× too small — rapid ice loss despite cold climate
+  diagnosis: 'SMB in m w.e./year instead of kg m^-2 year^-1; Same as precipitation: PISM expects climatic_mass_balance
+    in kg m^-2 year^-1. RACMO and MAR typically output SMB in m water equivalent/year. The conversion
+    factor is ×1000 (water density). This error causes the ice sheet to lose mass even when it should'
+  remedy: Multiply SMB by 1000.0; convert_geometry.py; ["ncap2 -O -s 'climatic_mass_balance=climatic_mass_balance*1000.0'
+    input.nc input.nc", "ncatted -O -a units,climatic_mass_balance,m,c,'kg m^-2 year^-1' input.nc"]; Use
+    --smb-units m_we/year in convert_geometry.py
+  severity: fatal
+- id: dt_006
+  symptom: Time step shrinks to seconds, simulation effectively halts
+  diagnosis: CFL violation due to extremely high velocities or thin ice on steep bed; PISM's adaptive
+    time stepping is governed by the CFL condition. If ice velocities become very large (often due to
+    incorrect input data or extreme forcing), the required time step can shrink to seconds, making the
+    simulation imp
+  remedy: Check input data units; increase -skip_max; coarsen grid; check physics parameters; run_pism.py;
+    ['Check thk units (should be meters, max ~4000 for Greenland)', 'Increase -skip_max to 50 or 100',
+    'Try coarser resolution first', 'Verify stress balance parameters are reasonable']; Always validate
+    inpu
+  severity: fatal
+- id: dt_007
+  symptom: No ice forms in simulation — ice volume stays at zero
+  diagnosis: Temperature too warm (wrong units) or precipitation too low (wrong units); If temperatures
+    are in °C and interpreted as kelvin, values like -20°C become -20K (impossible) or 20°C becomes 20K
+    (extremely cold but not glaciating if combined with wrong precipitation). More commonly, precipitation
+    in m/y
+  remedy: 'Verify temperature and precipitation units and value ranges; convert_climate_forcing.py; [''ncdump
+    -v air_temp input.nc | head -20  # Should be 220-280 K for ice sheets'', ''ncdump -v precipitation
+    input.nc | head -20  # Should be 0-5000 kg m^-2 yr^-1'']; Run convert_climate_forcing.py with explicit
+    uni'
+  severity: silent
+- id: dt_008
+  symptom: PISM crashes at startup with PETSc version error
+  diagnosis: 'PISM compiled against different PETSc version than currently loaded; PISM links dynamically
+    against PETSc. If the PETSc library at runtime differs from the one used at compile time (e.g., module
+    system loaded wrong version), PISM may crash immediately or produce subtle numerical errors.
+
+    ; [''build'', '
+  remedy: Ensure PETSC_DIR and PETSC_ARCH match the version used at build time; None; ['echo $PETSC_DIR
+    $PETSC_ARCH', 'Rebuild PISM if PETSc was updated', 'module load petsc/X.Y.Z matching build']; Document
+    PETSC_DIR and PETSC_ARCH in build notes
+  severity: fatal
+- id: dt_009
+  symptom: Seasonal cycle missing or shifted — summer forcing applied in winter
+  diagnosis: Calendar mismatch between forcing file and PISM configuration; PISM supports multiple calendars
+    (365_day, 360_day, standard, etc.). If the forcing file uses a different calendar than PISM expects,
+    monthly data may be shifted. A file with 'standard' calendar read by PISM configured for '365_day'
+    will
+  remedy: 'Set calendar in forcing file to match PISM''s -calendar flag; convert_climate_forcing.py; ["ncatted
+    -O -a calendar,time,m,c,''365_day'' forcing.nc", ''Verify: ncdump -v time forcing.nc | head'']; Always
+    set --calendar explicitly in convert_climate_forcing.py'
+  severity: silent
+- id: dt_010
+  symptom: SSA solver fails to converge — SNES/KSP diverged error
+  diagnosis: Extreme velocity gradients, usually at ice shelf front or grounding line; The SSA (Shallow
+    Shelf Approximation) uses an iterative nonlinear solver (SNES from PETSc). Convergence failures occur
+    when velocity gradients are extreme, typically at calving fronts, narrow fjords, or where ice goes
+    afloat o
+  remedy: Adjust SSA solver parameters or coarsen grid near problem areas; run_pism.py; ['Try -ssafd_ksp_rtol
+    1e-4 (relax tolerance)', 'Try -ssafd_picard_maxi 300 (more iterations)', 'Try -stress_balance.ssa.fd.brutal_sliding
+    (emergency option)', 'Check for zero-thickness ice shelves that should be removed'];
+  severity: fatal
+- id: dt_011
+  symptom: All ice shelves disappear within a few time steps
+  diagnosis: Ocean melt rate in m/day instead of m/year; PISM's -ocean.constant.melt_rate expects m/year.
+    If melt rate data is in m/day (e.g., from an ocean model), the value is 365× too high. A melt rate
+    of 0.01 m/day (reasonable) becomes 0.01 m/year (also reasonable) but 3.65 m/year is what was intended,
+    so th
+  remedy: 'Verify melt rate units; convert m/day to m/year if needed (×365.25); None; [''Check -ocean.constant.melt_rate
+    value'', ''Typical values: 0.1–50 m/year for Antarctic ice shelves'']; Document expected melt rate
+    range in run configuration'
+  severity: silent
+- id: dt_012
+  symptom: Ice sheet in equilibrium but bed elevation never changes
+  diagnosis: 'Bed deformation model not enabled (-bed_def lc not set); Glacial isostatic adjustment (GIA)
+    causes the bed to deform under ice load. Without -bed_def lc, the bed is fixed, which is unrealistic
+    for simulations >1000 years. The Lingle-Clark model is computationally cheap and should be enabled
+    for all '
+  remedy: Add -bed_def lc to the command line; run_pism.py; ["Add '-bed_def lc' to PISM command line",
+    'Ensure Lbz and Mbz are set (e.g., -Lbz 2000 -Mbz 11)']; run_pism.py warns if bed_def is not set for
+    runs >1000 years
+  severity: silent
+- id: dt_013
+  symptom: Ice geometry shifted by half a grid cell — boundaries slightly off
+  diagnosis: 'Grid registration mismatch (corner vs center); PISM supports both ''corner'' and ''center''
+    grid registration. If the input data uses one convention and PISM is configured for the other, all
+    fields will be offset by half a grid cell. The default for bootstrap is ''corner''.
+
+    ; [''grid'', ''geometry'', ''all_spa'
+  remedy: Set -grid.registration to match input data convention; None; ['Check input data documentation
+    for grid registration', 'Set -grid.registration corner (or center)']; Always specify -grid.registration
+    explicitly
+  severity: degraded
+- id: dt_014
+  symptom: PISM killed by OS — out of memory
+  diagnosis: 'Grid too large for available memory; PISM''s memory usage scales as Mx × My × Mz × n_fields
+    × 8 bytes. A 5km Greenland grid (301×551×201) requires ~8 GB per process. If insufficient memory is
+    available per MPI rank, the OS kills the process.
+
+    ; [''memory'', ''grid'', ''parallel_decomposition'']'
+  remedy: 'Reduce grid size, increase MPI processes, or use more nodes; None; [''Estimate memory: Mx*My*Mz*20*8
+    bytes / nprocs'', ''Reduce Mz or coarsen horizontal grid'', ''Increase number of MPI processes (more
+    memory total)'']; Check memory requirements before running'
+  severity: fatal
+- id: dt_015
+  symptom: Grid coordinates appear wrong — domain tiny or enormous
+  diagnosis: Coordinate variables in km instead of m; PISM expects projection coordinates (x, y) in meters.
+    Many datasets provide coordinates in km. If x ranges from -750 to 750 (km), PISM interprets this as
+    -750 to 750 meters — a 1.5 km domain instead of 1500 km. This causes the entire ice sheet to fit in
+    a few
+  remedy: Multiply x and y coordinates by 1000; convert_geometry.py; ["ncap2 -O -s 'x=x*1000.0;y=y*1000.0'
+    input.nc input.nc", "ncatted -O -a units,x,m,c,'m' input.nc", "ncatted -O -a units,y,m,c,'m' input.nc"];
+    convert_geometry.py auto-detects and converts km to m
+  severity: fatal
+- id: dt_016
+  symptom: Spurious ice growth in currently ice-free areas
+  diagnosis: Surface mass balance = 0 in ice-free regions instead of negative; Many SMB datasets set the
+    value to 0 or missing where there is no ice. PISM interprets 0 SMB as zero mass balance, which allows
+    any transported ice to accumulate. In reality, ablation in ice-free areas should be negative. The
+    std-gree
+  remedy: Set negative SMB in ice-free areas; None; ["ncap2 -O -s 'where(thk<=0.0){climatic_mass_balance=-1000.0;}'
+    input.nc input.nc"]; Always handle ice-free SMB in preprocessing
+  severity: silent
+- id: dt_017
+  symptom: NetCDF read error — cannot open input file
+  diagnosis: NetCDF library version mismatch or file format incompatibility; PISM is compiled against
+    a specific NetCDF version. If the runtime NetCDF library differs, or if the input file was created
+    with NetCDF features not supported by PISM's build (e.g., NetCDF-4 compression when built with NetCDF-3
+    only), f
+  remedy: 'Check NetCDF version compatibility; rewrite file if needed; None; [''ncdump -k input.nc  #
+    Check file format'', ''ncks -O --fl_fmt=netcdf4 input.nc input.nc  # Convert format'', ''Rebuild PISM
+    with matching NetCDF version'']; Verify ncdump can read the file before passing to PISM'
+  severity: fatal
+- id: dt_018
+  symptom: delta_T anomaly applied twice — temperature offset doubled
+  diagnosis: delta_T already in kelvin but converted from °C again; Temperature anomalies (delta_T) are
+    relative values. A -10 K anomaly means 10 K colder than present. Since it's a difference, °C and K
+    are equivalent for anomalies (Δ1°C = Δ1K). Converting delta_T from °C to K by adding 273.15 would
+    make the ano
+  remedy: Do NOT convert delta_T — it's already a relative offset; None; ['Verify delta_T values are reasonable
+    offsets (-20 to +10 K typically)', "Units should be 'kelvin' but values should be small offsets, not
+    absolute temps"]; Document that delta_T needs no conversion in SKILL.md
+  severity: silent
+- id: dt_019
+  symptom: Ice sheet volume drifts continuously even after long spinup
+  diagnosis: Spinup too short for the grid resolution and physics; Thermal equilibrium takes 10,000+ years
+    for ice sheets. At high resolution with hybrid dynamics, even 200,000 years may not be enough. If
+    volume still has a trend >0.1% per millennium at spinup end, the initial state is not equilibrated
+    and trans
+  remedy: 'Extend spinup duration or use grid sequencing; run_pism.py; [''Check volume trend in scalar
+    output'', ''Use grid sequencing: 40km→20km→10km with regridding'', ''For paleo runs, simulate at least
+    one full glacial cycle'']; Always check spinup stationarity before transient runs'
+  severity: silent
+- id: dt_020
+  symptom: PISM cannot find expected input variables
+  diagnosis: 'Variable names don''t match PISM conventions; PISM expects specific variable names: topg
+    (not bed, bedrock), thk (not thickness, ice_thickness), precipitation (not precip, pr), ice_surface_temp
+    or air_temp. If variable names don''t match, PISM either uses defaults or crashes.
+
+    ; [''input'', ''bootstrap'', '
+  remedy: Rename variables to PISM conventions; convert_geometry.py; ['ncrename -v bed,topg -v thickness,thk
+    input.nc', 'Refer to SKILL.md input variable table for correct names']; Use convert_geometry.py or
+    convert_climate_forcing.py which handle renaming
+  severity: fatal
+- id: dt_021
+  symptom: 'The requested comparison variable is not an ice-sheet observable PISM can emit (e.g. snow-water-equivalent
+    SWE, seasonal snowpack, streamflow at a gauge). The metric is structurally UNCOMPUTABLE, not merely
+    wrong-valued.
+
+    '
+  diagnosis: 'Wrong-variable / wrong-model case assignment. PISM''s declared outputs (dag.yaml outputs[])
+    are ice-sheet state ONLY: thk, usurf, velsurf_mag, velbase_mag, mask, ice_volume_glacierized, tendency_of_ice_mass(+_due_to_discharge),
+    tillwat, temppabase. There is NO SWE / seasonal-snowpack / discharge outp'
+  remedy: 'Do NOT enter the retry loop. Report STRUCTURAL_MISMATCH with metric = null and the reason.
+    Re-route SWE@<site> to a snow/hydrology model. For a PISM-VALID test at the same site, compare a declared
+    output instead: thk (spatial_snapshot vs a glacier-thickness product) or ice_volume_glacierized (region'
+  severity: structural
+- id: dt_022
+  symptom: 'A snow/hydrology observable (snow_water_equivalent, snowmelt) is requested of PISM and appears
+    valid because docs/format_spec.yaml listed it under outputs[], yet the run yields metric=null / ''Variable
+    not found''.
+
+    '
+  diagnosis: docs/format_spec.yaml outputs[] advertised observables (snow_water_equivalent, snowmelt)
+    that are NOT in the authoritative dag.yaml outputs[] and cannot be physically emitted by an ice-sheet-dynamics
+    model. The spec drifted out of sync with the dag observability contract, causing wrong-variable case
+  remedy: 'Keep docs/format_spec.yaml outputs[] a strict subset of dag.yaml outputs[]; remove non-emittable
+    snow observables. Route SWE/snowmelt requests to snow/ hydrology models (CRHM/SUMMA/SNOWPACK/SnowModel/VIC).
+    See dt_021 for the structural-mismatch handling.
+
+    '
+- id: dt_023
+  symptom: 'Bootstrapping PISM from a real ice-geometry product (BedMachine Greenland/ Antarctica) crashes
+    or refuses to run. Three distinct failures appear in sequence: (1) signal 6/SIGSEGV during context/Time
+    init with an HDF5 ''header (1.10.10) vs library (1.14.3) version mismatched'' banner; (2) ''PISM ERROR: '
+  diagnosis: (1) This PISM build links an HDF5 whose compile-time headers disagree with the runtime library,
+    so NetCDF4 (HDF5-backed) input reads corrupt/segfault. (2) The build has NO PROJ (-version shows no
+    PROJ line), yet PISM by default recomputes lon/lat from the projection at bootstrap. (3) BedMachine
+    stor
+  remedy: 'In convert_geometry.py: write NETCDF3_64BIT_OFFSET (default now), block-mean coarsen 150 m
+    BedMachine to a runnable grid (--coarsen N), flip descending axes to strictly increasing, and optionally
+    inject constant climate (--const-smb, --const-ice-temp) so a self-contained `-surface given` run needs
+    n'
+  severity: fatal
+- id: dt_024
+  symptom: 'Validating PISM surface speed (velsurf_mag) against a gridded velocity mosaic (MEaSUREs Antarctica/Greenland
+    ice velocity, spatial_snapshot) gives a near-zero or NEGATIVE raw Pearson r (e.g. -0.02) even though
+    the model clearly puts fast flow on the right outlets. Two confounders: (1) velsurf spans '
+  diagnosis: (a) The dag declares velsurf_mag determining_metric=csi with an explicit caveat that fast
+    flow spans orders of magnitude and "log-space or rank metrics [are] often more informative" — RAW
+    Pearson r is the wrong metric family for this obs_shape. (b) PISM 2.3 retired the `-topg_to_phi LIST`
+    option; th
+  remedy: Score velsurf_mag in LOG10 space (and report rank/Spearman + log-space r), not raw Pearson.
+    Exclude non-converged cells (model speed >> regional obs max, e.g. >3000 m/yr) as numerical artifacts
+    and log the excluded count. Run hybrid ssa+sia with the shelf preserved (-pik -ocean constant), a
+    bed-keye
+  severity: degraded

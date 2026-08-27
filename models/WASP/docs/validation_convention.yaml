@@ -1,0 +1,277 @@
+schema_version: 1
+model_id: WASP
+domain: lake
+generated_by: "Step-B agent (Codex) - validation convention campaign"
+generated_at: 2026-08-14
+
+references:
+  arnold2012:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42256.txt
+  engel2012:
+    doi: 10.13031/2013.42265
+    title: "Hydrologic and Water Quality Models: Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42265.txt
+  piccolroaz2013:
+    doi: 10.5194/hess-17-3323-2013
+    title: "A simple lumped model to convert air temperature into surface water temperature in lakes"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-17-3323-2013.txt
+  efdc2021:
+    doi: 10.1038/s41598-021-92453-z
+    title: "Applying EFDC Explorer model in the Gallinas River, Mexico to estimate its assimilative capacity"
+    venue: "Scientific Reports"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-021-92453-z.txt
+  deepavarsa2023:
+    doi: 10.2166/wpt.2023.173
+    title: "Water quality simulation using the WASP model for eutrophication control in a South Indian Reservoir"
+    venue: "Water Practice and Technology"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_wpt.2023.173.txt
+  wool2020:
+    doi: 10.3390/w12051398
+    title: "WASP 8: The Next Generation in the 50-year Evolution of USEPA's Water Quality Model"
+    venue: "Water"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w12051398.txt
+  chapra2021:
+    doi: 10.3390/w13172408
+    title: "Impact of Global Warming on Dissolved Oxygen and BOD Assimilative Capacity"
+    venue: "Water"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w13172408.txt
+  lushui2021:
+    doi: 10.3390/w13202819
+    title: "Research on Water Quality Simulation and Water Environmental Capacity in Lushui River using WASP"
+    venue: "Water"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w13202819.txt
+  zuniga2019:
+    doi: 10.1111/lre.12256
+    title: "Application of WASP model for assessment of water quality for eutrophication"
+    venue: "Lakes and Reservoirs: Research and Management"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1111_lre.12256.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling and Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+  eco2013:
+    doi: 10.1371/journal.pone.0068104
+    title: "ECO: A Generic Eutrophication Model Including Comprehensive Sediment-Water Interaction"
+    venue: "PLOS ONE"
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1371_journal.pone.0068104.txt
+
+validation:
+  - dag_variable: temperature_timeseries
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Monthly hydrologic and water-quality convention transferred to lake temperature time series; Piccolroaz et al. report lake water-temperature validation E about 0.9."
+        cites: [arnold2012, efdc2021, piccolroaz2013]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Lake water-temperature validation commonly reports RMSE; Piccolroaz et al. describe validation with high efficiency and RMSE on the order of 1 deg C, but the fetched text does not give a hard pass threshold for WASP profile or seasonal outputs."
+        cites: [piccolroaz2013]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "WASP 8 simulates water temperature internally using meteorological forcing and heat-exchange processes, so time-series temperature validation should be checked against observed water temperature rather than only against DO or eutrophication responses."
+        cites: [wool2020]
+    validated_when: "NSE >= 0.5 for the seasonal water-temperature time series; RMSE near 1 deg C is supportive but not an automatic pass gate."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Arnold 2012 states that Moriasi et al. proposed NSE values should exceed 0.5 for satisfactory monthly evaluations and that
+      very good meant NSE (and r2) >0.75. EFDC 2021 repeats "0.5 < NSE < 0.65" as satisfactory for water-quality data. Piccolroaz
+      2013 validates lake surface water temperature with "E ~= 0.9" and "overall very good agreement", supporting use of NSE for
+      temperature even though the model is not WASP.
+
+  - dag_variable: do_timeseries
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Water-quality time-series threshold reproduced in EFDC and SWAT calibration papers; direct WASP reservoir validation reports DO NSE 0.860."
+        cites: [arnold2012, efdc2021, deepavarsa2023]
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.6, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "R2 >= 0.5 is treated as acceptable in the WASP KRP paper; Lushui WASP reproduces general R2 tiers."
+        cites: [deepavarsa2023, lushui2021]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RMSE is commonly reported for water-quality calibration, but no fetched DO-specific mg/L pass band was found."
+        cites: [engel2012, zuniga2019]
+    validated_when: "NSE >= 0.5 and R2 >= 0.5 for DO time series, with RMSE/visual fit used only as supporting diagnostics."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Deepa Varsa et al. 2023 is a direct WASP eutrophication benchmark: calibration/validation used DO, chl-a, nitrate and
+      phosphate, and the validation table reports DO R2 = 0.904 and NSE = 0.860. It says values above 0.5 are acceptable for R2 and
+      that DO/N/P NSE were "very good" by Moriasi et al. 2007. EFDC 2021 reports DO NSE 0.65 dry and 0.80 wet and states the
+      0.5-0.65 satisfactory NSE threshold for water-quality data.
+
+  - dag_variable: temperature_profile
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Transferred from WASP water-quality relative-error calibration practice; no fetched profile-temperature PBIAS band was found."
+        cites: [lushui2021]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Temperature-profile validation should also inspect absolute deg C errors; fetched lake-temperature literature reports RMSE and NSE rather than a profile PBIAS gate."
+        cites: [piccolroaz2013, wool2020]
+    validated_when: "|PBIAS| <= 15% for per-depth profile magnitude, with RMSE in deg C reported as a supporting diagnostic."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      Lushui WASP says calibration continues unless the relative error is less than 15%. This is a transferred magnitude rule for
+      the dag's PBIAS snapshot comparison, not a temperature-profile-specific tier. Wool 2020 documents WASP's heat-balance
+      temperature module; Piccolroaz 2013 shows that lake temperature validation is usually discussed with NSE/RMSE.
+
+  - dag_variable: do_profile
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "WASP/water-quality model calibration convention: relative error below 15% completes calibration."
+        cites: [lushui2021]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "WASP eutrophication studies often co-report R2/index of agreement/visual fit for station profiles or time plots, but no fetched DO-profile-specific pass band was found."
+        cites: [deepavarsa2023, zuniga2019]
+    validated_when: "|PBIAS| <= 15% for the DO profile snapshot; R2 and visual profile agreement are supporting diagnostics."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Lushui WASP states that if the error is less than 15%, calibration is considered completed. Direct WASP reservoir work
+      validates DO in time-series form with NSE/R2, while El Pane reports WASP profile/station calibration by visual fit and
+      summary errors and says the calibrated model represented reservoir water quality moderately well.
+
+  - dag_variable: do_saturation
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Transferred relative-error check for a closed-form DO-saturation calculation; not a separate ecosystem-model skill tier."
+        cites: [lushui2021, chapra2021]
+    secondary_metrics:
+      - metric: absolute_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "DO saturation is a thermodynamic function of temperature, salinity and pressure/elevation; errors mainly indicate wrong inputs or formula implementation rather than calibration skill."
+        cites: [chapra2021]
+    validated_when: "|PBIAS| <= 15% against an independent DO-saturation reference table or observation-derived saturation estimate."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Chapra et al. 2021 state that dissolved oxygen saturation depends on temperature, salinity and oxygen partial pressure,
+      and that rising water temperature lowers saturation. The 15% band is borrowed from WASP water-quality relative-error
+      calibration practice in Lushui 2021 because no fetched source gives a DO-saturation formula-verification tolerance.
+
+  - dag_variable: TSI
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: spearman
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric Spearman threshold for validating Carlson TSI snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched WASP eutrophication benchmark validates chl-a, nitrate, phosphate and DO; it does not validate TSI directly."
+        cites: [deepavarsa2023]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bennett et al. recommend multiple metrics and context-specific acceptability for environmental models; no TSI-specific RMSE band was fetched."
+        cites: [bennett2013]
+    validated_when: "UNRESOLVED - compare snapshot TSI ranks to observed TSI ranks, but do not auto-validate without a cited Spearman band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Capped OpenAlex searches did not find a usable OA threshold paper for TSI Spearman validation. Deepa Varsa et al. 2023
+      report chl-a validation and trophic-management targets, but not a TSI rank-skill cutoff. Keep this block low-confidence and
+      non-loosening until the original Carlson scale or a TSI benchmark paper is fetched.
+
+  - dag_variable: TSI
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred water-quality time-series convention; no fetched TSI-specific NSE tier was found."
+        cites: [arnold2012, efdc2021]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "WASP eutrophication work validates chl-a and nutrients that feed TSI, but the fetched benchmark does not grade TSI directly."
+        cites: [deepavarsa2023]
+    validated_when: "NSE >= 0.5 for seasonal TSI time series, interpreted cautiously because the threshold is transferred from water-quality time-series validation."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      The dag asks for NSE when TSI is tracked across a season. The only cited numeric time-series band available in the fetched
+      set is the general water-quality NSE convention. This block should contextualize TSI time-series comparisons, not override
+      a need for TSI-specific literature.
+
+deferred_paywalled:
+  - ref: "Carlson 1977 - A trophic state index for lakes"
+    doi: 10.4319/lo.1977.22.2.0361
+    needed_for: [TSI]

@@ -124,7 +124,7 @@ outputs:
   - var: "flow"
     validation_rank: 3
     unit: "m^3/day"
-    description: "Flow between blocks through a connector (outflow / underdrain / overflow hydrograph)."
+    description: "Water flow between blocks through a connector (outflow / underdrain / overflow hydrograph)."
     emitted_in: "GIFMod time-series output"
     observability:
       comparable_obs_shapes:
@@ -186,7 +186,7 @@ outputs:
   - var: "velocity"
     validation_rank: 1
     unit: "m/day"
-    description: "Flow velocity within a connector."
+    description: "Water flow velocity within a pipe/stream/overland connector."
     emitted_in: "GIFMod time-series output"
     observability:
       comparable_obs_shapes:
@@ -370,3 +370,13 @@ safety:
       scope: "influence-block evidence standard"
       source: "Alikhani et al. 2020 (10.1061/JSWBAY.0000903); Wang et al. 2021"
       status: tentative
+
+medium_evidence:
+  - var: "flow"
+    source: "SKILL.md"
+    quote: "Blocks are connected by flow paths (Pipe, Porous, Non-Porous, Rating Curve, Prescribed Flow, Controlled) that govern inter-block water and solute exchange."
+    note: "GIFMod connectors govern inter-block water exchange, so connector flow is water flow."
+  - var: "velocity"
+    source: "SKILL.md"
+    quote: "Blocks are connected by flow paths (Pipe, Porous, Non-Porous, Rating Curve, Prescribed Flow, Controlled) that govern inter-block water and solute exchange."
+    note: "Connector governing equations control water transport, so connector velocity is water flow velocity."

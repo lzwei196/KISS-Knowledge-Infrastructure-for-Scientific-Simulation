@@ -1,0 +1,396 @@
+schema_version: 1
+model_id: MOM6
+domain: ocean
+generated_by: "Step-B validation-convention agent (Codex GPT-5)"
+generated_at: 2026-08-14
+
+references:
+  seelanki2025:
+    doi: 10.5194/gmd-18-7681-2025
+    title: "Evaluation of a coupled ocean and sea-ice model (MOM6-NEP10k) over the Bering Sea and its sensitivity to turbulence decay scales"
+    venue: "Geosci. Model Dev."
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-18-7681-2025.txt
+  tsujino2020:
+    doi: 10.5194/gmd-13-3643-2020
+    title: "Evaluation of global ocean-sea-ice model simulations based on the experimental protocols of the Ocean Model Intercomparison Project phase 2 (OMIP-2)"
+    venue: "Geosci. Model Dev."
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-3643-2020.txt
+  ross2023:
+    doi: 10.5194/gmd-16-6943-2023
+    title: "A high-resolution physical-biogeochemical model for marine resource applications in the northwest Atlantic (MOM6-COBALT-NWA12 v1.0)"
+    venue: "Geosci. Model Dev."
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-16-6943-2023.txt
+  lellouche2013:
+    doi: 10.5194/os-9-57-2013
+    title: "Evaluation of global monitoring and forecasting systems at Mercator Ocean"
+    venue: "Ocean Sci."
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_os-9-57-2013.txt
+  stellema2022:
+    doi: 10.3389/fclim.2022.933091
+    title: "Pacific Equatorial Undercurrent: Mean state, sources, and future changes across models"
+    venue: "Front. Clim."
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_fclim.2022.933091.txt
+
+validation:
+  - dag_variable: SSH
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: cm
+        bands: {very_good: 7.0, good: 8.0, satisfactory: 8.67}
+        pass_band: satisfactory
+        band_note: "Use RMSE/MedAE/correlation after removing each field's mean offset; OMIP subtracts quasi-global mean before SSH comparison."
+        cites: [lellouche2013, ross2023, tsujino2020]
+      - metric: corr
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.97, good: 0.9, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Ross reports SSH correlation 0.97; 0.5 is cited there as a lower bound for useful prediction skill."
+        cites: [ross2023]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched ocean-model evaluations use RMSE, bias, correlation, and Murphy skill for SSH, not categorical CSI."
+        cites: [lellouche2013, ross2023, tsujino2020]
+    validated_when: "SSH anomaly/dynamic sea level is benchmarked by RMSE <= 8.67 cm and correlation >= 0.5 after datum/geoid/mean-offset alignment."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      The dag headline csi is superseded by ocean-model convention. Lellouche reports SLA forecast RMS near 7 cm and weak mean innovations of 1-2 cm; Ross reports mean SSH RMSE 8 cm, MedAE 3 cm, bias 3 cm, and correlation 0.97; OMIP Table D3 lists GFDL-MOM OMIP-2 SSH RMSE 8.42 cm and MMM 8.67 cm.
+
+  - dag_variable: SSH
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mss
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: 0.5, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Murphy skill score is positive when the forecast beats persistence; use tide-gauge datum alignment before scoring."
+        cites: [lellouche2013]
+      - metric: rmse
+        direction: minimize
+        unit: cm
+        bands: {very_good: 7.0, good: 8.0, satisfactory: 8.67}
+        pass_band: satisfactory
+        band_note: "Transferred from SLA/SSH forecast and OMIP RMSE benchmarks; point gauges need datum alignment."
+        cites: [lellouche2013, ross2023, tsujino2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched SSH validation convention uses Murphy skill relative to persistence rather than hydrologic NSE."
+        cites: [lellouche2013]
+    validated_when: "A tide-gauge SSH comparison is validated when Murphy skill is non-negative and RMSE is no worse than the 8.67 cm OMIP/Mercator benchmark after datum alignment."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: >-
+      Lellouche defines MSS so positive values beat persistence and 1 is perfect. This supersedes the dag's nse for point SSH, while retaining a comparable RMSE band from fetched SSH evaluations.
+
+  - dag_variable: SST
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 0.4, good: 0.467, satisfactory: 0.6}
+        pass_band: satisfactory
+        band_note: "SST spatial validation convention uses RMSE/bias/correlation against OISST or reanalysis, not CSI."
+        cites: [seelanki2025, tsujino2020, lellouche2013]
+      - metric: bias
+        direction: zero_centered
+        unit: degC
+        bands: {very_good: 0.23, good: 0.4, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Ross reports overall SST bias -0.23 degC; OMIP states SST biases are below 0.4 degC in most regions."
+        cites: [ross2023, tsujino2020]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched SST evaluations use RMSE, mean bias, MedAE, and correlation for continuous fields."
+        cites: [ross2023, tsujino2020]
+    validated_when: "SST is validated when RMSE <= 0.6 degC and |bias| <= 0.5 degC against OISST or equivalent satellite/reanalysis products."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Seelanki cites GLORYS12 nearshore SST RMSE of about 0.25-0.6 degC and anomaly correlations above 0.9; OMIP Table D3 lists GFDL-MOM OMIP-2 SST RMSE 0.467 degC; Lellouche says most SST departures are within O(0.6 degC) product error.
+
+  - dag_variable: SST
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 0.4, good: 0.6, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Point/buoy SST band transfers the satellite product 0.6 degC benchmark and in-situ departure envelope."
+        cites: [lellouche2013, seelanki2025]
+      - metric: corr
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.82, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Ross cites 0.5 as a useful-skill lower bound; Seelanki reports R > 0.92 for tuned temperature at moorings."
+        cites: [ross2023, seelanki2025]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched ocean papers validate SST/temperature time series with RMSE and correlation rather than NSE."
+        cites: [ross2023, seelanki2025]
+    validated_when: "Point SST is validated when RMSE <= 1.0 degC and correlation >= 0.5, with depth/skin/bulk SST offsets documented."
+    evidence_strength: moderate
+    confidence: 0.64
+    notes: >-
+      The dag nse is superseded for point SST. The 1 degC band follows Lellouche's in-situ departure envelope; the 0.5 correlation floor is a useful-skill lower bound from Ross, while Seelanki reports mooring temperature R > 0.92 after tuning.
+
+  - dag_variable: thetao
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 0.24, good: 0.57, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "Use basin/depth matched 3-D potential-temperature RMSE against WOA/Argo climatology; reconcile potential vs conservative temperature."
+        cites: [tsujino2020]
+      - metric: bias
+        direction: zero_centered
+        unit: degC
+        bands: {very_good: 0.2, good: 0.4, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Mercator reports upper-ocean departures that do not exceed 0.2 degC for many layers and rarely exceed 1 degC."
+        cites: [lellouche2013]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Continuous 3-D temperature fields are judged by RMSE, bias, and profile/section pattern agreement in the fetched papers."
+        cites: [lellouche2013, tsujino2020]
+    validated_when: "3-D thetao snapshots are validated when basin/depth-matched RMSE <= 0.7 degC and |bias| <= 1.0 degC against WOA/Argo-style gridded products."
+    evidence_strength: strong
+    confidence: 0.74
+    notes: >-
+      OMIP Table D5 gives GFDL-MOM OMIP-2 zonal-mean temperature RMSEs of 0.24, 0.70, 0.57, and 0.26 degC across basins. Lellouche reports most 0-500 m in-situ departures rarely exceed 1 degC.
+
+  - dag_variable: thetao
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 0.4, good: 0.7, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Profile/mooring time series should be depth-interpolated before RMSE is computed."
+        cites: [lellouche2013, tsujino2020]
+      - metric: corr
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.82, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Useful-skill correlation floor transferred from Ross; Seelanki reports high mooring-temperature correlations."
+        cites: [ross2023, seelanki2025]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched profile/mooring evaluations use RMSE and correlation; NSE is not the reported ocean-temperature convention."
+        cites: [ross2023, seelanki2025]
+    validated_when: "A point thetao comparison is validated when RMSE <= 1.0 degC and correlation >= 0.5 after depth/layer interpolation."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: >-
+      Seelanki reports bottom-temperature RMSE improved from 1.33 to 0.97 degC and correlation from 0.82 to 0.90; Lellouche provides the 1 degC in-situ envelope.
+
+  - dag_variable: SSS
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: psu
+        bands: {very_good: 0.314, good: 0.408, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Validate against WOA/regional climatology or reanalysis with salinity convention matched to the model EOS."
+        cites: [tsujino2020, seelanki2025]
+      - metric: bias
+        direction: zero_centered
+        unit: psu
+        bands: {very_good: 0.28, good: 0.4, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Ross reports mean SSS bias 0.27-0.28; MOM6-NEP reports basin discrepancies below 0.5 psu."
+        cites: [ross2023, seelanki2025, tsujino2020]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched SSS evaluations use RMSE, mean bias, and spatial-pattern diagnostics for continuous salinity fields."
+        cites: [ross2023, tsujino2020]
+    validated_when: "SSS is validated when RMSE <= 0.5 psu and |bias| <= 0.5 psu after practical/absolute salinity conventions are reconciled."
+    evidence_strength: strong
+    confidence: 0.77
+    notes: >-
+      OMIP Table D3 lists GFDL-MOM OMIP-2 SSS RMSE 0.408 psu and MMM 0.314 psu; OMIP says salinity biases are below 0.4 psu in most regions. Seelanki reports small basin SSS discrepancies below 0.5 psu, with larger shelf biases.
+
+  - dag_variable: MLD_003
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 10.0, good: 22.37, satisfactory: 32.59}
+        pass_band: satisfactory
+        band_note: "Use the same 0.03 kg m-3 density criterion; winter and summer MLD have different error envelopes."
+        cites: [tsujino2020, ross2023, seelanki2025]
+      - metric: corr
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.94, good: 0.9, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Ross reports MLD spatial correlation 0.94; 0.5 is the cited useful-skill lower bound."
+        cites: [ross2023]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "MLD validation is criterion-sensitive and is reported as bias/RMSE/correlation, not categorical CSI."
+        cites: [seelanki2025, tsujino2020, ross2023]
+    validated_when: "MLD_003 is validated when RMSE <= 32.59 m and correlation >= 0.5 using a matched 0.03 kg m-3 density criterion."
+    evidence_strength: strong
+    confidence: 0.76
+    notes: >-
+      OMIP explicitly uses a 0.03 kg m-3 criterion and lists GFDL-MOM OMIP-2 winter RMSE 32.59 m and summer RMSE 10.02 m. Ross reports MOM6-NWA12 winter MLD correlation 0.94, mean bias 0.90 m, RMSE 22.37 m, and MedAE 8.02 m. Seelanki notes MOM6-NEP uses the same density threshold.
+
+  - dag_variable: MLD_003
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 10.0, good: 22.37, satisfactory: 32.59}
+        pass_band: satisfactory
+        band_note: "Transferred from gridded/seasonal MLD benchmark; point time series require matched MLD criterion and vertical resolution."
+        cites: [tsujino2020, ross2023]
+      - metric: corr
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.94, good: 0.9, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Correlation band is transferred from MOM6 spatial MLD and useful-skill convention."
+        cites: [ross2023]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched MLD validation uses RMSE, bias, and correlation; NSE is not the reported convention."
+        cites: [ross2023, tsujino2020]
+    validated_when: "Point MLD_003 is validated when RMSE <= 32.59 m and correlation >= 0.5, with the same density threshold and interpolation documented."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      No fetched point-MLD threshold table was found. Bands are transferred from OMIP and MOM6-NWA12 gridded MLD evaluations, so this block has reduced confidence.
+
+  - dag_variable: u
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: corr
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.82, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "For current-meter time series, use correlation after matching depth/layer and removing unresolved tides if appropriate."
+        cites: [ross2023]
+      - metric: relative_speed_bias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 20.0, good: 40.0, satisfactory: 60.0}
+        pass_band: satisfactory
+        band_note: "Mercator reports surface-current underestimation from 20% in strong currents to 60% in weak currents."
+        cites: [lellouche2013]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched current evaluations use ADCP/drifter/reanalysis velocity, transport, depth, bias, and correlation rather than NSE."
+        cites: [lellouche2013, stellema2022]
+    validated_when: "Zonal velocity at a point is validated when correlation >= 0.5 and relative speed bias is within 60% after depth matching and treatment of tides."
+    evidence_strength: moderate
+    confidence: 0.52
+    notes: >-
+      Mercator validates surface currents against corrected drifters and reports 20%-60% speed underestimation with well-represented vector orientation. Stellema validates EUC velocity/depth using TAO/TRITON ADCP and observational mean fits, supporting feature-specific current checks.
+
+  - dag_variable: u
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: relative_speed_bias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 20.0, good: 40.0, satisfactory: 60.0}
+        pass_band: satisfactory
+        band_note: "Spatial current snapshots should compare vector speed and direction against drifter, ADCP, or reanalysis products."
+        cites: [lellouche2013]
+      - metric: corr
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.82, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Useful-skill lower bound transferred from Ross; EUC validation also compares spatial maximum velocity/depth patterns."
+        cites: [ross2023, stellema2022]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched current-field papers judge continuous velocity structure by bias, transport, maximum velocity, depth, and correlation."
+        cites: [lellouche2013, stellema2022]
+    validated_when: "Spatial u snapshots are validated when relative speed bias is within 60% and correlation >= 0.5, with feature-specific checks for current cores when relevant."
+    evidence_strength: moderate
+    confidence: 0.52
+    notes: >-
+      Stellema reports EUC core validation against TAO/TRITON ADCP with observed maximum velocity near 1.15 m/s around 240E and checks whether models lie within reanalysis/observational ranges. No universal current-vector RMSE threshold was fetched.
+
+  - dag_variable: ocean_heat_content
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric percent-bias pass threshold for regional OHC time series."
+        cites: []
+      - metric: trend_corr
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "OMIP evaluates whether OHC anomalies follow observation-based estimates after the mid-1990s, but does not provide a numeric trend-correlation gate."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "OMIP links OHC trajectory mismatch before the 1990s to long ocean memory and the short duration of forcing datasets, so early-period OHC bias can be forcing-history limited."
+        cites: [tsujino2020]
+    validated_when: "UNRESOLVED - compare regional OHC anomaly/trend against observation-based products, but do not auto-validate because no fetched numeric pbias or trend-correlation threshold was found."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The dag's pbias metric is retained, but all bands are null. OMIP says 0-700 and 0-2000 m OHC anomalies start following observations only after the mid-1990s and match after the 1990s; that is guidance, not a numeric threshold.
+
+deferred_paywalled:
+  - ref: "Bachman et al. 2014 - Using a resolution function to regulate parameterizations of oceanic mesoscale eddy effects"
+    doi: 10.1016/j.ocemod.2013.08.007
+    needed_for: [SSH, u, MLD_003]

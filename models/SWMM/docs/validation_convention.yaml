@@ -1,0 +1,380 @@
+schema_version: 1
+model_id: SWMM
+domain: hydrology
+generated_by: "Step-B validation-convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+# Blocks are keyed by SWMM dag_variable, not by an invented canonical quantity.
+# Numeric bands are copied only from fetched/read texts. Transferred bands are
+# marked in band_note/notes; uncited or non-field thresholds remain null.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  rai2017:
+    doi: 10.2166/nh.2016.260
+    title: "GIS-based SWMM model for simulating the catchment response to flood events"
+    venue: "Hydrology Research"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_nh.2016.260.txt
+  niazi2017:
+    doi: 10.1061/jswbay.0000817
+    title: "Storm Water Management Model: Performance Review and Gap Analysis"
+    venue: "Journal of Sustainable Water in the Built Environment"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1061_jswbay.0000817.txt
+  sanudo2020:
+    doi: 10.3390/w12092647
+    title: "Modelling Pluvial Flooding in Urban Areas Coupling the Models Iber and SWMM"
+    venue: "Water"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w12092647.txt
+  gill2021:
+    doi: 10.1007/s10040-020-02241-8
+    title: "An evaluation of semidistributed-pipe-network and distributed-finite-difference models to simulate karst systems"
+    venue: "Hydrogeology Journal"
+    year: 2021
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10040-020-02241-8.txt
+
+validation:
+  - dag_variable: subcatchment_runoff
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 9: flow D-M-A satisfactory when NSE > 0.50; includes surface runoff."
+        cites: [moriasi2015, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 9: flow satisfactory when PBIAS is within +/-15%."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 recommends RSR together with NSE and PBIAS; RSR < 0.70 is satisfactory for watershed flow, but the dag headline metric is NSE."
+        cites: [moriasi2007]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 recommends reporting R2 with slope/intercept; SWMM review reports many runoff studies with R2/NSE/relative-error performance summaries."
+        cites: [moriasi2015, niazi2017]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 15% against directly observed or outlet-inferred runoff/flow; RSR/R2 are supporting diagnostics."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Moriasi 2015 states model performance can be judged satisfactory for watershed-scale flow when
+      R2 > 0.60, NSE > 0.50, and PBIAS <= +/-15%; Table 9 explicitly says flow includes stream flow,
+      surface runoff, base flow, and tile flow. Rai 2017 applies NSE, PBIAS, and RSR to SWMM flood-flow
+      calibration/validation and repeats the very-good/good/satisfactory categories. The subcatchment
+      caveat remains: direct subcatchment runoff observations are rare, so outlet/link observations are
+      usually the defensible comparison.
+
+  - dag_variable: node_depth_head
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.89, good: 0.84, satisfactory: 0.77}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 Table 3 BASINS/HSPF daily hydrology-flow R criteria; no manhole-stage-specific R band was fetched."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Sañudo 2020 reports pipe/surface depth validation with MAE less than 1 mm at most pipe control points and always less than 1.5 mm for surface water depths, but this is a lab/dual-drainage benchmark rather than a field manhole-stage convention."
+        cites: [sanudo2020]
+    validated_when: "R >= 0.77 only as a transferred hydrology-flow convention; prefer direct depth-error reporting where sensor datum alignment is known."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      The dag determines this block with r. The fetched SWMM/dual-drainage texts report water-depth
+      agreement and MAE benchmarks, not a reusable manhole head/depth R threshold. Therefore the r band
+      is explicitly transferred from hydrology-flow criteria and should not be treated as a strong stage
+      validation convention.
+
+  - dag_variable: node_depth_head
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 Table 3 BASINS/HSPF hydrology/flow simulated-vs-recorded value-difference classes; no high-water-mark node-depth PBIAS threshold was fetched."
+        cites: [moriasi2015]
+    secondary_metrics: []
+    validated_when: "|PBIAS| <= 25% for a peak/snapshot depth comparison, treated as a weak transferred magnitude check."
+    evidence_strength: weak
+    confidence: 0.40
+    notes: >-
+      Snapshot node head/depth validation is usually a high-water-mark or peak-stage comparison with
+      datum alignment. No fetched paper provided a node-stage-specific PBIAS tier; this uses the broad
+      hydrology/flow value-difference bands and keeps confidence at the low-confidence boundary.
+
+  - dag_variable: node_flooding
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred from watershed-scale flow criteria for flooding rate/volume time series."
+        cites: [moriasi2015, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 flow PBIAS criteria; only valid when observed flooding volume/rate is measured."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Sañudo 2020 validated sewer/surface exchange discharges and water depths with small MAE in controlled tests; this supports reporting absolute errors for node flooding but does not define a general field pass band."
+        cites: [sanudo2020]
+    validated_when: "For measured node overflow rate/volume, NSE >= 0.50 and |PBIAS| <= 15%; otherwise treat as an event-detection or mass-balance problem."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: >-
+      Node flooding rate/volume is a flow-like output, so the Moriasi flow convention is the defensible
+      transferred threshold. The block is only moderate because urban node overflow is strongly affected
+      by ponding configuration and sparse observations.
+
+  - dag_variable: node_flooding
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched-success paper provided a formal CSI pass threshold for SWMM node flood/no-flood events."
+        cites: []
+    secondary_metrics:
+      - metric: pod
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Use POD/hit rate alongside CSI when a binary flood-location inventory exists; no cited pass band was fetched."
+        cites: []
+      - metric: far
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Use false-alarm rate alongside CSI when reported/non-reported flood locations are available; no cited pass band was fetched."
+        cites: []
+    validated_when: "UNRESOLVED - categorical node flooding requires a fetched flood-event CSI/POD/FAR threshold before auto-validation."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      OpenAlex identified flood-validation DOI 10.1088/1748-9326/aae014, whose cached text reports
+      CSI ranges for flood extents, but the fetch helper returned fetch_failed during this run. Per the
+      discipline rule, the CSI band is left null and the DOI is deferred rather than cited as a gate.
+
+  - dag_variable: link_flow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 9 flow D-M-A criteria; applicable to conduit/outfall discharge series."
+        cites: [moriasi2015, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 9 flow PBIAS criteria."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: peak_timing_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Niazi 2017 shows SWMM studies often report peak error, volume error, and timing error together with NSE/R2; no universal numeric timing threshold was fetched."
+        cites: [niazi2017]
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 reports RSR < 0.70 as satisfactory for watershed flow and recommends it with NSE/PBIAS."
+        cites: [moriasi2007]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 15% for observed conduit/outfall discharge; peak timing and RSR support diagnosis."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      This is SWMM's primary field calibration target. Moriasi 2015 supplies the flow thresholds and
+      Niazi 2017 reviews SWMM calibration/validation studies reporting NSEQ, volume error, peak error,
+      timing error, and R2 for link/outfall hydrographs.
+
+  - dag_variable: link_depth_velocity
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.60, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 Table 3 DRAINMOD daily water-table-depth NSE criteria; no conduit depth/velocity NSE tier was fetched."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Sañudo 2020 reports pipe water-depth MAE less than 1 mm at most control points, but this controlled experiment is not a general conduit-depth pass band."
+        cites: [sanudo2020]
+      - metric: velocity_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched texts did not provide a reusable observed-velocity threshold; velocity is rarely directly observed in routine SWMM calibration."
+        cites: []
+    validated_when: "NSE >= 0.40 is only a transferred depth-series convention; report MAE for instrumented conduit depths and do not auto-grade velocity without observations."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      The dag headline metric is NSE. Because the fetched literature lacks a conduit depth/velocity
+      NSE convention, the water-table-depth NSE criterion is a weak analogue for depth only; velocity
+      remains an observation-gap diagnostic.
+
+  - dag_variable: subcatchment_infiltration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a direct infiltration-rate time-series NSE threshold for SWMM subcatchments."
+        cites: []
+    secondary_metrics:
+      - metric: runoff_nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Infiltration is usually inferred through runoff/flow closure; Moriasi flow criteria can validate the resulting runoff but not the infiltration rate itself."
+        cites: [moriasi2015]
+      - metric: water_balance_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Runoff mass balance should be inspected because infiltration is one term in SWMM's surface-water balance; no direct infiltration pass band was fetched."
+        cites: []
+    validated_when: "UNRESOLVED - direct infiltration-rate validation has no cited numeric threshold in the fetched set; validate runoff and water balance instead."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      The skeleton caveat says infiltration is seldom directly observed and is usually inferred from a
+      runoff coefficient or water-balance closure. The file therefore retains the dag metric but leaves
+      the band null.
+
+  - dag_variable: groundwater_outflow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.60, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 3 reports DRAINMOD daily water-table-depth NSE criteria: acceptable >0.40."
+        cites: [moriasi2015]
+      - metric: mae
+        direction: minimize
+        unit: cm
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 3 reports DRAINMOD daily water-table-depth MAE criteria: acceptable <20 cm."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Gill 2021 reports NSE and KGE for spring discharge and water-level/flood-location applications of urban-drainage software in karst groundwater settings."
+        cites: [gill2021]
+    validated_when: "For groundwater table elevation, NSE >= 0.40 and MAE <= 20 cm; for lateral/spring outflow, also report flow-style NSE/KGE."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      This block mixes table elevation and lateral groundwater outflow. The strongest numeric convention
+      in the fetched set is for daily water-table depth; Gill 2021 supports NSE/KGE reporting for
+      groundwater/spring discharge but does not provide a general pass tier.
+
+  - dag_variable: pollutant_concentration_load
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.45}
+        pass_band: satisfactory
+        band_note: "Conservative mixed-pollutant default from Moriasi 2015 sediment monthly NSE; N/P monthly satisfactory is lower (0.35) but SWMM pollutant type is not specified."
+        cites: [moriasi2015, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Conservative mixed-pollutant default from Moriasi 2015 sediment PBIAS; N/P allow +/-30%, but this variable may be TSS/sediment."
+        cites: [moriasi2015, moriasi2007]
+    secondary_metrics:
+      - metric: event_load_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "SWMM pollutant validation often reduces to event/load comparisons because concentration samples are sparse; Niazi 2017 and Moriasi 2015 both emphasize multiple PMs and pollutant-specific uncertainty."
+        cites: [niazi2017, moriasi2015]
+    validated_when: "For mixed pollutant concentration/load, require NSE >= 0.45 and |PBIAS| <= 20% unless the pollutant is explicitly N/P, where the cited N/P convention may be documented separately."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Moriasi 2015 states satisfactory criteria of monthly R2 > 0.40, NSE > 0.45, and PBIAS <= +/-20%
+      for sediment, and monthly NSE > 0.35 with PBIAS <= +/-30% for N/P. Because the SWMM dag variable
+      is a mixed pollutant concentration/load rather than a typed nutrient, the stricter sediment/TSS
+      convention is used to avoid loosening a gate.
+
+  - dag_variable: continuity_error
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 0.5, good: 1.0, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Sañudo 2020 verified global mass conservation with relative accumulated mass balance error lower than 1% at every time step."
+        cites: [sanudo2020]
+    secondary_metrics: []
+    validated_when: "|continuity error| <= 1% as a strict internal mass-conservation check; this is a numerical diagnostic, not a field-observation validation."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The dag caveat mentions SWMM-style acceptance thresholds of <5% and <1% for dynamic wave, but
+      no fetched-success literature source for the 5% threshold was available. The cited band uses the
+      stricter fetched Water 2020 mass-balance benchmark phrase: relative accumulated mass balance
+      error was lower than 1%.
+
+deferred_paywalled:
+  - {ref: "Bernhofen et al. 2018 - collective validation of global fluvial flood models; cached text exists but fetch_doi returned fetch_failed in this run", doi: 10.1088/1748-9326/aae014, needed_for: [node_flooding]}
+  - {ref: "A Cellular Automata Fast Flood Evaluation (CA-ffe) Model", doi: 10.1029/2018wr023679, needed_for: [node_flooding]}
+  - {ref: "Development and Application of a Real-Time Flood Forecasting System (RTFlood System)", doi: 10.3390/w14101641, needed_for: [node_flooding]}
+  - {ref: "A Quantity-Quality Model to Assess the Effects of Source Control Stormwater Management", doi: 10.3390/w11071415, needed_for: [continuity_error, pollutant_concentration_load]}

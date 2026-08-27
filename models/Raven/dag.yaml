@@ -487,7 +487,7 @@ outputs:
   - var: "Performance diagnostics (NSE, KGE, PBIAS, RMSE)"
     validation_rank: 5
     unit: "dimensionless / m3/s"
-    description: "Built-in objective functions computed against observed discharge over the simulation period."
+    description: "Built-in objective functions computed against observed in-stream water discharge (STREAMFLOW) over the simulation period."
     emitted_in: "Diagnostics.csv"
     observability:
       comparable_obs_shapes:
@@ -700,3 +700,9 @@ safety:
       scope: "Temperature unit handling inside the model"
       source: "RavenInclude.h ZERO_CELSIUS constant (line 112)"
       status: "tentative"
+
+medium_evidence:
+  - var: "Performance diagnostics (NSE, KGE, PBIAS, RMSE)"
+    source: "dag.yaml"
+    quote: "Simulated streamflow hydrograph at each gauged SubBasin outlet; observed series co-reported when supplied."
+    note: "The diagnostic output is computed against the observed in-stream water discharge series co-reported with simulated STREAMFLOW."

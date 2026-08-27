@@ -1,150 +1,488 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: GemPy
-  version: v3 (2024.1)
-  domain: geophysics
-  binary_path: KISSPATH_PYTHON_ENV/bin/python
-  language: Python 3.10-3.12
-  license: EUPL-1.2
-  repository: https://github.com/cgre-aachen/gempy
-  architecture:
-  - package: gempy
-    role: High-level API, data classes
-  - package: gempy_engine
-    role: Computation (NumPy/PyTorch)
-  - package: gempy_viewer
-    role: Visualization (matplotlib/PyVista)
-  - package: gempy_plugins
-    role: Extensions (topology, etc.)
+  language: python
+  implementation:
+    id: gempy-v3
+    version: 3.x (gempy_engine 2026.0.1a2.dev0)
+    provenance: Python; multi-package — gempy high-level API/data classes wrapping the gempy_engine NumPy/PyTorch
+      cokriging numerics that perform the actual computation
+  scientific_reference_version: GemPy v3 implicit potential-field geomodeling (Lajaunie 1997 / Calcagno
+    2008 universal cokriging), de la Varga et al. 2019 stochastic formulation
 inputs:
-  forcing:
-  - name: surface_points
-    format: CSV
-    columns:
-    - name: X
-      unit: meters (project CRS)
-      type: float64
-    - name: Y
-      unit: meters (project CRS)
-      type: float64
-    - name: Z
-      unit: meters (elevation)
-      type: float64
-    - name: formation
-      unit: string
-      type: string
-  - name: orientations
-    format: CSV
-    columns:
-    - name: X
-      unit: meters (project CRS)
-      type: float64
-    - name: Y
-      unit: meters (project CRS)
-      type: float64
-    - name: Z
-      unit: meters (elevation)
-      type: float64
-    - name: G_x
-      unit: unitless
-      type: float64
-      valid_range:
-      - -1.0
-      - 1.0
-    - name: G_y
-      unit: unitless
-      type: float64
-      valid_range:
-      - -1.0
-      - 1.0
-    - name: G_z
-      unit: unitless
-      type: float64
-      valid_range:
-      - -1.0
-      - 1.0
+  forcing: []
   parameters:
-    critical:
-    - name: extent
-      description: Model bounding box [x_min, x_max, y_min, y_max, z_min, z_max] in
-        meters
-      valid_range:
-      - z_min < z_max required
-    - name: refinement
-      description: Octree refinement level (higher = more detail, more memory)
-      valid_range:
-      - 1
-      - 8
-      default: 6
-    - name: resolution
-      description: Dense grid cells per axis [nx, ny, nz]
-      valid_range:
-      - 1
-      - 500
-    - name: nugget_surface_points
-      description: Tikhonov regularization for surface points
-      valid_range:
-      - 1.0e-08
-      - 0.1
-      default: 2.0e-05
-    - name: nugget_orientations
-      description: Tikhonov regularization for orientations
-      valid_range:
-      - 1.0e-08
-      - 0.1
-      default: 0.01
-    optional:
-    - name: backend
-      description: 'Computation backend: numpy (CPU) or pytorch (GPU)'
-      default: numpy
-    - name: mapping_object
-      description: Dict mapping series names to surface lists for structural frame
-    - name: fault_groups
-      description: List of group names to mark as faults
+  - name: surface_points (interface contact points)
+    unit: meters (project CRS)
+    category: parameters
+    source_kind: user geological observation data
+    model_input_format: X,Y,Z per formation interface point (CSV with formation label)
+    notes: Primary kriging value constraints; min 1 surface point per surface, faults need >=2 per side
+      of the fault trace. CSV formation column must be named 'formation' or all points collapse to a single
+      Default surface.
+  - name: orientations (dip/polarity gradient constraints)
+    unit: gradient components dimensionless (-1..1); or azimuth/dip in degrees + polarity
+    category: parameters
+    source_kind: user geological observation data
+    model_input_format: X,Y,Z + G_x,G_y,G_z unit gradient vector, or azimuth(0-360°)/dip(0-90° from horizontal)/polarity(±1)
+      converted via G_x=sin(dip)sin(az)·pol, G_y=sin(dip)cos(az)·pol, G_z=cos(dip)·pol
+    notes: Derivative constraints on the scalar field; each structural group needs >=1 orientation. Gradient
+      must be unit length (|G|=1) or cokriging is biased.
+  - name: nugget_surface_points
+    unit: dimensionless
+    category: parameters
+    source_kind: model default / user override
+    model_input_format: scalar Tikhonov regularization (default 0.00002)
+  - name: nugget_orientations
+    unit: dimensionless
+    category: parameters
+    source_kind: model default / user override
+    model_input_format: scalar Tikhonov regularization (default 0.01)
+  - name: kriging_range
+    unit: dimensionless (rescaled unit-cube space)
+    category: parameters
+    source_kind: hardcoded model default
+    model_input_format: covariance correlation length (default 1.7); coupled to data extent via the auto-rescaling
+      Transform
+  - name: covariance_scale (c_o)
+    unit: dimensionless
+    category: parameters
+    source_kind: hardcoded model default
+    model_input_format: covariance amplitude (default 10.0)
+  - name: covariance/kernel function
+    unit: '-'
+    category: parameters
+    source_kind: model default (construction-path dependent)
+    model_input_format: cubic (from_args default) | exponential (raw dataclass default) | Matern 5/2
+    notes: Default differs by construction path (cubic vs exponential) — a documented ambiguity, see safety.hazards.
+  - name: universal drift degree (uni_degree)
+    unit: dimensionless
+    category: parameters
+    source_kind: hardcoded model default
+    model_input_format: polynomial trend degree (default 1; sets n_uni_eq = number_dimensions)
+  - name: sigmoid_slope
+    unit: dimensionless
+    category: parameters
+    source_kind: hardcoded model default
+    model_input_format: soft-segmentation steepness (default 5e6 -> near-hard lithology boundaries)
+  - name: per-unit densities / magnetic susceptibilities
+    unit: kg/m^3 ; SI susceptibility
+    category: parameters
+    source_kind: user geophysical assignment (optional)
+    model_input_format: scalar per structural element; only used by the optional geophysics forward module
+  initial_conditions: []
+  boundary_conditions:
+  - name: model extent
+    unit: meters (project CRS)
+    category: boundary_conditions
+    source_kind: user run configuration
+    model_input_format: '[x_min,x_max,y_min,y_max,z_min,z_max]; requires z_min < z_max'
+  - name: grid type
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user run configuration (structural switch)
+    model_input_format: OCTREE | DENSE | CUSTOM | SECTIONS | TOPOGRAPHY | CENTERED (multiple can be active)
+  - name: octree refinement level
+    unit: dimensionless
+    category: boundary_conditions
+    source_kind: user run configuration
+    model_input_format: integer 1-8 (4 testing, 6 production, 8 high-detail); too low misses thin layers/narrow
+      faults
+  - name: dense grid resolution
+    unit: cells
+    category: boundary_conditions
+    source_kind: user run configuration
+    model_input_format: '[nx,ny,nz]; O(n^3) memory, keep under ~10M cells'
+  - name: structural_mapping (map_stack_to_surfaces / stack order)
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user run configuration (structural switch)
+    model_input_format: series/group -> tuple of surfaces; index 0 = youngest; order sets erosion/onlap
+      priority
+  - name: structural relation type per group
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user run configuration (structural switch)
+    model_input_format: ERODE (younger truncates older, default) | ONLAP (younger terminates against older)
+      | FAULT (surface acts as fault plane)
+  - name: fault_relations matrix
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user run configuration
+    model_input_format: boolean n_groups x n_groups, ASYMMETRIC; [i,j]=True means fault i displaces group
+      j
+  - name: compute backend
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user run configuration (structural switch)
+    model_input_format: NumPy (default, CPU) | PyTorch (GPU + autodiff for probabilistic modeling / nugget
+      optimization)
+  - name: topography (optional)
+    unit: meters elevation
+    category: boundary_conditions
+    source_kind: user run configuration
+    model_input_format: DEM (GeoTIFF/ASCII) or generated fractal surface; units must match model meters
 outputs:
   primary:
+  - name: lith_block
+    unit: categorical / dimensionless (lithology id)
+    description: Discretized 3D volumetric subsurface lithology block — formation id per grid cell.
+    validation_rank: 1
+    emitted_in: Solutions.raw_arrays.lith_block
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Lithology ids are categorical labels; pattern/adjacency agreement, not magnitude error, is the
+          meaningful metric.
+      detrending_options:
+      - none
   - name: scalar_field
-    type: ndarray float64
-    description: Continuous potential values at each grid point
-  - name: block
-    type: ndarray int32
-    description: Discrete formation IDs at each grid point
-  - name: vertices
-    type: list[ndarray]
-    description: Mesh vertices per geological surface
-  - name: edges
-    type: list[ndarray]
-    description: Mesh triangles per geological surface
-  - name: subsurface_resistivity
-    canonical_id: subsurface_resistivity
-    unit: ohm.m
-  - name: hydraulic_conductivity
-    canonical_id: hydraulic_conductivity
-    unit: m/s
-  - name: porosity
-    canonical_id: porosity
-    unit: fraction
-  serialization:
-  - format: Binary (.gempy)
-    tool: save_model/load_model
-  - format: VTK (.vtk)
-    tool: gempy_viewer export
-  - format: CSV (.csv)
-    tool: pandas export
-  - format: JSON (.json)
-    tool: json_geomodel_encoder
+    unit: dimensionless (potential)
+    description: Interpolated 3D scalar/potential field whose isosurfaces define geological interfaces
+      (one per structural group).
+    validation_rank: 2
+    emitted_in: Solutions.octrees_output / ExportedFields.scalar_field
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Potential field is dimensionless and defined up to the chosen drift/rescaling; only relative
+          isosurface geometry is comparable.
+      detrending_options:
+      - none
+  - name: surfaces_and_sections
+    unit: meters (mesh geometry); categorical (map/section lithology)
+    description: Triangulated surface meshes (vertices/edges), 2D cross-sections, and geological maps.
+    validation_rank: 3
+    emitted_in: Solutions.dc_meshes (vertices/edges); gempy_viewer matplotlib/PyVista renderers
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Meshes may be non-watertight near faults/pinchouts (extraction artifact); prefer the block model
+          for quantitative geometry comparison.
+      detrending_options:
+      - none
+  - name: uncertainty_distribution
+    unit: dimensionless (Shannon information entropy / probability)
+    description: Per-cell subsurface probability / information-entropy fields from stochastic (ensemble)
+      geological modeling — quantifies geometry/topology uncertainty.
+    validation_rank: 4
+    emitted_in: ensemble of Solutions (PyTorch backend stochastic runs)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Derived from an ensemble, not a single deterministic field; comparison is against entropy/uncertainty
+          maps, not point lithology.
+      detrending_options:
+      - none
+  - name: geophysics_forward
+    unit: mGal (gravity) / nT (total magnetic intensity)
+    description: Forward-modeled gravity and TMI response from the subsurface 3D lithology block (optional,
+      CENTERED grid).
+    validation_rank: 5
+    emitted_in: Solutions.fw_gravity / Solutions.fw_magnetic
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Forward response depends on per-unit density/susceptibility assignment; comparison only meaningful
+          when those are constrained.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Single-station gravity/magnetic value comparison.
+      detrending_options:
+      - none
+  - name: topology
+    unit: categorical (adjacency graph)
+    description: Adjacency/topology graph (edges + counts) between subsurface geologic regions.
+    validation_rank: 6
+    emitted_in: Solutions topology_edges / topology_count (gempy_plugins)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Compared as graph-structure agreement (region adjacency match), not numeric error.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: Coordinates in km instead of m cause paper-thin layers
+  symptom: 'Model extent appears correct but all geological layers are paper-thin or surfaces cluster
+    at one elevation. Cross-sections show no meaningful stratigraphy.
+
+    '
+  diagnosis: 'Coordinates are in kilometers but GemPy expects meters. The extent spans e.g., 0–2 km but
+    is interpreted as 0–2 meters, compressing all geology into a 2 m cube.
+
+    ; GemPy uses meters internally. If CSV data is in km, all distances are 1000x too small. The model
+    computes but produces meaningless thin l'
+  remedy: Multiply all X, Y, Z values by 1000 (km → m conversion); convert_geological_data; ['Check typical
+    coordinate values — if < 100, likely in km', 'Use --coord-unit km in convert_geological_data.py',
+    'Verify extent after conversion spans realistic distances']; convert_geological_data validates coordinat
+  severity: silent
+- id: dt_002
+  symptom: 'Orientation vectors produce surfaces that are nearly vertical or point in wrong directions.
+    Geological structure looks rotated or inverted compared to field observations.
+
+    '
+  diagnosis: 'Azimuth values are in radians (0–6.28) instead of degrees (0–360). The sin/cos conversion
+    produces incorrect gradient components.
+
+    ; GemPy''s azimuth_dip_to_gradient conversion expects degrees. If radians are passed, an azimuth of
+    1.57 rad (=90°) is treated as 1.57° — almost due North instead of due E'
+  remedy: 'Convert azimuth from radians to degrees: azimuth_deg = azimuth_rad * 180 / pi; convert_geological_data;
+    ["Check max azimuth value — if < 7, it''s in radians", ''Multiply all azimuth values by 180/pi'',
+    ''Similarly check dip values'']; convert_geological_data validates azimuth range (0-360)'
+  severity: silent
+- id: dt_003
+  symptom: 'All geological surfaces appear inverted — formations that should dip gently appear nearly
+    vertical, and vice versa. Anticlines appear as synclines.
+
+    '
+  diagnosis: 'Dip angle measured from vertical (0° = vertical) instead of from horizontal (0° = horizontal).
+    A 10° dip-from-vertical becomes a near-horizontal surface when interpreted as dip-from-horizontal.
+
+    ; Geological convention varies: some surveys measure dip from the vertical axis. GemPy expects dip
+    from ho'
+  remedy: 'Convert: dip_from_horizontal = 90 - dip_from_vertical; convert_geological_data; [''Check if
+    horizontal layers have dip near 90° (suggests from-vertical convention)'', ''Subtract dip values from
+    90'']; Document source survey convention before conversion'
+  severity: silent
+- id: dt_004
+  symptom: 'Layer stacking order is reversed — the youngest formation appears at the bottom and the oldest
+    at the top. Fault offset direction is opposite to expected.
+
+    '
+  diagnosis: 'Polarity sign is flipped (+1 should be -1 or vice versa). The gradient vector points in
+    the opposite direction, reversing the scalar field ordering.
+
+    ; GemPy''s scalar field increases in the direction of the gradient. A flipped polarity reverses which
+    side of a surface is "older" vs "younger", inverti'
+  remedy: Multiply polarity by -1 for all orientations; convert_geological_data; ['Check if Z-gradient
+    (G_z) has unexpected sign', 'For normally stacked layers, G_z should be positive (pointing up)', 'Negate
+    polarity column and recompute']; Verify one known contact (e.g., basement top) has correct orientation
   severity: silent
 - id: dt_005
-  description: Z-axis extent inverted (min > max) causes crash or empty model
+  symptom: 'Model creation fails with an error about invalid extent, or the model produces an empty grid
+    with zero points. compute_model() may crash or return immediately with no results.
+
+    '
+  diagnosis: 'The Z-axis extent is inverted: z_min > z_max. For example, extent=[0, 1000, 0, 1000, 0,
+    -500] puts the surface (0) as min and depth (-500) as max.
+
+    ; GemPy requires extent as [xmin, xmax, ymin, ymax, zmin, zmax] where each min < max. Since geological
+    depth is typically negative, z_min should be the d'
+  remedy: 'Swap z_min and z_max so that z_min < z_max; build_structural_params; [''Check extent: z_min
+    must be < z_max'', ''For models below sea level: extent=[..., -1000, 0] not [..., 0, -1000]'']; build_structural_params
+    validates z_min < z_max'
   severity: fatal
+- id: dt_006
+  symptom: 'Interpolation produces asymmetric surfaces even for symmetric input data. Surfaces are biased
+    toward one side of the model. Fit to data points is visibly uneven.
+
+    '
+  diagnosis: 'Gradient vectors are not normalized to unit length. A gradient with magnitude 2 has double
+    the influence of one with magnitude 1, creating artificial bias in the interpolation.
+
+    ; GemPy''s co-kriging treats gradient magnitude as a weight. Non-unit gradients bias the scalar field,
+    pulling surfaces towa'
+  remedy: 'Normalize all gradient vectors to unit length: G / |G|; convert_geological_data; [''Compute
+    |G| = sqrt(G_x² + G_y² + G_z²) for each orientation'', ''Divide each component by |G|'', ''Verify
+    |G| = 1.0 ± 0.01 after normalization'']; convert_geological_data normalizes automatically'
+  severity: degraded
+- id: dt_007
+  symptom: 'Model computes successfully but surfaces are over-smoothed and don''t pass through the input
+    data points. The block model shows smooth, broad formations that ignore local data constraints.
+
+    '
+  diagnosis: 'Nugget value is too large (> 0.1 for surface points). The regularization overwhelms the
+    data signal, allowing surfaces to deviate significantly from input points.
+
+    ; The nugget effect (Tikhonov regularization) adds diagonal noise to the covariance matrix. Large
+    nuggets effectively tell the interpolat'
+  remedy: 'Reduce nugget_surface_points to 0.00002 (default) or optimize with optimize_nuggets(); run_gempy_model;
+    [''Check current nugget values in the structural elements'', ''Set nugget_surface_points back to 0.00002'',
+    ''If still too smooth, try 0.000001'', ''If matrix becomes singular, use optimize_nuggets()'']; '
+  severity: degraded
 - id: dt_008
-  description: Nugget too small causes singular matrix crash
+  symptom: 'compute_model() crashes with LinAlgError: singular matrix, or produces NaN/Inf in the scalar
+    field. Model fails to converge.
+
+    '
+  diagnosis: 'Nugget value is too small (< 1e-8), making the covariance matrix numerically singular. Alternatively,
+    data points are nearly coincident (distance < 1e-6 m).
+
+    ; The covariance matrix inversion requires regularization (nugget) for numerical stability. Without
+    sufficient regularization, floating-point e'
+  remedy: Increase nugget to 0.00002 (default) or use optimize_nuggets(); run_gempy_model; ['Check for
+    duplicate/near-coincident data points and remove them', 'Increase nugget_surface_points to 0.00002',
+    'Increase nugget_orientations to 0.01', 'If persists, use optimize_nuggets() with PyTorch backend'];
+    build
   severity: fatal
+- id: dt_009
+  symptom: 'Model geometry is severely distorted — features appear stretched in one direction or the aspect
+    ratio is wrong. Circular features in reality appear elliptical in the model.
+
+    '
+  diagnosis: 'Input data mixes coordinate reference systems — e.g., X in WGS84 degrees and Y in UTM meters,
+    or surface points in one CRS and orientations in another.
+
+    ; GemPy treats all coordinates as a Cartesian system. If X is in degrees (0.01° ≈ 1 km) and Y is in
+    meters, the X-axis is compressed by ~100,000x re'
+  remedy: Convert all data to a consistent projected CRS (e.g., UTM) before import; convert_geological_data;
+    ['Identify the CRS of each input file', 'Reproject to a common UTM zone', 'Verify X and Y are both
+    in meters']; Check coordinate ranges — if X < 180 and Y > 10000, likely mixed CRS
+  severity: silent
+- id: dt_010
+  symptom: 'Topography surface intersects or clips through geological surfaces that should be underground.
+    Surface formations appear above the ground surface in cross-sections.
+
+    '
+  diagnosis: 'Topography elevation data is in different units (e.g., feet or cm) than the model coordinates
+    (meters). A topography at "500 feet" is interpreted as "500 meters", placing it too high.
+
+    ; GemPy doesn''t auto-convert topography units. If the DEM is in feet (152 m = 500 ft), but interpreted
+    as 500 m, the'
+  remedy: 'Convert topography to same units as model coordinates (meters); convert_geological_data; [''Check
+    DEM elevation range vs model Z extent'', ''If DEM max >> model z_max, units likely differ'', ''Multiply
+    topography by conversion factor (ft→m: 0.3048)'']; Compare topography range with surface point Z range
+    b'
+  severity: silent
+- id: dt_011
+  symptom: 'Erosion patterns are geologically impossible — older formations erode younger ones, or unconformity
+    surfaces cut the wrong layers. The block model shows a stratigraphic sequence that violates the known
+    geological history.
+
+    '
+  diagnosis: 'Structural groups are in the wrong order. GemPy processes groups from index 0 (youngest/top)
+    to last (oldest/bottom). If the order is reversed, old formations erroneously erode young ones.
+
+    ; In map_stack_to_surfaces(), the first group in the dict is youngest. For Python < 3.7, dict ordering
+    was not '
+  remedy: 'Reorder groups so youngest is first and oldest is last; build_structural_params; [''Review
+    geological history: identify youngest → oldest sequence'', ''List youngest group first in mapping_object'',
+    ''Faults should be listed before the series they affect'']; build_structural_params cross-validates
+    group o'
+  severity: silent
+- id: dt_012
+  symptom: 'Fault surface is visible in the model (as a formation boundary) but does not actually displace
+    the surrounding geology. Layers pass through the fault plane without offset.
+
+    '
+  diagnosis: 'The fault relation matrix entry is missing. set_is_fault() marks the group as a fault, but
+    set_fault_relation() must also specify which series the fault affects. Without this, the fault geometry
+    exists but has no mechanical effect.
+
+    ; GemPy separates fault geometry (set_is_fault) from fault mechanics'
+  remedy: 'Call set_fault_relation() with correct boolean matrix; build_structural_params; [''Create boolean
+    matrix of shape (n_groups, n_groups)'', ''Set fr[fault_idx, target_idx] = True for each affected series'',
+    ''Remember: fault relations are NOT symmetric'']; build_structural_params validates fault relations
+    e'
+  severity: silent
+- id: dt_013
+  symptom: 'Thin geological layers (< 10m) disappear from the block model. The layer exists in the scalar
+    field but is not represented in the discrete block model. Cross-sections show missing layers.
+
+    '
+  diagnosis: 'OCTREE refinement level is too low. At refinement=4, the minimum cell size may be larger
+    than thin layer thickness, causing the layer to be missed during discretization.
+
+    ; OCTREE grids adapt resolution based on scalar field gradients, but with low refinement, even adaptive
+    cells may be too coarse to'
+  remedy: Increase refinement from 4 to 6 or 8; run_gempy_model; ['Check minimum layer thickness in the
+    input data', 'Increase refinement to 6 (default) or 8 (high detail)', 'Alternatively, switch to DENSE
+    grid with resolution < layer thickness', 'Monitor memory usage — refinement 8 uses ~8x more cells
+    than 6
+  severity: degraded
 - id: dt_014
-  description: Dense grids >100^3 can cause OOM
+  symptom: 'Python process crashes with MemoryError or the system becomes unresponsive during compute_model().
+    OOM killer may terminate the process.
+
+    '
+  diagnosis: 'The computation grid has too many points. A DENSE grid of 200x200x200 = 8M cells, each requiring
+    multiple float64 values, can consume 10+ GB of RAM. With multiple structural groups, memory usage
+    multiplies.
+
+    ; Memory scales as O(n_grid_points * n_surfaces * n_data_points) for the interpolation. Large'
+  remedy: 'Reduce grid size or switch to OCTREE; run_gempy_model; [''Switch from DENSE to OCTREE grid
+    (adaptive resolution)'', ''Reduce DENSE resolution (e.g., 100x100x100 → 50x50x50)'', ''Reduce OCTREE
+    refinement (e.g., 8 → 6)'', ''Process subdomains independently if needed'']; build_structural_params
+    warns if total '
   severity: fatal
+- id: dt_015
+  symptom: 'Extracted mesh surfaces have holes, self-intersections, or disconnected fragments. VTK export
+    shows broken surfaces near fault intersections or at model boundaries.
+
+    '
+  diagnosis: 'Marching cubes / dual contouring algorithms can produce degenerate triangles near faults,
+    model boundaries, or where the scalar field has sharp gradients. These are numerical artifacts of
+    the mesh extraction, not the interpolation itself.
+
+    ; The scalar field is continuous and correct, but discretizat'
+  remedy: Increase grid resolution near faults, or post-process meshes; parse_gempy_output; ['Increase
+    OCTREE refinement to better resolve sharp features', 'Use scikit-image or PyMeshFix for mesh repair',
+    'For visualization only, small holes may be acceptable', 'For volume calculations, use block model
+    instea
+  severity: degraded
 - id: dt_016
-  description: gempy/gempy_engine version mismatch causes ImportError
+  symptom: 'ImportError when calling compute_model(): cannot import name from gempy_engine. Or unexpected
+    behavior due to API changes between gempy and gempy_engine versions.
+
+    '
+  diagnosis: 'Version mismatch between gempy and gempy_engine packages. GemPy v3 requires specific gempy_engine
+    versions (>=2026.0.1dev0,<2026.1.0). Installing from different sources can produce incompatible versions.
+
+    ; GemPy v3 split into separate packages (gempy, gempy_engine, gempy_viewer). These packages have'
+  remedy: 'Install compatible versions: pip install ''gempy[base]''; None; [''Check versions: pip show
+    gempy gempy-engine gempy-viewer'', "Reinstall from PyPI: pip install ''gempy[base]'' --force-reinstall",
+    ''For development: install from same git commit'']; Always install gempy with extras: pip install
+    ''gempy[base]'''
   severity: fatal
+- id: dt_017
+  symptom: 'Model is created but the structural frame shows "Default" elements only. Surface points are
+    loaded but not assigned to named formations. All points appear as a single unnamed surface.
+
+    '
+  diagnosis: 'The CSV column name for formation doesn''t match the ImporterHelper default ("formation").
+    If the CSV uses "Layer", "Unit", or "Name", the importer assigns all points to the default surface.
+
+    ; ImporterHelper has configurable column names via surface_name parameter (default: "formation").
+    If the CSV u'
+  remedy: Remap formation column or rename in CSV; convert_geological_data; ['Check CSV header for the
+    formation/layer column name', 'Use --col-formation in convert_geological_data.py to remap', "Or rename
+    the column to 'formation' in the CSV"]; convert_geological_data standardizes to 'formation' column
+  severity: silent

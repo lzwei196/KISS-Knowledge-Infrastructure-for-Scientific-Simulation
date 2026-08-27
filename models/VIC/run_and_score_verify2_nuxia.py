@@ -53,6 +53,7 @@ from pathlib import Path
 # system python3 + ~/.local ONLY. Do NOT prepend python_env/site-packages: it ships
 # a Py2-era pathlib.py backport (`from collections import Sequence`) that shadows the
 # stdlib and breaks rasterio/geopandas (dt in Bengbu verifier).
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 
 import numpy as np
 import pandas as pd
@@ -192,7 +193,8 @@ def preflight():
     try:
         p = subprocess.run(
             [sys.executable,
-             "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/validators/preflight_forcing.py", FORCING_1D, "--source", "auto"],
+             "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/"
+             "validators/preflight_forcing.py", FORCING_1D, "--source", "auto"],
             capture_output=True, text=True, timeout=3600)
         out = p.stdout + p.stderr
         import re

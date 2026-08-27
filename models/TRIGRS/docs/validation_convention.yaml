@@ -1,0 +1,262 @@
+schema_version: 1
+model_id: TRIGRS
+domain: hazard
+generated_by: "Step-B agent (GPT-5 Codex) - validation convention"
+generated_at: 2026-08-14
+
+# Grounded in the fetched TRIGRS / shallow-landslide validation set and one locally cached
+# open hydrology threshold paper. Numeric bands are used only where a fetched text gave a
+# threshold or a benchmark target. Null bands mark outputs for which no direct convention was
+# found under the campaign search cap.
+
+references:
+  raia2014:
+    doi: 10.5194/gmd-7-495-2014
+    title: "Improving predictive power of physically based rainfall-induced shallow landslide models: a probabilistic approach"
+    venue: "Geosci. Model Dev."
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-7-495-2014.txt
+  montrasio2011:
+    doi: 10.5194/nhess-11-1927-2011
+    title: "Towards a real-time susceptibility assessment of rainfall-induced shallow landslides on a regional scale"
+    venue: "Nat. Hazards Earth Syst. Sci."
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_nhess-11-1927-2011.txt
+  reichenbach2018:
+    doi: 10.1016/j.earscirev.2018.03.001
+    title: "A review of statistically-based landslide susceptibility models"
+    venue: "Earth-Science Reviews"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.earscirev.2018.03.001.txt
+  zhang2016:
+    doi: 10.5194/hess-20-5035-2016
+    title: "iCRESTRIGRS: a coupled modeling system for cascading flood-landslide disaster forecasting"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-5035-2016.txt
+  bordoni2015:
+    doi: 10.5194/nhess-15-1025-2015
+    title: "Site-specific to local-scale shallow landslides triggering zones assessment using TRIGRS"
+    venue: "Nat. Hazards Earth Syst. Sci."
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_nhess-15-1025-2015.txt
+  godt2012:
+    doi: 10.1029/2011WR011408
+    title: "Stability of infinite slopes under transient partially saturated seepage conditions"
+    venue: "Water Resources Research"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2011wr011408.txt
+  wijayarathne2020:
+    doi: 10.1016/j.ejrh.2019.100646
+    title: "Identification of hydrological models for operational flood forecasting in St. John's, Newfoundland, Canada"
+    venue: "Journal of Hydrology: Regional Studies"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.ejrh.2019.100646.txt
+
+validation:
+  - dag_variable: minimum_factor_of_safety
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: tpr_fpr_ratio
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "TRIGRS literature supersedes raw CSI with ROC/confusion-matrix skill; Raia 2014 states acceptable prediction requires TPR/FPR > 1."
+        cites: [raia2014]
+    secondary_metrics:
+      - metric: auc
+        direction: maximize
+        status: supportive
+        ceiling_reason: "TRIGRS benchmark papers report AUC/global accuracy rather than CSI; Raia reports AUC 0.65-0.73, Montrasio reports TRIGRS AUC 0.686, and Zhang reports TRIGRS AUC 0.90."
+        cites: [raia2014, montrasio2011, zhang2016]
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Binary Fs<1 maps are judged against landslide inventories using confusion matrices, ROC curves, sensitivity, specificity, and independent prediction performance; single local overlap metrics cannot capture inventory uncertainty, mapping-unit effects, and different meanings of false positives versus false negatives."
+        cites: [raia2014, reichenbach2018]
+    validated_when: "For a binary unstable/stable map derived from Fs<1, TPR/FPR >= 1 against an independent or withheld landslide inventory; AUC, sensitivity, specificity, and accuracy should be reported as supporting diagnostics."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      The dag's csi is not used as a numeric gate because the fetched TRIGRS papers validate minimum
+      factor-of-safety maps through ROC/confusion-matrix skill. Raia 2014: "An acceptable prediction
+      requires TPR/FPR > 1"; the same paper says AUC 0.5 is random and AUC 1 is perfect. Reichenbach
+      2018 emphasizes that prediction performance against independent landslide information is
+      equivalent to validation and recommends multiple metrics.
+
+  - dag_variable: minimum_factor_of_safety
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: rmse_fs
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.06, good: null, satisfactory: 0.15}
+        pass_band: satisfactory
+        band_note: "Single instrumented-slope benchmark: Godt 2012 reports factor-of-safety RMSE of 0.15 at 1.0 m and 0.06 at 1.5 m."
+        cites: [godt2012]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The dag metric is retained only as context; fetched field studies compare calculated and modeled Fs with RMSE, not PBIAS."
+        cites: [godt2012]
+    validated_when: "At an instrumented/back-analyzed slope, modeled Fs should match field-derived Fs with RMSE <= 0.15 for the relevant depth/time; PBIAS has no fetched numeric convention."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      Godt 2012 provides a benchmark table for "fit between observed and simulated quantities" and
+      lists RMSE for F calculated from field data versus simulated pressure head. This is a point-scale
+      mechanism benchmark, not a broad TRIGRS acceptance tier.
+
+  - dag_variable: depth_of_minimum_FS
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS threshold for depth of minimum Fs or rupture-surface depth."
+        cites: []
+    secondary_metrics:
+      - metric: absolute_error_depth
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Observed rupture depths are used qualitatively or in back analysis; Bordoni 2015 reports shallow failures with sliding surfaces between 0.5 and 2.0 m but does not define an error band."
+        cites: [bordoni2015]
+    validated_when: "UNRESOLVED - compare to observed/back-analyzed rupture depth where available, but do not auto-validate because no fetched numeric band exists."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Fetched TRIGRS studies discuss observed failure depths and soil-bedrock contacts, but did not
+      publish a pass/fail threshold for the depth of minimum factor of safety.
+
+  - dag_variable: pressure_head_at_min_FS
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: kPa
+        bands: {very_good: null, good: 1.5, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "Bordoni 2015 treats differences >2 kPa as exceptional and notes tensiometer accuracy of +/-1.5 kPa."
+        cites: [bordoni2015]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is temporal correlation, but fetched TRIGRS pressure-head validation uses RMSE against tensiometer/pore-pressure observations."
+        cites: [bordoni2015]
+      - metric: longer_term_r
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "One-dimensional vertical infiltration can be sufficient for storm-triggering time scales, but longer seasonal simulations may require downslope redistribution/lateral flow that the 1-D setup ignores."
+        cites: [godt2012]
+    validated_when: "Pressure-head time series at the relevant depth should have RMSE <= 2 kPa, preferably within the +/-1.5 kPa tensiometer accuracy envelope; correlation is supportive only."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Bordoni 2015 states that TRIGRS-unsaturated adequately models the increase in pore pressure
+      during rainfall, that differences greater than 2 kPa were generally not found, and that the
+      tensiometers had accuracy equal to +/-1.5 kPa.
+
+  - dag_variable: water_table_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched TRIGRS paper gives a numeric correlation threshold for water-table-depth time series."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Water-table position is a key initial/boundary condition and should be checked against monitoring wells or piezometers, but fetched papers do not define a numeric RMSE band for water-table depth itself."
+        cites: [zhang2016, godt2012]
+      - metric: seasonal_skill
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Godt 2012 notes that 1-D infiltration may be sufficient over typical storm-triggering time scales, while longer seasonal simulations may be improved by considering downslope redistribution of soil water."
+        cites: [godt2012]
+    validated_when: "UNRESOLVED - compare water-table-depth dynamics to well/piezometer observations, but do not auto-validate because no fetched numeric band exists."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Zhang 2016 says iCRESTRIGRS improves over stand-alone TRIGRS by providing more accurate initial
+      conditions such as soil saturation and depth of the water table. That supports checking this
+      output, but not a numeric pass threshold.
+
+  - dag_variable: actual_infiltration_rate
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred hydrologic time-series convention: Wijayarathne 2020 says NSE > 0.50 is satisfactory for simulated flows."
+        cites: [wijayarathne2020]
+    secondary_metrics:
+      - metric: relative_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "For TRIGRS-coupled hydrology, Zhang 2016 evaluates hydrographs with relative bias, Pearson correlation, and Nash-Sutcliffe efficiency; no direct infiltration-rate bias threshold was fetched."
+        cites: [zhang2016]
+    validated_when: "If plot/column infiltration observations exist, NSE >= 0.5 is the transferred hydrologic time-series threshold; report bias as supportive because no fetched infiltration-specific band exists."
+    evidence_strength: moderate
+    confidence: 0.45
+    notes: >-
+      This is a transferred hydrologic convention, not a TRIGRS infiltration benchmark. Zhang 2016
+      shows that stand-alone TRIGRS infiltration can be much larger than coupled iCRESTRIGRS
+      infiltration during Hurricane Ivan, so direct infiltration observations should be preferred.
+
+  - dag_variable: surface_runoff
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI threshold for TRIGRS surface-runoff spatial snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: hydrograph_nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Stand-alone TRIGRS uses simple excess-infiltration and runoff routing, maintains water balance each step, and does not carry runoff over time; Zhang 2016 evaluates coupled runoff by hydrographs rather than spatial runoff CSI."
+        cites: [zhang2016]
+      - metric: runoff_nse_threshold
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For streamflow-style runoff validation, a transferred hydrologic convention is NSE > 0.50 satisfactory, but this is not a direct spatial-runoff CSI rule."
+        cites: [wijayarathne2020]
+    validated_when: "UNRESOLVED for spatial CSI - compare runoff fields only qualitatively or with event-water observations; use hydrograph NSE only when routing to observed discharge is part of the model setup."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Zhang 2016 reports modeled hourly hydrographs with CC, relative bias, and NSCE, and states that
+      modeled hydrographs show generally good agreement. It also states that TRIGRS and iCRESTRIGRS
+      differ mainly in infiltration and runoff routing; no fetched paper supplied a spatial CSI threshold.
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 model evaluation guidelines update"
+    doi: 10.13031/trans.58.10715
+    needed_for: [actual_infiltration_rate, surface_runoff]
+  - ref: "Moriasi et al. 2007 model evaluation guidelines for streamflow NSE/PBIAS/RSR tiers"
+    doi: 10.13031/2013.23153
+    needed_for: [actual_infiltration_rate, surface_runoff]
+  - ref: "Reliability and Sensitivity Analysis of Rainfall-Induced Shallow Landslides Using TRIGRS Model"
+    doi: 10.2139/ssrn.4076168
+    needed_for: [minimum_factor_of_safety, depth_of_minimum_FS]

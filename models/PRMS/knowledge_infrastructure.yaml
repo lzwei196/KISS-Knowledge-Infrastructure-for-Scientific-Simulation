@@ -1,184 +1,137 @@
-package:
-  name: hydrocraft-prms-hydrology
-  version: "1.0.0"
-  created: "2026-03-25"
-  domain: hydrology
-  target_model: "PRMS v5.1.0"
-  binary_path: "prms/prms_hpc"
-  source_language: "C + Fortran 90"
-  build_system: make
-  authors:
-    - "Jianyun Zhang Research Group, Hohai University"
-  description: >
-    Knowledge infrastructure for the USGS Precipitation-Runoff Modeling System (PRMS).
-    Distributed-parameter watershed model using Hydrologic Response Units (HRUs).
-    Simulates precipitation distribution, snow processes, surface runoff, soil zone,
-    groundwater, and streamflow routing at daily timestep.
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
+package:
+  name: PRMS
+  language: fortran
+  implementation:
+    id: prms-hpc-510
+    version: 5.1.0 (2020-05-01)
+    provenance: Fortran 90 process modules + C MMF framework; USGS PRMS 5.1.0 from github.com/nhm-usgs/prms.
+  scientific_reference_version: PRMS-IV (Markstrom et al. 2015, USGS TM 6-B7), as implemented in USGS
+    Fortran PRMS 5.1.0
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PRMS/source/repo/prms/prms_hpc
+    type: work_dir
 pipeline:
   stages:
-    - id: s0_config
-      name: Configuration
-      description: Set basin name, simulation period, module selection, file paths
-      knowledge_type: procedural
-      depends_on: []
-      tools: []
-      milestones:
-        - id: m_s0_config
-          description: Control file created with valid paths and module selections
-          verification: "Control file exists and contains required variables"
-
-    - id: s1_domain
-      name: Domain / HRU Setup
-      description: Define HRUs from DEM and basin shapefile; compute areas, elevations, centroids
-      knowledge_type: procedural
-      depends_on: []
-      tools: []
-      milestones:
-        - id: m_s1_domain
-          description: HRU and segment dimensions defined; spatial attributes computed
-          verification: "nhru, nsegment dimensions set; hru_area, hru_elev values populated"
-
-    - id: s2_soil
-      name: Soil Parameters
-      description: Derive soil hydraulic properties from HWSD or SoilGrids for each HRU
-      knowledge_type: procedural
-      depends_on:
-        - s1_domain
-      tools:
-        - id: convert_soil_to_prms
-          script: tools/s2_soil/convert_soil_to_prms.py
-          purpose: "Convert HWSD/SoilGrids soil texture to PRMS parameters (soil_type, soil_moist_max, etc.)"
-      milestones:
-        - id: m_s2_soil
-          description: Soil parameters generated for all HRUs
-          verification: "JSON output contains soil_type, soil_moist_max, soil_rechr_max for nhru HRUs"
-
-    - id: s3_vegetation
-      name: Vegetation / Land Cover
-      description: Classify HRU vegetation from AVHRR/MODIS; set cover type, density, interception
-      knowledge_type: procedural
-      depends_on:
-        - s1_domain
-      tools: []
-      milestones:
-        - id: m_s3_vegetation
-          description: Vegetation parameters set for all HRUs
-          verification: "cov_type, covden_sum, covden_win populated"
-
-    - id: s4_forcing
-      name: Meteorological Forcing
-      description: Convert CMFD/MSWX/NASA POWER to PRMS data file format with unit conversions
-      knowledge_type: procedural
-      depends_on:
-        - s1_domain
-      tools:
-        - id: convert_forcing_to_prms
-          script: tools/s4_forcing/convert_forcing_to_prms.py
-          purpose: "Convert gridded forcing to PRMS data file (K→°F, mm→inches, W/m²→Langleys)"
-      milestones:
-        - id: m_s4_forcing
-          description: PRMS data file created with correct units
-          verification: "Data file has #### delimiters, correct variable count, physical value ranges"
-
-    - id: s5_parameters
-      name: Model Parameters
-      description: Assemble complete PRMS parameter file from soil, vegetation, and domain data
-      knowledge_type: procedural
-      depends_on:
-        - s2_soil
-        - s3_vegetation
-      tools:
-        - id: generate_prms_params
-          script: tools/s5_parameters/generate_prms_params.py
-          purpose: "Generate PRMS parameter file with all dimensions, types, and values"
-      milestones:
-        - id: m_s5_parameters
-          description: Complete parameter file with all required dimensions and parameters
-          verification: "Parameter file has ** Dimensions ** and ** Parameters ** sections; type codes correct"
-
-    - id: s6_run
-      name: Model Execution
-      description: Compile PRMS (if needed) and execute with the control file
-      knowledge_type: procedural
-      depends_on:
-        - s4_forcing
-        - s5_parameters
-      tools:
-        - id: run_prms
-          script: tools/s6_run/run_prms.py
-          purpose: "Build and run PRMS binary with preflight checks and output validation"
-      milestones:
-        - id: m_s6_run
-          description: PRMS completes without error; output files created
-          verification: "Return code 0; CSV output file exists and is non-empty"
-
-    - id: s7_postprocess
-      name: Output Parsing
-      description: Extract discharge, soil moisture, ET, SWE from PRMS output to standard CSV
-      knowledge_type: procedural
-      depends_on:
-        - s6_run
-      tools:
-        - id: parse_prms_output
-          script: tools/s7_postprocess/parse_prms_output.py
-          purpose: "Parse PRMS CSV/statvar output to standard format with annual summaries"
-      milestones:
-        - id: m_s7_postprocess
-          description: Parsed CSV with date, discharge, ET, SWE columns
-          verification: "Output CSV has headers; row count matches simulation days"
-
-    - id: s8_validation
-      name: Validation
-      description: Compare simulated discharge with observed; compute NSE, KGE, PBIAS
-      knowledge_type: procedural
-      depends_on:
-        - s7_postprocess
-      tools: []
-      milestones:
-        - id: m_s8_validation
-          description: Validation metrics computed and validation figure generated
-          verification: "Metrics JSON contains NSE, KGE, PBIAS, r values"
-
-skill_documents:
-  - id: sd_s0_config
-    path: docs/s0_configuration_skill.md
-    stage: s0_config
-  - id: sd_s1_domain
-    path: docs/s1_domain_setup_skill.md
-    stage: s1_domain
-  - id: sd_s2_soil
-    path: docs/s2_soil_parameters_skill.md
-    stage: s2_soil
-  - id: sd_s4_forcing
-    path: docs/s4_forcing_skill.md
-    stage: s4_forcing
-  - id: sd_s5_params
-    path: docs/s5_parameters_skill.md
-    stage: s5_parameters
-  - id: sd_s6_run
-    path: docs/s6_execution_skill.md
-    stage: s6_run
-  - id: sd_s7_post
-    path: docs/s7_postprocess_skill.md
-    stage: s7_postprocess
-
-diagnostics:
-  path: diagnostics/triplets.yaml
-  count: 30
-  failure_domains:
-    - unit_conversion
-    - parameter_format
-    - path_resolution
-    - compilation
-    - runtime
-    - silent_error
-    - dependency_mismatch
-
+  - s0_basin_configuration
+  - s1_forcing_preparation
+  - s2_parameter_preparation
+  - s3_control_file_generation
+  - s4_model_execution
+  - s5_output_analysis
+  - s6_calibration
+  - s7_troubleshooting
+tools:
+  count: 5
+  files:
+  - tools/convert_forcing_to_prms.py
+  - tools/convert_params_to_prms.py
+  - tools/generate_control_file.py
+  - tools/parse_prms_output.py
+  - tools/run_prms.py
+inputs:
+  forcing:
+  - name: tmax
+    unit: degrees Fahrenheit
+  - name: tmin
+    unit: degrees Fahrenheit
+  - name: precip
+    unit: inches/day
+  - name: solar radiation
+    unit: Langleys/day
+  - name: humidity
+    unit: percent (0-100)
+  - name: wind speed
+    unit: m/s
+  - name: pan evaporation
+    unit: inches/day
+  - name: observed runoff
+    unit: cfs (runoff_units=0)
+  parameters:
+  - name: hru_area
+    unit: acres
+  - name: hru_elev
+    unit: feet or meters (per elev_units)
+  - name: hru_lat
+    unit: degrees
+  - name: cov_type / covden_sum / covden_win
+    unit: categorical / fraction
+  - name: hru_percent_imperv
+    unit: fraction
+  - name: soil_type
+    unit: categorical (1=sand,2=loam,3=clay)
+  - name: soil_moist_max
+    unit: inches
+  - name: soil_rechr_max
+    unit: inches
+  - name: smidx_coef / smidx_exp
+    unit: fraction / (1/inch)
+  - name: carea_max
+    unit: fraction
+  - name: slowcoef_lin / slowcoef_sq / fastcoef_lin
+    unit: fraction/day
+  - name: soil2gw_max
+    unit: inches
+  - name: pref_flow_den
+    unit: fraction
+  - name: ssr2gw_rate
+    unit: fraction/day
+  - name: gwflow_coef
+    unit: fraction/day
+  - name: tmax_allsnow / tmax_allrain
+    unit: degrees Fahrenheit
+  - name: jh_coef / jh_coef_hru
+    unit: 1/degF / degF
+  - name: dday_intcp / dday_slope / radmax
+    unit: various
+  - name: rad_trncf / cecn_coef / freeh2o_cap
+    unit: fraction / cal·cm-2·degC-1·day-1 / fraction
+  - name: snarea_curve
+    unit: fraction (ndeplval = 11 values)
+  initial_conditions:
+  - name: soil_moist_init_frac
+    unit: fraction of soil_moist_max
+  - name: soil_rechr_init_frac
+    unit: fraction of soil_rechr_max
+  - name: ssstor_init
+    unit: inches
+  - name: gwstor_init
+    unit: inches
+  boundary_conditions:
+  - name: start_time / end_time
+    unit: array of 6 long integers [year, month, day, hour, min, sec]
+  - name: temp_module / precip_module / solrad_module / et_module / srunoff_module / strmflow_module /
+      transp_module
+    unit: module selector
+  - name: elev_units / temp_units / precip_units / runoff_units
+    unit: unit-system switch
+  - name: initial_deltat
+    unit: hours
+  - name: prms_warmup
+    unit: years
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - basin_cfs
+  - basin_stflow_out
+  - seg_outflow
+  - basin_actet
+  - basin_pweqv
+  - basin_soil_moist
+  - basin_ppt
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=1.000, KGE=1.000, R=1.000, 2 scorecard(s)'
+  metrics:
+    best_nse: 1.0
+    best_kge: 0.99998
+    best_r: 1.0
 summary:
-  tools: 5
-  tool_lines: 1818
-  skill_documents: 7
-  diagnostic_triplets: 30
-  silent_errors: 18
-  failure_domains: 7
+  total_tools: 5
+  total_stage_docs: 8
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

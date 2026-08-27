@@ -1,213 +1,227 @@
 schema_version: 1
 model_id: HydroCNHS
 domain: hydrology
-generated_by: "self-improve session (Claude Opus 4.8, 1M) — validation-convention Step-B, general schema"
+generated_by: self-improve session (Claude Opus 4.8, 1M) — validation-convention Step-B, general schema
 generated_at: 2026-07-09
-
-# HydroCNHS is a semi-distributed rainfall-runoff + Lohmann-routing model coupled to agent-based
-# human systems (reservoirs via Dam API, diversions via RiverDiv API, conveyance, in-situ agents).
-# Its primary return is daily routed streamflow (Q_routed); it also exposes local runoff (Q_runoff),
-# Hamon PET, an optional monthly sediment (TSS) mode, and user-defined ABM agent records (reservoir
-# release/storage, diversion volume). All headline numeric bands are grounded in the SWAT/Moriasi
-# hydrologic-modelling convention, which HydroCNHS explicitly adopts (its own paper calibrates against
-# KGE and reports monthly streamflow/reservoir-release/diversion skill in the Tualatin River Basin).
-#
-# GROUNDING: Moriasi et al. (2007) performance tiers are REPRODUCED VERBATIM in a fetched OA paper
-# (Bharati/Neupane 2017, nh.2017.189, Table 4). Arnold et al. (2012, the SWAT calibration+validation
-# paper) states the monthly NSE>0.5 "satisfactory" rule applies to BOTH hydrologic AND pollutant-loss
-# (sediment) evaluations, and NSE>0.75 = "very good". Betrie-style MDPI comparison (hydrology1010020)
-# independently reproduces the flow criteria (NSE>=0.65, PBIAS<=+/-10, RSR<=0.60). The HydroCNHS model
-# paper (Lin et al. 2022) is the model's own benchmark (monthly KGE 0.78-0.96). Bands are plain numbers
-# read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
-#
-# NOT GRADEABLE (no obs binding in obs_map): evapotranspiration (Hamon PET, has_obs_binding=false) ->
-# no block emitted; would require an energy-balance reference ET and would show structural (temperature-
-# driven) bias. The sediment-SPECIFIC PBIAS tier (Moriasi +/-55% satisfactory) is NOT in any fetched
-# paper -> sediment is graded on NSE (which IS grounded for pollutant loss) with PBIAS deferred.
-
 references:
   arnold2012:
     doi: 10.13031/2013.42256
-    title: "SWAT: Model Use, Calibration, and Validation"
-    venue: "Transactions of the ASABE"
+    title: 'SWAT: Model Use, Calibration, and Validation'
+    venue: Transactions of the ASABE
     year: 2012
     oa: green
     resolves: https://swat.tamu.edu/media/99051/azdezasx.pdf
   moriasi_repro_nh2017:
     doi: 10.2166/nh.2017.189
-    title: "Evaluation of the SWAT model performance for simulating river discharge in the Himalayan and lower plain basins"
-    venue: "Hydrology Research (Nordic Hydrology)"
+    title: Evaluation of the SWAT model performance for simulating river discharge in the Himalayan and
+      lower plain basins
+    venue: Hydrology Research (Nordic Hydrology)
     year: 2017
     oa: manual
-    resolves: manual  # reproduces Moriasi et al. 2007 Table 4 (NSE/PBIAS/RSR tiers) verbatim
+    resolves: manual
   mikeswat2014:
     doi: 10.3390/hydrology1010020
-    title: "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT"
-    venue: "Hydrology (MDPI)"
+    title: 'Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT'
+    venue: Hydrology (MDPI)
     year: 2014
     oa: manual
     resolves: https://www.mdpi.com/2306-5338/1/1/20
   lin2022hydrocnhs:
     doi: 10.1061/(ASCE)WR.1943-5452.0001630
-    title: "HydroCNHS: A Python Package of Hydrological Model for Coupled Natural-Human Systems"
-    venue: "J. Water Resources Planning and Management"
+    title: 'HydroCNHS: A Python Package of Hydrological Model for Coupled Natural-Human Systems'
+    venue: J. Water Resources Planning and Management
     year: 2022
     oa: manual
     resolves: https://github.com/philip928lin/HydroCNHS
-
 validation:
-
-  # ===================== DISCHARGE / point_time_series (well grounded) =====================
-  - canonical_quantity: discharge
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
-        pass_band: satisfactory
-        cites: [moriasi_repro_nh2017, arnold2012, mikeswat2014]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, good: 15, satisfactory: 25}
-        pass_band: satisfactory
-        cites: [moriasi_repro_nh2017, mikeswat2014]
-    secondary_metrics:
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "HydroCNHS calibrates to KGE and reports monthly TRB streamflow KGE 0.865-0.916 (DLLO) and 0.836-0.958 (WSLO) across GWLF/ABCD variants; used as the model's own achieved benchmark, but the fetched papers give no KGE tier table, so it is supportive not decisive."
-        cites: [lin2022hydrocnhs]
-      - metric: rsr
-        direction: minimize
-        status: supportive
-        ceiling_reason: "Moriasi RSR tiers (very_good 0.0-0.5, good 0.5-0.6, satisfactory 0.6-0.7) co-reported with NSE/PBIAS in the reproduced table; RMSE-based, informative."
-        cites: [moriasi_repro_nh2017]
-    validated_when: "monthly NSE >= 0.5 (Moriasi 2007 'satisfactory'; >=0.75 'very good') AND |PBIAS| <= 25% (relax to daily per Arnold 2012)"
-    evidence_strength: strong
-    confidence: 0.8
-    notes: >-
-      nh.2017.189 Table 4 reproduces Moriasi et al. (2007) verbatim: "Very good NSE 0.75, PBIAS <+/-10,
-      RSR 0-0.5; Good 0.65-0.75, +/-10 to +/-15, 0.5-0.6; Acceptable 0.5-0.65, 15 to +/-25, 0.6-0.7;
-      Unsatisfactory <0.5, >+/-25, >0.7". Arnold 2012: "Moriasi et al. (2007) proposed that NSE values
-      should exceed 0.5 in order for model results to be judged satisfactory ... on a monthly time step
-      (and appropriate relaxing ... for daily)"; NSE (and r2) >0.75 = very good. mikeswat2014 independently:
-      "monthly NSE >= 0.65, PBIAS <= +/-10% and RSR <= 0.60". These are the dag determining_metric (nse).
-      HydroCNHS regulated reaches require the corresponding ABM agents configured, else the comparison
-      conflates natural and human signals; exclude a 1-2 yr warm-up and align on the date index (dag caveats).
-      Bands are the MONTHLY standard; HydroCNHS runs daily but its TRB validation is monthly.
-
-  # ===================== DISCHARGE / point_snapshot (transferred magnitude band) =====================
-  - canonical_quantity: discharge
-    obs_shape: point_snapshot
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, good: 15, satisfactory: 25}
-        pass_band: satisfactory
-        cites: [moriasi_repro_nh2017]
-    secondary_metrics: []
-    validated_when: "|PBIAS| <= 25% (Moriasi 2007 streamflow magnitude tier; single-instant comparison discards timing)"
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      A single peak or long-term-mean-flow comparison discards the timing information routing is designed
-      to capture (dag caveat), so only the magnitude convention applies. PBIAS band transferred from the
-      Moriasi 2007 streamflow tier (nh.2017.189 Table 4); no snapshot-specific threshold in the fetched set,
-      hence reduced confidence.
-
-  # ===================== RUNOFF / point_time_series (transferred; rarely observed) =====================
-  - canonical_quantity: runoff
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
-        pass_band: satisfactory
-        cites: [moriasi_repro_nh2017, arnold2012]
-    secondary_metrics:
-      - metric: pbias
-        direction: zero_centered
-        status: supportive
-        ceiling_reason: "Streamflow PBIAS tier (|PBIAS|<=25% satisfactory) transfers to un-routed local runoff volume; co-reported with NSE."
-        cites: [moriasi_repro_nh2017]
-    validated_when: "monthly NSE >= 0.5 on a gauge representing un-routed local generation (else compare Q_routed)"
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      Q_runoff is local unrouted subbasin runoff (GWLF/ABCD output before Lohmann routing). It is rarely
-      directly observed (dag caveat): compare only against gauges representing un-routed local generation,
-      otherwise use Q_routed. The Moriasi hydrologic NSE tier is the applicable convention but is defined
-      for routed streamflow, so the band is transferred and confidence reduced. Hamon PET (evapotranspiration,
-      validation_rank 3) has NO obs binding in obs_map and is not graded here; it would require energy-balance
-      reference ET and shows a structural temperature-driven bias.
-
-  # ===================== SEDIMENT / point_time_series (pollutant-loss NSE grounded; PBIAS deferred) ==========
-  - canonical_quantity: sediment
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
-        pass_band: satisfactory
-        cites: [arnold2012]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no fetched paper gives the sediment-specific PBIAS tier (Moriasi 2007 uses |PBIAS|<=55% for sediment, distinct from the +/-25% streamflow tier); left null rather than mis-applying the streamflow band"
-        cites: []
-    secondary_metrics: []
-    validated_when: "monthly NSE >= 0.5 (Arnold 2012: Moriasi 'satisfactory' rule applies to pollutant-loss as well as hydrologic evaluations); sediment PBIAS tier UNRESOLVED"
-    evidence_strength: moderate
-    confidence: 0.45
-    notes: >-
-      dag determining_metric for TSS_monthly is pbias, but the sediment-SPECIFIC PBIAS convention
-      (Moriasi 2007 |PBIAS|<=55% satisfactory) is not present in any fetched paper, so pbias is kept as a
-      headline with a NULL band (un-evaluable, cannot loosen the gate). NSE IS grounded for sediment:
-      Arnold 2012 states the monthly NSE>0.5 'satisfactory' / NSE>0.75 'very good' rule covers "hydrologic
-      and pollutant loss evaluations". Literature thus partially supersedes the dag pbias determining_metric
-      for grading. TSS_monthly is a monthly aggregate depending on manually supplied dam-agent TSS and an
-      11-month backward routing window (dag caveat), so treat with care. Fetch Moriasi 2007/2015 to close
-      the PBIAS tier (see deferred_paywalled).
-
-  # ===================== RESERVOIR RELEASE / diversion (ABM agent records; dag quantity null) ==========
-  - canonical_quantity: reservoir_release
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
-        pass_band: satisfactory
-        cites: [moriasi_repro_nh2017, arnold2012]
-    secondary_metrics:
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "HydroCNHS reports monthly KGE for reservoir releases (ResAgt 0.783/0.811) and irrigation diversion (DivAgt 0.917/0.898) in the TRB (calibration/validation); its own achieved benchmark, but no KGE tier table is in the fetched set."
-        cites: [lin2022hydrocnhs]
-    validated_when: "monthly NSE >= 0.5 on the ABM-recorded release/diversion volume vs observed reservoir release/water-level/diversion (transferred flow convention)"
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      ABM_agent_records has canonical_quantity=null in the dag (field names/semantics are user- and
-      ABM-module-defined). In obs_map it binds to daily_water_level_m (reservoir storage proxy) and
-      discharge_m3s, and the HydroCNHS paper validates reservoir releases and irrigation diversion directly.
-      These are flow/volume quantities, so the Moriasi hydrologic NSE tier is transferred as the headline;
-      the model's own monthly KGE benchmark (0.78-0.96 across streamflow, release, diversion) is supportive.
-      Comparability depends on the specific agent implementation (dag caveat); confidence reduced because the
-      band is transferred and the quantity is user-defined rather than a fixed model output.
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - moriasi_repro_nh2017
+    - arnold2012
+    - mikeswat2014
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      good: 15
+      satisfactory: 25
+    pass_band: satisfactory
+    cites:
+    - moriasi_repro_nh2017
+    - mikeswat2014
+  secondary_metrics:
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: HydroCNHS calibrates to KGE and reports monthly TRB streamflow KGE 0.865-0.916 (DLLO)
+      and 0.836-0.958 (WSLO) across GWLF/ABCD variants; used as the model's own achieved benchmark, but
+      the fetched papers give no KGE tier table, so it is supportive not decisive.
+    cites:
+    - lin2022hydrocnhs
+  - metric: rsr
+    direction: minimize
+    status: supportive
+    ceiling_reason: Moriasi RSR tiers (very_good 0.0-0.5, good 0.5-0.6, satisfactory 0.6-0.7) co-reported
+      with NSE/PBIAS in the reproduced table; RMSE-based, informative.
+    cites:
+    - moriasi_repro_nh2017
+  validated_when: monthly NSE >= 0.5 (Moriasi 2007 'satisfactory'; >=0.75 'very good') AND |PBIAS| <=
+    25% (relax to daily per Arnold 2012)
+  evidence_strength: strong
+  confidence: 0.8
+  notes: 'nh.2017.189 Table 4 reproduces Moriasi et al. (2007) verbatim: "Very good NSE 0.75, PBIAS <+/-10,
+    RSR 0-0.5; Good 0.65-0.75, +/-10 to +/-15, 0.5-0.6; Acceptable 0.5-0.65, 15 to +/-25, 0.6-0.7; Unsatisfactory
+    <0.5, >+/-25, >0.7". Arnold 2012: "Moriasi et al. (2007) proposed that NSE values should exceed 0.5
+    in order for model results to be judged satisfactory ... on a monthly time step (and appropriate relaxing
+    ... for daily)"; NSE (and r2) >0.75 = very good. mikeswat2014 independently: "monthly NSE >= 0.65,
+    PBIAS <= +/-10% and RSR <= 0.60". These are the dag determining_metric (nse). HydroCNHS regulated
+    reaches require the corresponding ABM agents configured, else the comparison conflates natural and
+    human signals; exclude a 1-2 yr warm-up and align on the date index (dag caveats). Bands are the MONTHLY
+    standard; HydroCNHS runs daily but its TRB validation is monthly.'
+  dag_variable: Q_routed
+- obs_shape: point_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      good: 15
+      satisfactory: 25
+    pass_band: satisfactory
+    cites:
+    - moriasi_repro_nh2017
+  secondary_metrics: []
+  validated_when: '|PBIAS| <= 25% (Moriasi 2007 streamflow magnitude tier; single-instant comparison discards
+    timing)'
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: A single peak or long-term-mean-flow comparison discards the timing information routing is designed
+    to capture (dag caveat), so only the magnitude convention applies. PBIAS band transferred from the
+    Moriasi 2007 streamflow tier (nh.2017.189 Table 4); no snapshot-specific threshold in the fetched
+    set, hence reduced confidence.
+  dag_variable: Q_routed
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - moriasi_repro_nh2017
+    - arnold2012
+  secondary_metrics:
+  - metric: pbias
+    direction: zero_centered
+    status: supportive
+    ceiling_reason: Streamflow PBIAS tier (|PBIAS|<=25% satisfactory) transfers to un-routed local runoff
+      volume; co-reported with NSE.
+    cites:
+    - moriasi_repro_nh2017
+  validated_when: monthly NSE >= 0.5 on a gauge representing un-routed local generation (else compare
+    Q_routed)
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: 'Q_runoff is local unrouted subbasin runoff (GWLF/ABCD output before Lohmann routing). It is
+    rarely directly observed (dag caveat): compare only against gauges representing un-routed local generation,
+    otherwise use Q_routed. The Moriasi hydrologic NSE tier is the applicable convention but is defined
+    for routed streamflow, so the band is transferred and confidence reduced. Hamon PET (evapotranspiration,
+    validation_rank 3) has NO obs binding in obs_map and is not graded here; it would require energy-balance
+    reference ET and shows a structural temperature-driven bias.'
+  dag_variable: Q_runoff
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - arnold2012
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no fetched paper gives the sediment-specific PBIAS tier (Moriasi 2007 uses |PBIAS|<=55%
+      for sediment, distinct from the +/-25% streamflow tier); left null rather than mis-applying the
+      streamflow band
+    cites: []
+  secondary_metrics: []
+  validated_when: 'monthly NSE >= 0.5 (Arnold 2012: Moriasi ''satisfactory'' rule applies to pollutant-loss
+    as well as hydrologic evaluations); sediment PBIAS tier UNRESOLVED'
+  evidence_strength: moderate
+  confidence: 0.45
+  notes: 'dag determining_metric for TSS_monthly is pbias, but the sediment-SPECIFIC PBIAS convention
+    (Moriasi 2007 |PBIAS|<=55% satisfactory) is not present in any fetched paper, so pbias is kept as
+    a headline with a NULL band (un-evaluable, cannot loosen the gate). NSE IS grounded for sediment:
+    Arnold 2012 states the monthly NSE>0.5 ''satisfactory'' / NSE>0.75 ''very good'' rule covers "hydrologic
+    and pollutant loss evaluations". Literature thus partially supersedes the dag pbias determining_metric
+    for grading. TSS_monthly is a monthly aggregate depending on manually supplied dam-agent TSS and an
+    11-month backward routing window (dag caveat), so treat with care. Fetch Moriasi 2007/2015 to close
+    the PBIAS tier (see deferred_paywalled).'
+  dag_variable: TSS_monthly
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - moriasi_repro_nh2017
+    - arnold2012
+  secondary_metrics:
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: HydroCNHS reports monthly KGE for reservoir releases (ResAgt 0.783/0.811) and irrigation
+      diversion (DivAgt 0.917/0.898) in the TRB (calibration/validation); its own achieved benchmark,
+      but no KGE tier table is in the fetched set.
+    cites:
+    - lin2022hydrocnhs
+  validated_when: monthly NSE >= 0.5 on the ABM-recorded release/diversion volume vs observed reservoir
+    release/water-level/diversion (transferred flow convention)
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: ABM_agent_records has canonical_quantity=null in the dag (field names/semantics are user- and
+    ABM-module-defined). In obs_map it binds to daily_water_level_m (reservoir storage proxy) and discharge_m3s,
+    and the HydroCNHS paper validates reservoir releases and irrigation diversion directly. These are
+    flow/volume quantities, so the Moriasi hydrologic NSE tier is transferred as the headline; the model's
+    own monthly KGE benchmark (0.78-0.96 across streamflow, release, diversion) is supportive. Comparability
+    depends on the specific agent implementation (dag caveat); confidence reduced because the band is
+    transferred and the quantity is user-defined rather than a fixed model output.
+  dag_variable: ABM_agent_records
 deferred_paywalled:
-  - ref: "Moriasi, D.N. et al. 2007 — Model evaluation guidelines for systematic quantification of accuracy in watershed simulations (ORIGINAL tier table incl. sediment |PBIAS|<=55% and N/P<=70% satisfactory)"
-    doi: 10.13031/2013.23153
-    needed_for: [sediment]
-  - ref: "Moriasi, D.N. et al. 2015 — Hydrologic and water quality models: performance measures and evaluation criteria (updated tiers, incl. constituent-specific PBIAS)"
-    doi: 10.13031/trans.58.10715
-    needed_for: [sediment, discharge]
+- ref: Moriasi, D.N. et al. 2007 — Model evaluation guidelines for systematic quantification of accuracy
+    in watershed simulations (ORIGINAL tier table incl. sediment |PBIAS|<=55% and N/P<=70% satisfactory)
+  doi: 10.13031/2013.23153
+  needed_for:
+  - sediment
+- ref: 'Moriasi, D.N. et al. 2015 — Hydrologic and water quality models: performance measures and evaluation
+    criteria (updated tiers, incl. constituent-specific PBIAS)'
+  doi: 10.13031/trans.58.10715
+  needed_for:
+  - sediment
+  - discharge

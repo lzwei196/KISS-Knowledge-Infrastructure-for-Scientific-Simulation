@@ -36,7 +36,8 @@ from ki_tools_common.metrics import all_metrics
 # ---------------------------------------------------------------- config
 BUOY     = "41002"
 OBS_FILE = f"KISSPATH_OBS/ndbc_buoys/{BUOY}_stdmet_2020.txt"
-SWAN_EXE = ("KISSPATH_BINARIES/ADCIRC/source/repo/thirdparty/swan/swan.exe")
+SWAN_EXE = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ADCIRC"
+            "/source/repo/thirdparty/swan/swan.exe")
 SWANINIT = "KISSPATH_OUTPUTS/swan_lekima/swaninit"
 DET      = "KISSPATH_KI_ROOT/SWAN/detached/verify_2"
 WORK     = os.environ.get("SWAN_WORK",   os.path.join(DET, "swanrun"))

@@ -1,14 +1,3 @@
----
-name: glm
-description: >-
-  GLM 3.0 science (Hipsey et al. 2019, GMD 12:473-523); AED2 water-quality coupling.
-  Covers 1D vertical thermal stratification and mixing of a single lake/reservoir; lake
-  water balance (inflows, outflows, rainfall, evaporation, seepage); surface energy budget
-  (shortwave, longwave, sensible, latent fluxes); vertical density structure from
-  temperature and salinity (UNESCO 1981 EOS). Use when the task involves running,
-  configuring, calibrating or interpreting GLM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -33,6 +22,54 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (17 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (11 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (39 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/s10_coupling/glm_to_cama_outflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_coupling/glm_to_cama_outflow.py --help` |
+| `tools/s1_lake_identification/build_morphometry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_lake_identification/build_morphometry.py --help` |
+| `tools/s1_lake_identification/lookup_hydrolakes.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_lake_identification/lookup_hydrolakes.py --help` |
+| `tools/s2_met_forcing/convert_met_to_glm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_met_forcing/convert_met_to_glm.py --help` |
+| `tools/s3_inflow/convert_inflow_to_glm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_inflow/convert_inflow_to_glm.py --help` |
+| `tools/s4_outflow/configure_outflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_outflow/configure_outflow.py --help` |
+| `tools/s5_init_profiles/build_init_profiles.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_init_profiles/build_init_profiles.py --help` |
+| `tools/s6_namelist/generate_glm_nml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_namelist/generate_glm_nml.py --help` |
+| `tools/s7_aed_config/configure_inflow_wq.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_aed_config/configure_inflow_wq.py --help` |
+| `tools/s7_aed_config/generate_aed_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_aed_config/generate_aed_config.py --help` |
+| `tools/s8_execution/run_glm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_execution/run_glm.py --help` |
+| `tools/s9_output_analysis/calibrate_glm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_analysis/calibrate_glm.py --help` |
+| `tools/s9_output_analysis/load_ismn_obs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_analysis/load_ismn_obs.py --help` |
+| `tools/s9_output_analysis/load_ntl_lter_obs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_analysis/load_ntl_lter_obs.py --help` |
+| `tools/s9_output_analysis/parse_aed_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_analysis/parse_aed_output.py --help` |
+| `tools/s9_output_analysis/parse_glm_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_analysis/parse_glm_output.py --help` |
+| `tools/s9_output_analysis/plot_glm_results.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_output_analysis/plot_glm_results.py --help` |
+
+*17 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -73,6 +110,192 @@ This knowledge infrastructure enables fully autonomous simulation of lake and re
 - Optional AED2 water quality (DO, nutrients, phytoplankton, carbon)
 
 **Key difference from other HydroCraft models**: GLM operates on a single lake/reservoir (1D vertical), not a gridded basin. It couples with CaMa-Flood (upstream discharge as inflow) and VIC (shared meteorological forcing with unit conversions).
+
+---
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | GLM v3.3.3 (General Lake Model) with optional AED2 water quality |
+| Package | `hydrocraft-glm-lake` v1.0.0 |
+| Binary | `model/glm/bin/glm` |
+| Binary version | `model/glm/bin/VERSION` reports `glm_3.3.3` |
+| Primary domain | Lake and reservoir thermodynamics; optional lake water quality |
+| Spatial mode | 1D vertical lake/reservoir column |
+| Validation status | `production_validated` |
+
+## 2. What This Model Does
+
+GLM simulates the vertical thermal and hydrodynamic state of a single lake or reservoir with adaptive Lagrangian layers. It can also run AED2 modules for dissolved oxygen, nutrients, organic matter, phytoplankton, totals and related water-quality state variables when the AED2 configuration is enabled.
+
+## 3. Input Requirements
+
+Exact machine-readable shapes live in `docs/format_spec.yaml`, projected from `dag.yaml` and `diagnostics/triplets.yaml`; regenerate that spec after changing either source and do not hand-edit it. The operational details below summarize intent and common traps only.
+
+### 3.1 Meteorological Forcing
+
+| Variable | Unit GLM expects | Source dataset | Source unit | Conversion / preparation |
+|----------|------------------|----------------|-------------|--------------------------|
+| Precipitation | m/day | CMFD/MSWX/NASA POWER | mm per source timestep or daily mm | Convert to daily m/day; for CMFD 3-hourly: `mm/3hr * 8 / 1000 = m/day` |
+| Air temperature | degC | CMFD/MSWX/NASA POWER/VIC | dataset-dependent | Use `load_daily_forcing` / `convert_met_to_glm.py`; confirm attributes before scoring |
+| Shortwave radiation | W/m2 | CMFD/MSWX/NASA POWER/VIC | dataset-dependent | Use `convert_met_to_glm.py`; reject negative interpolated radiation |
+| Wind speed | m/s | CMFD/MSWX/NASA POWER/VIC | dataset-dependent | Use `convert_met_to_glm.py`; optionally scale with `wind_factor` during calibration |
+| Relative humidity | percent (0-100) | VIC vapor pressure or source humidity | fraction, percent, or vapor pressure | Convert vapor pressure to percent RH; do not pass 0-1 fractions |
+| Longwave radiation | W/m2 when `lw_type = 'LW_IN'` | CMFD/MSWX/NASA POWER/VIC | dataset-dependent | Do not combine measured longwave with cloud-cover longwave calculation |
+
+### 3.2 Static And Boundary Inputs
+
+| Input | Source | Tool that prepares it |
+|-------|--------|----------------------|
+| Lake polygon / metadata | HydroLAKES or site-specific lake metadata | `tools/s1_lake_identification/lookup_hydrolakes.py` |
+| Morphometry / depth-area curve | HydroLAKES-derived or site bathymetry | `tools/s1_lake_identification/build_morphometry.py` |
+| Meteorological forcing CSV | CMFD/MSWX/NASA POWER/VIC forcing | `tools/s2_met_forcing/convert_met_to_glm.py` |
+| Inflow CSV | CaMa-Flood/VIC discharge or constant inflow | `tools/s3_inflow/convert_inflow_to_glm.py` |
+| Outflow CSV / rules | Dam operation, spillway, balance mode | `tools/s4_outflow/configure_outflow.py` |
+| Initial T/S profiles | Uniform, climatology, or observed profile | `tools/s5_init_profiles/build_init_profiles.py` |
+| AED2 water-quality config | Selected AED2 modules and WQ inflow concentrations | `tools/s7_aed_config/generate_aed_config.py`, `tools/s7_aed_config/configure_inflow_wq.py` |
+
+### 3.3 Configuration Files
+
+| File | Format | Notes |
+|------|--------|-------|
+| `glm3.nml` | Fortran namelist | Generated by `tools/s6_namelist/generate_glm_nml.py`; string values require single quotes |
+| `aed2.nml` | Fortran namelist | Required when AED2 modules are enabled |
+| `docs/format_spec.yaml` | YAML | Contract for exact I/O shapes and known issues |
+| `dag.yaml` | YAML | Source of truth for outputs, units, media, observability and `validation_rank` |
+| `docs/validation_convention.yaml` | YAML | Source of truth for metrics, directions and cited pass-bands |
+
+## 6. Output Description
+
+SOURCE: `dag.yaml`. The dag is the model identity for outputs; if this section ever disagrees with `dag.yaml`, the dag wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable -- the one this model is judged by):
+
+> `lake_level` -- Water surface elevation. (m)
+
+| Output variable (dag `var`) | Rank | Unit | Description / status |
+|-----------------------------|------|------|----------------------|
+| `lake_level` | 1 | m | Water surface elevation. |
+| `temp` | see `dag.yaml` | see `dag.yaml` | other dag output |
+| `surface_temp` | see `dag.yaml` | see `dag.yaml` | other dag output |
+| `bottom_temp` | see `dag.yaml` | see `dag.yaml` | other dag output |
+| `lake_volume` | see `dag.yaml` | see `dag.yaml` | other dag output |
+| `ice_thickness` | see `dag.yaml` | see `dag.yaml` | other dag output |
+| `evaporation` | see `dag.yaml` | see `dag.yaml` | other dag output |
+| `thermocline_depth` | see `dag.yaml` | see `dag.yaml` | other dag output |
+| `schmidt_stability` | see `dag.yaml` | see `dag.yaml` | other dag output |
+| `PHY_tchla` | see `dag.yaml` | see `dag.yaml` | other dag output |
+| `OXY_oxy` | see `dag.yaml` | see `dag.yaml` | other dag output |
+| `NIT_nit, NIT_amm, PHS_frp` | see `dag.yaml` | see `dag.yaml` | other dag outputs as extracted |
+
+Do not validate streamflow/discharge as a GLM output. The allowed validation targets are the dag outputs above, with `lake_level` as the rank-1 output.
+
+## 8. Unit Conversion Table
+
+Critical unit conversions are implemented by the stage tools and must be verified against source-data attributes before scoring a run.
+
+| Variable | Source unit (verified source) | Model / analysis unit | Conversion | Type |
+|----------|-------------------------------|-----------------------|------------|------|
+| CMFD precipitation | mm/3hr | m/day | `mm/3hr * 8 / 1000` | multiplicative |
+| Relative humidity from vapor pressure | kPa vapor pressure plus degC air temperature | percent (0-100) | `100 * VP / (0.6108 * exp(17.27*T/(T+237.3)))` | diagnostic formula |
+| Freshwater inflow salinity | site/source salinity | 0 for freshwater lakes | set `--salinity 0.0` | boundary condition |
+| Dissolved oxygen | `OXY_oxy` mmol O2/m3 | mg/L | `OXY_oxy * 32.0 / 1000` | multiplicative |
+| NO3-N | `NIT_nit` mmol N/m3 | mg/L | `NIT_nit * 14.01 / 1000` | multiplicative |
+| NH4-N | `NIT_amm` mmol N/m3 | mg/L | `NIT_amm * 14.01 / 1000` | multiplicative |
+| PO4-P | `PHS_frp` mmol P/m3 | mg/L | `PHS_frp * 30.97 / 1000` | multiplicative |
+| DOC | `OGM_doc` mmol C/m3 | mg/L | `OGM_doc * 12.01 / 1000` | multiplicative |
+| SiO2 | `SIL_rsi` mmol Si/m3 | mg/L | `SIL_rsi * 60.08 / 1000` | multiplicative |
+
+### 8c. Sign Conventions And Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| `lake_level` | Water surface elevation in m | Treating level as discharge | Invalid validation target and wrong units |
+| Rain | m/day into the lake surface | mm/day | 1000x water-balance error |
+| Relative humidity | percent (0-100) | fraction (0-1) | Extreme evaporation bias |
+| `OXY_oxy` | mmol O2/m3 in AED2 output | mg/L directly | 31.25x DO magnitude error if not converted |
+| GLM profile depths | Adaptive Lagrangian layers | Fixed-depth grid | Fixed-depth observations must be interpolated |
+
+Output unit verification checklist:
+- Read `units` attributes from `output/output.nc` before computing metrics.
+- Print first values for each scored variable and check physical magnitude.
+- For `lake_level`, verify the series is water-surface elevation in m, not volume or outflow.
+- For WQ variables, convert AED2 internal units before comparing to common mg/L observations.
+- For fixed-depth temperature, use `parse_glm_output.py --depths` so the adaptive layer grid is interpolated to observation depths.
+
+## 9. Diagnostic Triplets (Top 5)
+
+The full corpus lives in `diagnostics/triplets.yaml`; do not duplicate or renumber it. Check that YAML before debugging any run.
+
+| # | ID | Error / symptom | Diagnosis | Remedy |
+|---|----|-----------------|-----------|--------|
+| 1 | `dt_027` | Surface temperature sticks near freezing but ice never forms | Missing `dt_iceon_avg` / `min_ice_thickness` silently disables ice | Set `dt_iceon_avg = 0.02` and `min_ice_thickness = 0.001`; keep `dt_iceon_avg <= 0.04` for deep reservoirs |
+| 2 | `dt_001` | Lake floods or water balance is impossible | Rain passed as mm/day instead of m/day | Convert precipitation to m/day |
+| 3 | `dt_002` | Evaporation is extreme | Relative humidity passed as 0-1 fraction instead of percent | Convert RH to 0-100 percent |
+| 4 | `dt_006` | GLM crashes during basin setup | `H[]` and `A[]` morphometry arrays are not ascending bottom-to-top | Sort morphometry bottom-to-top and keep `A[0]` at the bottom |
+| 5 | `dt_036` | Fixed-depth temperature metrics are silently wrong | Output read directly from adaptive Lagrangian layers | Use `parse_glm_output.py --depths` to interpolate to fixed depths |
+
+## 11. Validated Results
+
+This section restates validated campaigns already documented below and the KI's sourced convention bars. The dag's rank-1 validation variable is `lake_level`; no convention bar for `lake_level` is stated here unless it is present in `docs/validation_convention.yaml`.
+
+### Test Basin: Miyun Reservoir
+
+| Property | Value |
+|----------|-------|
+| Location | 40.48N, 116.97E |
+| Period | 2001-2010 |
+| Forcing | CMFD daily from VIC Chaohe simulation |
+| Runtime | 3-4 seconds for 10 years |
+| Status | Production validation campaign documented in this file |
+
+| Result | Value | Status |
+|--------|-------|--------|
+| Summer surface T (JJA) | 28.2 C simulated vs 24-28 C published | PASS |
+| Winter surface T (DJF) | 3.4 C simulated vs 0-2 C published | Warm bias |
+| Annual mean T | 15.5 C simulated vs 10-12 C published | Warm bias |
+| Ice days/year | 71 simulated vs ~120 published | REASONABLE |
+| Max ice thickness | 0.28 m simulated vs 0.3-0.5 m published | REASONABLE |
+| Lake level variation | 0.007 m simulated vs 5-15 m published | Water balance issue |
+
+### Test Basin: Lake Catoma, Alabama
+
+| Property | Value |
+|----------|-------|
+| Location | 34.1932N, -86.8052E |
+| Period | 2014 spin-up discarded; 2015-01-01..2020-12-30 scored |
+| Observation proxy | ISMN / SCAN station `Cullman-NAHRC` soil temperature |
+| Runtime | GLM 7 years in ~2 s; whole pipeline ~3 min |
+| Status | Depth-matched temperature comparison documented in this file |
+
+| Matched depth | NSE | r | KGE | PBIAS |
+|---|---:|---:|---:|---:|
+| 0.0508 m (headline) | 0.723 | 0.937 | 0.835 | +14.9 % |
+| 0.1016 m | 0.711 | 0.933 | 0.837 | +14.1 % |
+| 0.2032 m | 0.712 | 0.942 | 0.820 | +14.3 % |
+| 0.508 m | 0.681 | 0.936 | 0.801 | +14.2 % |
+| 1.016 m | 0.400 | 0.910 | 0.600 | +13.7 % |
+
+### Performance Metrics -- convention bars
+
+Use `docs/validation_convention.yaml` as the source of truth for metric direction and cited pass-bands. For minimize metrics, smaller values are better.
+
+| Dag variable | Metric | Direction | Satisfactory | Good | Very good |
+|--------------|--------|-----------|--------------|------|-----------|
+| `temp` | RMSE | minimize | 2.0 (`bruce2018`, `feldbauer2025`, `tan2021`) | 1.71 (`bruce2018`, `feldbauer2025`, `tan2021`) | 1.34 (`bruce2018`, `feldbauer2025`, `tan2021`) |
+| `surface_temp` | RMSE | minimize | 2.0 (`bruce2018`, `tan2021`, `thomas2020`) | 1.62 (`bruce2018`, `tan2021`, `thomas2020`) | 1.13 (`bruce2018`, `tan2021`, `thomas2020`) |
+| `lake_level` | see `docs/validation_convention.yaml` | see `docs/validation_convention.yaml` | no cited threshold | no cited threshold | no cited threshold |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| GLM binary | `model/glm/bin/glm` | Installed and preflight-gated | Run `python preflight_check.py` first |
+| Meteorological forcing | CMFD/MSWX/NASA POWER/VIC through `convert_met_to_glm.py` | Available | Unit traps documented in diagnostics |
+| Morphometry | HydroLAKES or site bathymetry through `build_morphometry.py` | Available; site bathymetry preferred | HydroLAKES-only depths may be unsuitable for hypolimnetic claims |
+| Inflow/outflow | CaMa-Flood/VIC or configured boundary rules | Available | Do not validate outflow as simulated streamflow |
+| Observations | In-lake profiles, surface/bottom temperature, lake level, ice thickness, ISMN proxy when explicitly caveated | Data-dependent | Score only variables supported by the dag and observation support |
 
 ---
 
@@ -164,26 +387,23 @@ Stages 9 and 10 depend on 8.
 
 ### Skill Knowledge
 
-**Note**: `docs/` currently holds only the reference material (`format_spec.yaml`,
-`reference/Hipsey2019_GLM_GMD.pdf`, `REFERENCES.md`) — there are no per-stage skill
-documents. All critical domain knowledge is documented inline in this SKILL.md file (see "Critical Domain Knowledge" section below and diagnostic triplets). The following topics are covered inline:
+Per-stage skill documents live under `docs/` and wrap the executable tools in
+this KI. Use these alongside the inline Critical Domain Knowledge section and
+`diagnostics/triplets.yaml`:
 
-| Stage | Topic | Where in this document |
-|-------|-------|----------------------|
-| s0 | Lake selection, period, forcing source | Pipeline table above |
-| s1 | HydroLAKES search, morphometry | Tools Reference + Critical Domain Knowledge |
-| s2 | Unit conversions (VP->RH, mm->m/day) | Critical Domain Knowledge #1, #2 |
-| s3 | Inflow temperature estimation | Tools Reference |
-| s4 | Dam operation modes, withdrawal depth | Tools Reference |
-| s5 | Spinup strategy, initialization | Tools Reference |
-| s6 | 13 namelist blocks, Fortran format | Critical Domain Knowledge #3-#8 |
-| s7 | AED2 module selection, phytoplankton config | Tools Reference + AED2 Phytoplankton section |
-| s7 | Inflow WQ loading, nutrient concentrations | AED2 Phytoplankton section |
-| s8 | Runtime expectations, error messages | Critical Domain Knowledge + Error Handling |
-| s9 | output.nc structure, validation | Validated Results section |
-| s9 | AED2 WQ output: Chl-a, DO, nutrients | AED2 Phytoplankton section |
-| s10 | GLM-CaMa coupling | Tools Reference |
-| calib | Calibration parameters | Validated Results section |
+| Stage | Skill document | Tooling covered |
+|-------|----------------|-----------------|
+| s0 | `docs/s0_configuration.md` | Applicability, period, forcing source, AED2 decision |
+| s1 | `docs/s1_lake_identification.md` | `lookup_hydrolakes`, `build_morphometry` |
+| s2 | `docs/s2_met_forcing.md` | `convert_met_to_glm` |
+| s3 | `docs/s3_inflow.md` | `convert_inflow_to_glm` |
+| s4 | `docs/s4_outflow.md` | `configure_outflow` |
+| s5 | `docs/s5_init_profiles.md` | `build_init_profiles` |
+| s6 | `docs/s6_namelist.md` | `generate_glm_nml` |
+| s7 | `docs/s7_aed_config.md` | `generate_aed_config`, `configure_inflow_wq` |
+| s8 | `docs/s8_execution.md` | `run_glm` |
+| s9 | `docs/s9_output_analysis.md` | `parse_glm_output`, `parse_aed_output`, plotting, calibration, obs loaders |
+| s10 | `docs/s10_coupling.md` | `glm_to_cama_outflow` |
 
 ---
 

@@ -1,150 +1,262 @@
 #!/usr/bin/env python3
 """
-Preflight check for Pywr — verifies environment before simulation.
+Preflight check for the Pywr Knowledge Infrastructure.
 
-Run this BEFORE attempting any model execution. It checks that all required
-binaries, packages, and data paths are available.
-
-Usage:
-    python preflight_check.py
-
-Exit codes:
-    0 — all checks passed, safe to proceed
-    1 — one or more checks failed, fix before proceeding
+This script verifies the real runtime contract before any model execution:
+the HydroCraft Python environment with Pywr, the Pywr runner declared in the
+KI manifest, the GLPK solver path exercised through a minimal Pywr model, KI
+tools, required data, and diagnostic recovery metadata.
 """
 
+import json
 import os
-import sys
-import shutil
 import subprocess
-
-PASS = 0
-FAIL = 0
-
-
-def check_file(path, label, executable=False):
-    global PASS, FAIL
-    if os.path.isfile(path):
-        if executable and not os.access(path, os.X_OK):
-            print(f"  WARN  {label}: exists but not executable: {path}")
-            print(f"         Fix: chmod +x {path}")
-            FAIL += 1
-        else:
-            print(f"  OK    {label}: {path}")
-            PASS += 1
-    else:
-        print(f"  FAIL  {label}: NOT FOUND at {path}")
-        FAIL += 1
+import sys
+import tempfile
+from pathlib import Path
 
 
-def check_dir(path, label):
-    global PASS, FAIL
-    if os.path.isdir(path):
-        n = len(os.listdir(path))
-        print(f"  OK    {label}: {path} ({n} items)")
-        PASS += 1
-    else:
-        print(f"  FAIL  {label}: directory NOT FOUND at {path}")
-        FAIL += 1
+MODEL_ID = "Pywr"
+KI_DIR = Path(__file__).resolve().parent
+DIAGNOSTICS = KI_DIR / "diagnostics" / "triplets.yaml"
+PYWR_PYTHON = Path("KISSPATH_PYTHON_ENV/bin/python")
+RUN_PYWR = KI_DIR / "tools" / "s8_execution" / "run_pywr.py"
+GRAND_DB = Path("KISSPATH_BINARIES/cmf_v420_pkg/map/data/GRanD_allocated.csv")
+
+REQUIRED_TOOLS = [
+    KI_DIR / "tools" / "s1_installation" / "verify_pywr_installation.py",
+    KI_DIR / "tools" / "s2_dam_inventory" / "find_dams_in_basin.py",
+    KI_DIR / "tools" / "s3_reservoir_properties" / "build_reservoir_properties.py",
+    KI_DIR / "tools" / "s4_inflow" / "convert_obs_to_inflow.py",
+    KI_DIR / "tools" / "s4_inflow" / "convert_vic_to_inflow.py",
+    KI_DIR / "tools" / "s5_operating_rules" / "create_operating_rules.py",
+    KI_DIR / "tools" / "s6_demands" / "create_demand_nodes.py",
+    KI_DIR / "tools" / "s7_assembly" / "assemble_pywr_model.py",
+    RUN_PYWR,
+    KI_DIR / "tools" / "s8_execution" / "plot_reservoir_operations.py",
+    KI_DIR / "tools" / "s8_execution" / "inject_releases_to_cama.py",
+    KI_DIR / "tools" / "s8_execution" / "check_overtopping.py",
+]
+
+OPTIONAL_COMMON_DATA = [
+    Path("KISSPATH_OBS"),
+    Path("KISSPATH_FORCING"),
+    Path("KISSPATH_STATIC"),
+    Path("KISSPATH_STATIC"),
+]
 
 
-def check_import(module, label):
-    # Also search HydroCraft python_env for packages
-    import sys
-    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
-    if _penv not in sys.path:
-        sys.path.insert(0, _penv)
-    global PASS, FAIL
+def fix(text):
+    return f"{text}; then check {DIAGNOSTICS} for matching recovery triplets."
+
+
+def add_check(checks, kind, subject, critical, passed, fix_text=""):
+    check = {
+        "kind": kind,
+        "subject": str(subject),
+        "critical": bool(critical),
+        "status": "pass" if passed else "fail",
+        "fix": "" if passed else fix(fix_text),
+    }
+    checks.append(check)
+    label = "OK" if passed else ("FAIL" if critical else "WARN")
+    print(f"  {label:<5} {kind}: {subject}")
+    if not passed:
+        print(f"        Fix: {check['fix']}")
+    return passed
+
+
+def run_command(args, timeout=30):
     try:
-        __import__(module)
-        print(f"  OK    {label}: import {module} succeeded")
-        PASS += 1
-    except ImportError as e:
-        print(f"  FAIL  {label}: import {module} failed: {e}")
-        print(f"         Fix: pip install {module.split('.')[0]}")
-        FAIL += 1
+        return subprocess.run(
+            [str(a) for a in args],
+            cwd=str(KI_DIR),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        completed = subprocess.CompletedProcess(args, 124)
+        completed.stdout = exc.stdout or ""
+        completed.stderr = exc.stderr or f"timed out after {timeout}s"
+        return completed
+    except OSError as exc:
+        completed = subprocess.CompletedProcess(args, 127)
+        completed.stdout = ""
+        completed.stderr = str(exc)
+        return completed
 
 
-def check_binary_search(name, label):
-    global PASS, FAIL
-    found = shutil.which(name)
-    if found:
-        print(f"  OK    {label}: {found}")
-        PASS += 1
+def check_python_import(checks, module, critical=True):
+    subject = f"{PYWR_PYTHON} imports {module}"
+    proc = run_command(
+        [
+            PYWR_PYTHON,
+            "-c",
+            f"import {module}; print(getattr({module.split('.')[0]}, '__version__', 'ok'))",
+        ]
+    )
+    return add_check(
+        checks,
+        "import",
+        subject,
+        critical,
+        proc.returncode == 0,
+        f"Install/repair {module.split('.')[0]} in {PYWR_PYTHON}",
+    )
+
+
+def check_manifest_runner(checks):
+    real_runner = RUN_PYWR.resolve(strict=False)
+    ready = RUN_PYWR.is_file() and os.access(RUN_PYWR, os.X_OK)
+    add_check(
+        checks,
+        "binary",
+        real_runner,
+        True,
+        ready,
+        f"Restore the manifest binary at {RUN_PYWR} and run chmod +x on it",
+    )
+    if not RUN_PYWR.is_file():
         return
-    # Search common locations
-    search_dirs = [
-        "KISSPATH_BINARIES",
-        "KISSPATH_HOME",
-        "/usr/local/bin",
-    ]
-    for d in search_dirs:
-        if not os.path.isdir(d):
-            continue
-        for root, dirs, files in os.walk(d):
-            for f in files:
-                if name.lower() in f.lower() and os.access(os.path.join(root, f), os.X_OK):
-                    print(f"  OK    {label}: {os.path.join(root, f)}")
-                    PASS += 1
-                    return
-            if root.count(os.sep) - d.count(os.sep) > 3:
-                dirs.clear()  # limit depth
-    print(f"  FAIL  {label}: binary '{name}' not found in PATH or common locations")
-    print(f"         Check SKILL.md for the correct binary path")
-    FAIL += 1
+
+    proc = run_command([PYWR_PYTHON, RUN_PYWR, "--help"])
+    add_check(
+        checks,
+        "run",
+        f"{PYWR_PYTHON} {real_runner} --help",
+        True,
+        proc.returncode == 0 and "--model" in proc.stdout and "--output_dir" in proc.stdout,
+        "Make run_pywr.py start cleanly under the Pywr Python environment",
+    )
 
 
-def check_common_data():
-    """Check common HydroCraft data paths."""
-    global PASS, FAIL
-    common = [
-        ("KISSPATH_OBS", "Observation data"),
-        ("KISSPATH_FORCING", "Forcing data"),
-        ("KISSPATH_STATIC", "DEM data"),
-        ("KISSPATH_STATIC", "Soil data"),
-    ]
-    for path, label in common:
-        if os.path.isdir(path):
-            PASS += 1
-        else:
-            print(f"  WARN  {label}: {path} not found (may not be needed)")
+def check_glpk_solver(checks):
+    script = r"""
+import json
+import tempfile
+from pathlib import Path
+from pywr.model import Model
+
+model_def = {
+    "metadata": {"title": "preflight_solver_test"},
+    "timestepper": {"start": "2000-01-01", "end": "2000-01-03", "timestep": 1},
+    "nodes": [
+        {"name": "input1", "type": "input", "max_flow": 10.0},
+        {"name": "output1", "type": "output", "max_flow": 5.0, "cost": -10.0},
+    ],
+    "edges": [["input1", "output1"]],
+    "solver": {"name": "glpk"},
+}
+
+with tempfile.TemporaryDirectory() as tmp:
+    model_path = Path(tmp) / "model.json"
+    model_path.write_text(json.dumps(model_def), encoding="utf-8")
+    model = Model.load(str(model_path))
+    model.run()
+    print(getattr(model.solver, "name", type(model.solver).__name__))
+"""
+    proc = run_command([PYWR_PYTHON, "-c", script], timeout=45)
+    add_check(
+        checks,
+        "run",
+        f"{PYWR_PYTHON} minimal Pywr GLPK model",
+        True,
+        proc.returncode == 0,
+        "Install GLPK/libglpk and verify Pywr solver availability with tools/s1_installation/verify_pywr_installation.py",
+    )
+
+
+def check_required_tools(checks):
+    for tool in REQUIRED_TOOLS:
+        add_check(
+            checks,
+            "data",
+            tool.resolve(strict=False),
+            True,
+            tool.is_file(),
+            f"Restore required KI tool {tool.relative_to(KI_DIR)}",
+        )
+
+
+def check_grand_database(checks):
+    passed = GRAND_DB.is_file() and GRAND_DB.stat().st_size > 0
+    add_check(
+        checks,
+        "data",
+        GRAND_DB,
+        True,
+        passed,
+        "Restore GRanD_allocated.csv at the HydroCraft model data path used by find_dams_in_basin.py",
+    )
+
+
+def check_common_data(checks):
+    for path in OPTIONAL_COMMON_DATA:
+        add_check(
+            checks,
+            "data",
+            path,
+            False,
+            path.is_dir(),
+            f"Create or mount optional HydroCraft data directory {path} if this run needs it",
+        )
+
+
+def check_diagnostics(checks):
+    add_check(
+        checks,
+        "data",
+        DIAGNOSTICS,
+        True,
+        DIAGNOSTICS.is_file() and DIAGNOSTICS.stat().st_size > 0,
+        "Restore diagnostics/triplets.yaml so failures point to recovery guidance",
+    )
+
+
+def emit_report(model_id, checks):
+    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": model_id, "checks": checks}, sort_keys=True))
+    sys.exit(0 if all(c["status"] == "pass" or not c.get("critical") for c in checks) else 1)
 
 
 def main():
-    global PASS, FAIL
-    print(f"=" * 60)
-    print(f"  PREFLIGHT CHECK: Pywr")
-    print(f"=" * 60)
+    checks = []
+    print("=" * 60)
+    print(f"  PREFLIGHT CHECK: {MODEL_ID}")
+    print("=" * 60)
     print()
 
-    # Model-specific checks
-    # Python package: Pywr 1.30
-    # Pywr in dissection venv
-    import sys
-    sys.path.insert(0, "KISSPATH_HOME/桌面/test/hydro-claude/python_env/lib/python3.12/site-packages")
-    check_import("pywr", "Pywr (pywr)")
-    # Python package: Pywr model module
+    add_check(
+        checks,
+        "binary",
+        PYWR_PYTHON.resolve(strict=False),
+        True,
+        PYWR_PYTHON.is_file() and os.access(PYWR_PYTHON, os.X_OK),
+        f"Restore executable Pywr Python interpreter at {PYWR_PYTHON}",
+    )
+    check_manifest_runner(checks)
+    check_python_import(checks, "pywr")
+    check_python_import(checks, "pywr.model")
 
+    for module in ["numpy", "pandas", "geopandas", "netCDF4", "xarray", "matplotlib", "shapely", "scipy"]:
+        check_python_import(checks, module, critical=False)
+
+    check_glpk_solver(checks)
+    check_required_tools(checks)
+    check_grand_database(checks)
+    check_common_data(checks)
+    check_diagnostics(checks)
+
+    passed = sum(1 for check in checks if check["status"] == "pass")
+    failed = len(checks) - passed
+    critical_failed = sum(1 for check in checks if check["critical"] and check["status"] == "fail")
     print()
-
-    # Common data checks
-    check_common_data()
-
-    # Diagnostics available?
-    ki_dir = os.path.dirname(os.path.abspath(__file__))
-    triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")
-    if os.path.isfile(triplets):
-        print(f"  INFO  Diagnostic triplets available at: {triplets}")
-        print(f"         If the model fails, check triplets FIRST for known fixes.")
-
-    print()
-    print(f"  Results: {PASS} passed, {FAIL} failed")
-    if FAIL > 0:
-        print(f"  STATUS: PREFLIGHT FAILED — fix the issues above before running")
-        sys.exit(1)
+    print(f"  Results: {passed} passed, {failed} failed ({critical_failed} critical)")
+    if critical_failed:
+        print(f"  STATUS: PREFLIGHT FAILED - check {DIAGNOSTICS} and fix the blockers above")
     else:
-        print(f"  STATUS: PREFLIGHT PASSED — safe to proceed with model execution")
-        sys.exit(0)
+        print("  STATUS: PREFLIGHT PASSED - model runtime is ready")
+    emit_report(MODEL_ID, checks)
 
 
 if __name__ == "__main__":

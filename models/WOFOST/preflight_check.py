@@ -1,150 +1,326 @@
 #!/usr/bin/env python3
 """
-Preflight check for WOFOST/PCSE — verifies environment before simulation.
+Preflight check for the WOFOST/PCSE knowledge infrastructure.
 
-Run this BEFORE attempting any model execution. It checks that all required
-binaries, packages, and data paths are available.
-
-Usage:
-    python preflight_check.py
-
-Exit codes:
-    0 — all checks passed, safe to proceed
-    1 — one or more checks failed, fix before proceeding
+This script verifies the model entrypoint, required Python environment,
+imports, KI tool files, diagnostics, and common data locations before model
+execution. It always finishes with a single PREFLIGHT_REPORT= JSON line.
 """
 
+import json
 import os
-import sys
-import shutil
 import subprocess
-
-PASS = 0
-FAIL = 0
+import sys
 
 
-def check_file(path, label, executable=False):
-    global PASS, FAIL
-    if os.path.isfile(path):
-        if executable and not os.access(path, os.X_OK):
-            print(f"  WARN  {label}: exists but not executable: {path}")
-            print(f"         Fix: chmod +x {path}")
-            FAIL += 1
-        else:
-            print(f"  OK    {label}: {path}")
-            PASS += 1
+MODEL_ID = "WOFOST"
+KI_DIR = os.path.dirname(os.path.abspath(__file__))
+HYDROCRAFT_ROOT = "KISSPATH_ROOT"
+PYTHON = os.path.join(HYDROCRAFT_ROOT, "python_env", "bin", "python")
+MODEL_ENTRYPOINT = os.path.join(HYDROCRAFT_ROOT, "models", "WOFOST", "run_and_score.py")
+KI_TOOLS_COMMON = os.path.join(HYDROCRAFT_ROOT, "models", "ki_tools_common")
+TRIPLETS = os.path.join(KI_DIR, "diagnostics", "triplets.yaml")
+
+TOOL_FILES = [
+    "tools/calib_run.py",
+    "tools/s1_crop_params/load_crop_parameters.py",
+    "tools/s1_crop_params/validate_crop_params.py",
+    "tools/s2_soil_params/convert_hwsd_to_pcse_soil.py",
+    "tools/s2_soil_params/validate_soil_params.py",
+    "tools/s3_weather_prep/convert_vic_to_pcse_weather.py",
+    "tools/s3_weather_prep/create_csv_weather_file.py",
+    "tools/s3_weather_prep/validate_weather_data.py",
+    "tools/s4_agromanagement/generate_agromanagement_yaml.py",
+    "tools/s4_agromanagement/validate_agromanagement.py",
+    "tools/s5_engine_config/configure_pcse_engine.py",
+    "tools/s5_engine_config/validate_engine_config.py",
+    "tools/s6_execution/check_simulation_status.py",
+    "tools/s6_execution/run_wofost_simulation.py",
+    "tools/s7_output_parsing/export_output_csv.py",
+    "tools/s7_output_parsing/parse_wofost_output.py",
+    "tools/s8_yield_analysis/compare_wofost_dssat.py",
+    "tools/s8_yield_analysis/compute_gridded_yield.py",
+    "tools/s8_yield_analysis/generate_yield_map.py",
+    "tools/s8_yield_analysis/validate_against_faostat.py",
+]
+
+IMPORT_CHECKS = [
+    "pcse",
+    "pcse.models",
+    "pcse.input",
+    "pcse.base",
+    "pandas",
+    "numpy",
+    "yaml",
+    "xarray",
+]
+
+KI_TOOLS_COMMON_IMPORTS = [
+    "ki_tools_common.load_forcing",
+    "ki_tools_common.crop_obs",
+    "ki_tools_common.metrics",
+    "ki_tools_common.soil_utils",
+]
+
+COMMON_DATA_PATHS = [
+    ("KISSPATH_OBS", "Observation data", False),
+    ("KISSPATH_FORCING", "Forcing data", False),
+    ("KISSPATH_DATA/elev", "Elevation/DEM data", False),
+    ("KISSPATH_STATIC", "Soil data", False),
+]
+
+
+def diag_fix(message):
+    return f"{message}. Check {os.path.relpath(TRIPLETS, KI_DIR)} for recovery."
+
+
+def run_cmd(args, timeout=20, env=None):
+    merged_env = os.environ.copy()
+    if env:
+        merged_env.update(env)
+    return subprocess.run(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+        env=merged_env,
+    )
+
+
+def add_check(checks, kind, subject, critical, ok, fix="", ok_message=None, fail_message=None):
+    status = "pass" if ok else "fail"
+    check = {
+        "kind": kind,
+        "subject": subject,
+        "critical": bool(critical),
+        "status": status,
+        "fix": "" if ok else fix,
+    }
+    checks.append(check)
+
+    label = "OK" if ok else ("FAIL" if critical else "WARN")
+    message = ok_message if ok else fail_message
+    if message:
+        print(f"  {label:<5} {message}")
     else:
-        print(f"  FAIL  {label}: NOT FOUND at {path}")
-        FAIL += 1
+        print(f"  {label:<5} {subject}")
+    if not ok and fix:
+        print(f"        Fix: {fix}")
+    return ok
 
 
-def check_dir(path, label):
-    global PASS, FAIL
-    if os.path.isdir(path):
-        n = len(os.listdir(path))
-        print(f"  OK    {label}: {path} ({n} items)")
-        PASS += 1
-    else:
-        print(f"  FAIL  {label}: directory NOT FOUND at {path}")
-        FAIL += 1
-
-
-def check_import(module, label):
-    # Also search HydroCraft python_env for packages
-    import sys
-    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
-    if _penv not in sys.path:
-        sys.path.insert(0, _penv)
-    global PASS, FAIL
+def check_python(checks):
+    subject = os.path.realpath(PYTHON)
+    if not os.path.isfile(PYTHON):
+        return add_check(
+            checks,
+            "binary",
+            subject,
+            True,
+            False,
+            diag_fix(f"Restore the HydroCraft Python interpreter at {PYTHON}"),
+            fail_message=f"HydroCraft Python missing: {PYTHON}",
+        )
+    if not os.access(PYTHON, os.X_OK):
+        return add_check(
+            checks,
+            "binary",
+            subject,
+            True,
+            False,
+            diag_fix(f"Make the HydroCraft Python interpreter executable: chmod +x {PYTHON}"),
+            fail_message=f"HydroCraft Python is not executable: {PYTHON}",
+        )
     try:
-        __import__(module)
-        print(f"  OK    {label}: import {module} succeeded")
-        PASS += 1
-    except ImportError as e:
-        print(f"  FAIL  {label}: import {module} failed: {e}")
-        print(f"         Fix: pip install {module.split('.')[0]}")
-        FAIL += 1
+        proc = run_cmd(
+            [PYTHON, "-c", "import sys; print(sys.executable); print(sys.version_info[:2])"],
+            timeout=10,
+        )
+        ok = proc.returncode == 0 and "(3, 12)" in proc.stdout
+        detail = proc.stdout.strip().replace("\n", " ")
+        return add_check(
+            checks,
+            "binary",
+            subject,
+            True,
+            ok,
+            diag_fix(f"Use the Python 3.12 HydroCraft environment at {PYTHON}"),
+            ok_message=f"HydroCraft Python starts: {detail}",
+            fail_message=f"HydroCraft Python did not start as Python 3.12: {proc.stderr.strip()}",
+        )
+    except Exception as exc:
+        return add_check(
+            checks,
+            "binary",
+            subject,
+            True,
+            False,
+            diag_fix(f"Repair the HydroCraft Python environment at {PYTHON}"),
+            fail_message=f"HydroCraft Python startup failed: {exc}",
+        )
 
 
-def check_binary_search(name, label):
-    global PASS, FAIL
-    found = shutil.which(name)
-    if found:
-        print(f"  OK    {label}: {found}")
-        PASS += 1
-        return
-    # Search common locations
-    search_dirs = [
-        "KISSPATH_BINARIES",
-        "KISSPATH_HOME",
-        "/usr/local/bin",
-    ]
-    for d in search_dirs:
-        if not os.path.isdir(d):
-            continue
-        for root, dirs, files in os.walk(d):
-            for f in files:
-                if name.lower() in f.lower() and os.access(os.path.join(root, f), os.X_OK):
-                    print(f"  OK    {label}: {os.path.join(root, f)}")
-                    PASS += 1
-                    return
-            if root.count(os.sep) - d.count(os.sep) > 3:
-                dirs.clear()  # limit depth
-    print(f"  FAIL  {label}: binary '{name}' not found in PATH or common locations")
-    print(f"         Check SKILL.md for the correct binary path")
-    FAIL += 1
+def check_entrypoint(checks):
+    subject = os.path.realpath(MODEL_ENTRYPOINT)
+    if not os.path.isfile(MODEL_ENTRYPOINT):
+        return add_check(
+            checks,
+            "binary",
+            subject,
+            True,
+            False,
+            diag_fix(f"Restore the WOFOST model entrypoint at {MODEL_ENTRYPOINT}"),
+            fail_message=f"WOFOST entrypoint missing: {MODEL_ENTRYPOINT}",
+        )
+    if not os.access(MODEL_ENTRYPOINT, os.R_OK):
+        return add_check(
+            checks,
+            "binary",
+            subject,
+            True,
+            False,
+            diag_fix(f"Make the WOFOST entrypoint readable: chmod +r {MODEL_ENTRYPOINT}"),
+            fail_message=f"WOFOST entrypoint is not readable: {MODEL_ENTRYPOINT}",
+        )
+
+    try:
+        proc = run_cmd([PYTHON, MODEL_ENTRYPOINT, "--help"], timeout=20)
+        ok = proc.returncode == 0 and "usage:" in proc.stdout
+        return add_check(
+            checks,
+            "binary",
+            subject,
+            True,
+            ok,
+            diag_fix(f"Run `{PYTHON} {MODEL_ENTRYPOINT} --help` and fix the first traceback"),
+            ok_message=f"WOFOST entrypoint starts via HydroCraft Python: {subject}",
+            fail_message=(
+                "WOFOST entrypoint failed cheap startup check: "
+                + (proc.stderr.strip() or proc.stdout.strip())
+            ),
+        )
+    except Exception as exc:
+        return add_check(
+            checks,
+            "binary",
+            subject,
+            True,
+            False,
+            diag_fix(f"Run `{PYTHON} {MODEL_ENTRYPOINT} --help` and fix the startup failure"),
+            fail_message=f"WOFOST entrypoint startup check crashed: {exc}",
+        )
 
 
-def check_common_data():
-    """Check common HydroCraft data paths."""
-    global PASS, FAIL
-    common = [
-        ("KISSPATH_OBS", "Observation data"),
-        ("KISSPATH_FORCING", "Forcing data"),
-        ("KISSPATH_STATIC", "DEM data"),
-        ("KISSPATH_STATIC", "Soil data"),
-    ]
-    for path, label in common:
-        if os.path.isdir(path):
-            PASS += 1
-        else:
-            print(f"  WARN  {label}: {path} not found (may not be needed)")
+def check_import(checks, module, critical=True, extra_path=None):
+    subject = module
+    code = "import importlib; importlib.import_module(%r); print('ok')" % module
+    env = None
+    if extra_path:
+        env = {"PYTHONPATH": extra_path + os.pathsep + os.environ.get("PYTHONPATH", "")}
+    try:
+        proc = run_cmd([PYTHON, "-c", code], timeout=20, env=env)
+        ok = proc.returncode == 0
+        return add_check(
+            checks,
+            "import",
+            subject,
+            critical,
+            ok,
+            diag_fix(f"Install or repair import `{module}` in {PYTHON}"),
+            ok_message=f"import {module} succeeded under {PYTHON}",
+            fail_message=f"import {module} failed under {PYTHON}: {proc.stderr.strip()}",
+        )
+    except Exception as exc:
+        return add_check(
+            checks,
+            "import",
+            subject,
+            critical,
+            False,
+            diag_fix(f"Install or repair import `{module}` in {PYTHON}"),
+            fail_message=f"import {module} check crashed: {exc}",
+        )
+
+
+def check_file(checks, path, label, critical=True):
+    subject = os.path.realpath(path)
+    ok = os.path.isfile(path)
+    return add_check(
+        checks,
+        "data",
+        subject,
+        critical,
+        ok,
+        diag_fix(f"Restore required file for {label}: {path}"),
+        ok_message=f"{label}: {path}",
+        fail_message=f"{label} missing: {path}",
+    )
+
+
+def check_dir(checks, path, label, critical=False):
+    subject = os.path.realpath(path)
+    ok = os.path.isdir(path)
+    count = len(os.listdir(path)) if ok else 0
+    return add_check(
+        checks,
+        "data",
+        subject,
+        critical,
+        ok,
+        diag_fix(f"Restore or configure {label} at {path} if this run needs it"),
+        ok_message=f"{label}: {path} ({count} items)",
+        fail_message=f"{label} not found: {path}",
+    )
+
+
+def emit_report(model_id, checks):
+    print("PREFLIGHT_REPORT=" + json.dumps({"model_id": model_id, "checks": checks}, sort_keys=True))
+    critical_failed = any(c["critical"] and c["status"] != "pass" for c in checks)
+    sys.exit(1 if critical_failed else 0)
 
 
 def main():
-    global PASS, FAIL
-    print(f"=" * 60)
-    print(f"  PREFLIGHT CHECK: WOFOST/PCSE")
-    print(f"=" * 60)
+    checks = []
+
+    print("=" * 60)
+    print("  PREFLIGHT CHECK: WOFOST/PCSE")
+    print("=" * 60)
     print()
 
-    # Model-specific checks
-    # Python package: PCSE 6.0
-    check_import("pcse", "PCSE 6.0")
-    # Python package: PCSE model classes
-    check_import("pcse.models", "PCSE model classes")
-    # Python package: PCSE input providers
-    check_import("pcse.input", "PCSE input providers")
-
+    check_python(checks)
+    check_entrypoint(checks)
     print()
 
-    # Common data checks
-    check_common_data()
-
-    # Diagnostics available?
-    ki_dir = os.path.dirname(os.path.abspath(__file__))
-    triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")
-    if os.path.isfile(triplets):
-        print(f"  INFO  Diagnostic triplets available at: {triplets}")
-        print(f"         If the model fails, check triplets FIRST for known fixes.")
-
+    for module in IMPORT_CHECKS:
+        check_import(checks, module, critical=True)
+    for module in KI_TOOLS_COMMON_IMPORTS:
+        check_import(checks, module, critical=True, extra_path=KI_TOOLS_COMMON)
     print()
-    print(f"  Results: {PASS} passed, {FAIL} failed")
-    if FAIL > 0:
-        print(f"  STATUS: PREFLIGHT FAILED — fix the issues above before running")
-        sys.exit(1)
+
+    for relpath in TOOL_FILES:
+        check_file(checks, os.path.join(KI_DIR, relpath), relpath, critical=True)
+    check_file(checks, os.path.join(KI_DIR, "knowledge_infrastructure.yaml"), "KI manifest", critical=True)
+    check_file(checks, os.path.join(KI_DIR, "dag.yaml"), "DAG", critical=True)
+    check_file(checks, os.path.join(KI_DIR, "SKILL.md"), "agent skill instructions", critical=True)
+    check_file(checks, TRIPLETS, "diagnostic triplets", critical=True)
+    print()
+
+    for path, label, critical in COMMON_DATA_PATHS:
+        check_dir(checks, path, label, critical=critical)
+    print()
+
+    passed = sum(1 for c in checks if c["status"] == "pass")
+    failed = len(checks) - passed
+    critical_failed = [c for c in checks if c["critical"] and c["status"] != "pass"]
+    print(f"  Results: {passed} passed, {failed} failed")
+    if critical_failed:
+        print("  STATUS: PREFLIGHT FAILED - fix critical issues before running")
     else:
-        print(f"  STATUS: PREFLIGHT PASSED — safe to proceed with model execution")
-        sys.exit(0)
+        print("  STATUS: PREFLIGHT PASSED - safe to proceed with model execution")
+    print()
+
+    emit_report(MODEL_ID, checks)
 
 
 if __name__ == "__main__":

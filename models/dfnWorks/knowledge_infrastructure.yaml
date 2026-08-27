@@ -1,77 +1,116 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:59:55.797271'
-  domain: groundwater
   name: dfnWorks
-  version: auto-generated
+  language: c++/c/python
+  implementation:
+    id: dfnworks-v2100
+    version: v2.10.0 (DFNGen v2.3, DFNTrans, pydfnworks driver)
+    provenance: C++ (DFNGen generator), C (DFNTrans particle tracker), Python (pydfnworks driver + self-contained
+      dfnGraph flow/transport solver); LANL EES-16. Full-physics meshing (LaGriT) and flow (PFLOTRAN/FEHM)
+      are external binaries invoked by pydfnworks.
+  scientific_reference_version: dfnWorks discrete fracture network framework (Hyman et al. 2015, Computers
+    & Geosciences 84:10-19), graph-mode flow/transport branch (dfnGraph, v2.2+)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/dfnWorks/venv/bin/python
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s0_configuration_skill
+  - s1_network_generation_skill
+  - s2_meshing_skill
+  - s3_flow_simulation_skill
+  - s4_transport_skill
+  - s5_postprocessing_skill
+  - s6_coupling_skill
+tools:
+  count: 4
+  files:
+  - tools/convert_fracture_input.py
+  - tools/convert_hydraulic_params.py
+  - tools/parse_dfnworks_output.py
+  - tools/run_dfnworks.py
+inputs:
+  forcing: []
+  parameters:
+  - name: domainSize
+    unit: m
+  - name: domainSizeIncrease
+    unit: m
+  - name: h
+    unit: m
+  - name: fracture shape
+    unit: enum
+  - name: size distribution (edistr/rdistr)
+    unit: enum
+  - name: min_radius / max_radius
+    unit: m
+  - name: Fisher kappa (ekappa/rkappa)
+    unit: dimensionless
+  - name: orientation (theta/phi trend & plunge, or dip/strike)
+    unit: degrees
+  - name: aspect ratio (easpect/raspect)
+    unit: dimensionless
+  - name: p32 targets (e_p32Targets/r_p32Targets)
+    unit: 1/m
+  - name: famProb / probability
+    unit: dimensionless
+  - name: permeability k
+    unit: m^2
+  - name: aperture b
+    unit: m
+  - name: transmissivity T
+    unit: m^2/s
+  - name: fluid_viscosity
+    unit: Pa.s
+  - name: fluid_density
+    unit: kg/m^3
+  - name: matrix_porosity
+    unit: dimensionless
+  - name: matrix_diffusivity
+    unit: m^2/s
+  - name: phi (graph-flow velocity porosity)
+    unit: dimensionless
+  initial_conditions:
+  - name: seed
+    unit: n/a
+  boundary_conditions:
+  - name: stopCondition
+    unit: enum
+  - name: nPoly
+    unit: count
+  - name: boundaryFaces
+    unit: 6 binary flags
+  - name: keepOnlyLargestCluster / keepIsolatedFractures / removeFracturesLessThan / disableFram
+    unit: switches
+  - name: pressure_in / pressure_out
+    unit: Pa
+  - name: nparticles
+    unit: count
+  - name: tdrw_flag
+    unit: bool
+  - name: particle release weighting (flux_weight / init_nf / init_partn)
+    unit: switch
+  - name: control_planes
+    unit: m + direction
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - particle_travel_time
+  - breakthrough_curve
+  - travel_time_statistics
+  - effective_permeability
+  - flow_channeling_metric
+  - fracture_network_geometry
+  - upscaled_continuum_properties
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: 2 scorecard(s)'
+summary:
+  total_tools: 4
+  total_stage_docs: 7
+  total_diagnostic_triplets: 17
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

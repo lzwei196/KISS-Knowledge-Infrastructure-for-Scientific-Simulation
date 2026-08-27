@@ -493,7 +493,7 @@ outputs:
   - var: "flddph"
     validation_rank: 5
     unit: "m"
-    description: "Floodplain inundation depth above floodplain ground."
+    description: "Floodplain flood-water inundation depth above floodplain ground."
     emitted_in: "o_flddph{YYYY}.nc"
     observability:
       comparable_obs_shapes:

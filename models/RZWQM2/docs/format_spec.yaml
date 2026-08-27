@@ -1,326 +1,805 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["crop"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "RZWQM2 (Root Zone Water Quality Model 2)"
-  domain: "crop"
-  secondary_domains: ["water_quality", "soil_water", "nutrient_transport", "tile_drainage"]
-  binary: "main_ryzen"
-  binary_path: "KISSPATH_BINARIES/rzwqm2/main_ryzen_patched"
-  language: "Fortran"
-  execution: "cd <scenario_dir> && ./main_ryzen_patched"
-  notes: >
-    USDA-ARS process-based model for water movement, nutrient transport, and crop
-    growth (via embedded DSSAT) in agricultural fields. Linux binary requires
-    patchelf ELF interpreter fix and AVX2-capable CPU.
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: RZWQM2
+  language: fortran
+  implementation:
+    id: rzwqm2-main-ryzen
+    version: RZWQM2 (USDA-ARS release 4.2 lineage; Linux x86-64 binary main_ryzen)
+    provenance: Fortran; USDA-ARS RZWQM2 compiled binary (Windows RZWQMrelease.exe / Linux main_ryzen)
+      with embedded DSSAT crop modules.
+  scientific_reference_version: RZWQM2 (Root Zone Water Quality Model 2; model science core v2.x, e.g.
+    2.70) with embedded DSSAT 4.0 CERES/CROPGRO crop modules and RZ-SHAW heat/snow coupling
 inputs:
-
   forcing:
-    - name: "temperature_min"
-      file: "*.met"
-      unit: "degC"
-      valid_range: [-60.0, 50.0]
-      format: "fixed-width columns in RZWQM2 .met format"
-
-    - name: "temperature_max"
-      file: "*.met"
-      unit: "degC"
-      valid_range: [-50.0, 60.0]
-
-    - name: "wind_speed"
-      file: "*.met"
-      unit: "km/day"
-      valid_range: [0.0, 900.0]
-      conversion_from_cmfd: "m/s -> km/day: multiply by 86.4"
-
-    - name: "solar_radiation"
-      file: "*.met"
-      unit: "MJ/m2/day"
-      valid_range: [0.0, 35.0]
-      conversion_from_cmfd: "W/m2 -> MJ/m2/day: multiply by 0.0864"
-
-    - name: "pan_evaporation"
-      file: "*.met"
-      unit: "mm/day"
-      valid_range: [0.0, 20.0]
-      notes: "If unavailable, estimate as 0.7 * Hargreaves ET0"
-
-    - name: "relative_humidity"
-      file: "*.met"
-      unit: "%"
-      valid_range: [0, 100]
-
-    - name: "par"
-      file: "*.met"
-      unit: "MJ/m2/day"
-      valid_range: [0.0, 18.0]
-      notes: "Photosynthetically active radiation. Estimate as 0.48 * shortwave if missing."
-
-    - name: "breakpoint_rainfall"
-      file: "*.brk"
-      unit: "inches"
-      valid_range: [0.0, 20.0]
-      conversion_from_met: "mm -> inches: divide by 25.4"
-      silent_error: >
-        BRK precipitation must be in INCHES, not mm. The .met file uses mm.
-        Providing mm in .brk causes drainage 25x too high. (dt_004)
-
+  - name: daily meteorology (Tmin, Tmax, wind run, solar radiation, relative humidity, rainfall; optional
+      E-pan, PAR)
+    unit: Tmin/Tmax degC; wind km/day; SRAD MJ/m^2/day; RH %; rainfall mm; E-pan cm/day; PAR mol quanta/m^2/day
+    category: weather
+    source_kind: forcing
+    model_input_format: .met (36-line header then one 10-column row per day)
+    notes: 'No missing-value handler: every day must carry a complete numeric row. Setting E-pan and PAR
+      columns to 0 triggers the model''s internal Penman-Monteith/Shuttleworth-Wallace ET estimation;
+      supplying non-zero values overrides it. Wind is a daily run (km/day), solar radiation is MJ/m^2/day.
+      When the PAR column is 0/absent, the model internally derives PAR as 0.48 × shortwave (SRAD) in
+      the meteorology reader (hmet); this is the model''s built-in PAR estimate, not a host-tool conversion.'
+  - name: breakpoint (sub-daily) rainfall intensity
+    unit: inches (precipitation depth per breakpoint)
+    category: weather
+    source_kind: forcing
+    model_input_format: .brk (20-line header, per-event control line, breakpoint time/depth pairs)
+    notes: Drives the sub-daily infiltration intensity that the Green-Ampt/macropore routine consumes.
+      The binary expects breakpoint precipitation in INCHES (not mm); mm supplied without /25.4 inflates
+      infiltration ~25x.
+  - name: ambient CO2 concentration
+    unit: ppm
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: grid general-property line in RZWQM.dat
+    notes: Atmospheric driver to the crop assimilation routines; specified as a site property rather than
+      a per-day column.
   parameters:
-    critical:
-      - name: "latitude"
-        file: "RZWQM.dat"
-        unit: "radians"
-        valid_range: [-1.571, 1.571]
-        silent_error: >
-          MUST be in RADIANS, not degrees. Convert: rad = deg * pi / 180.
-          Wrong units cause incorrect ET and radiation calculations. (dt_009)
-
-      - name: "longitude"
-        file: "RZWQM.dat"
-        unit: "radians"
-        valid_range: [-3.142, 3.142]
-        silent_error: "Must be in radians. Degrees cause silent errors in solar geometry."
-
-      - name: "soil_texture"
-        file: "RZWQM.dat"
-        description: "Physical, hydraulic, micropore, macropore soil properties"
-        notes: >
-          All soil sections must have the same horizon count. Brooks-Corey
-          hydraulic parameters derived from texture via pedotransfer.
-
-      - name: "cultivar_coefficients"
-        file: "*.CUL"
-        description: "DSSAT cultivar parameters embedded in RZWQM2"
-        notes: >
-          RZWQM2 reads .CUL files from BOTH scenario root AND DSSAT/ subdirectory.
-          Cultivar updates must target both locations. (dt_022)
-          ECO# must start at column 25 (1-indexed). VRNAME = 16 name + 1 space = 17 chars. (dt_023)
-
-      - name: "tile_drainage_params"
-        description: "drain flag + perched_WT=1 + bottom_BC=3 + lateral_ksat>1.0 + geometry"
-        notes: >
-          Just enabling the drain flag produces zero drainage. Need all 5 params:
-          drain flag, perched water table, bottom boundary condition (constant flux),
-          lateral Ksat > 1.0 cm/hr, and drain spacing/depth geometry.
-
-      - name: "field_sat"
-        description: "Field saturation fraction for constant-flux bottom BC"
-        valid_range: [0.70, 1.00]
-        typical: [0.80, 0.85]
-        notes: "Controls water influx. 1.0 = maximum, 0.80-0.85 typical for calibrated tile-drained clay."
-
-    management:
-      - name: "crop_ref"
-        file: "RZCropSel.rzq"
-        description: "Crop reference number (1=maize, 2=soybean, 3=wheat)"
-        notes: "Must match management events in rzwqm.dat"
-
-  files:
-    required:
-      - name: "ipnames.dat"
-        description: "Master control file with 8 file paths + simulation dates"
-        format: "Lines 0-7: file paths. Line 8: DD MM YYYY DD MM YYYY"
-        notes: "All paths must point to existing files. Primary source of path-not-found errors."
-
-      - name: "RZWQM.dat"
-        description: "Main parameter file (soil, site, management, options)"
-        format: "Fortran fixed-width sections"
-        notes: "Use validated tools for all modifications. Encoding: ISO-8859-1."
-
-      - name: "RZINIT.dat"
-        description: "Initial conditions (soil water, temperature, chemistry, nutrients)"
-
-      - name: "*.met"
-        description: "Daily meteorological data"
-
-      - name: "*.brk"
-        description: "Breakpoint rainfall (sub-daily, in inches)"
-
-      - name: "*.CUL + *.ECO + *.SPE"
-        description: "DSSAT genotype files"
-
-      - name: "RZCropSel.rzq"
-        description: "Crop selection registry"
-
-      - name: "*.RZX"
-        description: "Experiment file with DSSAT database paths"
-        notes: "Paths must be updated for the scenario directory"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: site geometry (latitude, longitude, elevation, slope, aspect, area)
+    unit: lat/lon RADIANS; elevation m; slope fraction 0-1; aspect deg from north; area m^2
+    category: site
+    source_kind: user_provided
+    model_input_format: RZWQM.dat grid general-property line
+    notes: Latitude and longitude MUST be in radians; |lat|>pi/2 indicates a degrees error that silently
+      corrupts solar geometry and PET.
+  - name: soil horizon physical properties (bulk density, particle density, sand/silt/clay, porosity)
+    unit: g/cm^3; %; fraction
+    category: soil
+    source_kind: calibrated
+    model_input_format: RZWQM.dat soil physical section (per horizon, max 20 horizons / 3000 cm)
+  - name: Brooks-Corey hydraulic parameters (bubbling pressure, pore-size index lambda, Ksat, residual/saturated
+      water content, field-capacity points, lateral Ksat)
+    unit: bubbling pressure cm H2O; Ksat cm/hr; water contents cm^3/cm^3
+    category: soil
+    source_kind: calibrated
+    model_input_format: RZWQM.dat soil hydraulic section (per horizon)
+    notes: Dominant water-flux controls; sensitivity order Ksat > effective porosity (ws-wr) > macroporosity
+      > bubbling pressure > pore-size index.
+  - name: macropore / micropore properties (total macroporosity, radius, width, crack/aggregate geometry,
+      dead-end fraction, microporosity by texture)
+    unit: fraction; cm
+    category: soil
+    source_kind: calibrated
+    model_input_format: RZWQM.dat macropore and micropore sections
+  - name: soil heat / thermal parameters (method flag, thermal conductivity)
+    unit: dimensionless flag; W/m/K
+    category: soil
+    source_kind: calibrated
+    model_input_format: RZWQM.dat heat-model section
+  - name: DSSAT cultivar / ecotype / species coefficients
+    unit: crop-specific genetic coefficients
+    category: crop
+    source_kind: dataset_lookup
+    model_input_format: .CUL / .ECO / .SPE DSSAT databases (linked via .RZX)
+    notes: Cultivar coefficients are fixed-width and crop-specific (maize, wheat, soybean differ in parameter
+      count); they parameterize the embedded DSSAT crop modules.
+  - name: pesticide chemical properties (Freundlich adsorption constant, dissociation/pKa, degradation
+      rates) and soil chemistry parameters (pH, CEC)
+    unit: adsorption constant, rate constants, pH, cmol/kg
+    category: chemistry
+    source_kind: calibrated
+    model_input_format: RZWQM.dat pesticide/chemistry sections and RZINIT.dat chemistry section
+  initial_conditions:
+  - name: initial soil water tension/content and soil temperature per horizon
+    unit: cm tension or cm^3/cm^3; degC
+    category: soil_water
+    source_kind: user_provided
+    model_input_format: RZINIT.dat water section
+    notes: A 1-3 year warm-up is recommended to equilibrate the profile before the analysis period.
+  - name: initial nitrogen pools (NO3, NH4, urea, fast/slow organic N) per horizon
+    unit: ug/g or kg/ha
+    category: nutrient
+    source_kind: user_provided
+    model_input_format: RZINIT.dat nutrient section
+  - name: initial soil chemistry (pH, CEC, organic carbon) per horizon
+    unit: pH; cmol/kg; %
+    category: chemistry
+    source_kind: user_provided
+    model_input_format: RZINIT.dat chemistry section
+  - name: initial surface residue / organic-matter pool state
+    unit: kg/ha
+    category: residue
+    source_kind: user_provided
+    model_input_format: RZINIT.dat / management residue settings
+  - name: initial snow water / depth state
+    unit: cm
+    category: snow
+    source_kind: user_provided
+    model_input_format: .sno
+  boundary_conditions:
+  - name: simulation period (start/end dates)
+    unit: DD MM YYYY DD MM YYYY
+    category: control
+    source_kind: user_provided
+    model_input_format: ipnames.dat line 8
+    notes: Dates must fall within the .met record range.
+  - name: bottom boundary condition (1=free drainage, 2=water table, 3=constant flux/lysimeter)
+    unit: integer switch
+    category: hydrology_option
+    source_kind: user_provided
+    model_input_format: RZWQM.dat infiltration parameter line
+    notes: Tile drainage requires the constant-flux option (BC=3) together with perched-water-table and
+      lateral-Ksat settings; otherwise drainage is zero.
+  - name: tile drainage configuration (drain flag, drain depth/spacing geometry, lateral Ksat threshold)
+    unit: geometry in cm; lateral Ksat cm/hr
+    category: drainage_geometry
+    source_kind: user_provided
+    model_input_format: RZWQM.dat infiltration/drainage section
+  - name: management events (planting date/density/row spacing, fertilizer N/P rate and timing, manure,
+      tillage, irrigation mode, residue, harvest)
+    unit: dates; kg/ha; counts
+    category: management
+    source_kind: user_provided
+    model_input_format: RZWQM.dat management sections and plgen.dat
+    notes: Fertilizer timing uses event codes (e.g., 1=preplant, 3=postemergence); irrigation is set as
+      irrigated vs rainfed mode.
+  - name: crop / cultivar selection and planting plant-reference
+    unit: crop id + cultivar id
+    category: crop_selection
+    source_kind: user_provided
+    model_input_format: RZWQM.dat crop line and planting schedule; .RZX DSSAT link
+    notes: Selects which embedded DSSAT crop module (CERES maize/wheat, CROPGRO soybean, etc.) runs; an
+      incomplete/empty cultivar id makes DSSAT fall back to its first .CUL entry.
 outputs:
-
   primary:
-    - name: "soil_water_storage"
-      file: "*.ana"
-      unit: "cm"
-      valid_range: [0, 200]
-      notes: "Total stored soil water across all horizons"
-
-    - name: "crop_yield"
-      file: "*.ana"
-      unit: "kg/ha"
-      notes: "From embedded DSSAT crop growth module"
-
-    - name: "evapotranspiration"
-      file: "*.ana"
-      unit: "mm/day"
-      valid_range: [0, 15]
-
-    - name: "tile_drainage"
-      file: "*.ana"
-      unit: "cm"
-      valid_range: [0, 50]
-      notes: >
-        IMPORTANT: Tile drainage in .ana output is in CENTIMETERS.
-        Multiply by 10 for mm. (dt_010)
-
-    - name: "no3_leaching"
-      file: "*.ana"
-      unit: "kgN/ha"
-      notes: "Nitrate leaching below root zone"
-
-    - name: "deep_seepage"
-      file: "*.ana"
-      unit: "cm"
-
-  layer_output:
-    - name: "layer_soil_water"
-      file: "Layer.plt"
-      description: "Depth-resolved soil water, temperature, N species"
-      notes: "Use parse_layer_output.py for extraction"
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: soil_water_storage
+    unit: cm (profile) or cm^3/cm^3 (volumetric by layer)
+    description: Total and layer-resolved soil water content in the root-zone profile.
+    validation_rank: 3
+    emitted_in: .ana (profile total); Layer.plt (depth-resolved by node)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - Layer.plt node depths derive from the half-way-rule discretization and may not align with sensor/horizon
+          depths; depth matching required before comparison.
+      detrending_options:
+      - none
+  - name: tile_drainage
+    unit: cm (.ana column; multiply by 10 for mm)
+    description: Lateral tile-drainage water flux leaving the profile.
+    validation_rank: 4
+    emitted_in: .ana (column index 10)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Reported in cm; convert to mm (x10) before comparison with mm-based drain-flow observations.
+      detrending_options:
+      - none
+  - name: evapotranspiration
+    unit: mm/day (or cm)
+    description: Actual and potential evapotranspiration from the surface energy/water balance.
+    validation_rank: 2
+    emitted_in: .ana
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Non-zero E-pan/PAR forcing columns override the internal ET estimate; comparison only meaningful
+          when internal ET is active.
+      detrending_options:
+      - none
+  - name: no3_leaching
+    unit: kg N/ha
+    description: Nitrate-N in subsurface soil-profile leachate below the root zone and in tile-drainage
+      water.
+    validation_rank: 5
+    emitted_in: .ana
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Strongly dependent on calibrated N-transformation and humus-pool parameters; uncalibrated runs
+          are not predictive.
+      detrending_options:
+      - none
+  - name: soil_nitrate
+    unit: kg N/ha (or ug/g by layer)
+    description: Soil nitrate-N content / concentration in the profile.
+    validation_rank: 6
+    emitted_in: .ana (profile); Layer.plt (depth-resolved N species)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Depth-resolved sampling must be matched to discretization nodes.
+      detrending_options:
+      - none
+  - name: crop_yield
+    unit: kg/ha
+    description: Crop grain yield from the embedded DSSAT crop module.
+    validation_rank: 1
+    emitted_in: .ana (grain yield column); MANAGE.OUT; PLANTSUM.OUT (may be missing)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Single-season point yield; field-measured yield is the appropriate target.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - ranking_quality
+        determining_metric: pbias
+        caveats:
+        - Multi-season field yields; inter-annual ranking is meaningful at a calibrated point.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/regional yield aggregates carry a technology trend a point process model cannot reproduce;
+          detrend before comparing.
+      detrending_options:
+      - none
+      - linear_residual
+      - decadal_mean
+  - name: soil_temperature
+    unit: degC
+    description: Soil temperature profile by depth.
+    validation_rank: 7
+    emitted_in: .ana (column 4); Layer.plt (depth-resolved)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Layer.plt node depths must be matched to sensor depths.
+      detrending_options:
+      - none
+  - name: snow_depth
+    unit: cm
+    description: Snow depth / snow water state (RZ-SHAW).
+    validation_rank: 8
+    emitted_in: .ana (column index 91)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Only meaningful when the RZ-SHAW snow/freezing path is active.
+      detrending_options:
+      - none
+  - name: pesticide_loss
+    unit: mass and concentration units (runoff and leachate)
+    description: Pesticide mass loss and concentration in surface runoff water and subsurface leachate.
+    validation_rank: 9
+    emitted_in: .ana / chemistry output files
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Weak-acid pesticide predictions are highly sensitive to Freundlich constant, soil pH and dissociation
+          coefficient; treat as semi-quantitative without calibration.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "elf_interpreter_wrong"
-    triplet: "dt_012"
-    description: >
-      Linux binary has wrong ELF interpreter path (ComputeCanada cluster path).
-      Must be patched with patchelf for standard Linux systems.
-    affected_output: "Binary fails to start with 'No such file or directory' despite existing"
-    detection: "Binary exists but 'No such file or directory' error on execution"
-    fix: "patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 main_ryzen"
-    scorecard: "core_RZWQM2.json (PASS after patchelf)"
+- id: dt_001
+  symptom: 'RZWQM2 crashes immediately on startup, or creates empty files named like "C:\RZWQM2\projects\..."
+    in the working directory instead of reading the intended input files.
 
-  - id: "avx2_required"
-    description: "Binary requires AVX2 instruction set"
-    affected_output: "Illegal instruction or SIGILL on older CPUs"
-    detection: "SIGILL signal or 'Illegal instruction' error"
-    fix: "Run on x86-64 CPU with AVX2 support. Will not run on ARM or pre-Haswell x86."
+    ; [''Model exits within seconds of launch'', ''Empty files with Windows-style path names appear in
+    the scenario directory'', ''Fortran ru'
+  diagnosis: 'ipnames.dat contains Windows paths (C:\...) but the model is running on Linux. The Fortran
+    OPEN statement interprets backslash-containing strings as literal filenames rather than directory
+    separators, creating files with those names instead of navigating to the intended paths.
 
-  - id: "brk_precipitation_inches"
-    triplet: "dt_004"
-    description: "Breakpoint rainfall in mm instead of inches"
-    affected_output: "Drainage 25x too high"
-    detection: "Drainage values unrealistically high"
-    fix: "Divide mm by 25.4 in .brk file"
+    ; RZWQM2 reads the fir'
+  remedy: 'Run the update_ipnames_paths tool. Replace all Windows paths with relative Linux paths (./file.dat).
 
-  - id: "lat_lon_degrees_not_radians"
-    triplet: "dt_009"
-    description: "Latitude/longitude in degrees instead of radians"
-    affected_output: "Wrong ET and radiation -- silent error"
-    detection: "Latitude values > 1.6 in RZWQM.dat"
-    fix: "Convert: radians = degrees * pi / 180"
+    ; update_ipnames_paths; head -8 ipnames.dat should show ./cntrl.dat, ./rzwqm.dat, ./rzinit.dat, ./plgen.dat,
+    and relative paths to .met, .brk, .ana, and chemistry files.
 
-  - id: "tile_drainage_cm_not_mm"
-    triplet: "dt_010"
-    description: "Tile drainage output in cm, not mm"
-    affected_output: "Drainage appears 10x too low when compared to mm-based observations"
-    detection: "Drainage values seem unreasonably small"
-    fix: "Multiply .ana tile drainage values by 10 for mm"
+    ; C:\RZWQM2\projects\534\cntr'
+  severity: fatal
+- id: dt_002
+  symptom: 'Segfault during DSSAT crop model initialization. The model reads initial values successfully
+    but crashes when the plant growth module starts.
 
-  - id: "soil_texture_whitespace"
-    triplet: "dt_008"
-    description: "Wrong soil texture from whitespace mismatch in fixed-width format"
-    affected_output: "Wrong hydraulic properties, cascading errors in water balance"
-    detection: "Soil type does not match expected USDA classification"
-    fix: "Use write_soil_properties.py which handles exact column alignment"
+    ; ["Stdout shows ''INITIAL VALUES READ IN'' followed by crash", ''forrtl: severe (174): SIGSEGV, segmentation
+    fault occurred'', ''Model dies during crop growth ini'
+  diagnosis: '.RZX files (MZDSSAT.RZX, SBDSSAT.RZX, WHDSSAT.RZX) contain Windows paths for the DSSAT database
+    directory (C:\RZWQM2\DATABASES\DSSAT\) and the project directory. The DSSAT module cannot locate its
+    cultivar, species, and ecotype files.
 
-  - id: "ipnames_path_resolution"
-    description: "ipnames.dat paths not pointing to correct files"
-    affected_output: "Binary crashes immediately or reads wrong data"
-    detection: "File not found errors or unexpected behavior"
-    fix: "Use update_ipnames_paths.py to fix all 8 paths"
+    ; Line 68 of each .RZX file specifies the DSSAT database director'
+  remedy: 'Run the update_rzx_paths tool. Replace line 68 with relative "DSSAT/" and line 69 with "./"
+    in all .RZX files.
 
-  - id: "cul_dual_location"
-    triplet: "dt_022"
-    description: "Cultivar .CUL files read from both scenario root and DSSAT/ subdir"
-    affected_output: "Old cultivar parameters used if only one location updated"
-    detection: "Yield does not change after cultivar update"
-    fix: "Update .CUL in BOTH scenario root and DSSAT/ subdirectory"
+    ; update_rzx_paths; Check line 68 of each .RZX file shows "DSSAT/" and line 69 shows "./". Verify
+    the DSSAT/ directory exists and contains the required database files.
 
-  - id: "fortran_fixed_width_eco"
-    triplet: "dt_023"
-    description: "ECO# field must start at column 25 (1-indexed) in .CUL files"
-    affected_output: "Wrong ecotype parameters silently applied"
-    detection: "Yield or phenology does not match expected values"
-    fix: "VRNAME = 16 chars name + 1 space = 17 chars before ECO# starts at column 25"
+    ; C:\RZWQM2\DATABASES'
+  severity: fatal
+- id: dt_003
+  symptom: 'Model runs but produces unrealistic evapotranspiration, plant growth, or soil temperature
+    values. No error message is generated by the model.
 
-  - id: "encoding_iso8859"
-    description: "rzwqm_file.py reads ISO-8859-1; all writes must use encoding='ISO-8859-1'"
-    affected_output: "File bloats 3x per read-write cycle with UTF-8 default"
-    detection: "RZWQM.dat file size grows after each modification"
-    fix: "Always use encoding='ISO-8859-1' in open() calls"
+    ; [''ET values are negative or implausibly high'', ''Plant growth curve shows anomalous jumps or stalls'',
+    ''Soil temperature does not follow expected seasonal pat'
+  diagnosis: 'Source weather data has Tmin > Tmax for some days. This is a common data quality issue with
+    station data, especially around midnight observation times or sensor malfunctions.
 
-# =========================================================================
-# EXPECTED RANGES (from validated results — Iowa Maize)
-# =========================================================================
-expected_ranges:
-  iowa_maize:
-    stored_soil_water_cm: [50, 100]
-    total_soil_inorganic_n_kgNha: [100, 400]
-    output_columns: 139
-    daily_records: 1095
-    reference: "Iowa Maize 2015-2017"
-    scorecard: "core_RZWQM2.json (PASS)"
+    ; RZWQM2 does not validate that Tmin <= Tmax. When Tmin exceeds Tmax, the Penman-Monteith ET calculation
+    receives incorrect v'
+  remedy: 'Run the met_quality_check tool. It identifies all days where Tmin > Tmax and swaps the values.
 
-# =========================================================================
-# CALIBRATION REFERENCE
-# =========================================================================
-calibration_reference:
-  approach: "Automated LHS/Sobol sampling + agent-guided batches"
-  tool: "tools/s10_calibration/rzwqm2_calibrate.py"
-  key_parameters:
-    - name: "Ksat"
-      description: "Saturated hydraulic conductivity"
-      unit: "cm/hr"
-      notes: "Primary control on infiltration and drainage"
+    ; met_quality_check; After running the tool, verify no rows in the .met file have column 3 (Tmin)
+    greater than column 4 (Tmax). The tool reports the number of swapped rows.
 
-    - name: "ws (porosity)"
-      description: "Total porosity"
-      unit: "cm3/cm3"
-      conversion_from_vic: "1 - bulk_density/2650"
+    ; 15  2015   5.2   3.1  120.0  1'
+  severity: degraded
+- id: dt_004
+  symptom: 'Model runs to completion but greatly overestimates soil moisture and drainage. Precipitation
+    appears approximately 25x too high in the simulation results.
 
-    - name: "fc33"
-      description: "Field capacity at 33 kPa"
-      unit: "volumetric"
+    ; [''Simulated drainage is ~25x observed drainage'', ''Soil is perpetually saturated'', ''Surface
+    runoff is much higher than expected'', ''Model complet'
+  diagnosis: 'The .brk file uses INCHES as its precipitation unit, but the .met file uses mm. If the breakpoint
+    generator does not divide by 25.4 when creating the .brk file, precipitation values in mm are applied
+    as if they were inches.
 
-    - name: "lateral_ksat"
-      description: "Lateral saturated hydraulic conductivity for tile drainage"
-      unit: "cm/hr"
-      valid_range: [1.0, 50.0]
+    ; RZWQM2 reads .brk precipitation as inches (its internal unit for breakpoin'
+  remedy: 'Regenerate the .brk file using the create_breakpoint_file tool, which divides mm values by
+    25.4 automatically.
 
-    - name: "drain_spacing"
-      description: "Tile drain spacing"
-      unit: "cm"
+    ; create_breakpoint_file; Spot-check a few .brk events: the cumulative precipitation value should
+    be approximately 1/25.4 of the corresponding mm value in the .met file. For example, a 25.4'
+  severity: silent
+- id: dt_005
+  symptom: 'Model reports "things went wrong when adjusting the calibration input" or crashes with a segfault
+    during soil property reading.
 
-    - name: "field_sat"
-      description: "Field saturation fraction"
-      valid_range: [0.70, 1.00]
-  notes: >
-    6-parameter calibration: Ksat, ws, fc33, lateral_ksat, drain_spacing, field_sat.
-    LHS sampling with 10 runs per batch. Calibration targets: soil moisture, tile
-    drainage, crop yield.
+    ; ["Error message: ''things went wrong when adjusting the calibration input''", ''Segfault during
+    early initialization (before met data reading)'', "Model crashes after ''Readin'
+  diagnosis: 'The number of horizons declared in the soil depth section of RZWQM.dat does not match the
+    number of entries in the hydraulic, physical, micropore, or macropore property sections.
+
+    ; RZWQM.dat has multiple sections that must all have the same number of horizon entries. The soil
+    physical section declar'
+  remedy: 'Regenerate all soil sections using the write_soil_properties tool with a consistent horizon
+    count. This tool writes all sections atomically, ensuring the same number of horizons throughout.
+
+    ; write_soil_properties; Verify the hydraulic section has exactly 3 lines per horizon. Count entries
+    in physic'
+  severity: fatal
+- id: dt_006
+  symptom: 'Fortran runtime error "forrtl: severe (174): SIGSEGV, segmentation fault occurred" immediately
+    after the model prints "INITIAL VALUES READ IN".
+
+    ; ["Stdout shows ''INITIAL VALUES READ IN'' as the last message before crash", ''forrtl: severe (174):
+    SIGSEGV, segmentation fault occurred'', ''Crash occurs at '
+  diagnosis: 'Multiple possible causes, all related to the DSSAT crop model initialization: (1) RZX paths
+    are wrong (see dt_002), (2) DSSAT .CUL/.SPE/.ECO files are missing from the DSSAT/ directory, (3)
+    the crop cultivar ID specified in plgen.dat does not match any entry in the corresponding .CUL file.
+
+    ; The DSS'
+  remedy: 'Investigate in order: (1) Check all .RZX paths with update_rzx_paths tool, (2) verify the DSSAT/
+    directory contains all 29 crop model files listed in the RZX, (3) verify the cultivar ID in plgen.dat
+    matches an entry in the corresponding .CUL file.
+
+    ; update_rzx_paths; After fixing paths, verify: (a) '
+  severity: fatal
+- id: dt_007
+  symptom: 'Segfault after partial initialization. If run under strace, the process shows repeated switching
+    between 64-bit and x32 modes.
+
+    ; [''Segfault early in execution, sometimes after partial output'', ''strace shows x32/64-bit mode
+    switching'', ''Running on ARM Mac via Docker with Rosetta translation'', ''Binary'
+  diagnosis: 'The Linux binary (main_ryzen) was compiled for x86-64-v3 (AVX2 instruction set). Running
+    on ARM Mac via Docker/Rosetta cannot emulate AVX2 instructions. Rosetta translates basic x86-64 but
+    fails on advanced SIMD extensions.
+
+    ; The Fortran compiler used to build main_ryzen on ComputeCanada targeted th'
+  remedy: 'Use native x86-64 hardware with AVX2 support. Options: (1) x86 Linux machine with a modern
+    Intel/AMD CPU, (2) cloud VM such as AWS c5/c6i instances, (3) Windows executable (RZWQMrelease.exe)
+    via Wine on x86 hardware.
+
+    ; None; On the target machine, check AVX2 support: grep avx2 /proc/cpuinfo should r'
+  severity: fatal
+- id: dt_008
+  symptom: 'Model produces biased soil moisture or evapotranspiration values. No error message is generated.
+    Results look plausible but systematically deviate from observations.
+
+    ; [''Soil moisture consistently too high or too low'', ''ET bias that does not respond to calibration'',
+    ''Hydraulic parameters seem wrong '
+  diagnosis: 'The soil_texture_setter() function has a known edge case: the "silty clay loam" key in default_setter
+    has a trailing space ("silty clay loam "). If the texture is computed as "silty clay loam" (no trailing
+    space), the dictionary lookup fails silently and incorrect default parameters are used.
+
+    ; When'
+  remedy: 'Verify the texture class string matches exactly what soil_default_setter() expects. Use the
+    soil_texture_classification tool which strips whitespace and normalizes the string.
+
+    ; soil_texture_classification; Print the texture class returned by the tool and compare with the expected
+    keys in soil_defau'
+  severity: silent
+- id: dt_009
+  symptom: 'Wildly incorrect solar radiation calculations, wrong day length, incorrect evapotranspiration.
+    The model runs without any error.
+
+    ; [''ET is drastically wrong (too high in winter, too low in summer, or vice versa)'', ''Day length
+    calculations do not match the site latitude'', ''Solar radiation partitionin'
+  diagnosis: 'RZWQM.dat grid general properties expect latitude and longitude in RADIANS. Users commonly
+    enter values in degrees. At 45 degrees latitude, entering 45.0 instead of 0.785 gives completely wrong
+    solar geometry.
+
+    ; The solar declination and day length calculations use lat/lon directly in trigonometric '
+  remedy: 'Convert degrees to radians before writing to RZWQM.dat: lat_rad = lat_deg * pi / 180, lon_rad
+    = lon_deg * pi / 180.
+
+    ; write_site_properties; Verify latitude is between -1.57 and 1.57 (plus/minus pi/2) and longitude
+    is between -3.14 and 3.14 (plus/minus pi). Any value outside this range indicates deg'
+  severity: silent
+- id: dt_010
+  symptom: 'Tile drainage values appear approximately 10x too low compared to field observations. All
+    other outputs look reasonable.
+
+    ; [''Simulated tile drainage is ~10x lower than observed'', ''Other water balance components (ET,
+    runoff) are plausible'', ''Bias is systematic and exactly ~10x, not random'']; [''Parsed'
+  diagnosis: 'The .ana output file reports tile drainage in centimeters. To compare with observations
+    (typically in mm), values must be multiplied by 10. Manual parsing may miss this conversion.
+
+    ; RZWQM2 internally tracks many water balance variables in cm. The .ana file column for tile drainage
+    (column 10) is wr'
+  remedy: 'Use the parse_ana_output tool which applies the *10 conversion for tile_drainage automatically.
+    If parsing manually, multiply column 10 values by 10 to convert from cm to mm.
+
+    ; parse_ana_output; Compare a few parsed drainage values against known events. Values should be in
+    mm. A 2 cm drainage event '
+  severity: silent
+- id: dt_011
+  symptom: 'The nlayer_gen function returns False. The error message states "The numerical layering scheme
+    generated TOO MANY layers".
+
+    ; [''nlayer_gen returns False'', "Error message: ''The numerical layering scheme generated TOO MANY
+    layers''", ''Node count exceeds MAXNOD (300)'']; [''RZWQM.dat (node discretization s'
+  diagnosis: 'Soil horizons are either too close together (very thin layers) or the total soil depth exceeds
+    3000 cm. The half-way rule algorithm cannot fit node boundaries to horizon boundaries within the maximum
+    node count.
+
+    ; The nlayer_gen algorithm places computational nodes using a half-way rule: each node b'
+  remedy: 'Adjust horizon depths: (1) merge very thin horizons (<5 cm) into adjacent horizons, (2) reduce
+    maximum soil depth to <=3000 cm, (3) the generate_nodes tool will automatically adjust depths slightly
+    if possible to satisfy the constraint.
+
+    ; generate_nodes; After adjustment, run generate_nodes and veri'
+  severity: fatal
+- id: dt_012
+  symptom: 'Running ./main_ryzen returns "No such file or directory" even though the file exists and has
+    executable permissions.
+
+    ; [''bash: ./main_ryzen: No such file or directory'', ''ls -la shows the file exists with -rwxr-xr-x
+    permissions'', ''file main_ryzen confirms it is an ELF 64-bit executable'', ''The error i'
+  diagnosis: 'The binary has a hardcoded ELF interpreter path from ComputeCanada: /cvmfs/soft.computecanada.ca/.../ld-linux-x86-64.so.2
+    which does not exist on non-ComputeCanada Linux systems. The kernel cannot find the dynamic linker
+    to start the process.
+
+    ; Every dynamically linked ELF binary has an "interpreter'
+  remedy: 'Use patchelf to replace the interpreter path: patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2
+    main_ryzen This creates a patched binary (or modifies in place) that uses the standard system dynamic
+    linker.
+
+    ; None; After patching, verify with: readelf -l main_ryzen | grep interpreter Should show'
+  severity: fatal
+- id: dt_013
+  symptom: 'FileNotFoundError or "No such file or directory" for files that clearly exist in the scenario
+    directory. Commonly affects RZWQM.dat/rzwqm.dat, RZINIT.dat/rzinit.dat, IPNAMES.DAT/ipnames.dat, and
+    LAYER.PLT/Layer.plt.
+
+    ; ["FileNotFoundError: [Errno 2] No such file or directory: ''...RZWQM.dat''", ''File e'
+  diagnosis: 'RZWQM2 was developed on Windows (case-insensitive filesystem). The codebase has mixed case
+    conventions: template files use lowercase (rzwqm.dat, rzinit.dat) but the RZWQM class and some tools
+    reference uppercase (RZWQM.dat, RZINIT.dat). On Linux (case-sensitive), these are different files.
+
+    ; The For'
+  remedy: 'The RZWQM class constructor uses _resolve_case() to try both cases and pick whichever exists
+    on disk. The update_ipnames_paths tool detects actual filenames before writing to ipnames.dat. When
+    creating new scenarios on Linux, use consistent lowercase for .dat files.
+
+    ; ls -la <scenario_dir>/*.dat
+
+    # C'
+  severity: fatal
+- id: dt_014
+  symptom: 'Crop dies of water stress despite adequate soil moisture. Root water uptake (PotRWUP) drops
+    to zero during growing season. Yield is 0 or near-zero. Stored soil water remains high (>70 cm) but
+    ActualET is a small fraction of PotentialET.
+
+    ; [''Yield = 0 with adequate precipitation and soil water'', ''STR'
+  diagnosis: The .met file has non-zero values in column 7 (E-pan) and column 9 (PAR). When these are
+    non-zero, RZWQM2 uses them directly instead of computing ET internally via Penman-Monteith. Estimated
+    E-pan/PAR values from forcing data adapters override the model's water balance calculation, producing
+    incorre
+  remedy: 'Set E-pan (column 7) and PAR (column 9) to 0 in all .met files. The generate_met_file tool
+    now hardcodes these to 0. Never write estimated E-pan or PAR values — always let RZWQM2 compute them.
+
+    ; awk ''NR>36 {print $7, $9}'' Meteorology/station.met | head -5
+
+    # Should show: 0 0 for every line
+
+    '
+  severity: silent
+- id: dt_021
+  symptom: 'rzwqm.dat has "7000  maize" with no cultivar ID. The model falls to a wrong default cultivar
+    (e.g., AC0001 TOHONO O''odham) instead of the intended variety.
+
+    ; ["rzwqm.dat crop line shows ''7000  maize'' with no cultivar ID or description", "Model selects
+    wrong default cultivar (e.g., AC0001 TOHONO O''od'
+  diagnosis: 'The cultivar_id and cultivar_desc parameters in update_crop_selection were optional with
+    no default value. When omitted, the tool wrote a crop line with no cultivar specification, causing
+    the DSSAT module to fall back to an arbitrary default cultivar.
+
+    ; RZWQM2''s DSSAT integration reads the cultivar '
+  remedy: 'Added a DEFAULT_CULTIVARS dictionary with sensible default cultivar IDs per crop code. When
+    cultivar_id is not provided, the tool now automatically selects an appropriate default for the crop
+    type.
+
+    ; update_crop_selection; Check rzwqm.dat has a full crop line like "7000  maize IB1068 DEKALB 521"
+    wit'
+  severity: fatal
+- id: dt_022
+  symptom: 'Cultivar override has no effect on the simulation. The model continues to use the original
+    cultivar parameters despite the update.
+
+    ; [''Cultivar parameters in DSSAT/*.CUL are updated but model behavior unchanged'', ''Root .CUL file
+    still contains original cultivar parameters'', ''Model reads from root .C'
+  diagnosis: 'The update_cultivar tool only wrote to the .CUL file in the DSSAT/ subdirectory. However,
+    the RZWQM2 binary reads .CUL files from both the root scenario directory and the DSSAT/ subdirectory,
+    depending on the configuration.
+
+    ; RZWQM2''s DSSAT module searches for .CUL files in the directory specified b'
+  remedy: 'The update_cultivar tool now discovers and updates BOTH the DSSAT/ subdirectory and root scenario
+    directory .CUL files. It searches for all matching .CUL files in the scenario tree.
+
+    ; update_cultivar; grep for the cultivar ID in both root/*.CUL and DSSAT/*.CUL files. Both copies
+    must contain the upd'
+  severity: fatal
+- id: dt_023
+  symptom: 'MZPHEN Error number 7 — the DSSAT crop model cannot look up the ecotype (ECO#) for the specified
+    cultivar.
+
+    ; [''MZPHEN Error number 7'', ''ECO# lookup fails in .CUL file'', ''Crop model crashes during phenology
+    initialization'']; [''All crop outputs (model crashes before producing any)'']'
+  diagnosis: 'VRNAME was padded to 16 characters (.ljust(16)) but the Fortran fixed-width format requires
+    17 characters (16 for the name + 1 separator space). This shifted ECO# to position 23 instead of the
+    required position 24.
+
+    ; DSSAT .CUL files use strict Fortran fixed-width column formatting. The Fortran READ'
+  remedy: 'Changed .ljust(16) to .ljust(17) for VRNAME padding. This ensures the ECO# column starts at
+    position 24 (0-indexed), matching the Fortran format specification.
+
+    ; update_cultivar; Check that ECO# starts at position 24 (0-indexed) in the generated CUL line. Count
+    characters from the start of the culti'
+  severity: fatal
+- id: dt_024
+  symptom: 'Wheat gets an 8-parameter CUL line (wrong format), soybean gets a 6-parameter line (wrong
+    format). The DSSAT module cannot parse the cultivar parameters for non-maize crops.
+
+    ; [''Wheat .CUL line has 8 parameters instead of 7'', ''Soybean .CUL line has 6 parameters instead
+    of 15'', ''DSSAT parser error or'
+  diagnosis: 'The _convert_to_040() function used a hardcoded maize format: 6 parameters plus Height and
+    Biomass, with maize-specific precision. This format is incorrect for wheat (7 parameters) and soybean
+    (15 parameters).
+
+    ; Each DSSAT crop model version (.040) has a different .CUL file format with different par'
+  remedy: 'Made _convert_to_040() crop-aware by adding a CROP_FORMAT_040 dictionary. Maize uses 6+2 params,
+    wheat uses 7 params, soybean uses 15 params, each with the correct format specifiers for their respective
+    DSSAT crop model version.
+
+    ; update_cultivar; Check that the generated .CUL line has the correct p'
+  severity: fatal
+- id: dt_025
+  symptom: 'Soybean cultivars (SB0001 etc.) are not parsed from the China CUL library. The tool reports
+    no matching cultivars for soybean.
+
+    ; [''Soybean cultivar lookup returns empty results'', ''All 7 soybean cultivars in China CUL library
+    are silently skipped'', ''Maize and wheat cultivars parse correctly'', ''No err'
+  diagnosis: 'The regex pattern r''(IB\d{4}|DFAULT)'' in _read_china_cul() only matches ECO codes starting
+    with "IB" (used by maize and wheat). Soybean uses "SB" prefix ECO codes (e.g., SB0001), which are
+    rejected by the regex.
+
+    ; The China CUL library parser uses a regex to identify the ECO# field in each cultivar '
+  remedy: 'Changed the regex from r''(IB\d{4}|DFAULT)'' to r''([A-Z]{2}\d{4}|DFAULT)''. This matches any
+    2-letter + 4-digit ECO code pattern, covering all DSSAT crop model conventions (IB, SB, etc.).
+
+    ; update_cultivar; All 7 soybean cultivars should be parsed from the China CUL library after the fix.
+    Run _read_chi'
+  severity: fatal
+- id: dt_026
+  symptom: 'Soybean CUL line is truncated at 6 parameters. DSSAT fails to parse the cultivar line because
+    it expects 15 parameters for SBGRO040.
+
+    ; [''Soybean .CUL line has only 6 parameters instead of 15'', ''DSSAT parser error or crash during
+    soybean phenology init'', ''Bengbu soybean test yields 0 or nonsensical v'
+  diagnosis: 'The CROP_FORMAT_040 dictionary entry for ''soybean'' was a placeholder copied from the maize
+    definition with param_count=6. The SBGRO040 soybean model actually requires 15 parameters per cultivar
+    line.
+
+    ; When _convert_to_040() generates a soybean .CUL line using the placeholder format (param_count=6),'
+  remedy: 'Updated the CROP_FORMAT_040[''soybean''] entry to param_count=15 with correct format specifiers
+    matching the SBGRO040 cultivar file specification.
+
+    ; update_cultivar; Soybean CUL line must have exactly 15 parameters. Bengbu test case should produce
+    a soybean yield of approximately 1345 kg/ha.
+
+    ; CROP_FO'
+  severity: fatal
+- id: dt_027
+  symptom: 'update_cultivar.py exits with INPUT_ERROR when given a cultivar ID that sits in a reserved-but-empty
+    numeric range (e.g. CN0005–CN0010, CN0020, CN0106–CN0110). The China CUL files use non-contiguous
+    numbering: HHH maize is CN0001–CN0004, NEC maize is CN0011–CN0019 — IDs between those blocks do not
+    e'
+  diagnosis: 'The China cultivar library uses block numbering with intentional gaps reserved for future
+    entries. Any code that interpolates or generates IDs within a block (e.g. lat-interpolation giving
+    CN0005) will produce a valid-looking but non-existent ID.
+
+    ; _read_china_cul() builds a dict keyed by VAR# exact'
+  remedy: Added _find_closest_cultivar() to update_cultivar.py. When the requested ID is not found, the
+    function computes the numeric distance from every existing ID with the same prefix (e.g. "CN") and
+    snaps to the closest one. A [WARNING] is printed to stderr. The README now contains an explicit gap
+    table f
+  severity: fatal
+- id: dt_028
+  symptom: 'rzwqm.dat grows from ~170KB to 500KB+ after modify+write cycle. Box-drawing characters in
+    separator lines triple in size. Model may still run but drainage/macropore mechanisms silently broken.
+
+    ; [''rzwqm.dat file size increases ~3× after each write cycle'', ''Box-drawing separator characters
+    (│, ─, etc'
+  diagnosis: 'The dat_data property in rzwqm_file.py reads RZWQM.dat with encoding=''ISO-8859-1'', but
+    all 13 write functions (open(..., ''w'')) default to UTF-8. Multi-byte re-encoding on each read-modify-write
+    cycle causes ISO-8859-1 single-byte box-drawing characters to be re-encoded as 2-3 byte UTF-8 sequences.
+
+    ;'
+  remedy: 'Changed all 13 open(self.dat_path, ''w'') calls to open(self.dat_path, ''w'', encoding=''ISO-8859-1'')
+    in rzwqm_file.py. This ensures read and write encodings match, preventing multi-byte re-encoding of
+    box-drawing characters.
+
+    ; modify_soil_params; Check file size before and after a write cycle — should s'
+  severity: degraded
+- id: dt_029
+  symptom: After a successful RZWQM2 maize run, PLANTSUM.OUT is empty or does not exist — even though
+    MANAGE.OUT clearly shows planting, growth, and harvest events with valid grain yields (e.g., 5,000-10,000
+    kg/ha). The .ana file also contains correct daily grain_yield (col 44) and biomass_above (col 41)
+    data.
+  diagnosis: 'The DSSAT crop module within RZWQM2 occasionally fails to write the summary output file
+    for maize, even when the internal crop simulation completes successfully. This appears to be a DSSAT-RZWQM2
+    interface issue where the summary trigger is not fired for certain cultivar or harvest configurations.
+
+    ;'
+  remedy: Use parse_ana_output.py as the PRIMARY extraction method for ALL RZWQM2 outputs, including crop
+    yields. Do NOT rely on PLANTSUM.OUT. The .ana file is the authoritative output containing all 139
+    daily variables including grain_yield (col 44 / h44), biomass_above (col 41), and LAI (col 43). Alternativ
+  severity: silent
+- id: dt_030
+  symptom: An LLM agent attempting to set up RZWQM2 for a new basin crashes or returns an internal error
+    before completing all pipeline stages. The agent typically reads the SKILL.md, YAML (58 KB), and begins
+    calling individual stage tools sequentially, exhausting its context window before reaching S8 (executi
+  diagnosis: 'The RZWQM2 KI is the largest in HydroCraft (36 tools, 58 KB YAML, 14 stages). An agent reading
+    the full KI plus manipulating large config files (rzwqm.dat ~170 KB, .MET files) will exceed typical
+    LLM context limits (~100-200K tokens) before the pipeline completes.
+
+    ; Each stage tool produces verbose '
+  remedy: 'Use mass_project_generator.py for batch site setup. It handles all 10 stages internally in
+    a single Python script without requiring agent intervention between stages. Provide a sites CSV with
+    columns (site_id, lat, lon, elevation, slope) and the generator builds all scenarios automatically.
+
+    ; mass_p'
+  severity: fatal
+- id: dt_031
+  symptom: 'RZWQM.OUT soil section shows "Rago Loam" or "Rayne Silt Loam" (Ohio template soil names) instead
+    of the actual HWSD soil type for the simulated region, even though the numerical soil properties (sand%,
+    silt%, clay%, bulk density, Ksat) are correctly set from HWSD data.
+
+    ; [''RZWQM.OUT SOIL TYPE shows '
+  diagnosis: 'initialize_scenario.py copies the entire Ohio template directory including the soil type
+    name strings in rzwqm.dat. The write_soil_properties.py tool updates numerical values (sand, silt,
+    clay, Ksat, porosity, etc.) but does NOT update the SOIL TYPE label string in the rzwqm.dat header
+    section.
+
+    ; Th'
+  remedy: Verify actual soil properties (sand%, silt%, clay%, bulk density) match HWSD for your target
+    region. The label is cosmetic and does not affect simulation results. To fix the label, manually edit
+    the SOIL TYPE string in rzwqm.dat, or update write_soil_properties.py to also overwrite the label
+    using t
+  severity: degraded
+- id: dt_032
+  symptom: 'RZWQM2 crashes with ''File: SBGRO040.CUL not found'' or ''MZCER040.CUL not found'' after crop
+    selection change'
+  diagnosis: update_crop_selection.py updated the crop definition (line ~488 in rzwqm.dat) but did NOT
+    update the planting schedule plant reference numbers. The planting lines still reference the old crop
+    (e.g., plant_ref=2 for soybean), so RZWQM2 tries to plant the wrong crop and looks for the wrong .CUL
+    file.
+  remedy: 'Fixed in update_crop_selection.py (2026-04-10): now also calls _update_planting_references()
+    to rewrite all planting schedule entries to use the correct plant reference (1=maize, 2=soybean, 3=wheat).
+    Verify with: grep ''^[123]  '' rzwqm.dat — all planting lines should start with the target plant ref.'
+  severity: critical
+- id: dt_033
+  symptom: 'forrtl: severe (59): list-directed I/O syntax error, unit 69, file MZDSSAT.RZX'
+  diagnosis: update_rzx_paths.py or initialize_scenario.py corrupted the .RZX file by replacing a comment
+    line containing 'DSSAT' (e.g., '==  RZWQM-DSSAT CONTROL FILE') instead of the actual database path
+    lines at positions 68-69.
+  remedy: 'Fixed in both tools (2026-04-10): now uses the ''DATABASE FILE LOCATIONS'' section marker to
+    find the correct path lines, skipping comments. Falls back to fixed positions 68-69 only if no marker
+    found. Both path lines must be relative: ''DSSAT/'' and ''./'' — absolute paths cause file-not-found
+    on some Li'
+  severity: critical
+- id: dt_034
+  symptom: initialize_scenario.py creates the new scenario inside the template directory instead of a
+    separate output location
+  diagnosis: The tool only had PROJECT_PATH (which defaults to the canonical template), so new scenarios
+    were created as siblings of the template scenario. This pollutes the template directory and causes
+    confusion.
+  remedy: 'Fixed (2026-04-10): Added OUTPUT_DIR parameter (6th CLI argument). When set, the tool creates
+    a self-contained project at OUTPUT_DIR with proper structure (scenario/, Meteorology/, Analysis/),
+    IPNAMES.DAT paths pointing to the new location, and relative RZX paths. Usage: initialize_scenario.py
+    <temp'
+  severity: minor
+- id: dt_035
+  symptom: Validation requested against GRACE full-column terrestrial_water_storage_anomaly (regional_aggregate_time_series,
+    ~300 km mascon); all metrics return null, no model run performed.
+  diagnosis: WRONG-VARIABLE + WRONG-SCALE. RZWQM2 is a 1-D root-zone field model. dag.yaml emits no terrestrial_water_storage_anomaly.
+    The closest output, soil_water_storage (dag.yaml:336), declares its only comparable_obs_shape as point_time_series
+    (soil-moisture probe). water_table_depth is a prognostic state,
+  remedy: Do not run or retry. Record a structurally-invalid SKIP with metrics=null. GRACE TWS belongs
+    to a full-column / regional-mass model (PISM/ISSM for ice, or a land-surface/groundwater model), not
+    a 1-D root-zone crop model. Same SKIP family as Daisy / AquaCrop_python / CLM_Crop GRACE-TWS.
+  severity: info

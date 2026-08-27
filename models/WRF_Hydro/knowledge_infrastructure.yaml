@@ -1,920 +1,129 @@
-# ============================================================================
-# Knowledge Infrastructure — WRF-Hydro v5.2.0 Standalone (NoahMP)
-# ============================================================================
-# Created by the Jianyun Zhang Research Group, Hohai University.
-# Methodology: Knowledge Dissection Toolkit v1.0
-#
-# This package enables fully autonomous domain construction and execution
-# of WRF-Hydro v5.2.0 in offline/standalone mode (NoahMP land surface +
-# gridded routing) on any basin, without requiring WPS or ArcGIS.
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
-# --- Package metadata ---
 package:
-  name: "hydrocraft-wrfhydro-standalone"
-  version: "2.0.0"
-  description: "Knowledge infrastructure for WRF-Hydro v5.2.0 standalone (NoahMP) — domain construction, forcing conversion, and execution without WPS/ArcGIS"
-  target_model: "WRF-Hydro v5.2.0 (NoahMP offline, gridded routing)"
-  domain: "distributed hydrology, land surface modelling, channel routing"
-  authors:
-    - "Jianyun Zhang Research Group"
-    - "Hohai University"
-  license: "CC-BY-4.0"
-
-# --- Pipeline definition ---
+  name: WRF_Hydro
+  language: fortran
+  implementation:
+    id: wrf-hydro-standalone-520
+    version: 5.2.0
+    provenance: Fortran 90, MPI-parallel; NCAR WRF-Hydro/NDHMS standalone (offline) binary wrf_hydro.exe
+      run via mpirun, no WRF atmospheric coupling.
+  scientific_reference_version: WRF-Hydro v5.2.0 standalone/offline (Noah-MP LSM + gridded overland/subsurface/channel
+    routing + conceptual groundwater bucket; NCAR NDHMS architecture)
+  binary:
+    path: KISSPATH_BINARIES/wrf_hydro/source/trunk/NDHMS/Run/wrf_hydro_NoahMP.exe
+    type: null
 pipeline:
   stages:
-    - id: "s0_config"
-      name: "Configuration"
-      description: "Define basin location, resolution, time period, data paths. Central configuration consumed by all downstream stages."
-      order: 0
-      depends_on: []
-      skill_document: "docs/s0_config_skill.md"
-      tools: []
-      milestones:
-        - id: "m0_basin_identified"
-          description: "Basin shapefile path, outlet coordinates, time period, and data paths confirmed"
-          verification: "Shapefile exists and can be read by geopandas"
-
-    - id: "s1_domain"
-      name: "Lambert domain definition"
-      description: "Define a Lambert Conformal Conic grid covering the basin shapefile. Outputs domain_def.json with projection parameters, grid dimensions, and SW corner coordinates."
-      order: 1
-      depends_on: ["s0_config"]
-      skill_document: "docs/s1_domain_skill.md"
-      tools: ["define_lambert_domain"]
-      milestones:
-        - id: "m1_domain_json"
-          description: "domain_def.json exists with cen_lat, cen_lon, e_we, e_sn, proj4, x_sw, y_sw"
-          verification: "json.load(domain_def.json) succeeds and all required keys present"
-
-    - id: "s2_geo_em"
-      name: "geo_em.d01.nc construction"
-      description: "Build the WRF geogrid-equivalent file from raw DEM, land cover, and soil rasters. Contains 39 variables including coordinates, map factors, land use, soil type, GREENFRAC, LAI12M, SOILTEMP."
-      order: 2
-      depends_on: ["s1_domain"]
-      skill_document: "docs/s2_geo_em_skill.md"
-      tools: ["build_geo_em"]
-      milestones:
-        - id: "m2_geo_em_created"
-          description: "geo_em.d01.nc exists with 39 variables, MMINLU=USGS, correct dimensions"
-          verification: "ncdump -h geo_em.d01.nc shows 39 variables and MMINLU=USGS"
-
-    - id: "s3_wrfinput"
-      name: "wrfinput_d01.nc construction"
-      description: "Build the WRF initial conditions file from geo_em. Contains renamed coordinate fields, 4-layer soil moisture/temperature initialization from SOILPARM.TBL, and surface fields (TSK, SNOW, CANWAT, XLAND)."
-      order: 3
-      depends_on: ["s2_geo_em"]
-      skill_document: "docs/s3_wrfinput_skill.md"
-      tools: ["build_wrfinput"]
-      milestones:
-        - id: "m3_wrfinput_created"
-          description: "wrfinput_d01.nc exists with SMOIS, TSLB, HGT, XLAT, XLONG, IVGTYP, ISLTYP"
-          verification: "ncdump -h wrfinput_d01.nc shows soil_layers_stag=4 and all required variables"
-
-    - id: "s4_fulldom"
-      name: "Fulldom_hires.nc construction"
-      description: "Build the high-resolution routing domain. Reprojects DEM to LCC routing grid (AGGFACTRT x finer), runs WhiteboxTools hydrological conditioning, converts D8 encoding, extracts channels by flow accumulation threshold, computes Strahler order."
-      order: 4
-      depends_on: ["s1_domain", "s2_geo_em"]
-      skill_document: "docs/s4_fulldom_skill.md"
-      tools: ["build_fulldom_hires"]
-      milestones:
-        - id: "m4_fulldom_created"
-          description: "Fulldom_hires.nc exists with FLOWDIRECTION, CHANNELGRID, TOPOGRAPHY, STREAMORDER, x/y coordinate variables with resolution attribute"
-          verification: "ncdump -h Fulldom_hires.nc shows y and x dimensions, FLOWDIRECTION variable"
-
-    - id: "s5_soil_properties"
-      name: "soil_properties.nc construction"
-      description: "Build per-cell soil hydraulic parameters (bexp, smcmax, dksat, etc.) and vegetation parameters (cwpvt, hvt, vcmx25, etc.) by looking up SOILPARM.TBL and MPTABLE.TBL per soil/vegetation type."
-      order: 5
-      depends_on: ["s2_geo_em"]
-      skill_document: "docs/s5_soil_properties_skill.md"
-      tools: ["build_soil_properties"]
-      milestones:
-        - id: "m5_soil_properties_created"
-          description: "soil_properties.nc exists with 18 variables (9 soil x 4-layer + 5 veg + 4 2D-soil)"
-          verification: "ncdump -h soil_properties.nc shows soil_layers_stag=4 and bexp, smcmax, dksat variables"
-
-    - id: "s6_groundwater"
-      name: "Groundwater and ancillary files"
-      description: "Build GWBASINS.nc (basin ID grid), GWBUCKPARM.nc (bucket parameters), hydro2dtbl.nc (2D routing lookup), and GEOGRID_LDASOUT_Spatial_Metadata.nc (spatial reference for outputs)."
-      order: 6
-      depends_on: ["s1_domain", "s2_geo_em"]
-      skill_document: "docs/s6_groundwater_skill.md"
-      tools: ["build_groundwater"]
-      milestones:
-        - id: "m6_gw_files_created"
-          description: "GWBASINS.nc, GWBUCKPARM.nc, hydro2dtbl.nc, GEOGRID_LDASOUT_Spatial_Metadata.nc all exist in DOMAIN/"
-          verification: "All 4 files present; ncdump -h GWBASINS.nc shows BASIN variable"
-
-    - id: "s7_spatial_metadata"
-      name: "Spatial metadata validation"
-      description: "Validate that x/y coordinate variables in Fulldom_hires.nc and GEOGRID_LDASOUT_Spatial_Metadata.nc have the required 'resolution' attribute. WRF-Hydro reads this attribute to determine grid spacing — missing it causes a fatal startup error."
-      order: 7
-      depends_on: ["s4_fulldom", "s6_groundwater"]
-      skill_document: "docs/s7_spatial_metadata_skill.md"
-      tools: []
-      milestones:
-        - id: "m7_resolution_attrs"
-          description: "x and y variables in Fulldom_hires.nc and Spatial_Metadata.nc have 'resolution' attribute"
-          verification: "ncdump -h <file> | grep resolution shows numeric value on x and y variables"
-
-    - id: "s8_forcing"
-      name: "Forcing conversion to LDASIN"
-      description: "Convert VIC 3-hourly ASCII forcing (or CMFD/MSWX) to hourly LDASIN_DOMAIN1 NetCDF files on the LCC grid. Handles unit conversions (C->K, mm/3hr->mm/s, kPa->Pa, VP->specific humidity, scalar wind->U/V) and temporal interpolation."
-      order: 8
-      depends_on: ["s1_domain", "s2_geo_em"]
-      skill_document: "docs/s8_forcing_skill.md"
-      tools: ["convert_forcing_to_ldasin"]
-      milestones:
-        - id: "m8_ldasin_files"
-          description: "FORCING/ directory contains YYYYMMDDHH.LDASIN_DOMAIN1 files for every hour of the simulation period"
-          verification: "ls FORCING/*.LDASIN_DOMAIN1 | wc -l equals expected_days * 24"
-
-    - id: "s9_namelists"
-      name: "Namelist generation"
-      description: "Generate namelist.hrldas and hydro.namelist with correct KHOUR, DXRT, AGGFACTRT, file paths, and physics options for NoahMP offline + gridded routing."
-      order: 9
-      depends_on: ["s3_wrfinput", "s4_fulldom", "s5_soil_properties", "s6_groundwater", "s8_forcing"]
-      skill_document: "docs/s9_namelists_skill.md"
-      tools: ["generate_namelists"]
-      milestones:
-        - id: "m9_namelists_written"
-          description: "namelist.hrldas and hydro.namelist exist in run directory with correct KHOUR and AGGFACTRT"
-          verification: "grep KHOUR namelist.hrldas returns expected value; grep AGGFACTRT hydro.namelist matches Fulldom"
-
-    - id: "s10_execution"
-      name: "WRF-Hydro execution"
-      description: "Run WRF-Hydro via MPI. Symlinks executable and TBL files, runs mpirun, checks for 'The model finished successfully' in stdout, collects output file inventory."
-      order: 10
-      depends_on: ["s9_namelists"]
-      skill_document: "docs/s10_execution_skill.md"
-      tools: ["run_wrfhydro"]
-      milestones:
-        - id: "m10_model_success"
-          description: "stdout contains 'The model finished successfully' and LDASOUT/CHRTOUT files exist"
-          verification: "grep 'The model finished successfully' diag_hydro.00000; ls *LDASOUT* | wc -l > 0"
-
-    - id: "s11_output"
-      name: "Output processing"
-      description: "Extract discharge timeseries, compute basin-average fluxes, compare with VIC output or observations. Visualization of CHRTOUT, RTOUT, LDASOUT fields."
-      order: 11
-      depends_on: ["s10_execution"]
-      skill_document: "docs/s11_output_skill.md"
-      tools: []
-      milestones:
-        - id: "m11_results_extracted"
-          description: "Discharge timeseries extracted from CHRTOUT files, basin-average ET/runoff computed"
-          verification: "Output CSV or plot file exists with physically reasonable values"
-
-# --- Layer 1: Validated Tools ---
+  - s11_output_interpretation_skill
+  - s4_channel_routing_skill
+  - s6_groundwater_skill
+  - s9_runoff_options_skill
 tools:
-  - id: "define_lambert_domain"
-    name: "Define Lambert domain"
-    description: "Define a Lambert Conformal Conic domain grid covering a basin shapefile using the WRF sphere (R=6370000m). Outputs domain_def.json."
-    stage: "s1_domain"
-    script_path: "tools/s1_domain/define_lambert_domain.py"
-    language: "python"
-    inputs:
-      - name: "basin_shp"
-        type: "file"
-        description: "Basin boundary shapefile (.shp)"
-        required: true
-        example: "data/shp/chaohe_boundary.shp"
-      - name: "dx"
-        type: "number"
-        description: "Grid spacing in metres"
-        required: false
-        example: "1000"
-      - name: "truelat1"
-        type: "number"
-        description: "First true latitude for LCC"
-        required: false
-        example: "30"
-      - name: "truelat2"
-        type: "number"
-        description: "Second true latitude for LCC"
-        required: false
-        example: "60"
-      - name: "stand_lon"
-        type: "number"
-        description: "Standard longitude (default: basin centre)"
-        required: false
-        example: "116.5"
-      - name: "buffer_cells"
-        type: "number"
-        description: "Buffer cells around basin"
-        required: false
-        example: "3"
-      - name: "output"
-        type: "file"
-        description: "Output JSON path"
-        required: false
-        example: "domain_def.json"
-    outputs:
-      - name: "domain_def"
-        type: "file"
-        description: "JSON with cen_lat, cen_lon, e_we, e_sn, proj4, x_sw, y_sw, truelat1/2, stand_lon, dx/dy"
-        path_pattern: "domain_def.json"
-    preconditions:
-      - "Basin shapefile exists and is readable"
-      - "pyproj and geopandas installed"
-    postconditions:
-      - "domain_def.json contains all required projection parameters"
-      - "Basin is fully contained within the domain"
-
-  - id: "build_geo_em"
-    name: "Build geo_em.d01.nc"
-    description: "Build the WRF geogrid-equivalent NetCDF file with 39 variables from raw DEM, UMD AVHRR land cover (with UMD->USGS crosswalk), and HWSD soil data. Includes coordinate grids, map scale factors, Coriolis parameters, rotation angles, SOILTEMP, GREENFRAC, LAI12M."
-    stage: "s2_geo_em"
-    script_path: "tools/s2_geo_em/build_geo_em.py"
-    language: "python"
-    inputs:
-      - name: "domain_json"
-        type: "file"
-        description: "Domain definition JSON from define_lambert_domain.py"
-        required: true
-        example: "domain_def.json"
-      - name: "dem_path"
-        type: "file"
-        description: "DEM GeoTIFF (EPSG:4326)"
-        required: true
-        example: "data/dem/china_dem_90m/china_dem_90m.tif"
-      - name: "landcover_path"
-        type: "file"
-        description: "UMD AVHRR land cover GeoTIFF"
-        required: true
-        example: "data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif"
-      - name: "hwsd_raster"
-        type: "file"
-        description: "HWSD global raster (.bil)"
-        required: true
-        example: "data/soil/HWSD_RASTER/hwsd.bil"
-      - name: "hwsd_mdb"
-        type: "file"
-        description: "HWSD MDB database"
-        required: true
-        example: "data/forcing/huaihe_raw/soil/HWSD.mdb"
-      - name: "output"
-        type: "file"
-        description: "Output NetCDF path"
-        required: false
-        example: "DOMAIN/geo_em.d01.nc"
-    outputs:
-      - name: "geo_em"
-        type: "file"
-        description: "geo_em.d01.nc with 39 variables, WRF-compatible structure"
-        path_pattern: "DOMAIN/geo_em.d01.nc"
-    preconditions:
-      - "domain_def.json exists"
-      - "DEM, land cover, HWSD raster and MDB all exist"
-      - "mdb-export available (mdbtools package)"
-    postconditions:
-      - "geo_em.d01.nc has 39 variables and MMINLU=USGS"
-      - "LANDUSEF and SOILCTOP fractional sums = 1.0 per cell"
-      - "SOILTEMP > 230 K for all land cells"
-
-  - id: "build_wrfinput"
-    name: "Build wrfinput_d01.nc"
-    description: "Build WRF initial conditions file from geo_em.d01.nc. Adds 4-layer soil moisture (from SOILPARM.TBL REFSMC), soil temperature (TSK->TMN interpolation), and surface fields."
-    stage: "s3_wrfinput"
-    script_path: "tools/s3_wrfinput/build_wrfinput.py"
-    language: "python"
-    inputs:
-      - name: "geo_em"
-        type: "file"
-        description: "geo_em.d01.nc"
-        required: true
-        example: "DOMAIN/geo_em.d01.nc"
-      - name: "output_path"
-        type: "file"
-        description: "Output wrfinput_d01.nc path"
-        required: true
-        example: "DOMAIN/wrfinput_d01.nc"
-      - name: "start_month"
-        type: "number"
-        description: "Start month (1-12) for LAI selection"
-        required: false
-        example: "1"
-      - name: "soilparm_tbl"
-        type: "file"
-        description: "SOILPARM.TBL path"
-        required: false
-        example: "model/wrf_hydro/source/trunk/NDHMS/Run/SOILPARM.TBL"
-    outputs:
-      - name: "wrfinput"
-        type: "file"
-        description: "wrfinput_d01.nc with soil IC and surface fields"
-        path_pattern: "DOMAIN/wrfinput_d01.nc"
-    preconditions:
-      - "geo_em.d01.nc exists with required variables"
-      - "SOILPARM.TBL is accessible"
-    postconditions:
-      - "wrfinput_d01.nc has SMOIS with 4 soil layers"
-      - "TMN > 200 K for all cells (no zero-K values)"
-
-  - id: "build_fulldom_hires"
-    name: "Build Fulldom_hires.nc"
-    description: "Build high-resolution routing domain. Reprojects DEM, runs WhiteboxTools breach+D8+accumulation, converts WBT D8 encoding to ArcGIS/WRF-Hydro encoding, extracts channels, computes Strahler order, rasterizes basin mask."
-    stage: "s4_fulldom"
-    script_path: "tools/s4_fulldom/build_fulldom_hires.py"
-    language: "python"
-    inputs:
-      - name: "geo_em"
-        type: "file"
-        description: "geo_em.d01.nc"
-        required: true
-        example: "DOMAIN/geo_em.d01.nc"
-      - name: "domain_json"
-        type: "file"
-        description: "domain_def.json"
-        required: true
-        example: "domain_def.json"
-      - name: "dem_path"
-        type: "file"
-        description: "DEM GeoTIFF"
-        required: true
-        example: "data/dem/china_dem_90m/china_dem_90m.tif"
-      - name: "basin_shp"
-        type: "file"
-        description: "Basin boundary shapefile"
-        required: true
-        example: "data/shp/chaohe_boundary.shp"
-      - name: "output_path"
-        type: "file"
-        description: "Output Fulldom_hires.nc"
-        required: true
-        example: "DOMAIN/Fulldom_hires.nc"
-      - name: "aggfactrt"
-        type: "number"
-        description: "Aggregation factor (LSM-to-routing)"
-        required: false
-        example: "4"
-      - name: "stream_threshold"
-        type: "number"
-        description: "Flow accumulation threshold for channels"
-        required: false
-        example: "100"
-    outputs:
-      - name: "fulldom"
-        type: "file"
-        description: "Fulldom_hires.nc with FLOWDIRECTION, CHANNELGRID, TOPOGRAPHY, STREAMORDER"
-        path_pattern: "DOMAIN/Fulldom_hires.nc"
-    preconditions:
-      - "geo_em.d01.nc and domain_def.json exist"
-      - "WhiteboxTools Python package installed"
-    postconditions:
-      - "Fulldom_hires.nc has y and x dimension variables"
-      - "FLOWDIRECTION values are in ArcGIS D8 encoding {1,2,4,8,16,32,64,128}"
-      - "Boundary cells have FLOWDIRECTION=0"
-
-  - id: "build_soil_properties"
-    name: "Build soil_properties.nc"
-    description: "Build per-cell soil hydraulic and vegetation parameters by looking up SOILPARM.TBL and MPTABLE.TBL per soil/veg type from geo_em."
-    stage: "s5_soil_properties"
-    script_path: "tools/s5_soil_properties/build_soil_properties.py"
-    language: "python"
-    inputs:
-      - name: "geo_em"
-        type: "file"
-        description: "geo_em.d01.nc"
-        required: true
-        example: "DOMAIN/geo_em.d01.nc"
-      - name: "output_path"
-        type: "file"
-        description: "Output soil_properties.nc"
-        required: true
-        example: "DOMAIN/soil_properties.nc"
-      - name: "soilparm_tbl"
-        type: "file"
-        description: "SOILPARM.TBL path"
-        required: false
-        example: "model/wrf_hydro/source/trunk/NDHMS/Run/SOILPARM.TBL"
-      - name: "mptable_tbl"
-        type: "file"
-        description: "MPTABLE.TBL path"
-        required: false
-        example: "model/wrf_hydro/source/trunk/NDHMS/Run/MPTABLE.TBL"
-    outputs:
-      - name: "soil_properties"
-        type: "file"
-        description: "soil_properties.nc with 18 parameter fields"
-        path_pattern: "DOMAIN/soil_properties.nc"
-    preconditions:
-      - "geo_em.d01.nc exists"
-      - "SOILPARM.TBL and MPTABLE.TBL accessible"
-    postconditions:
-      - "soil_properties.nc has bexp, smcmax, dksat with 4 soil layers"
-      - "All smcmax values > 0 for land cells"
-
-  - id: "build_groundwater"
-    name: "Build groundwater and ancillary files"
-    description: "Build GWBASINS.nc, GWBUCKPARM.nc, hydro2dtbl.nc, and GEOGRID_LDASOUT_Spatial_Metadata.nc. Single-basin setup assigns all land cells to basin ID=1."
-    stage: "s6_groundwater"
-    script_path: "tools/s6_groundwater/build_groundwater.py"
-    language: "python"
-    inputs:
-      - name: "geo_em"
-        type: "file"
-        description: "geo_em.d01.nc"
-        required: true
-        example: "DOMAIN/geo_em.d01.nc"
-      - name: "domain_json"
-        type: "file"
-        description: "domain_def.json"
-        required: true
-        example: "domain_def.json"
-      - name: "basin_shp"
-        type: "file"
-        description: "Basin boundary shapefile"
-        required: true
-        example: "data/shp/chaohe_boundary.shp"
-      - name: "output_dir"
-        type: "directory"
-        description: "DOMAIN directory for output files"
-        required: true
-        example: "outputs/chaohe_wrf_test/DOMAIN/"
-      - name: "hydro_tbl"
-        type: "file"
-        description: "HYDRO.TBL path"
-        required: false
-        example: "model/wrf_hydro/source/trunk/NDHMS/Run/HYDRO.TBL"
-    outputs:
-      - name: "gwbasins"
-        type: "file"
-        description: "GWBASINS.nc with basin ID raster"
-        path_pattern: "DOMAIN/GWBASINS.nc"
-      - name: "gwbuckparm"
-        type: "file"
-        description: "GWBUCKPARM.nc with bucket parameters"
-        path_pattern: "DOMAIN/GWBUCKPARM.nc"
-      - name: "hydro2dtbl"
-        type: "file"
-        description: "hydro2dtbl.nc with 2D routing params"
-        path_pattern: "DOMAIN/hydro2dtbl.nc"
-      - name: "spatial_metadata"
-        type: "file"
-        description: "GEOGRID_LDASOUT_Spatial_Metadata.nc"
-        path_pattern: "DOMAIN/GEOGRID_LDASOUT_Spatial_Metadata.nc"
-    preconditions:
-      - "geo_em.d01.nc and domain_def.json exist"
-      - "HYDRO.TBL accessible"
-    postconditions:
-      - "All 4 output files exist"
-      - "GWBASINS.nc BASIN variable has at least 1 cell with value > 0"
-      - "Spatial_Metadata.nc has x and y variables with resolution attribute"
-
-  - id: "convert_forcing_to_ldasin"
-    name: "Convert forcing to LDASIN"
-    description: "Convert VIC 3-hourly ASCII forcing files to hourly LDASIN_DOMAIN1 NetCDF files on the LCC grid. Unit conversions: C->K, mm/3hr->mm/s, kPa->Pa, VP_kPa->specific_humidity_kg/kg, scalar_wind->U/V. Temporal interpolation: linear for continuous vars, step for RAINRATE/SWDOWN."
-    stage: "s8_forcing"
-    script_path: "tools/s8_forcing/convert_forcing_to_ldasin.py"
-    language: "python"
-    inputs:
-      - name: "forcing_dir"
-        type: "directory"
-        description: "VIC forcing ASCII files directory"
-        required: true
-        example: "outputs/chaohe_2000_2010/vic_temp/forcing/forcing_final"
-      - name: "grid_nc"
-        type: "file"
-        description: "VIC basin_grid.nc with cell coordinates"
-        required: true
-        example: "outputs/chaohe_2000_2010/vic_temp/grid/basin_grid.nc"
-      - name: "geo_em"
-        type: "file"
-        description: "geo_em.d01.nc with LCC grid lat/lon"
-        required: true
-        example: "DOMAIN/geo_em.d01.nc"
-      - name: "domain_json"
-        type: "file"
-        description: "domain_def.json"
-        required: true
-        example: "domain_def.json"
-      - name: "output_dir"
-        type: "directory"
-        description: "Output FORCING directory"
-        required: true
-        example: "FORCING/"
-      - name: "start_date"
-        type: "string"
-        description: "Start date YYYY-MM-DD"
-        required: true
-        example: "2001-01-01"
-      - name: "end_date"
-        type: "string"
-        description: "End date YYYY-MM-DD (inclusive)"
-        required: true
-        example: "2001-01-07"
-      - name: "source_timestep"
-        type: "number"
-        description: "VIC forcing timestep in seconds (default 10800=3hr)"
-        required: false
-        example: "10800"
-    outputs:
-      - name: "ldasin_files"
-        type: "directory"
-        description: "Hourly LDASIN_DOMAIN1 NetCDF files"
-        path_pattern: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-    preconditions:
-      - "VIC forcing directory has files matching lat_lon naming"
-      - "geo_em.d01.nc and basin_grid.nc exist"
-    postconditions:
-      - "N_days * 24 LDASIN files exist"
-      - "T2D > 200 K, RAINRATE >= 0, PSFC > 10000 Pa in all files"
-
-  - id: "generate_namelists"
-    name: "Generate namelists"
-    description: "Generate namelist.hrldas and hydro.namelist with correct KHOUR, physics options, DXRT, AGGFACTRT, channel_option, and file paths."
-    stage: "s9_namelists"
-    script_path: "tools/s9_namelists/generate_namelists.py"
-    language: "python"
-    inputs:
-      - name: "domain_dir"
-        type: "directory"
-        description: "DOMAIN directory with all domain files"
-        required: true
-        example: "outputs/chaohe_wrf_test/DOMAIN"
-      - name: "forcing_dir"
-        type: "directory"
-        description: "FORCING directory with LDASIN files"
-        required: true
-        example: "outputs/chaohe_wrf_test/FORCING"
-      - name: "output_dir"
-        type: "directory"
-        description: "Run directory for namelists"
-        required: true
-        example: "outputs/chaohe_wrf_test"
-      - name: "start_date"
-        type: "string"
-        description: "Start date YYYY-MM-DD"
-        required: true
-        example: "2001-01-01"
-      - name: "end_date"
-        type: "string"
-        description: "End date YYYY-MM-DD"
-        required: true
-        example: "2001-01-07"
-      - name: "output_timestep"
-        type: "number"
-        description: "Output timestep in seconds"
-        required: false
-        example: "3600"
-    outputs:
-      - name: "namelist_hrldas"
-        type: "file"
-        description: "namelist.hrldas for NoahMP offline"
-        path_pattern: "namelist.hrldas"
-      - name: "hydro_namelist"
-        type: "file"
-        description: "hydro.namelist for routing"
-        path_pattern: "hydro.namelist"
-    preconditions:
-      - "DOMAIN files (wrfinput, Fulldom) exist for grid detection"
-    postconditions:
-      - "KHOUR matches (end_date - start_date + 1) * 24"
-      - "AGGFACTRT matches Fulldom dimensions / wrfinput dimensions"
-
-  - id: "cmfd_to_ldasin"
-    name: "Convert CMFD to LDASIN (direct)"
-    description: "Convert CMFD 3-hourly NetCDF forcing directly to hourly LDASIN_DOMAIN1 files on the LCC grid, bypassing VIC forcing as intermediate. Handles all unit conversions (rate to flux, C to K, VP to q) and elevation correction."
-    stage: "s8_forcing"
-    script_path: "tools/s8_forcing/cmfd_to_ldasin.py"
-    language: "python"
-    inputs:
-      - name: "cmfd_dir"
-        type: "directory"
-        description: "CMFD forcing data directory (Data_forcing_03hr_010deg)"
-        required: true
-        example: "data/forcing/Data_forcing_03hr_010deg"
-      - name: "geo_em"
-        type: "file"
-        description: "geo_em.d01.nc"
-        required: true
-        example: "DOMAIN/geo_em.d01.nc"
-      - name: "domain_json"
-        type: "file"
-        description: "domain_def.json"
-        required: true
-        example: "domain_def.json"
-      - name: "output_dir"
-        type: "directory"
-        description: "Output FORCING directory"
-        required: true
-        example: "FORCING/"
-      - name: "start_date"
-        type: "string"
-        description: "Start date YYYY-MM-DD"
-        required: true
-        example: "2000-01-01"
-      - name: "end_date"
-        type: "string"
-        description: "End date YYYY-MM-DD"
-        required: true
-        example: "2005-12-31"
-    outputs:
-      - name: "ldasin_files"
-        type: "directory"
-        description: "Hourly or daily LDASIN_DOMAIN1 NetCDF files"
-        path_pattern: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-    preconditions:
-      - "CMFD data directory contains monthly NetCDF files"
-      - "geo_em.d01.nc exists"
-    postconditions:
-      - "LDASIN files cover the full simulation period"
-      - "RAINRATE in mm/s (not mm/3hr)"
-
-  - id: "run_wrfhydro_full_pipeline"
-    name: "Run full WRF-Hydro pipeline"
-    description: "End-to-end pipeline wrapper that runs all stages (domain definition through execution) in one command. Handles stage dependencies and error recovery."
-    stage: "s0_config"
-    script_path: "tools/run_wrfhydro_full_pipeline.py"
-    language: "python"
-    inputs:
-      - name: "basin_shp"
-        type: "file"
-        description: "Basin boundary shapefile"
-        required: true
-        example: "data/shp/chaohe_boundary.shp"
-      - name: "start_date"
-        type: "string"
-        description: "Start date YYYY-MM-DD"
-        required: true
-        example: "2000-01-01"
-      - name: "end_date"
-        type: "string"
-        description: "End date YYYY-MM-DD"
-        required: true
-        example: "2005-12-31"
-      - name: "output_dir"
-        type: "directory"
-        description: "Output directory for all results"
-        required: true
-        example: "outputs/my_run/"
-      - name: "forcing_source"
-        type: "string"
-        description: "Forcing source: 'cmfd' or 'vic'"
-        required: false
-        example: "cmfd"
-    outputs:
-      - name: "all_outputs"
-        type: "directory"
-        description: "LDASOUT, CHRTOUT, GWOUT files + domain files"
-        path_pattern: "outputs/<run>/"
-    preconditions:
-      - "Basin shapefile exists"
-      - "CMFD or VIC forcing data available"
-    postconditions:
-      - "Model completed successfully"
-      - "CHRTOUT files contain discharge timeseries"
-
-  - id: "run_wrfhydro"
-    name: "Run WRF-Hydro"
-    description: "Execute WRF-Hydro via MPI with preflight checks, TBL symlinks, and post-run output collection. Returns JSON summary."
-    stage: "s10_execution"
-    script_path: "tools/s10_execution/run_wrfhydro.py"
-    language: "python"
-    inputs:
-      - name: "run_dir"
-        type: "directory"
-        description: "Run directory with DOMAIN/, FORCING/, namelists"
-        required: true
-        example: "outputs/chaohe_wrf_test"
-      - name: "nproc"
-        type: "number"
-        description: "Number of MPI processes"
-        required: false
-        example: "4"
-      - name: "timeout"
-        type: "number"
-        description: "Timeout in seconds"
-        required: false
-        example: "3600"
-    outputs:
-      - name: "ldasout"
-        type: "file"
-        description: "LDASOUT_DOMAIN1 hourly land surface output"
-        path_pattern: "*.LDASOUT_DOMAIN1"
-      - name: "chrtout"
-        type: "file"
-        description: "CHRTOUT_DOMAIN1 channel routing output"
-        path_pattern: "*.CHRTOUT_DOMAIN1"
-      - name: "rtout"
-        type: "file"
-        description: "RTOUT_DOMAIN1 terrain routing output"
-        path_pattern: "*.RTOUT_DOMAIN1"
-      - name: "gwout"
-        type: "file"
-        description: "GW_DOMAIN1 groundwater output"
-        path_pattern: "*.GW_DOMAIN1"
-    preconditions:
-      - "DOMAIN/, FORCING/, namelist.hrldas, hydro.namelist all present"
-      - "wrf_hydro.exe compiled and accessible"
-      - "MPICH installed and mpirun in path"
-    postconditions:
-      - "stdout contains 'The model finished successfully'"
-      - "LDASOUT files exist for each output timestep"
-
-# --- Layer 2: Skill Documents ---
-skill_documents:
-  - id: "sd_s0"
-    name: "WRF-Hydro Configuration"
-    stage: "s0_config"
-    path: "docs/s0_config_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 800
-  - id: "sd_s1"
-    name: "Lambert Domain Definition"
-    stage: "s1_domain"
-    path: "docs/s1_domain_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 600
-  - id: "sd_s2"
-    name: "geo_em Construction"
-    stage: "s2_geo_em"
-    path: "docs/s2_geo_em_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 900
-  - id: "sd_s3"
-    name: "wrfinput Construction"
-    stage: "s3_wrfinput"
-    path: "docs/s3_wrfinput_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 500
-  - id: "sd_s4"
-    name: "Fulldom Routing Domain"
-    stage: "s4_fulldom"
-    path: "docs/s4_fulldom_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 800
-  - id: "sd_s5"
-    name: "Soil Properties"
-    stage: "s5_soil_properties"
-    path: "docs/s5_soil_properties_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 500
-  - id: "sd_s6"
-    name: "Groundwater and Ancillary Files"
-    stage: "s6_groundwater"
-    path: "docs/s6_groundwater_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 600
-  - id: "sd_s7"
-    name: "Spatial Metadata Validation"
-    stage: "s7_spatial_metadata"
-    path: "docs/s7_spatial_metadata_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 400
-  - id: "sd_s8"
-    name: "Forcing Conversion to LDASIN"
-    stage: "s8_forcing"
-    path: "docs/s8_forcing_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 800
-  - id: "sd_s9"
-    name: "Namelist Generation"
-    stage: "s9_namelists"
-    path: "docs/s9_namelists_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 600
-  - id: "sd_s10"
-    name: "WRF-Hydro Execution"
-    stage: "s10_execution"
-    path: "docs/s10_execution_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 700
-  - id: "sd_s11"
-    name: "Output Processing"
-    stage: "s11_output"
-    path: "docs/s11_output_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
-    word_count: 500
-
-# --- Layer 3: Diagnostic Triplets ---
-diagnostic_triplets:
-  - id: "dt_001"
-    stage: "s4_fulldom"
-    failure_domain: "parameter_format"
-  - id: "dt_002"
-    stage: "s7_spatial_metadata"
-    failure_domain: "parameter_format"
-  - id: "dt_003"
-    stage: "s4_fulldom"
-    failure_domain: "parameter_format"
-  - id: "dt_004"
-    stage: "s10_execution"
-    failure_domain: "runtime"
-  - id: "dt_005"
-    stage: "s8_forcing"
-    failure_domain: "path_resolution"
-  - id: "dt_006"
-    stage: "s0_config"
-    failure_domain: "compilation"
-  - id: "dt_007"
-    stage: "s1_domain"
-    failure_domain: "silent_error"
-  - id: "dt_008"
-    stage: "s2_geo_em"
-    failure_domain: "silent_error"
-  - id: "dt_009"
-    stage: "s2_geo_em"
-    failure_domain: "silent_error"
-  - id: "dt_010"
-    stage: "s4_fulldom"
-    failure_domain: "silent_error"
-  - id: "dt_011"
-    stage: "s8_forcing"
-    failure_domain: "unit_conversion"
-  - id: "dt_012"
-    stage: "s8_forcing"
-    failure_domain: "unit_conversion"
-  - id: "dt_013"
-    stage: "s10_execution"
-    failure_domain: "runtime"
-  - id: "dt_014"
-    stage: "s10_execution"
-    failure_domain: "dependency_mismatch"
-  - id: "dt_015"
-    stage: "s9_namelists"
-    failure_domain: "parameter_format"
-  - id: "dt_v005"
-    stage: "s3_wrfinput"
-    failure_domain: "silent_error"
-  - id: "dt_v006"
-    stage: "s8_forcing"
-    failure_domain: "dependency_mismatch"
-  - id: "dt_v007"
-    stage: "s4_fulldom"
-    failure_domain: "silent_error"
-  - id: "dt_v008"
-    stage: "s8_forcing"
-    failure_domain: "unit_conversion"
-  - id: "dt_v009"
-    stage: "s11_output"
-    failure_domain: "silent_error"
-  - id: "dt_v010"
-    stage: "s4_fulldom"
-    failure_domain: "parameter_format"
-  - id: "dt_v011"
-    stage: "s8_forcing"
-    failure_domain: "unit_conversion"
-  - id: "dt_v012"
-    stage: "s2_geo_em"
-    failure_domain: "parameter_format"
-  - id: "dt_v013"
-    stage: "s6_groundwater"
-    failure_domain: "parameter_format"
-  - id: "dt_v014"
-    stage: "s10_execution"
-    failure_domain: "dependency_mismatch"
-  # Full triplet details in diagnostics/triplets.yaml
-
-# --- Summary statistics ---
+  count: 17
+  files:
+  - tools/calib_run.py
+  - tools/run_wrfhydro_full_pipeline.py
+  - tools/s10_execution/calibrate_wrfhydro.py
+  - tools/s10_execution/run_wrfhydro.py
+  - tools/s11_output/extract_discharge.py
+  - tools/s1_domain/define_lambert_domain.py
+  - tools/s2_geo_em/build_geo_em.py
+  - tools/s3_wrfinput/build_wrfinput.py
+  - tools/s4_fulldom/build_fulldom_hires.py
+  - tools/s4_fulldom/build_route_link.py
+  - tools/s4_fulldom/build_spatial_weights.py
+  - tools/s5_soil_properties/build_soil_properties.py
+  - tools/s6_groundwater/build_groundwater.py
+  - tools/s8_forcing/cmfd_to_ldasin.py
+  - tools/s8_forcing/convert_forcing_to_ldasin.py
+  - tools/s8_forcing/nasa_power_to_ldasin.py
+  - tools/s9_namelists/generate_namelists.py
+inputs:
+  forcing:
+  - name: RAINRATE (liquid precipitation rate)
+    unit: mm/s (kg/m^2/s)
+  - name: T2D (2-m air temperature)
+    unit: K
+  - name: PSFC (surface pressure)
+    unit: Pa
+  - name: SWDOWN (incoming shortwave radiation)
+    unit: W/m^2
+  - name: LWDOWN (incoming longwave radiation)
+    unit: W/m^2
+  - name: Q2D (specific humidity)
+    unit: kg/kg
+  - name: U2D (near-surface wind, u-component)
+    unit: m/s
+  - name: V2D (near-surface wind, v-component)
+    unit: m/s
+  parameters:
+  - name: REFKDT
+    unit: '-'
+  - name: Soil hydraulic properties (SMCMAX, SMCREF, SMCWLT, DKSAT/SATDK, BEXP, SLOPE)
+    unit: various (m^3/m^3, m/s, -)
+  - name: NEXP (transmissivity depth-decay exponent)
+    unit: '-'
+  - name: LKSATFAC (saturated conductivity multiplier)
+    unit: '-'
+  - name: OV_ROUGH / OVROUGHRTFAC (overland Manning roughness and scale factor)
+    unit: '-'
+  - name: RETDEPRTFAC (surface retention depth factor)
+    unit: '-'
+  - name: Channel geometry/roughness by Strahler order (Bw, ChSSlp, MannN, HLINK)
+    unit: m, -, s/m^(1/3)
+  - name: GW bucket parameters (Coeff C, Expon E, Zmax, Zinit)
+    unit: 'C: m^3/s, E: -, Zmax/Zinit: mm'
+  - name: Lake level-pool parameters (WeirC/L/E, OrificeC/A/E, LkArea, LkMxE)
+    unit: various
+  - name: stream_threshold (flow-accumulation channel-definition threshold)
+    unit: cells or cfs
+  initial_conditions:
+  - name: Soil moisture (SMOIS / SOIL_M), 4 Noah layers
+    unit: m^3/m^3
+  - name: Soil temperature (TSLB / SOILTEMP/TMN), 4 layers
+    unit: K
+  - name: Snow water equivalent (SNEQV)
+    unit: kg/m^2 (mm)
+  - name: GW bucket storage (z_gwsubbas, init = Zinit)
+    unit: mm
+  boundary_conditions:
+  - name: RUNOFF_OPTION (runoff-generation scheme selector)
+    unit: enum 1-5
+  - name: channel_option (channel routing method selector)
+    unit: enum 1/2/3
+  - name: GWBASESWCRT (groundwater scheme selector)
+    unit: enum 0/1/2/4
+  - name: Routing activation switches (OVRTSWCRT, SUBRTSWCRT, CHANRTSWCRT, rt_option)
+    unit: enum
+  - name: lake_option (lake/reservoir routing selector)
+    unit: enum 0/1/2
+  - name: UDMP_OPT (user-defined mapping toggle)
+    unit: enum 0/1
+  - name: Grid/timestep coupling (DXRT, DTRT_CH, DTRT_TER, AGGFACTRT)
+    unit: m, s, s, ratio
+  - name: Run control (KHOUR, OUTPUT_TIMESTEP, RESTART_FREQUENCY_HOURS, CHRTOUT_DOMAIN, MMINLU)
+    unit: various
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - streamflow
+  - SOIL_M
+  - SNEQV
+  - ACCET
+  - z_gwsubbas
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.711, KGE=0.815, R=0.922, 4 scorecard(s)'
+  metrics:
+    best_nse: 0.7114
+    best_kge: 0.8147
+    best_r: 0.9222
 summary:
-  total_tools: 11   # 9 core + cmfd_to_ldasin + run_wrfhydro_full_pipeline
-  total_tool_lines: 5173
-  total_skill_documents: 1   # SKILL.md (per-stage docs pending)
-  total_skill_words: 9500
-  total_diagnostic_triplets: 35   # dt_001-dt_015, dt_v005-dt_v014
-  total_error_log_entries: 19   # err_001-err_019
-  last_audit: "2026-03-20"
-  failure_domains:
-    - "parameter_format"
-    - "path_resolution"
-    - "compilation"
-    - "silent_error"
-    - "unit_conversion"
-    - "runtime"
-    - "dependency_mismatch"
-  pipeline_stages: 12
-  pipeline_milestones: 12
-  validated_results:
-    - basin: "Chaohe"
-      period: "2001-01-01 to 2001-01-07"
-      grid: "126x116 @ 1km"
-      status: "SUCCESS"
-      runtime: "29s on 4 cores"
-    - basin: "Bengbu (1km)"
-      period: "2001-07-01 to 2001-07-14"
-      grid: "535x442 @ 1km"
-      status: "SUCCESS (after 3 bug fixes)"
-      runtime: "72 min on 2 cores"
-    - basin: "Bengbu (0.25deg)"
-      period: "2000-01-01 to 2005-12-31"
-      grid: "22x18 @ 0.25deg"
-      status: "SUCCESS — CHRTOUT validated"
-      runtime: "19 min"
-      comparison: "vs VIC: mean 1090 vs 1535 m3/s, r=0.84, best year r=0.92"
+  total_tools: 17
+  total_stage_docs: 4
+  total_diagnostic_triplets: 48
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

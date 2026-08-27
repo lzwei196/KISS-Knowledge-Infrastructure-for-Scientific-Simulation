@@ -1,182 +1,568 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "PRMS"
-  version: "5.1.0"
-  full_name: "Precipitation-Runoff Modeling System"
-  domain: "hydrology"
-  developer: "USGS"
-  binary_path: "KISSPATH_BINARIES/PRMS/source/repo/prms/prms_hpc"
-  unit_system: "US customary (Fahrenheit, inches, acres, feet, cfs)"
-
+  name: PRMS
+  language: fortran
+  implementation:
+    id: prms-hpc-510
+    version: 5.1.0 (2020-05-01)
+    provenance: Fortran 90 process modules + C MMF framework; USGS PRMS 5.1.0 from github.com/nhm-usgs/prms.
+  scientific_reference_version: PRMS-IV (Markstrom et al. 2015, USGS TM 6-B7), as implemented in USGS
+    Fortran PRMS 5.1.0
 inputs:
-  control_file:
-    format: "plain text with #### delimiters"
-    type_codes:
-      1: "long integer"
-      2: "float"
-      3: "double"
-      4: "string"
-
   forcing:
-    - name: "tmax"
-      description: "Daily maximum temperature"
-      unit: "degrees Fahrenheit"
-      valid_range: [-40, 130]
-    - name: "tmin"
-      description: "Daily minimum temperature"
-      unit: "degrees Fahrenheit"
-      valid_range: [-60, 120]
-    - name: "precip"
-      description: "Daily precipitation"
-      unit: "inches/day"
-      valid_range: [0, 30]
-    - name: "runoff"
-      description: "Observed streamflow (optional, for calibration)"
-      unit: "cfs"
-      valid_range: [0, 1000000]
-
+  - name: tmax
+    unit: degrees Fahrenheit
+    category: forcing
+    source_kind: forcing
+    model_input_format: PRMS data file column (station mode) or tmax.cbh per-HRU file (climate_hru mode)
+    notes: Internally Fahrenheit; rain/snow partition keys off tmax against tmax_allsnow/tmax_allrain.
+  - name: tmin
+    unit: degrees Fahrenheit
+    category: forcing
+    source_kind: forcing
+    model_input_format: PRMS data file column or tmin.cbh per-HRU file
+  - name: precip
+    unit: inches/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: PRMS data file column or precip.cbh per-HRU file
+  - name: solar radiation
+    unit: Langleys/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: PRMS data file / CBH (only when supplied as input rather than estimated by ddsolrad/ccsolrad)
+  - name: humidity
+    unit: percent (0-100)
+    category: forcing
+    source_kind: forcing
+    model_input_format: PRMS data file column
+    notes: Required only by potet_pt and potet_pm.
+  - name: wind speed
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: PRMS data file column
+    notes: Required only by potet_pt and potet_pm.
+  - name: pan evaporation
+    unit: inches/day
+    category: forcing
+    source_kind: forcing
+    model_input_format: PRMS data file column
+    notes: Required only by potet_pan.
+  - name: observed runoff
+    unit: cfs (runoff_units=0)
+    category: forcing
+    source_kind: forcing
+    model_input_format: PRMS data file 'runoff' column; read by obs module
+    notes: Observed streamflow used for routing reference and calibration comparison, not a model driver
+      of the water budget.
   parameters:
-    critical:
-      - name: "hru_area"
-        unit: "acres"
-        valid_range: [1, 50000]
-        description: "Area of each HRU"
-      - name: "hru_elev"
-        unit: "feet (elev_units=0) or meters (elev_units=1)"
-        valid_range: [0, 15000]
-        description: "Mean elevation of each HRU"
-      - name: "hru_lat"
-        unit: "decimal degrees"
-        valid_range: [-90, 90]
-        description: "Latitude of HRU centroid"
-      - name: "soil_moist_max"
-        unit: "inches"
-        valid_range: [1, 20]
-        description: "Maximum soil moisture storage capacity"
-      - name: "soil_rechr_max"
-        unit: "inches"
-        valid_range: [0.5, 10]
-        description: "Maximum recharge zone capacity"
-      - name: "gwflow_coef"
-        unit: "fraction/day"
-        valid_range: [0.001, 0.5]
-        description: "Groundwater linear flow coefficient"
-      - name: "slowcoef_lin"
-        unit: "fraction/day"
-        valid_range: [0.001, 0.5]
-        description: "Linear interflow coefficient"
-      - name: "fastcoef_lin"
-        unit: "fraction/day"
-        valid_range: [0.001, 1.0]
-        description: "Linear preferential flow coefficient"
-      - name: "ssr2gw_rate"
-        unit: "fraction/day"
-        valid_range: [0.001, 0.5]
-        description: "Subsurface to groundwater transfer rate"
-      - name: "smidx_coef"
-        unit: "fraction"
-        valid_range: [0.001, 0.06]
-        description: "Surface runoff SMIDX coefficient"
-      - name: "smidx_exp"
-        unit: "1/inch"
-        valid_range: [0.1, 0.5]
-        description: "Surface runoff SMIDX exponent"
-      - name: "tmax_allsnow"
-        unit: "degrees Fahrenheit"
-        valid_range: [28, 40]
-        description: "Tmax below which all precip is snow"
-      - name: "tmax_allrain"
-        unit: "degrees Fahrenheit"
-        valid_range: [35, 50]
-        description: "Tmax above which all precip is rain"
-
-  dimensions:
-    - name: "nhru"
-      description: "Number of Hydrologic Response Units"
-      typical_range: [1, 100000]
-    - name: "nsegment"
-      description: "Number of stream segments"
-      typical_range: [1, 100000]
-    - name: "ngw"
-      description: "Number of groundwater reservoirs (= nhru)"
-    - name: "nssr"
-      description: "Number of subsurface reservoirs (= nhru)"
-    - name: "nobs"
-      description: "Number of streamflow observation stations"
-      typical_range: [0, 10]
-
+  - name: hru_area
+    unit: acres
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: parameter file, dim nhru
+  - name: hru_elev
+    unit: feet or meters (per elev_units)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: parameter file, dim nhru
+  - name: hru_lat
+    unit: degrees
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: parameter file, dim nhru
+  - name: cov_type / covden_sum / covden_win
+    unit: categorical / fraction
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: parameter file, dim nhru
+    notes: Vegetation cover type and seasonal canopy density driving interception.
+  - name: hru_percent_imperv
+    unit: fraction
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: parameter file, dim nhru
+  - name: soil_type
+    unit: categorical (1=sand,2=loam,3=clay)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: parameter file, dim nhru
+  - name: soil_moist_max
+    unit: inches
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file, dim nhru
+    notes: Maximum soil-zone water-holding capacity; dominant water-balance partition parameter.
+  - name: soil_rechr_max
+    unit: inches
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file, dim nhru
+  - name: smidx_coef / smidx_exp
+    unit: fraction / (1/inch)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file (srunoff_smidx)
+    notes: Coefficient and exponent of the variable-source-area SMIDX surface-runoff scheme.
+  - name: carea_max
+    unit: fraction
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file
+    notes: Maximum contributing area for surface runoff (srunoff CAREA / SMIDX).
+  - name: slowcoef_lin / slowcoef_sq / fastcoef_lin
+    unit: fraction/day
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file (soilzone)
+    notes: Linear and nonlinear slow/fast interflow routing coefficients; slowcoef_sq is the nonlinear
+      (squared-storage) slow-interflow term, a MEDIUM-sensitivity lever on interflow (influence block).
+  - name: soil2gw_max
+    unit: inches
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file (soilzone), dim nhru
+    notes: Maximum soil-water excess routed from the capillary reservoir to groundwater; HIGH-sensitivity
+      lever on interflow and baseflow (influence block).
+  - name: pref_flow_den
+    unit: fraction
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file (soilzone), dim nhru
+    notes: Preferential-flow reservoir fraction of the soil zone; HIGH-sensitivity lever on interflow
+      (influence block). PRMS default 0 replicates classic no-preferential-flow behavior.
+  - name: ssr2gw_rate
+    unit: fraction/day
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file, dim nssr
+    notes: Gravity-reservoir to groundwater transfer rate.
+  - name: gwflow_coef
+    unit: fraction/day
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file, dim ngw
+    notes: Linear groundwater-reservoir baseflow recession coefficient.
+  - name: tmax_allsnow / tmax_allrain
+    unit: degrees Fahrenheit
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file
+    notes: Temperature thresholds bounding the rain/snow partition (defaults 32F / 38F).
+  - name: jh_coef / jh_coef_hru
+    unit: 1/degF / degF
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file (potet_jh)
+    notes: Jensen-Haise potential-ET coefficients (defaults 0.014 / 13.0).
+  - name: dday_intcp / dday_slope / radmax
+    unit: various
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file (ddsolrad)
+    notes: Degree-day shortwave radiation intercept/slope and max radiation fraction.
+  - name: rad_trncf / cecn_coef / freeh2o_cap
+    unit: fraction / cal·cm-2·degC-1·day-1 / fraction
+    category: parameters
+    source_kind: calibrated
+    model_input_format: parameter file (snowcomp)
+    notes: Canopy radiation transmission, convection-condensation energy coefficient, and snowpack free-water
+      holding capacity.
+  - name: snarea_curve
+    unit: fraction (ndeplval = 11 values)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: parameter file; required by snowcomp
+    notes: Snow-depletion curve relating snow-covered area to water equivalent.
+  initial_conditions:
+  - name: soil_moist_init_frac
+    unit: fraction of soil_moist_max
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: parameter file
+  - name: soil_rechr_init_frac
+    unit: fraction of soil_rechr_max
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: parameter file
+  - name: ssstor_init
+    unit: inches
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: parameter file (subsurface reservoir)
+  - name: gwstor_init
+    unit: inches
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: parameter file (groundwater reservoir, 0-10 in)
+  boundary_conditions:
+  - name: start_time / end_time
+    unit: array of 6 long integers [year, month, day, hour, min, sec]
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: control file, type code 1
+    notes: Must be type-code-1 longs; otherwise PRMS silently falls back to a default 2000-2001 period.
+  - name: temp_module / precip_module / solrad_module / et_module / srunoff_module / strmflow_module /
+      transp_module
+    unit: module selector
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: control file (string)
+    notes: Swappable process-module choices (e.g., potet_jh vs potet_pm; srunoff_smidx vs srunoff_carea;
+      muskingum vs strmflow). Selected variant must match available forcing.
+  - name: elev_units / temp_units / precip_units / runoff_units
+    unit: unit-system switch
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: control file
+    notes: Declare the unit system of inputs (0=feet/F/inches/cfs defaults). Mismatch silently corrupts
+      results.
+  - name: initial_deltat
+    unit: hours
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: control file
+    notes: Must be 24.0 for the daily model.
+  - name: prms_warmup
+    unit: years
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: control file
+    notes: Warmup years excluded from statistics.
 outputs:
   primary:
-    - name: "basin_cfs"
-      description: "Total basin streamflow"
-      unit: "cfs"
-      valid_range: [0, 1000000]
-    - name: "basin_ppt"
-      description: "Basin-average precipitation"
-      unit: "inches/day"
-      valid_range: [0, 30]
-    - name: "basin_actet"
-      description: "Basin actual evapotranspiration"
-      unit: "inches/day"
-      valid_range: [0, 1]
-    - name: "basin_potet"
-      description: "Basin potential evapotranspiration"
-      unit: "inches/day"
-      valid_range: [0, 1]
-    - name: "basin_tmax"
-      description: "Basin maximum temperature"
-      unit: "degrees Fahrenheit"
-      valid_range: [-40, 130]
-    - name: "basin_tmin"
-      description: "Basin minimum temperature"
-      unit: "degrees Fahrenheit"
-      valid_range: [-60, 120]
-    - name: "basin_soil_moist"
-      description: "Basin soil moisture"
-      unit: "inches"
-      valid_range: [0, 20]
-    - name: "basin_gwstor"
-      description: "Basin groundwater storage"
-      unit: "inches"
-      valid_range: [0, 50]
-    - name: "basin_snowcov"
-      description: "Basin snow cover fraction"
-      unit: "fraction"
-      valid_range: [0, 1]
-    - name: "basin_swrad"
-      description: "Basin shortwave radiation"
-      unit: "Langleys/day"
-      valid_range: [0, 900]
-
-  output_formats:
-    - "CSV (csvON_OFF=1): daily comma-separated basin summary"
-    - "StatVar (statsON_OFF=1): selected variables at each timestep"
-    - "Basin Summary (basinOutON_OFF=1): daily/monthly/yearly averages"
-    - "NHru Summary (nhruOutON_OFF=1): per-HRU output for selected variables"
-
-unit_conversions:
-  - from: "Celsius"
-    to: "Fahrenheit"
-    formula: "F = C * 9/5 + 32"
-    trap: "Off by ~50 if unconverted"
-  - from: "mm/day"
-    to: "inches/day"
-    formula: "in = mm / 25.4"
-    trap: "25.4x too much precip"
-  - from: "meters"
-    to: "feet"
-    formula: "ft = m / 0.3048"
-    trap: "Lapse rate errors"
-  - from: "km2"
-    to: "acres"
-    formula: "acres = km2 * 247.105"
-    trap: "Water balance wrong by orders of magnitude"
-  - from: "m3/s"
-    to: "cfs"
-    formula: "cfs = cms / 0.028317"
-    trap: "Calibration mismatch"
-
+  - name: basin_cfs
+    unit: cfs
+    description: Total basin streamflow at the outlet in cubic feet per second
+    validation_rank: 2
+    emitted_in: prms.out / CSV summary
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against gauged discharge at the basin outlet in matching units (cfs); m3/s observations
+          must be converted (runoff_units).
+        - Use a water-year start and discard warmup; snow-affected basins need an antecedent snowpack
+          spinup.
+      detrending_options:
+      - none
+  - name: basin_stflow_out
+    unit: inches
+    description: Total basin streamflow expressed as a basin-average depth
+    validation_rank: 3
+    emitted_in: prms.out / CSV summary
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Basin-area-weighted depth; compare against runoff depth derived from gauged discharge divided
+          by drainage area.
+      detrending_options:
+      - none
+  - name: seg_outflow
+    unit: cfs
+    description: Per-segment channel outflow from Muskingum / routing
+    validation_rank: 4
+    emitted_in: nsegment CSV / NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Match the segment to the gauge location; routing variant (muskingum vs simple summation) affects
+          timing.
+      detrending_options:
+      - none
+  - name: basin_actet
+    unit: inches
+    description: Basin-average actual evapotranspiration
+    validation_rank: 1
+    emitted_in: prms.out / CSV summary
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Comparison against remote-sensing or eddy-covariance ET requires unit conversion and scale matching
+          to the HRU/basin aggregate.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Per-HRU actet can be compared against gridded ET only after HRU-to-grid mapping.
+      detrending_options:
+      - none
+  - name: basin_pweqv
+    unit: inches
+    description: Basin-average snowpack water equivalent (SWE)
+    validation_rank: 5
+    emitted_in: prms.out / CSV summary
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against SNOTEL/observed SWE; snowpack is poorly constrained without observed SWE.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Snow-covered area / SWE maps require HRU-to-grid mapping for spatial comparison.
+      detrending_options:
+      - none
+  - name: basin_soil_moist
+    unit: inches
+    description: Basin-average soil-zone moisture storage
+    validation_rank: 6
+    emitted_in: prms.out / CSV summary
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - PRMS soil_moist is a conceptual capillary-reservoir depth, not a measured volumetric water content;
+          anomaly/pattern comparison only.
+      detrending_options:
+      - first_difference
+  - name: basin_ppt
+    unit: inches
+    description: Basin-average precipitation (rain + snow), a forcing-derived diagnostic
+    validation_rank: 7
+    emitted_in: prms.out / CSV summary
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Reflects the distributed input, not an independent model prediction; useful as a water-balance
+          / input-sanity check (in inches/day).
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "NSE=-1.09 on Wangjiaba with transferred parameters (no local calibration)"
-  - "Parameters transferred from Bengbu without re-calibration produce PBIAS=41%"
-  - "-C flag requires no space: -C/path/to/control (not -C /path/to/control)"
-  - "Data file columns are positional, not name-matched"
+- id: dt_001
+  symptom: Extreme flooding, unrealistic peak flows, runoff ratio > 1.0, basin floods continuously
+  diagnosis: Precipitation in mm/day instead of inches/day — 25.4x too much precipitation; PRMS expects
+    daily precipitation in inches. Global datasets (CMFD, ERA5, MSWX) provide mm/day or mm/timestep. If
+    mm values are fed directly without dividing by 25.4, the basin receives 25.4x more precipitation than
+    reality
+  remedy: Divide all precipitation values by 25.4 in convert_forcing_to_prms.py; convert_forcing_to_prms;
+    ['Check mean precip value — should be 0.01-0.3 inches/day for most basins', 'If mean precip > 1.0
+    inches/day, values are likely in mm — divide by 25.4', 'Annual total should be 15-60 inches for most
+    US ba
+  severity: silent
+- id: dt_002
+  symptom: No snow accumulation even in cold basins, snow module inactive, all precipitation falls as
+    rain
+  diagnosis: Temperature in Celsius instead of Fahrenheit; PRMS expects temperatures in degrees Fahrenheit.
+    The tmax_allsnow parameter defaults to 32F (0C). If Celsius values are fed directly, 0C is interpreted
+    as 0F = -17.8C. Since most temperatures are > 0C = 0F, PRMS classifies all precipitation as rain.
+    Snow
+  remedy: Apply F = C * 9/5 + 32 to all temperature values; convert_forcing_to_prms; ['Check mean tmax
+    — should be 40-80F for temperate basins', 'If mean tmax is 5-30, values are likely in Celsius', 'If
+    mean tmax is 270-300, values are likely in Kelvin']; validate_outputs() checks for suspiciously low
+    tempera
+  severity: silent
+- id: dt_003
+  symptom: Temperature distribution is nearly flat across all HRUs despite elevation range. Lapse rate
+    corrections ineffective.
+  diagnosis: 'Elevation in meters but elev_units=0 (feet expected); When elev_units=0 (default), PRMS
+    expects elevation in feet. If meters are provided, elevation differences are 3.28x smaller than expected.
+    Temperature lapse rate corrections (typically -3.5F per 1000ft) are under-applied, making the temperature '
+  remedy: 'Either convert elevations to feet (m * 3.28084) or set elev_units=1; convert_params_to_prms;
+    [''Check hru_elev values — if max < 5000 for mountain basins, likely in meters'', ''Convert: feet
+    = meters * 3.28084'', ''OR set elev_units=1 in parameter file'']; validate_outputs() checks elevation
+    range vs elev'
+  severity: silent
+- id: dt_004
+  symptom: Water balance volumes are orders of magnitude wrong. Basin area appears ~247x too small.
+  diagnosis: 'HRU area in km2 instead of acres; PRMS expects hru_area in acres (1 km2 = 247.105 acres).
+    If km2 values are used directly, the basin area is ~247x too small. Streamflow volume calculations
+    are wrong because depth-to-volume conversions depend on area.
+
+    ; [''convert_params_to_prms'', ''hru_area'', ''water_b'
+  remedy: 'Multiply all hru_area values by 247.105; convert_params_to_prms; [''Check hru_area values —
+    typical HRUs are 50-5000 acres'', ''If values are 0.5-50, they are likely in km2'', ''Convert: acres
+    = km2 * 247.105'']; validate_outputs() warns if max hru_area < 1 acre'
+  severity: silent
+- id: dt_005
+  symptom: Soil never saturates, no surface runoff generated, extreme infiltration
+  diagnosis: soil_moist_max in mm instead of inches — 25.4x too large; soil_moist_max defines the total
+    available water storage in the soil zone. If values are in mm (e.g., 150mm) instead of inches (5.9in),
+    the soil zone is 25.4x too large. All precipitation infiltrates, soil never saturates, and Dunnian
+    surface
+  remedy: 'Divide soil_moist_max by 25.4; convert_params_to_prms; [''Check soil_moist_max values — typical
+    range is 2-15 inches'', ''If values are 50-400, they are likely in mm'', ''Convert: inches = mm /
+    25.4'']; validate_outputs() warns if soil_moist_max > 100'
+  severity: silent
+- id: dt_006
+  symptom: Streamflow calibration appears to fail — observed and simulated flows differ by factor of ~35
+  diagnosis: Observed streamflow in m3/s but runoff_units=0 (cfs expected); If runoff_units=0 (default),
+    PRMS expects observed streamflow in cubic feet per second (cfs). If m3/s values are fed directly,
+    the observed flow is ~35.3x too small (1 cfs = 0.02832 m3/s). NSE and PBIAS metrics will be misleading
+    because
+  remedy: 'Convert m3/s to cfs: cfs = cms / 0.028317; convert_forcing_to_prms; [''Check observed runoff
+    values and compare magnitudes'', ''Set runoff_units=1 in parameter file to use cms directly'', ''Or
+    convert values: cfs = cms / 0.028317'']; Cross-check flow units with basin area and precipitation'
+  severity: silent
+- id: dt_007
+  symptom: 'PRMS fails to start with ''Usage: Set the full path to the control file using the -C option'''
+  diagnosis: Space between -C flag and control file path; The PRMS command line parser requires NO space
+    between -C and the path. Using './prms -C /path/to/control' treats '/path/to/control' as a separate
+    positional argument, and -C gets no value. The parser falls through to the NULL check and prints the
+    usage m
+  remedy: 'Remove space: use -C/path/to/control; run_prms; [''Use: ./prms_hpc -C/path/to/control'', ''NOT:
+    ./prms_hpc -C /path/to/control'']; run_prms.py constructs the command correctly'
+  severity: fatal
+- id: dt_008
+  symptom: PRMS crashes reading CBH file with 'Early end-of-file' or IOSTAT error
+  diagnosis: 'CBH file header format wrong — missing variable count or wrong delimiter; CBH files must
+    have exactly: line 1 = ''varname nhru_count'', line 2 = ''########...'', then data. If nhru_count
+    is missing, the delimiter is wrong (#### instead of ########), or there are extra blank lines, the
+    Fortran READ state'
+  remedy: 'Fix CBH header format; convert_forcing_to_prms; ["Line 1 must be: variable_name nhru_count
+    (e.g., ''tmax 42'')", ''Line 2 must be: ######## (8 or more # characters)'', ''No blank lines before
+    data'', ''Data columns must equal nhru_count'']; convert_forcing_to_prms.py writes correct headers'
+  severity: fatal
+- id: dt_009
+  symptom: start_time or end_time not recognized, model uses wrong simulation period
+  diagnosis: start_time/end_time type code wrong — must be type 1 (long integer); start_time and end_time
+    are arrays of 6 long integers in the control file. If the type code is set to 4 (string) or 2 (float)
+    instead of 1 (long), the values are misinterpreted. The model may use default dates (2000-10-01 to
+    2001-0
+  remedy: 'Ensure start_time and end_time use type code 1; generate_control_file; [''Verify control file
+    has: size=6, type=1 for start_time and end_time'', ''Check that year, month, day, hour, min, sec are
+    each on separate lines'']; generate_control_file.py uses correct type codes'
+  severity: silent
+- id: dt_010
+  symptom: PRMS crashes with 'Variable X not declared' error for data file variable
+  diagnosis: Data file contains variable not used by selected modules; The data file header declares variables
+    (e.g., 'solrad 1'). If the selected modules don't declare that variable, PRMS fails because it can't
+    find the variable in its internal database. This commonly happens when switching from station-based
+    t
+  remedy: 'Remove unused variables from data file header, or switch data file; convert_forcing_to_prms;
+    ["Remove variable declarations from data file that aren''t needed", "When using climate_hru, data
+    file only needs ''runoff'' (if available)", ''Or create a minimal data file with just the #### delimiter''];
+    Match'
+  severity: fatal
+- id: dt_011
+  symptom: PRMS crashes during initialization with dimension error or array bounds error
+  diagnosis: 'nhru in parameter file doesn''t match CBH file column count; The parameter file declares
+    nhru=N, but the CBH files have M columns per line. If N != M, the Fortran READ statement reads wrong
+    number of values, causing array bounds errors or segfaults. This is a fatal mismatch.
+
+    ; [''call_modules'', ''clima'
+  remedy: 'Ensure nhru dimension is consistent across all files; convert_params_to_prms; ["Check nhru
+    in parameter file: look for ''nhru'' in Dimensions section", ''Count columns in CBH files (subtract
+    6 for date fields)'', ''They must be equal'']; Tools ensure consistent nhru'
+  severity: fatal
+- id: dt_012
+  symptom: No surface runoff generated, all flow is baseflow/interflow
+  diagnosis: smidx_coef too small or soil_moist_max too large; Surface runoff in PRMS (srunoff_smidx)
+    depends on soil moisture index. The runoff fraction = smidx_coef * 10^(smidx_exp * soil_moist / soil_moist_max).
+    If smidx_coef is near zero or soil_moist_max is very large, the runoff fraction stays near zero re
+  remedy: Increase smidx_coef (try 0.01-0.05) or decrease soil_moist_max; None; ['Check smidx_coef — typical
+    range 0.001 to 0.06', 'Check soil_moist_max — typical range 2 to 15 inches', 'Ensure soil_moist_max
+    is in inches, not mm']; Use validate_outputs() to check parameter ranges
+  severity: silent
+- id: dt_013
+  symptom: Baseflow recession is too fast — flow drops to zero between storms
+  diagnosis: gwflow_coef too high; gwflow_coef is the linear coefficient for groundwater flow. The daily
+    groundwater discharge = gwflow_coef * gwstor. If gwflow_coef = 0.5, half the GW storage flows out
+    each day — a residence time of ~2 days. For most basins, gwflow_coef should be 0.005-0.05 (20-200
+    day residenc
+  remedy: 'Decrease gwflow_coef to 0.005-0.02; None; [''Check gwflow_coef value for each HRU'', ''Typical
+    values: 0.005 for deep/slow aquifers, 0.05 for shallow/fast'', ''Also check gwstor_init — may need
+    to increase initial GW storage'']; Start with default value of 0.015'
+  severity: silent
+- id: dt_014
+  symptom: Missing snarea_curve parameter causes crash in snow module
+  diagnosis: 'Snow depletion curve parameter not in parameter file; The snowcomp module requires snarea_curve
+    (ndeplval=11 values defining the snow covered area depletion curve). If this parameter is missing
+    from the parameter file, PRMS crashes during the declare phase.
+
+    ; [''snowcomp'', ''param_file'']'
+  remedy: 'Add snarea_curve to parameter file with 11 values; convert_params_to_prms; [''Add to parameter
+    file: snarea_curve with ndeplval dimension'', ''Default values: 0.05, 0.25, 0.40, 0.55, 0.65, 0.75,
+    0.82, 0.88, 0.93, 0.97, 1.00'']; convert_params_to_prms.py always includes snarea_curve'
+  severity: fatal
+- id: dt_015
+  symptom: 'PRMS binary fails with ''error while loading shared libraries: libnetcdff.so'''
+  diagnosis: 'NetCDF Fortran library not in LD_LIBRARY_PATH; PRMS v5.1.0 is compiled with NetCDF support
+    for optional NetCDF output. The runtime linker needs to find libnetcdff.so and libnetcdf.so. If these
+    libraries are installed in a non-standard location, LD_LIBRARY_PATH must include their directory.
+
+    ; [''prms_'
+  remedy: 'Set LD_LIBRARY_PATH or install NetCDF libraries; run_prms; ["Find libraries: find / -name ''libnetcdff.so*''
+    2>/dev/null", ''Export: export LD_LIBRARY_PATH=/path/to/netcdf/lib:$LD_LIBRARY_PATH'', ''Or install:
+    apt install libnetcdff-dev'']; run_prms.py checks for required libraries'
+  severity: fatal
+- id: dt_016
+  symptom: Model runs but CSV output file is empty or missing
+  diagnosis: csvON_OFF control variable set to 0 or csv_output_file path invalid; The CSV summary output
+    is only produced when csvON_OFF=1 in the control file. If the flag is 0 or missing, no CSV output
+    is generated. Also, if the csv_output_file path points to a non-existent directory, the file creation
+    silently
+  remedy: Set csvON_OFF=1 and ensure csv_output_file directory exists; generate_control_file; ['Add csvON_OFF
+    with value 1 to control file', 'Ensure csv_output_file points to valid directory', 'Create output
+    directory if needed']; generate_control_file.py defaults csvON_OFF=1
+  severity: silent
+- id: dt_017
+  symptom: Compilation fails with 'fallow-argument-mismatch' error
+  diagnosis: GFortran version >= 10 requires -fallow-argument-mismatch flag; GFortran 10+ enforces strict
+    type checking for procedure arguments by default. The PRMS Fortran code uses some legacy calling conventions
+    that violate this. The -fallow-argument-mismatch flag is already in the makelist file but may need
+  remedy: 'Add -fallow-argument-mismatch to FFLAGS; None; [''Edit makelist: add -fallow-argument-mismatch
+    to FFLAGS line'', ''This flag is already present in the default makelist'']; Use the provided makelist
+    which includes this flag'
+  severity: fatal
+- id: dt_018
+  symptom: Negative evapotranspiration values in output, or ET exceeds precipitation
+  diagnosis: jh_coef calibration coefficient too high for the basin; The Jensen-Haise ET coefficient (jh_coef)
+    controls the relationship between temperature and potential ET. The default value of 0.014 works for
+    many basins but can produce excessive ET in warm, arid regions. If ET > precipitation for extended
+    pe
+  remedy: Reduce jh_coef to 0.005-0.01 for arid basins; None; ['Check basin_potet vs basin_ppt in CSV
+    output', 'If annual potet > 2 * ppt, jh_coef is too high', 'Try jh_coef = 0.005 for arid, 0.014 for
+    humid basins']; Check ET/PET ratio in output validation
+  severity: silent

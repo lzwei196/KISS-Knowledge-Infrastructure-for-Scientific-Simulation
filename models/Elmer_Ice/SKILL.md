@@ -1,13 +1,3 @@
----
-name: elmer-ice
-description: >-
-  Elmer/Ice 9.0 (Gagliardini et al. 2013 full-Stokes baseline; ReleaseNotes 9.0); SSA
-  marine-ice-sheet configuration. Covers Ice flow velocity and pressure (Full-Stokes
-  momentum balance, Glen's flow law rheology); Shallow Shelf/Stream Approximation (SSA)
-  and Shallow Ice Approximation (SIA) asymptotic flow. Use when the task involves running,
-  configuring, calibrating or interpreting Elmer_Ice.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (25 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/convert_geometry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_geometry.py --help` |
+| `tools/generate_sif.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_sif.py --help` |
+| `tools/parse_vtu_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_vtu_output.py --help` |
+| `tools/run_elmerice.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_elmerice.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # Elmer/Ice Knowledge Infrastructure
 
@@ -243,9 +268,31 @@ End
 
 ---
 
-## 6. Output Formats
+## 6. Output Description and Formats
 
-### 6.1 VTU (VTK Unstructured Grid)
+**Source**: `dag.yaml`. The dag is the model's output identity; if this
+section and `dag.yaml` disagree, `dag.yaml` wins.
+
+### 6.1 Dag output description
+
+**Headline output** (`validation_rank: 1` in `dag.yaml`):
+
+> `SSAVelocity` — Depth-averaged horizontal ice velocity (raw VTU stores m/s) (`m/a`)
+
+Other dag outputs are `H`, `DHDT`, `Zs`, `GroundedMask`, `Temperature`, and
+`Effective Pressure`.
+
+| Output variable (dag `var`) | Rank | Unit | Output description |
+|-----------------------------|------|------|--------------------|
+| `SSAVelocity` | 1 | `m/a` | Depth-averaged horizontal ice velocity (raw VTU stores m/s) |
+| `H` | — | — | Listed in `dag.yaml` as an output |
+| `DHDT` | — | — | Listed in `dag.yaml` as an output |
+| `Zs` | — | — | Listed in `dag.yaml` as an output |
+| `GroundedMask` | — | — | Listed in `dag.yaml` as an output |
+| `Temperature` | — | — | Listed in `dag.yaml` as an output |
+| `Effective Pressure` | — | — | Listed in `dag.yaml` as an output |
+
+### 6.2 VTU (VTK Unstructured Grid)
 
 Primary output format — XML-based, readable by ParaView and VTK tools.
 
@@ -253,7 +300,7 @@ Key output variables and their units:
 
 | Variable | DOFs | Unit | Description |
 |----------|------|------|-------------|
-| SSAVelocity | 1-2 | m/a | Depth-averaged horizontal velocity |
+| SSAVelocity | 1-2 | m/a | Depth-averaged horizontal ice velocity (raw VTU stores m/s) |
 | Velocity | 3-4 | m/a | 3D velocity field (u,v,w) |
 | Pressure | 1 | Pa | Ice pressure |
 | Temperature | 1 | deg C | Ice temperature (relative to PMP) |
@@ -269,11 +316,11 @@ Key output variables and their units:
 | Hydraulic Potential | 1 | m | Subglacial water potential (GlaDS) |
 | Effective Pressure | 1 | Pa | Ice overburden minus water pressure |
 
-### 6.2 Result Files
+### 6.3 Result Files
 
 Native Elmer format for restart and advanced analysis.
 
-### 6.3 NetCDF
+### 6.4 NetCDF
 
 Optional (requires `-DWITH_NETCDF=TRUE`), used for large-scale ice sheet runs.
 
@@ -298,7 +345,28 @@ wrong results). Each is cross-referenced to a diagnostic triplet.
 
 ---
 
-## 8. Solver Configuration Reference
+## 8. Unit Table / Unit Conversion Table
+
+This table documents the unit conversions explicitly stated by this KI. Verify
+source data attributes before adding any dataset-specific conversion rows.
+
+| Variable | Source unit (verified) | Model/KI unit | Factor | Type | Source |
+|----------|------------------------|---------------|--------|------|--------|
+| `SSAVelocity` input or observation velocity | `m/a` | `m/s` internal Elmer velocity | `x3.1688e-8` | multiplicative | `dt_001` |
+| `SSAVelocity` raw VTU output | `m/s` | `m/a` dag output | `x31556926.0` | multiplicative | `dag.yaml`, `dt_009` |
+| Mesh node coordinates | `km` if supplied by source | `m` | `x1000` | multiplicative | `dt_008` |
+| Time step size | years if supplied by workflow intent | seconds in SIF unless explicitly set | `x31556926.0` | multiplicative | `dt_009` |
+
+Output unit verification checklist:
+- Read raw VTU arrays before metric calculation; `SSAVelocity` is reported by
+  the dag as `m/a`, while raw VTU storage is `m/s`.
+- Confirm mesh coordinates are meters before running `ElmerSolver`.
+- Confirm transient SIF timesteps are seconds unless the SIF explicitly encodes
+  another time convention.
+
+---
+
+## 8a. Solver Configuration Reference
 
 ### 8.1 SSA Solver (Shallow Shelf Approximation)
 
@@ -401,7 +469,43 @@ Nonlinear System Relaxation Factor = 1.0
 
 ---
 
-## 11. Quick Start — ISMIP-HOM Benchmark A
+## 11. Validated Results
+
+**Source**: `docs/validation_convention.yaml`. The convention file is the
+field bar for this KI; if this section and the convention disagree, the
+convention wins.
+
+### 11.1 Validation benchmark
+
+| Property | Value |
+|----------|-------|
+| Benchmark | ISMIP-HOM Experiment A |
+| Headline dag output | `SSAVelocity` |
+| Headline output unit | `m/a` |
+| Headline output description | Depth-averaged horizontal ice velocity (raw VTU stores m/s) |
+
+### 11.2 Performance bars from the convention
+
+For minimize metrics, lower values are better. For maximize metrics, higher
+values are better. Null convention bands are written as `no cited threshold`.
+
+| Output variable | Metric | Direction | Satisfactory band | Good band | Very good band |
+|-----------------|--------|-----------|-------------------|-----------|----------------|
+| `SSAVelocity` | `rmse` | minimize | `94.5` (`seroussi2019`, `mcarthur2023`) | `47.5` (`seroussi2019`, `mcarthur2023`) | `7.31` (`seroussi2019`, `mcarthur2023`) |
+| `SSAVelocity` | `nse` | maximize | no cited threshold | no cited threshold | no cited threshold |
+| `H` | `rmse` | minimize | `320.8` (`seroussi2019`) | `160.0` (`seroussi2019`) | `91.2` (`seroussi2019`) |
+
+### 11.3 Results interpretation
+
+Grade `SSAVelocity` first because it is the rank-1 dag output. An achieved
+`SSAVelocity` RMSE must be compared against the cited `seroussi2019` and
+`mcarthur2023` bands above; an achieved `SSAVelocity` NSE has no cited
+threshold in the convention. An achieved `H` RMSE must be compared against the
+cited `seroussi2019` bands above.
+
+---
+
+## 12. Quick Start — ISMIP-HOM Benchmark A
 
 ```bash
 # Step 1: Navigate to example directory
@@ -426,7 +530,7 @@ mpirun -np 4 ElmerSolver ismip_SSA_1D.sif
 
 ---
 
-## 12. Diagnostic Triplets Summary
+## 13. Diagnostic Triplets Summary
 
 | ID | Stage | Symptom | Root Cause |
 |----|-------|---------|------------|
@@ -451,7 +555,7 @@ mpirun -np 4 ElmerSolver ismip_SSA_1D.sif
 
 ---
 
-## 13. File Structure
+## 14. File Structure
 
 ```
 ki/

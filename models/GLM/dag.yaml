@@ -526,7 +526,7 @@ outputs:
   - var: "thermocline_depth"
     validation_rank: 8
     unit: "m"
-    description: "Depth of the thermocline (derived when stratified)."
+    description: "Depth of the thermocline in lake/reservoir water (derived when stratified)."
     emitted_in: "derived"
     observability:
       comparable_obs_shapes:
@@ -574,7 +574,7 @@ outputs:
   - var: "OXY_oxy"
     validation_rank: 11
     unit: "mmol O2/m3"
-    description: "Dissolved oxygen concentration (AED2)."
+    description: "Dissolved oxygen concentration in lake/reservoir water (AED2)."
     emitted_in: "output.nc (AED2 enabled)"
     observability:
       comparable_obs_shapes:
@@ -588,7 +588,7 @@ outputs:
   - var: "NIT_nit, NIT_amm, PHS_frp"
     validation_rank: 12
     unit: "mmol/m3"
-    description: "Dissolved nutrient species: nitrate, ammonium, filterable reactive phosphorus (AED2)."
+    description: "Dissolved nutrient species in lake/reservoir water: nitrate, ammonium, filterable reactive phosphorus (AED2)."
     emitted_in: "output.nc (AED2 enabled)"
     observability:
       comparable_obs_shapes:
@@ -830,3 +830,17 @@ safety:
       scope: "inflow/outflow input units"
       source: "GLM v2.0-beta manual, inflow/outflow tables (Table 4-5), p.26-27"
       status: "tentative"
+
+medium_evidence:
+  - var: "thermocline_depth"
+    source: "SKILL.md"
+    quote: "GLM is a 1D **vertical lake/reservoir thermodynamic** model."
+    note: "The thermocline is a derived thermal-structure output of the GLM lake/reservoir column."
+  - var: "OXY_oxy"
+    source: "SKILL.md"
+    quote: "GLM is a 1D **vertical lake/reservoir thermodynamic** model."
+    note: "AED2 dissolved oxygen is emitted by the same GLM lake/reservoir column."
+  - var: "NIT_nit, NIT_amm, PHS_frp"
+    source: "SKILL.md"
+    quote: "GLM is a 1D **vertical lake/reservoir thermodynamic** model."
+    note: "AED2 nutrient species are emitted by the same GLM lake/reservoir column."

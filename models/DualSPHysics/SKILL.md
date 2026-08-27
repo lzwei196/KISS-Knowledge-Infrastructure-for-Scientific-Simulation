@@ -1,14 +1,3 @@
----
-name: dualsphysics
-description: >-
-  Weakly-compressible SPH (WCSPH) per Crespo et al. 2015 / Dominguez et al. 2022;
-  DualSPHysics v5.4 formulation. Covers Free-surface flows (dam breaks, wave impact,
-  flooding); Wave generation, propagation, and active/passive absorption; Wave-structure
-  interaction and forces on coastal/offshore structures; Floating-body 6-DOF dynamics and
-  fluid-structure interaction. Use when the task involves running, configuring,
-  calibrating or interpreting DualSPHysics.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (23 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_dsph.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_dsph.py --help` |
+| `tools/convert_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters.py --help` |
+| `tools/generate_case_xml.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_case_xml.py --help` |
+| `tools/parse_dsph_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_dsph_output.py --help` |
+| `tools/run_dualsphysics.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_dualsphysics.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # DualSPHysics v5.4 — Knowledge Infrastructure
 
@@ -71,6 +95,62 @@ This knowledge infrastructure enables fully autonomous simulation of free-surfac
 **Key difference from Eulerian HydroCraft models**: DualSPHysics is a Lagrangian particle method — the computational domain is represented by discrete particles, not a fixed grid. This is ideal for violent free-surface flows, wave breaking, and complex moving boundaries where mesh-based methods struggle.
 
 **All units are SI**: meters (m), seconds (s), kilograms per cubic meter (kg/m^3), Pascals (Pa), meters per second (m/s).
+
+---
+
+## 3. Input Requirements
+
+**Exact shapes live in `docs/format_spec.yaml`** (projected from `dag.yaml` + `diagnostics/triplets.yaml`; regenerate it after changing either source, never hand-edit it). This section summarizes the intent; the spec file is the contract.
+
+| Input family | Model unit / format | Prepared by | Notes |
+|--------------|---------------------|-------------|-------|
+| XML case definition | DualSPHysics XML | `tools/generate_case_xml.py` | Geometry, constants, particle spacing, and execution parameters. |
+| Wave forcing | m, s | `tools/convert_forcing_to_dsph.py` | Wave height and water level must be meters; wave period must be seconds. |
+| Inlet/current forcing | m/s | `tools/convert_forcing_to_dsph.py` | Convert cm/s, knots, km/h, or ft/s before building inlet/outlet XML. |
+| Physical/numerical parameters | SI or dimensionless as specified | `tools/convert_parameters.py` | `Visco` has conditional units depending on `ViscoTreatment`. |
+| Initial particle distribution | `.bi4` generated from XML | `GenCase` | Produced from the XML geometry and consumed by the solver. |
+
+---
+
+## 6. Output Description
+
+**Source: `dag.yaml`. If this section and the dag disagree, the dag wins.**
+
+**Headline output** (dag `validation_rank: 1`; this is the variable the model is judged by):
+
+> `water_surface_elevation` - Free-surface elevation derived from particle positions / isosurface or a virtual wave gauge (MeasureTool). (`m`)
+
+Other dag outputs are `pressure`, `force_on_structure`, and `velocity`.
+
+| Output variable (dag `var`) | Rank | Emitted in | Unit | Description |
+|-----------------------------|------|------------|------|-------------|
+| `water_surface_elevation` | 1 | `Part_XXXX.bi4` via IsoSurface / MeasureTool gauge | m | Free-surface elevation derived from particle positions / isosurface or a virtual wave gauge (MeasureTool). |
+| `pressure` | 2 | `Part_XXXX.bi4` press field, exported via PartVTK/MeasureTool | Pa | Per-water-particle pressure from the Tait equation of state; total pressure (hydrostatic + dynamic) unless the rho*g*z component is removed. |
+| `force_on_structure` | 3 | CSV via ComputeForces | N | Integrated wave-water force on a given MK boundary structure (via ComputeForces). |
+| `velocity` | 4 | `Part_XXXX.bi4` vel field | m/s | Per-water-particle velocity (and magnitude) interpolated to gauges via MeasureTool. |
+
+---
+
+## 8. Unit Conversion Table
+
+**Critical**: Every model-facing value is SI unless the parameter is explicitly dimensionless. Verify source attributes before converting.
+
+| Variable | Source unit | Model unit | Factor / conversion | Type |
+|----------|-------------|------------|---------------------|------|
+| Wave height / free-surface elevation / water level | cm | m | divide by 100 | multiplicative |
+| Particle spacing (`dp`) / geometry position | mm | m | divide by 1000 | multiplicative |
+| Particle spacing (`dp`) / geometry position | cm | m | divide by 100 | multiplicative |
+| Density (`rhop0`) | g/cm^3 | kg/m^3 | multiply by 1000 | multiplicative |
+| Gravity | cm/s^2 | m/s^2 | divide by 100 | multiplicative |
+| Inlet/current velocity | cm/s | m/s | divide by 100 | multiplicative |
+| Inlet/current velocity | knots | m/s | multiply by 0.5144 | multiplicative |
+| Time | minutes | s | multiply by 60 | multiplicative |
+| Time | hours | s | multiply by 3600 | multiplicative |
+| Pressure output | kPa | Pa | multiply by 1000 | multiplicative |
+| Pressure output | bar | Pa | multiply by 100000 | multiplicative |
+| Pressure output | atm | Pa | multiply by 101325 | multiplicative |
+| Artificial viscosity (`ViscoTreatment=1`) | dimensionless | dimensionless | no conversion needed | none |
+| Laminar viscosity (`ViscoTreatment=2` or `3`) | cm^2/s | m^2/s | divide by 10000 | multiplicative |
 
 ---
 
@@ -347,6 +427,20 @@ DualSPHysics5.4CPU_linux64 output/CaseName output/ [options]
 
 ---
 
+## 9. Diagnostic Triplets (Top 5)
+
+Read `diagnostics/triplets.yaml` before debugging. These are the most likely unit/stability failures to check first; the YAML remains the source of truth.
+
+| ID | Error / symptom | Diagnosis | Remedy |
+|----|-----------------|-----------|--------|
+| `dt_001` | Billions of particles generated by GenCase; out of memory. | `dp` specified in mm instead of meters. | Verify `dp` is in meters; typical values are 0.001-0.1 m. |
+| `dt_002` | Pressure values are 1000x too high or too low; density oscillations. | `rhop0` in g/cm^3 instead of kg/m^3. | Use `rhop0=1000` for fresh water, `1025` for seawater. |
+| `dt_003` | Fluid is extremely viscous or has zero viscosity. | `Visco` value does not match `ViscoTreatment`. | Use 0.01-0.1 for artificial viscosity, about 1e-6 m^2/s for laminar. |
+| `dt_004` | Waves are invisible or immediately unstable. | Wave height in cm instead of meters. | Ensure all wave heights are in meters. |
+| `dt_005` | Inlet velocity is orders of magnitude wrong. | Velocity in cm/s or knots instead of m/s. | Convert velocities to m/s before input. |
+
+---
+
 ## Critical Domain Knowledge
 
 ### 1. dp determines everything (cost scales as dp^-3 in 3D)
@@ -445,7 +539,7 @@ ${dirbin}/MeasureTool_linux64 -dirdata CaseDambreak_out/data -points CaseDambrea
 
 ---
 
-## Validated Results
+## 11. Validated Results
 
 ### DamBreak Benchmark
 
@@ -453,6 +547,25 @@ ${dirbin}/MeasureTool_linux64 -dirdata CaseDambreak_out/data -points CaseDambrea
 - **Reference**: Koshizuka & Oka (1996) experimental data
 - **Validation data**: `EXP_X-DamTipPosition_Koshizula&Oka1996.txt`
 - **Metrics**: Dam tip position vs time, pressure at probes
+
+### Performance Metrics - judged against the field's bar, not intuition
+
+**Source: `docs/validation_convention.yaml`. Every band below carries the citation key from the convention; a missing/null band would be written as "no cited threshold".**
+
+Headline bar for `water_surface_elevation`:
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation key(s) |
+|--------------|--------|-----------|-----------|------|--------------|-----------------|
+| `water_surface_elevation` | `normalized_rmse_h` | minimize | <= 0.175 | <= 0.175 | <= 1.0 | `verbrugghe2019` |
+| `water_surface_elevation` | `relative_wave_height_error` | minimize | <= 3.0 | <= 5.0 | <= 12.1 | `altomare2018`, `zhan2025` |
+
+Other convention bars stated in this KI:
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation key(s) |
+|--------------|--------|-----------|-----------|------|--------------|-----------------|
+| `pressure` | `normalized_rmse_total_pressure` | minimize | <= 0.002 | <= 0.008 | <= 0.008 | `verbrugghe2019` |
+| `pressure` | `relative_amplitude_error` | minimize | <= 0.04 | <= 0.07 | <= 0.07 | `crespo2011` |
+| `pressure` | `relative_amplitude_error` | minimize | <= 0.04 | <= 0.07 | <= 0.07 | `crespo2011` |
 
 ---
 

@@ -1,106 +1,95 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:58:54.189715'
-  domain: hydrology
   name: CREST
-  version: auto-generated
+  language: c++
+  implementation:
+    id: crest-ef5-v123
+    version: EF5 v1.2.3 (hydrocraft-crest-ef5 package v1.1.0)
+    provenance: C++; HyDROSLab EF5 framework (Flamig/Vergara/Gourley), single bin/ef5 executable; CREST
+      is one of EF5's selectable water-balance modules (MODEL=CREST).
+  scientific_reference_version: CREST distributed water balance (Wang et al. 2011, HSJ 56:84-98) as realized
+    in EF5 v1.2.3
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CREST/source/repo/build/ef5
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s1_dem_preparation
+  - s2_forcing_conversion
+  - s3_parameter_preparation
+  - s4_execution
+  - s5_output_analysis
+tools:
+  count: 5
+  files:
+  - tools/convert_forcing_to_ef5.py
+  - tools/convert_params_to_ef5.py
+  - tools/parse_ef5_output.py
+  - tools/prepare_basic_grids.py
+  - tools/run_ef5.py
+inputs:
+  forcing:
+  - name: Precipitation
+    unit: mm per config UNIT interval (internally converted to mm/hr)
+  - name: PET (potential evapotranspiration)
+    unit: mm per config UNIT interval, or C (UNIT=C for internally-computed temperature-based PET)
+  - name: Temperature
+    unit: C
+  parameters:
+  - name: WM
+    unit: mm
+  - name: B
+    unit: '-'
+  - name: IM
+    unit: '% (0-100)'
+  - name: KE
+    unit: '-'
+  - name: FC (Ksat)
+    unit: mm/hr
+  - name: 'Channel routing coefficients (LR: RIVER, COEM, UNDER, LEAKO, LEAKI, TH; KW: ALPHA, BETA, ALPHA0,
+      UNDER, LEAKI, TH)'
+    unit: mixed (multipliers, fractions, FAM-cell threshold)
+  initial_conditions:
+  - name: IWU
+    unit: '% of WM (0-100)'
+  - name: ISO / ISU
+    unit: mm
+  - name: Saved state grids
+    unit: mm (SM); module-specific for routing/snow
+  boundary_conditions:
+  - name: ROUTING selector
+    unit: '-'
+  - name: DDM encoding flag (ESRIDDM)
+    unit: '-'
+  - name: FAM self-inclusion flag (SELFFAM)
+    unit: '-'
+  - name: Simulation window and timestep (TIME_BEGIN, TIME_END, TIME_WARMEND, TIMESTEP)
+    unit: datetime / interval
+  - name: Gauge specification (LON/LAT, BASINAREA, OBS)
+    unit: WGS84 degrees / km2 / m3/s
+  - name: Static basic grids (DEM, DDM, FAM)
+    unit: m / direction code / cell count
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - STREAMFLOW (Q)
+  - SOILMOISTURE (SM)
+  - SNOWWATER (SWE)
+  - RETURNPERIOD (RP)
+  - INUNDATION (depth)
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: NSE=0.885, KGE=0.912, R=0.941, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.8846
+    best_kge: 0.9121
+    best_r: 0.9406
+summary:
+  total_tools: 5
+  total_stage_docs: 5
+  total_diagnostic_triplets: 21
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

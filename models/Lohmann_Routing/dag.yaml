@@ -325,7 +325,7 @@ outputs:
   - var: "discharge_yearly"
     validation_rank: 3
     unit: "m3/s"
-    description: "Long-term climatological mean monthly cycle (12 values) across all simulation years."
+    description: "Long-term climatological mean monthly cycle (12 values) of routed river discharge across all simulation years."
     emitted_in: "<NAME5>.year"
     observability:
       comparable_obs_shapes:
@@ -493,3 +493,9 @@ safety:
       scope: "outputs"
       source: "rout source write_routines.f (.day/.month/.year m3/s and *_mm)"
       status: "adopted"
+
+medium_evidence:
+  - var: "discharge_yearly"
+    source: "dag.yaml"
+    quote: "Channel/river-network routing of cell-outlet flow to gauge/outlet points using the linearized (diffusive-wave) Saint-Venant equation parameterized by wave velocity and diffusivity"
+    note: "scope_in declares this routing model output as channel/river-network flow, so the climatological yearly output is routed river discharge."

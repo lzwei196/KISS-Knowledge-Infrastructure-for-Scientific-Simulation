@@ -1,0 +1,529 @@
+schema_version: 1
+model_id: FSM2
+domain: cryosphere
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  fsm2_2025:
+    doi: 10.5194/gmd-18-3583-2025
+    title: "A Flexible Snow Model (FSM 2.1.1) including a forest canopy"
+    venue: "Geosci. Model Dev."
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-18-3583-2025.txt
+  krinner2018:
+    doi: 10.5194/gmd-11-5027-2018
+    title: "ESM-SnowMIP: assessing snow models and quantifying snow-related climate feedbacks"
+    venue: "Geosci. Model Dev."
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-11-5027-2018.txt
+  menard2019:
+    doi: 10.5194/essd-11-865-2019
+    title: "Meteorological and evaluation datasets for snow modelling at 10 reference sites"
+    venue: "Earth Syst. Sci. Data"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_essd-11-865-2019.txt
+  bams2021:
+    doi: 10.1175/bams-d-19-0329.1
+    title: "Scientific and Human Errors in a Snow Model Intercomparison"
+    venue: "Bull. Amer. Meteor. Soc."
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_bams-d-19-0329.1.txt
+  etchevers2004:
+    doi: 10.3189/172756404781814825
+    title: "Validation of the energy budget of an alpine snowpack simulated by several snow models (SnowMIP)"
+    venue: "Ann. Glaciol."
+    year: 2004
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3189_172756404781814825.txt
+  ellis2010:
+    doi: 10.5194/hess-14-925-2010
+    title: "Simulation of snow accumulation and melt in needleleaf forest environments"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2010
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-14-925-2010.txt
+  magnusson2015:
+    doi: 10.1002/2014wr016498
+    title: "Evaluating snow models with varying process representations for hydrological applications"
+    venue: "Water Resour. Res."
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2014wr016498.txt
+  mazzotti2020:
+    doi: 10.1029/2019wr026129
+    title: "Resolving Small-Scale Forest Snow Patterns Using an Energy Balance Snow Model With a One-Layer Canopy"
+    venue: "Water Resour. Res."
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2019wr026129.txt
+  smyth2022:
+    doi: 10.1029/2021wr030563
+    title: "The Challenges of Simulating SWE Beneath Forest Canopies are Reduced by Data Assimilation of Snow Depth"
+    venue: "Water Resour. Res."
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2021wr030563.txt
+  musselman2017:
+    doi: 10.1175/jhm-d-16-0111.1
+    title: "Estimation of Needleleaf Canopy and Trunk Temperatures and Longwave Contribution to Snowmelt"
+    venue: "J. Hydrometeor."
+    year: 2017
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jhm-d-16-0111.1.txt
+  gouttevin2015:
+    doi: 10.5194/gmd-8-2379-2015
+    title: "A two-layer canopy model with thermal inertia for an improved snowpack energy balance below needleleaf forest"
+    venue: "Geosci. Model Dev."
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-8-2379-2015.txt
+  pritchard2020:
+    doi: 10.5194/tc-14-1225-2020
+    title: "Multi-physics ensemble snow modelling in the western Himalaya"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-14-1225-2020.txt
+
+validation:
+  - dag_variable: snw
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.64, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Inferred from ESM-SnowMIP nRMSE convention: NRMSE > 1 is no better than the mean observation; with the same variance normalization this maps to NSE < 0."
+        cites: [krinner2018, bams2021]
+      - metric: nrmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.6, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "ESM-SnowMIP normalizes SWE RMSE by observed SWE standard deviation; BAMS 2021 calls mean SWE NRMSE below 0.6 generally low."
+        cites: [krinner2018, bams2021]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "SWE absolute RMSE is site-dependent; Ellis et al. report mean all-site SWE RMSE of 26.5 kg m-2 and Menard et al. note mean standard deviation generally less than 10 percent of mean SWE."
+        cites: [ellis2010, menard2019]
+    validated_when: "NSE >= 0 and nRMSE <= 1.0, with nRMSE <= 0.6 treated as good snow-model skill."
+    evidence_strength: strong
+    confidence: 0.72
+    notes: >-
+      The dag determining metric nse is retained, but the fetched field convention is primarily RMSE/nRMSE.
+      Krinner et al.: NRMSE greater than 1 means the model fits observations no better than the observation
+      mean. BAMS 2021: mean SWE NRMSEs were "below 0.6 for half of the models".
+
+  - dag_variable: snd
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: 0.14, satisfactory: 0.21}
+        pass_band: satisfactory
+        band_note: "FSM2 forest snow-depth benchmark: default RMSE 0.21 m; improved local-canopy FSM2-D RMSE 0.14 m."
+        cites: [mazzotti2020]
+      - metric: kge
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.54, satisfactory: 0.54}
+        pass_band: satisfactory
+        band_note: "Mazzotti et al. report FSM2-D average KGE 0.54 and maximum KGE 0.80 for snow depth."
+        cites: [mazzotti2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag uses nse, but recent forest-snow-depth FSM2 papers report RMSE, MAE, R, and KGE rather than NSE."
+        cites: [mazzotti2020]
+    validated_when: "RMSE <= 0.21 m and KGE >= 0.54 for co-located snow-depth time series; stricter forest-pattern work reaches RMSE near 0.14 m."
+    evidence_strength: strong
+    confidence: 0.70
+    notes: >-
+      Literature supersedes the dag nse headline for snow depth with RMSE/KGE. Smyth et al. also show
+      snow-depth observations directly constrain FSM2 SWE, reducing snow depth error by 70-90 percent
+      at forest locations.
+
+  - dag_variable: svg
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric pass band for canopy snow load time-series validation."
+        cites: []
+    secondary_metrics:
+      - metric: canopy_snow_load
+        direction: minimize
+        status: supportive
+        ceiling_reason: "FSM2 2025 only demonstrates canopy snow load with subjective observations scaled to model capacity; this is not a numeric validation convention."
+        cites: [fsm2_2025]
+    validated_when: "UNRESOLVED: canopy snow load observations are rare; do not auto-validate without a fetched numeric skill band."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "FSM2 2025 reports maximum sub-canopy snow mass and sublimation sensitivity, but not a pass/fail metric for svg itself."
+
+  - dag_variable: Tsrf
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: null, good: 1.5, satisfactory: 3.0}
+        pass_band: satisfactory
+        band_note: "SnowMIP longwave errors are equivalent to 0.7-1.5 K for the best models and 1.5-3 K for most other models."
+        cites: [etchevers2004]
+      - metric: bias
+        direction: zero_centered
+        unit: degC
+        bands: {very_good: null, good: null, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "BAMS 2021 reports surface-temperature biases less than 2 degC as relatively low across most sites."
+        cites: [bams2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Snow surface temperature is commonly judged by RMSE and bias because melt-point censoring and strong diurnal cycles weaken NSE interpretation."
+        cites: [etchevers2004, gouttevin2015]
+    validated_when: "RMSE <= 3 degC and |bias| <= 2 degC for snow/ground surface temperature."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Etchevers et al. explicitly convert net-longwave RMSE to snow-surface-temperature error; this supersedes the dag nse as the primary convention."
+
+  - dag_variable: Tsoil
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric NSE pass band for soil-layer temperatures under snow."
+        cites: []
+      - metric: bias
+        direction: zero_centered
+        unit: degC
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "BAMS 2021 reports large soil-temperature biases for some models but does not state a pass threshold."
+        cites: []
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "BAMS 2021 shows soil temperature is evaluated by bias and that snow/soil process choices can greatly reduce errors."
+        cites: [bams2021]
+    validated_when: "UNRESOLVED: compare layer-matched soil temperature with bias/RMSE, but no fetched numeric pass band was found."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "The BAMS intercomparison ranks soil-temperature absolute bias but does not define a validation gate."
+
+  - dag_variable: Tveg
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 1.1, good: 1.7, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "Canopy/trunk temperature papers report 2-layer canopy RMSE 1.1 K, trunk model RMSE better than 1.7 degC, and needle daytime RMSE 1.97 degC."
+        cites: [gouttevin2015, musselman2017]
+      - metric: bias
+        direction: zero_centered
+        unit: degC
+        bands: {very_good: 0.48, good: 1.0, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Musselman and Pomeroy state needle and trunk surface temperature biases smaller than +/-1.0 degC are considered quite good."
+        cites: [musselman2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Canopy temperature benchmarks use RMSE, bias, and correlation rather than NSE."
+        cites: [gouttevin2015, musselman2017]
+    validated_when: "RMSE <= 2 degC and |bias| <= 1 degC for measured vegetation/canopy-layer temperature."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: "Bands are transferred from canopy/trunk/needle temperature studies, not an FSM2 Tveg-specific benchmark."
+
+  - dag_variable: Melt
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric pass band for point melt-rate NSE."
+        cites: []
+    secondary_metrics:
+      - metric: melt_timing
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Etchevers et al. report that no model reproduced both melting amount and net shortwave radiation with high enough accuracy in one SnowMIP period."
+        cites: [etchevers2004]
+    validated_when: "UNRESOLVED: direct melt-rate validation needs lysimeter/energy-budget melt observations; use SWE depletion and Roff as related diagnostics."
+    evidence_strength: weak
+    confidence: 0.28
+    notes: "Pritchard et al. separate surface melt from snowpack runoff but provide sensitivity differences, not a pass band."
+
+  - dag_variable: Roff
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: kge
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.83, good: 0.83, satisfactory: 0.41}
+        pass_band: satisfactory
+        band_note: "Magnusson et al. report JIM individual-model KGE approximately 0.41-0.84 for daily runoff and lysimeter mutual agreement KGE 0.83."
+        cites: [magnusson2015]
+      - metric: rmse
+        direction: minimize
+        unit: mm/day
+        bands: {very_good: null, good: 5.6, satisfactory: 5.6}
+        pass_band: satisfactory
+        band_note: "The only fetched numeric RMSE comparator is two Col de Porte lysimeters agreeing at RMSE 5.6 mm/24 h; no broader satisfactory threshold was stated."
+        cites: [magnusson2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Snowpack runoff is judged with KGE and event metrics in the fetched benchmark; snow depth alone is not a good indicator of runoff."
+        cites: [magnusson2015]
+    validated_when: "Daily snowpack outflow is credible when KGE is within the model-benchmark range (>=0.41) and, where available, RMSE approaches lysimeter agreement (~5.6 mm/day)."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Pritchard et al. warn FSM snowpack runoff is runoff from the base of the snowpack, not routed catchment runoff."
+
+  - dag_variable: subl
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.41}
+        pass_band: satisfactory
+        band_note: "Ellis et al. report canopy sublimation model efficiency ME = 0.41 against load-cell observations."
+        cites: [ellis2010]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 6.0}
+        pass_band: satisfactory
+        band_note: "Computed from Ellis et al. mean daily simulated/observed losses 0.55/0.52 kg m-2, consistent with reported MB = 1.06."
+        cites: [ellis2010]
+    secondary_metrics: []
+    validated_when: "ME/NSE >= 0.41 and |PBIAS| <= 6% for direct canopy sublimation observations."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Direct sublimation validation is single-study and canopy-specific; keep confidence moderate-low."
+
+  - dag_variable: H
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric sensible-heat-flux validation threshold for FSM2 point output."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "SnowMIP states turbulent fluxes are difficult to measure and no reliable direct observation was available for its validation sites."
+        cites: [etchevers2004]
+    validated_when: "UNRESOLVED: do not validate H automatically without direct eddy-covariance or energy-balance observations."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "Etchevers et al.: turbulent fluxes cannot be directly validated at SnowMIP sites; this is a data/observation ceiling."
+
+  - dag_variable: LE
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric latent-heat-flux validation threshold for FSM2 point output."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "SnowMIP states turbulent fluxes are difficult to measure and no reliable direct observation was available for its validation sites."
+        cites: [etchevers2004]
+    validated_when: "UNRESOLVED: do not validate LE automatically without direct eddy-covariance or energy-balance observations."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "Flux-tower latent heat can contextualize LE/sublimation, but the fetched snow-model papers do not define a numeric pass band."
+
+  - dag_variable: LWout
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: W m-2
+        bands: {very_good: 3.0, good: 6.0, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "SnowMIP reports net-longwave RMSE 3-6 W m-2 for six successful models and 5-10 W m-2 on average."
+        cites: [etchevers2004]
+      - metric: bias
+        direction: zero_centered
+        unit: W m-2
+        bands: {very_good: null, good: 3.0, satisfactory: 3.0}
+        pass_band: satisfactory
+        band_note: "SnowMIP says six models succeed with longwave bias ranging from -3 to 3 W m-2."
+        cites: [etchevers2004]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Radiation validation papers use RMSE and bias rather than NSE for daily fluxes."
+        cites: [etchevers2004]
+    validated_when: "RMSE <= 10 W m-2 and |bias| <= 3 W m-2 for outgoing/net longwave radiation diagnostics."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "For LWout, use upwelling/net longwave comparisons only when observation geometry matches the DAG output."
+
+  - dag_variable: SWout
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: W m-2
+        bands: {very_good: null, good: 5.3, satisfactory: 13.9}
+        pass_band: satisfactory
+        band_note: "Ellis et al. report reflected shortwave RMSE 5.3 W m-2 at forest and 13.9 W m-2 at clearing sites."
+        cites: [ellis2010]
+      - metric: bias
+        direction: zero_centered
+        unit: W m-2
+        bands: {very_good: null, good: 2.75, satisfactory: 2.75}
+        pass_band: satisfactory
+        band_note: "Ellis et al. report mean simulated-minus-observed reflected shortwave -2.75 W m-2 at the clearing and -0.02 W m-2 at the forest site."
+        cites: [ellis2010]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Outgoing shortwave is principally an albedo/radiation diagnostic; fetched benchmarks report RMSE, bias, and model efficiency."
+        cites: [ellis2010, etchevers2004]
+    validated_when: "RMSE <= 13.9 W m-2 and |bias| <= 2.75 W m-2 for reflected outgoing shortwave radiation."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: "SnowMIP also reports net-shortwave RMSE about 10-20 W m-2, but SWout is closer to reflected shortwave than net shortwave."
+
+  - dag_variable: LWsub
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: W m-2
+        bands: {very_good: 8.3, good: 9.24, satisfactory: 14.1}
+        pass_band: satisfactory
+        band_note: "Gouttevin et al. report below-canopy LW RMSE 8.3-14.1 W m-2; Ellis et al. report forest L-down RMSE 9.24 W m-2."
+        cites: [gouttevin2015, ellis2010]
+      - metric: bias
+        direction: zero_centered
+        unit: W m-2
+        bands: {very_good: 0.7, good: 2.7, satisfactory: 3.5}
+        pass_band: satisfactory
+        band_note: "Gouttevin calibration table reports LW mean bias from -3.5 to -0.7 W m-2 across canopy versions."
+        cites: [gouttevin2015]
+    secondary_metrics: []
+    validated_when: "RMSE <= 14.1 W m-2 and |bias| <= 3.5 W m-2 for subcanopy downward longwave radiation."
+    evidence_strength: moderate
+    confidence: 0.67
+    notes: "FSM2 2025 compares subcanopy longwave enhancement with observations but calls the tests demonstrations, not rigorous evaluations."
+
+  - dag_variable: SWsub
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: W m-2
+        bands: {very_good: null, good: 6.1, satisfactory: 9.4}
+        pass_band: satisfactory
+        band_note: "Gouttevin et al. report below-canopy SW RMSE about 9.3-9.4 W m-2; Ellis et al. report forest subcanopy K-down RMSE 6.1 W m-2."
+        cites: [gouttevin2015, ellis2010]
+      - metric: bias
+        direction: zero_centered
+        unit: W m-2
+        bands: {very_good: 0.2, good: 0.3, satisfactory: 1.6}
+        pass_band: satisfactory
+        band_note: "Gouttevin et al. report SW mean bias 0.2-1.6 W m-2 across canopy versions."
+        cites: [gouttevin2015]
+    secondary_metrics: []
+    validated_when: "RMSE <= 9.4 W m-2 and |bias| <= 1.6 W m-2 for subcanopy downward shortwave radiation."
+    evidence_strength: moderate
+    confidence: 0.67
+    notes: "FSM2 2025 provides direct subcanopy shortwave comparisons across 10 forest stands but no tabulated pass threshold."
+
+  - dag_variable: Tsub
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric validation band for FSM2 subcanopy air temperature."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Canopy temperature and radiation papers discuss air temperature as a forcing/reference but do not define Tsub validation thresholds."
+        cites: [gouttevin2015, musselman2017]
+    validated_when: "UNRESOLVED: validate against below-canopy air-temperature sensors when available; no fetched numeric pass band."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "Do not transfer Tveg needle/trunk temperature bands to Tsub air temperature."
+
+  - dag_variable: Usub
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.64}
+        pass_band: satisfactory
+        band_note: "FSM2 2025 reports simulated subcanopy/open wind-speed ratios have moderate correlation 0.64 with observations."
+        cites: [fsm2_2025]
+      - metric: rmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.1}
+        pass_band: satisfactory
+        band_note: "FSM2 2025 reports moderate RMSE 0.1 for subcanopy/open wind-speed ratios; unit inherits the modeled ratio comparison, so use only for matching normalized ratios."
+        cites: [fsm2_2025]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched FSM2 paper reports correlation and RMSE for averaged wind-speed ratios, not NSE for hourly wind speed."
+        cites: [fsm2_2025]
+    validated_when: "Use only as weak context: averaged forest/open wind-speed ratio r >= 0.64 and RMSE <= 0.1 for comparable ratio data."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "FSM2 2025 says these comparisons are demonstrations of behavior rather than rigorous evaluations."
+
+deferred_paywalled:
+  - ref: "Raleigh et al. 2019, Uncertainties in Snowpack Simulations: model structure, parameter choice, and forcing data error"
+    doi: 10.1029/2018wr023403
+    needed_for: [snw, snd, Melt]

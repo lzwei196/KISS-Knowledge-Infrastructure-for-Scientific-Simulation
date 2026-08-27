@@ -75,13 +75,13 @@ python tools/run_bgc_spinup.py \
 
 **Expected runtime**: 1-5 minutes wall clock for 6000 model years. This is NORMAL -- do not interrupt.
 
-**Expected result**: JSON with status=success, restart_file path, restart_size > 1 KB.
+**Expected result**: JSON with status=success, restart_file path, restart_size_bytes == sizeof(restart_data_struct) for the build — 584 bytes for the shipped 4.2 binary (identical to the bundled `restart/enf_test1.endpoint`). A 584-byte endpoint is complete; 0 bytes means the spinup crashed.
 
 ### Step 3: Verify spinup convergence
 
 After spinup, check:
 1. The restart (.endpoint) file was written
-2. File size is > 1 KB (empty = crash during spinup)
+2. File size equals sizeof(restart_data_struct) — 584 bytes with the shipped binary (empty = crash during spinup)
 
 For detailed convergence checking, run a short normal simulation reading the restart and examining the annual output trend over the last 100 years. SOC change should be < 0.5 gC/m2/yr.
 
@@ -144,7 +144,7 @@ If skipping the transition, expect ~10-20 years of NEE drift at the start of the
 
 ## Validation Checks
 
-1. [ ] Restart file exists and size > 1 KB
+1. [ ] Restart file exists and size == 584 bytes (sizeof restart_data_struct for the shipped binary; compare with `restart/enf_test1.endpoint`)
 2. [ ] Spinup used pre-industrial CO2 (280 ppm) and N deposition (0.0001)
 3. [ ] Spinup duration was appropriate for the biome (see table)
 4. [ ] Normal run reads the spinup restart successfully

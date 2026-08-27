@@ -401,7 +401,7 @@ outputs:
   - var: "energy_grade"
     validation_rank: 3
     unit: "ft or m"
-    description: "Energy-grade-line elevation EG = WS + α·V^2/2g at each section."
+    description: "Open-channel surface-water energy-grade-line elevation EG = WS + α·V^2/2g at each section."
     emitted_in: "<prj>.pNN.tmp.hdf at /Results/.../Cross Sections/Energy Grade"
     observability:
       comparable_obs_shapes:
@@ -417,7 +417,7 @@ outputs:
   - var: "discharge_out"
     validation_rank: 1
     unit: "cfs or m^3/s"
-    description: "Discharge at each cross section / structure / 2-D cell-face. For STEADY flow this is a conserved pass-through of the input forcing, NOT a model product."
+    description: "Open-channel surface-water discharge at each cross section / structure / 2-D cell-face. For STEADY flow this is a conserved pass-through of the input forcing, NOT a model product."
     emitted_in: "<prj>.pNN.tmp.hdf at /Results/.../Cross Sections/Flow"
     observability:
       comparable_obs_shapes:
@@ -458,7 +458,7 @@ outputs:
   - var: "velocity_total"
     validation_rank: 5
     unit: "ft/s or m/s"
-    description: "Cross-section average (1-D) or cell-face (2-D) velocity."
+    description: "Open-channel surface-water cross-section average (1-D) or cell-face (2-D) velocity."
     emitted_in: "<prj>.pNN.tmp.hdf at /Results/.../Additional Variables/Velocity Total (1-D) or per-face (2-D)"
     observability:
       comparable_obs_shapes:
@@ -475,7 +475,7 @@ outputs:
   - var: "flood_inundation_extent"
     validation_rank: 6
     unit: "m^2 or km^2 (area); ft or m (depth grid)"
-    description: "Inundated area / depth grid / velocity grid produced from 1-D or 2-D stage results."
+    description: "River/floodplain surface-water inundated area / water-depth grid / water-velocity grid produced from 1-D or 2-D stage results."
     emitted_in: "RAS Mapper inundation rasters / depth grids derived from <prj>.pNN.tmp.hdf"
     observability:
       comparable_obs_shapes:
@@ -806,3 +806,21 @@ safety:
       scope: "all hydrodynamic solvers"
       source: "HEC-RAS Hydraulic Reference Manual v6.1 — Theoretical Basis chapter"
       status: "adopted"
+
+medium_evidence:
+  - var: "energy_grade"
+    source: "dag.yaml"
+    quote: "1-D steady-flow water-surface profile computations in gradually varied open-channel flow (standard-step energy equation)"
+    note: "scope_in declares the steady-flow medium as open-channel water."
+  - var: "discharge_out"
+    source: "docs/input_preparation.md"
+    quote: "HEC-RAS solves the open-channel flow equations on a network of surveyed"
+    note: "Input preparation identifies discharge as belonging to open-channel flow."
+  - var: "velocity_total"
+    source: "dag.yaml"
+    quote: "Unsteady-flow solver (2-D shallow-water / DSW)"
+    note: "The producing process declares the 2-D velocity medium as shallow water."
+  - var: "flood_inundation_extent"
+    source: "dag.yaml"
+    quote: "Dam-break analysis and floodplain inundation mapping"
+    note: "scope_in declares the flood output as floodplain inundation."

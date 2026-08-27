@@ -1,0 +1,449 @@
+schema_version: 1
+model_id: APSIM
+domain: crop
+generated_by: "Step-B validation-convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+# APSIM block keys intentionally use `dag_variable`, not the retired `canonical_quantity`.
+# Numeric bands are cited only to full texts present in the local paper cache. Where the dag
+# determining metric is not how crop-model papers judge validation, it is retained as supportive
+# or left null, and the notes say which fetched literature supersedes it.
+
+references:
+  zhao2012:
+    doi: 10.4141/cjps2011-266
+    title: "Evaluation of the APSIM-Wheat model in terms of different cultivars, management regimes and environmental conditions"
+    venue: "Canadian Journal of Plant Science"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.4141_cjps2011-266.txt
+  ahmed2016:
+    doi: 10.1016/j.compag.2016.03.015
+    title: "Calibration and validation of APSIM-Wheat and CERES-Wheat for spring wheat under rainfed conditions"
+    venue: "Computers and Electronics in Agriculture"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.compag.2016.03.015.txt
+  brown2018:
+    doi: 10.21475/ajcs.18.12.01.pne570
+    title: "Improving the prediction of potato productivity: APSIM-Potato model parameterization and evaluation"
+    venue: "Australian Journal of Crop Science"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.21475_ajcs.18.12.01.pne570.txt
+  pasley2023:
+    doi: 10.1007/s13593-022-00854-9
+    title: "How to build a crop model. A review"
+    venue: "Agronomy for Sustainable Development"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13593-022-00854-9.txt
+  sarker2014:
+    doi: 10.5027/jnrd.v4i0.01
+    title: "A new novel index for evaluating model performance"
+    venue: "Journal of Natural Resources and Development"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5027_jnrd.v4i0.01.txt
+  lu2022:
+    doi: 10.1007/s11119-022-09885-4
+    title: "A review of methods to evaluate crop model performance at multiple and changing spatial scales"
+    venue: "Precision Agriculture"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s11119-022-09885-4.txt
+  liang2016:
+    doi: 10.1038/srep25755
+    title: "An integrated soil-crop system model for water and nitrogen management in North China"
+    venue: "Scientific Reports"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_srep25755.txt
+  vilakazi2011:
+    doi: 10.1016/j.pce.2011.07.069
+    title: "Simulating the impact of no-till systems on field water fluxes and maize production using APSIM"
+    venue: "Physics and Chemistry of the Earth"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.pce.2011.07.069.txt
+  folberth2017:
+    doi: 10.5194/gmd-10-1403-2017
+    title: "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications"
+    venue: "Geoscientific Model Development"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-10-1403-2017.txt
+
+validation:
+  - dag_variable: Grain.Wt
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Zhao reproduces Jamieson-style RMSEn tiers: excellent <=10%, good 10-20%, acceptable 20-30%, poor >30%; Brown repeats excellent <10%, good 10-20%, fair 20-30%, poor >30%."
+        cites: [zhao2012, brown2018]
+      - metric: ef
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Brown states EF of 1.0 is excellent and 0.0 to >1.0 acceptable; APSIM yield studies often report ME/EF alongside nRMSE."
+        cites: [brown2018]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Pasley notes PBIAS is useful for supply/demand bias but threshold ratings depend on what is measured; no fetched crop-yield PBIAS tier was found."
+        cites: [pasley2023]
+      - metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Ahmed reports D-index >0.80 with nRMSE <10% and model efficiency above 80% as evidence of accurate APSIM-Wheat validation."
+        cites: [ahmed2016]
+    validated_when: "At maturity, unit-converted Grain.Wt is validated when nRMSE <= 30% and EF >= 0.0; stronger evidence is nRMSE <= 20% and EF near 1.0."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      The dag determining_metric is pbias, but fetched crop-model convention papers judge point yield mainly by normalized
+      error and efficiency. Ahmed's APSIM-Wheat abstract says accurate simulation had normalized RMSE less than 10%,
+      D-index greater than 0.80, and model efficiency above 80% in most cases; Brown reports tuber yield nRMSE <20%
+      as high precision.
+
+  - dag_variable: Grain.Wt
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Use the same season-by-season yield RMSEn tiers as point yield; compare each season at maturity after unit conversion."
+        cites: [zhao2012, brown2018]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Pasley reproduces Moriasi-style NSE tiers: very good >0.75, good >0.65, satisfactory >0.5."
+        cites: [pasley2023]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "PBIAS indicates over- or under-estimation, but Pasley says crop-model PBIAS thresholds depend on the measured variable."
+        cites: [pasley2023]
+    validated_when: "Across seasons, Grain.Wt is validated when nRMSE <= 30% and NSE >= 0.5, with yields compared only at maturity."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      This is not a daily grain-growth validation rule. The dag caveat says multi-season point yields require unit conversion;
+      field convention evaluates season endpoints with nRMSE and efficiency, while PBIAS is diagnostic.
+
+  - dag_variable: Grain.Wt
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Transferred from crop-model RMSEn tiers; regional aggregation adds scaling uncertainty."
+        cites: [zhao2012, lu2022]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Use only on detrended regional yield anomalies; Pasley reproduces NSE tiers but warns dataset variability affects NSE."
+        cites: [pasley2023]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Bias is informative for regional mean yield but no fetched paper provides a crop regional-yield PBIAS pass tier."
+        cites: [pasley2023]
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Lucà et al. emphasize scale-transfer and spatialization uncertainty; correlation alone cannot establish regional validation."
+        cites: [lu2022]
+    validated_when: "After detrending technology/management trends, regional Grain.Wt is validated when nRMSE <= 30% and NSE >= 0.5 for the aggregate series."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      The dag warns that point/field APSIM output is being compared with regional statistics carrying trends and many-field
+      averaging. Lucà states spatialized crop models combine model errors, scaled-data errors, and spatialization-method errors,
+      so this block uses transferred bands with reduced confidence.
+
+  - dag_variable: AboveGround.Wt
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Same crop-model RMSEn tiers as biomass-yield comparisons; Brown treats 20-30% as fair and >30% poor."
+        cites: [zhao2012, brown2018]
+      - metric: ef
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Brown states EF 0.0 to >1.0 is acceptable and <0.0 poor."
+        cites: [brown2018]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Pasley notes crop models generally tend to overestimate yield, biomass, and leaf area because pest and disease limitations are often absent."
+        cites: [pasley2023]
+    validated_when: "At a dated biomass sampling or maturity harvest, AboveGround.Wt is validated when nRMSE <= 30% and EF >= 0.0."
+    evidence_strength: moderate
+    confidence: 0.68
+    notes: >-
+      Ahmed reports APSIM-Wheat biomass validation using nRMSE, D-index, CRM, ME and R2; Brown's APSIM-Potato paper shows
+      aboveground biomass can be fair or poor even when yield is good, so confidence is lower than for Grain.Wt.
+
+  - dag_variable: AboveGround.Wt
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Applied to in-season biomass time series; Brown uses nRMSE for biomass trajectories and treats >30% as poor."
+        cites: [brown2018, zhao2012]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Pasley reproduces general NSE performance ratings used in crop-model evaluation."
+        cites: [pasley2023]
+    secondary_metrics:
+      - metric: d_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "D-index is commonly co-reported; Ahmed uses it with nRMSE and ME for APSIM-Wheat crop growth validation."
+        cites: [ahmed2016]
+    validated_when: "In-season AboveGround.Wt is validated when nRMSE <= 30% and NSE >= 0.5 over matched sampling dates."
+    evidence_strength: moderate
+    confidence: 0.64
+    notes: >-
+      The dag determining_metric nse is retained. Pasley warns NSE depends on dataset size and natural variability; therefore
+      nRMSE is also required as the magnitude check.
+
+  - dag_variable: Leaf.LAI
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "LAI uses the same crop-model RMSEn tiers, but APSIM studies often find LAI harder to simulate than yield."
+        cites: [zhao2012, brown2018]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Pasley reproduces NSE tiers and notes low values may arise from small or low-variability datasets."
+        cites: [pasley2023]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Sarker reviews r/R2 as potentially ambiguous; LAI validation should not rely on correlation alone."
+        cites: [sarker2014]
+    validated_when: "Leaf.LAI is validated when the matched in-season LAI series has nRMSE <= 30% and NSE >= 0.5, with peak LAI timing checked qualitatively."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Zhao states LAI predictions were poorer than biomass and that leaf area is generally more difficult to predict than biomass.
+      Brown reports APSIM-Potato LAI fits ranging from fair to poor, including N-RMSE >30% for one cultivar/site.
+
+  - dag_variable: "Phenology.Stage / flowering & maturity date"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: day_bias
+        direction: zero_centered
+        unit: day
+        bands: {very_good: 2, good: 4, satisfactory: 7}
+        pass_band: satisfactory
+        band_note: "Zhao reports average absolute RMSE of 2-3 days for phenology and validation RMSEa ranges of 2-4 days for flowering and 2-3 days for maturity; 7 days is a conservative transferred pass band."
+        cites: [zhao2012, ahmed2016]
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "When phenology is scored as normalized error rather than absolute days, use the crop-model RMSEn tiers."
+        cites: [zhao2012]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Zhao co-reports r2, but the practical convention for phenology is absolute day error against flowering and maturity dates."
+        cites: [zhao2012]
+    validated_when: "Flowering or maturity timing is validated when absolute day_bias <= 7 days, preferably <= 4 days, at the stage threshold crossing."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Ahmed states accurate phenology is the first priority to calibrate crop models and reports APSIM-Wheat flowering and
+      maturity close to observations; Zhao provides APSIM-specific 2-4 day RMSE ranges across varieties.
+
+  - dag_variable: "Phenology.Stage / flowering & maturity date"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: day_bias
+        direction: zero_centered
+        unit: day
+        bands: {very_good: 2, good: 4, satisfactory: 7}
+        pass_band: satisfactory
+        band_note: "Stage-code time series should be reduced to flowering/maturity crossing dates; numeric NSE-on-stage convention was not found."
+        cites: [zhao2012, ahmed2016]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE tier for ordinal phenology stage codes."
+        cites: []
+    secondary_metrics: []
+    validated_when: "Use stage-code series to derive event dates; validate if flowering/maturity crossing day_bias <= 7 days. NSE on ordinal stage codes remains unresolved."
+    evidence_strength: weak
+    confidence: 0.38
+    notes: >-
+      The dag determining_metric is nse for point_time_series, but the fetched APSIM phenology literature validates event dates
+      rather than ordinal-stage NSE. The null NSE band must not loosen the gate.
+
+  - dag_variable: Root.RootingDepth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched APSIM paper provides a numeric validation tier for rooting-depth time series."
+        cites: []
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Generic crop-model nRMSE tiers exist, but no fetched root-depth benchmark justified transferring them to Root.RootingDepth."
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Pasley says detailed soil data are often difficult to find and process-based models need enough in-season measurements to describe development."
+        cites: [pasley2023]
+    validated_when: "UNRESOLVED - require direct rooting-depth observations and a fetched root benchmark before auto-validation."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      Root depth appears in APSIM model-structure papers and sensitivity studies, but the cached validation papers do not provide
+      a cited numeric field convention for Root.RootingDepth. Bands are null per no-fabrication rule.
+
+  - dag_variable: Soil.Water.SW / ESW
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Pasley reproduces Moriasi-style NSE tiers; apply only after matching model layers to sensor depths."
+        cites: [pasley2023]
+      - metric: rsr
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.5, good: 0.6, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "Pasley reproduces RSR tiers: <=0.5 very good, <=0.6 good, <=0.7 satisfactory."
+        cites: [pasley2023]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining_metric is r, but Sarker argues r/R2 can be ambiguous and Pasley emphasizes NSE/RSR/PBIAS for accuracy."
+        cites: [sarker2014, pasley2023]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Liang reports soil-water RMSE by layer, but the fetched paper does not define a pass/fail RMSE threshold."
+        cites: [liang2016]
+    validated_when: "Soil.Water.SW / ESW is validated when layer-matched soil-water time series have NSE >= 0.5 and RSR <= 0.7."
+    evidence_strength: moderate
+    confidence: 0.56
+    notes: >-
+      Liang's soil-crop benchmark reports soil-water R2, RMSE, IA, and NSE by depth; top-layer soil-water NSE was 0.35 and
+      deeper layers lower, showing this output can be hard to validate. The pass bands are transferred from the crop-model
+      review's reproduced Moriasi tiers.
+
+  - dag_variable: SoilWater.Drainage / Runoff / Es
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred hydrologic-efficiency convention from Pasley's reproduced NSE tiers for time-series environmental model evaluation."
+        cites: [pasley2023]
+      - metric: d_index
+        direction: maximize
+        unit: dimensionless
+        bands: {good: 0.8, satisfactory: 0.8}
+        pass_band: satisfactory
+        band_note: "Ahmed treats D-index >0.80 together with low nRMSE as evidence of accurate APSIM-Wheat simulation; Vilakazi reports runoff d=0.97 for close APSIM runoff prediction."
+        cites: [ahmed2016, vilakazi2011]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining_metric r is superseded by error/efficiency checks because correlation alone can be ambiguous."
+        cites: [sarker2014]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Vilakazi states good runoff performance means RMSE values close to zero, but gives no universal numeric threshold."
+        cites: [vilakazi2011]
+    validated_when: "Measured runoff/drainage/soil-evaporation flux series are validated when NSE >= 0.5 and d-index >= 0.8; RMSE must also be reported but has no universal pass band."
+    evidence_strength: weak
+    confidence: 0.42
+    notes: >-
+      Vilakazi directly evaluates APSIM runoff with observed runoff and maize yield, but drainage and soil evaporation are mostly
+      simulated water-balance partitions. The same paper notes shortcomings in runoff generation and in separating evaporation
+      from deep drainage, so this is a weak transferred convention.
+
+deferred_paywalled:
+  - ref: "Jamieson et al. 1991 primary RMSEn crop-model tier paper"
+    doi: unknown_not_fetched
+    needed_for: [Grain.Wt, AboveGround.Wt, Leaf.LAI, "Phenology.Stage / flowering & maturity date"]
+  - ref: "Moriasi et al. 2007 primary NSE/RSR/PBIAS performance-rating paper"
+    doi: 10.13031/2013.23153
+    needed_for: [Soil.Water.SW / ESW, SoilWater.Drainage / Runoff / Es]
+  - ref: "Global sensitivity analyses prior to parameter calibration significantly improves prediction quality"
+    doi: 10.1016/j.compag.2025.110750
+    needed_for: [Grain.Wt, AboveGround.Wt, Leaf.LAI]
+  - ref: "Global sensitivity analysis of APSIM-wheat yield predictions to model parameters and inputs"
+    doi: 10.1016/j.ecolmodel.2023.110551
+    needed_for: [Grain.Wt, "Phenology.Stage / flowering & maturity date"]
+  - ref: "APSIM - Evolution towards a new generation of agricultural systems simulation"
+    doi: 10.1016/j.envsoft.2014.07.009
+    needed_for: [Root.RootingDepth, Soil.Water.SW / ESW, SoilWater.Drainage / Runoff / Es]
+  - ref: "An overview of APSIM, a model designed for farming systems simulation"
+    doi: 10.1016/s1161-0301(02)00108-9
+    needed_for: [Root.RootingDepth, SoilWater.Drainage / Runoff / Es]
+  - ref: "Global Sensitivity Analyses of the APSIM-Wheat Model at Different Soil Moisture Levels"
+    doi: 10.3390/plants14172608
+    needed_for: [Soil.Water.SW / ESW, Root.RootingDepth]

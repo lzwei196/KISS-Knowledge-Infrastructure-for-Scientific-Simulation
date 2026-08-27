@@ -1,0 +1,416 @@
+schema_version: 1
+model_id: ISSM
+domain: cryosphere
+generated_by: "Step-B validation-convention agent (Codex)"
+generated_at: 2026-08-14
+
+references:
+  seroussi2019_initmip_antarctica:
+    doi: 10.5194/tc-13-1441-2019
+    title: "initMIP-Antarctica: an ice sheet model initialization experiment of ISMIP6"
+    venue: "The Cryosphere"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-13-1441-2019.txt
+  goelzer2018_initmip_greenland:
+    doi: 10.5194/tc-12-1433-2018
+    title: "Design and results of the ice sheet model initialisation experiments initMIP-Greenland"
+    venue: "The Cryosphere"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-12-1433-2018.txt
+  goelzer2020_ismip6_greenland:
+    doi: 10.5194/tc-14-3071-2020
+    title: "The future sea-level contribution of the Greenland ice sheet: a multi-model ensemble study of ISMIP6"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-14-3071-2020.txt
+  quiquet2018_grisli:
+    doi: 10.5194/gmd-11-5003-2018
+    title: "The GRISLI ice sheet model (version 2.0): calibration and validation for multi-millennial changes of the Antarctic ice sheet"
+    venue: "Geoscientific Model Development"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-11-5003-2018.txt
+  larour2012_issm:
+    doi: 10.1029/2011jf002140
+    title: "Continental scale, high order, high spatial resolution, ice sheet modeling using the Ice Sheet System Model (ISSM)"
+    venue: "Journal of Geophysical Research: Earth Surface"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2011jf002140.txt
+  goldberg2013_adjoint:
+    doi: 10.5194/tc-7-1659-2013
+    title: "Parameter and state estimation with a time-dependent adjoint marine ice sheet model"
+    venue: "The Cryosphere"
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-7-1659-2013.txt
+  pattyn2013_mismip3d:
+    doi: 10.3189/2013jog12j129
+    title: "Grounding-line migration in plan-view marine ice-sheet models: results of the ice2sea MISMIP3d intercomparison"
+    venue: "Journal of Glaciology"
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3189_2013jog12j129.txt
+  seroussi2014_grounding:
+    doi: 10.5194/tc-8-2075-2014
+    title: "Hydrostatic grounding line parameterization in ice sheet models"
+    venue: "The Cryosphere"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-8-2075-2014.txt
+  adhikari2016_sesaw:
+    doi: 10.5194/gmd-9-1087-2016
+    title: "ISSM-SESAW v1.0: mesh-based computation of gravitationally consistent sea-level and geodetic signatures"
+    venue: "Geoscientific Model Development"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-9-1087-2016.txt
+  adhikari2019_fingerprints:
+    doi: 10.5194/essd-11-629-2019
+    title: "Sea-level fingerprints emergent from GRACE mission data"
+    venue: "Earth System Science Data"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_essd-11-629-2019.txt
+  schlegel2022_basal_temperature:
+    doi: 10.1038/s41467-022-32632-2
+    title: "Ice mass loss sensitivity to the Antarctic ice sheet basal thermal state"
+    venue: "Nature Communications"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41467-022-32632-2.txt
+
+validation:
+  - dag_variable: "Vel (and Vx, Vy, Vz)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/yr
+        bands: {very_good: 50.0, good: 94.5, satisfactory: 308.0}
+        pass_band: satisfactory
+        band_note: "initMIP-Antarctica reports surface-speed RMSE 47.5-94.5 m/yr for velocity-assimilating models and 116-308 m/yr otherwise; Larour 2012 reports intrinsic model differences on average less than 50 m/yr."
+        cites: [seroussi2019_initmip_antarctica, larour2012_issm]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining metric is csi, but fetched ice-sheet benchmarks judge continuous velocity fields with RMSE/RMSD or velocity-misfit cost functions, not categorical overlap."
+        cites: [seroussi2019_initmip_antarctica, goelzer2018_initmip_greenland, larour2012_issm]
+      - metric: log_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "initMIP-Antarctica also reports log-speed RMSE 0.62-1.51 because raw speed RMSE is dominated by fast ice streams."
+        cites: [seroussi2019_initmip_antarctica]
+    validated_when: "Modeled surface velocity magnitude/components are compared to observed surface velocity fields and RMSE <= 308 m/yr, with <= 94.5 m/yr indicating the assimilated-velocity benchmark range."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "The field convention supersedes spatial csi for this continuous field: initMIP figures are explicitly 'Root mean square error (RMSE)' against observed surface velocity."
+
+  - dag_variable: "Vel (and Vx, Vy, Vz)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched ISSM/ISMIP paper gives an NSE threshold for point or fluxgate velocity time series."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m/yr
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Spatial snapshot RMSE benchmarks should not be reused as a time-series validation threshold without a fetched temporal-velocity study."
+        cites: []
+    secondary_metrics:
+      - metric: velocity_misfit_cost
+        direction: minimize
+        status: supportive
+        ceiling_reason: "ISSM inversions minimize cost functions measuring modeled-observed horizontal surface-velocity misfit."
+        cites: [larour2012_issm]
+    validated_when: "UNRESOLVED - retain dag nse as the requested time-series metric, but no cited numeric time-series threshold was fetched."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "Goldberg 2013 demonstrates time-dependent inverse use of velocity/surface data, but not a field threshold for velocity NSE."
+
+  - dag_variable: Thickness
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 304.0, good: 350.0, satisfactory: 422.3}
+        pass_band: good
+        band_note: "GRISLI validation retained a 'good representation' at RMSE lower than 350 m, with 12 best members <=304 m; initMIP-Antarctica reports observed-vs-modeled thickness RMSE 91.2-422.3 m."
+        cites: [quiquet2018_grisli, seroussi2019_initmip_antarctica]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag csi metric is not the convention for continuous ice-thickness fields; fetched benchmarks compute RMSE against radar/Bedmap thickness."
+        cites: [quiquet2018_grisli, goelzer2018_initmip_greenland]
+    validated_when: "Ice thickness spatial snapshots are validated primarily by RMSE against observed thickness; pass at RMSE <= 350 m, with <= 304 m matching the best calibrated GRISLI subset."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: "Quiquet 2018 states the metric 'puts a strong constraint on ice sheet geometry' and avoids compensatory volume bias."
+
+  - dag_variable: Thickness
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for local ice-thickness time series."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Snapshot thickness RMSE bands are not automatically valid for transient point thickness without a fetched time-series convention."
+        cites: []
+    secondary_metrics:
+      - metric: model_drift
+        direction: minimize
+        status: supportive
+        ceiling_reason: "initMIP-Greenland treats forward control-run drift as complementary to observed-geometry match."
+        cites: [goelzer2018_initmip_greenland]
+    validated_when: "UNRESOLVED - compare point thickness time series when available, but no fetched NSE/RMSE pass band exists."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "Goelzer 2018 notes that mass trend and observed-geometry match are complementary measures, not a local NSE gate."
+
+  - dag_variable: "Surface (and Base)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric RMSE pass band specifically for ISSM surface/base elevation snapshots."
+        cites: []
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The fetched ice-sheet papers use continuous-elevation or geometry misfit diagnostics, not csi, for surface/base fields."
+        cites: []
+    secondary_metrics:
+      - metric: surface_elevation_misfit
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Surface elevation is used as an inversion target in initMIP-style initialization, but the fetched passages do not state a numeric validation band."
+        cites: [goelzer2018_initmip_greenland, goldberg2013_adjoint]
+    validated_when: "UNRESOLVED - spatial surface/base elevation should be evaluated as continuous elevation error, but no cited numeric pass band was fetched."
+    evidence_strength: weak
+    confidence: 0.32
+    notes: "Thickness RMSE bands are not copied here because the dag variable is explicitly Surface/Base, not Thickness."
+
+  - dag_variable: "Surface (and Base)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for altimetry-style surface-elevation time series."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Goldberg 2013 discusses centimeter-to-meter surface-elevation measurement accuracy, but not a validation threshold."
+        cites: []
+    secondary_metrics:
+      - metric: trend_match
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Time-dependent adjoint experiments show surface time information can matter, but the assumed centimeter-scale accuracy is explicitly below typical satellite/airborne accuracy."
+        cites: [goldberg2013_adjoint]
+    validated_when: "UNRESOLVED - evaluate against altimetry surface-elevation-change time series, but leave automatic pass bands disabled."
+    evidence_strength: weak
+    confidence: 0.28
+    notes: "No numeric band is cited because the relevant fetched passage is methodological and exploratory."
+
+  - dag_variable: Temperature
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper reports a numeric PBIAS pass band for borehole or point ice-temperature snapshots."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: K
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "OpenAlex/cached-paper search found mechanism and borehole-comparison context, not an RMSE threshold."
+        cites: []
+    secondary_metrics:
+      - metric: pressure_melting_bound
+        direction: maximize
+        status: supportive
+        ceiling_reason: "ISSM thermal equations keep ice temperature below the pressure melting point; basal-temperature studies note very few borehole constraints continent-wide."
+        cites: [larour2012_issm, schlegel2022_basal_temperature]
+    validated_when: "UNRESOLVED - borehole temperature profile comparison is the appropriate observation shape, but no fetched numeric threshold exists."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: "Schlegel 2022 says ice boreholes can constrain basal thermal state but are very sparse; this supports caution, not a pass band."
+
+  - dag_variable: "grounding-line position (MaskOceanLevelset)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: line_position_error
+        direction: minimize
+        unit: km
+        bands: {very_good: 0.5, good: 3.2, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "Seroussi 2014 reports convergence errors of 0.5 and 3.2 km for sub-element parameterizations; Pattyn 2013 reports reversible grounding lines within hundreds of metres and recommends subgrid/interpolation approaches."
+        cites: [seroussi2014_grounding, pattyn2013_mismip3d]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag csi request is a categorical proxy; fetched grounding-line benchmarks use contour/line position, reversibility, and mesh convergence."
+        cites: [seroussi2014_grounding, pattyn2013_mismip3d]
+      - metric: mesh_resolution_near_grounding_line
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Pattyn 2013 requires grid size below 500 m or subgrid interpolation; Seroussi 2014 suggests refinement below about 2 km for similar high-resolution sub-parameterized results."
+        cites: [seroussi2014_grounding, pattyn2013_mismip3d]
+    validated_when: "Grounding-line spatial snapshots are validated as contour/line-position errors; pass when line-position error <= 10 km, with <= 3.2 km matching sub-element convergence-error scale."
+    evidence_strength: strong
+    confidence: 0.80
+    notes: "Seroussi 2014 notes differences of more than 80 km without proper sub-element treatment, so a csi-only mask score is not the field convention."
+
+  - dag_variable: "grounding-line position (MaskOceanLevelset)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a PBIAS threshold for grounding-line retreat/advance time series."
+        cites: []
+      - metric: line_position_error
+        direction: minimize
+        unit: km
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Spatial convergence bands are not reused as temporal retreat/advance bands without a fetched time-series convention."
+        cites: []
+    secondary_metrics:
+      - metric: reversibility
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Grounding-line benchmarks judge reversibility and transient behavior, but the fetched papers do not define a numeric time-series observation threshold."
+        cites: [seroussi2014_grounding, pattyn2013_mismip3d]
+    validated_when: "UNRESOLVED - compare retreat/advance histories when transient observations exist, but no automatic numeric gate is cited."
+    evidence_strength: weak
+    confidence: 0.34
+    notes: "Seroussi 2014 says reversibility is necessary but not sufficient for steady-state accuracy; this supports diagnostic use, not a PBIAS pass band."
+
+  - dag_variable: "IceVolume / GroundedArea / TotalSmb"
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 0.42, satisfactory: 0.42}
+        pass_band: satisfactory
+        band_note: "initMIP-Antarctica reports 100-year control ice-mass-above-flotation drift less than 0.42 percent of initial volume in all cases, highlighting the accuracy required for sea-level projections."
+        cites: [seroussi2019_initmip_antarctica]
+      - metric: sle_drift
+        direction: zero_centered
+        unit: mm
+        bands: {good: 25.0, satisfactory: 50.0}
+        pass_band: satisfactory
+        band_note: "initMIP-Greenland ctrl drift is about -20 to +25 mm SLE excluding outliers; ISMIP6 Greenland ctrl_proj drift range is -50 to +15 mm."
+        cites: [goelzer2018_initmip_greenland, goelzer2020_ismip6_greenland]
+    secondary_metrics:
+      - metric: trend_match
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched intercomparison papers emphasize control-run drift and mass/SLE trends rather than raw NSE for aggregate diagnostics."
+        cites: [goelzer2018_initmip_greenland, goelzer2020_ismip6_greenland]
+    validated_when: "Regional aggregate time series are judged by small signed volume/SLE drift and trend consistency; pass when |PBIAS| <= 0.42 percent and |SLE drift| <= 50 mm over the reported control/projection benchmark horizon."
+    evidence_strength: strong
+    confidence: 0.70
+    notes: "The rule is strongest for IceVolume/GroundedArea mass diagnostics; TotalSmb should still be checked against its forcing/RCM product because the fetched bands are ice-sheet response bands."
+
+  - dag_variable: "IceVolume / GroundedArea / TotalSmb"
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "initMIP-Greenland reports modeled ice-sheet area and volume overestimation by up to 15 percent as a common present-day aggregate mismatch."
+        cites: [goelzer2018_initmip_greenland]
+    secondary_metrics:
+      - metric: area_volume_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Goelzer 2018 compares grounded area and volume against observed diamonds and warns that outlying glaciers/ice caps alter area more than volume."
+        cites: [goelzer2018_initmip_greenland]
+    validated_when: "Regional aggregate snapshots are compared to observed present-day area/volume; pass band is a weak benchmark envelope of |PBIAS| <= 15 percent."
+    evidence_strength: moderate
+    confidence: 0.50
+    notes: "This is a benchmark envelope, not a formal tier table; keep confidence moderate-low and do not use it to justify poor spatial geometry."
+
+  - dag_variable: "relative sea level (S)"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "ISSM-SESAW explicitly reports no standard benchmark or model intercomparison experiment for elastic rotating relative sea-level models."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched sea-level-fingerprint papers provide GRACE-derived fields and uncertainty products, but no model pass threshold for spatial RSL fingerprints."
+        cites: []
+    secondary_metrics:
+      - metric: feature_resolution
+        direction: minimize
+        status: supportive
+        ceiling_reason: "ISSM-SESAW validates components by reproducing published results and says its mesh can capture features as small as about 2 km, but this is numerical resolution rather than an observation pass band."
+        cites: [adhikari2016_sesaw]
+      - metric: uncertainty_map
+        direction: minimize
+        status: supportive
+        ceiling_reason: "GRACE fingerprint data products quantify standard errors for relative-sea-level trends, useful for weighting but not a pass threshold."
+        cites: [adhikari2019_fingerprints]
+    validated_when: "UNRESOLVED - use GRACE/tide-gauge fingerprint fields and uncertainty maps for comparison, but no automatic numeric validation gate is cited."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "Adhikari 2016: 'no standard benchmark or model intercomparison experiments' for this model class; csi is retained only because the dag requested it."
+
+deferred_paywalled:
+  - ref: "Decadal-scale sensitivity of Northeast Greenland ice flow to errors in surface mass balance using ISSM"
+    doi: 10.1002/jgrf.20062
+    needed_for: ["Vel (and Vx, Vy, Vz)", "IceVolume / GroundedArea / TotalSmb"]
+  - ref: "Sensitivity Analysis of Pine Island Glacier ice flow using ISSM and DAKOTA"
+    doi: 10.1029/2011jf002146
+    needed_for: ["Vel (and Vx, Vy, Vz)", "grounding-line position (MaskOceanLevelset)"]

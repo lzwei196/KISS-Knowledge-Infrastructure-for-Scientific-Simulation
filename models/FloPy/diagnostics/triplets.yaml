@@ -537,3 +537,26 @@
     prevention: "Review water balance after first run — CHD should be < 30% of total"
   severity: degraded
   cross_references: []
+
+# ---------------------------------------------------------------------------
+# Triplets added by self-improve runs after the original corpus was published.
+# Recovered 2026-08-12 and merged back; the block above is the published base,
+# byte-for-byte. See REPORT.md.
+# ---------------------------------------------------------------------------
+- id: dt_021
+  symptom:
+    description: Verification obs is an above-canopy eddy-covariance latent-heat / ET / carbon flux (FLUXNET2015
+      LE_F_MDS/LE_CORR/GPP_NT_VUT_REF) but all MODFLOW outputs are hydraulic; r/NSE/KGE return null because
+      no model output is comparable.
+  diagnosis:
+    root_cause: 'Wrong-variable / wrong-domain: MODFLOW is a saturated-zone groundwater-flow model with
+      no surface energy budget (dag.yaml:582). The EVT budget term is an input-prescribed water sink (m3/day),
+      not ecosystem latent heat (W/m2), so it is not a valid LE surrogate.'
+  remedy:
+    action: 'SKIP — do not retry, do not tune. The r<0.5 trigger is uncomputable (no comparable output).
+      Verify FloPy only against hydraulic obs: well heads, pumping-test drawdown, gauged baseflow (RIV/DRN
+      budget term), or solute breakthrough concentration.'
+  format_spec_violated: dag.yaml boundary.closure ('carries no surface energy budget') and observability.comparable_obs_shapes
+    (no energy/carbon flux mapping)
+  canonical_intent: ki_local_if_pass
+  added_by_run: FloPy_retry2

@@ -1,77 +1,92 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:02:48.439236'
-  domain: water_quality
   name: OpenHydroQual
-  version: auto-generated
+  language: c++
+  implementation:
+    id: openhydroqual-204
+    version: 2.0.4
+    provenance: C++14; Aquifolium engine by Arash Massoudieh / EnviroInformatics, generic implicit block-link
+      mass-balance + reactive-transport solver.
+  scientific_reference_version: OpenHydroQual 2.0.4 (Aquifolium block-link mass-balance / reactive-transport
+    engine; Massoudieh & Nguyen 2023, EMS)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenHydroQual/source/repo/OHQLibTest/OHQLibTest
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_data_preparation
+  - s2_template_configuration
+  - s3_model_construction
+  - s4_model_execution
+  - s5_output_analysis
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing.py
+  - tools/convert_parameters.py
+  - tools/parse_output.py
+  - tools/run_ohq.py
+inputs:
+  forcing:
+  - name: Temperature
+    unit: Celsius
+  - name: Wind speed
+    unit: m/s
+  - name: Solar radiation
+    unit: W/m^2
+  - name: Relative humidity
+    unit: fraction (0-1)
+  - name: Inflow hydrograph
+    unit: m^3/day
+  - name: Constituent loading
+    unit: g/day
+  parameters:
+  - name: Manning roughness (ManningCoeff)
+    unit: s/m^(1/3)
+  - name: hydraulic_conductivity
+    unit: m/day
+  - name: Storage / alpha / beta / bottom_elevation / area / length / width / depth
+    unit: m^3, m^2, m (per property)
+  - name: porosity / specific_yield
+    unit: dimensionless (0-1)
+  - name: diffusion_coefficient
+    unit: m^2/day
+  - name: Reaction parameters (base_value, reference_temperature, Arrhenius_factor)
+    unit: per parameter (e.g. mu_H 1/day, K_s g/m^3, Y_H gCOD/gCOD)
+  - name: c_n_weight
+    unit: dimensionless (0-1)
+  initial_conditions:
+  - name: Initial Storage / head / piezometric_head
+    unit: m^3 / m
+  - name: Initial constituent concentration
+    unit: g/m^3 (= mg/L)
+  boundary_conditions:
+  - name: fixed_head boundary
+    unit: m (head)
+  - name: Atmospheric exchange / aeration source
+    unit: g/m^3 (target saturation)
+  - name: Solver control settings (nr_tolerance, minimum_timestep, initial_time_step, write_interval,
+      simulation end time)
+    unit: various (days, dimensionless, count)
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - constituent_concentration
+  - flow
+  - head_storage
+  - evapotranspiration
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=-10.295, R=-0.105, 2 scorecard(s)'
+  metrics:
+    best_nse: -10.295
+    best_r: -0.105
+summary:
+  total_tools: 4
+  total_stage_docs: 5
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

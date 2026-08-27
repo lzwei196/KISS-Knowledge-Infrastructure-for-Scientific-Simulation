@@ -1,0 +1,324 @@
+schema_version: 1
+model_id: LDNDC
+domain: crop
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  ali2014:
+    doi: 10.5027/jnrd.v4i0.01
+    title: "A new novel index for evaluating model performance"
+    venue: "Journal of Natural Resources and Development"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5027_jnrd.v4i0.01.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling & Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+  klatt2012:
+    doi: 10.5194/bg-9-3983-2012
+    title: "Parameter-induced uncertainty quantification of soil N2O, NO and CO2 emission from Hoeglwald spruce forest (Germany) using the LandscapeDNDC model"
+    venue: "Biogeosciences"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-9-3983-2012.txt
+  houska2017:
+    doi: 10.5194/bg-14-3487-2017
+    title: "Constraining a complex biogeochemical model for CO2 and N2O emission simulations from various land uses by model-data fusion"
+    venue: "Biogeosciences"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-14-3487-2017.txt
+  cui2014:
+    doi: 10.5194/bg-11-91-2014
+    title: "Assessing biogeochemical effects and best management practice for a wheat-maize cropping system using the DNDC model"
+    venue: "Biogeosciences"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-11-91-2014.txt
+  zhang2019:
+    doi: 10.5194/bg-16-2905-2019
+    title: "Using a modified DNDC biogeochemical model to optimize field management of a multi-crop rotation system"
+    venue: "Biogeosciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-16-2905-2019.txt
+  rahimi2021:
+    doi: 10.5194/gmd-14-3789-2021
+    title: "Modeling gas exchange and biomass production in West African Sahelian and Sudanian ecological zones"
+    venue: "Geoscientific Model Development"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-14-3789-2021.txt
+  botter2021:
+    doi: 10.5194/bg-18-1917-2021
+    title: "Impacts of fertilization on grassland productivity and water quality across the European Alps"
+    venue: "Biogeosciences"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-18-1917-2021.txt
+  fumoto2017:
+    doi: 10.24514/00000061
+    title: "Process-based modeling of methane emissions from rice fields"
+    venue: "NARO Research Report"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.24514_00000061.txt
+
+validation:
+  - dag_variable: dN_n2o_emis
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Ali 2014 states ENS <= 0.0 is unsatisfactory and 0 < ENS < 1 is acceptable; schema uses 0.0 as the closest plain numeric lower edge, so exact-zero cases require inspection."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "LandscapeDNDC and DNDC gas-flux papers report RMSE and cumulative annual comparisons, but no transferable absolute RMSE gate because units and flux magnitudes vary by site."
+        cites: [klatt2012, cui2014, houska2017, zhang2019]
+    validated_when: "Daily N2O temporal skill is acceptable when NSE is above the zero-skill edge; cumulative/annual magnitude should also be inspected because chamber flux peaks are episodic."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Numeric NSE band is a general model-evaluation convention, not an LDNDC-specific threshold. Ali 2014: "ENS<=0.0 indicates unsatisfactory performance" and "0<ENS<1 is considered as the acceptable range." Bennett 2013 warns that final evaluation should use objective criteria derived from purpose or comparable model accuracy. LDNDC/DNDC benchmarks commonly report RMSE, RMD/MRB, IA/NSI and annual totals: Cui 2014 says daily N2O peaks are highly variable but annual N2O had RMSE 19.45%, RMD 8.74%, ME 0.57; Zhang 2019 reports daily N2O NSI around -0.45 to 0.03 but annual N2O NSI 0.72 and error factor 8.7 +/- 4.5%; Klatt 2012 and Houska 2017 document freeze-thaw and hot-moment limits.
+
+  - dag_variable: dN_n2o_emis
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Ali 2014 PMARE guide: 5-10 very good, 10-15 good, 15-20 fair, 20-25 moderate, >25 unsatisfactory; for annual aggregate totals, absolute PBIAS is treated as an aggregate relative-error analogue."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Annual or regional N2O totals are judged primarily by magnitude and treatment response; daily NSE can be poor even when cumulative N2O is acceptable."
+        cites: [cui2014, zhang2019]
+    validated_when: "|PBIAS| <= 25% for annual or regional N2O-N totals, with treatment ranking and uncertainty checked where available."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: >-
+      This is a transferred relative-error convention. Ali 2014 gives PMARE model ratings ending with ">25 Unsatisfactory"; Cui 2014 reports annual N2O RMSE 19.45%, RMD 8.74%, ME 0.57, and Zhang 2019 reports annual cumulative N2O IA 0.94, NSI 0.72 and error factors 8.7 +/- 4.5%.
+
+  - dag_variable: dN_no_emis
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Ali 2014 states ENS <= 0.0 is unsatisfactory and 0 < ENS < 1 is acceptable; schema uses 0.0 as the closest plain numeric lower edge."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "LandscapeDNDC and DNDC papers report NO RMSE or annual cumulative error, but no universal NO-flux RMSE threshold."
+        cites: [klatt2012, cui2014, zhang2019]
+    validated_when: "Daily NO temporal skill is acceptable when NSE is above the zero-skill edge; annual totals and post-fertilization peaks remain required visual/context checks."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Cui 2014 reports that annual NO emissions had R2 0.88, slope 1.07, RMSE 27.45%, RMD 0.32%, ME 0.53 and that the model captured temporal pattern and magnitudes of NO fluxes. Zhang 2019 reports daily NO NSI ranging from -0.04 to about 0.32 after modification, and annual cumulative NO NSI 0.85 with error factors 10.1 +/- 3.2%. Klatt 2012 reports NO RMSE ranges but no threshold table.
+
+  - dag_variable: dC_co2_emis_hetero
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Ali 2014 states ENS <= 0.0 is unsatisfactory and 0 < ENS < 1 is acceptable; schema uses 0.0 as the closest plain numeric lower edge."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "CO2 and NEE evaluations are often reported as cumulative carbon balance, RMSE/RMD, IA/NSI, or bias because daily carbon fluxes can have small means and sign changes."
+        cites: [cui2014, zhang2019, klatt2012]
+    validated_when: "Daily heterotrophic CO2 temporal skill is acceptable when NSE is above the zero-skill edge, while cumulative carbon balance and bias must be checked as supporting evidence."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Cui 2014 did not calculate RMSE/RMD for daily NEE because positive and negative fluxes made the observation mean small; ME was 0.36 and cumulative NEE approached observations. Zhang 2019 improved daily NEE NSI to 0.60 and 0.51 for two systems and annual/seasonal cumulative NEE NSI to 0.95-1.00. Klatt 2012 reports CO2 RMSE and notes seasonal deviations.
+
+  - dag_variable: dC_ch4_emis
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Ali 2014 states ENS <= 0.0 is unsatisfactory and 0 < ENS < 1 is acceptable; schema uses 0.0 as the closest plain numeric lower edge."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Methane validation is management-regime dependent; flooded rice/paddy settings use treatment response and seasonal totals in addition to time-series skill."
+        cites: [fumoto2017, zhang2019]
+    validated_when: "Daily CH4 temporal skill is acceptable when NSE is above the zero-skill edge, but only for a configuration capable of the observed methane regime; seasonal treatment response must be checked."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      The band is generic, and LDNDC-specific CH4 threshold evidence is thin. Fumoto 2017 states DNDC-Rice was evaluated at six paddy sites and "consistently estimated the variations in CH4 emission rate" for residue incorporation, water management, and sulfate application, but also says validation is mostly limited to Japan and FACE responses need improvement. Zhang 2019 reports CH4 uptake IA 0.68 with NSI < 0 for daily flux, but annual cumulative CH4 uptake NSI 0.91.
+
+  - dag_variable: dN_no3_leach
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Ali 2014 PMARE guide as an absolute relative-error convention; no fetched LDNDC nitrate-leaching PBIAS threshold table was found."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Daily nitrate leaching depends strongly on drainage and sparse leachate observations; fetched DNDC papers emphasize insufficient direct NO3 leaching validation."
+        cites: [cui2014, zhang2019, botter2021]
+    validated_when: "|PBIAS| <= 25% for nitrate leaching magnitude, with the caveat that this is a transferred relative-error convention and should not override a direct leaching benchmark if later fetched."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      Cui 2014 explicitly says there was "no validation of nitrate leaching due to no measurement." Zhang 2019 says NO3 leaching underestimation dominated uncertainty and that available observations were too few to judge model structure versus parameters. Botter 2021 treated NO3 leaching fluxes across Alpine grasslands as realistic in magnitude, but did not give a validation threshold. Use this block cautiously.
+
+  - dag_variable: dN_no3_leach
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Ali 2014 PMARE guide as an annual/regional absolute relative-error convention; no fetched regional nitrate-leaching PBIAS threshold table was found."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: trend
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Regional nitrate leaching is evaluated mainly through aggregate N budgets, water leakage, and management-response consistency rather than a universal daily skill threshold."
+        cites: [botter2021, zhang2019]
+    validated_when: "|PBIAS| <= 25% for regional nitrate leaching totals and directionally correct management response."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      The numeric band is transferred from general PMARE model ratings. Botter 2021 discusses NO3 leaching and groundwater recharge controls across sites and says simulated hydrology, vegetation dynamics, and NO3/DOC leaching fluxes had realistic magnitude with exceptions; it does not define a pass/fail PBIAS tier.
+
+  - dag_variable: evapotranspiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Ali 2014 states ENS <= 0.0 is unsatisfactory and 0 < ENS < 1 is acceptable; schema uses 0.0 as the closest plain numeric lower edge."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "ET validation in ecosystem models is often interpreted with energy-balance closure, lysimeter border effects, and water-budget consistency."
+        cites: [botter2021, bennett2013]
+    validated_when: "ET time-series validation requires NSE above the zero-skill edge and supporting water/energy-budget consistency."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: >-
+      No LDNDC-specific ET threshold table was fetched. Botter 2021 notes flux-tower energy budget non-closure and lysimeter oasis/border effects that can make crop yields and evapotranspiration fluxes 10%-20% larger than larger-field observations; the paper discusses realistic water-balance responses rather than a universal ET NSE gate.
+
+  - dag_variable: yield
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "For a single harvest snapshot, absolute PBIAS is equivalent to absolute relative error; Ali 2014 PMARE ratings treat 20-25% as moderate and >25% as unsatisfactory."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Single harvest yield is normally judged by magnitude error; temporal NSE is not applicable to a point snapshot."
+        cites: [cui2014, zhang2019, rahimi2021]
+    validated_when: "|PBIAS| <= 25% after converting LDNDC kgC/ha yield to the observational dry-matter or grain-mass basis."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Ali 2014 provides the numeric relative-error band. Cui 2014 reports DNDC grain yield RMSE 9.51%, RMD -2.76%, ME 0.70 and "good agreement"; Zhang 2019 reports crop-yield IA 0.93-0.95, NSI 0.75, slope 0.96-1.00, and error factors 3.0 +/- 1.6%; Rahimi 2021 reports LandscapeDNDC crop biomass/yield validation-site correlation 0.82 and RMSE 0.15 kg/m2.
+
+  - dag_variable: yield
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Transferred from Ali 2014 PMARE guide to annual/regional yield bias; regional trend skill should be evaluated separately from weather-driven level bias."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Regional yield benchmarks report correlation across sites/years, but no fetched paper provided a universal correlation pass band."
+        cites: [rahimi2021, zhang2019]
+    validated_when: "|PBIAS| <= 25% for regional annual yield levels after unit conversion, with trend/correlation used supportively."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Numeric band is transferred from general relative-error ratings. Rahimi 2021 applied calibrated LandscapeDNDC to 42 validation sites and reported crop, grass, and tree biomass/yield correlations of 0.82, 0.94, and 0.77 with RMSEs of 0.15, 0.22, and 0.12 kg/m2. The dag caveat about technology trends remains important: do not require raw interannual regional r where management/technology trend is outside the process setup.
+
+  - dag_variable: lai
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Ali 2014 states ENS <= 0.0 is unsatisfactory and 0 < ENS < 1 is acceptable; schema uses 0.0 as the closest plain numeric lower edge."
+        cites: [ali2014]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched LandscapeDNDC LAI evaluations report Pearson r and visual seasonal agreement, not a universal LAI NSE or r threshold."
+        cites: [rahimi2021]
+    validated_when: "LAI time-series skill is acceptable when NSE is above the zero-skill edge and seasonal phenology timing is visually consistent."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: >-
+      Rahimi 2021 reports LAI and NEE correlations by site, including agricultural LAI r values around 0.76, grassland LAI 0.78 to 0.95 at cited sites, and mixed tree-grass LAI correlations around 0.85 for Nazinga, but no formal LAI threshold table. The numeric NSE band is therefore a general convention; GDD phenology timing remains a key caveat.
+
+deferred_paywalled:
+  - ref: "LandscapeDNDC: a process model for simulation of biosphere-atmosphere-hydrosphere exchange processes at site and regional scale"
+    doi: 10.1007/s10980-012-9772-x
+    needed_for: [dN_n2o_emis, dN_no_emis, dC_co2_emis_hetero, dN_no3_leach, evapotranspiration, yield, lai]
+  - ref: "Parameter-induced uncertainty quantification of regional N2O emissions and NO3 leaching using the biogeochemical model LandscapeDNDC"
+    doi: 10.2134/advagricsystmodel6.2013.0001
+    needed_for: [dN_n2o_emis, dN_no3_leach]
+  - ref: "Moriasi et al. 2015 model performance criteria for hydrologic/water-quality variables"
+    doi: 10.13031/trans.58.10715
+    needed_for: [dN_no3_leach, evapotranspiration]

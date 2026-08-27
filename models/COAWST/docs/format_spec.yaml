@@ -1,240 +1,604 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "COAWST"
-  version: "3.8"
-  full_name: "Coupled-Ocean-Atmosphere-Wave-Sediment Transport"
-  domain: "coastal_ocean"
-  binary_path: "KISSPATH_BINARIES/COAWST/source/repo/coawstM"
-  build_system: "GNU Make / CMake with MPI"
-  language: "Fortran 90+"
-  coupling_framework: "MCT or ESMF/NUOPC"
-
+  name: COAWST
+  language: fortran
+  implementation:
+    id: coawst-v38
+    version: v3.8
+    provenance: Fortran 90; USGS (John C. Warner, Woods Hole) coupled binary coawstM joining ROMS ocean,
+      SWAN waves, WRF atmosphere, WW3 open-ocean waves, and USGS Community Sediment Models via the MCT
+      coupler with SCRIP-weighted regridding.
+  scientific_reference_version: COAWST v3.8 (Coupled-Ocean-Atmosphere-Wave-Sediment Transport modeling
+    system; Warner et al. 2010, Ocean Modelling)
 inputs:
-  config_files:
-    - name: "ocean_*.in"
-      format: "KEYWORD = value"
-      description: "ROMS parameters (grid dims, timestep, physics, I/O paths)"
-    - name: "coupling_*.in"
-      format: "KEYWORD = value"
-      description: "MCT coupling intervals, processor allocation, SCRIP weights"
-    - name: "swan_*.in"
-      format: "SWAN command syntax"
-      description: "SWAN spectral parameters, physics switches"
-    - name: "namelist.input"
-      format: "Fortran namelist"
-      description: "WRF atmospheric configuration"
-
   forcing:
-    - name: "Uwind"
-      unit: "m/s"
-      valid_range: [-50, 50]
-      description: "Eastward wind component at 10m"
-    - name: "Vwind"
-      unit: "m/s"
-      valid_range: [-50, 50]
-      description: "Northward wind component at 10m"
-    - name: "Tair"
-      unit: "Celsius"
-      valid_range: [-60, 50]
-      description: "Air temperature at 2m"
-    - name: "Pair"
-      unit: "mb"
-      valid_range: [870, 1084]
-      description: "Surface air pressure"
-    - name: "Qair"
-      unit: "kg/kg"
-      valid_range: [0, 0.04]
-      description: "Specific humidity"
-    - name: "rain"
-      unit: "m/s"
-      valid_range: [0, 0.001]
-      description: "Rain fall rate"
-    - name: "swrad"
-      unit: "W/m2"
-      valid_range: [0, 1400]
-      description: "Shortwave radiation"
-    - name: "lwrad"
-      unit: "W/m2"
-      valid_range: [0, 500]
-      description: "Longwave radiation"
-
-  grid:
-    - name: "lon_rho"
-      unit: "degrees_east"
-      valid_range: [-180, 360]
-    - name: "lat_rho"
-      unit: "degrees_north"
-      valid_range: [-90, 90]
-    - name: "h"
-      unit: "m"
-      valid_range: [0, 11000]
-      description: "Bathymetry at RHO-points (positive down)"
-    - name: "mask_rho"
-      unit: "dimensionless"
-      valid_range: [0, 1]
-      description: "Land/sea mask (0=land, 1=sea)"
-    - name: "angle"
-      unit: "radians"
-      valid_range: [-3.15, 3.15]
-      description: "Angle between xi-axis and east"
-
-  initial_conditions:
-    - name: "temp"
-      unit: "Celsius"
-      valid_range: [-2, 40]
-      description: "Initial potential temperature"
-    - name: "salt"
-      unit: "PSU"
-      valid_range: [0, 42]
-      description: "Initial salinity"
-    - name: "zeta"
-      unit: "m"
-      valid_range: [-10, 10]
-      description: "Initial free-surface elevation"
-
+  - name: Uwind / Vwind (10 m wind components)
+    unit: m/s
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: ROMS atmospheric forcing NetCDF (xi_rho x eta_rho x time)
+    notes: Drives wind stress directly (prescribed) or via COARE bulk fluxes when BULK_FLUXES is defined.
+  - name: Tair (air temperature)
+    unit: degC
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: ROMS forcing NetCDF
+    notes: Expected in Celsius; Kelvin input silently drives runaway heat flux under BULK_FLUXES.
+  - name: Pair (sea-level air pressure)
+    unit: mb
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: ROMS forcing NetCDF
+    notes: mb (hPa); Pa input must be divided by 100.
+  - name: Qair (specific humidity)
+    unit: kg/kg
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: ROMS forcing NetCDF
+    notes: Specific humidity, not relative humidity; valid 0.0001-0.04 kg/kg.
+  - name: rain (precipitation)
+    unit: kg/m2/s
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: ROMS forcing NetCDF
+    notes: Internal flux unit kg/m2/s; mm/day must be divided by 86400.
+  - name: swrad (shortwave radiation)
+    unit: W/m2
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: ROMS forcing NetCDF
+    notes: Converted internally to temperature flux by dividing by rho0*Cp.
+  - name: lwrad (longwave radiation)
+    unit: W/m2
+    category: atmosphere
+    source_kind: forcing
+    model_input_format: ROMS forcing NetCDF
+  - name: lateral open-boundary temp/salt/u/v/zeta time series
+    unit: degC, PSU, m/s, m
+    category: ocean_lateral
+    source_kind: forcing
+    model_input_format: ROMS boundary NetCDF (boundary x s_rho x time)
+    notes: Must be on the correct Arakawa-C stagger for each variable.
+  - name: tidal elevation/current constituents (Eamp, Ephase, Cangle, Cphase)
+    unit: m, deg, deg, deg
+    category: tides
+    source_kind: forcing
+    model_input_format: ROMS tidal forcing NetCDF (xi x eta x tide_period)
+  - name: river discharge
+    unit: m3/s
+    category: rivers
+    source_kind: forcing
+    model_input_format: ROMS river point-source NetCDF/CSV
+    notes: m3/s; m3/day must be divided by 86400 or estuary salinity is wrong.
+  - name: open-boundary wave spectra / parameters
+    unit: m, s, deg
+    category: waves_bc
+    source_kind: forcing
+    model_input_format: SWAN boundary spectral input
+    notes: Supplied when SWAN is the wave component on a regional grid.
   parameters:
-    critical:
-      - name: "DT"
-        valid_range: [1, 300]
-        unit: "seconds"
-        description: "Baroclinic timestep"
-      - name: "NDTFAST"
-        valid_range: [10, 60]
-        unit: "dimensionless"
-        description: "Barotropic:baroclinic timestep ratio"
-      - name: "theta_s"
-        valid_range: [0.1, 10.0]
-        unit: "dimensionless"
-        description: "Surface S-coordinate stretching parameter"
-      - name: "theta_b"
-        valid_range: [0.0, 4.0]
-        unit: "dimensionless"
-        description: "Bottom S-coordinate stretching parameter"
-      - name: "Tcline"
-        valid_range: [10, 300]
-        unit: "m"
-        description: "Thermocline depth for S-coordinate stretching"
-      - name: "Vtransform"
-        valid_range: [1, 2]
-        unit: "dimensionless"
-        description: "S-coordinate transformation type"
-      - name: "Vstretching"
-        valid_range: [1, 5]
-        unit: "dimensionless"
-        description: "S-coordinate stretching function"
-      - name: "rdrg2"
-        valid_range: [0.0001, 0.01]
-        unit: "dimensionless"
-        description: "Quadratic bottom drag coefficient"
-      - name: "VISC2"
-        valid_range: [1, 100]
-        unit: "m2/s"
-        description: "Horizontal Laplacian viscosity"
-      - name: "TNU2"
-        valid_range: [0, 50]
-        unit: "m2/s"
-        description: "Horizontal tracer diffusion"
-      - name: "NtileI"
-        valid_range: [1, 256]
-        unit: "dimensionless"
-        description: "Number of tiles in XI-direction (NtileI*NtileJ = nprocs)"
-      - name: "NtileJ"
-        valid_range: [1, 256]
-        unit: "dimensionless"
-        description: "Number of tiles in ETA-direction"
-
+  - name: theta_s (surface S-coordinate stretching)
+    unit: dimensionless
+    category: vertical_coordinate
+    source_kind: calibrated
+    model_input_format: ocean.in THETA_S keyword
+    notes: Range 0.1-10.0; high sensitivity on thermocline resolution.
+  - name: theta_b (bottom S-coordinate stretching)
+    unit: dimensionless
+    category: vertical_coordinate
+    source_kind: calibrated
+    model_input_format: ocean.in THETA_B keyword
+    notes: Range 0.0-4.0.
+  - name: Tcline (thermocline stretching depth)
+    unit: m
+    category: vertical_coordinate
+    source_kind: calibrated
+    model_input_format: ocean.in TCLINE keyword
+    notes: Range 10-300 m.
+  - name: VISC2 (horizontal Laplacian viscosity)
+    unit: m2/s
+    category: numerics
+    source_kind: calibrated
+    model_input_format: ocean.in VISC2 keyword
+    notes: Range 1-100 m2/s.
+  - name: TNU2 (horizontal tracer diffusion)
+    unit: m2/s
+    category: numerics
+    source_kind: calibrated
+    model_input_format: ocean.in TNU2 keyword
+    notes: Range 0-50 m2/s.
+  - name: rdrg2 (quadratic bottom drag coefficient)
+    unit: dimensionless
+    category: bottom_boundary
+    source_kind: calibrated
+    model_input_format: ocean.in RDRG2 keyword
+    notes: Range 1e-4 to 1e-2; high sensitivity on bottom stress.
+  - name: Zob (bottom roughness length)
+    unit: m
+    category: bottom_boundary
+    source_kind: calibrated
+    model_input_format: ocean.in ZOB keyword
+    notes: Range 0.001-0.1 m, used with LOG_PROFILE.
+  - name: Znudg (free-surface nudging timescale)
+    unit: day
+    category: nudging
+    source_kind: calibrated
+    model_input_format: ocean.in ZNUDG keyword
+    notes: Range 0.01-30 day.
+  - name: Tnudg (tracer nudging timescale)
+    unit: day
+    category: nudging
+    source_kind: calibrated
+    model_input_format: ocean.in TNUDG keyword
+    notes: Range 1-360 day.
+  - name: rho0 (Boussinesq reference seawater density)
+    unit: kg/m3
+    category: physical_constants
+    source_kind: default
+    model_input_format: mod_scalars.F hardcoded
+    notes: Default 1025.0; used in wind-stress and heat-flux unit conversions.
+  - name: Cp (specific heat of seawater)
+    unit: J/kg/degC
+    category: physical_constants
+    source_kind: default
+    model_input_format: mod_scalars.F hardcoded
+    notes: Default 3985.0; pairs with rho0 in heat-flux to temperature-flux conversion.
+  - name: g (gravitational acceleration)
+    unit: m/s2
+    category: physical_constants
+    source_kind: default
+    model_input_format: mod_scalars.F hardcoded
+    notes: Default 9.81 (set to 1.0 in non-dimensional test configs).
+  - name: h (bottom depth)
+    unit: m
+    category: bathymetry
+    source_kind: dataset_lookup
+    model_input_format: ROMS grid NetCDF variable h
+    notes: Positive down (depth below MSL); GEBCO/ETOPO must be negated. rx0 should be < 0.2 to avoid
+      spurious slope currents.
+  - name: grid metrics (pm, pn, angle, f, mask_rho)
+    unit: 1/m, rad, 1/s, 0/1
+    category: grid_metrics
+    source_kind: dataset_lookup
+    model_input_format: ROMS grid NetCDF (xi_rho x eta_rho)
+  initial_conditions:
+  - name: initial temp / salt
+    unit: degC, PSU
+    category: ocean_state
+    source_kind: dataset_lookup
+    model_input_format: ROMS initial NetCDF (xi x eta x s_rho)
+    notes: Must lie in EOS-valid range (T -2..40 degC, S 0..42 PSU); fill values (9999) produce NaN density.
+  - name: initial u / v / ubar / vbar
+    unit: m/s
+    category: ocean_state
+    source_kind: dataset_lookup
+    model_input_format: ROMS initial NetCDF
+  - name: initial zeta (free surface)
+    unit: m
+    category: ocean_state
+    source_kind: dataset_lookup
+    model_input_format: ROMS initial NetCDF
+    notes: With WET_DRY, must give h+zeta>Dcrit on intended wet cells to avoid checkerboard oscillation.
+  - name: initial sediment bed (thickness, fractions)
+    unit: m, fraction
+    category: sediment_state
+    source_kind: dataset_lookup
+    model_input_format: ROMS sediment IC NetCDF
+    notes: Active only when the sediment module is enabled.
+  - name: restart record (NRREC)
+    unit: index
+    category: restart
+    source_kind: user_provided
+    model_input_format: ocean.in NRREC / restart NetCDF
+    notes: Must match restart file time record or the simulation clock misaligns.
+  boundary_conditions:
+  - name: DT (baroclinic timestep)
+    unit: s
+    category: numerics
+    source_kind: user_provided
+    model_input_format: ocean.in DT keyword
+    notes: Range 1-300 s; bound by CFL on the barotropic substep.
+  - name: NDTFAST (barotropic:baroclinic substep ratio)
+    unit: count
+    category: numerics
+    source_kind: user_provided
+    model_input_format: ocean.in NDTFAST keyword
+    notes: Range 10-60; barotropic dt = DT/NDTFAST must satisfy CFL < ~0.7.
+  - name: Vtransform (S-coordinate transformation type)
+    unit: code
+    category: vertical_coordinate
+    source_kind: user_provided
+    model_input_format: ocean.in Vtransform (1 or 2)
+    notes: V2 recommended.
+  - name: Vstretching (S-coordinate stretching function)
+    unit: code
+    category: vertical_coordinate
+    source_kind: user_provided
+    model_input_format: ocean.in Vstretching (1-5)
+    notes: V4 recommended.
+  - name: BULK_FLUXES (bulk vs prescribed surface flux)
+    unit: switch
+    category: surface_flux_method
+    source_kind: user_provided
+    model_input_format: application CPP header flag
+    notes: If defined, fluxes computed from atmospheric variables via COARE; otherwise prescribed sustr/svstr/shflux/swrad
+      expected. Mismatch silently zeroes forcing.
+  - name: WET_DRY (dynamic wet/dry masking)
+    unit: switch
+    category: masking
+    source_kind: user_provided
+    model_input_format: application CPP header flag
+  - name: RadNud open-boundary scheme + obcfac
+    unit: scheme, factor
+    category: open_boundary
+    source_kind: user_provided
+    model_input_format: ocean.in LBC / OBCFAC keyword
+    notes: obcfac range 0-10; too small reflects, too large ignores boundary data.
+  - name: TIME_REF (model time epoch)
+    unit: date
+    category: time_reference
+    source_kind: user_provided
+    model_input_format: ocean.in TIME_REF keyword
+    notes: Must match forcing time units epoch or interpolation extrapolates / yields NaN.
+  - name: coupling interval (TI_OCN2WAV etc.)
+    unit: s
+    category: coupling
+    source_kind: user_provided
+    model_input_format: coupling.in
+    notes: Must be an integer multiple of every coupled component timestep.
+  - name: NtileI x NtileJ tiling and node allocation
+    unit: count
+    category: parallel_decomposition
+    source_kind: user_provided
+    model_input_format: ocean.in / coupling.in
+    notes: NtileI x NtileJ must equal NnodesOCN or MPI deadlocks.
+  - name: SWAN spectral resolution (direction / frequency bins)
+    unit: count
+    category: wave_spectral_resolution
+    source_kind: user_provided
+    model_input_format: swan.in CIRCLE command
+    notes: Recommend >=36 directions, >=31 frequencies (0.04-1.0 Hz) to resolve swell.
 outputs:
   primary:
-    - name: "zeta"
-      unit: "m"
-      valid_range: [-10, 10]
-      description: "Free-surface elevation"
-    - name: "temp"
-      unit: "Celsius"
-      valid_range: [-2, 40]
-      description: "Potential temperature"
-    - name: "salt"
-      unit: "PSU"
-      valid_range: [0, 42]
-      description: "Salinity"
-    - name: "u"
-      unit: "m/s"
-      valid_range: [-5, 5]
-      description: "Eastward velocity component"
-    - name: "v"
-      unit: "m/s"
-      valid_range: [-5, 5]
-      description: "Northward velocity component"
-    - name: "w"
-      unit: "m/s"
-      valid_range: [-1, 1]
-      description: "Vertical velocity component"
-    - name: "ubar"
-      unit: "m/s"
-      valid_range: [-5, 5]
-      description: "Vertically integrated u-momentum"
-    - name: "vbar"
-      unit: "m/s"
-      valid_range: [-5, 5]
-      description: "Vertically integrated v-momentum"
-    - name: "Hsig"
-      unit: "m"
-      valid_range: [0, 30]
-      description: "Significant wave height (coupled mode)"
-    - name: "bed_thickness"
-      unit: "m"
-      valid_range: [0, 100]
-      description: "Sediment bed thickness"
-
-  file_types:
-    - pattern: "*_his_*.nc"
-      description: "History snapshots (full 3D state)"
-    - pattern: "*_avg_*.nc"
-      description: "Time-averaged fields"
-    - pattern: "*_rst_*.nc"
-      description: "Restart/checkpoint files"
-    - pattern: "*_dia_*.nc"
-      description: "Diagnostic terms (momentum/tracer budgets)"
-    - pattern: "*_sta_*.nc"
-      description: "Station time series"
-    - pattern: "*_flt_*.nc"
-      description: "Lagrangian float trajectories"
-
-  format: "NetCDF-4 with CF-1.6 conventions"
-
-unit_traps:
-  - id: "ut_001"
-    variable: "Temperature"
-    external_unit: "K"
-    internal_unit: "Celsius"
-    factor: "-273.15"
-    failure: "Unrealistic SST, density blowup"
-  - id: "ut_002"
-    variable: "Wind stress"
-    external_unit: "Pa"
-    internal_unit: "m2/s2"
-    factor: "divide by rho0 (1025)"
-    failure: "Currents 1000x too strong"
-  - id: "ut_005"
-    variable: "Precipitation"
-    external_unit: "mm/day"
-    internal_unit: "m/s"
-    factor: "divide by 86400000"
-    failure: "Freshwater flux 1000x too high"
-  - id: "ut_007"
-    variable: "Wave direction"
-    external_unit: "degrees (met conv)"
-    internal_unit: "radians (math conv)"
-    factor: "multiply pi/180 + rotation"
-    failure: "Wave-current stress in wrong direction"
-  - id: "ut_012"
-    variable: "Bathymetry"
-    external_unit: "positive up"
-    internal_unit: "positive down (h>0)"
-    factor: "multiply -1"
-    failure: "Grid above water, instant crash"
-
+  - name: zeta
+    unit: m
+    description: Free-surface elevation (water level / storm surge).
+    validation_rank: 2
+    emitted_in: '*_his_*.nc / *_avg_*.nc'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Tide-gauge water level mixes tidal, surge, and steric signal; harmonic separation often needed.
+        - Surge timing depends on coupled wind-stress and drag parameterization.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Peak-surge field comparison is sensitive to landfall timing/track.
+      detrending_options:
+      - none
+  - name: temp
+    unit: degC
+    description: Potential temperature, including sea-surface temperature at the top S-level.
+    validation_rank: 3
+    emitted_in: '*_his_*.nc'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Buoy/CTD SST compared against the top S-coordinate level, not a fixed depth.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Satellite SST is a skin temperature; model top-level is a bulk temperature - a cool-skin offset
+          applies.
+      detrending_options:
+      - none
+  - name: salt
+    unit: PSU
+    description: Ocean salinity.
+    validation_rank: 4
+    emitted_in: '*_his_*.nc'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Estuarine salinity is highly sensitive to river-discharge units and mixing closure.
+      detrending_options:
+      - none
+  - name: u
+    unit: m/s
+    description: Eastward 3D baroclinic ocean velocity component (on the u-grid).
+    validation_rank: 5
+    emitted_in: '*_his_*.nc'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - ADCP currents must be matched to model depth level and rotated from the curvilinear grid angle.
+      detrending_options:
+      - none
+  - name: v
+    unit: m/s
+    description: Northward 3D baroclinic ocean velocity component (on the v-grid).
+    validation_rank: 6
+    emitted_in: '*_his_*.nc'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Same grid-angle rotation caveat as u; longshore current sign depends on wave-current coupling.
+      detrending_options:
+      - none
+  - name: Hsig
+    unit: m
+    description: Significant wave height from the coupled wave model (SWAN HSIGN).
+    validation_rank: 1
+    emitted_in: '*_his_*.nc'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Wave-buoy Hs depends on adequate SWAN spectral resolution (>=36 dir, >=31 freq) and on current/water-level
+          coupling.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Altimeter swath Hs gives spatial snapshots along-track only.
+      detrending_options:
+      - none
+  - name: bed_thickness
+    unit: m
+    description: Sediment bed thickness / cumulative morphodynamic bed change.
+    validation_rank: 7
+    emitted_in: '*_his_*.nc'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Pre/post-storm bathymetric survey difference; net erosion/accretion pattern, not absolute bed
+          level.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Requires the sediment module enabled; bed change controlled by wave propagation and shelf width.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "NtileI*NtileJ must exactly equal MPI processor count or deadlock occurs"
-  - "Coupling intervals must be integer multiples of both ocean and wave timesteps"
-  - "BULK_FLUXES flag determines whether raw atmospheric or pre-computed fluxes are expected"
-  - "Bathymetry must be positive-down; positive-up causes instant crash"
+- id: dt_001
+  symptom: SST diverges to ~300°C. Density computation produces unrealistic values. Model may run but
+    all thermal dynamics are wrong.
+  diagnosis: Atmospheric temperature provided in Kelvin instead of Celsius; ERA5, GFS, NARR provide air
+    temperature in Kelvin (e.g., 293 K). ROMS expects Celsius (e.g., 20°C). If BULK_FLUXES is on, heat
+    flux computation uses Tair directly — 293°C air temperature drives massive heat input.; ['convert_forcing',
+    'b
+  remedy: 'Subtract 273.15 from temperature fields; convert_forcing.py --source-format era5; [''Check
+    Tair range in forcing file: ncdump -v Tair forcing.nc | tail'', ''Expected range: -60 to +50 °C'',
+    ''If values are 200-320, subtract 273.15'']; convert_forcing.py validates output range automatically'
+  severity: silent
+- id: dt_002
+  symptom: Currents are ~1000× too strong. Model may blow up quickly or produce unrealistic transport
+    patterns.
+  diagnosis: Wind stress provided in Pa (N/m²) instead of ROMS internal m²/s²; ROMS expects surface momentum
+    stress as sustr/svstr in m²/s² (= N/m² ÷ ρ₀). If stress is provided in Pa and used directly, currents
+    are amplified by factor of ρ₀ ≈ 1025. This only matters when NOT using BULK_FLUXES.; ['convert_forcing
+  remedy: 'Divide stress by reference density ρ₀ = 1025 kg/m³; convert_forcing.py; [''Check if BULK_FLUXES
+    is defined in application .h file'', ''If BULK_FLUXES: provide wind speed (m/s), not stress — ROMS
+    computes stress internally'', ''If no BULK_FLUXES: ensure sustr/svstr are in m²/s² (divide Pa by 1025)''];
+    Use '
+  severity: silent
+- id: dt_003
+  symptom: Model crashes with NaN or uses forcing from wrong time period. Output shows unrealistic seasonal
+    patterns or constant fields.
+  diagnosis: Time reference mismatch between forcing file and ocean.in TIME_REF; ROMS interpolates forcing
+    in time using ocean_time (from TIME_REF) vs frc_time. If forcing uses 'days since 1900-01-01' but
+    TIME_REF is '20120101.0d0', the temporal offset causes ROMS to extrapolate beyond available data or
+    use wron
+  remedy: 'Align TIME_REF in ocean.in with time units in forcing files; generate_config.py; [''ncdump
+    -v frc_time forcing.nc | head -5 → check units attribute'', ''Ensure ocean.in TIME_REF matches the
+    epoch'', "Example: if frc_time units=''days since 2012-10-01'', set TIME_REF=20121001.0d0"]; generate_config.py
+    cros'
+  severity: fatal
+- id: dt_004
+  symptom: Model hangs immediately after startup. No output, no error message. MPI processes are alive
+    but not progressing.
+  diagnosis: NtileI × NtileJ does not equal allocated ocean processors (NnodesOCN); ROMS distributes the
+    grid across NtileI × NtileJ MPI processes. If this product doesn't match the processes allocated to
+    the ocean model, some processes wait for data from non-existent partners, causing deadlock.; ['coupling',
+    'o
+  remedy: 'Ensure NtileI × NtileJ = NnodesOCN, and NnodesOCN + NnodesWAV + NnodesATM = total mpirun -np
+    N; generate_config.py; [''Check ocean.in: NtileI, NtileJ values'', ''Check coupling.in: NnodesOCN
+    value'', ''Verify: NtileI × NtileJ == NnodesOCN'', ''Verify: NnodesOCN + NnodesWAV + NnodesATM ==
+    mpirun -np N'']; ge'
+  severity: fatal
+- id: dt_005
+  symptom: Model prints 'BLOWUP' and stops after a few timesteps. Velocity or sea level values grow exponentially.
+  diagnosis: 'Baroclinic or barotropic timestep violates CFL condition; CFL requires c·dt/dx < 1, where
+    c=√(g·h) for barotropic mode. With DT=300s, NDTFAST=20 → dt_baro=15s. For h=5000m, dx=1km: CFL = 221×15/1000
+    = 3.3 → blowup. The barotropic timestep (DT/NDTFAST) is usually the binding constraint.; [''time_stepp'
+  remedy: 'Reduce DT or increase NDTFAST to satisfy CFL < 0.7; generate_config.py (validates CFL); [''Compute:
+    c_max = sqrt(9.81 × h_max)'', ''Compute: dx_min = minimum grid spacing'', ''Compute: dt_baro_max =
+    0.7 × dx_min / c_max'', ''Set NDTFAST >= DT / dt_baro_max'']; generate_config.py CFL check warns before
+    run'
+  severity: fatal
+- id: dt_006
+  symptom: Model runs with zero surface forcing. SST drifts toward initial conditions without atmospheric
+    correction. Currents are weak.
+  diagnosis: BULK_FLUXES CPP flag does not match forcing file contents; With BULK_FLUXES defined, ROMS
+    expects atmospheric variables (Uwind, Tair, Qair, etc.) and computes fluxes internally. Without BULK_FLUXES,
+    ROMS expects pre-computed fluxes (sustr, svstr, shflux, etc.). If you provide wind speed to a non-BUL
+  remedy: 'Match forcing file type to BULK_FLUXES flag in application header; N/A — requires recompilation
+    if flag needs changing; [''Check application .h file: grep BULK_FLUXES sandy.h'', ''If BULK_FLUXES
+    defined: provide Uwind, Vwind, Tair, Pair, Qair, rain, swrad, lwrad'', ''If NOT defined: provide sustr,
+    svstr,'
+  severity: silent
+- id: dt_007
+  symptom: Model crashes immediately. Bathymetry appears as mountains above sea level. All water cells
+    are masked as land.
+  diagnosis: Bathymetry not negated from GEBCO/ETOPO convention (negative=ocean) to ROMS convention (positive=depth);
+    GEBCO and ETOPO use negative values for ocean depths and positive for land elevations. ROMS requires
+    h > 0 for water depth below MSL. If the bathymetry is not negated, all ocean points have h < 0
+  remedy: 'Negate bathymetry values: h_roms = -z_gebco; convert_grid.py (handles this automatically for
+    gebco/etopo formats); [''ncdump -v h grid.nc | head → values should be positive'', ''If negative,
+    multiply by -1'']; convert_grid.py auto-negates for known formats'
+  severity: fatal
+- id: dt_008
+  symptom: Freshwater flux is 1000× too high. Lake/estuary salinity drops to zero. Sea level rises rapidly.
+  diagnosis: Precipitation in mm/day or mm/step instead of m/s or kg/m²/s; ERA5 provides total precipitation
+    as m/step (accumulated). Some post-processed datasets provide mm/day. ROMS expects kg/m²/s. 1 mm/day
+    = 1.157e-5 kg/m²/s. If mm/day values (e.g., 10) are used directly as kg/m²/s, freshwater input is
+    ~860,
+  remedy: 'Convert: mm/day → kg/m²/s: divide by 86400. m/step → kg/m²/s: multiply by 1000/dt_step; convert_forcing.py;
+    [''Check max rain value: typical max ~0.01 kg/m²/s for extreme events'', ''If max rain > 1.0, units
+    are likely wrong'']; convert_forcing.py validates rain range'
+  severity: silent
+- id: dt_009
+  symptom: Boundary artifacts appear as stripes or discontinuities at domain edges. Velocity/tracer fields
+    show jumps at boundaries.
+  diagnosis: Boundary condition data provided on wrong stagger point (e.g., rho data on u-point boundary);
+    ROMS uses Arakawa C-grid with different dimensions for rho, u, v points. Boundary files must provide
+    u-velocity on u-points (Lm+1), v-velocity on v-points (Mm+1), and tracers on rho-points (Lm+2). Dimension
+  remedy: Ensure boundary arrays match the correct stagger dimensions; N/A — check with ncdump; ['ncdump
+    -h boundary.nc → check variable dimensions', 'u-boundary variables should have dimension xi_u (not
+    xi_rho)', 'v-boundary variables should have dimension eta_v (not eta_rho)']; Use CDL templates from
+    Data/R
+  severity: silent
+- id: dt_010
+  symptom: Coupled model shows stepping artifacts in exchanged fields. Wave height jumps discontinuously.
+    SST in WRF has temporal gaps.
+  diagnosis: Coupling interval is not an integer multiple of all model timesteps; If TI_OCN2WAV=300s but
+    ROMS DT=200s, ROMS timesteps at 0, 200, 400... The exchange at 300s is missed. The next exchange happens
+    at 400s using stale data. This creates a 100s timing error that repeats every coupling cycle.; ['coupli
+  remedy: 'Set coupling intervals as integer multiples of the longest component timestep; generate_config.py;
+    [''TI = N × max(DT_ocean, DT_swan, DT_wrf) where N is a positive integer'', ''Common choice: TI =
+    600s with DT_ocean=60s, DT_swan=600s'']; generate_config.py validates coupling interval divisibility'
+  severity: degraded
+- id: dt_011
+  symptom: Wave-current interaction forces are in the wrong direction. Longshore currents are reversed.
+    Sediment transport goes offshore instead of along-shore.
+  diagnosis: 'Wave direction in degrees (meteorological convention) instead of radians (mathematical convention);
+    ROMS internal wave variables use radians. Meteorological convention reports direction waves come FROM
+    in degrees clockwise from north. ROMS uses direction waves GO TO in radians counterclockwise from '
+  remedy: 'Convert: rad = (270 - degrees_met) × π/180; convert_forcing.py; [''Check Dwave range in forcing:
+    should be 0 to 2π radians'', ''If values are 0-360, convert degrees to radians with convention rotation''];
+    convert_forcing.py handles convention conversion'
+  severity: silent
+- id: dt_012
+  symptom: Model crashes in first few timesteps with density errors. Barotropic pressure gradient is extreme.
+  diagnosis: 'Initial condition salinity or temperature values are out of valid range for equation of
+    state; ROMS equation of state (Jackett & McDougall) is valid for T: -2 to 40°C, S: 0 to 42 PSU. If
+    initial conditions have fill values (e.g., 9999) or wrong units, the density computation produces
+    NaN, which prop'
+  remedy: 'Validate IC ranges: T in [-2, 40], S in [0, 42]. Replace fill values with realistic values.;
+    N/A; [''ncdump -v temp initial.nc | python3 -c \''import sys; [print(l) for l in sys.stdin if "_"
+    not in l]\'''', ''Check for fill values (1e37, 9999, -999)'', ''Check ranges are physically reasonable''];
+    Always ins'
+  severity: fatal
+- id: dt_013
+  symptom: Restart run produces wrong results. Simulation time jumps. Forcing interpolation uses data
+    from wrong period.
+  diagnosis: NRREC in ocean.in does not match restart file time record; NRREC specifies which time record
+    in the restart file to use. If NRREC=0, ROMS uses the last record. If NRREC=1 but the restart file
+    was overwritten with a later time, the simulation clock will be wrong and all time-dependent forcing
+    will be
+  remedy: Set NRREC=0 to use latest record, or verify exact record index; N/A; ['ncdump -v ocean_time
+    restart.nc → check available time records', 'Set NRREC=0 (use latest) or set to specific record number',
+    'Verify DSTART matches the restart time']; Always use NRREC=0 unless specific record is needed
+  severity: fatal
+- id: dt_014
+  symptom: Wave model misses swell energy. Wave spectra are too narrow. Wave period shows systematic bias.
+  diagnosis: 'SWAN spectral resolution too coarse: too few frequency bins or direction bins; SWAN with
+    < 24 direction bins smears directional spreading, losing refraction and shadowing effects. With <
+    25 frequency bins, the gap between swell (0.04-0.15 Hz) and wind-sea (0.1-0.5 Hz) is poorly resolved,
+    causing ene'
+  remedy: 'Use ≥ 36 direction bins and ≥ 31 frequency bins (0.04-1.0 Hz); generate_config.py --swan; [''In
+    SWAN input: CIRCLE 36 0.04 1.0 31'', ''36 directions × 10° = full circle'', ''31 frequencies logarithmically
+    spaced from 0.04 to 1.0 Hz'']; generate_config.py sets these defaults'
+  severity: degraded
+- id: dt_015
+  symptom: Latent heat flux is enormously wrong. Evaporation rate is unrealistic. Sea surface salinity
+    drifts.
+  diagnosis: Humidity provided as relative humidity (%) instead of specific humidity (kg/kg); ROMS BULK_FLUXES
+    expects specific humidity in kg/kg (typical values 0.001-0.025). If relative humidity (0-100%) is
+    used directly, the humidity is interpreted as 1-100 kg/kg — ~4000× too large. This massively overestimat
+  remedy: 'Convert RH% to specific humidity using Clausius-Clapeyron relation; convert_forcing.py (handles
+    this for ERA5 dewpoint → specific humidity); [''Check Qair range: should be 0.0001 to 0.04 kg/kg'',
+    ''If values are 10-100, they are likely % RH — convert using:'', ''es = 6.112 × exp(17.67 × T / (T
+    + 243.5))'''
+  severity: silent
+- id: dt_016
+  symptom: Pressure gradient errors near steep topography. Spurious currents along continental slope.
+    Unrealistic upwelling/downwelling.
+  diagnosis: Bathymetry rx0 (Beckmann-Haidvogel number) exceeds safe threshold; In sigma coordinates,
+    steep topography creates large pressure gradient errors. The rx0 parameter measures |Δh|/(h₁+h₂).
+    Values > 0.2 can produce spurious currents comparable to real ocean currents. This is fundamental
+    to terrain-foll
+  remedy: Smooth bathymetry to achieve rx0 < 0.2 everywhere; convert_grid.py --smooth-factor 0.2; ['Compute
+    rx0 = max(|h(i+1)-h(i)| / (h(i+1)+h(i)))', 'Apply Shapiro or Laplacian smoothing iteratively', 'Verify
+    rx0 < 0.2 (or < 0.4 for well-resolved problems)']; convert_grid.py smooths to target rx0
+  severity: degraded
+- id: dt_017
+  symptom: Model runs but wetting/drying produces checkerboard pattern. Alternating wet/dry cells oscillate
+    every timestep.
+  diagnosis: WET_DRY enabled but initial sea level inconsistent with bathymetry; When WET_DRY is active,
+    cells with h + zeta < Dcrit are masked dry. If initial zeta is set to 0 but shallow cells have h <
+    Dcrit, they start dry. Adjacent cells may then flood/drain repeatedly, creating instabilities.; ['wetting_dry
+  remedy: Set initial zeta to ensure all intended wet cells have h + zeta > Dcrit; N/A; ['Check Dcrit
+    value in ocean.in (DCRIT parameter)', 'Verify initial zeta + h > Dcrit for all water cells', 'Use
+    a small positive initial zeta if needed']; Validate IC against grid before run
+  severity: degraded

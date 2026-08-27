@@ -1,0 +1,343 @@
+schema_version: 1
+model_id: OpenFOAM
+domain: cfd_hydraulics
+generated_by: "Step-B validation convention agent (Codex GPT-5)"
+generated_at: 2026-08-14
+
+# This file is keyed by OpenFOAM dag output variable names. The CFD literature
+# usually validates context-specific quantities of interest, not the OpenFOAM
+# code globally; fixed bands are therefore used only where fetched guidance
+# gives explicit hydrodynamic performance criteria.
+
+references:
+  hydro_guidance2017:
+    doi: 10.1155/2017/5251902
+    title: "Guidance on Setup, Calibration, and Validation of Hydrodynamic, Wave, and Sediment Models for Shelf Seas and Estuaries"
+    venue: "Advances in Civil Engineering"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1155_2017_5251902.txt
+  oberkampf2002:
+    doi: 10.2172/793406
+    title: "Verification and Validation in Computational Fluid Dynamics"
+    venue: "Sandia National Laboratories report"
+    year: 2002
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2172_793406.txt
+  hariharan2017:
+    doi: 10.1371/journal.pone.0178749
+    title: "Use of the FDA nozzle model to illustrate validation techniques in computational fluid dynamics (CFD) simulations"
+    venue: "PLOS ONE"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1371_journal.pone.0178749.txt
+  rahman2024:
+    doi: 10.1038/s41598-024-61297-8
+    title: "Experimental and numerical investigations of the water surface profile and wave characteristics"
+    venue: "Scientific Reports"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-024-61297-8.txt
+  navas2024:
+    doi: 10.1080/00221686.2024.2401905
+    title: "Benchmark of computational hydraulics models for open-channel flow with lateral inflow"
+    venue: "Journal of Hydraulic Research"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1080_00221686.2024.2401905.txt
+  jung2023:
+    doi: 10.1038/s41598-023-41324-w
+    title: "Assessing the impact of turbulent kinetic energy boundary conditions on turbulent flow simulations"
+    venue: "Scientific Reports"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-023-41324-w.txt
+  benaissa2021:
+    doi: 10.1556/1848.2021.00264
+    title: "Assessment of RANS turbulence closure models for predicting airflow in neutral atmospheric boundary layer"
+    venue: "International Review of Applied Sciences and Engineering"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1556_1848.2021.00264.txt
+  pat_review2021:
+    doi: 10.3390/w13152134
+    title: "Analysis of Applicability of CFD Numerical Studies Applied to Problem When Pump Working as Turbine"
+    venue: "Water"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w13152134.txt
+
+validation:
+  - dag_variable: U
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.05, good: 0.10, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Hydrodynamic current-speed guidance gives very good/good/moderate error tiers and states RMSE <0.2 with bias and SI limits is significant."
+        cites: [hydro_guidance2017]
+      - metric: bias
+        direction: zero_centered
+        unit: m/s
+        bands: {very_good: null, good: null, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Same guidance uses bias<0.2 for current-speed model fit."
+        cites: [hydro_guidance2017]
+      - metric: scatter_index
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Same guidance uses SI<0.5 for current-speed model fit."
+        cites: [hydro_guidance2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining metric is not the usual CFD/hydrodynamic velocity gate in the fetched guidance; RMSE, bias, and scatter index are the cited convention."
+        cites: [hydro_guidance2017]
+    validated_when: "Velocity probes are validated when RMSE <= 0.20 m/s, |bias| <= 0.20 m/s, and scatter_index <= 0.50 after unit/averaging alignment."
+    evidence_strength: moderate
+    confidence: 0.70
+    notes: >-
+      The fetched hydrodynamic guidance says current-speed predictions should be within +/-0.20 m/s
+      or about 10-20% of measurements and reports Cefas tiers for maximum velocity error. This supersedes
+      the dag NSE convention for velocity time series.
+
+  - dag_variable: U
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.05, good: 0.10, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Transferred from current-speed field/profile guidance; compare on the resolved steady or phase-averaged velocity field."
+        cites: [hydro_guidance2017]
+      - metric: scatter_index
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Hydrodynamic guidance recommends SI with RMSE and bias for current-speed model performance."
+        cites: [hydro_guidance2017]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is a categorical spatial-overlap score and is not the fetched convention for continuous PIV/LDV velocity fields."
+        cites: [hydro_guidance2017, navas2024]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Open-channel CFD benchmarks compare velocity profiles against PIV/experiments qualitatively and by profile agreement; they do not give a universal R2 pass band."
+        cites: [navas2024]
+    validated_when: "Spatial velocity snapshots are validated by continuous-field error: RMSE <= 0.20 m/s and scatter_index <= 0.50 over the resolved comparison mask."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: >-
+      The OpenFOAM/open-channel benchmark reports profile-level agreement and model differences but no
+      fixed CSI threshold. The hydrodynamic RMSE/SI convention is therefore transferred to PIV/LDV spatial
+      snapshots with reduced confidence.
+
+  - dag_variable: p
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched CFD pressure paper gives an NSE pass threshold for pressure time series."
+        cites: []
+      - metric: comparison_error
+        direction: minimize
+        unit: context_dependent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "CFD V&V judges pressure by comparison error against experiment/qualification uncertainty; the acceptable number is context-of-use dependent."
+        cites: []
+    secondary_metrics:
+      - metric: relative_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched pump/pressure CFD review reports case-specific pressure/head relative errors, but not a universal pressure validation band."
+        cites: [pat_review2021]
+      - metric: validation_uncertainty
+        direction: minimize
+        status: supportive
+        ceiling_reason: "General CFD V&V treats validation as an uncertainty-bounded comparison; Oberkampf notes crisp validation conclusions are rare."
+        cites: [oberkampf2002, hariharan2017]
+    validated_when: "UNRESOLVED - convert OpenFOAM kinematic pressure to physical units and compare against a context-specific pressure/head-loss acceptance criterion or uncertainty budget."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      General CFD validation papers use comparison error, validation uncertainty, and context of use, not a
+      fixed NSE threshold for pressure. Hariharan 2017 states a model is sufficiently validated if E is less
+      than O in a safety-threshold context, but that does not supply a reusable pressure band here.
+
+  - dag_variable: p
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched CFD pressure-field paper gives a CSI pass threshold; pressure is continuous, not categorical."
+        cites: []
+      - metric: comparison_error
+        direction: minimize
+        unit: context_dependent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Use validation uncertainty or an engineering pressure/load criterion when available; no universal numeric band was fetched."
+        cites: []
+    secondary_metrics:
+      - metric: relative_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Pressure/head CFD literature reports achieved relative errors by device or case, not a field-wide spatial pressure threshold."
+        cites: [pat_review2021]
+      - metric: validation_uncertainty
+        direction: minimize
+        status: supportive
+        ceiling_reason: "CFD V&V requires error and uncertainty estimates on both computational and experimental sides."
+        cites: [oberkampf2002, hariharan2017]
+    validated_when: "UNRESOLVED - pressure spatial snapshots need a fetched case-specific pressure coefficient, load, or head-loss acceptance criterion."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      The dag CSI metric is retained as a null headline because the cached pressure literature does not
+      support a numeric CSI gate. A pressure/load benchmark standard would be needed to raise confidence.
+
+  - dag_variable: phi
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Estuarine flood-model guidance gives Q tolerances of +/-5%, +/-10%, and +/-15% of measured flows."
+        cites: [hydro_guidance2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For patch-integrated OpenFOAM face flux, fetched guidance grades flow-rate magnitude tolerance rather than NSE."
+        cites: [hydro_guidance2017]
+    validated_when: "Patch-integrated volumetric flux is validated when |PBIAS| <= 15% of measured flow after summing phi over the comparable outlet/inlet patch."
+    evidence_strength: moderate
+    confidence: 0.75
+    notes: >-
+      The relevant observable is Q = sum(phi), not per-face phi. The cited guidance table grades Q as a
+      percent of measured flows for flood/estuarine hydrodynamic models, which supersedes the dag NSE
+      headline for this OpenFOAM output.
+
+  - dag_variable: alpha.water
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: water_level_error
+        direction: zero_centered
+        unit: m
+        bands: {very_good: 0.10, good: 0.20, satisfactory: 0.30}
+        pass_band: satisfactory
+        band_note: "Water-level guidance gives +/-0.10 m at shelf/estuary mouth and +/-0.30 m at estuary head; flood table gives 0.20 m and 0.30 m levels."
+        cites: [hydro_guidance2017]
+      - metric: timing_error
+        direction: zero_centered
+        unit: minutes
+        bands: {very_good: null, good: 15.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Water-level guidance gives high-water timing tolerances of +/-15 min at the mouth and +/-25 min at the head."
+        cites: [hydro_guidance2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For VoF free-surface outputs, fetched hydrodynamic and wave guidance uses water-level amplitude, phase/timing, and wave bias rather than NSE."
+        cites: [hydro_guidance2017, rahman2024]
+      - metric: wave_height_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Wave-model guidance grades mean height bias, while OpenFOAM spillway/free-surface benchmarks report case-specific water-surface deviations."
+        cites: [hydro_guidance2017, rahman2024]
+    validated_when: "Derived free-surface elevation from alpha.water is validated when |water_level_error| <= 0.30 m and |timing_error| <= 25 minutes for the intended estuary/free-surface context."
+    evidence_strength: moderate
+    confidence: 0.70
+    notes: >-
+      The alpha.water field itself is not observed directly; the comparison quantity is the derived
+      alpha=0.5 free surface. Rahman 2024 reports OpenFOAM free-surface depth deviations within 2.1%
+      for the first extrema, but the pass band here is taken from hydrodynamic performance guidance.
+
+  - dag_variable: k
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched RANS/TKE paper gives a PBIAS pass threshold for modeled turbulent kinetic energy."
+        cites: []
+      - metric: mae
+        direction: minimize
+        unit: m2/s2
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched TKE papers report case-specific MAE values, not a reusable acceptance band."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Modeled RANS k is strongly bounded by turbulence boundary data, measurement resolution/noise, near-wall treatment, and closure choice; Jung 2023 reports that arbitrary turbulence-intensity inputs make larger error occur than profile TKE inputs."
+        cites: [jung2023, benaissa2021]
+    validated_when: "UNRESOLVED - compare k only against TKE estimates under the same averaging convention; no cited numeric PBIAS/MAE threshold is available."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      Jung 2023 gives achieved TKE MAE values and says SNR and voxel size affected the result, but does
+      not define a pass band. Benaissa 2021 documents RANS closure and near-wall limitations in separated
+      flows. Null bands prevent automatic validation.
+
+  - dag_variable: k
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for continuous modeled TKE fields."
+        cites: []
+      - metric: mae
+        direction: minimize
+        unit: m2/s2
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "TKE spatial benchmarks report case-specific MAE/error maps, not a universal pass band."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "A categorical CSI gate is structurally mismatched to continuous RANS TKE fields, and the fetched papers show TKE skill is limited by boundary-condition data, noise/resolution, near-wall treatment, and RANS closure."
+        cites: [jung2023, benaissa2021]
+    validated_when: "UNRESOLVED - spatial k snapshots require a case-specific TKE/PIV/MRI benchmark and uncertainty budget; CSI alone is not a cited CFD TKE convention."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      The dag CSI metric is retained with null bands. The fetched TKE literature supports a data/closure
+      ceiling but not a numeric spatial acceptance threshold.
+
+deferred_paywalled:
+  - ref: "ASME V&V 20-2009 Standard for Verification and Validation in Computational Fluid Dynamics and Heat Transfer"
+    doi: unknown_standard_not_fetched
+    needed_for: [U, p, k]
+  - ref: "AIAA Guide for the Verification and Validation of Computational Fluid Dynamics Simulations"
+    doi: unknown_standard_not_fetched
+    needed_for: [p, k]

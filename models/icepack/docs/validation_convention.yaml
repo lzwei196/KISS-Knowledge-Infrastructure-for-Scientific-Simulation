@@ -1,0 +1,228 @@
+schema_version: 1
+model_id: icepack
+domain: cryosphere
+generated_by: "self-improve Step-B agent (Codex GPT-5) - validation convention campaign"
+generated_at: 2026-08-14
+
+# Icepack's observable DAG outputs are continuous glacier-flow state fields. The fetched
+# literature validates these with velocity residuals/RMSE, observation-error envelopes,
+# and ice-thickness or geometry RMSE diagnostics, not with CSI. Numeric velocity bands
+# below are published benchmark/error-envelope values, not universal community tiers.
+# Thickness and surface-elevation papers identify the correct metric family but did not
+# provide a fetched numeric pass threshold, so those gates remain null.
+
+references:
+  polashenski2024:
+    doi: 10.1017/jog.2024.51
+    title: "Reduced basal motion responsible for 50 years of declining ice velocities on Athabasca Glacier"
+    venue: "Journal of Glaciology"
+    year: 2024
+    oa: gold
+    resolves: https://www.cambridge.org/core/services/aop-cambridge-core/content/view/389D23D1FAFBFB459EB4832C01BDBFF9/S0022143024000510a.pdf
+  armstrong2016:
+    doi: 10.1017/jog.2016.66
+    title: "Modeling the WorldView-derived seasonal velocity evolution of Kennicott Glacier, Alaska"
+    venue: "Journal of Glaciology"
+    year: 2016
+    oa: gold
+    resolves: https://www.cambridge.org/core/services/aop-cambridge-core/content/view/F5EF81FE051B997993F446650AA92400/S0022143016000666a.pdf
+  goelzer2018:
+    doi: 10.5194/tc-12-1433-2018
+    title: "Design and results of the ice sheet model initialisation experiments initMIP-Greenland: an ISMIP6 intercomparison"
+    venue: "The Cryosphere"
+    year: 2018
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/12/1433/2018/tc-12-1433-2018.pdf
+
+validation:
+  - dag_variable: velocity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/yr
+        bands: {very_good: 3.51, good: 5.66, satisfactory: 9.49}
+        pass_band: satisfactory
+        band_note: >-
+          Velocity validation is by RMSE/residual fit, not CSI. Very_good is the Athabasca
+          deformation-profile benchmark RMSE of 3.51 m a-1. Good and satisfactory convert
+          Kennicott's reported RMSE envelope from 0.0155 and 0.0260 m d-1 to 5.66 and
+          9.49 m yr-1. These are benchmark values from fetched papers, not formal tiers.
+        cites: [polashenski2024, armstrong2016]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DAG default for spatial pattern checks, but fetched glacier-flow papers evaluate continuous velocity magnitude with RMSE or uncertainty-weighted residuals rather than categorical CSI."
+        cites: [goelzer2018, armstrong2016]
+    validated_when: "Velocity-field RMSE <= 9.49 m/yr against gridded surface-velocity observations, with spatial residuals inspected rather than auto-validating by CSI."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Polashenski 2024 states that Icepack estimates basal friction by inverting known surface
+      velocities and reports "Model-observation misfit was minimized (RMSE = 3.51 m a-1)" for
+      historical deformation profiles. Armstrong 2016 reports that end-member glacier-flow
+      scenarios "reproduce the observed springtime surface velocities reasonably well, with RMSE
+      values of 0.0155-0.0233 m d-1" and summer cases around 0.0215-0.0260 m d-1. Goelzer
+      2018 confirms that ice-sheet initialisation studies compute RMSE between modelled and
+      observed velocity magnitude; CSI is therefore retained only as supportive DAG context.
+
+  - dag_variable: velocity
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/yr
+        bands: {very_good: null, good: null, satisfactory: 10.95}
+        pass_band: satisfactory
+        band_note: >-
+          Point/station velocity validation uses residuals against GPS or image-derived
+          velocities. The satisfactory band converts Armstrong 2016's conservative velocity
+          uncertainty upper envelope of 0.03 m d-1 to 10.95 m yr-1; no fetched paper provides
+          an NSE tier for glacier velocity time series.
+        cites: [armstrong2016]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched glacier-flow validation paper gives an NSE threshold for point velocity time series; RMSE/error envelopes supersede NSE here."
+        cites: []
+    secondary_metrics:
+      - metric: gps_displacement_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Armstrong 2016 ground-truthed WorldView velocity estimates against on-glacier GPS, reporting agreement within 1% in displacement magnitude and azimuth."
+        cites: [armstrong2016]
+    validated_when: "Station velocity RMSE <= 10.95 m/yr where a point error envelope is available; NSE remains unresolved and must not loosen the gate."
+    evidence_strength: moderate
+    confidence: 0.45
+    notes: >-
+      Armstrong 2016 estimated random image-correlation uncertainty from static off-glacier
+      regions and reported velocity uncertainty of about 0.01-0.03 m d-1, while GPS and
+      COSI-Corr displacement agreed to within 1%. This grounds an observation-error RMSE
+      envelope for point velocity checks. NSE is the DAG metric, but the fetched field literature
+      did not use NSE for glacier velocity validation.
+
+  - dag_variable: thickness
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The fetched ice-sheet intercomparison evaluates thickness with RMSE, but does not state a numeric pass band."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Thickness is a continuous geometry field; Goelzer 2018 evaluates the match to observed geometry as RMSE between modelled and observed ice thickness, not a categorical CSI threshold."
+        cites: [goelzer2018]
+    validated_when: "UNRESOLVED - compare modelled and observed ice thickness by RMSE, but no fetched numeric pass threshold is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Goelzer 2018: "The match of the initial ice sheets with observed geometry ... is evaluated
+      as the RMSE between modelled and observed ice thickness." The paper warns that the diagnostic
+      requires care when formally scoring models. No fetched source turns this diagnostic into a
+      numeric validation tier for Icepack thickness.
+
+  - dag_variable: thickness
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE validation threshold for glacier thickness-change time series."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Field papers evaluate thickness drift/change with RMSE or tendency diagnostics, but no numeric pass band was fetched."
+        cites: []
+    secondary_metrics:
+      - metric: model_drift
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Goelzer 2018 uses unforced control experiments to evaluate model drift and projected ice-thickness change, but does not prescribe a numeric pass threshold."
+        cites: [goelzer2018]
+    validated_when: "UNRESOLVED - thickness-change time series should be checked for RMSE/drift against observations or control-run drift, but no cited numeric band is available."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The DAG metric NSE is retained as an unresolved headline metric. Goelzer 2018 says the
+      control experiment evaluates model response in the absence of forcing and discusses projected
+      ice thickness change, but the fetched text provides no model-agnostic NSE or RMSE tier.
+
+  - dag_variable: surface
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched source gives a numeric surface-elevation RMSE pass band for glacier/ice-sheet model validation."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Surface elevation is a continuous geometry field; fetched model-initialisation literature uses surface-elevation assimilation or geometry RMSE diagnostics rather than categorical CSI."
+        cites: [goelzer2018]
+    validated_when: "UNRESOLVED - compare surface elevation against DEM/altimetry with RMSE or bias, but no cited numeric validation band is available."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Goelzer 2018 identifies assimilation of surface elevation as a common initialisation
+      technique and discusses mismatch with observed surface elevations, but the fetched text does
+      not provide a numeric pass threshold. Since Icepack surface is hydrostatically derived from
+      thickness and bed, validation should also inspect the thickness and bed inputs.
+
+  - dag_variable: simulated_velocity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/yr
+        bands: {very_good: 3.51, good: 5.66, satisfactory: 9.49}
+        pass_band: satisfactory
+        band_note: >-
+          The inverse-problem output is judged by the velocity misfit at the optimum. Bands reuse
+          fetched glacier-flow benchmark values: Athabasca RMSE 3.51 m a-1 and Kennicott
+          RMSE values converted from 0.0155 and 0.0260 m d-1.
+        cites: [polashenski2024, armstrong2016]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The inversion objective is a continuous model-data velocity misfit, not a categorical overlap score."
+        cites: [polashenski2024, goelzer2018]
+      - metric: optimized_control_direct_fit
+        direction: minimize
+        status: supportive
+        ceiling_reason: "The inferred control field is not directly observed; Polashenski 2024 verifies Icepack inversion through modeled-versus-observed surface velocities and regularization tradeoff."
+        cites: [polashenski2024]
+    validated_when: "Simulated velocity at the inversion optimum has RMSE <= 9.49 m/yr against the observed velocity field, with the regularization tradeoff documented."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Polashenski 2024 states that Icepack's friction inversion minimizes a loss function penalizing
+      misfit between observed and modeled surface velocities plus a regularization functional. It
+      selects regularization near the L-curve corner where data misfit improves only marginally with
+      roughness. No separate block is emitted for optimized_control because the DAG caveat says it is
+      inferred rather than directly observed and should be verified via simulated-velocity misfit.
+
+deferred_paywalled:
+  - ref: "Shapero et al. 2021 - icepack: a new glacier flow modeling package in Python, version 1.0"
+    doi: 10.5194/gmd-14-4593-2021
+    needed_for: [velocity, thickness, surface, simulated_velocity]
+  - ref: "Armstrong et al. 2022 - Declining basal motion dominates the long-term slowing of Athabasca Glacier, Canada"
+    doi: 10.1029/2021JF006439
+    needed_for: [velocity, thickness, surface, simulated_velocity]

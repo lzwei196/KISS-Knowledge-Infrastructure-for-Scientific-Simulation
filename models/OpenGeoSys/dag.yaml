@@ -366,7 +366,7 @@ outputs:
   - var: "pressure"
     validation_rank: 2
     unit: "Pa"
-    description: "Pore/liquid (or gas) pressure at FEM nodes; the primary variable of flow processes."
+    description: "Subsurface pore/liquid (or gas) pressure in the porous medium at FEM nodes; the primary variable of flow processes."
     emitted_in: "{prefix}_ts_{step}_t_{time}.vtu (PointData), indexed by .pvd"
     observability:
       comparable_obs_shapes:
@@ -384,7 +384,7 @@ outputs:
   - var: "temperature"
     validation_rank: 1
     unit: "K"
-    description: "Temperature field at FEM nodes; primary variable of thermal/heat-transport processes."
+    description: "Subsurface (rock/soil porous-medium) temperature field at FEM nodes; primary variable of thermal/heat-transport processes."
     emitted_in: "{prefix}_ts_{step}_t_{time}.vtu (PointData)"
     observability:
       comparable_obs_shapes:
@@ -402,7 +402,7 @@ outputs:
   - var: "displacement"
     validation_rank: 3
     unit: "m"
-    description: "Nodal solid displacement vector; primary variable of mechanics processes."
+    description: "Nodal displacement vector of the rock/soil solid matrix; primary variable of mechanics processes."
     emitted_in: "{prefix}_ts_{step}_t_{time}.vtu (PointData)"
     observability:
       comparable_obs_shapes:
@@ -415,7 +415,7 @@ outputs:
   - var: "darcy_velocity"
     validation_rank: 4
     unit: "m/s"
-    description: "Darcy (specific discharge) flux vector derived from pressure gradient and permeability."
+    description: "Groundwater Darcy (specific discharge) flux vector in the porous medium, derived from pressure gradient and permeability."
     emitted_in: "{prefix}_ts_{step}_t_{time}.vtu (CellData)"
     observability:
       comparable_obs_shapes:
@@ -428,7 +428,7 @@ outputs:
   - var: "stress"
     validation_rank: 5
     unit: "Pa"
-    description: "Cauchy/effective stress tensor at integration points (mechanics)."
+    description: "Cauchy/effective stress tensor of the rock/soil matrix at integration points (mechanics)."
     emitted_in: "{prefix}_ts_{step}_t_{time}.vtu (CellData)"
     observability:
       comparable_obs_shapes:
@@ -441,7 +441,7 @@ outputs:
   - var: "saturation"
     validation_rank: 6
     unit: "-"
-    description: "Liquid saturation from the capillary-pressure-saturation model (Richards/two-phase)."
+    description: "Soil/rock pore liquid saturation from the capillary-pressure-saturation model (Richards/two-phase)."
     emitted_in: "{prefix}_ts_{step}_t_{time}.vtu"
     observability:
       comparable_obs_shapes:
@@ -454,7 +454,7 @@ outputs:
   - var: "concentration"
     validation_rank: 7
     unit: "mol/m^3"
-    description: "Solute/component concentration field (component or reactive transport)."
+    description: "Groundwater solute/component concentration field (component or reactive transport)."
     emitted_in: "{prefix}_ts_{step}_t_{time}.vtu"
     observability:
       comparable_obs_shapes:

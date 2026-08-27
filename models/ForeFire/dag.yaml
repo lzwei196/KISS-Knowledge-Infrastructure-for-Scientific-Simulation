@@ -383,7 +383,7 @@ outputs:
   - var: "burned_area"
     validation_rank: 1
     unit: "ha"
-    description: "Total burned area derived from the arrival-time / perimeter at a given time."
+    description: "Total wildfire-burned vegetation area derived from the arrival-time / perimeter at a given time."
     emitted_in: "post-processing of the burning map / perimeters"
     observability:
       comparable_obs_shapes:

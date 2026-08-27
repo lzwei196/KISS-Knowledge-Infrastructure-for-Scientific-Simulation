@@ -1,292 +1,300 @@
+# ========================================================================
+# Ribasim Diagnostic Triplets
+# ========================================================================
+# 18 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+# Comments preserved from the previous file:
 # Ribasim Diagnostic Triplets
 # Each entry: symptom → diagnosis → remedy
 # Severity: silent (no error message), degraded (wrong results), fatal (crash/abort)
-
-triplets:
   # =========================================================================
   # UNIT CONVERSION TRAPS
   # =========================================================================
-
-  - id: dt_001
-    severity: silent
-    domain: unit_conversion
-    symptom: >
-      Basin level rises to maximum within first few timesteps. Basin floods
-      instantly regardless of outflow capacity. Storage increases at extreme rate.
-    diagnosis: >
-      Precipitation is in mm/day instead of m/s. Ribasim expects vertical
-      fluxes in meters per second. 5 mm/day = 5.787e-8 m/s. If passed as
-      5.0 (mm/day value), the basin receives ~86 million times too much water.
-    remedy: >
-      Convert precipitation: value_ms = value_mm_day / 86400000.
-      Verify: max precipitation should be < 1e-5 m/s (< 864 mm/day).
-      Add validation: assert precip < 1e-5, "Precipitation likely in wrong units"
-
-  - id: dt_002
-    severity: silent
-    domain: unit_conversion
-    symptom: >
-      Basin level drops continuously. Evaporation exceeds all inflows.
-      Basin dries out even with substantial precipitation and inflow.
-    diagnosis: >
-      Evaporation is in mm/day instead of m/s. Ribasim expects m/s.
-      Typical evaporation is 2-5 mm/day = 2.3e-8 to 5.8e-8 m/s.
-      If passed as 3.0 (mm/day), it's 2.6e8 times too high.
-    remedy: >
-      Convert evaporation: value_ms = value_mm_day / 86400000.
-      Verify: max evaporation should be < 1.2e-7 m/s (< 10 mm/day).
-
-  - id: dt_003
-    severity: silent
-    domain: unit_conversion
-    symptom: >
-      Basin level barely responds to inflows. Large inflows produce
-      negligible level changes. Storage changes are minuscule.
-    diagnosis: >
-      Basin profile area is in km² instead of m². Ribasim expects m².
-      An area of 10 km² = 1e7 m², but if entered as 10, the basin has
-      only 10 m² surface area — it fills in milliseconds with any inflow,
-      or if the area is too large relative to expected, level changes are tiny.
-    remedy: >
-      Convert area: area_m2 = area_km2 * 1e6. Or ha: area_m2 = area_ha * 1e4.
-      Verify: basin area should be consistent with expected storage volumes.
-
-  - id: dt_004
-    severity: silent
-    domain: unit_conversion
-    symptom: >
-      FlowBoundary inflows are 1000x smaller than expected. Basin levels
-      are much lower than observed. Water balance shows deficit.
-    diagnosis: >
-      Flow boundary values are in L/s instead of m³/s. Ribasim expects
-      flow in cubic meters per second. 100 L/s = 0.1 m³/s.
-    remedy: >
-      Convert flow: flow_m3s = flow_ls / 1000.
-      Verify: compare flow magnitudes with expected catchment runoff.
-
-  - id: dt_005
-    severity: silent
-    domain: unit_conversion
-    symptom: >
-      Allocation optimization runs at every timestep, making the simulation
-      extremely slow. Or allocation updates are so infrequent that demands
-      are never served in time.
-    diagnosis: >
-      Allocation timestep is in days instead of seconds.
-      timestep = 1 means every second (very slow).
-      timestep = 86400 means daily (typical).
-    remedy: >
-      Set allocation.timestep in seconds: 86400 for daily, 3600 for hourly.
-      saveat in [solver] is also in seconds.
-
   # =========================================================================
   # PARAMETER FORMAT ERRORS
   # =========================================================================
-
-  - id: dt_006
-    severity: fatal
-    domain: parameter_format
-    symptom: >
-      Ribasim crashes at startup with error about basin profile or
-      monotonicity violation. Error message references profile levels.
-    diagnosis: >
-      Basin / profile levels are not monotonically increasing. Each
-      level value must be strictly greater than the previous one.
-      This often happens when data is sorted incorrectly or when
-      duplicate level values exist.
-    remedy: >
-      Sort profile data by level (ascending). Remove duplicate level values.
-      Verify: np.all(np.diff(levels) > 0) for each basin.
-
-  - id: dt_007
-    severity: fatal
-    domain: parameter_format
-    symptom: >
-      Ribasim crashes at startup with error about missing initial state
-      or basin state table. Error references Basin / state.
-    diagnosis: >
-      Missing Basin / state table in GeoPackage. Every basin node
-      requires an initial water level specification.
-    remedy: >
-      Add Basin / state table with initial level for each basin node.
-      Level must be within the range defined in Basin / profile.
-
-  - id: dt_008
-    severity: fatal
-    domain: parameter_format
-    symptom: >
-      Ribasim crashes at startup with connectivity validation error.
-      Error message about invalid node connections.
-    diagnosis: >
-      Node connectivity rules violated. Common cases:
-      - Basin connected directly to Basin (needs structure between them)
-      - FlowBoundary connected to non-Basin node
-      - Control node connected via "flow" instead of "control" link
-    remedy: >
-      Check connectivity rules in SKILL.md. Ensure structure nodes
-      (Pump, Outlet, LinearResistance, etc.) separate basins.
-      Use link_type="control" for control connections.
-
-  - id: dt_009
-    severity: silent
-    domain: parameter_format
-    symptom: >
-      Model runs but distances and areas are incorrect. Manning resistance
-      flows are wrong magnitude. Spatial operations give unexpected results.
-    diagnosis: >
-      CRS mismatch between declared CRS and actual node coordinates.
-      E.g., coordinates in WGS84 (degrees) but CRS declared as
-      EPSG:28992 (meters). Ribasim doesn't reproject automatically.
-    remedy: >
-      Ensure all coordinates match the declared CRS. Use GIS tools
-      to reproject if needed. Verify by plotting nodes on a map.
-
   # =========================================================================
   # SILENT ERRORS
   # =========================================================================
+# Field names normalised to the controlled vocabulary 2026-08-12
+# (see ki_vocabulary.py). Values unchanged; only keys were renamed.
 
-  - id: dt_010
-    severity: silent
-    domain: silent_error
-    symptom: >
-      No water flows between connected basins despite level differences.
-      LinearResistance links show zero or near-zero flow. Basins behave
-      as if isolated.
-    diagnosis: >
-      Resistance value is too high. LinearResistance uses Q = Δh / R.
-      With R = 1e10 s/m² and Δh = 1m, Q = 1e-10 m³/s (negligible).
-      This effectively disconnects the basins.
-    remedy: >
-      Typical resistance values: 1e2 to 1e6 s/m² for natural channels.
-      Start with R = 1e4 and adjust. Lower R = more flow.
-      Check: with expected Δh, does Q = Δh/R give reasonable flow?
+- id: dt_001
+  severity: silent
+  failure_domain: unit_conversion
+  symptom: 'Basin level rises to maximum within first few timesteps. Basin floods instantly regardless
+    of outflow capacity. Storage increases at extreme rate.
 
-  - id: dt_011
-    severity: silent
-    domain: silent_error
-    symptom: >
-      Basin levels stay near zero or at minimum despite inflows.
-      Pump/outlet flows are zero even when they should be active.
-      Basin never "fills up" to expected operating level.
-    diagnosis: >
-      depth_threshold in solver settings is too high. When basin depth
-      is below this threshold, flows are progressively reduced to zero.
-      Default is 0.1 m. If set to e.g. 5.0 m, basins must reach 5m
-      before structures activate.
-    remedy: >
-      Keep depth_threshold at default 0.1 m for most applications.
-      Only increase for very deep basins where sub-meter levels are
-      numerically problematic.
+    '
+  diagnosis: 'Precipitation is in mm/day instead of m/s. Ribasim expects vertical fluxes in meters per
+    second. 5 mm/day = 5.787e-8 m/s. If passed as 5.0 (mm/day value), the basin receives ~86 million times
+    too much water.
 
-  - id: dt_012
-    severity: silent
-    domain: silent_error
-    symptom: >
-      PID-controlled structure oscillates wildly. Basin level swings
-      between extremes instead of approaching target. Solver takes
-      very small timesteps. Simulation is extremely slow.
-    diagnosis: >
-      PID gains have wrong sign. For level regulation where the
-      controlled structure is an outlet (removing water to lower level):
-      - Proportional and integral gains must be NEGATIVE
-      - Positive gains increase outflow when level is BELOW target,
-        further lowering the level (positive feedback → instability)
-    remedy: >
-      For outlet/pump control to maintain level:
-        proportional = -1e-3 (negative)
-        integral = -1e-7 (negative)
-      For inlet control to maintain level:
-        proportional = +1e-3 (positive)
+    '
+  remedy: 'Convert precipitation: value_ms = value_mm_day / 86400000. Verify: max precipitation should
+    be < 1e-5 m/s (< 864 mm/day). Add validation: assert precip < 1e-5, "Precipitation likely in wrong
+    units"
 
-  - id: dt_013
-    severity: fatal
-    domain: runtime
-    symptom: >
-      Solver throws NaN or Inf error. Model crashes during integration.
-      Error message about divergence or unstable ODE solution.
-    diagnosis: >
-      Extreme forcing values cause numerical overflow. Common causes:
-      - Precipitation in wrong units (see dt_001)
-      - Very steep basin profiles (small area change per level change)
-      - Flow boundary with unrealistically large flow rate
-    remedy: >
-      Check all input values for physical plausibility.
-      Reduce solver tolerances (increase abstol/reltol).
-      Smooth steep basin profiles by adding intermediate level-area points.
+    '
+- id: dt_002
+  severity: silent
+  failure_domain: unit_conversion
+  symptom: 'Basin level drops continuously. Evaporation exceeds all inflows. Basin dries out even with
+    substantial precipitation and inflow.
 
-  - id: dt_014
-    severity: degraded
-    domain: runtime
-    symptom: >
-      Water balance error exceeds tolerance. Warning messages about
-      mass conservation. Results may be inaccurate.
-    diagnosis: >
-      Solver is struggling with the ODE system. Typically caused by:
-      - Abrupt forcing changes (step functions in time series)
-      - Very different time scales between connected basins
-      - High flow rates through narrow constraints
-    remedy: >
-      Reduce tolerances (abstol = 1e-7, reltol = 1e-7).
-      Smooth abrupt forcing transitions.
-      Consider using FBDF instead of QNDF for very stiff systems.
+    '
+  diagnosis: 'Evaporation is in mm/day instead of m/s. Ribasim expects m/s. Typical evaporation is 2-5
+    mm/day = 2.3e-8 to 5.8e-8 m/s. If passed as 3.0 (mm/day), it''s 2.6e8 times too high.
 
-  - id: dt_015
-    severity: silent
-    domain: silent_error
-    symptom: >
-      Output time series misses important dynamics. Peak flows are
-      underestimated. Control state changes not captured. Daily output
-      looks smooth when hourly dynamics are important.
-    diagnosis: >
-      saveat interval is too large relative to system dynamics.
-      Default saveat = 86400 (daily) misses sub-daily control switching,
-      short flood peaks, and rapid level changes.
-    remedy: >
-      Reduce saveat: 3600 for hourly, 900 for 15-minute.
-      Note: smaller saveat increases output file size proportionally.
-      For control systems, saveat should be <= control response time.
+    '
+  remedy: 'Convert evaporation: value_ms = value_mm_day / 86400000. Verify: max evaporation should be
+    < 1.2e-7 m/s (< 10 mm/day).
 
-  - id: dt_016
-    severity: silent
-    domain: dependency_mismatch
-    symptom: >
-      FlowBoundary or LevelBoundary suddenly drops to zero or goes flat
-      partway through the simulation. Basin inflows stop unexpectedly.
-    diagnosis: >
-      Time series data has gaps or doesn't cover the full simulation
-      period. Ribasim interpolates between data points but may use
-      zero or last value for periods beyond the time series range.
-    remedy: >
-      Ensure all time series cover [starttime, endtime].
-      Check for gaps: pd.date_range vs actual timestamps.
-      Fill gaps with appropriate interpolation before input.
+    '
+- id: dt_003
+  severity: silent
+  failure_domain: unit_conversion
+  symptom: 'Basin level barely responds to inflows. Large inflows produce negligible level changes. Storage
+    changes are minuscule.
 
-  - id: dt_017
-    severity: fatal
-    domain: path_resolution
-    symptom: >
-      Ribasim crashes at startup with "file not found" error.
-      Error references database.gpkg or a NetCDF file path.
-    diagnosis: >
-      GeoPackage or NetCDF file path is incorrect. Ribasim resolves
-      paths relative to the TOML file location, not the working directory.
-      input_dir = "input" means <toml_dir>/input/.
-    remedy: >
-      Ensure input_dir path is relative to TOML file location.
-      Verify: ls <toml_dir>/<input_dir>/database.gpkg
-      Avoid absolute paths in TOML configuration.
+    '
+  diagnosis: 'Basin profile area is in km² instead of m². Ribasim expects m². An area of 10 km² = 1e7
+    m², but if entered as 10, the basin has only 10 m² surface area — it fills in milliseconds with any
+    inflow, or if the area is too large relative to expected, level changes are tiny.
 
-  - id: dt_018
-    severity: fatal
-    domain: path_resolution
-    symptom: >
-      Ribasim crashes with error about missing NetCDF file when
-      time series are stored externally (not in GeoPackage).
-    diagnosis: >
-      NetCDF time series file referenced in TOML section (e.g.,
-      [basin] time = "basin/time.nc") doesn't exist at the
-      expected path relative to input_dir.
-    remedy: >
-      Check file path: <toml_dir>/<input_dir>/<nc_path>.
-      Ensure the NetCDF file has correct dimensions and variable names.
-      Alternative: store time series directly in GeoPackage tables.
+    '
+  remedy: 'Convert area: area_m2 = area_km2 * 1e6. Or ha: area_m2 = area_ha * 1e4. Verify: basin area
+    should be consistent with expected storage volumes.
+
+    '
+- id: dt_004
+  severity: silent
+  failure_domain: unit_conversion
+  symptom: 'FlowBoundary inflows are 1000x smaller than expected. Basin levels are much lower than observed.
+    Water balance shows deficit.
+
+    '
+  diagnosis: 'Flow boundary values are in L/s instead of m³/s. Ribasim expects flow in cubic meters per
+    second. 100 L/s = 0.1 m³/s.
+
+    '
+  remedy: 'Convert flow: flow_m3s = flow_ls / 1000. Verify: compare flow magnitudes with expected catchment
+    runoff.
+
+    '
+- id: dt_005
+  severity: silent
+  failure_domain: unit_conversion
+  symptom: 'Allocation optimization runs at every timestep, making the simulation extremely slow. Or allocation
+    updates are so infrequent that demands are never served in time.
+
+    '
+  diagnosis: 'Allocation timestep is in days instead of seconds. timestep = 1 means every second (very
+    slow). timestep = 86400 means daily (typical).
+
+    '
+  remedy: 'Set allocation.timestep in seconds: 86400 for daily, 3600 for hourly. saveat in [solver] is
+    also in seconds.
+
+    '
+- id: dt_006
+  severity: fatal
+  failure_domain: parameter_format
+  symptom: 'Ribasim crashes at startup with error about basin profile or monotonicity violation. Error
+    message references profile levels.
+
+    '
+  diagnosis: 'Basin / profile levels are not monotonically increasing. Each level value must be strictly
+    greater than the previous one. This often happens when data is sorted incorrectly or when duplicate
+    level values exist.
+
+    '
+  remedy: 'Sort profile data by level (ascending). Remove duplicate level values. Verify: np.all(np.diff(levels)
+    > 0) for each basin.
+
+    '
+- id: dt_007
+  severity: fatal
+  failure_domain: parameter_format
+  symptom: 'Ribasim crashes at startup with error about missing initial state or basin state table. Error
+    references Basin / state.
+
+    '
+  diagnosis: 'Missing Basin / state table in GeoPackage. Every basin node requires an initial water level
+    specification.
+
+    '
+  remedy: 'Add Basin / state table with initial level for each basin node. Level must be within the range
+    defined in Basin / profile.
+
+    '
+- id: dt_008
+  severity: fatal
+  failure_domain: parameter_format
+  symptom: 'Ribasim crashes at startup with connectivity validation error. Error message about invalid
+    node connections.
+
+    '
+  diagnosis: 'Node connectivity rules violated. Common cases: - Basin connected directly to Basin (needs
+    structure between them) - FlowBoundary connected to non-Basin node - Control node connected via "flow"
+    instead of "control" link
+
+    '
+  remedy: 'Check connectivity rules in SKILL.md. Ensure structure nodes (Pump, Outlet, LinearResistance,
+    etc.) separate basins. Use link_type="control" for control connections.
+
+    '
+- id: dt_009
+  severity: silent
+  failure_domain: parameter_format
+  symptom: 'Model runs but distances and areas are incorrect. Manning resistance flows are wrong magnitude.
+    Spatial operations give unexpected results.
+
+    '
+  diagnosis: 'CRS mismatch between declared CRS and actual node coordinates. E.g., coordinates in WGS84
+    (degrees) but CRS declared as EPSG:28992 (meters). Ribasim doesn''t reproject automatically.
+
+    '
+  remedy: 'Ensure all coordinates match the declared CRS. Use GIS tools to reproject if needed. Verify
+    by plotting nodes on a map.
+
+    '
+- id: dt_010
+  severity: silent
+  failure_domain: silent_error
+  symptom: 'No water flows between connected basins despite level differences. LinearResistance links
+    show zero or near-zero flow. Basins behave as if isolated.
+
+    '
+  diagnosis: 'Resistance value is too high. LinearResistance uses Q = Δh / R. With R = 1e10 s/m² and Δh
+    = 1m, Q = 1e-10 m³/s (negligible). This effectively disconnects the basins.
+
+    '
+  remedy: 'Typical resistance values: 1e2 to 1e6 s/m² for natural channels. Start with R = 1e4 and adjust.
+    Lower R = more flow. Check: with expected Δh, does Q = Δh/R give reasonable flow?
+
+    '
+- id: dt_011
+  severity: silent
+  failure_domain: silent_error
+  symptom: 'Basin levels stay near zero or at minimum despite inflows. Pump/outlet flows are zero even
+    when they should be active. Basin never "fills up" to expected operating level.
+
+    '
+  diagnosis: 'depth_threshold in solver settings is too high. When basin depth is below this threshold,
+    flows are progressively reduced to zero. Default is 0.1 m. If set to e.g. 5.0 m, basins must reach
+    5m before structures activate.
+
+    '
+  remedy: 'Keep depth_threshold at default 0.1 m for most applications. Only increase for very deep basins
+    where sub-meter levels are numerically problematic.
+
+    '
+- id: dt_012
+  severity: silent
+  failure_domain: silent_error
+  symptom: 'PID-controlled structure oscillates wildly. Basin level swings between extremes instead of
+    approaching target. Solver takes very small timesteps. Simulation is extremely slow.
+
+    '
+  diagnosis: "PID gains have wrong sign. For level regulation where the controlled structure is an outlet\
+    \ (removing water to lower level): - Proportional and integral gains must be NEGATIVE - Positive gains\
+    \ increase outflow when level is BELOW target,\n  further lowering the level (positive feedback →\
+    \ instability)\n"
+  remedy: "For outlet/pump control to maintain level:\n  proportional = -1e-3 (negative)\n  integral =\
+    \ -1e-7 (negative)\nFor inlet control to maintain level:\n  proportional = +1e-3 (positive)\n"
+- id: dt_013
+  severity: fatal
+  failure_domain: runtime
+  symptom: 'Solver throws NaN or Inf error. Model crashes during integration. Error message about divergence
+    or unstable ODE solution.
+
+    '
+  diagnosis: 'Extreme forcing values cause numerical overflow. Common causes: - Precipitation in wrong
+    units (see dt_001) - Very steep basin profiles (small area change per level change) - Flow boundary
+    with unrealistically large flow rate
+
+    '
+  remedy: 'Check all input values for physical plausibility. Reduce solver tolerances (increase abstol/reltol).
+    Smooth steep basin profiles by adding intermediate level-area points.
+
+    '
+- id: dt_014
+  severity: degraded
+  failure_domain: runtime
+  symptom: 'Water balance error exceeds tolerance. Warning messages about mass conservation. Results may
+    be inaccurate.
+
+    '
+  diagnosis: 'Solver is struggling with the ODE system. Typically caused by: - Abrupt forcing changes
+    (step functions in time series) - Very different time scales between connected basins - High flow
+    rates through narrow constraints
+
+    '
+  remedy: 'Reduce tolerances (abstol = 1e-7, reltol = 1e-7). Smooth abrupt forcing transitions. Consider
+    using FBDF instead of QNDF for very stiff systems.
+
+    '
+- id: dt_015
+  severity: silent
+  failure_domain: silent_error
+  symptom: 'Output time series misses important dynamics. Peak flows are underestimated. Control state
+    changes not captured. Daily output looks smooth when hourly dynamics are important.
+
+    '
+  diagnosis: 'saveat interval is too large relative to system dynamics. Default saveat = 86400 (daily)
+    misses sub-daily control switching, short flood peaks, and rapid level changes.
+
+    '
+  remedy: 'Reduce saveat: 3600 for hourly, 900 for 15-minute. Note: smaller saveat increases output file
+    size proportionally. For control systems, saveat should be <= control response time.
+
+    '
+- id: dt_016
+  severity: silent
+  failure_domain: dependency_mismatch
+  symptom: 'FlowBoundary or LevelBoundary suddenly drops to zero or goes flat partway through the simulation.
+    Basin inflows stop unexpectedly.
+
+    '
+  diagnosis: 'Time series data has gaps or doesn''t cover the full simulation period. Ribasim interpolates
+    between data points but may use zero or last value for periods beyond the time series range.
+
+    '
+  remedy: 'Ensure all time series cover [starttime, endtime]. Check for gaps: pd.date_range vs actual
+    timestamps. Fill gaps with appropriate interpolation before input.
+
+    '
+- id: dt_017
+  severity: fatal
+  failure_domain: path_resolution
+  symptom: 'Ribasim crashes at startup with "file not found" error. Error references database.gpkg or
+    a NetCDF file path.
+
+    '
+  diagnosis: 'GeoPackage or NetCDF file path is incorrect. Ribasim resolves paths relative to the TOML
+    file location, not the working directory. input_dir = "input" means <toml_dir>/input/.
+
+    '
+  remedy: 'Ensure input_dir path is relative to TOML file location. Verify: ls <toml_dir>/<input_dir>/database.gpkg
+    Avoid absolute paths in TOML configuration.
+
+    '
+- id: dt_018
+  severity: fatal
+  failure_domain: path_resolution
+  symptom: 'Ribasim crashes with error about missing NetCDF file when time series are stored externally
+    (not in GeoPackage).
+
+    '
+  diagnosis: 'NetCDF time series file referenced in TOML section (e.g., [basin] time = "basin/time.nc")
+    doesn''t exist at the expected path relative to input_dir.
+
+    '
+  remedy: 'Check file path: <toml_dir>/<input_dir>/<nc_path>. Ensure the NetCDF file has correct dimensions
+    and variable names. Alternative: store time series directly in GeoPackage tables.
+
+    '

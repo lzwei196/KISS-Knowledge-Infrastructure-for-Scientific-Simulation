@@ -202,7 +202,7 @@ outputs:
   - var: "burn_probability"
     validation_rank: 7
     unit: "fraction (0-1)"
-    description: "Fraction of Monte Carlo ensemble members that burned each cell."
+    description: "Fraction of Monte Carlo ensemble members in which surface/crown wildland fire burned each landscape raster cell."
     emitted_in: "burn_probability.tif"
     observability:
       comparable_obs_shapes:
@@ -385,3 +385,9 @@ safety:
       scope: "input units"
       source: "ELMFIRE namelist defaults (elmfire_namelists.f90) and SKILL unit-trap table"
       status: adopted
+
+medium_evidence:
+  - var: "burn_probability"
+    source: "dag.yaml"
+    quote: "Surface and crown wildland fire spread across a landscape raster"
+    note: "scope_in declares the whole model medium as surface/crown wildland fire on a landscape raster"

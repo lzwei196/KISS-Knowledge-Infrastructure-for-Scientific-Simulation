@@ -1,14 +1,3 @@
----
-name: ef5
-description: >-
-  HYPE 5.35.0. Covers Subbasin water balance: snow accumulation/melt, soil water (up to 3
-  layers), evapotranspiration…; Infiltration, surface runoff, percolation, macropore flow,
-  tile drainage, groundwater runoff…; Soil temperature and ground frost; Glacier mass
-  balance (glacier classes); Internal river routing (local + main river) with delay and
-  attenuation via MAINDOWN topology. Use when the task involves running, configuring,
-  calibrating or interpreting EF5.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (21 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_ef5.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_ef5.py --help` |
+| `tools/convert_params_to_ef5.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_params_to_ef5.py --help` |
+| `tools/parse_ef5_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_ef5_output.py --help` |
+| `tools/prepare_basic_grids.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/prepare_basic_grids.py --help` |
+| `tools/run_ef5.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_ef5.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # EF5 v1.2.3 (Ensemble Framework For Flash Flood Forecasting) — Knowledge Infrastructure
 
@@ -282,6 +306,26 @@ TASK=run1
 
 ---
 
+## Unit Conversion Table
+
+This table is the explicit unit table required by the 2026-08-18 skill template.
+Use it with `docs/format_spec.yaml`, `dag.yaml`, and the task control file; when a
+source dataset is involved, verify the source unit from its own data KI before running.
+
+| Variable | Source unit (verified) | Model / output unit | Factor or conversion | Type | Source |
+|----------|------------------------|---------------------|----------------------|------|--------|
+| Precipitation forcing | Config-dependent (`UNIT=`) | mm/hr internal rate | EF5 uses `UNIT=` and converts to timestep depth internally | model-unit declaration | EF5 control file + Unit Trap Table |
+| PET forcing | Config-dependent (`UNIT=`) | mm/hr internal rate | EF5 uses `UNIT=`; monthly PET must not be declared as `mm/h` | model-unit declaration | EF5 control file + Unit Trap Table |
+| Temperature forcing | degC | degC | none when already Celsius; convert K to degC before EF5 | additive if source is K | Unit Trap Table |
+| `cout` | EF5 native output | m^3/s | none | output unit | `dag.yaml` |
+| `snow` | EF5 optional gridded output / dag output | mm | none | output unit | `dag.yaml` + Gridded Output Options |
+| Streamflow gridded output | EF5 native output | m^3/s | none | output unit | Gridded Output Options |
+| Soil moisture gridded output | EF5 native output | % | EF5 reports soil moisture as percent of WM | output convention | Unit Trap Table + Gridded Output Options |
+| Snow water equivalent gridded output | EF5 native output | mm | none | output unit | Gridded Output Options |
+| Inundation gridded output | EF5 native output | m | none | output unit | Gridded Output Options |
+
+---
+
 ## Input File Formats
 
 ### Gridded formats supported
@@ -401,6 +445,26 @@ Combine with `|` in OUTPUT_GRIDS:
 
 EF5 produces two main output types: (1) time series CSV files at gauge points with columns `datetime, simulated_Q (m^3/s)`, written to the OUTPUT directory specified in the Task block, and (2) optional gridded output fields (GeoTIFF or ASC) for streamflow, soil moisture, SWE, return period, and inundation depth, controlled by the `OUTPUT_GRIDS` task parameter. Calibration tasks output a CSV of calibrated parameter sets with objective function values. Use `parse_ef5_output.py` to extract gauge time series, compute performance metrics (NSE, KGE, PBIAS), and generate comparison plots against observed data.
 
+### DAG-sourced output contract
+
+This subsection restates the KI's `dag.yaml` output facts. If this body and
+`dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `cout` — Simulated outflow (discharge) from the outlet lake / subbasin (`m^3/s`)
+
+| Output variable (dag `var`) | Rank | Unit | Description / status |
+|-----------------------------|------|------|----------------------|
+| `cout` | 1 | m^3/s | Simulated outflow (discharge) from the outlet lake / subbasin |
+| `snow` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
+| `evap` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
+| `soim` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
+| `gwat` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
+| `wcom` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
+| `c1TN` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
+| `c1TP` | other dag output | see `dag.yaml` | Other dag output listed by the KI |
+
 ---
 
 ## Projections
@@ -424,6 +488,48 @@ EF5 produces two main output types: (1) time series CSV files at gauge points wi
 ### Ensemble Calibration
 - `[EnsTask]` block wraps multiple tasks for joint calibration
 - All ensemble members calibrated simultaneously via DREAM
+
+---
+
+## Validated Results
+
+The KI body does not claim a completed validation campaign. Its current validation
+status is `source_dissected`: the binary executes end-to-end at prepared sites, while
+observation validation requires hourly `TIMESTEP` as described in `docs/s5_execution.md`.
+Use the convention bars below to judge any produced metrics; do not replace missing
+bars with remembered thresholds.
+
+### Headline output and convention bars
+
+The rank-1 dag output is:
+
+> `cout` — Simulated outflow (discharge) from the outlet lake / subbasin (`m^3/s`)
+
+| Variable | Metric | Direction | Convention bar, cited |
+|----------|--------|-----------|-----------------------|
+| `cout` | NSE | maximize | satisfactory >= 0.5 (`moriasi2015`, `moriasi2007`); good >= 0.7 (`moriasi2015`, `moriasi2007`); very_good >= 0.8 (`moriasi2015`, `moriasi2007`) |
+| `cout` | PBIAS | zero_centered | satisfactory <= 15.0 (`moriasi2015`); good <= 10.0 (`moriasi2015`); very_good <= 5.0 (`moriasi2015`) |
+| `cout` | CSI | maximize | satisfactory: no cited threshold |
+| `snow` | NSE | maximize | satisfactory: no cited threshold |
+
+### Performance metrics
+
+| Metric | Calibration | Validation | Full period | Bar (convention, cited) |
+|--------|-------------|------------|-------------|-------------------------|
+| NSE for `cout` | pending | pending | pending | satisfactory >= 0.5 (`moriasi2015`, `moriasi2007`); good >= 0.7 (`moriasi2015`, `moriasi2007`); very_good >= 0.8 (`moriasi2015`, `moriasi2007`) |
+| PBIAS for `cout` | pending | pending | pending | satisfactory <= 15.0 (`moriasi2015`); good <= 10.0 (`moriasi2015`); very_good <= 5.0 (`moriasi2015`) |
+| CSI for `cout` | pending | pending | pending | no cited threshold |
+| NSE for `snow` | pending | pending | pending | no cited threshold |
+
+### Data replacement tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | pending validation | Use `convert_forcing_to_ef5` and source data KIs |
+| Soil / parameters | Pipeline | pending validation | Use `convert_params_to_ef5` |
+| DEM / routing grids | Pipeline | pending validation | Use `prepare_basic_grids`; do not use `ef5 -p` |
+| Execution | EF5 binary | source dissected | Run with `tools/run_ef5.py` after `python preflight_check.py` |
+| Observation scoring | `tools/parse_ef5_output.py` | pending validation | Scores point streamflow time series with temporal metrics |
 
 ---
 

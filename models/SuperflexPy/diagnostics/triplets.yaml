@@ -517,22 +517,149 @@
     detection_method: value_comparison
 
   diagnosis:
-    root_cause: "x2 sign convention misunderstood: positive = groundwater import"
+    root_cause: "x2 sign convention inverted: in SuperflexPy, positive x2 = groundwater LOSS"
     explanation: >
-      In SuperflexPy's GR4J implementation, x2 > 0 means the catchment
-      imports water from external sources (gaining stream). x2 < 0 means
-      the catchment exports water (losing stream). This is opposite to
-      some other GR4J implementations where positive means loss.
-    affected_components: [RoutingStore]
+      CORRECTED 2026-08-21 against the source. This entry previously asserted
+      the opposite and would have made an agent read every calibrated x2
+      backwards. Read the code, not the convention you remember:
+      superflexpy/implementation/elements/gr4j.py, RoutingStore.get_output()
+      documents its second return value verbatim as "Exchange flux (F),
+      positive if loss"; the flux function computes F = x2 * (S/x3)**omega,
+      and the routing store's ODE enters that term with a MINUS sign, so a
+      positive x2 drains the store. FluxAggregator then subtracts F from the
+      direct branch as well (Qr + max(0, Q2_out - F)), so the exchange is
+      applied TWICE per timestep. Therefore x2 > 0 = the catchment EXPORTS
+      water (losing stream) and x2 < 0 = the catchment IMPORTS water
+      (gaining stream). What is opposite to other implementations is the
+      classic Perrin (2003) GR4J, where the exchange term is ADDED.
+      Confirmed numerically on GRDC_6503201 (R. Erne at Belturbet): a
+      calibrated x2 = -0.61 produced exchange_loss_total = -472 mm over
+      1979-1990, i.e. a net IMPORT, exactly as the corrected sign predicts.
+    affected_components: [RoutingStore, FluxAggregator]
 
   remedy:
-    action: "Check x2 sign: positive = import, negative = export"
-    tool_to_run: ""
+    action: "Check x2 sign: positive = EXPORT (loss), negative = IMPORT (gain)"
+    tool_to_run: "run_superflexpy.py --diagnostics   # emits the F series and the exchange total"
     manual_steps:
-      - "For gaining streams: x2 > 0 (typical: 0.1-3.0)"
-      - "For losing streams: x2 < 0 (typical: -5.0 to -0.1)"
-      - "For neutral: x2 ≈ 0"
-    prevention: "Document sign convention in parameter setup; verify water balance"
+      - "For gaining streams: x2 < 0 (typical: -5.0 to -0.1)"
+      - "For losing streams: x2 > 0 (typical: 0.1-3.0)"
+      - "For neutral: x2 ~ 0"
+      - "Verify with diagnostics.water_balance_terms_mm.exchange_loss_total: positive = net loss"
+    prevention: "Read RoutingStore.get_output()'s docstring in the installed package before trusting any prose about x2"
 
   severity: silent
-  cross_references: [dt_001]
+  cross_references: [dt_001, dt_021]
+
+- id: dt_019
+  stage: s7_calibration
+  failure_domain: runtime
+
+  symptom:
+    description: "Calibration converges to nonsense, or the same parameter vector scores differently on repeat evaluation; the optimiser's best score cannot be reproduced by re-running with its best parameters"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "get_output() called repeatedly without model.reset_states() in between"
+    explanation: >
+      SuperflexPy components CARRY STATE FORWARD. Each get_output() call
+      leaves reservoir storage at the last timestep's value and leaves the
+      LagElement convolution memory partially filled, and the next call
+      starts from there. In a calibration loop every trial is therefore
+      evaluated from a different initial condition determined by whichever
+      trial ran before it -- the optimiser is fitting evaluation ORDER, not
+      parameters -- and no error is raised.
+      Measured 2026-08-21 on GR4J with 500 days of forcing: run 1 vs run 2
+      with IDENTICAL parameters and no reset differ by up to 5.45 mm/d; with
+      reset_states() in between they are bit-identical (max difference 0.0).
+      The package's own shipped example is explicit about the ordering --
+      examples/02_calibrate_a_model.ipynb, function calibrate():
+      set_parameters -> reset_states -> get_output.
+    affected_components: [Unit, Node, Network, all ODEsElement, all LagElement]
+
+  remedy:
+    action: "Call model.reset_states() before EVERY get_output() in any loop"
+    tool_to_run: "run_superflexpy.py --calibrate   # its run_once() already does this"
+    manual_steps:
+      - "Do not hand-roll the calibration loop; use run_superflexpy.py --calibrate"
+      - "If you must loop manually, follow examples/02_calibrate_a_model.ipynb exactly"
+      - "Self-check: run the SAME parameter vector twice; the two Q arrays must be bit-identical"
+    prevention: "Treat a non-reproducible repeat run as a hard failure, not as noise"
+
+  severity: silent
+  cross_references: [dt_007, dt_008]
+
+- id: dt_020
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Model cannot reach the observed runoff volume however it is calibrated; PBIAS stuck strongly negative and NSE plateaus, while the internal water balance closes perfectly"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Reanalysis potential-evaporation product far exceeds the PET demand a conceptual structure is calibrated against"
+    explanation: >
+      Caravan / ERA5-Land potential_evaporation_sum is a well-watered-surface
+      potential and in humid maritime catchments it exceeds precipitation.
+      GR4J's InterceptionFilter removes min(P, PET) BEFORE anything else, so
+      an inflated PET removes precipitation the catchment demonstrably
+      converted to runoff, and no combination of x1/x2/x3/x4 can put it back.
+      Measured on GRDC_6503201 (R. Erne at Belturbet, Ireland, 1979-1990):
+      P = 995 mm/yr, Caravan PET = 1208 mm/yr, observed Q = 604 mm/yr. Raw
+      PET makes interception alone remove 444 mm/yr, capping the model's
+      possible runoff at 551 mm/yr -- BELOW the observed 604 mm/yr. The
+      structure is fine; the forcing product is the constraint.
+      HBV does not have this failure mode: UnsaturatedReservoir's Ce IS a
+      PET correction coefficient. Calibrated on the same catchment,
+      GR4J cpet = 0.44 and HBV Ce = 0.39 -- two independent structures
+      agreeing the raw product is roughly 2.3x too large.
+    affected_components: [InterceptionFilter, ProductionStore, UnsaturatedReservoir]
+
+  remedy:
+    action: "Calibrate a PET correction coefficient alongside the structural parameters"
+    tool_to_run: "run_superflexpy.py --calibrate --free-params x1 x3 x4 x2 cpet"
+    manual_steps:
+      - "GR4J has no internal PET coefficient: add cpet to --free-params (bounds 0.2-2.0)"
+      - "HBV already has one: put Ce in --free-params instead; do NOT also use cpet"
+      - "Sanity check first: sum(min(P, PET)) must be well below sum(P) - sum(Q_obs)"
+      - "Also pass convert_forcing.py --pet-min 0 (see dt_021)"
+    prevention: "Compare annual P, PET and Q_obs totals BEFORE calibrating; PET above P in a humid catchment is the tell"
+
+  severity: silent
+  cross_references: [dt_002, dt_021]
+
+- id: dt_021
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "A handful of days show precipitation the forcing file does not contain; the conservation check is off by a few mm"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Negative daily PET values from a reanalysis product passed through unfiltered"
+    explanation: >
+      Reanalysis daily potential evaporation goes slightly negative on
+      condensation days (34 of 4383 days across the Irish Caravan gauges,
+      minimum -0.45 mm/d). GR4J's InterceptionFilter computes
+      remove = min(PET, P) and returns P - remove: with PET negative, remove
+      is negative and the filter ADDS |PET| mm of precipitation that never
+      fell. The ProductionStore's evaporation term reverses sign for the
+      same reason. Small in magnitude, invisible in any output, and it
+      corrupts a conservation check.
+    affected_components: [InterceptionFilter, ProductionStore]
+
+  remedy:
+    action: "Floor PET at zero when converting the forcing"
+    tool_to_run: "convert_forcing.py --pet-min 0"
+    manual_steps:
+      - "Always pass --pet-min 0 for ERA5 / ERA5-Land / Caravan / MSWX PET"
+      - "Check conversions_applied.PET_floor in the forcing JSON for how many days were clipped"
+      - "An ALL-negative PET series is a different bug -- the sign was never flipped; use --pet-sign flip"
+    prevention: "convert_forcing.py --format caravan hard-fails on an all-negative PET series rather than running with zero evaporative demand"
+
+  severity: silent
+  cross_references: [dt_002, dt_020]

@@ -377,7 +377,7 @@ outputs:
   - var: "link_flow_rate"
     validation_rank: 6
     unit: "CFS (US) | CMS (SI)"
-    description: "Flow rate through a conduit/structure link."
+    description: "Drainage-network water flow rate through a conduit/structure link."
     emitted_in: "model.out (LinkSeries); live via Link.flow"
     observability:
       comparable_obs_shapes:
@@ -416,7 +416,7 @@ outputs:
   - var: "runoff_error"
     validation_rank: 9
     unit: "% continuity"
-    description: "Runoff-phase mass-balance continuity error."
+    description: "Subcatchment surface-runoff water mass-balance continuity error."
     emitted_in: "model.rpt; live via Simulation.runoff_error"
     observability:
       comparable_obs_shapes:
@@ -429,7 +429,7 @@ outputs:
   - var: "flow_routing_error"
     validation_rank: 10
     unit: "% continuity"
-    description: "Conveyance-routing-phase mass-balance continuity error."
+    description: "Drainage-network conveyance-routing water mass-balance continuity error."
     emitted_in: "model.rpt; live via Simulation.flow_routing_error"
     observability:
       comparable_obs_shapes:
@@ -656,3 +656,17 @@ safety:
       scope: "control-structure parameters"
       source: "PySWMM unit guidance (SKILL critical_domain_knowledge); EPA SWMM5 hydraulics reference"
       status: "adopted"
+
+medium_evidence:
+  - var: "link_flow_rate"
+    source: "dag.yaml"
+    quote: "Hydraulic flow routing through a drainage network of nodes and links"
+    note: "scope_in declares link flow as drainage-network water routing"
+  - var: "runoff_error"
+    source: "docs/s2_soil_infiltration.md"
+    quote: "much rainfall infiltrates vs becomes surface runoff — this is the single most"
+    note: "the runoff continuity output belongs to subcatchment surface-runoff water"
+  - var: "flow_routing_error"
+    source: "dag.yaml"
+    quote: "Hydraulic flow routing through a drainage network of nodes and links"
+    note: "scope_in declares routing as drainage-network water routing"

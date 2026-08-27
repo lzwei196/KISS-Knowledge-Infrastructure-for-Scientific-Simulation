@@ -1,144 +1,515 @@
-model:
-  name: "ForeFire"
-  version: "2.2.1"
-  domain: "wildfire_propagation"
-  binary_path: "KISSPATH_BINARIES/ForeFire/source/repo/bin/forefire"
-  developer: "CNRS / Universite de Corse Pascal Paoli"
-  language: "C++"
-  propagation_models:
-    - "Rothermel"
-    - "Balbi2020"
-    - "RothermelAndrews2018"
-    - "Farsite"
-    - "Isotropic"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: ForeFire
+  language: c++
+  implementation:
+    id: forefire
+    version: v1.0 (HydroCraft KI binding; package wildfire-forefire 1.0.0)
+    provenance: C++; CNRS / Universite de Corse (SPE Lab) ForeFire engine (libforefireL) with forefire
+      CLI / .ff interpreter and pyforefire Python bindings.
+  scientific_reference_version: ForeFire wildland-fire front-tracking engine with Rothermel (1972) and
+    Balbi physical rate-of-spread models (Filippi/Balbi, Univ. de Corse / CNRS)
 inputs:
   forcing:
-    - name: "altitude"
-      unit: "m"
-      valid_range: [-500, 9000]
-      description: "Digital elevation model (UTM meters)"
-      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
-    - name: "fuel"
-      unit: "index (0-N)"
-      valid_range: [0, 255]
-      description: "Fuel type index referencing fuels.csv"
-      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
-    - name: "windU"
-      unit: "m/s"
-      valid_range: [-50, 50]
-      description: "U-component (eastward) of wind"
-      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
-    - name: "windV"
-      unit: "m/s"
-      valid_range: [-50, 50]
-      description: "V-component (northward) of wind"
-      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
-    - name: "moisture"
-      unit: "fraction"
-      valid_range: [0.0, 1.0]
-      description: "Fuel moisture content (optional)"
-      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
-    - name: "temperature"
-      unit: "K"
-      valid_range: [200, 400]
-      description: "Air temperature (optional, required for Balbi model)"
-      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
-
+  - name: wind field (windU eastward, windV northward)
+    unit: m/s
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: NetCDF landscape layers windU/windV (DIMT,DIMZ,DIMY,DIMX), or trigger[wind;vel=(u,v,w)]
+      constant/time-varying in the .ff script
+    notes: Primary driver of wind-driven spread; enters the ROS wind factor. Must be m/s; time-varying
+      wind triggers use absolute time from domain start.
+  - name: fuel moisture (dead Md / live Ml, optional moisture layer)
+    unit: fraction
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Optional NetCDF moisture layer and/or Md/Ml columns in the fuels table
+    notes: Raises ignition energy and lowers ROS; spread stops above the moisture of extinction.
+  - name: air temperature
+    unit: K
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: Optional NetCDF temperature layer; ambient Ta also a fuels-table column
+    notes: Used in the Balbi ignition-energy balance; Kelvin required (Celsius gives negative ignition
+      energy).
   parameters:
-    critical:
-      - name: "propagationModel"
-        valid_range: ["Rothermel", "Balbi2020", "RothermelAndrews2018", "Farsite", "Iso"]
-        description: "Rate of Spread model selection"
-      - name: "fuelsTableFile"
-        valid_range: null
-        description: "Path to fuel properties CSV (semicolon-delimited)"
-      - name: "propagationSpeedAdjustmentFactor"
-        valid_range: [0.0, 10.0]
-        description: "Global ROS multiplier"
-        default: 1.0
-      - name: "windReductionFactor"
-        valid_range: [0.0, 1.0]
-        description: "Wind speed reduction factor"
-        default: 1.0
-    tuning:
-      - name: "spatialIncrement"
-        valid_range: [0.1, 100]
-        description: "Spatial resolution for front nodes (m)"
-        default: 3
-      - name: "perimeterResolution"
-        valid_range: [1, 1000]
-        description: "Perimeter node spacing (m)"
-        default: 10
-      - name: "minSpeed"
-        valid_range: [0.0, 1.0]
-        description: "Minimum propagation speed (m/s)"
-        default: 0.009
-      - name: "relax"
-        valid_range: [0.0, 1.0]
-        description: "Relaxation factor for front smoothing"
-        default: 0.5
-      - name: "minimalPropagativeFrontDepth"
-        valid_range: [1, 1000]
-        description: "Minimum front depth for propagation (m)"
-        default: 20
-
-  fuel_parameters_rothermel:
-    format: "CSV (semicolon-delimited)"
-    columns:
-      - { name: "Index", unit: "-", description: "Fuel type index" }
-      - { name: "Rhod", unit: "kg/m³", description: "Dead fuel particle density" }
-      - { name: "Rhol", unit: "kg/m³", description: "Live fuel particle density" }
-      - { name: "Md", unit: "fraction", description: "Dead fuel moisture content" }
-      - { name: "Ml", unit: "fraction", description: "Live fuel moisture content" }
-      - { name: "sd", unit: "1/m", description: "Dead fuel SAV ratio" }
-      - { name: "sl", unit: "1/m", description: "Live fuel SAV ratio" }
-      - { name: "e", unit: "m", description: "Fuel bed depth" }
-      - { name: "Sigmad", unit: "kg/m²", description: "Dead fuel load" }
-      - { name: "Sigmal", unit: "kg/m²", description: "Live fuel load" }
-      - { name: "stoch", unit: "-", description: "Stochiometric coefficient" }
-      - { name: "RhoA", unit: "kg/m³", description: "Air density" }
-      - { name: "Ta", unit: "K", description: "Ambient temperature" }
-      - { name: "Tau0", unit: "s", description: "Flame residence time" }
-      - { name: "Deltah", unit: "J/kg", description: "Heat of vaporization of water" }
-      - { name: "DeltaH", unit: "J/kg", description: "Heat of combustion" }
-      - { name: "Cp", unit: "J/(kg·K)", description: "Fuel specific heat" }
-      - { name: "Cpa", unit: "J/(kg·K)", description: "Air specific heat" }
-      - { name: "Ti", unit: "K", description: "Ignition temperature" }
-      - { name: "X0", unit: "-", description: "Radiant fraction" }
-      - { name: "r00", unit: "m", description: "Flame base radiation length" }
-      - { name: "Blai", unit: "m²/m²", description: "Leaf area index" }
-      - { name: "me", unit: "fraction", description: "Moisture of extinction" }
-
+  - name: digital elevation model (altitude)
+    unit: m
+    category: topography
+    source_kind: dataset_lookup
+    model_input_format: altitude variable in landscape NetCDF (DIMT,DIMZ,DIMY,DIMX); from SRTM/Copernicus
+      DEM/LiDAR GeoTIFF reprojected to UTM
+    notes: Topography; internal slope (and aspect) are derived from altitude and drive slope-driven spread.
+      A flat layer yields slope factor = 0.
+  - name: fuel type map (fuel index)
+    unit: integer index
+    category: land_surface
+    source_kind: dataset_lookup
+    model_input_format: fuel variable in landscape NetCDF (integer raster); each index selects a row in
+      the fuels table
+    notes: Index 0 should be non-burnable (e=0). Max index in the raster must be < number of fuel rows
+      or an out-of-bounds read occurs.
+  - name: fuel combustion parameters (Rothermel/Balbi SI set)
+    unit: mixed SI (kg/m3, 1/m, m, kg/m2, J/kg, K)
+    category: fuel_properties
+    source_kind: calibrated
+    model_input_format: 'Semicolon-delimited fuels table, one row per fuel index: Rhod, Rhol, Md, Ml,
+      sd, sl, e, Sigmad, Sigmal, stoch, RhoA, Ta, Tau0, Deltah, DeltaH, Cp, Cpa, Ti, X0, r00, Blai, me'
+    notes: Rothermel/Balbi require SI in the CSV and convert internally to Imperial; do NOT pre-convert.
+      me is a fraction here. Applies to Rothermel and Balbi propagation models.
+  - name: fuel combustion parameters (RothermelAndrews2018 Imperial set)
+    unit: imperial (tons/acre, ft, 1/ft, lb/ft3, BTU/lb, %)
+    category: fuel_properties
+    source_kind: calibrated
+    model_input_format: 'Semicolon-delimited fuels table: fl1h_tac, fd_ft, SAVcar_ftinv, mdOnDry1h_r,
+      fuelDens_lbft3, H_BTUlb, Dme_pc, totMineral_r, effectMineral_r'
+    notes: RothermelAndrews2018 consumes Imperial fuel parameters directly (no internal conversion of
+      fuel params). Dme_pc is a percentage. Applies to the RothermelAndrews2018 model only.
+  initial_conditions:
+  - name: ignition points / initial fire front
+    unit: UTM m (or lon/lat degrees), time s
+    category: fire_state
+    source_kind: user_provided
+    model_input_format: startFire[loc=(x,y,z);t=T] in UTM, startFire[lonlat=(lon,lat,z);t=T] in degrees,
+      or an explicit FireFront/FireNode node hierarchy
+    notes: Seeds the initial front(s); multiple and delayed ignitions are supported. Must lie within the
+      loaded domain bounds and on burnable fuel.
+  - name: loaded landscape state / domain extent
+    unit: UTM m
+    category: landscape_state
+    source_kind: dataset_lookup
+    model_input_format: loadData[data.nc;timestamp]; FireDomain[sw=(...);ne=(...)] or inferred from the
+      NetCDF extent
+    notes: Establishes the domain SW/NE corners and the t=0 landscape fields before ignition.
+  boundary_conditions:
+  - name: propagationModel
+    unit: categorical
+    category: model_selection
+    source_kind: user_provided
+    model_input_format: setParameter[propagationModel=Rothermel|Balbi2020|RothermelAndrews2018|Farsite|Iso]
+    notes: Selects the rate-of-spread model; MUST match the fuels-table unit system. Engine default is
+      Iso (isotropic), not Rothermel/Balbi — omitting it gives trivial constant spread.
+  - name: spatialIncrement
+    unit: m
+    category: numerical_control
+    source_kind: user_provided
+    model_input_format: setParameter[spatialIncrement=...]
+    notes: Lagrangian space step used in dt = ds/speed; controls integration accuracy/CFL. Sub-1 m values
+      over large domains create millions of nodes and can hang.
+  - name: perimeterResolution
+    unit: m
+    category: numerical_control
+    source_kind: user_provided
+    model_input_format: setParameter[perimeterResolution=...]
+    notes: Target spacing between fire-front nodes (re-meshing resolution).
+  - name: relax (front smoothing / ROS relaxation factor)
+    unit: dimensionless
+    category: numerical_control
+    source_kind: user_provided
+    model_input_format: setParameter[relax=...]
+    notes: 'Temporal relaxation of node speed: speed = (1-relax)*speed + relax*newSpeed.'
+  - name: windReductionFactor
+    unit: dimensionless (0-1)
+    category: physical_control
+    source_kind: user_provided
+    model_input_format: setParameter[windReductionFactor=...]
+    notes: Midflame wind reduction for canopy effects. When < 1.0 Rothermel also switches to the Andrews/Cruz/Rothermel
+      (2013) wind-cap formula Uf=96.81*Ir^(1/3) - an undocumented coupling. Set 0 suppresses wind entirely.
+  - name: propagationSpeedAdjustmentFactor
+    unit: dimensionless
+    category: numerical_control
+    source_kind: user_provided
+    model_input_format: setParameter[propagationSpeedAdjustmentFactor=...]
+    notes: Global multiplier on computed ROS.
+  - name: minSpeed / minimalPropagativeFrontDepth
+    unit: m/s, m
+    category: numerical_control
+    source_kind: user_provided
+    model_input_format: setParameter[minSpeed=...]; setParameter[minimalPropagativeFrontDepth=...]
+    notes: 'Stop thresholds: minimum propagation speed and minimum front depth for continued propagation.'
+  - name: time advancement command
+    unit: s
+    category: simulation_control
+    source_kind: user_provided
+    model_input_format: step[dt=seconds] or goTo[t=seconds] after startFire
+    notes: Without a step/goTo the simulation stays at t=0 and produces no advancement.
+  - name: dumpMode / output format
+    unit: categorical
+    category: output_control
+    source_kind: user_provided
+    model_input_format: setParameter[dumpMode=ff|kml|geojson|json]
+    notes: Selects serialization format for emitted fronts.
 outputs:
   primary:
-    - name: "fire_perimeter"
-      unit: "coordinates (UTM m)"
-      valid_range: null
-      description: "Fire front polygon vertices at each timestep"
-      formats: ["GeoJSON", "KML", "ForeFire .ff", "NetCDF"]
-    - name: "rate_of_spread"
-      unit: "m/s"
-      valid_range: [0.0, 10.0]
-      description: "Fire front propagation velocity per node"
-    - name: "burning_map"
-      unit: "seconds (arrival time)"
-      valid_range: [0, null]
-      description: "Grid of fire arrival times (NetCDF output)"
-
-  output_modes:
-    - { mode: "geojson", command: "print[output.geojson]" }
-    - { mode: "kml", command: "print[output.kml]" }
-    - { mode: "ff", command: "print[output.ff]" }
-    - { mode: "netcdf", command: "save[filename=out.nc]" }
-
-coordinate_system: "UTM (meters)"
-time_unit: "seconds from domain start"
-
+  - name: arrival_time_of_front
+    unit: s (seconds from domain start; 0 = never burned)
+    description: Per-cell Eulerian time the fire front reached each grid cell (the burning / arrival-time
+      map).
+    validation_rank: 2
+    emitted_in: ForeFire.0.nc (NetCDF), via save[]
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - 'Compared against a final fire-extent/perimeter map: threshold arrival_time>0 to a burned/unburned
+          mask, then score overlap (Sorensen coefficient, hit/false-alarm).'
+        - CRS and grid alignment (UTM) must match the observation; reprojection errors masquerade as spatial
+          bias.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - When isochrones / multi-time perimeters are observed, compare arrival-time contours; isochrone
+          timing is sensitive to ignition time and wind timing.
+      detrending_options:
+      - none
+  - name: fire_front_perimeter
+    unit: UTM m (polygon geometry)
+    description: Fire-front polygon geometry per timestep (final or intermediate perimeters).
+    validation_rank: 3
+    emitted_in: GeoJSON / KML via print[...], dumpMode geojson|kml
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - 'Against an observed final perimeter: Sorensen coefficient SC=2|A∩B|/(|A|+|B|) (>0.6 good),
+          over/under-estimation ratios, Hausdorff distance between boundaries.'
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - Against time-stamped observed perimeters/isochrones; timing accuracy depends on correct ignition
+          time and time-varying wind.
+      detrending_options:
+      - none
+  - name: burned_area
+    unit: ha
+    description: Total wildfire-burned vegetation area derived from the arrival-time / perimeter at a
+      given time.
+    validation_rank: 1
+    emitted_in: post-processing of the burning map / perimeters
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Single-fire-event burned-area total compared to an observed final area; over/under-estimation
+          ratios apply.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - When the observed extent is a mask rather than a scalar, compare the burned footprint spatially
+          rather than just the area total.
+      detrending_options:
+      - none
+  - name: rate_of_spread
+    unit: m/s
+    description: Local fire-front rate of spread (node speed field).
+    validation_rank: 4
+    emitted_in: speed field in the NetCDF output path; per-node .ff records
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Against observed/experimental ROS at a location (e.g. instrumented burn plots); ROS is dominated
+          by wind so wind-forcing error propagates directly.
+      detrending_options:
+      - none
+  - name: fire_line_intensity
+    unit: kW/m
+    description: Byram fire-line intensity = ROS × heat yield × fuel load.
+    validation_rank: 5
+    emitted_in: post-processing of ROS, fuel load and heat of combustion
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Against estimated observed fireline intensity; inherits ROS and fuel-load uncertainty.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "Binary requires LD_LIBRARY_PATH=KISSPATH_HOME/.local/lib for libnetcdf-cxx4.so.1"
-  - "Wind speed must be in m/s; km/h or mph input causes silent ROS errors (2-3x off)"
-  - "Coordinates must be UTM meters; lon/lat degrees cause domain mismatch"
-  - "Rothermel model internally converts SI to Imperial and back; fuels.csv must be SI"
-  - "RothermelAndrews2018 expects Imperial units directly in fuel table"
-  - "Core dump when running without fuel properties file (even with Isotropic model)"
+- id: dt_001
+  symptom: Fire starts but doesn't spread, or domain is microscopic/enormous.
+  diagnosis: 'Coordinates in lon/lat degrees instead of UTM meters; ForeFire expects all spatial coordinates
+    in UTM meters. If the DEM and fuel map are in geographic coordinates (lon/lat degrees), the domain
+    will be tiny (e.g., 8.7 x 41.9 meters instead of kilometers). Fire front nodes will be outside the
+    domain '
+  remedy: Reproject DEM and fuel map to UTM before creating data.nc; convert_landscape_to_nc; ['Check
+    XHAT/YHAT values in data.nc — should be large numbers (100,000+) for UTM', 'Use gdalwarp -t_srs EPSG:326XX
+    to reproject source rasters']; validate_outputs() checks coordinate magnitude
+  severity: silent
+- id: dt_002
+  symptom: Fire spreads much too fast or too slow. ROS off by 2-3x.
+  diagnosis: Wind speed not in m/s — provided in km/h, mph, or knots; ForeFire expects wind components
+    (windU, windV) in meters per second. ERA5 provides m/s, but weather station data is often in km/h
+    or mph. Wind speed enters the Rothermel ROS equation raised to power B (~0.54), so a 2.2x error in
+    wind (km/h vs
+  remedy: 'Convert wind to m/s: km/h ÷ 3.6, mph × 0.44704, knots × 0.5144; convert_landscape_to_nc; [''Check
+    windU/windV values in data.nc — typical surface wind is 0-20 m/s'', ''If values > 30, likely in km/h;
+    if values > 50, likely in ft/min'']; validate_outputs() warns if wind > 40 m/s'
+  severity: silent
+- id: dt_003
+  symptom: Rothermel ROS is orders of magnitude wrong (100x too fast or slow).
+  diagnosis: 'fuels.csv in Imperial units for Rothermel model (double conversion); The Rothermel model
+    code internally converts SI → Imperial for calculation: Rhod × 0.06 (kg/m³ → lb/ft³), sd ÷ 3.28 (1/m
+    → 1/ft), etc. If fuels.csv already contains Imperial values, they get double-converted, producing
+    absurd ROS v'
+  remedy: 'Ensure fuels.csv uses SI units (kg/m³, 1/m, m, kg/m², J/kg) for Rothermel; convert_fuel_params;
+    [''Check Rhod values: should be 400-900 kg/m³, NOT 25-55 lb/ft³'', ''Check sd values: should be 2000-12000
+    1/m, NOT 600-3500 1/ft'', ''Check e values: should be 0.1-3 m, NOT 0.3-10 ft'']; validate_outputs()
+    che'
+  severity: silent
+- id: dt_004
+  symptom: RothermelAndrews2018 produces zero ROS for all fuels.
+  diagnosis: 'Andrews2018 fuel table in SI units instead of Imperial; Unlike the standard Rothermel model,
+    RothermelAndrews2018 expects fuel parameters directly in Imperial units (tons/acre, ft, 1/ft, lb/ft³,
+    BTU/lb). The model code converts m/s wind to ft/min but does NOT convert fuel params. If fuel params
+    are '
+  remedy: 'Use Imperial units in fuels.csv for RothermelAndrews2018; convert_fuel_params; [''Check fl1h_tac:
+    should be 0.1-10 tons/acre'', ''Check fd_ft: should be 0.1-10 ft'', ''Check SAVcar_ftinv: should be
+    100-3500 1/ft'', ''Check H_BTUlb: should be 6000-9000 BTU/lb'']; Use --model andrews2018 flag in convert_fuel_'
+  severity: silent
+- id: dt_005
+  symptom: Ambient temperature in Celsius causes negative ignition energy, fire won't spread.
+  diagnosis: Ta (ambient temperature) in Celsius instead of Kelvin in fuels.csv; The Balbi2020 model computes
+    ignition energy as q = Cp*(Ti-Ta) + m*(Deltah+Cp*(373-Ta)). If Ta=25 (Celsius) instead of Ta=298 (Kelvin),
+    Ti-Ta becomes 575 instead of 302, drastically changing the energy balance. For Rothermel, Ta doe
+  remedy: 'Ensure Ta and Ti are in Kelvin in fuels.csv; convert_fuel_params; [''Check Ta: should be 280-320
+    K (not 7-47°C)'', ''Check Ti: should be 500-700 K (not 227-427°C)'']; validate_outputs() checks Ta
+    > 200'
+  severity: silent
+- id: dt_006
+  symptom: 'Moisture of extinction mismatch: fire always spreads or never spreads.'
+  diagnosis: me as percentage for Rothermel (expects fraction) or fraction for Andrews (expects %); Rothermel
+    model uses 'me' as fraction (0.3 = 30% moisture of extinction). RothermelAndrews2018 uses 'Dme_pc'
+    as percentage (30 = 30%). If me=30 in Rothermel, the model thinks moisture of extinction is 3000%,
+    and f
+  remedy: 'Use fraction (0-1) for Rothermel me, percentage (0-100) for Andrews Dme_pc; convert_fuel_params;
+    [''For Rothermel: check me values are 0.1-0.5'', ''For Andrews: check Dme_pc values are 10-50''];
+    validate_outputs() checks me range based on model'
+  severity: silent
+- id: dt_007
+  symptom: 'NetCDF: Unknown file format error when loading data.nc'
+  diagnosis: 'data.nc is a Git LFS pointer file, not actual NetCDF binary; The test data files in the
+    ForeFire repository are stored with Git LFS. If Git LFS is not installed or not pulled, the files
+    are small ASCII pointer files (~130 bytes) instead of actual binary NetCDF data.
+
+    ; [''data.nc'', ''git_lfs'']'
+  remedy: 'Install Git LFS and pull data files; None; [''Run: apt install git-lfs && git lfs install &&
+    git lfs pull'', ''Or download data.nc directly from GitHub web interface'', "Verify: file data.nc
+    should show ''NetCDF Data Format'' not ''ASCII text''"]; The CMakeLists.txt runs check_all_lfs.bash
+    at configure time'
+  severity: fatal
+- id: dt_008
+  symptom: ForeFire crashes or reads wrong values from fuels.csv
+  diagnosis: 'fuels.csv uses comma delimiter instead of semicolon; ForeFire expects semicolon-delimited
+    CSV for fuel tables. If commas are used, the parser reads the entire row as a single field, producing
+    garbage values or a crash when indexing into the fuel properties array.
+
+    ; [''fuels.csv'', ''DataBroker.cpp'']'
+  remedy: 'Replace commas with semicolons in fuels.csv; convert_fuel_params; [''Check delimiter: head
+    -1 fuels.csv — fields should be separated by ;'', "Convert: sed -i ''s/,/;/g'' fuels.csv"]; convert_fuel_params.py
+    always writes semicolons'
+  severity: fatal
+- id: dt_009
+  symptom: Fuel map values don't match fuels.csv indices, causing segfault or wrong fuel.
+  diagnosis: Fuel index in data.nc exceeds number of rows in fuels.csv; The fuel layer in data.nc contains
+    integer indices that reference rows in fuels.csv. If the raster contains index 30 but fuels.csv only
+    has 20 rows (indices 0-19), the model reads beyond the fuel array, causing undefined behavior or segfault
+  remedy: 'Ensure fuel raster max index < number of rows in fuels.csv; convert_landscape_to_nc; [''Check:
+    python -c "import netCDF4; print(netCDF4.Dataset(\''data.nc\'')[\''fuel\''][:].max())"'', ''Compare
+    with: wc -l fuels.csv (subtract 1 for header)'']; validate_outputs() cross-checks fuel range vs fuels.csv'
+  severity: fatal
+- id: dt_010
+  symptom: No fire appears after startFire command.
+  diagnosis: 'Ignition point outside domain bounds; The startFire location must be within the FireDomain
+    sw/ne bounds. When using loadData[], the domain is created from the NetCDF extent. If ignition coordinates
+    are in a different reference frame (e.g., lon/lat vs UTM), the point falls outside.
+
+    ; [''simulation.ff'''
+  remedy: Verify ignition coordinates are within domain bounds; None; ['Check domain bounds from loadData
+    output', 'Verify ignition point is within those bounds', 'Use startFire[lonlat=(...)] for lon/lat
+    coordinates']; ForeFire prints domain bounds; compare with ignition point
+  severity: silent
+- id: dt_011
+  symptom: Simulation runs but produces no fire spread (ROS = 0 everywhere).
+  diagnosis: 'Fuel type at ignition point is non-burnable (e=0); If the fuel index at the ignition location
+    maps to a fuel type with zero fuel depth (e=0), the Rothermel/Balbi models return ROS=0. The fire
+    is created but cannot propagate. This commonly happens when igniting on roads, water, or urban areas.
+
+    ; [''fu'
+  remedy: Check fuel type at ignition location; move ignition to burnable fuel; None; ['Extract fuel index
+    at ignition point from data.nc', 'Check that fuel type has e > 0 in fuels.csv', 'Move ignition point
+    to a cell with burnable fuel']; Preflight check of fuel at ignition location
+  severity: silent
+- id: dt_012
+  symptom: Simulation completes instantly with no time advancement.
+  diagnosis: 'step[dt=] or goTo[t=] not specified in script; ForeFire processes commands sequentially.
+    After startFire, the simulation time is still t=0. Without a step[] or goTo[] command, no time advancement
+    occurs and the fire stays at its initial state.
+
+    ; [''simulation.ff'']'
+  remedy: Add step[dt=3600] or goTo[t=3600] after startFire; None; ['Check .ff script has a step[] or
+    goTo[] command after startFire', 'Verify dt value is in seconds (3600 = 1 hour)']; Template scripts
+    include step[] by default
+  severity: silent
+- id: dt_013
+  symptom: 'error while loading shared libraries: libnetcdf_c++4.so'
+  diagnosis: 'NetCDF C++ library not installed; ForeFire links against libnetcdf_c++4 for NetCDF I/O.
+    If this library is not installed, the binary cannot load at runtime.
+
+    ; [''forefire binary'', ''system libraries'']'
+  remedy: 'Put the directory containing libnetcdf-cxx4.so.1 on LD_LIBRARY_PATH (usually already installed,
+    just not on the default loader path).; run_forefire; ["Locate it: find / -name ''libnetcdf-cxx4.so.1''
+    2>/dev/null (on this platform: KISSPATH_HOME/.local/lib)", ''Run with: LD_LIBRARY_PATH=KISSPATH_HOME/.loca'
+  severity: fatal
+- id: dt_014
+  symptom: 'CMake error: fatal error: netcdf file not found during build'
+  diagnosis: 'NetCDF development headers not installed; The ForeFire source includes <netcdf> headers.
+    Without the development package (headers + libraries), compilation fails.
+
+    ; [''CMakeLists.txt'', ''build system'']'
+  remedy: Install NetCDF C++ development package before building; None; ['apt install libnetcdf-c++4-dev',
+    'Or set NETCDF_HOME environment variable']; CMakeLists.txt checks for NetCDF availability
+  severity: fatal
+- id: dt_015
+  symptom: Simulation hangs indefinitely, never produces output.
+  diagnosis: Balbi2020 solver non-convergence or extremely fine resolution; The Balbi2020 model uses an
+    iterative solver with max 40 iterations. With extreme fuel parameters, it may not converge, causing
+    repeated recalculation. Also, very small spatialIncrement (<1m) with large domains creates millions
+    of fire n
+  remedy: Increase spatialIncrement, check fuel parameters, set timeout; run_forefire; ['Try spatialIncrement=5
+    or larger', 'Check fuel parameters for extreme values', 'Use --timeout flag in run_forefire.py'];
+    Start with coarse resolution and refine
+  severity: silent
+- id: dt_016
+  symptom: Fire only spreads downwind, ignores slope effects.
+  diagnosis: 'Flat altitude in data.nc (no elevation variation); If the altitude layer in data.nc is constant
+    (flat terrain), the slope factor φ_s = 0 in Rothermel. Only wind drives spread asymmetry. This is
+    correct for flat terrain but wrong if slope effects were expected.
+
+    ; [''data.nc'', ''altitude layer'']'
+  remedy: 'Verify altitude layer has elevation variation matching real terrain; convert_landscape_to_nc;
+    [''Check altitude range: python -c "import netCDF4; d=netCDF4.Dataset(\''data.nc\''); print(d[\''altitude\''][:].min(),
+    d[\''altitude\''][:].max())"'', ''If min==max, the DEM is flat; reload with correct elevation d'
+  severity: silent
+- id: dt_017
+  symptom: Wind triggers have no effect on fire spread direction.
+  diagnosis: 'windReductionFactor set to 0, or wind trigger at wrong time; If windReductionFactor=0, wind
+    is completely suppressed in the Rothermel model. Also, trigger[wind;...] only affects the simulation
+    AFTER the trigger time. If @t=3600 but simulation ends at t=2400, the wind change never takes effect.
+
+    ; [''s'
+  remedy: Check windReductionFactor > 0 and trigger time < simulation end time; None; ['Verify windReductionFactor
+    in params (should be 0.3-1.0)', 'Verify trigger times are within simulation period']; Use windReductionFactor=0.4
+    as default
+  severity: silent
+- id: dt_018
+  symptom: Rothermel wind limit clamps ROS, fire is slower than expected in high winds.
+  diagnosis: Andrews/Cruz/Rothermel (2013) wind limit active when windReductionFactor < 1.0; In Rothermel.cpp,
+    when windReductionFactor < 1.0, the wind limit changes from Uf = 0.9*Ir to Uf = 96.81*Ir^(1/3). This
+    more restrictive limit caps the effective wind speed, reducing ROS in high-wind scenarios. This is
+    ph
+  remedy: 'Set windReductionFactor=1.0 to use original wind limit, or accept Andrews limit; None; [''Check
+    params: setParameter[windReductionFactor=X]'', ''windReductionFactor < 1.0 → Andrews 2013 limit active'',
+    ''windReductionFactor = 1.0 → original Rothermel limit'']; Document wind limit behavior in simulation
+    no'
+  severity: silent
+- id: dt_019
+  symptom: loadData silently loads nothing; 'Domain variable not found' and/or 'Skipping variable X because
+    type attribute is missing'; fire never ignites.
+  diagnosis: data.nc lacks the scalar `domain` variable and/or per-layer `type` attributes that DataBroker::loadFromNCFile
+    requires.; ForeFire's NetCDF reader (src/DataBroker.cpp) FIRST fetches a scalar variable named `domain`
+    and reads SWx/SWy/Lx/Ly (+ optional BBoxWSEN) from its attributes; if absent it prints
+  remedy: 'Regenerate data.nc with the patched convert_landscape_to_nc.py (writes `domain` + type attrs).;
+    convert_landscape_to_nc; [''Verify: python -c "import netCDF4; d=netCDF4.Dataset(\''data.nc\''); print(\''domain\''
+    in d.variables, [d[v].getncattr(\''type\'') for v in (\''altitude\'',\''fuel\'',\''windU\'',\''windV\'''
+  severity: fatal
+- id: dt_020
+  symptom: 'loadData prints ''NetCDF: Numeric conversion not representable'' (ncAtt.cpp); time origin
+    garbage (valid_at ~1901), fire never ignites.'
+  diagnosis: 'domain variable / attributes written with the wrong NetCDF types (NC_CHAR var or float64
+    attrs).; ForeFire''s canonical landscape file stores `domain` as an NC_STRING scalar with float32
+    attributes (SWx, SWy, Lx, Ly, t0, Lt=inf, ...). Writing the numeric attrs as float64 (or the variable
+    as a single '
+  remedy: 'Write `domain` as NC_STRING with float32 attrs and use nt=1 (single time slab).; convert_landscape_to_nc;
+    [''domain dtype must be str (NC_STRING), not S1; attrs float32.'', ''altitude/fuel/windU/windV: single
+    time step (nt=1).'']; Patched convert_landscape_to_nc.py writes str-typed domain, float32 attrs'
+  severity: fatal
+- id: dt_021
+  symptom: ForeFire segfaults during goTo as the fire grows large; gdb shows FDCell::addFireNode with
+    a garbage `this` from FireDomain::updateFireNodeInCells.
+  diagnosis: 'A FireNode propagated OUTSIDE the loaded domain; updateFireNodeInCells indexes cells[i][j]
+    out of bounds (no boundary check).; When the fire front reaches the edge of the landscape grid, a
+    marker can be advanced to a cell index beyond atmoNX/atmoNY. FireDomain::updateFireNodeInCells (FireDomain.cpp '
+  remedy: Size the domain with a generous margin around the expected final fire extent, and stop the run
+    before the front reaches any edge.; None; ['Make the landscape grid extend several km beyond the expected
+    burn, especially downwind.', 'Pick the analysis time (e.g. area-matched isochrone) so the front sta
+  severity: fatal
+- id: dt_022
+  symptom: forefire exits 0, prints no error, and EVERY print[] isochrone is an empty GeoJSON FeatureCollection
+    (~90 bytes). The fire never ignites.
+  diagnosis: startFire[loc=(x,y,0)] was given projected CRS coordinates (e.g. UTM easting/northing); ForeFire's
+    loc is in DOMAIN-LOCAL metres.; convert_landscape_to_nc writes the `domain` variable with SWx=SWy=0
+    and Lx/Ly = the domain size in metres, because the engine maps that local metric frame onto the BBoxW
+  remedy: Convert the ignition point to domain-local metres, or ignite with lon/lat.; prepare_fire_case;
+    ['prepare_fire_case.py writes both `ignition_utm` and `ignition_local_m`; pass ignition_local_m to
+    startFire[loc=].', 'Local = projected - origin, where the origin is data.nc domain attrs originX/originY.'
+  severity: silent
+- id: dt_023
+  symptom: validate_spread reports a high Sorensen coefficient for fires that do not overlap at all (or
+    ~0 for fires that clearly do).
+  diagnosis: The simulated and observed perimeters were rasterised on SEPARATE bounding boxes, then padded
+    from index (0,0) — the two masks are not co-registered.; The original compute_burned_area_raster()
+    built each raster on the extent of its OWN polygon, so cell (0,0) meant a different ground location
+    for the
+  remedy: Rasterise both perimeters on ONE shared grid before scoring.; validate_spread; ['shared_grid([sim_coords,
+    obs_coords], resolution) -> rasterize_on_grid(...) for each.', 'Score with overlap_scores(), which
+    emits csi/sorensen/pod/far together.', 'Both inputs must already be in the SAME projected CRS (
+  severity: silent
+- id: dt_024
+  symptom: forefire aborts immediately with 'File <some-other-directory>/./data.nc doesn't exist or no
+    longer available', even though data.nc IS in the working directory passed to run_forefire.
+  diagnosis: ForeFire resolves ForeFireDataDirectory (and hence loadData / fuelsTableFile) against the
+    PWD ENVIRONMENT VARIABLE, not against the process working directory.; `setParameter[ForeFireDataDirectory=.]`
+    is expanded using $PWD. Python's subprocess.run(cwd=...) changes the process working directory but
+    d
+  remedy: 'Export PWD=<workdir> in the environment handed to the binary (or pass absolute paths in the
+    .ff script).; run_forefire; ["run_forefire.py now sets env[''PWD''] = abspath(--workdir); nothing
+    else is needed.", ''Running by hand: cd into the case directory first, or use `env PWD=$PWD forefire
+    -i run.ff`.'''
+  severity: fatal

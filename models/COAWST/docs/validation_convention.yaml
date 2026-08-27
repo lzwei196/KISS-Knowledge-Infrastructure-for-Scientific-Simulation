@@ -1,0 +1,412 @@
+schema_version: 1
+model_id: COAWST
+domain: ocean
+generated_by: "step-b validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  olabarrieta2011:
+    doi: 10.1029/2011JC007387
+    title: "Wave-current interaction in Willapa Bay"
+    venue: "Journal of Geophysical Research: Oceans"
+    year: 2011
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2011jc007387.txt
+  staneva2016:
+    doi: 10.5194/nhess-16-2373-2016
+    title: "Coastal flooding: impact of waves on storm surge during extremes - a case study for the German Bight"
+    venue: "Natural Hazards and Earth System Sciences"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_nhess-16-2373-2016.txt
+  ganju2017:
+    doi: 10.1002/2016JC012344
+    title: "Physical response of a back-barrier estuary to a post-tropical cyclone"
+    venue: "Journal of Geophysical Research: Oceans"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2016jc012344.txt
+  wahle2017:
+    doi: 10.5194/os-13-289-2017
+    title: "An atmosphere-wave regional coupled model: improving predictions of wave heights and surface winds in the southern North Sea"
+    venue: "Ocean Science"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_os-13-289-2017.txt
+  gong2018:
+    doi: 10.5194/os-14-139-2018
+    title: "Effect of winds and waves on salt intrusion in the Pearl River estuary"
+    venue: "Ocean Science"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_os-14-139-2018.txt
+  sherwood2018:
+    doi: 10.5194/gmd-11-1849-2018
+    title: "Cohesive and mixed sediment in the Regional Ocean Modeling System (ROMS v3.6) implemented in the Coupled Ocean-Atmosphere-Wave-Sediment Transport Modeling System (COAWST r1234)"
+    venue: "Geoscientific Model Development"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-11-1849-2018.txt
+  zang2018:
+    doi: 10.1016/j.ocemod.2018.04.002
+    title: "Numerical study of sediment dynamics during hurricane Gustav"
+    venue: "Ocean Modelling"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.ocemod.2018.04.002.txt
+  lewis2019:
+    doi: 10.5194/os-15-669-2019
+    title: "Can wave coupling improve operational regional ocean forecasts for the north-west European Shelf?"
+    venue: "Ocean Science"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_os-15-669-2019.txt
+  zambon2018:
+    doi: 10.1002/2017MS001177
+    title: "A New Coupled Ocean-Waves-Atmosphere Model Designed for Tropical Storm Studies"
+    venue: "Journal of Advances in Modeling Earth Systems"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2017ms001177.txt
+  kumar2015:
+    doi: 10.1175/JPO-D-14-0151.1
+    title: "Midshelf to Surfzone Coupled ROMS-SWAN Model Data Comparison of Waves, Currents, and Temperature"
+    venue: "Journal of Physical Oceanography"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jpo-d-14-0151.1.txt
+
+validation:
+  - dag_variable: zeta
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.14, good: 0.16, satisfactory: 0.26}
+        pass_band: satisfactory
+        band_note: "Benchmark surge/water-level papers judge point records with RMSE, bias, correlation, and BSS rather than NSE."
+        cites: [staneva2016, ganju2017]
+      - metric: bias
+        direction: zero_centered
+        unit: m
+        bands: {very_good: 0.09, good: 0.10, satisfactory: 0.17}
+        pass_band: satisfactory
+        band_note: "Storm-surge table reports model-observation bias alongside RMSE and correlation."
+        cites: [staneva2016]
+      - metric: correlation
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.93, good: 0.92, satisfactory: 0.84}
+        pass_band: satisfactory
+        band_note: "Storm-surge table reports correlation for four model runs."
+        cites: [staneva2016]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is temporal pattern skill, but fetched coastal validation papers use RMSE, bias, correlation, and BSS for water level."
+        cites: [staneva2016, ganju2017]
+      - metric: bss
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Brier Skill Score is reported as a supplementary water-level skill metric."
+        cites: [ganju2017]
+    validated_when: "Point water level is validated when surge/water-level RMSE <= 0.26 m, |bias| <= 0.17 m, and correlation >= 0.84."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Staneva 2016 Table 2 reports "RMSE 0.26 0.16 0.15 0.39", "Bias -0.17 -0.09 -0.10 -0.28",
+      and "Correlation 0.84 0.92 0.93 0.76" for storm surge. Ganju 2017 Table 2 reports water-level
+      RMSE 0.14-0.16 m and states BSS greater than zero is better than a time-averaged mean. This
+      supersedes the dag determining_metric nse for zeta.
+
+  - dag_variable: zeta
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched COAWST/surge paper gives a numeric CSI threshold for spatial peak-surge fields."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched surge papers evaluate tide-gauge and residual-surge time series; spatial maps are interpreted against event timing and track."
+        cites: [staneva2016]
+    validated_when: "UNRESOLVED - spatial surge CSI has no fetched numeric convention; require a dedicated inundation/spatial-surge benchmark."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Staneva 2016 reports tide-gauge surge RMSE/bias/correlation but not a CSI threshold for spatial snapshots."
+
+  - dag_variable: temp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 0.35, good: 0.44, satisfactory: 0.72}
+        pass_band: satisfactory
+        band_note: "Transferred from SST RMSD benchmarks against in situ observations; point profile temperature remains more variable near the bed."
+        cites: [lewis2019, kumar2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched ocean temperature papers report RMSD, bias, and correlation rather than NSE."
+        cites: [lewis2019, kumar2015]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Kumar 2015 reports small near-surface temperature bias but larger near-bed bias in stratified surfzone conditions."
+        cites: [kumar2015]
+    validated_when: "Temperature time series are validated when RMSE/RMSD <= 0.72 degC against in situ observations, with bias checked supportively."
+    evidence_strength: strong
+    confidence: 0.72
+    notes: >-
+      Lewis 2019 Table 2 reports SST RMSD 0.64-0.72 K without data assimilation and 0.35-0.52 K with
+      assimilation over the 2016-2017 comparison. Kumar 2015 reports near-surface temperature bias of
+      about 0.2 degC but near-bed bias up to 2.0 degC in strongly stratified surfzone water. This supersedes
+      the dag determining_metric nse for temp.
+
+  - dag_variable: temp
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 0.35, good: 0.44, satisfactory: 0.72}
+        pass_band: satisfactory
+        band_note: "Spatial SST validation in the fetched operational forecast paper is RMSD/MD-based, not CSI-based."
+        cites: [lewis2019]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag lists CSI for spatial pattern matching, but the fetched SST benchmark reports RMSD and mean difference."
+        cites: [lewis2019]
+    validated_when: "Spatial SST time series are validated when RMSD <= 0.72 degC against in situ observations; CSI remains unsupported."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: >-
+      Lewis 2019 explicitly gives "SST mean difference" and "root-mean-square difference (RMSD)"
+      statistics, with RMSD values 0.64-0.72 K for free-running on-shelf/full-domain cases and lower
+      RMSD in assimilative cases.
+
+  - dag_variable: salt
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: willmott_skill
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.5, satisfactory: 0.4}
+        pass_band: good
+        band_note: "Gong 2018 calls salinity skill mostly larger than 0.5 good/excellent, while some validation stations near 0.4 are still discussed as satisfactory."
+        cites: [gong2018]
+      - metric: rmse
+        direction: minimize
+        unit: PSU
+        bands: {very_good: 0.3, good: 0.6, satisfactory: 1.1}
+        pass_band: satisfactory
+        band_note: "Calibration table reports depth-mean and stratification salinity RMSE up to about 1.063 ppt across stations."
+        cites: [gong2018]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched salinity validation paper uses Willmott predictive skill and RMSE, not NSE."
+        cites: [gong2018]
+    validated_when: "Salinity is validated when Willmott predictive skill >= 0.5 and RMSE <= 1.1 PSU/ppt."
+    evidence_strength: moderate
+    confidence: 0.68
+    notes: >-
+      Gong 2018 defines Skill so "1 indicating perfect agreement" and "0 indicating complete disagreement",
+      then states the model "performs satisfactorily" and that S and delta-S skills mostly larger than 0.5
+      indicate excellent and good performance. Tables 2-3 report salinity RMSE from 0.119 to 1.063 ppt in
+      the fetched validation cases.
+
+  - dag_variable: u
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.04, good: 0.10, satisfactory: 0.15}
+        pass_band: satisfactory
+        band_note: "Point current validation uses component RMSE against ADCP/current-meter observations."
+        cites: [olabarrieta2011, gong2018, kumar2015]
+      - metric: willmott_skill
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.87, good: 0.5, satisfactory: 0.37}
+        pass_band: good
+        band_note: "Willapa Bay current summary calls minimum skill 0.37 reasonable, but most stations exceed 0.87."
+        cites: [olabarrieta2011, gong2018]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched current papers use RMSE, correlation, and Willmott skill for velocity components."
+        cites: [olabarrieta2011, gong2018, kumar2015]
+    validated_when: "Eastward current is validated when component RMSE <= 0.15 m/s and Willmott skill >= 0.5."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Olabarrieta 2011 reports current RMSE near 0.1 m/s and up to 0.15 m/s, and says the time variation
+      was correctly estimated. Gong 2018 says U skill values are larger than 0.88 at all calibration stations.
+      Kumar 2015 reports cross-shore current RMSE 0.04-0.07 m/s.
+
+  - dag_variable: v
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.07, good: 0.15, satisfactory: 0.21}
+        pass_band: satisfactory
+        band_note: "Northward/alongshore current skill is commonly looser near the surfzone than offshore or estuarine u components."
+        cites: [olabarrieta2011, kumar2015]
+      - metric: willmott_skill
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.87, good: 0.5, satisfactory: 0.37}
+        pass_band: good
+        band_note: "Willapa Bay summary reports reasonable barotropic-current skill with minimum 0.37 and most stations above 0.87."
+        cites: [olabarrieta2011, gong2018]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched current papers use RMSE, correlation, and Willmott skill for velocity components."
+        cites: [olabarrieta2011, gong2018, kumar2015]
+    validated_when: "Northward current is validated when component RMSE <= 0.21 m/s and Willmott skill >= 0.5."
+    evidence_strength: strong
+    confidence: 0.76
+    notes: >-
+      Kumar 2015 reports alongshore current RMSE 0.12 m/s offshore and 0.21 m/s at M1.5, saying the latter
+      is similar to surfzone values at other beaches. Olabarrieta 2011 reports profile component RMSE values
+      up to 0.16 m/s and summarizes most current-station skill values as higher than 0.87.
+
+  - dag_variable: Hsig
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.09, good: 0.46, satisfactory: 0.60}
+        pass_band: satisfactory
+        band_note: "Significant wave height validation is judged by buoy/altimeter RMSE or standard deviation plus bias."
+        cites: [olabarrieta2011, wahle2017, zambon2018, kumar2015]
+      - metric: bias
+        direction: zero_centered
+        unit: m
+        bands: {very_good: 0.05, good: 0.15, satisfactory: 0.34}
+        pass_band: satisfactory
+        band_note: "Zambon 2018 reports all-altimeter Hs bias of 34 cm, less than 10 percent for big waves."
+        cites: [wahle2017, zambon2018]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched wave papers report Hs RMSE, bias, standard deviation, correlation, and Willmott skill, not NSE."
+        cites: [olabarrieta2011, wahle2017, zambon2018, kumar2015]
+      - metric: willmott_skill
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Willapa Bay wave validation reports Willmott skill and calls Hs agreement good."
+        cites: [olabarrieta2011]
+    validated_when: "Significant wave height is validated when RMSE <= 0.60 m and |bias| <= 0.34 m against buoy or altimeter observations."
+    evidence_strength: strong
+    confidence: 0.84
+    notes: >-
+      Zambon 2018 reports Hs correlation 0.99, all-altimeter bias 34 cm, and all-altimeter RMSE 46 cm, with
+      the statement "less than 10%" for big waves. Wahle 2017 Table 3 reports buoy Hs bias from -0.01 to
+      -0.15 m and SD 0.49-0.59 m. Kumar 2015 reports nearshore Hs RMSE 0.08-0.09 m, and Olabarrieta
+      2011 reports minimum significant-wave-height skill 0.72.
+
+  - dag_variable: Hsig
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched wave paper gives a CSI threshold for altimeter-swath or gridded Hs spatial snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched spatial Hs papers compare along-track altimeters and buoys with RMSE/bias/correlation rather than categorical CSI."
+        cites: [zambon2018, wahle2017]
+    validated_when: "UNRESOLVED - Hsig spatial_snapshot CSI has no fetched numeric convention; evaluate with RMSE/bias until a spatial categorical benchmark is fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Zambon 2018 provides altimeter Hs RMSE/bias/correlation, but not a CSI threshold for spatial snapshots."
+
+  - dag_variable: bed_thickness
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched COAWST sediment paper gives a numeric CSI threshold for erosion/accretion spatial patterns."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched sediment papers describe qualitative and process validation, while bed-elevation-change errors are said to cascade from sediment-transport uncertainty."
+        cites: [ganju2017, sherwood2018, zang2018]
+    validated_when: "UNRESOLVED - bed_thickness spatial CSI requires a dedicated bed-change benchmark; current fetched evidence supports only qualitative/process checks."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      Ganju 2017 says many uncertainty sources are inherent in sediment transport and errors cascade into
+      reduced model skill for bed elevation changes. Sherwood 2018 documents bed-layer and cohesive-bed
+      mechanisms, and Zang 2018 reports qualitative/quantitative sediment dynamics evaluation but no CSI band.
+
+  - dag_variable: bed_thickness
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched COAWST sediment paper gives a numeric NSE threshold for bed-thickness time series."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched COAWST sediment paper gives a point time-series RMSE pass band for bed thickness."
+        cites: []
+    secondary_metrics:
+      - metric: process_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched sediment papers validate process behavior and event deposition/erosion patterns rather than a universal time-series threshold."
+        cites: [ganju2017, sherwood2018, zang2018]
+    validated_when: "UNRESOLVED - bed_thickness point time-series validation has no fetched numeric NSE/RMSE convention."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      Sherwood 2018 states the cohesive bed framework captures important muddy-bed aspects including
+      depth-limited erosion. Zang 2018 reports averaged post-hurricane deposition and maximum erosion,
+      but does not define a validation pass band for bed_thickness time series.
+
+deferred_paywalled:
+  - ref: "SWAN coastal-region model description and validation paper"
+    doi: 10.1029/98JC02622
+    needed_for: [Hsig]
+  - ref: "Three-dimensional anticyclonic eddy validation with multiple underwater gliders"
+    doi: 10.1175/JTECH-D-19-0006.1
+    needed_for: [temp, u, v]

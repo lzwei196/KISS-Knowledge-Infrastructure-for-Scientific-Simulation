@@ -1,106 +1,102 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:03:28.756670'
-  domain: wildfire
   name: Cell2Fire
-  version: auto-generated
+  language: c++
+  implementation:
+    id: hydrocraft-cell2fire-w
+    version: hydrocraft-cell2fire-wildfire v1.0.0
+    provenance: C++ with OpenMP; fire2a C2F-W fork (github.com/fire2a/C2F-W) of the Pais/Carrasco/Weintraub
+      Cell2Fire object-oriented core.
+  scientific_reference_version: Cell2Fire W (C2F-W) — unified Scott&Burgan / Canadian FBP / Kitral cellular
+    fire-spread simulator; FBP lineage per Pais et al. 2021 (Front. For. Glob. Change 4:692706) and arXiv:1905.09317
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Cell2Fire/source/repo/Cell2Fire/Cell2Fire
+    type: work_dir
 pipeline:
-  stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  stages: []
+tools:
+  count: 4
+  files:
+  - tools/convert_fuel_params.py
+  - tools/convert_weather_to_c2f.py
+  - tools/parse_cell2fire_output.py
+  - tools/run_cell2fire.py
+inputs:
+  forcing:
+  - name: wind speed (WS)
+    unit: km/h (at 10 m)
+  - name: wind direction (WD)
+    unit: degrees (meteorological, FROM; north=0)
+  - name: air temperature (TMP)
+    unit: deg C
+  - name: relative humidity (RH)
+    unit: '% (0-100)'
+  - name: precipitation (APCP)
+    unit: mm
+  - name: Canadian FWI System indices (FFMC, DMC, DC, ISI, BUI, FWI)
+    unit: dimensionless (FFMC 0-101; others CFFDRS scale)
+  parameters:
+  - name: per-cell fuel type
+    unit: integer fuel code
+  - name: fuel lookup table
+    unit: table
+  - name: per-fueltype FBP coefficients (p1,p2,p3,q,bui0,cfl,cbh,fmc)
+    unit: mixed
+  - name: slope
+    unit: degrees (0-90)
+  - name: slope aspect (saz)
+    unit: degrees (0-360, compass, north=0)
+  - name: elevation
+    unit: m ASL
+  - name: crown base height (cbh)
+    unit: m
+  - name: crown bulk density (cbd)
+    unit: kg/m3
+  - name: crown closure fraction (ccf) / foliar canopy cover (fcc)
+    unit: percent (0-100)
+  - name: curing percentage (cur)
+    unit: percent
+  - name: ROS adjustment / ellipse factors (HFactor/FFactor/BFactor/EFactor, ROS10Factor, CBDFactor/CCFFactor)
+    unit: dimensionless multipliers
+  initial_conditions:
+  - name: ignition point(s)
+    unit: cell id(s)
+  - name: initial cell states
+    unit: categorical
+  boundary_conditions:
+  - name: ignition probability map
+    unit: probability per cell
+  - name: fire-behavior model selector (--sim {S,C,K,P})
+    unit: enum
+  - name: ensemble / stochastic controls (--nsims, --seed, --weather {rows,random}, ROS-CV)
+    unit: count / integer / enum
+  - name: time-stepping controls (--Weather-Period-Length, --Fire-Period-Length, --max-fire-periods)
+    unit: minutes / count
+  - name: spread / crown thresholds and switches (--ROS-Threshold, --cros, --fmc, --scenario)
+    unit: m/min / flag / percent / enum
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - FinalGrid (burned/unburned)
+  - burn probability
+  - fire propagation messages
+  - rate of spread (ROS)
+  - fireline intensity
+  - flame length
+  - crown fire state / crown fraction burned
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.214, KGE=0.162, R=0.653, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.214
+    best_kge: 0.1622
+    best_r: 0.653
+summary:
+  total_tools: 4
+  total_stage_docs: 0
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

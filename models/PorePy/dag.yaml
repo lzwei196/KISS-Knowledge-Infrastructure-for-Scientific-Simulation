@@ -450,7 +450,7 @@ outputs:
   - var: "pressure"
     validation_rank: 2
     unit: "Pa"
-    description: "Fluid pressure field at cell centers across matrix, fracture, and intersection subdomains."
+    description: "Subsurface fractured-porous-medium fluid pressure field at cell centers across matrix, fracture, and intersection subdomains."
     emitted_in: "<file_name>_<subdomain>.vtu (collected in <file_name>.pvd)"
     observability:
       comparable_obs_shapes:
@@ -468,7 +468,7 @@ outputs:
   - var: "displacement"
     validation_rank: 3
     unit: "m"
-    description: "Mechanical displacement vector field at cell centers (matrix subdomains)."
+    description: "Subsurface fractured-porous-medium mechanical displacement vector field at cell centers (matrix subdomains)."
     emitted_in: "<file_name>_<subdomain>.vtu"
     observability:
       comparable_obs_shapes:
@@ -486,7 +486,7 @@ outputs:
   - var: "temperature"
     validation_rank: 1
     unit: "K"
-    description: "Temperature field at cell centers (energy / THM models)."
+    description: "Subsurface fractured-porous-medium temperature field at cell centers (energy / THM models)."
     emitted_in: "<file_name>_<subdomain>.vtu"
     observability:
       comparable_obs_shapes:
@@ -499,7 +499,7 @@ outputs:
   - var: "darcy_flux"
     validation_rank: 4
     unit: "m^3/s"
-    description: "Darcy / interface flux on faces and codimension-one mortar interfaces."
+    description: "Subsurface fractured-porous-medium Darcy / interface flux on faces and codimension-one mortar interfaces."
     emitted_in: "<file_name>_<interface>.vtu (interface_darcy_flux mortar data)"
     observability:
       comparable_obs_shapes:
@@ -512,7 +512,7 @@ outputs:
   - var: "stress"
     validation_rank: 5
     unit: "Pa"
-    description: "Mechanical stress field derived from the displacement solution (cell centers)."
+    description: "Subsurface fractured-porous-medium mechanical stress field derived from the displacement solution (cell centers)."
     emitted_in: "<file_name>_<subdomain>.vtu (when registered)"
     observability:
       comparable_obs_shapes:
@@ -525,7 +525,7 @@ outputs:
   - var: "fracture_aperture"
     validation_rank: 6
     unit: "m"
-    description: "Derived fracture aperture (DisplacementJumpAperture / dimension-reduction state) on fracture cells."
+    description: "Subsurface fractured-porous-medium derived fracture aperture (DisplacementJumpAperture / dimension-reduction state) on fracture cells."
     emitted_in: "<file_name>_<subdomain>.vtu (secondary/derived, via data_to_export)"
     observability:
       comparable_obs_shapes:
@@ -538,7 +538,7 @@ outputs:
   - var: "contact_traction"
     validation_rank: 7
     unit: "Pa"
-    description: "Contact traction on fracture interfaces (normal + tangential Coulomb-friction components)."
+    description: "Subsurface fractured-porous-medium contact traction on fracture interfaces (normal + tangential Coulomb-friction components)."
     emitted_in: "<file_name>_<interface>.vtu"
     observability:
       comparable_obs_shapes:
@@ -762,3 +762,33 @@ safety:
       scope: "Default material parameterization"
       source: "porepy.applications.material_values.solid_values.granite / fluid_values.water"
       status: "adopted"
+
+medium_evidence:
+  - var: "pressure"
+    source: "dag.yaml"
+    quote: "Mixed-dimensional geometry: nd-matrix subdomains, (nd-1) fracture subdomains, lower-dimensional intersections, and codimension-one mortar interfaces."
+    note: "DAG boundary notes define the observable domain as a subsurface mixed-dimensional fractured porous medium."
+  - var: "displacement"
+    source: "dag.yaml"
+    quote: "Mixed-dimensional geometry: nd-matrix subdomains, (nd-1) fracture subdomains, lower-dimensional intersections, and codimension-one mortar interfaces."
+    note: "DAG boundary notes define the observable domain as a subsurface mixed-dimensional fractured porous medium."
+  - var: "temperature"
+    source: "dag.yaml"
+    quote: "Mixed-dimensional geometry: nd-matrix subdomains, (nd-1) fracture subdomains, lower-dimensional intersections, and codimension-one mortar interfaces."
+    note: "DAG boundary notes define the observable domain as a subsurface mixed-dimensional fractured porous medium."
+  - var: "darcy_flux"
+    source: "dag.yaml"
+    quote: "Mixed-dimensional geometry: nd-matrix subdomains, (nd-1) fracture subdomains, lower-dimensional intersections, and codimension-one mortar interfaces."
+    note: "DAG boundary notes define the observable domain as a subsurface mixed-dimensional fractured porous medium."
+  - var: "stress"
+    source: "dag.yaml"
+    quote: "Mixed-dimensional geometry: nd-matrix subdomains, (nd-1) fracture subdomains, lower-dimensional intersections, and codimension-one mortar interfaces."
+    note: "DAG boundary notes define the observable domain as a subsurface mixed-dimensional fractured porous medium."
+  - var: "fracture_aperture"
+    source: "dag.yaml"
+    quote: "Mixed-dimensional geometry: nd-matrix subdomains, (nd-1) fracture subdomains, lower-dimensional intersections, and codimension-one mortar interfaces."
+    note: "DAG boundary notes define the observable domain as a subsurface mixed-dimensional fractured porous medium."
+  - var: "contact_traction"
+    source: "dag.yaml"
+    quote: "Mixed-dimensional geometry: nd-matrix subdomains, (nd-1) fracture subdomains, lower-dimensional intersections, and codimension-one mortar interfaces."
+    note: "DAG boundary notes define the observable domain as a subsurface mixed-dimensional fractured porous medium."

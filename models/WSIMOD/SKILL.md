@@ -1,14 +1,3 @@
----
-name: wsimod
-description: >-
-  WSIMOD (Water Systems Integrated Modelling framework), node-arc message-passing
-  integrated water-cycle model per Dobson et al. 2024 GMD (CityWat…. Covers Integrated
-  water quantity AND quality across the terrestrial/urban water cycle; Urban and rural
-  hydrological catchments (Land node with multiple surfaces); Agricultural / growing
-  surfaces with crop nutrient cycling, ET, and soil erosion. Use when the task involves
-  running, configuring, calibrating or interpreting WSIMOD.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (13 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_data.py --help` |
+| `tools/convert_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters.py --help` |
+| `tools/parse_wsimod_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_wsimod_output.py --help` |
+| `tools/run_wsimod.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wsimod.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # WSIMOD Knowledge Infrastructure v1.0.0
 
@@ -444,6 +467,99 @@ Models can be saved/loaded with `model.save()` / `model.load()`:
 ## Output Description
 
 WSIMOD's `model.run()` returns four DataFrames: `flows`, `tanks`, `_, surfaces`. The `flows` DataFrame records water volumes (m^3 or ML) and VQIP pollutant masses/concentrations transferred along each arc per timestep. The `tanks` DataFrame logs storage levels at each node. The `surfaces` DataFrame tracks land surface states (soil moisture, runoff, percolation). These are returned as lists of dictionaries convertible to pandas DataFrames via `pd.DataFrame(flows)`. Use `parse_wsimod_output.py` to export results to CSV files (`flows.csv`, `tanks.csv`, `surfaces.csv`) with columns including `date, arc/node_name, volume, and pollutant values`, and to compute mass-balance checks across the network.
+
+---
+
+## 6. Output Description (dag.yaml-sourced)
+
+This section restates the observable outputs from `dag.yaml`. If this section and
+`dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable; the variable this
+model is judged by):
+
+> `river flow / discharge` — Routed river discharge at a node, a subset of the
+> flows record commonly compared to gauge data. (`m3/d or ML/d`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| river flow / discharge | 1 | m3/d or ML/d | Routed river discharge at a node, a subset of the flows record commonly compared to gauge data. |
+| flows | not specified here | see dag.yaml | See `dag.yaml` for medium, observability, and rank details. |
+| pollutant concentration / mass | not specified here | see dag.yaml | See `dag.yaml` for medium, observability, and rank details. |
+| storage / tank levels | not specified here | see dag.yaml | See `dag.yaml` for medium, observability, and rank details. |
+| land surface states (soil moisture, runoff, percolation) | not specified here | see dag.yaml | See `dag.yaml` for medium, observability, and rank details. |
+| CSO spill / flood volume | not specified here | see dag.yaml | See `dag.yaml` for medium, observability, and rank details. |
+
+The `flows` record is the main parsing source for routed discharge and water
+quality transfers. The rank-1 output `river flow / discharge` is a subset of
+that record and should be compared to gauge observations in `m3/d or ML/d`.
+
+---
+
+## 8. Unit Conversion Table
+
+The exact I/O contract lives in `docs/format_spec.yaml`; this unit table
+summarizes the unit traps used by the pipeline and diagnostic triplets. Verify
+the source data attributes before converting a new dataset.
+
+| Variable | Source unit | Model / parsed unit | Conversion | Diagnostic |
+|----------|-------------|---------------------|------------|------------|
+| Precipitation | mm/day | m/timestep | x `MM_TO_M` (`1e-3`) | dt_001 |
+| Volume | m3 | ML | divide by `ML_TO_M3` (`1000`) | dt_002 |
+| Flow | m3/s | ML/d | x `M3_S_TO_ML_D` (`86.4`) | dt_003, dt_018 |
+| Area (surface) | km2 | m2 | x `KM2_TO_M2` (`1e6`) | dt_004, dt_008 |
+| Pollutant additive load | mg/L with volume | kg/timestep | x `MG_L_TO_KG_M3` x volume | dt_005 |
+| Pollutant non-additive value | varies | mg/L, degC, or pH | direct; mix by volume-weighted average | dt_006 |
+| ET0 | mm/timestep | m/timestep | x `MM_TO_M` (`1e-3`) | dt_007, dt_015 |
+| Relative humidity / pressure | hPa | kPa | x `HPA_TO_KPA` (`0.1`) | dt_008 |
+| Radiation | cal/cm2 | MJ/m2 | divide by `MJ_M2_TO_CAL_CM2` | dt_009 |
+| Decay rate | per second | per day | divide by `PER_DAY_TO_PER_SEC` | dt_010 |
+| Soil depth | mm | m | x `MM_TO_M` (`1e-3`) | dt_011 |
+| Nutrient load | g/m2 | kg/km2 | x `G_M2_TO_KG_KM2` (`1e3`) | dt_012 |
+| River flow / discharge | flows record | m3/d or ML/d | keep in dag unit before scoring | dag rank-1 |
+
+Output unit convention: `river flow / discharge` is scored in `m3/d or ML/d`.
+Do not compare raw `m3/s` gauge data to parsed daily discharge until it has been
+converted to the same unit basis.
+
+---
+
+## 11. Validated Results
+
+This section states the model's validation target and field pass-bands from
+`docs/validation_convention.yaml`. It does not claim a site-specific achieved
+score unless a run report supplies one.
+
+### Headline Validation Target
+
+| Property | Value |
+|----------|-------|
+| Rank-1 dag variable | river flow / discharge |
+| Unit | m3/d or ML/d |
+| Description | Routed river discharge at a node, a subset of the flows record commonly compared to gauge data. |
+| Validation data role | Gauge comparison for routed river discharge at a node |
+
+### Performance Metrics -- judged against the field's bar, not intuition
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory |
+|--------------|--------|-----------|-----------|------|--------------|
+| flows | nse | maximize | >= 0.8 (moriasi2015, arnold2012) | >= 0.7 (moriasi2015, arnold2012) | >= 0.5 (moriasi2015, arnold2012) |
+| flows | pbias | zero_centered | abs(PBIAS) <= 5.0 (moriasi2015) | abs(PBIAS) <= 10.0 (moriasi2015) | abs(PBIAS) <= 15.0 (moriasi2015) |
+| river flow / discharge | nse | maximize | >= 0.8 (moriasi2015, moriasi2007) | >= 0.7 (moriasi2015, moriasi2007) | >= 0.5 (moriasi2015, moriasi2007) |
+| river flow / discharge | pbias | zero_centered | abs(PBIAS) <= 5.0 (moriasi2015) | abs(PBIAS) <= 10.0 (moriasi2015) | abs(PBIAS) <= 15.0 (moriasi2015) |
+| pollutant concentration / mass | nse | maximize | >= 0.65 (moriasi2015) | >= 0.5 (moriasi2015) | >= 0.35 (moriasi2015) |
+| pollutant concentration / mass | pbias | zero_centered | abs(PBIAS) <= 15.0 (moriasi2015) | abs(PBIAS) <= 20.0 (moriasi2015) | abs(PBIAS) <= 30.0 (moriasi2015) |
+
+For any metric or dag variable not listed in `docs/validation_convention.yaml`,
+write the band as `no cited threshold`; do not substitute remembered hydrology
+thresholds.
+
+### Achieved Result Values
+
+No calibration, validation, or full-period achieved metric values were supplied
+in the sourced facts for this edit. Record achieved values only after running the
+real WSIMOD package or CLI, then judge `river flow / discharge` against the
+bands above.
 
 ---
 

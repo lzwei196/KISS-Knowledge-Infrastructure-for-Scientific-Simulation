@@ -1,106 +1,105 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:02:19.178209'
-  domain: cryosphere
   name: ISSM
-  version: auto-generated
+  language: c++
+  implementation:
+    id: issm-core
+    version: '2026.2'
+    provenance: C++/Fortran computational core (FemModel::Solve dispatch over *_core solvers) with Python/MATLAB
+      model-object APIs; NASA JPL / UC Irvine (ISSMteam).
+  scientific_reference_version: ISSM (Ice-sheet and Sea-level System Model) v2026.x finite-element ice-sheet/sea-level
+    formulation
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ISSM/source/repo/bin/issm.exe
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s1_mesh_generation
+  - s2_mask_definition
+  - s3_parameterization
+  - s5_flow_equations
+  - s7_execution
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_issm.py
+  - tools/convert_geometry_to_issm.py
+  - tools/parse_issm_output.py
+  - tools/run_issm.py
+inputs:
+  forcing:
+  - name: md.smb.mass_balance
+    unit: m/yr ice equivalent
+  - name: md.thermal.spctemperature
+    unit: K
+  - name: md.basalforcings.geothermalflux
+    unit: W/m^2
+  - name: md.basalforcings.groundedice_melting_rate / floatingice_melting_rate
+    unit: m/yr
+  parameters:
+  - name: md.materials.rheology_B
+    unit: Pa s^(1/n)
+  - name: md.materials.rheology_n
+    unit: '-'
+  - name: md.materials.rho_ice / rho_water / rho_freshwater
+    unit: kg/m^3
+  - name: md.materials.heatcapacity / latentheat / thermalconductivity / meltingpoint / beta
+    unit: J/kg/K, J/kg, W/m/K, K, K/Pa
+  - name: md.friction.coefficient
+    unit: law-dependent (e.g. (Pa m^-1 s)^(1/2) for the default law)
+  - name: md.friction.p / md.friction.q
+    unit: '-'
+  - name: md.geometry.bed
+    unit: m
+  initial_conditions:
+  - name: md.geometry.surface / base / thickness
+    unit: m
+  - name: md.initialization.vx / vy / vz
+    unit: m/yr
+  - name: md.initialization.temperature
+    unit: K
+  - name: md.initialization.pressure
+    unit: Pa
+  - name: md.initialization.waterfraction
+    unit: 0-1
+  boundary_conditions:
+  - name: domain outline / ice-front contour
+    unit: m (projected)
+  - name: mesh resolution / hmin / hmax / gradation
+    unit: m
+  - name: md.mask.ocean_levelset / ice_levelset
+    unit: '- (signed distance)'
+  - name: md.stressbalance.spcvx / spcvy
+    unit: m/yr
+  - name: md.flowequation (approximation choice)
+    unit: '-'
+  - name: md.groundingline.migration / md.masstransport.stabilization / md.thermal.isenthalpy / md.friction.coupling
+    unit: '-'
+  - name: md.timestepping.start_time / final_time / time_step / time_adapt / cfl_coefficient
+    unit: year
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - Vel (and Vx, Vy, Vz)
+  - Thickness
+  - Surface (and Base)
+  - Temperature
+  - grounding-line position (MaskOceanLevelset)
+  - IceVolume / GroundedArea / TotalSmb
+  - relative sea level (S)
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=1.000, KGE=1.000, R=1.000, 2 scorecard(s)'
+  metrics:
+    best_nse: 1.0
+    best_kge: 1.0
+    best_r: 1.0
+summary:
+  total_tools: 4
+  total_stage_docs: 5
+  total_diagnostic_triplets: 21
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

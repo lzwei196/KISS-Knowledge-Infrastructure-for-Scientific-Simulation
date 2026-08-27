@@ -1,0 +1,411 @@
+schema_version: 1
+model_id: GEOtop
+domain: hydrology
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  schuol2012:
+    doi: 10.5194/hess-16-3371-2012
+    title: "Critical review of SWAT applications in the upper Nile basin countries"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-16-3371-2012.txt
+  endrizzi2014:
+    doi: 10.5194/gmd-7-2831-2014
+    title: "GEOtop 2.0: simulating the combined energy and water balance at and below the land surface accounting for soil freezing, snow cover and terrain effects"
+    venue: "Geoscientific Model Development"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-7-2831-2014.txt
+  rigon2006:
+    doi: 10.1175/jhm497.1
+    title: "GEOtop: A Distributed Hydrological Model with Coupled Water and Energy Budgets"
+    venue: "Journal of Hydrometeorology"
+    year: 2006
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jhm497.1.txt
+  terzago2020:
+    doi: 10.5194/hess-24-4061-2020
+    title: "Sensitivity of snow models to the accuracy of meteorological forcings in mountain environments"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-24-4061-2020.txt
+  avanzi2023:
+    doi: 10.5194/essd-15-639-2023
+    title: "IT-SNOW: a snow reanalysis for Italy blending modeling, in situ data, and satellite observations (2010-2021)"
+    venue: "Earth System Science Data"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_essd-15-639-2023.txt
+  jan2020:
+    doi: 10.5194/gmd-13-2259-2020
+    title: "Evaluating integrated surface/subsurface permafrost thermal hydrology models in ATS against observations from a polygonal tundra site"
+    venue: "Geoscientific Model Development"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-2259-2020.txt
+  gubler2013:
+    doi: 10.5194/gmd-6-1319-2013
+    title: "Sensitivities and uncertainties of modeled ground temperatures in mountain environments"
+    venue: "Geoscientific Model Development"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-6-1319-2013.txt
+  dallamico2011:
+    doi: 10.5194/tc-5-469-2011
+    title: "A robust and energy-conserving model of freezing variably-saturated soil"
+    venue: "The Cryosphere"
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-5-469-2011.txt
+  kuppel2018:
+    doi: 10.1016/j.envsoft.2018.01.001
+    title: "What can we learn from multi-data calibration of a process-based ecohydrological model?"
+    venue: "Environmental Modelling & Software"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2018.01.001.txt
+  luo2012:
+    doi: 10.5194/bg-9-3857-2012
+    title: "A framework for benchmarking land models"
+    venue: "Biogeosciences"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-9-3857-2012.txt
+  silvestro2013:
+    doi: 10.5194/hess-17-39-2013
+    title: "Exploiting remote sensing land surface temperature in distributed hydrological modelling: the example of the Continuum model"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-17-39-2013.txt
+  bertoldi2010:
+    doi: 10.1002/eco.129
+    title: "Topographical and ecohydrological controls on land surface temperature in an alpine catchment"
+    venue: "Ecohydrology"
+    year: 2010
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_eco.129.txt
+
+validation:
+  - dag_variable: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 9 gives watershed-scale flow criteria: NSE > 0.80 very good, 0.70 < NSE <= 0.80 good, 0.50 < NSE <= 0.70 satisfactory."
+        cites: [moriasi2015, schuol2012]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5, good: 10, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 Table 9 gives flow PBIAS thresholds of less than +/-5, +/-5 to +/-10, and +/-10 to +/-15 percent."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 recommends R2 with regression slope/intercept, NSE, d, RMSE with RSR, and PBIAS; R2 is supportive because the dag metric is NSE."
+        cites: [moriasi2015]
+    validated_when: "NSE >= 0.50 and absolute PBIAS <= 15% for outlet discharge; inspect hydrographs and low-flow behavior as recommended by Moriasi."
+    evidence_strength: strong
+    confidence: 0.9
+    notes: "Discharge convention is transferred from general hydrologic watershed criteria. Rigon 2006 is GEOtop-specific but mainly reports qualitative hydrograph performance; Moriasi 2015 supplies the numeric pass bands."
+
+  - dag_variable: SWE
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: mm
+        bands: {very_good: 37.1, good: 40, satisfactory: 95}
+        pass_band: satisfactory
+        band_note: "Endrizzi 2014 reports GEOtop SWE RMSD 37.1 mm at Col de Porte; Terzago 2020 reports GEOTOP CTL SWE RMSE 0.04 m; Avanzi 2023 reports local Torgnon SWE RMSE 95 mm."
+        cites: [endrizzi2014, terzago2020, avanzi2023]
+      - metric: pbias
+        direction: zero_centered
+        unit: mm
+        bands: {very_good: 3.2, good: 8.5, satisfactory: 17.3}
+        pass_band: satisfactory
+        band_note: "Endrizzi 2014 reports GEOtop SWE bias -3.2 mm, with Crocus comparison values -17.3 and -2.3 mm; Avanzi 2023 reports Torgnon SWE bias -8.5 mm."
+        cites: [endrizzi2014, avanzi2023]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched snow validation papers report RMSE/RMSD, bias, correlation, and KGE for SWE rather than NSE."
+        cites: [endrizzi2014, terzago2020, avanzi2023]
+    validated_when: "Point SWE is validated when RMSE <= 95 mm and absolute bias <= 17.3 mm water equivalent, with seasonal accumulation and melt timing inspected."
+    evidence_strength: moderate
+    confidence: 0.75
+    notes: "The dag determining metric is NSE, but fetched snow-model literature supersedes it with RMSE/RMSD and bias for SWE."
+
+  - dag_variable: SWE
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: mm
+        bands: {very_good: 95, good: 200, satisfactory: 300}
+        pass_band: satisfactory
+        band_note: "Avanzi 2023 states snow reanalysis RMSEs are of typical order 90-300 mm for SWE against in situ data."
+        cites: [avanzi2023]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag names CSI for the spatial SWE comparison, but fetched SWE spatial/time benchmarks report RMSE, bias, MAE, KGE, and r rather than a CSI pass threshold."
+        cites: [avanzi2023]
+    validated_when: "Spatial SWE time series is provisionally validated when RMSE <= 300 mm water equivalent, with spatial snow-cover timing checked separately."
+    evidence_strength: weak
+    confidence: 0.45
+    notes: "Transferred from an alpine snow reanalysis rather than GEOtop-specific distributed SWE validation; no fetched paper gave a CSI threshold for SWE."
+
+  - dag_variable: snowDepth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.10, good: 0.15, satisfactory: 0.17}
+        pass_band: satisfactory
+        band_note: "Endrizzi 2014 reports GEOtop snow-depth RMSD 0.15 m at Col de Porte; Terzago 2020 reports GEOTOP CTL snow-depth RMSE 0.17 m."
+        cites: [endrizzi2014, terzago2020]
+      - metric: pbias
+        direction: zero_centered
+        unit: m
+        bands: {very_good: 0.01, good: 0.07, satisfactory: 0.11}
+        pass_band: satisfactory
+        band_note: "Endrizzi 2014 reports snow-depth bias 0.07 m and comparison values -0.01 and 0.08 m; Terzago 2020 reports GEOTOP average bias -0.07 m."
+        cites: [endrizzi2014, terzago2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched snow-depth studies judge GEOtop using RMSE/RMSD, bias, and correlation; Terzago 2020 reports GEOTOP correlation 0.90 but notes weaknesses in snow density and depth."
+        cites: [terzago2020]
+    validated_when: "Snow depth is validated when RMSE <= 0.17 m and absolute bias <= 0.11 m, with accumulation/melt timing visually checked."
+    evidence_strength: moderate
+    confidence: 0.8
+    notes: "Literature supersedes the dag NSE metric for snow depth. Terzago 2020 reports GEOTOP CTL RMSE 0.16 m average by season and Table 4 CTL RMSE 0.17 m over the longer period."
+
+  - dag_variable: soilTz
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.94, good: 0.80, satisfactory: 0.65}
+        pass_band: satisfactory
+        band_note: "Jan 2020 reports soil-temperature NSE values greater than 0.94 and calls that an excellent match; Marmy 2016 describes r2 > 0.8 as very good and 0.65-0.77 as satisfactory near-surface ground-temperature calibration."
+        cites: [jan2020]
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 2.0, good: 3.0, satisfactory: 4.37}
+        pass_band: satisfactory
+        band_note: "Endrizzi 2014 reports GEOtop near-surface temperature RMSD 4.37/2.01 degC at two Jungfrau ridge sites."
+        cites: [endrizzi2014]
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Endrizzi 2014 reports near-surface temperature bias -0.63/-0.68 degC; Gubler 2013 shows discretization, albedo, and roughness can shift mean annual ground temperature by more than 1 degC."
+        cites: [endrizzi2014, gubler2013]
+    validated_when: "Soil temperature profile is validated when NSE >= 0.65 and RMSE <= 4.37 degC; for permafrost applications, require thaw/freeze timing and active-layer depth to be represented."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "NSE band is transferred from permafrost thermal-hydrology evaluation; RMSE band is GEOtop-specific but from near-surface rock temperature, not every soil layer."
+
+  - dag_variable: thetaliq
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE pass threshold for GEOtop liquid volumetric soil water content."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m3/m3
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched soil-moisture and ecohydrology papers use RMSE or normalized RMSE, but do not state a transferable numeric acceptance band for point soil-water-content profiles."
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Kuppel 2018 evaluates volumetric water content with RMSE, normalized RMSE, and correlation; Rigon 2006 compares GEOtop soil moisture to ESTAR qualitatively."
+        cites: [kuppel2018, rigon2006]
+    validated_when: "UNRESOLVED - compare to soil-moisture sensors with RMSE/bias/correlation, but do not auto-validate without a fetched numeric band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Rigon 2006 reports fairly good basin-average soil moisture and visually similar spatial patterns, but no numeric threshold."
+
+  - dag_variable: thetaice
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric NSE threshold for soil ice content time series."
+        cites: []
+      - metric: active_layer_timing_error
+        direction: minimize
+        unit: days
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Permafrost papers emphasize freeze-up, snowmelt timing, and active-layer depth, but the fetched set does not give a numeric timing-error band."
+        cites: []
+    secondary_metrics:
+      - metric: thaw_depth_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Dall'Amico 2011 validates the freezing-soil algorithm against analytical and experimental tests; Jan 2020 states timing of snowmelt, freeze-up, and active-layer depth are well represented."
+        cites: [dallamico2011, jan2020]
+    validated_when: "UNRESOLVED - validate thetaice through freeze/thaw state, active-layer timing/depth, and conserved water/energy tests until a numeric field threshold is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The observable field convention is usually active-layer and freeze/thaw timing, not direct soil-ice NSE."
+
+  - dag_variable: LE
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched eddy-covariance benchmark gives an NSE pass threshold for latent heat flux."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: W/m2
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched land-model papers recommend RMSE/correlation/benchmarking for fluxes but do not provide a numeric LE acceptance band."
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Luo 2012 lists latent heat flux as a land-model benchmark target and notes RMSE, bias, and correlations as metrics; Rigon 2006 uses eddy-correlation energy-flux comparisons qualitatively."
+        cites: [luo2012, rigon2006]
+    validated_when: "UNRESOLVED - use eddy-covariance LE with RMSE, bias, and correlation, but do not auto-validate without a fetched numeric band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "GEOtop LE is tightly coupled to soil moisture and vegetation partitioning; fetched GEOtop paper reports good agreement qualitatively, not a pass threshold."
+
+  - dag_variable: H
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE pass threshold for sensible heat flux."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: W/m2
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched land-model benchmark literature identifies sensible heat flux as a benchmark variable but gives no numeric acceptance band."
+        cites: []
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Rigon 2006 notes slight overestimation of nocturnal sensible heat fluxes and possible stable-boundary-layer parameterization issues."
+        cites: [rigon2006, luo2012]
+    validated_when: "UNRESOLVED - compare H to eddy-covariance observations using RMSE, bias, and correlation, but no automatic pass band is supported by the fetched set."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The fetched GEOtop evidence is qualitative for H; it is useful diagnostically but not enough for a numeric validation convention."
+
+  - dag_variable: Tsurface
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 2.01, good: 3.0, satisfactory: 4.37}
+        pass_band: satisfactory
+        band_note: "Endrizzi 2014 reports GEOtop near-surface temperature RMSD 4.37/2.01 degC for south/north Jungfrau ridge sites."
+        cites: [endrizzi2014]
+      - metric: bias
+        direction: zero_centered
+        unit: degC
+        bands: {very_good: 0.63, good: 0.68, satisfactory: 2.1}
+        pass_band: satisfactory
+        band_note: "Endrizzi 2014 reports GEOtop near-surface temperature bias -0.63/-0.68 degC; Bertoldi 2010 reports overall GEOtop-Landsat LST bias -2.1 K."
+        cites: [endrizzi2014, bertoldi2010]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched LST and near-surface-temperature studies report RMSE/RMSD, bias, and correlation rather than NSE."
+        cites: [endrizzi2014, bertoldi2010]
+    validated_when: "Point surface temperature is validated when RMSE <= 4.37 degC and absolute bias <= 2.1 degC."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "The dag NSE metric is superseded by RMSE and bias in the fetched GEOtop near-surface-temperature and LST literature."
+
+  - dag_variable: Tsurface
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.88, good: 0.80, satisfactory: 0.74}
+        pass_band: satisfactory
+        band_note: "Bertoldi 2010 reports GEOtop-Landsat LST spatial correlation 0.88, changing only from 0.876 to 0.873 in a canopy-fraction test and decreasing to 0.74 without land-cover/soil-moisture variability."
+        cites: [bertoldi2010]
+      - metric: rmse
+        direction: minimize
+        unit: K
+        bands: {very_good: 2.0, good: 3.0, satisfactory: 4.3}
+        pass_band: satisfactory
+        band_note: "Bertoldi 2010 reports GEOtop-Landsat LST RMSE 4.3 K; Silvestro 2013 notes satellite LST retrieval RMSE versus in situ is about 2-3 degC."
+        cites: [bertoldi2010, silvestro2013]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag names CSI for spatial snapshots, but fetched LST papers evaluate continuous fields with correlation, RMSE, MAE, and bias."
+        cites: [bertoldi2010, silvestro2013]
+    validated_when: "Spatial LST snapshot is validated when r >= 0.74 and RMSE <= 4.3 K against properly co-registered satellite or ground-derived LST."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: "Literature supersedes CSI with continuous-field LST metrics. Silvestro 2013 reports LST RMSE/bias/MAE/correlation and warns about georeferencing, shadowing, viewing angle, and resolution mismatches."
+
+deferred_paywalled:
+  - ref: "Cold Regions Science and Technology 2026 paper from skeleton; title unavailable in fetched metadata"
+    doi: 10.1016/j.coldregions.2026.104513
+    needed_for: [SWE, snowDepth, thetaice]
+  - ref: "Dedicated GEOtop or alpine eddy-covariance evaluation with numeric LE/H RMSE or NSE thresholds"
+    doi: unknown_not_fetched
+    needed_for: [LE, H]
+  - ref: "Dedicated GEOtop soil-moisture profile evaluation with numeric RMSE/NSE/PBIAS acceptance bands"
+    doi: unknown_not_fetched
+    needed_for: [thetaliq]

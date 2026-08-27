@@ -1,14 +1,3 @@
----
-name: alpine3d
-description: >-
-  Alpine3D 3.2.0 (SLF release; SNOWPACK 1D snow/soil physics + MeteoIO interpolation +
-  EnergyBalance terrain radiation + optional SnowDrift + Runoff). Covers Distributed
-  per-pixel 1-D snow/soil/canopy energy and mass balance over a DEM (SNOWPACK physics
-  per…; Spatial and temporal interpolation/downscaling of point-station meteo to the grid
-  (MeteoIO). Use when the task involves running, configuring, calibrating or interpreting
-  Alpine3D.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (35 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_smet.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_smet.py --help` |
+| `tools/generate_sno_files.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_sno_files.py --help` |
+| `tools/parse_alpine3d_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_alpine3d_output.py --help` |
+| `tools/run_alpine3d.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_alpine3d.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # Alpine3D Knowledge Infrastructure
 
@@ -97,7 +120,7 @@ in that file's `# SNOTEL <id>: <Name>, <ST>` comment line.
 
 ## Validated Test Cases (Tier-3, real DEM + real obs)
 
-Located at `KISSPATH_BINARIES/Alpine3D/t3_runs/`:
+Located at `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Alpine3D/t3_runs/`:
 
 ⚠️ Every row in the table below was produced with the differenced (i.e. ~44%
 too dry) precipitation described above. Treat their NSE/PBIAS as a **floor**,
@@ -195,6 +218,106 @@ assessment, permafrost studies, and ski resort management.
 
 ---
 
+## 6. Output Description
+
+This section restates the KI's dag facts. If this section and `dag.yaml`
+disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `SWE` — Snow water equivalent per pixel (bulk snowpack mass). (`kg/m2`)
+
+| Output variable (dag `var`) | Rank | Unit | Dag description / scope |
+|---|---:|---|---|
+| SWE | 1 | kg/m2 | Snow water equivalent per pixel (bulk snowpack mass). |
+| HS | listed dag output | see `dag.yaml` | other dag output |
+| TSS | listed dag output | see `dag.yaml` | other dag output |
+| MS_SNOWPACK_RUNOFF | listed dag output | see `dag.yaml` | other dag output |
+| MS_SOIL_RUNOFF | listed dag output | see `dag.yaml` | other dag output |
+| RSNO | listed dag output | see `dag.yaml` | other dag output |
+| POI energy/mass-balance terms (.met) | listed dag output | see `dag.yaml` | point time-series energy/mass-balance terms |
+
+The model also writes gridded ARC outputs and POI `.met` time series as
+described in "Output File Formats" below. For scoring and obs-binding, treat
+`SWE` as the headline variable because the dag ranks it first.
+
+---
+
+## 8. Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`; this table summarizes the
+unit conversions and traps already documented in this KI body. Alpine3D uses
+SI/MKSA units internally.
+
+| Variable | Source unit / common incoming unit | Model unit | Conversion | Trap ID / note |
+|---|---|---|---|---|
+| Air temperature (TA) | Celsius (degC) | Kelvin (K) | +273.15 | dt_001 |
+| Relative humidity (RH) | Percent (0-100) | Fraction (0-1) | divide by 100 | dt_002 |
+| Wind speed (VW) | km/h | m/s | divide by 3.6 | dt_003 |
+| Wind direction (DW) | radians | degrees from N (0-360) | multiply by 180/pi | dt_004 |
+| Precipitation (PSUM) | m | kg/m2, equivalent to mm water | multiply by 1000 | dt_005 |
+| NRCS SNOTEL precipitation | inches, daily increment | mm water | convert inches to mm with `convert_forcing_to_smet.py --precip-unit in`; do not apply `.diff()` | 2026-08-09 SNOTEL warning |
+| Pressure (P) | hPa/mbar | Pa | multiply by 100 | dt_006 |
+| Incoming shortwave radiation (ISWR) | MJ/m2/day | W/m2 | multiply by 11.574 | dt_007 |
+| Incoming longwave radiation (ILWR) | MJ/m2/day | W/m2 | multiply by 11.574 | dt_008 |
+| Snow height (HS) | cm | m | divide by 100 | dt_009 |
+| Layer thickness (.sno) | cm or mm | m | divide by 100 or 1000 | dt_010 |
+| Grain radius (rg in .sno) | um | mm | divide by 1000 | dt_011 |
+| Soil density | g/cm3 | kg/m3 | multiply by 1000 | dt_012 |
+| Geothermal heat (GEO_HEAT) | mW/m2 | W/m2 | divide by 1000 | dt_013 |
+| Roughness length | mm | m | divide by 1000 | dt_014 |
+| Timestep (CALCULATION_STEP_LENGTH) | seconds | minutes | divide by 60 | dt_015 |
+
+Output units explicitly documented in this KI body:
+
+| Output | Unit |
+|---|---|
+| SWE | kg/m2 |
+| HS | m |
+| TSS | K |
+| MS_SNOWPACK_RUNOFF | kg/m2 |
+| MS_SOIL_RUNOFF | kg/m2 |
+| RSNO | kg/m3 |
+| POI energy/mass-balance terms (.met) | see `.met` fields and `dag.yaml` |
+
+---
+
+## 11. Validated Results
+
+This section restates the KI's validation facts and the convention bar. If this
+section and `docs/validation_convention.yaml` disagree, the convention file
+wins.
+
+### Performance Metrics — judged against the field's bar, not intuition
+
+`SWE` is judged by `nrmse` with direction `minimize`.
+
+| SWE convention band | Threshold | Citation |
+|---|---|---|
+| very_good | no cited threshold | esmsnowmip2018 |
+| good | no cited threshold | esmsnowmip2018 |
+| satisfactory | nrmse <= 1.0 | esmsnowmip2018 |
+
+No `nrmse` achieved value is stated in the validated-run body below. Existing
+validated SWE rows report `r`, `NSE`, `KGE`, and `PBIAS`; do not translate those
+metrics into the convention bar without a sourced `nrmse` value.
+
+### Documented Validated SWE Runs
+
+| Site | SNOTEL | Climate | r | NSE | KGE | PBIAS | Period | Precipitation note |
+|---|---:|---|---:|---:|---:|---:|---|---|
+| Lone Mountain, MT | 590 | continental | see existing table below | see existing table below | | | 2010-10 to 2020-09 (held out) | raw (correct) |
+| Trial Lake, UT | 828 | continental | 0.79 | +0.31 | +0.19 | | 2014-10 to 2019-09 | differenced precipitation; floor |
+| Mores Creek Summit, ID | 637 | continental-W | 0.85 | +0.39 | +0.20 | | 2014-10 to 2019-09 | differenced precipitation; floor |
+| Paradise, WA (Mt Rainier) | 679 | maritime | 0.62 | -0.22 | -0.11 | | 2014-10 to 2019-09 | baseline, no remedy; differenced precipitation; floor |
+| Paradise, WA (Mt Rainier) | 679 | maritime | 0.71 | +0.33 | +0.46 | -40% | 2006-01 to 2015-12 | dt_023 remedy, 1x1 |
+
+Rows marked "differenced precipitation" were produced before the 2026-08-09
+SNOTEL precipitation correction documented above. Treat their NSE/PBIAS as a
+floor, not as Alpine3D's skill.
+
+---
+
 ## Installation
 
 ### Dependencies
@@ -240,7 +363,7 @@ make -j$(nproc) && sudo make install
 ### Binary Location
 
 After build: `alpine3d/build/bin/alpine3d`
-After install: `/usr/local/bin/alpine3d` or current location: `KISSPATH_BINARIES/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d`
+After install: `/usr/local/bin/alpine3d` or current location: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d`
 
 ### Test
 

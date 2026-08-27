@@ -246,7 +246,7 @@ outputs:
   - var: "hru_actet"
     validation_rank: 3
     unit: "mm/int"
-    description: "Actual evapotranspiration per HRU per timestep (Granger / Priestley-Taylor / Penman-Monteith / Shuttleworth-Wallace depending on evap_type)."
+    description: "Actual evapotranspiration from the HRU soil-column and land/water surface water balance per timestep (Granger / Priestley-Taylor / Penman-Monteith / Shuttleworth-Wallace depending on evap_type)."
     emitted_in: "Display_Variable output file from evap module"
     observability:
       comparable_obs_shapes:
@@ -427,3 +427,9 @@ safety:
       scope: "energy-balance and snow-physics modules"
       source: "CRHMcode source files src/core/CRHM_constants.h, src/core/PBSM_constants.h, src/core/CHAD_constants.h, src/modules/newmodules/SnobalDefines.h"
       status: "tentative"
+
+medium_evidence:
+  - var: "hru_actet"
+    source: "dag.yaml"
+    quote: "hru_actet removed from soil column storage."
+    note: "The process graph pins hru_actet to CRHM's HRU soil-column water balance; the description names the HRU soil-column/land-water surface medium."

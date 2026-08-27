@@ -1,184 +1,787 @@
-model:
-  name: "Noah_MP"
-  version: "5.2.0"
-  domain: "land_surface"
-  description: "Noah Multi-Parameterization Land Surface Model — coupled energy, water, and carbon cycle simulation"
-  binary_path: "KISSPATH_BINARIES/Noah_MP/run_fullyear/hrldas.exe"
-  driver: "HRLDAS (High Resolution Land Data Assimilation System)"
-  language: "Fortran (F90/F2003/F2008)"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: Noah-MP
+  language: fortran
+  implementation:
+    id: noahmp-hrldas-v52
+    version: v5.2.0
+    provenance: Fortran 90/2008; NCAR/RAL community Noah-MP v5.2.0 run uncoupled through the HRLDAS offline
+      column driver.
+  scientific_reference_version: Noah-MP multi-physics community LSM (Niu et al. 2011 / He et al. 2023
+    NCAR/TN-575+STR v5.0 lineage; community code v5.2)
 inputs:
   forcing:
-    format: "NetCDF (one file per timestep: YYYYMMDDHH.LDASIN_DOMAIN1)"
-    variables:
-      - name: "T2D"
-        description: "2-m air temperature"
-        unit: "K"
-        valid_range: [200.0, 340.0]
-      - name: "Q2D"
-        description: "2-m specific humidity"
-        unit: "kg/kg"
-        valid_range: [0.0, 0.04]
-      - name: "U2D"
-        description: "10-m U wind component"
-        unit: "m/s"
-        valid_range: [-50.0, 50.0]
-      - name: "V2D"
-        description: "10-m V wind component"
-        unit: "m/s"
-        valid_range: [-50.0, 50.0]
-      - name: "PSFC"
-        description: "Surface pressure"
-        unit: "Pa"
-        valid_range: [50000.0, 110000.0]
-      - name: "SWDOWN"
-        description: "Downward shortwave radiation"
-        unit: "W/m2"
-        valid_range: [0.0, 1400.0]
-      - name: "LWDOWN"
-        description: "Downward longwave radiation"
-        unit: "W/m2"
-        valid_range: [50.0, 600.0]
-      - name: "RAINRATE"
-        description: "Precipitation rate"
-        unit: "mm/s"
-        valid_range: [0.0, 0.03]
-
+  - name: T2D (air temperature at reference height)
+    unit: K
+    category: forcing
+    source_kind: forcing
+    model_input_format: LDASIN NetCDF, one file per forcing timestep (YYYYMMDDHH.LDASIN_DOMAIN1)
+    notes: Physical valid range [200,340] K; Tetens/Magnus saturation-vapor-pressure terms are evaluated
+      directly on this field.
+  - name: Q2D (specific humidity at reference height)
+    unit: kg/kg
+    category: forcing
+    source_kind: forcing
+    model_input_format: LDASIN NetCDF
+    notes: Specific humidity, NOT relative humidity; typical 0.001-0.025, physical ceiling ~0.04.
+  - name: U2D (zonal wind component)
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: LDASIN NetCDF
+  - name: V2D (meridional wind component)
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: LDASIN NetCDF
+  - name: PSFC (surface pressure)
+    unit: Pa
+    category: forcing
+    source_kind: forcing
+    model_input_format: LDASIN NetCDF
+    notes: Sets air density P/(R*T); scales all turbulent fluxes.
+  - name: LWDOWN (downward longwave radiation)
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: LDASIN NetCDF
+  - name: SWDOWN (downward shortwave radiation)
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: LDASIN NetCDF
+    notes: Model does not internally clip to >=0; negative interpolation artifacts act as an energy sink.
+  - name: RAINRATE (precipitation rate)
+    unit: mm/s (= kg/m2/s)
+    category: forcing
+    source_kind: forcing
+    model_input_format: LDASIN NetCDF
+    notes: Internally partitioned into rain/snow (OPT_SNF); rate units are mm/s, not mm/hr.
   parameters:
-    critical:
-      - name: "surface_runoff_option"
-        valid_range: [1, 8]
-        description: "Runoff generation scheme (SIMGM/SIMTOP/Schaake96/BATS/VIC/XAJ)"
-      - name: "subsurface_runoff_option"
-        valid_range: [1, 6]
-        description: "Subsurface runoff / baseflow scheme"
-      - name: "DKSAT"
-        valid_range: [1.0e-7, 1.0e-4]
-        description: "Saturated hydraulic conductivity (m/s)"
-      - name: "SMCMAX"
-        valid_range: [0.3, 0.5]
-        description: "Porosity / max volumetric soil moisture (m3/m3)"
-      - name: "BEXP"
-        valid_range: [2.0, 13.0]
-        description: "Clapp-Hornberger B exponent"
-      - name: "MFSNO"
-        valid_range: [1.0, 4.0]
-        description: "Snowmelt curve parameter"
-      - name: "VCMX25"
-        valid_range: [20.0, 80.0]
-        description: "Max carboxylation rate at 25C (umol/m2/s)"
-
-  setup_file:
-    format: "NetCDF (HRLDAS setup/initialization)"
-    variables:
-      - name: "IVGTYP"
-        description: "Vegetation type index"
-        unit: "integer"
-      - name: "ISLTYP"
-        description: "Soil type index"
-        unit: "integer"
-      - name: "TSLB"
-        description: "Initial soil temperature per layer"
-        unit: "K"
-      - name: "SMOIS"
-        description: "Initial volumetric soil moisture per layer"
-        unit: "m3/m3"
-      - name: "TMN"
-        description: "Deep soil temperature"
-        unit: "K"
-      - name: "VEGFRA"
-        description: "Vegetation fraction"
-        unit: "percent"
-        valid_range: [0.0, 100.0]
-
-  namelist:
-    file: "namelist.hrldas"
-    block: "NOAHLSM_OFFLINE"
-    key_parameters:
-      - name: "noah_timestep"
-        default: 900
-        unit: "s"
-      - name: "forcing_timestep"
-        unit: "s"
-        constraint: "must be integer multiple of noah_timestep"
-      - name: "NSOIL"
-        default: 4
-        description: "Number of soil layers"
-
+  - name: SMCMAX (porosity / saturated soil moisture)
+    unit: m3/m3
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: NoahmpTable.TBL soil section
+    notes: Per soil-texture class; must satisfy SMCMAX > SMCREF > SMCWLT > 0.
+  - name: DKSAT (saturated hydraulic conductivity)
+    unit: m/s
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: NoahmpTable.TBL soil section
+    notes: Controls infiltration vs runoff partitioning; ~1e-7..1e-4 m/s.
+  - name: BEXP (Clapp-Hornberger pore-size exponent)
+    unit: '-'
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: NoahmpTable.TBL soil section
+  - name: SMCWLT (wilting point)
+    unit: m3/m3
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: NoahmpTable.TBL soil section
+  - name: MFSNO (snowmelt curve parameter)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: NoahmpTable.TBL
+  - name: VCMX25 (max carboxylation rate at 25C)
+    unit: umol/m2/s
+    category: parameter
+    source_kind: calibrated
+    model_input_format: NoahmpTable.TBL vegetation section
+  - name: CWPVT (canopy wind extinction parameter)
+    unit: '-'
+    category: parameter
+    source_kind: calibrated
+    model_input_format: NoahmpTable.TBL vegetation section
+  - name: ISLTYP (soil-type index)
+    unit: class index 1-19
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: HRLDAS setup NetCDF 2-D field
+    notes: STATSGO/STAS texture; selects the soil-parameter row; 14=Water cells skipped, 15=Bedrock.
+  - name: IVGTYP (vegetation-type index)
+    unit: class index
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: HRLDAS setup NetCDF 2-D field
+    notes: Class set depends on MMINLU (USGS 27-class vs MODIFIED_IGBP_MODIS_NOAH 20-class).
+  - name: VEGFRA (green vegetation fraction)
+    unit: '% (0-100)'
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: HRLDAS setup NetCDF 2-D field (or 12-month climatology)
+    notes: Percent, not 0-1 fraction; driver only divides by 100 when max>1.
+  - name: TMN/TBOT (deep-soil annual-mean temperature, lower BC)
+    unit: K
+    category: parameter
+    source_kind: dataset_lookup
+    model_input_format: HRLDAS setup NetCDF 2-D field
+    notes: Lower thermal boundary condition held constant at the column base.
+  - name: Soil-layer geometry ZSOIL / DZS (interface depths and thicknesses)
+    unit: m
+    category: parameter
+    source_kind: user_provided
+    model_input_format: namelist.hrldas soil_thick_input (NSOIL values)
+    notes: ZSOIL negative downward (e.g. -0.1/-0.4/-1.0/-2.0); DZS positive; NSOIL must equal the count
+      of thickness values.
+  initial_conditions:
+  - name: SMOIS (initial volumetric soil moisture per layer)
+    unit: m3/m3
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: HRLDAS setup NetCDF 3-D field or restart
+    notes: 'Cold-start default ~0.50-0.75*SMCMAX (docs: 60% saturation); must lie between SMCWLT and SMCMAX.
+      3-5 yr spinup recommended.'
+  - name: TSLB (initial soil temperature per layer)
+    unit: K
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: HRLDAS setup NetCDF 3-D field or restart
+  - name: TSK (initial skin temperature)
+    unit: K
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: HRLDAS setup NetCDF 2-D field
+  - name: SNOW / SNOWH (initial SWE and snow depth)
+    unit: mm / m
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: HRLDAS setup NetCDF 2-D field
+  - name: CANWAT (initial canopy intercepted water)
+    unit: mm
+    category: initial_condition
+    source_kind: user_provided
+    model_input_format: HRLDAS setup NetCDF 2-D field
+  - name: Aquifer storage / water-table (WA, ZWT)
+    unit: mm / m
+    category: initial_condition
+    source_kind: default
+    model_input_format: restart or arbitrary-init default
+    notes: Cold-start default aquifer ~4900 mm (~2.5 m water table).
+  boundary_conditions:
+  - name: dynamic_veg_option (DVEG)
+    unit: switch 1-7
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas &NOAHLSM_OFFLINE
+    notes: Vegetation dynamics / LAI source; default 4.
+  - name: canopy_stomatal_resistance_option (OPT_CRS)
+    unit: switch 1-2
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+    notes: Ball-Berry (1) vs Jarvis (2); must be 1 when dynamic vegetation is on.
+  - name: btr_option (OPT_BTR, soil-moisture stress)
+    unit: switch 1-3
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+    notes: Noah / CLM / SSiB stress formulation.
+  - name: surface_runoff_option (OPT_RUN surface)
+    unit: switch 1-8
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+    notes: SIMGM/SIMTOP/Schaake96/BATS/VIC/Xinanjiang; very high sensitivity.
+  - name: subsurface_runoff_option (baseflow scheme)
+    unit: switch 1-6
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+  - name: surface_drag_option (OPT_SFC)
+    unit: switch 1-2
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+    notes: Monin-Obukhov vs Chen97 exchange coefficient.
+  - name: frozen_soil_option (OPT_FRZ/INF)
+    unit: switch 1-2
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+  - name: radiative_transfer_option (OPT_RAD)
+    unit: switch 1-3
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+  - name: snow_albedo_option (OPT_ALB)
+    unit: switch 1-3
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+    notes: BATS / CLASS / SNICAR; SNICAR (3) needs optics files.
+  - name: pcp_partition_option (OPT_SNF, rain/snow split)
+    unit: switch 1-4
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+  - name: crop_option / irrigation_option / tile_drainage_option / wetland_option
+    unit: switch (0=off)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+    notes: Activate optional crop, irrigation, tile-drainage, wetland modules.
+  - name: MMINLU land-use classification choice
+    unit: string (USGS | MODIFIED_IGBP_MODIS_NOAH)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: HRLDAS setup NetCDF global attribute
+    notes: Must match the section used in NoahmpTable.TBL.
+  - name: Time control (noah_timestep, forcing_timestep, output_timestep, NSOIL, khour/kday)
+    unit: s / count
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: namelist.hrldas
+    notes: forcing_timestep and output_timestep must be integer multiples of noah_timestep (default 900
+      s).
 outputs:
   primary:
-    format: "NetCDF (one file per output_timestep: YYYYMMDDHH00.LDASOUT_DOMAIN1)"
-    variables:
-      - name: "SOIL_M"
-        description: "Volumetric soil moisture per layer"
-        unit: "m3/m3"
-        valid_range: [0.0, 0.5]
-      - name: "SOIL_T"
-        description: "Soil temperature per layer"
-        unit: "K"
-        valid_range: [240.0, 340.0]
-      - name: "SFCRNOFF"
-        description: "Accumulated surface runoff"
-        unit: "m"
-        valid_range: [0.0, 1000.0]
-      - name: "UGDRNOFF"
-        description: "Accumulated subsurface runoff"
-        unit: "m"
-        valid_range: [0.0, 1000.0]
-      - name: "HFX"
-        description: "Sensible heat flux"
-        unit: "W/m2"
-        valid_range: [-200.0, 800.0]
-      - name: "LH"
-        description: "Latent heat flux"
-        unit: "W/m2"
-        valid_range: [-50.0, 1000.0]
-      - name: "GRDFLX"
-        description: "Ground heat flux"
-        unit: "W/m2"
-        valid_range: [-200.0, 200.0]
-      - name: "FSA"
-        description: "Absorbed shortwave radiation"
-        unit: "W/m2"
-        valid_range: [0.0, 1200.0]
-      - name: "FIRA"
-        description: "Net longwave radiation"
-        unit: "W/m2"
-        valid_range: [0.0, 500.0]
-      - name: "SNOWH"
-        description: "Snow depth"
-        unit: "m"
-        valid_range: [0.0, 10.0]
-      - name: "SNEQV"
-        description: "Snow water equivalent"
-        unit: "mm"
-        valid_range: [0.0, 5000.0]
-      - name: "GPP"
-        description: "Gross primary productivity"
-        unit: "g C/m2/s"
-        valid_range: [0.0, 50.0e-6]
-      - name: "NEE"
-        description: "Net ecosystem exchange"
-        unit: "g C/m2/s"
-      - name: "LAI"
-        description: "Leaf area index"
-        unit: "m2/m2"
-        valid_range: [0.0, 10.0]
-      - name: "ALBEDO"
-        description: "Surface albedo"
-        unit: "dimensionless"
-        valid_range: [0.0, 1.0]
-
+  - name: LH
+    unit: W/m2
+    description: Total latent heat flux (canopy evaporation + transpiration + soil evaporation), positive
+      upward.
+    validation_rank: 3
+    emitted_in: LDASOUT NetCDF (YYYYMMDDHH00.LDASOUT_DOMAIN1)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance tower fluxes carry energy-balance non-closure (~10-30%); column footprint vs
+          tower footprint mismatch.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Gridded ET products (e.g. satellite/reanalysis) are themselves model-derived; treat as cross-validation,
+          not ground truth.
+      detrending_options:
+      - none
+  - name: HFX
+    unit: W/m2
+    description: Total sensible heat flux from the land surface to the atmosphere, positive upward.
+    validation_rank: 4
+    emitted_in: LDASOUT NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Tower energy-balance non-closure; sensible heat most sensitive to the surface-exchange scheme
+          (OPT_SFC).
+      detrending_options:
+      - none
+  - name: SMOIS
+    unit: m3/m3
+    description: Volumetric soil moisture per layer (ice + liquid).
+    validation_rank: 5
+    emitted_in: LDASOUT NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - In-situ probes sample a depth/support volume that rarely matches model layer interfaces; anomaly
+          correlation often more meaningful than absolute magnitude.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Satellite retrievals sense only the top few cm; compare against the shallowest model layer.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: TSK
+    unit: K
+    description: Surface skin / radiative temperature.
+    validation_rank: 6
+    emitted_in: LDASOUT NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Satellite LST is clear-sky and instantaneous-overpass; emissivity assumptions affect comparison.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats: []
+      detrending_options:
+      - none
+  - name: SNEQV
+    unit: mm
+    description: Snow water equivalent (total over up-to-3-layer snowpack).
+    validation_rank: 7
+    emitted_in: LDASOUT NetCDF (also SNOW/SNOWH)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - SNOTEL/pillow point SWE vs grid-cell mean; timing of melt-out is a key diagnostic (MFSNO, snow
+          albedo scheme).
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Gridded SWE products have large uncertainty in forest/complex terrain.
+      detrending_options:
+      - none
+  - name: SFCRUNOFF + UDRUNOFF (total runoff)
+    unit: m (accumulated; mm/s instantaneous in some drivers)
+    description: Surface plus subsurface/baseflow runoff. Written as values ACCUMULATED since simulation
+      start; incremental runoff = difference between consecutive output timesteps.
+    validation_rank: 1
+    emitted_in: LDASOUT NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Column runoff is NOT streamflow; comparison to gauged discharge requires an external routing
+          model (WRF-Hydro, CaMa-Flood). Without routing only basin-aggregated water-balance closure is
+          defensible.
+      detrending_options:
+      - none
+  - name: GPP / NEE
+    unit: g C/m2/s (GPP) ; g CO2/m2/s (NEE)
+    description: Gross primary productivity and net ecosystem exchange (dynamic vegetation / crop on).
+    validation_rank: 2
+    emitted_in: LDASOUT NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - FLUXNET NEE partitioning into GPP is itself model-assisted; only available when carbon/dynamic-veg
+          physics is active.
+      detrending_options:
+      - none
+  - name: LAI
+    unit: m2/m2
+    description: Leaf area index (prognostic when dynamic vegetation active; prescribed otherwise).
+    validation_rank: 8
+    emitted_in: LDASOUT NetCDF
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Only meaningful as an evaluation target when dynamic vegetation is on; with prescribed LAI it
+          echoes the input.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    description: "Temperature forcing must be Kelvin, not Celsius — causes NaN crash"
-  - id: "dt_002"
-    description: "Precipitation rate must be mm/s, not mm/hr — causes instant soil saturation"
-  - id: "dt_003"
-    description: "Must use specific humidity (kg/kg), not relative humidity — causes extreme LH"
-  - id: "dt_007"
-    description: "VEGFRA 0-1 vs 0-100 mismatch causes zero vegetation"
-  - id: "dt_008"
-    description: "NoahmpTable.TBL MMINLU must match setup file classification"
-  - id: "dt_009"
-    description: "forcing_timestep must divide evenly into noah_timestep"
+- id: dt_001
+  symptom: 'Model crashes with NaN in saturation vapor pressure calculation, or skin temperature drops
+    to ~0 K. Stderr shows floating-point exception.
+
+    '
+  diagnosis: 'T2D forcing is in Celsius instead of Kelvin. When T_C ~ 25°C is interpreted as 25 K (-248°C),
+    the Tetens/Magnus formula for saturation vapor pressure computes exp(negative_large), producing NaN
+    or underflow.
+
+    '
+  remedy: Add 273.15 to all T2D values in LDASIN files; Validate T2D range [200, 340] K before running
+    model
+  severity: silent
+- id: dt_002
+  symptom: 'Soil moisture instantly saturates. Surface runoff is extreme (>100 mm/day). SMOIS hits SMCMAX
+    within first few timesteps. Snow accumulates unrealistically.
+
+    '
+  diagnosis: 'RAINRATE is in mm/hr instead of mm/s (3600x too high). At 1 mm/hr input interpreted as 1
+    mm/s, the model receives 3600 mm/hr = 86.4 m/day of precipitation, flooding the soil column instantly.
+
+    '
+  remedy: Divide RAINRATE by 3600 to convert mm/hr to mm/s; Validate RAINRATE < 0.03 mm/s (108 mm/hr,
+    extreme threshold)
+  severity: silent
+- id: dt_003
+  symptom: 'Latent heat flux (LH) is extremely high (>1000 W/m²). Soil dries out unrealistically fast.
+    ET exceeds precipitation by 10x+.
+
+    '
+  diagnosis: 'Q2D is relative humidity (0-100%) instead of specific humidity (kg/kg). When RH=70 is interpreted
+    as q=70 kg/kg, the surface-to-air moisture gradient is enormous, driving extreme evaporation.
+
+    '
+  remedy: 'Convert RH to specific humidity: q = 0.622*e/(P-0.378*e) where e = RH/100 * es(T); Validate
+    Q2D < 0.04 kg/kg'
+  severity: silent
+- id: dt_004
+  symptom: 'Energy balance has systematic negative bias. Surface temperature is anomalously low. Negative
+    SWDOWN values in nighttime output diagnostics.
+
+    '
+  diagnosis: 'SWDOWN has negative values from temporal interpolation of 3-hourly data. Negative shortwave
+    creates an energy sink, cooling the surface. The model does not clip SWDOWN internally.
+
+    '
+  remedy: Clip SWDOWN to max(0, SWDOWN) during forcing conversion; Always validate SWDOWN >= 0 in all
+    LDASIN files
+  severity: silent
+- id: dt_005
+  symptom: 'All turbulent fluxes (HFX, LH) are systematically too low or too high by a factor of ~10.
+    Bowen ratio appears normal but magnitudes are wrong.
+
+    '
+  diagnosis: 'PSFC is in hPa (millibars) instead of Pa. Since air density = P/(R*T), wrong pressure by
+    100x causes 100x error in density, which scales all turbulent flux computations. The ratio of fluxes
+    stays correct so the Bowen ratio appears normal.
+
+    '
+  remedy: Multiply PSFC by 100 to convert hPa to Pa; Validate PSFC in range [40000, 110000] Pa
+  severity: silent
+- id: dt_006
+  symptom: 'Model crashes in soil temperature/moisture solver with array bounds error or produces nonsensical
+    soil profiles (warm at depth, cold at surface).
+
+    '
+  diagnosis: 'ZSOIL values are positive instead of negative. Noah-MP convention is ZSOIL measured downward
+    from surface as negative values: [-0.1, -0.4, -1.0, -2.0]. DZS (thickness) is positive. Mixing conventions
+    corrupts layer ordering.
+
+    '
+  remedy: Ensure ZSOIL values are negative (downward from surface); Validate all(ZSOIL < 0) and all(DZS
+    > 0)
+  severity: fatal
+- id: dt_007
+  symptom: 'All grid cells behave as bare soil. No canopy interception, transpiration, or photosynthesis.
+    LAI appears correct but vegetation fraction is zero.
+
+    '
+  diagnosis: 'VEGFRA in the setup file is in fraction (0-1) instead of percentage (0-100). The HRLDAS
+    driver divides VEGFRA by 100 if max > 1.0. If VEGFRA=0.65 (fraction), it stays as-is but is treated
+    as 0.65% vegetation cover, effectively bare soil.
+
+    '
+  remedy: Multiply VEGFRA by 100 if values are in 0-1 range; Check max(VEGFRA); if < 1.0, likely needs
+    ×100
+  severity: silent
+- id: dt_008
+  symptom: 'Vegetation parameters don''t match expected land cover. Forest grid cells have grassland parameters
+    (low height, different albedo). Runoff behavior is inconsistent with land cover map.
+
+    '
+  diagnosis: 'MMINLU attribute in HRLDAS setup file doesn''t match the section in NoahmpTable.TBL. USGS
+    has 27 classes, MODIS has 20 classes. Type 7 in USGS is Grassland but in MODIS is Open Shrubland.
+
+    '
+  remedy: Verify MMINLU in setup NetCDF matches NoahmpTable.TBL classification; ncdump -h setup_file |
+    grep MMINLU; compare to table header
+  severity: silent
+- id: dt_009
+  symptom: 'Output timeseries shows periodic artifacts or jumps in forcing-sensitive variables. Forcing
+    appears to skip or repeat values at regular intervals.
+
+    '
+  diagnosis: 'forcing_timestep is not an integer multiple of noah_timestep. The model reads forcing every
+    forcing_timestep seconds but integrates at noah_timestep. If not evenly divisible, the forcing read
+    timing drifts, causing interpolation artifacts.
+
+    '
+  remedy: 'Set forcing_timestep as integer multiple of noah_timestep; Validate: forcing_timestep % noah_timestep
+    == 0'
+  severity: silent
+- id: dt_010
+  symptom: 'Zero surface runoff everywhere despite heavy precipitation. All water infiltrates. Baseflow
+    index is 1.0.
+
+    '
+  diagnosis: 'All grid cells classified as Sand (ISLTYP=1) with DKSAT=1.76e-4 m/s. Sandy soil has extremely
+    high infiltration capacity, so all precipitation infiltrates and appears as subsurface runoff only.
+
+    '
+  remedy: Verify ISLTYP classification against known soil texture maps; Cross-check ISLTYP distribution
+    against HWSD/SoilGrids
+  severity: silent
+- id: dt_011
+  symptom: 'Soil moisture permanently near saturation. Surface runoff is dominant (>90% of total). Very
+    little baseflow.
+
+    '
+  diagnosis: 'Soil misclassified as Clay (ISLTYP=12) instead of actual lighter texture. Clay has DKSAT=1.28e-6
+    m/s (very low K), so water pools at surface, generating excessive Hortonian runoff.
+
+    '
+  remedy: Verify ISLTYP matches HWSD/SoilGrids data at study location; Compare simulated vs observed baseflow
+    index
+  severity: silent
+- id: dt_012
+  symptom: 'ET is systematically too high. Soil never reaches stress conditions. LAI appears correct but
+    transpiration exceeds observations.
+
+    '
+  diagnosis: 'SMCMAX set too high for the soil type, so the soil column holds more water than physically
+    possible. The soil moisture stress function (btran) never reduces transpiration because SMOIS stays
+    above SMCREF.
+
+    '
+  remedy: Verify SMCMAX matches literature for the soil texture class; Compare SMCMAX with pedotransfer
+    estimate from sand/clay
+  severity: silent
+- id: dt_013
+  symptom: 'Model runs partway then crashes with file-not-found error. Output exists for first portion
+    of simulation but stops mid-period.
+
+    '
+  diagnosis: 'Gap in LDASIN forcing file sequence. The HRLDAS driver expects one file per forcing_timestep
+    with strict naming convention (YYYYMMDDHH.LDASIN_DOMAIN1). A missing file causes immediate read failure.
+
+    '
+  remedy: Fill gaps with interpolated data or adjust simulation period; Verify continuous file sequence
+    before running model
+  severity: fatal
+- id: dt_014
+  symptom: 'Model crashes immediately at first timestep with NetCDF read error or segmentation fault.
+    No output files created.
+
+    '
+  diagnosis: 'HRLDAS setup file (wrfinput_d01) is corrupt, missing required variables, or has dimension
+    mismatches with forcing files. Grid dimensions must match between setup file and LDASIN files.
+
+    '
+  remedy: Check setup file dimensions match LDASIN; verify all required variables exist; ncdump -h on
+    both files; compare dimensions
+  severity: fatal
+- id: dt_015
+  symptom: 'Model crashes with floating-point exception (SIGFPE) or NaN propagation after running for
+    some timesteps. Crash occurs during energy balance solver.
+
+    '
+  diagnosis: 'Forcing data contains out-of-range values (extreme temperature, negative pressure, etc.)
+    that cause division by zero or overflow in the energy balance iteration. The implicit solver diverges.
+
+    '
+  remedy: Quality-control forcing data; remove spikes and fill missing values; Validate all forcing variables
+    against physical limits before running
+  severity: fatal
+- id: dt_016
+  symptom: 'Model produces NaN in output for specific grid cells but continues running. Other grid cells
+    appear normal. NaN appears in TSK, HFX, or SMOIS.
+
+    '
+  diagnosis: 'Isolated grid cells have inconsistent initial conditions (e.g., SMOIS > SMCMAX, TSK = 0,
+    or IVGTYP/ISLTYP = 0). The column solver fails for those cells but the driver continues with other
+    grid cells.
+
+    '
+  remedy: Check initial conditions in setup file; ensure no IVGTYP=0 on land cells; Validate all state
+    variables are within physical bounds in setup file
+  severity: silent
+- id: dt_017
+  symptom: 'SFCRUNOFF and UDRUNOFF appear to increase monotonically without seasonality. Values reach
+    unrealistically large numbers by end of simulation.
+
+    '
+  diagnosis: 'SFCRUNOFF and UDRUNOFF are ACCUMULATED since simulation start, not per-timestep values.
+    To get incremental runoff, compute the difference between consecutive output timesteps: runoff_inc
+    = SFCRUNOFF[t] - SFCRUNOFF[t-1].
+
+    '
+  remedy: Compute np.diff(SFCRUNOFF) * 1000 for incremental runoff in mm; Always compute incremental from
+    accumulated variables
+  severity: silent
+- id: dt_018
+  symptom: 'Computed ET exceeds 20 mm/day consistently. Annual ET is >3000 mm, far exceeding precipitation.
+    Water balance doesn''t close.
+
+    '
+  diagnosis: 'LH (latent heat flux) is being converted with wrong constant. ET = LH / Lv where Lv = 2.5104e6
+    J/kg (latent heat of vaporization), NOT 2.5e3 or 2.5e9. Also ensure LH is in W/m² and time conversion
+    is correct.
+
+    '
+  remedy: ET_mm_s = LH_Wm2 / 2.5104e6; ET_mm_day = ET_mm_s * 86400; Verify ET_annual is 200-1500 mm for
+    most basins
+  severity: silent
+- id: dt_019_freedrainage_overdrain_humid
+  symptom: 'Noah-MP on a humid/forested/energy-limited basin: runoff timing excellent (r > 0.9) but discharge
+    PBIAS >> +25% and basin water balance FAILS with ET+RO > P; subsurface runoff (UGDRNOFF) is ~950 mm/yr
+    and dominates total runoff (runoff ratio ~0.6-0.7 vs observed ~0.4).'
+  diagnosis: SURFACE_RUNOFF_OPTION=3 + SUBSURFACE_RUNOFF_OPTION=3 (Schaake96 + FREE DRAINAGE) has no groundwater
+    store, so the bottom soil layer drains freely as subsurface runoff before it can evaporate; the root
+    zone is starved and realized ET (= P - RO) collapses below atmospheric demand (LH-derived ET), over
+  remedy: For humid/energy-limited basins set SURFACE_RUNOFF_OPTION=1 and SUBSURFACE_RUNOFF_OPTION=1 (SIMGM
+    TOPMODEL-with-groundwater, Niu et al. 2007); the aquifer store (WA/WT/ZWT, cold-start default 4900
+    mm) allows capillary rise back to roots, raising ET and lowering/smoothing runoff. Reserve free drainag
+- id: noahmp_unrouted_runoff_vs_discharge_and_wb_closure
+  symptom: Noah-MP runoff run reports negative discharge NSE with high r (~0.9) and large +PBIAS vs a
+    gauged-discharge obs, and basin water-balance closure FAILS at ~15-25% (ET+runoff exceed precip).
+  diagnosis: Two coupled protocol defects, not a model result. (1) Column runoff was scored vs gauged
+    discharge through a hand-rolled linear-reservoir proxy, which the dag forbids ('discharge comparison
+    requires an external router; without routing only WB closure is defensible') -> the discharge metrics
+    are prov
+  remedy: Do not report proxy-routed discharge NSE as the verdict. Use WB closure as the non-routed verdict,
+    computed with prognostic ET (ECAN+EDIR+ETRAN) and dS=dSMOIS*dz+dSNEQV+dWA; spin up SIMGM (SPINUP_LOOPS>=3
+    or multi-decade). For real runoff skill without a router, validate runoff-to-runoff against a g
+- id: dt_v060_offline_wb_closure_et_snapshot
+  symptom: Noah-MP offline (HRLDAS) basin water-balance closure FAILS ~20-30% (ET+Q exceed P) while dStorage
+    ~= 0 and runoff pattern vs GRUN is excellent (r~0.97); a strict critic flags workflow_incomplete claiming
+    un-differenced accumulated runoff.
+  diagnosis: 'Runoff IS correctly differenced from accumulated SFCRNOFF/UGDRNOFF (GRUN r~0.97 proves it).
+    The residual is the ET term: prognostic ET read from an INSTANTANEOUS daily flux snapshot (ECAN+EDIR+ETRAN)
+    x86400 overstates ET because the offline daily HRLDAS build emits no accumulated ET fields. Noah-MP '
+  remedy: Do NOT gate the verdict on offline daily closure. Set verdict_metric = GRUN runoff-to-runoff
+    NSE/PBIAS (regional_aggregate) and mark WB closure a soft diagnostic with ~+/-30% ET-snapshot tolerance.
+    For exact closure use accumulated ET fields if emitted, else sub-daily OUTPUT_TIMESTEP + flux integrat
+- id: dt_019
+  symptom: 'Flux-tower-driven column run has an excellent daily/seasonal LE pattern but a badly distorted
+    DIURNAL cycle: LE peaks hours away from the SWDOWN peak, albedo and canopy shading look wrong, and
+    COSZ in LDASOUT is near zero while SWDOWN is at its daily maximum (or vice versa). Daily-mean LE metrics
+    de'
+  diagnosis: 'FLUXNET2015 (and most site-network) timestamps are LOCAL STANDARD TIME with no DST. HRLDAS
+    reads the LDASIN filename stamp as UTC: CALC_DECLIN in module_NoahMP_hrldas_driver.F computes TLOCTIM
+    = hour + LONGITUDE/15 and the hour angle from it. Writing local-time-stamped tower data into LDASIN
+    files t'
+  remedy: Shift the site record by -UTC_OFFSET before writing LDASIN files. The KI converter enforces
+    this - `--source fluxnet` REQUIRES `--utc_offset`, taken from the FLUXNET BADM/BIF variable UTC_OFFSET.;
+    Find the LDASIN file with the daily maximum SWDOWN; its UTC hour must be within ~1 h of (12 - longitude
+  severity: silent
+- id: dt_020
+  symptom: 'Parsed LDASOUT timeseries contains only SOIL_M_L1 / SOIL_T_L1 (layers 2..N silently missing)
+    on a single-column run; on a multi-cell domain the layer values are scrambled across rows. Soil-moisture
+    validation then compares the wrong depth or fails for lack of data.
+
+    '
+  diagnosis: HRLDAS writes layered LDASOUT fields with dimension order (Time, south_north, soil_layers_stag,
+    west_east) -- the LAYER axis sits BETWEEN the two horizontal axes. SKILL.md documented them as (ns,
+    y, x). Positional indexing var[0, k, iy, ix] with k over shape[1] therefore walks south_north (length
+    1)
+  remedy: Index by DIMENSION NAME, not position. extract_point now maps 'Time'->0, 'south_north'->iy,
+    'west_east'->ix and slices whichever axis is soil_layers_stag / snow_layers / rad_num.; A parsed 4-layer
+    run must yield SOIL_M_L1..SOIL_M_L4 with distinct values.
+  severity: silent
+- id: dt_021
+  symptom: 'Mean LH/HFX/FVEG from a parsed run are wildly negative (e.g. mean LH of -20 W/m2 on a humid
+    forest), or the first runoff increment is enormous. Only the period means are wrong; the shape of
+    the series looks right.
+
+    '
+  diagnosis: The t=0 LDASOUT record (written when SKIP_FIRST_OUTPUT=.false.) is dumped BEFORE any physics
+    has run, so every diagnostic field in it is the -9999 fill value. HRLDAS attaches no _FillValue attribute,
+    so a naive read folds -9999 into means, and the first accumulated-runoff difference is taken against
+  remedy: Mask values <= -9990 to None at read time (extract_point now does), and/or set SKIP_FIRST_OUTPUT=.true.
+    in namelist.hrldas.; Range-check any consumer guard against -9999 specifically; -9999 is inside every
+    plausible `> -1e6` sanity bound.
+  severity: silent
+- id: dt_022
+  symptom: 'ISLTYP for a point disagrees with the site''s published soil texture; the NoahmpTable row
+    picked has a noticeably different BEXP / DKSAT / SMCMAX than the correct texture class, shifting the
+    ET/runoff partition with no error message.
+
+    '
+  diagnosis: 'classify_usda_texture() in convert_soil_to_noahmp.py implemented the USDA triangle with
+    three wrong boundaries: sandy clay was gated at clay>=40 (the class starts at 35); sandy clay loam
+    omitted the silt<28 limb, so e.g. sand 47 / clay 21 / silt 32 (a LOAM) returned sandy clay loam --
+    ISLTYP 7 inste'
+  remedy: Use the USDA-NRCS class definitions including the silt+1.5*clay / silt+2*clay sand-limb boundaries
+    and the silt<28 side of sandy clay loam (rewritten 2026-08-02).; sand 47 / clay 21 -> loam (ISLTYP
+    6); sand 60 / clay 25 -> sandy clay loam; sand 45 / clay 15 -> loam; sand 50 / clay 38 -> sandy clay.
+  severity: silent
+- id: dt_023
+  symptom: 'A cropland/irrigated run behaves exactly like the dryland default: LAI follows the table climatology
+    instead of the crop model, IRSIVOL/IRNUMSI stay 0 for the whole run, and the only clue is a line on
+    stdout such as "MODULE_HRLDAS_NETCDF_IO: Problem finding variable ''CROPTYPE'' in NetCDF file. Using '
+  diagnosis: The HRLDAS setup reader does NOT use a shape-agnostic helper for the crop / irrigation fields.  READ_CROP_INPUT
+    calls nf90_get_var(..., start=(/x,y,1/), count=(/nx,ny,5/)) for CROPTYPE, so the variable must have
+    exactly THREE dimensions in Fortran order (west_east, south_north, crop) -- i.e. declare
+  remedy: 'Build the setup and agdata files with tools/build_hrldas_setup.py, which writes CROPTYPE as
+    (crop_cat=5, south_north, west_east) and PLANTING / HARVEST / SEASON_GDD / IRFRACT / SIFRACT / MIFRACT
+    / FIFRACT as 2-D, and set AGDATA_FLNM in namelist.hrldas.; ncdump -h the setup file: CROPTYPE(crop_cat,
+    s'
+  severity: silent
+- id: dt_024
+  symptom: 'IRRIGATION_OPTION=2 ("trigger on crop season") is set with CROP_OPTION=0, and irrigation starts/stops
+    on dates that have nothing to do with the PLANTING/HARVEST written into the setup file -- or the site
+    is a cropland class but FlagCropland is false and NOTHING irrigates.
+
+    '
+  diagnosis: 'Two separate gates.  (1) READ_CROP_INPUT is only called when IOPT_CROP == 1 (module_NoahMP_hrldas_driver.F),
+    so with CROP_OPTION=0 the PLANTING/HARVEST maps are never read; BiochemVarInTransferMod then leaves
+    DatePlanting/DateHarvest at the NoahmpTable PLTDAY/HSDAY of the default crop (corn: 111/300'
+  remedy: For a real cropland site set IVGTYP to 12 (or 14) AND CROP_OPTION=1 AND write PLANTING/HARVEST
+    from ki_tools_common.crop_calendar.get_planting_harvest. If the crop carbon model is deliberately
+    off, use IRRIGATION_OPTION=3 (LAI threshold) rather than 2, because option 2's dates are then not
+    yours.; T
+  severity: silent
+- id: dt_025
+  symptom: 'Total irrigation for a season comes out in the tens of thousands of mm (or the water balance
+    closes only if irrigation is dropped entirely). Summing the LDASOUT IRSIVOL column over a period gives
+    a number that scales with the NUMBER OF OUTPUT STEPS rather than with the weather.
+
+    '
+  diagnosis: 'IRSIVOL / IRMIVOL / IRFIVOL / IRELOSS / IRRSPLH (and ACSNOM / ACSNOW) are RUNNING TOTALS,
+    not per-step values: WaterVarOutTransferMod does `IRSIVOL = IRSIVOL + IrrigationRateSprinkler*1000`
+    every timestep.  Summing the raw series double-counts by ~N_timesteps, exactly like summing the accumulated
+    SF'
+  remedy: parse_noahmp_output.py now emits a `<NAME>_INC` column (per-output-step increment, clipped at
+    0) for every entry of ACCUMULATED_VARS; sum THAT for a period total.; sum(IRSIVOL_INC) over the period
+    == IRSIVOL(last) - IRSIVOL(first), and the closed budget P + sum(IRSIVOL_INC) = ET + sum(IRELOSS_INC)
+    +
+  severity: silent
+- id: dt_026
+  symptom: 'A CROP_OPTION=1 run started on 1 January transpires a full canopy all winter: LAI sits at
+    the annual-maximum value from the setup file from the first timestep until the first HARVEST date,
+    giving a large cold-season LE bias that no parameter change removes.
+
+    '
+  diagnosis: 'The setup-file LAI is the INITIAL canopy.  With the crop model on, NoahmpInitMainMod converts
+    it to leaf biomass (LFMASSXY = LAI/0.015 for corn, /0.030 for soybean) and nothing resets that biomass
+    before planting: CarbonFluxCropMod resets LeafMass/StemMass to their minima ONLY at PlantGrowStage
+    == 8'
+  remedy: Initialize a cropped column BARE -- LAI = 0.05 (the same value the post-harvest reset uses)
+    -- not with the table LAI maximum. Only non-crop (DVEG) runs should be seeded with the climatological
+    LAI.; SPINUP_LOOPS >= 1 masks the symptom (the second loop inherits the post-harvest reset), so it
+    is easy
+  severity: silent

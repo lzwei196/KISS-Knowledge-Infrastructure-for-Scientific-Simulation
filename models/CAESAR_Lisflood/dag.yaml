@@ -497,7 +497,7 @@ outputs:
   - var: "Elevation difference raster"
     validation_rank: 6
     unit: "m"
-    description: "Net erosion/deposition (elev - initial elev)"
+    description: "Net sediment erosion/deposition thickness (elev - initial elev)"
     emitted_in: "ElevationDiff_NNNN.asc"
     observability:
       comparable_obs_shapes:

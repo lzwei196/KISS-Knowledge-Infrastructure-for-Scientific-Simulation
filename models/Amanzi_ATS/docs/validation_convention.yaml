@@ -1,0 +1,495 @@
+schema_version: 1
+model_id: Amanzi_ATS
+domain: hydrology
+generated_by: "Step-B fleet agent"
+generated_at: 2026-08-14
+
+# Literature-grounded validation convention for the DAG outputs emitted by
+# Amanzi/ATS. Blocks are keyed by the model's own dag_variable names. Numeric
+# bands are used only where a fetched paper reports a threshold, observational
+# error target, or benchmark skill value. Missing conventions remain null.
+
+references:
+  jan2020:
+    doi: 10.5194/gmd-13-2259-2020
+    title: "Evaluating integrated surface/subsurface permafrost thermal hydrology models in ATS (v0.88) against observations from a polygonal tundra site"
+    venue: "Geosci. Model Dev."
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-2259-2020.txt
+  li2023:
+    doi: 10.5194/hess-27-2621-2023
+    title: "Knowledge-informed deep learning for hydrological model calibration: an application to Coal Creek Watershed in Colorado"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-27-2621-2023.txt
+  abolt2018:
+    doi: 10.5194/tc-12-1957-2018
+    title: "Microtopographic control on the ground thermal regime in ice wedge polygons"
+    venue: "The Cryosphere"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-12-1957-2018.txt
+  jafarov2012:
+    doi: 10.5194/tc-6-613-2012
+    title: "Numerical modeling of permafrost dynamics in Alaska using a high spatial resolution dataset"
+    venue: "The Cryosphere"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-6-613-2012.txt
+  marker2015:
+    doi: 10.5194/hess-19-3875-2015
+    title: "Performance evaluation of groundwater model hydrostratigraphy from airborne electromagnetic data and lithological borehole logs"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-3875-2015.txt
+  das2019:
+    doi: 10.1007/s13201-019-1013-x
+    title: "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India"
+    venue: "Applied Water Science"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13201-019-1013-x.txt
+  arnold2012:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Trans. ASABE"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42256.txt
+  alberg2009:
+    doi: 10.5194/hess-13-115-2009
+    title: "An evaluation of ASCAT surface soil moisture products with in-situ observations in Southwestern France"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2009
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-13-115-2009.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling & Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+  maxwell2014:
+    doi: 10.1002/2013WR013725
+    title: "Surface-subsurface model intercomparison: A first set of benchmark results to diagnose integrated hydrology and feedbacks"
+    venue: "Water Resour. Res."
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2013wr013725.txt
+  kollet2017:
+    doi: 10.1002/2016WR019191
+    title: "The integrated hydrologic model intercomparison project, IH-MIP2: A second set of benchmark results to diagnose integrated hydrology and feedbacks"
+    venue: "Water Resour. Res."
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2016wr019191.txt
+  steefel2015:
+    doi: 10.1007/s10596-014-9443-x
+    title: "Reactive transport codes for subsurface environmental simulation"
+    venue: "Computational Geosciences"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10596-014-9443-x.txt
+  lu2014:
+    doi: 10.1002/2013WR013755
+    title: "Assessment of parametric uncertainty for groundwater reactive transport modeling"
+    venue: "Water Resour. Res."
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2013wr013755.txt
+  frampton2015:
+    doi: 10.1002/2014WR016689
+    title: "Impact of degrading permafrost on subsurface solute transport pathways and travel times"
+    venue: "Water Resour. Res."
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2014wr016689.txt
+
+validation:
+  - dag_variable: pressure
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "DAG metric retained, but fetched groundwater-head papers do not give an NSE pass band for pressure converted to head."
+        cites: []
+      - metric: rmse_head
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.95, good: 1.4, satisfactory: 2.2}
+        pass_band: satisfactory
+        band_note: "Pressure should be converted to hydraulic head; Marker 2015 used head observation error classes of 0.95, 1.4, and 2.2 m."
+        cites: [marker2015]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Integrated hydrology benchmarks compare water-table/head dynamics and discharge; no pressure-field NSE convention was found."
+        cites: [maxwell2014, kollet2017]
+    validated_when: "Pressure is judged through converted hydraulic head: NSE is unresolved; RMSE of head residuals should be no larger than the largest cited head-observation error class, 2.2 m."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "Marker 2015 states that hydraulic head observation errors were estimated and that total errors amount to 0.95, 1.4, and 2.2 m; this is an observation-error transfer, not a universal pressure NSE tier."
+
+  - dag_variable: pressure
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a percent-bias validation band for instantaneous pressure snapshots."
+        cites: []
+      - metric: rmse_head
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.95, good: 1.4, satisfactory: 2.2}
+        pass_band: satisfactory
+        band_note: "Use hydraulic-head residual error after pressure-to-head conversion; 2.2 m is the largest Marker 2015 head-observation error class."
+        cites: [marker2015]
+    secondary_metrics: []
+    validated_when: "For pressure snapshots, compare as hydraulic head where possible; the DAG PBIAS band is unresolved, while RMSE_head <= 2.2 m is a transferred observation-error screen."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: "The numeric screen is transferred from groundwater-head calibration practice; PBIAS remains null because no pressure-snapshot convention was fetched."
+
+  - dag_variable: pressure
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI pass band for gridded pressure/ponded-pressure fields."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Bennett 2013 defines CSI as hits divided by hits plus misses plus false alarms and says it penalizes both misses and false alarms, but supplies no hydrologic pressure-field threshold."
+        cites: [bennett2013]
+    validated_when: "UNRESOLVED - use CSI only as a descriptive spatial categorical metric until a pressure-field threshold is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "OpenAlex coverage check for spatial hydrology CSI returned Bennett 2013 as the usable fetched source; it defines the metric but not a pass tier."
+
+  - dag_variable: hydraulic_head
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "DAG metric retained, but fetched groundwater-head texts do not give a universal r threshold."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.95, good: 1.4, satisfactory: 2.2}
+        pass_band: satisfactory
+        band_note: "Marker 2015 estimated head-observation total errors of 0.95, 1.4, and 2.2 m and calibrated to head residuals."
+        cites: [marker2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "ATS water-level evaluation reports NSE and RMSE against polygon-center water-level observations, but not a general head threshold."
+        cites: [jan2020]
+    validated_when: "Head hydrographs are acceptable when RMSE is within the largest cited head-observation error class (<= 2.2 m); the DAG r pass band remains unresolved."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Marker 2015 used hydraulic head and stream discharge observations in calibration and reports weighted RMSE/ME for head validation. Jan 2020 reports water-level NSE 0.56 and RMSE 0.07 with bias -1.3 cm and calls the agreement reasonably good."
+
+  - dag_variable: hydraulic_head
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a PBIAS band for hydraulic-head snapshots."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.95, good: 1.4, satisfactory: 2.2}
+        pass_band: satisfactory
+        band_note: "Use hydraulic-head residual error; Marker 2015 gives observation-error classes up to 2.2 m."
+        cites: [marker2015]
+    secondary_metrics: []
+    validated_when: "Head snapshots are screened by RMSE <= 2.2 m where colocated head observations exist; PBIAS is unresolved."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "Transferred from groundwater-head calibration/validation practice; not a dedicated snapshot PBIAS convention."
+
+  - dag_variable: saturation_liquid
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "DAG metric retained, but fetched soil-moisture validation papers report correlation/RMSE rather than NSE pass tiers."
+        cites: []
+      - metric: rmse_theta
+        direction: minimize
+        unit: m3/m3
+        bands: {good: 0.06, satisfactory: 0.06}
+        pass_band: satisfactory
+        band_note: "Albergel 2009 reports average relative RMSE 0.255 as about 0.06 m3/m3 error for surface soil-moisture retrievals."
+        cites: [alberg2009]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Albergel 2009 reports significant correlations for 11 stations and an average correlation coefficient of 0.556, but not a pass/fail tier."
+        cites: [alberg2009]
+    validated_when: "After converting saturation to volumetric water content, RMSE_theta near 0.06 m3/m3 is the fetched soil-moisture benchmark; NSE remains unresolved."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: "This is transferred from ASCAT-vs-in-situ soil-moisture evaluation. The paper says RMSE represents the relative error of the dynamical range and estimates average retrieval error about 0.06 m3/m3."
+
+  - dag_variable: saturation_liquid
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI pass band for spatial liquid-saturation or soil-moisture snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Bennett 2013 defines CSI for thresholded categorical/spatial comparisons but does not supply a soil-moisture CSI threshold."
+        cites: [bennett2013]
+    validated_when: "UNRESOLVED - spatial saturation maps may use CSI descriptively after thresholding wet/dry classes, but no numeric pass band is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The cached soil-moisture paper validates point time series; it does not establish spatial CSI bands."
+
+  - dag_variable: darcy_velocity
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {good: 0.75, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "For integrated runs, Darcy flux is normally compared after aggregation to streamflow/discharge hydrographs; Das 2019 reproduces Moriasi monthly streamflow NSE > 0.50 satisfactory."
+        cites: [das2019, arnold2012]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Das 2019 quotes monthly streamflow PBIAS +/-25% as satisfactory; its validation PBIAS values to -15.7% were described as good."
+        cites: [das2019]
+    secondary_metrics:
+      - metric: mKGE
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Li 2023 uses NSE and modified Kling-Gupta efficiency for ATS streamflow calibration and reports mKGE above 0.8 for selected multiyear discharge mappings."
+        cites: [li2023]
+    validated_when: "For discharge/flux hydrographs aggregated from Darcy velocity, require NSE >= 0.5 and |PBIAS| <= 25% on the validation period."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Das 2019 quotes: monthly objective functions are satisfactory if NSE > 0.50 and PBIAS +/-25% for streamflow. Arnold 2012 states Moriasi proposed NSE should exceed 0.5 for monthly hydrologic and pollutant-loss evaluations and very good means NSE and r2 > 0.75."
+
+  - dag_variable: darcy_velocity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI pass band for spatial Darcy-flux fields."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Bennett 2013 supports CSI for threshold exceedance or spatial categorical comparisons, but no flux-field pass threshold is given."
+        cites: [bennett2013]
+    validated_when: "UNRESOLVED - spatial Darcy-velocity CSI is descriptive unless a site-specific thresholded-flow benchmark is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Integrated hydrology benchmark papers compare storage/discharge time series and cross sections, not a universal spatial CSI band."
+
+  - dag_variable: total_component_concentration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched reactive-transport paper supplies an NSE threshold for concentration breakthrough curves."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: mol/L
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Reactive-transport benchmarks emphasize code comparison, residual likelihoods, and uncertainty; no universal mol/L RMSE band was fetched."
+        cites: []
+    secondary_metrics:
+      - metric: breakthrough_timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Frampton 2015 analyzes water and inert solute pathways and travel times under degrading permafrost, supporting breakthrough timing as the practical signal."
+        cites: [frampton2015]
+      - metric: uncertainty_coverage
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Lu 2014 frames concentration residuals through likelihood functions and predictive uncertainty rather than fixed NSE/RMSE pass tiers."
+        cites: [lu2014]
+    validated_when: "UNRESOLVED - validate concentration breakthrough curves by site-specific RMSE/timing and uncertainty coverage; no fetched numeric pass band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Coverage check for reactive-transport breakthrough thresholds returned no usable OA convention. Steefel 2015 says the special issue focus is benchmark problems and not fixed code pass criteria."
+
+  - dag_variable: total_component_concentration
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI pass band for spatial reactive-solute concentration fields."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI can describe threshold exceedance maps, but Bennett 2013 does not provide a solute-plume threshold convention."
+        cites: [bennett2013]
+    validated_when: "UNRESOLVED - use spatial CSI descriptively for plume/exceedance maps until a solute-plume benchmark convention is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Reactive-transport fetched texts support benchmarking and uncertainty analysis, not spatial pass bands."
+
+  - dag_variable: temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.94, satisfactory: 0.8}
+        pass_band: satisfactory
+        band_note: "Jan 2020 reports all soil-temperature NSE values greater than 0.94 and calls this an excellent match."
+        cites: [jan2020]
+      - metric: rmse
+        direction: minimize
+        unit: K
+        bands: {very_good: 0.7, good: 1.0, satisfactory: 1.1}
+        pass_band: satisfactory
+        band_note: "Abolt 2018 reports calibrated ground-temperature RMSE about 1.0 C and less than 1.1 C; Jafarov 2012 reports MAGT RMSE 0.70 to 0.88 C."
+        cites: [abolt2018, jafarov2012]
+    secondary_metrics:
+      - metric: freeze_thaw_timing
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Jan 2020 says timing of snowmelt, freeze-up, and active-layer depth are well represented, but does not give a numeric timing-error band."
+        cites: [jan2020]
+    validated_when: "Soil/ground temperature time series are validated when NSE >= 0.8 and RMSE <= 1.1 K, with freeze-up/thaw timing inspected."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: "The DAG NSE metric is well supported for temperature. Jan 2020 reports NSE > 0.94 for all cases; Abolt 2018 reports observed-vs-simulated daily ground-temperature RMSE about 1.0 C across 25 sensors."
+
+  - dag_variable: temperature
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI pass band for spatial ground-temperature snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Point/profile temperature RMSE is well benchmarked, but the fetched ATS/permafrost papers do not convert this to a spatial CSI threshold."
+        cites: [jan2020, abolt2018, jafarov2012]
+    validated_when: "UNRESOLVED for CSI; spatial temperature maps should be evaluated by colocated point/profile RMSE where possible."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "The fetched literature validates time/depth temperature series and ALT, not categorical spatial temperature fields."
+
+  - dag_variable: saturation_ice
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "DAG metric retained, but fetched active-layer/freeze-front papers report RMSE/MAE rather than NSE tiers for ice saturation."
+        cites: []
+      - metric: rmse_alt
+        direction: minimize
+        unit: m
+        bands: {good: 0.08, satisfactory: 0.08}
+        pass_band: satisfactory
+        band_note: "Jafarov 2012 validated active-layer thickness against 43 CALM stations and reported ALT RMSE 0.08 m."
+        cites: [jafarov2012]
+    secondary_metrics:
+      - metric: freeze_thaw_timing
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Jan 2020 treats timing of freeze-up and active-layer depth as key permafrost thermal-hydrology signals, but provides no numeric timing-error band."
+        cites: [jan2020]
+    validated_when: "Use active-layer thickness or freeze/thaw-front observations as the practical observable; RMSE_ALT <= 0.08 m is the fetched benchmark, while NSE remains unresolved."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Saturation_ice itself is rarely observed directly. Jafarov 2012 says simulated active-layer thicknesses were validated with observed ALTs from 43 CALM stations and reports RMSE 0.08 m, MAE 0.07 m, MBE -0.03 m."
+
+  - dag_variable: saturation_ice
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI pass band for spatial ice-saturation or freeze/thaw-extent maps."
+        cites: []
+    secondary_metrics:
+      - metric: rmse_alt
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Active-layer thickness RMSE is benchmarked for point/station comparisons, but not as a spatial CSI convention."
+        cites: [jafarov2012]
+    validated_when: "UNRESOLVED - spatial ice-saturation maps need site-specific active-layer/freeze-thaw extent thresholds; no numeric CSI band fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Use station ALT/freeze-front validation when available; do not auto-validate spatial saturation_ice CSI from the current fetched literature."
+
+deferred_paywalled:
+  - ref: "Integrated surface/subsurface permafrost thermal hydrology: Model formulation and proof-of-concept simulations"
+    doi: 10.1002/2015WR018427
+    needed_for: [temperature, hydraulic_head, pressure, saturation_liquid, saturation_ice]
+  - ref: "A Multicomponent Reactive Transport Model for Integrated Surface-Subsurface Hydrology Problems"
+    doi: 10.1029/2022WR032074
+    needed_for: [total_component_concentration]
+  - ref: "Using Mutual Information for Global Sensitivity Analysis on Watershed Modeling"
+    doi: 10.1029/2022WR032932
+    needed_for: [darcy_velocity, hydraulic_head]

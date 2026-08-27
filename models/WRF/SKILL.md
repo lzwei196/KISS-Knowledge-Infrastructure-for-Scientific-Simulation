@@ -1,14 +1,3 @@
----
-name: wrf
-description: >-
-  Advanced Research WRF (ARW) dynamical core, v4.x lineage; governing equations per the
-  ARW Technical Note (NCAR TN series): fully compressible…. Covers Limited-area
-  mesoscale-to-microscale atmospheric dynamics (compressible nonhydrostatic, with…;
-  Real-data numerical weather prediction over a map-projected limited-area domain;
-  Idealized simulations (LES, convection, baroclinic wave). Use when the task involves
-  running, configuring, calibrating or interpreting WRF.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -32,9 +21,52 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
-# WRF (Weather Research and Forecasting) Model - Knowledge Infrastructure
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
 
-## Package Overview
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (23 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_wrf.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_wrf.py --help` |
+| `tools/convert_soil_to_wrf.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_wrf.py --help` |
+| `tools/parse_wrfout.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_wrfout.py --help` |
+| `tools/run_wrf.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wrf.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
+# WRF (Weather Research and Forecasting) Model -- Knowledge Infrastructure Skill Document
+
+> **Version**: 4.7.1
+> **Domain**: Mesoscale atmospheric simulation
+> **Last updated**: 2026-08-18
+> **Validation status**: partial_replacement
+
+---
+
+## 1. Model Identity
+
+### Package Overview
 
 | Field          | Value                                              |
 |----------------|----------------------------------------------------|
@@ -48,7 +80,25 @@ description: >-
 | I/O Format     | NetCDF (default), GRIB1/2, HDF5, pnetCDF           |
 | Parallelism    | MPI (distributed) + OpenMP (shared memory)         |
 
-## Installation
+## 2. What This Model Does
+
+WRF is a nonhydrostatic mesoscale atmospheric model used for numerical weather prediction and regional climate simulation. This KI describes the real-data ARW workflow from static geography and meteorological forcing through `real.exe`, `wrf.exe`, post-processing, and validation against observable atmospheric fields.
+
+## 3. Input Requirements
+
+Exact I/O shapes live in `docs/format_spec.yaml`, projected from `dag.yaml` and `diagnostics/triplets.yaml`; regenerate that spec after changing either source and do not hand-edit it. Real-data runs require WPS geography, gridded meteorological forcing, WRF namelists, and lookup tables in the run directory.
+
+| Input class | Expected source | Tool or component that prepares it |
+|-------------|-----------------|------------------------------------|
+| Domain and projection | User configuration in `namelist.wps` | WPS `geogrid.exe` / Stage 0 and Stage 1 tools |
+| Static geography | WPS geographical data | WPS `geogrid.exe` |
+| Meteorological forcing | GFS, ERA5, NCEP FNL, CMFD/MSWX/NASA POWER through KI helpers where applicable | WPS `ungrib.exe` and `metgrid.exe`; `ki_tools_common.load_forcing` for KI forcing loaders |
+| Initial and boundary conditions | `met_em` files | WRF `real.exe` |
+| Model configuration | `namelist.input` | Stage 5 namelist assembly |
+
+## 4. Build Instructions
+
+### Installation
 
 ### Prerequisites
 
@@ -95,7 +145,7 @@ cd /path/to/WRF/source/repo
 
 ---
 
-## Data Preparation
+### Data Preparation
 
 ### Forcing data
 
@@ -104,7 +154,9 @@ cd /path/to/WRF/source/repo
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for boundary condition forcing.
 
 
-## Pipeline Architecture
+## 5. Execution
+
+### Pipeline Architecture
 
 The WRF real-data workflow has **9 stages** from raw global data to verified output.
 
@@ -163,7 +215,48 @@ Compare simulated fields against observations. Compute skill metrics (RMSE, bias
 
 ---
 
-## Unit Trap Table
+## 6. Output Description
+
+Source of truth: `dag.yaml`. The dag defines the model's observable outputs, units, descriptions, and validation rank; if this body ever disagrees with `dag.yaml`, the dag wins.
+
+**Headline output**: `T2` is the dag's rank-1 variable, the output this model is judged by.
+
+> `T2` -- 2-metre air temperature (diagnosed at the surface; already in Kelvin, no base-state offset needed) (`K`)
+
+| Output variable from dag | Validation rank | Unit | Description restated from dag facts |
+|--------------------------|-----------------|------|-------------------------------------|
+| `T2` | 1 | `K` | 2-metre air temperature (diagnosed at the surface; already in Kelvin, no base-state offset needed) |
+| `RAINC+RAINNC` | dag output | see `dag.yaml` | Named by the dag as an additional output |
+| `U10/V10` | dag output | see `dag.yaml` | Named by the dag as an additional output |
+| `PSFC` | dag output | see `dag.yaml` | Named by the dag as an additional output |
+| `T` | dag output | see `dag.yaml` | Named by the dag as an additional output |
+| `SWDOWN` | dag output | see `dag.yaml` | Named by the dag as an additional output |
+| `TSLB` | dag output | see `dag.yaml` | Named by the dag as an additional output |
+| `SMOIS` | dag output | see `dag.yaml` | Named by the dag as an additional output |
+
+## 7. Tool Inventory
+
+| Tool Script                    | Lines | Purpose                                   |
+|--------------------------------|-------|-------------------------------------------|
+| `convert_forcing_to_wrf.py`   | ~350  | Global reanalysis GRIB/NC -> WPS intermediate |
+| `convert_soil_to_wrf.py`      | ~250  | HWSD/SoilGrids -> WRF geogrid format     |
+| `run_wrf.py`                  | ~200  | Execute real.exe + wrf.exe with checks    |
+| `parse_wrfout.py`             | ~280  | Extract wrfout variables to CSV/timeseries|
+
+### Shared Utilities
+
+Use shared KI utilities instead of writing raw ad hoc extraction or metric code where the toolchain provides them:
+
+```python
+from ki_tools_common.load_forcing import load_daily_forcing
+from ki_tools_common.metrics import all_metrics
+from ki_tools_common.validation import validate_forcing_ranges
+from ki_tools_common.units import convert
+```
+
+## 8. Unit Table
+
+### Unit Trap Table
 
 These are the most dangerous silent-error unit mismatches when preparing WRF input data.
 
@@ -184,6 +277,21 @@ These are the most dangerous silent-error unit mismatches when preparing WRF inp
 | SST                 | K                    | C                      | +273.15; wrflowinp must also be in K      | HIGH     |
 | Grid spacing dx/dy  | m                    | km, degrees            | Must be meters for real-data cases        | HIGH     |
 | Time step           | s                    | min                    | CFL: dt <= 6*dx(km) for stability         | CRITICAL |
+
+### Output Unit Table
+
+This table records output-unit facts that an agent reading only this body must know before computing metrics. `T2` is not the same as WRF's 3D `T`; `T2` is already Kelvin and needs no 300 K base-state offset.
+
+| Output variable | Unit | Conversion or handling |
+|-----------------|------|------------------------|
+| `T2` | `K` | Use directly for 2-metre air temperature; no base-state offset needed. |
+| `T` | K perturbation potential temperature | Add the 300 K base state before converting to actual temperature. |
+| `RAINC+RAINNC` | mm accumulated | Use `RAINC + RAINNC` for total accumulated precipitation; difference consecutive output times for interval precipitation. |
+| `PSFC` | Pa | Surface pressure is total pressure in Pa. |
+| `U10/V10` | m s⁻¹ | Compare as 10-metre wind components or derive wind speed after confirming observation convention. |
+| `SWDOWN` | W m⁻² | Downward shortwave radiation flux. |
+| `TSLB` | K | Soil temperature. |
+| `SMOIS` | m³ m⁻³ | Volumetric soil moisture. |
 
 ---
 
@@ -257,14 +365,31 @@ karman  = 0.4           ! von Karman constant              [-]
 
 ---
 
-## Tool Reference
+## 9. Diagnostic Triplets
 
-| Tool Script                    | Lines | Purpose                                   |
-|--------------------------------|-------|-------------------------------------------|
-| `convert_forcing_to_wrf.py`   | ~350  | Global reanalysis GRIB/NC -> WPS intermediate |
-| `convert_soil_to_wrf.py`      | ~250  | HWSD/SoilGrids -> WRF geogrid format     |
-| `run_wrf.py`                  | ~200  | Execute real.exe + wrf.exe with checks    |
-| `parse_wrfout.py`             | ~280  | Extract wrfout variables to CSV/timeseries|
+Check `diagnostics/triplets.yaml` before debugging any failure. These are the first five high-risk entries to check; the YAML remains the complete source of truth.
+
+| ID | Error / symptom | Diagnosis | Remedy |
+|----|-----------------|-----------|--------|
+| `dt_001` | Surface temperatures in `wrfout` are about 300 K too cold. | 3D `T` was read directly as actual temperature instead of perturbation potential temperature. | Add 300 K to `T` and use pressure conversion for actual temperature; use `T2` directly because it is already in K. |
+| `dt_002` | Surface pressure is about 100x too small. | Pressure was read in hPa, or `P` was used without `PB`. | Convert hPa to Pa and use total pressure `P + PB`; `PSFC` is total surface pressure in Pa. |
+| `dt_003` | Mixing ratios are 1000x too large. | Humidity or mixing ratio was supplied in g/kg instead of kg/kg. | Divide g/kg values by 1000 before ingestion. |
+| `dt_004` | Geopotential height is about 9.81x too large. | ERA5 geopotential in m2/s2 was used where WRF expects height in meters. | Divide ERA5 geopotential by 9.81 to get geopotential height in meters. |
+| `dt_005` | Precipitation totals are zero or look like multi-day accumulations. | `RAINC` and `RAINNC` are accumulated from simulation start. | Use `RAINC + RAINNC`, then difference consecutive outputs for interval precipitation. |
+
+## 10. Coupling Interfaces
+
+WRF is commonly used as an atmospheric driver for land, hydrology, air-quality, and post-processing systems. Confirm the exact exchange fields and units against `dag.yaml`, `docs/format_spec.yaml`, and the downstream model before coupling.
+
+| Upstream model or dataset | Variable exchanged | Unit | Temporal resolution |
+|---------------------------|-------------------|------|---------------------|
+| GFS / ERA5 / NCEP FNL | Meteorological initial and boundary forcing | Dataset-dependent; convert to WRF/WPS expectations | Hourly to 6-hourly depending on dataset |
+| WPS geography | Terrain, land use, soil category, vegetation fields | WPS geogrid conventions | Static |
+
+| Downstream model or workflow | Variable exchanged | Unit | Temporal resolution |
+|------------------------------|-------------------|------|---------------------|
+| Validation workflow | `T2`, `RAINC+RAINNC`, `U10/V10`, `PSFC`, `SWDOWN`, `TSLB`, `SMOIS` | Use dag and output unit table | `history_interval` from `namelist.input` |
+| Hydrology or land-surface post-processing | Precipitation, temperature, radiation, wind, pressure | Convert from WRF output conventions before ingest | Model output interval |
 
 ---
 
@@ -354,6 +479,47 @@ ncdump -h wrfout_d01_0001-01-01_00:00:00
 - `SOILPARM.TBL` - Soil type parameters
 - `GENPARM.TBL` - General land-surface parameters
 - `RRTM_DATA` / `RRTMG_*_DATA` - Radiation lookup tables
+
+---
+
+## 11. Validated Results
+
+Source of truth for validation bars: `docs/validation_convention.yaml`. This section restates the KI's convention facts; it does not invent achieved run metrics. If a convention band is null, write `no cited threshold`.
+
+### Headline Validation Variable
+
+The dag's rank-1 output is `T2`: 2-metre air temperature (diagnosed at the surface; already in Kelvin, no base-state offset needed), unit `K`.
+
+### Performance Metrics -- judged against the field's bar, not intuition
+
+| Dag variable | Metric | Direction | Convention bar | Citation key |
+|--------------|--------|-----------|----------------|--------------|
+| `T2` | `rmse` | minimize | very_good <= 1.5; good <= 2.0; satisfactory <= 2.5 | `gilliam2010`, `wyszogrodzki2013` |
+| `T2` | `r` | maximize | very_good >= 0.99; good >= 0.97; satisfactory >= 0.95 | `katragkou2015` |
+| `RAINC+RAINNC` | `nse` | maximize | satisfactory: no cited threshold | none in convention |
+| `RAINC+RAINNC` | `mae` | minimize | satisfactory: no cited threshold | none in convention |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending per run | Validate source units before WPS conversion. |
+| Static geography | WPS geographical data | Pending per run | Check terrain, land use, soil categories, and projection. |
+| Initial and boundary conditions | `real.exe` from `met_em` | Pending per run | Confirm `wrfinput_d0N` and `wrfbdy_d01` are produced before `wrf.exe`. |
+| Output extraction | `wrfout` history files | Pending per run | Extract `T2` directly in K for headline validation. |
+| Validation | `docs/validation_convention.yaml` | Pending per run | Apply cited bars above; do not substitute uncited thresholds. |
+
+## 12. Parameter Selection by Region
+
+WRF physics choices are not universal calibration constants. Use documented scheme behavior, forcing resolution, grid spacing, and the target region's terrain and convection regime as physically informed starting points, then validate against the dag-ranked outputs.
+
+| Region or configuration | Key parameters | Rationale |
+|-------------------------|----------------|-----------|
+| Convection-permitting nests (`dx < 5 km`) | `cu_physics = 0` | Avoid double-counting parameterized and resolved convection. |
+| Coarser parent domains (`dx > 10 km`) | Cumulus scheme such as Kain-Fritsch or New Tiedtke when appropriate | Deep convection is not fully resolved. |
+| Noah land-surface runs | `sf_surface_physics = 2`, `num_soil_layers = 4` | Soil-layer count must match the land-surface model. |
+| Nested real-data domains | Odd `parent_grid_ratio`, commonly 3 or 5 | WRF interpolation expects odd nesting ratios for real-data cases. |
+| Any domain | `time_step <= 6 * dx_km` as an upper-bound rule of thumb | Prevent CFL instability; start more conservatively for complex terrain or aggressive physics. |
 
 ---
 

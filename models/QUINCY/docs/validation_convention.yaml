@@ -1,0 +1,325 @@
+schema_version: 1
+model_id: QUINCY
+domain: biogeochem
+generated_by: "Step-B validation convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+references:
+  thum2025:
+    doi: 10.5194/bg-22-1781-2025
+    title: "Modelling decadal trends and the impact of extreme events on carbon fluxes in a temperate deciduous forest using a terrestrial biosphere model"
+    venue: "Biogeosciences"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-22-1781-2025.txt
+  miinalainen2025:
+    doi: 10.5194/bg-22-6937-2025
+    title: "Evaluating the carbon and nitrogen cycles of the QUINCY terrestrial biosphere model using space-born optical remotely-sensed data"
+    venue: "Biogeosciences"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-22-6937-2025.txt
+  thum2019:
+    doi: 10.5194/gmd-12-4781-2019
+    title: "A new model of the coupled carbon, nitrogen, and phosphorus cycles in the terrestrial biosphere (QUINCY v1.0; revision 1996)"
+    venue: "Geosci. Model Dev."
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-12-4781-2019.txt
+  williams2009:
+    doi: 10.5194/bg-6-1341-2009
+    title: "Improving land surface models with FLUXNET data"
+    venue: "Biogeosciences"
+    year: 2009
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-6-1341-2009.txt
+  tramontana2016:
+    doi: 10.5194/bg-13-4291-2016
+    title: "Predicting carbon dioxide and energy fluxes across global FLUXNET sites with regression algorithms"
+    venue: "Biogeosciences"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-13-4291-2016.txt
+  jung2009:
+    doi: 10.5194/bg-6-2001-2009
+    title: "Towards global empirical upscaling of FLUXNET eddy covariance observations: validation of a model tree ensemble approach"
+    venue: "Biogeosciences"
+    year: 2009
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-6-2001-2009.txt
+  sun2021:
+    doi: 10.5194/gmd-14-1987-2021
+    title: "Global evaluation of the nutrient-enabled version of the land surface model ORCHIDEE-CNP (v1.2)"
+    venue: "Geosci. Model Dev."
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-14-1987-2021.txt
+  yang2023:
+    doi: 10.5194/bg-20-2813-2023
+    title: "Global evaluation of terrestrial biogeochemistry in the Energy Exascale Earth System Model (E3SM) and the role of the phosphorus cycle"
+    venue: "Biogeosciences"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-20-2813-2023.txt
+  hashimoto2015:
+    doi: 10.5194/bg-12-4121-2015
+    title: "Global spatiotemporal distribution of soil respiration modeled using a global database"
+    venue: "Biogeosciences"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-12-4121-2015.txt
+  tang2020:
+    doi: 10.5194/essd-12-1037-2020
+    title: "Spatial and temporal patterns of global soil heterotrophic respiration in terrestrial ecosystems"
+    venue: "Earth Syst. Sci. Data"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_essd-12-1037-2020.txt
+  lawrence2019:
+    doi: 10.1029/2018ms001583
+    title: "The Community Land Model Version 5: Description of New Features, Benchmarking, and Impact of Forcing Uncertainty"
+    venue: "J. Adv. Model. Earth Syst."
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018ms001583.txt
+  blyth2010:
+    doi: 10.1175/2009jhm1183.1
+    title: "Evaluating the JULES Land Surface Model Energy Fluxes Using FLUXNET Data"
+    venue: "J. Hydrometeorol."
+    year: 2010
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_2009jhm1183.1.txt
+  braghiere2022:
+    doi: 10.1029/2022ms003204
+    title: "Modeling Global Carbon Costs of Plant Nitrogen and Phosphorus Acquisition"
+    venue: "J. Adv. Model. Earth Syst."
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2022ms003204.txt
+  fang2019:
+    doi: 10.1029/2018rg000608
+    title: "An Overview of Global Leaf Area Index (LAI): Methods, Products, Validation, and Applications"
+    venue: "Rev. Geophys."
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018rg000608.txt
+
+validation:
+  - dag_variable: GPP
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "FLUXCOM reports GPP predictability as R2 > 0.7; QUINCY site benchmarks report daily r2 near 0.80 and v1 half-hourly r2 mostly 0.63-0.76."
+        cites: [tramontana2016, thum2025, thum2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Reported as benchmark context, not a portable pass band: QUINCY daily GPP RMSE was about 2.16-2.58 umol CO2 m-2 s-1 at one forest and 2.42-7.78 across four v1 FLUXNET sites."
+        cites: [thum2025, thum2019]
+    validated_when: "R2 >= 0.7 against eddy-covariance partitioned GPP; use RMSE and bias as supporting diagnostics."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: "The dag determining_metric is nse, but fetched land-surface and QUINCY benchmarks overwhelmingly report r2/RMSE for GPP. Tramontana 2016 gives GPP among the fluxes with R2 > 0.7; Thum 2025 reports GPP daily r2 = 0.80."
+
+  - dag_variable: GPP
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Annual or seasonal mean GPP magnitude: QUINCY site studies treat roughly 10-20% annual bias as benchmark-scale agreement, not a universal mechanistic threshold."
+        cites: [thum2025, miinalainen2025, yang2023]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For cross-site annual GPP, Miinalainen 2025 reports r = 0.71 against PLUMBER2 eddy-covariance data."
+        cites: [miinalainen2025]
+    validated_when: "|PBIAS| <= 20% for annual or seasonal mean GPP, with sign convention and day-fraction scaling checked before comparison."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Thum 2025 annual GPP biases span about +1.7% to -20.1% across parameterizations; Miinalainen 2025 reports annual QUINCY GPP about 9% lower at FI-Sod."
+
+  - dag_variable: NEE
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE pass threshold for QUINCY NEE."
+        cites: []
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "NEE is repeatedly benchmarked as harder than GPP/TER; fetched papers report values but not a defensible pass band."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "QUINCY reports daily NEE RMSE near 1.73-2.08 umol CO2 m-2 s-1, but annual NEE magnitude biases remain large; this is context, not a threshold."
+        cites: [thum2025, thum2019, tramontana2016]
+    validated_when: "UNRESOLVED - compare sign-correct NEE with eddy-covariance NEE, but do not auto-validate without a fetched numeric NEE threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Tramontana 2016 ranks NEE lowest among fluxes (R2 < 0.5). Thum 2025 reports NEE r2 up to 0.57 but annual sink magnitude is strongly underestimated, so no numeric pass band is asserted."
+
+  - dag_variable: Reco
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.6}
+        pass_band: satisfactory
+        band_note: "Flux benchmarks report ecosystem respiration/TER predictability above R2 = 0.6; QUINCY daily TER r2 reached 0.75 at the temperate forest site."
+        cites: [tramontana2016, thum2025]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "QUINCY daily TER RMSE near 1.38-1.77 umol CO2 m-2 s-1 is a benchmark value, not a portable pass band across biomes."
+        cites: [thum2025]
+    validated_when: "R2 >= 0.6 against partitioned ecosystem respiration/TER; inspect RMSE and annual bias as supporting diagnostics."
+    evidence_strength: strong
+    confidence: 0.7
+    notes: "Reco maps to TER/ecosystem respiration in the fetched benchmark literature. Tramontana 2016 reports ecosystem respiration R2 > 0.6; Thum 2025 reports daily TER r2 = 0.75 for best QUINCY variants."
+
+  - dag_variable: Ra
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a direct numeric validation threshold for autotrophic respiration as a tower-scale QUINCY output."
+        cites: []
+    secondary_metrics:
+      - metric: cue
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Autotrophic respiration is usually constrained indirectly through GPP, NPP, CUE, maintenance/growth respiration, and nutrient-acquisition costs rather than directly measured at flux towers."
+        cites: [braghiere2022, thum2019]
+    validated_when: "UNRESOLVED - Ra should be checked for carbon-budget consistency, but no fetched numeric pass band supports auto-validation."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "OpenAlex coverage check returned the cached Braghiere 2022 paper as the relevant OA result. It defines maintenance and growth respiration and benchmarks nutrient-cost effects, but does not provide a direct Ra pass threshold."
+
+  - dag_variable: Rh
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "A global data-derived RH benchmark reports 10-fold cross-validation R2 = 50% and RMSE = 143 g C m-2 yr-1."
+        cites: [tang2020]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "TRENDY model mean RH underestimation of 16% against data-derived RH is benchmark context, not a universal threshold."
+        cites: [tang2020, hashimoto2015]
+    validated_when: "R2 >= 0.5 against heterotrophic-respiration observations or a data-derived RH benchmark; magnitude bias is supporting context."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Tang 2020 states the data-derived RH dataset can serve as a benchmark for terrestrial biogeochemical models. Hashimoto 2015 provides an independent global RH/soil-respiration benchmark."
+
+  - dag_variable: LAI
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "LAI validation literature reports 10-20% field/optical systematic errors; use this as a magnitude gate, not as a seasonal timing gate."
+        cites: [fang2019]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "QUINCY remote-sensing evaluation reports LAI annual cross-site r = 0.51 and known phenology biases; use timing diagnostics separately."
+        cites: [miinalainen2025]
+    validated_when: "|PBIAS| <= 20% for LAI magnitude, with seasonal onset/senescence timing inspected separately."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "The dag determining_metric is nse, but fetched LAI papers emphasize magnitude error, product uncertainty, Pearson r, RMSE, and phenological timing. Fang 2019 reports LAI-2200/DHP errors of 10-20% for forests."
+
+  - dag_variable: LAI
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Satellite or site-extracted LAI snapshots should be judged within the 10-20% field/product uncertainty envelope where definitions match."
+        cites: [fang2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Absolute LAI RMSE is product- and biome-dependent; Fang 2019 reports LiDAR/TLS LAI errors of 0.2-0.3 and other product-specific uncertainties."
+        cites: [fang2019]
+    validated_when: "|PBIAS| <= 20% for site-extracted spatial LAI snapshot; verify LAI definition, clumping, woody-area correction, and remote-sensing footprint."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Miinalainen 2025 finds QUINCY LAI generally agrees with remote-sensing LAI but overestimates many PFTs; the numeric band is grounded in Fang 2019 product-validation uncertainty."
+
+  - dag_variable: LE
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "FLUXCOM reports latent heat among fluxes with R2 > 0.7; JULES uses FLUXNET energy-flux partitioning as a benchmark."
+        cites: [tramontana2016, blyth2010]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Energy-flux RMSE depends on available-energy normalization, biome, and dry-down behavior; JULES reports site-specific RMSE rather than a portable pass threshold."
+        cites: [blyth2010]
+    validated_when: "R2 >= 0.7 against FLUXNET latent heat or evaporation after energy-balance/sign conventions are handled."
+    evidence_strength: strong
+    confidence: 0.7
+    notes: "The dag determining_metric nse is superseded here by fetched FLUXNET benchmark practice using R2 and energy-partition diagnostics. Blyth 2010 selected sites with energy closure within 30% before evaluation."
+
+  - dag_variable: H
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "FLUXCOM reports sensible heat among fluxes with R2 > 0.7; energy-balance closure remains a required data-quality check."
+        cites: [tramontana2016, blyth2010]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Because sensible heat is evaluated together with latent heat and net radiation in FLUXNET energy partitioning, bias is diagnostic rather than a cited portable pass band."
+        cites: [tramontana2016, blyth2010]
+    validated_when: "R2 >= 0.7 against FLUXNET sensible heat, with available-energy closure and sign convention checked."
+    evidence_strength: strong
+    confidence: 0.7
+    notes: "QUINCY computes H as an Rn-LE residual; no structural limitation is asserted because the fetched papers support only general FLUXNET energy-partition benchmarking."
+
+deferred_paywalled: []

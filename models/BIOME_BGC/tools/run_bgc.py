@@ -145,6 +145,28 @@ def main():
                     "size_bytes": candidate.stat().st_size,
                 }
 
+    # A normal run that produces no output file is a FAILURE even at rc 0:
+    # BIOME-BGC copies the output prefix into char outprefix[100] with no
+    # bounds check, so an over-long prefix makes the model exit 0, print
+    # "Opened binary daily output file in write mode", and write nothing.
+    if not output_files or all(v["size_bytes"] == 0 for v in output_files.values()):
+        result = {
+            "status": "error",
+            "stage": "execution",
+            "returncode": proc.returncode,
+            "message": ("BIOME-BGC exited 0 but wrote no output files under prefix "
+                        f"'{output_prefix}' ({len(output_prefix or '')} chars). "
+                        "Prefixes longer than 99 chars overflow the model's "
+                        "outprefix[100] buffer silently; use a short prefix relative "
+                        "to --workdir (e.g. 'outputs/normal') and check the ini's "
+                        "OUTPUT_CONTROL flags request daily/annual output."),
+            "output_prefix": output_prefix,
+            "stdout": proc.stdout[-2000:] if proc.stdout else "",
+            "stderr": proc.stderr[-2000:] if proc.stderr else "",
+        }
+        print(json.dumps(result, indent=2))
+        sys.exit(2)
+
     result = {
         "status": "success",
         "elapsed_seconds": round(elapsed, 1),

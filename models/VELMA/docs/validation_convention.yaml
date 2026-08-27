@@ -1,0 +1,238 @@
+schema_version: 1
+model_id: VELMA
+domain: hydrology
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  ortuani2020:
+    doi: 10.3390/agronomy10010002
+    title: "Predicting Streamflow and Nutrient Loadings in a Semi-Arid Mediterranean Watershed with Ephemeral Streams Using the SWAT Model"
+    venue: "Agronomy"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_agronomy10010002.txt
+  golmohammadi2014:
+    doi: 10.3390/hydrology1010020
+    title: "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT"
+    venue: "Hydrology"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_hydrology1010020.txt
+  ahn2017:
+    doi: 10.5194/hess-21-5583-2017
+    title: "Assessment of integrated watershed health based on the natural environment, hydrology, water quality, and aquatic ecology"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-21-5583-2017.txt
+  wang2022:
+    doi: 10.3389/fenvs.2022.1012838
+    title: "Runoff simulation and projection in the source area of the Yellow River"
+    venue: "Frontiers in Environmental Science"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_fenvs.2022.1012838.txt
+  abdelnour2011:
+    doi: 10.1029/2010wr010165
+    title: "Catchment hydrological responses to forest harvest amount and spatial pattern"
+    venue: "Water Resources Research"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2010wr010165.txt
+  venable2024:
+    doi: 10.1016/j.envsoft.2024.106134
+    title: "Model linkage to assess forest disturbance impacts on water quality: A wildfire case study using an integrated hydro-biogeochemical model"
+    venue: "Environmental Modelling and Software"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2024.106134.txt
+  mccreight2014:
+    doi: 10.5194/tc-8-521-2014
+    title: "Modeling bulk density and snow water equivalent using daily snow depth observations"
+    venue: "The Cryosphere"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-8-521-2014.txt
+
+validation:
+  - dag_variable: Q_sim_m3s
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Flow/runoff time-series convention transferred from watershed-model evaluation papers; Ortuani et al. reproduce 'streamflow simulation is considered satisfactory if NSE > 0.5', while Golmohammadi et al. report monthly flow calibration at NSE >= 0.65."
+        cites: [ortuani2020, golmohammadi2014]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Ortuani et al. reproduce the streamflow threshold PBIAS < +/-15%; Golmohammadi et al. use PBIAS <= +/-10% for calibrated monthly flow."
+        cites: [ortuani2020, golmohammadi2014]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Ortuani et al. co-report RSR and state streamflow is satisfactory when RSR <= 0.70; retained as a diagnostic because the dag determining metric is NSE."
+        cites: [ortuani2020]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Wang et al. state monthly runoff performance is satisfactory when R2 > 0.7 and NSE > 0.55; use R2 only as corroboration of hydrograph skill."
+        cites: [wang2022]
+    validated_when: "After spin-up, daily outlet discharge is validated when NSE >= 0.5 and |PBIAS| <= 15% against a comparable outlet gauge."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      This retains the dag determining_metric nse and adds PBIAS because watershed hydrology papers judge both temporal pattern and volume bias. VELMA-specific support:
+      Abdelnour et al. report that VELMA "captures daily, seasonal, and annual streamflow dynamics"; Venable et al. report VELMA runoff NSEs 0.601 to 0.621, described
+      as "good fit" under Moriasi-style criteria, after a two-year spin-up.
+
+  - dag_variable: Q_sim_m3s
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "No snapshot-specific discharge convention was found; this is a direct transfer of the cited streamflow magnitude-bias convention to single-instant peak/low-flow checks."
+        cites: [ortuani2020, golmohammadi2014]
+    secondary_metrics: []
+    validated_when: "For a peak or low-flow magnitude snapshot, |PBIAS| <= 15%; do not treat a single instant as full hydrograph validation."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The dag caveat limits this comparison to peak/low-flow magnitude checks. Ortuani et al. give PBIAS < +/-15% for satisfactory streamflow simulation, but that
+      source is a time-series convention, so confidence is reduced for a point snapshot.
+
+  - dag_variable: mean_et_mm_d
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Ahn and Kim evaluate evapotranspiration with NSE/RMSE/PBIAS and state the calibration guidelines included NSE >= 0.5; their ET validation NSEs include 0.50 and 0.55 at the reported stations."
+        cites: [ahn2017]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Ahn and Kim co-report ET PBIAS values in percent, but the cached text does not isolate an ET-specific PBIAS pass band; use only as diagnostic."
+        cites: [ahn2017]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Ahn and Kim co-report ET RMSE in mm/day, but no universal ET RMSE threshold was fetched."
+        cites: [ahn2017]
+    validated_when: "Basin-mean daily ET time series is validated when NSE >= 0.5 against a comparable ET product or flux-derived series."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: >-
+      The dag determining_metric nse is retained. This is a transferred watershed-model convention, not a VELMA-specific ET benchmark. Venable et al. provide VELMA
+      context by comparing annual AET to regional estimates and stating that about 79% of simulated AET values agreed with a 310 to 500 mm regional range, but they
+      do not supply an ET NSE threshold.
+
+  - dag_variable: mean_et_mm_d
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 28.0}
+        pass_band: satisfactory
+        band_note: "Ahn and Kim state watershed calibration guidelines as PBIAS <= 28% while reporting evapotranspiration PBIAS; this is transferred to basin-aggregated ET products."
+        cites: [ahn2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Ahn and Kim also evaluate ET with NSE, but the dag chooses PBIAS for regional aggregate magnitude."
+        cites: [ahn2017]
+    validated_when: "Regional/basin aggregate ET is validated when aggregate |PBIAS| <= 28% against a basin-aggregated ET product."
+    evidence_strength: moderate
+    confidence: 0.52
+    notes: >-
+      This is weaker than the discharge convention because the cited PBIAS band is a watershed-model calibration guideline reproduced in an ET-containing SWAT study,
+      not a VELMA ET-specific threshold.
+
+  - dag_variable: mean_runoff_mm_d
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Runoff-depth magnitude convention transferred from streamflow/runoff watershed-model evaluation; Ortuani et al. state satisfactory streamflow at PBIAS < +/-15% and Golmohammadi et al. use PBIAS <= +/-10% for calibrated flow."
+        cites: [ortuani2020, golmohammadi2014]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "NSE is commonly co-reported for runoff/discharge, but this VELMA output is pre-routing runoff depth rather than the routed outlet hydrograph."
+        cites: [ortuani2020, wang2022]
+    validated_when: "Pre-routing basin runoff depth is validated as a magnitude diagnostic when |PBIAS| <= 15% against a comparable runoff-depth product."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: >-
+      The dag determining_metric pbias is retained. Do not compare this pre-routing diagnostic directly to an interior stream gauge hydrograph; Q_sim_m3s is the
+      appropriate outlet-discharge validation variable.
+
+  - dag_variable: final_swe_mm
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "For point SWE near peak conditions, McCreight and Small report percent-error thresholds and note a 'typically observed range of 20% error'; transferred to a single end-state SWE snapshot."
+        cites: [mccreight2014]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "McCreight and Small report SWE RMSE values such as 3.79 cm when fit locally, but the paper does not define a universal RMSE pass band for hydrologic model SWE snapshots."
+        cites: [mccreight2014]
+    validated_when: "A point SWE snapshot is only provisionally validated when |PBIAS| <= 20%; this is a transferred observation-error convention, not a VELMA benchmark."
+    evidence_strength: moderate
+    confidence: 0.50
+    notes: >-
+      The capped OpenAlex check found no VELMA-specific SWE validation benchmark. McCreight and Small use over half a million SNOTEL observations and state their
+      model keeps 86% of peak-SWE estimates below 20% error; because VELMA final_swe_mm may not be peak SWE, this band should contextualize but not overrule better
+      local snow validation data.
+
+  - dag_variable: final_sw_mm[4]
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gave a numeric PBIAS threshold for per-layer soil water storage snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Ahn and Kim report soil-moisture R2 values of 0.75 to 0.85 and co-report an R2 guideline, but this does not define a PBIAS band for VELMA layer storage."
+        cites: [ahn2017]
+    validated_when: "UNRESOLVED - no cited numeric PBIAS threshold for final per-layer soil water storage; require a fetched soil-moisture/storage convention before auto-validation."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag determining_metric pbias is retained with a null band. A capped OpenAlex check found a plausible SMAP soil-moisture validation paper, but fetch_doi
+      failed, so it is deferred rather than cited. This block must not loosen any gate.
+
+deferred_paywalled:
+  - ref: "Validation of Soil Moisture Data Products From the NASA SMAP Mission"
+    doi: 10.1109/JSTARS.2021.3124743
+    needed_for: ["final_sw_mm[4]"]

@@ -1,0 +1,147 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
+package:
+  name: QUINCY
+  language: python
+  implementation:
+    id: quincy-analytic-py
+    version: analytic reimplementation (QUINCYModel, monthly timestep)
+    provenance: Python; HydroCraft analytic reimplementation of QUINCY's core biogeochemistry (Farquhar
+      photosynthesis with N-limited Vcmax, CENTURY-like heterotrophic respiration, temperature-driven
+      LAI), not the upstream MPI-BGC Fortran QUINCY.
+  scientific_reference_version: QUINCY v1.0 (Thum et al. 2019, GMD; revision 1996 lineage) — analytic
+    single-site C-N reimplementation of the coupled C-N(-P) terrestrial-biogeochemistry formulation
+  binary:
+    path: KISSPATH_KI_ROOT/QUINCY/knowledge_infrastructure/tools/run_quincy.py
+    type: Python
+pipeline:
+  stages: []
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_quincy.py
+  - tools/convert_parameters_to_quincy.py
+  - tools/parse_output_quincy.py
+  - tools/run_quincy.py
+inputs:
+  forcing:
+  - name: SW_IN (incoming shortwave radiation)
+    unit: W/m2
+  - name: TA (air temperature at 2 m)
+    unit: deg C
+  - name: VPD (vapor pressure deficit)
+    unit: hPa
+  - name: PRECIP (precipitation)
+    unit: mm/day
+  - name: CO2 (atmospheric CO2 mole fraction)
+    unit: ppm
+  - name: DAYLENGTH (day fraction driver)
+    unit: hours
+  - name: LW_IN (incoming longwave radiation, optional)
+    unit: W/m2
+  - name: WIND (wind speed, optional)
+    unit: m/s
+  - name: PA (air pressure, optional)
+    unit: kPa
+  parameters:
+  - name: vcmax25 (max carboxylation rate at 25C)
+    unit: umol/m2/s
+  - name: jmax_vcmax_ratio (Jmax/Vcmax ratio)
+    unit: '-'
+  - name: alpha_j (quantum yield of electron transport)
+    unit: mol/mol
+  - name: theta_j (curvature of light response)
+    unit: '-'
+  - name: ea_vcmax (activation energy for Vcmax)
+    unit: J/mol
+  - name: ea_jmax (activation energy for Jmax)
+    unit: J/mol
+  - name: n_leaf_ref (reference leaf nitrogen content)
+    unit: gN/m2_leaf
+  - name: vcmax_n_slope (Vcmax per unit leaf N)
+    unit: umol/s/gN
+  - name: g1_bb (Ball-Berry slope parameter)
+    unit: '-'
+  - name: r_maint_leaf (leaf maintenance respiration at 25C)
+    unit: umol/m2leaf/s
+  - name: r_maint_stem (stem maintenance respiration at 25C)
+    unit: umol/m2ground/s
+  - name: r_maint_root (root maintenance respiration at 25C)
+    unit: umol/m2ground/s
+  - name: r_growth_frac (growth respiration fraction of NPP)
+    unit: '-'
+  - name: ea_rd (activation energy for dark respiration)
+    unit: J/mol
+  - name: rh_base (base heterotrophic respiration rate at Tref)
+    unit: umol/m2/s
+  - name: rh_q10 (Q10 temperature sensitivity of Rh)
+    unit: '-'
+  - name: rh_t_ref (reference temperature for Rh)
+    unit: deg C
+  - name: rh_precip_scale (precipitation scaling for moisture response)
+    unit: '-'
+  - name: rh_precip_opt (optimal precipitation for decomposition)
+    unit: mm/day
+  - name: lai_max (maximum LAI)
+    unit: m2/m2
+  - name: lai_min (minimum / evergreen-base LAI)
+    unit: m2/m2
+  - name: lai_t_opt (temperature for maximum LAI)
+    unit: deg C
+  - name: lai_t_range (temperature range for LAI response)
+    unit: deg C
+  - name: cn_leaf (leaf C:N ratio)
+    unit: gC/gN
+  - name: cn_root (fine-root C:N ratio)
+    unit: gC/gN
+  - name: cn_wood (wood C:N ratio)
+    unit: gC/gN
+  - name: cp_leaf (leaf C:P ratio)
+    unit: gC/gP
+  - name: np_leaf (leaf N:P ratio)
+    unit: gN/gP
+  - name: Kc (Michaelis constant for carboxylation at 25C; Ea 79430 J/mol)
+    unit: umol/mol
+  - name: Ko (Michaelis constant for oxygenation at 25C; Ea 36380 J/mol)
+    unit: mmol/mol
+  - name: Gamma_star (CO2 compensation point at 25C; Ea 37830 J/mol)
+    unit: umol/mol
+  - name: Oi (intercellular O2 concentration)
+    unit: mmol/mol
+  initial_conditions_note: The analytic reimplementation carries no explicit prognostic pool state and
+    does not document initial-condition inputs; LAI and effective Vcmax are recomputed diagnostically
+    each timestep from forcing and parameters. (Upstream QUINCY initializes from bare-ground plus a default
+    SOM profile and a multi-decade spin-up; that does not apply to this surrogate.)
+  initial_conditions: []
+  boundary_conditions:
+  - name: lat (site latitude)
+    unit: deg
+  - name: lon (site longitude)
+    unit: deg
+  - name: pft (plant functional type selector)
+    unit: '-'
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - GPP
+  - NEE
+  - Reco
+  - Ra
+  - Rh
+  - LAI
+  - LE
+  - H
+  other: []
+validation:
+  tier: not_runnable
+  tier_justification: 'measured: NSE=0.952, R=0.980'
+  metrics:
+    best_nse: 0.9516
+    best_r: 0.9804
+summary:
+  total_tools: 4
+  total_stage_docs: 0
+  total_diagnostic_triplets: 25
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

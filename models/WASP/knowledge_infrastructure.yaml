@@ -1,0 +1,103 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
+package:
+  name: WASP
+  language: python
+  implementation:
+    id: hydrocraft-wasp
+    version: 1.0.0
+    provenance: Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain
+      lineage) for lakes and reservoirs.
+  scientific_reference_version: WASP (US EPA Water Analysis Simulation Program) core water-quality physics;
+    analytic lake/reservoir reimplementation (temperature, DO, BOD, TSI)
+  binary:
+    path: KISSPATH_KI_ROOT/WASP/knowledge_infrastructure/tools/run_wasp.py
+    type: Python
+pipeline:
+  stages: []
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_wasp.py
+  - tools/convert_parameters_to_wasp.py
+  - tools/parse_output_wasp.py
+  - tools/run_wasp.py
+inputs:
+  forcing:
+  - name: water temperature
+    unit: deg C
+  - name: dissolved_oxygen
+    unit: mg/L
+  - name: chlorophyll_a
+    unit: ug/L
+  - name: depth
+    unit: m
+  - name: day_of_year
+    unit: integer 1-366
+  - name: secchi_depth
+    unit: m
+  - name: total_phosphorus
+    unit: ug/L
+  parameters:
+  - name: T_mean
+    unit: deg C
+  - name: amplitude
+    unit: deg C
+  - name: phase
+    unit: day
+  - name: kd
+    unit: 1/d
+  - name: ka
+    unit: 1/d
+  - name: BOD0
+    unit: mg/L
+  - name: DO_offset
+    unit: mg/L
+  - name: T_surface
+    unit: deg C
+  - name: T_bottom
+    unit: deg C
+  - name: thermo_depth
+    unit: m
+  - name: thermo_width
+    unit: m
+  - name: z_max
+    unit: m
+  - name: z_mean
+    unit: m
+  - name: area
+    unit: km2
+  - name: volume
+    unit: m3
+  - name: SOD
+    unit: g O2/m2/d
+  - name: depletion_rate
+    unit: per meter below thermocline
+  initial_conditions:
+  - name: D0
+    unit: mg/L
+  - name: BOD0
+    unit: mg/L
+  boundary_conditions: []
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - temperature_timeseries
+  - do_timeseries
+  - temperature_profile
+  - do_profile
+  - do_saturation
+  - TSI
+  other: []
+validation:
+  tier: not_runnable
+  tier_justification: 'measured: R=0.996'
+  metrics:
+    best_r: 0.996
+summary:
+  total_tools: 4
+  total_stage_docs: 0
+  total_diagnostic_triplets: 26
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

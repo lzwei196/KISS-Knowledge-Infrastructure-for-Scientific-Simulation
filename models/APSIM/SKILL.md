@@ -1,16 +1,41 @@
----
-name: apsim
-description: >-
-  APSIM Next Generation (Plant Modelling Framework lineage; daily soil-plant-atmosphere
-  continuum). Covers crop growth and development (phenology, canopy/LAI, biomass, grain
-  yield); soil water balance (infiltration, SCS-CN runoff, Ritchie evaporation, drainage,
-  layered…; soil nitrogen and carbon cycling (mineralisation, nitrate/ammonium/urea pools,
-  residue…. Use when the task involves running, configuring, calibrating or interpreting
-  APSIM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (8 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_apsimx.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_apsimx.py --help` |
+| `tools/convert_met.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_met.py --help` |
+| `tools/convert_soil.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_apsim.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_apsim.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ## Data Preparation
 
@@ -250,6 +275,25 @@ Variables are addressed by model path in Report definitions:
 **CRITICAL: Biomass outputs (Wt) are in g/m², NOT kg/ha.** To convert:
 kg/ha = g/m² × 10. Grain yield of 300 g/m² = 3000 kg/ha = 3.0 t/ha. See dt_006.
 
+## 6. Output Description
+
+**Source of truth: `dag.yaml`.** The dag defines what this KI predicts. If this
+section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `Grain.Wt` — Crop grain dry weight (yield) in the plant/crop biomass medium; g/m^2 x10 = kg/ha, /100 = t/ha. (`g/m^2`)
+
+| Output variable (dag `var`) | Rank | Unit | Description / dag status |
+|-----------------------------|------|------|--------------------------|
+| `Grain.Wt` | 1 | `g/m^2` | Crop grain dry weight (yield) in the plant/crop biomass medium; g/m^2 x10 = kg/ha, /100 = t/ha. |
+| `AboveGround.Wt` | dag output | see `dag.yaml` | Listed by the dag as an APSIM output. |
+| `Leaf.LAI` | dag output | see `dag.yaml` | Listed by the dag as an APSIM output. |
+| `Phenology.Stage / flowering & maturity date` | dag output | see `dag.yaml` | Listed by the dag as an APSIM output. |
+| `Root.RootingDepth` | dag output | see `dag.yaml` | Listed by the dag as an APSIM output. |
+| `Soil.Water.SW / ESW` | dag output | see `dag.yaml` | Listed by the dag as an APSIM output. |
+| `SoilWater.Drainage / Runoff / Es` | dag output | see `dag.yaml` | Listed by the dag as an APSIM output. |
+
 ### 4.6 Fertiliser Application
 
 Fertiliser is applied via Manager script or Operations list:
@@ -319,6 +363,31 @@ from global datasets (ERA5, CMFD, MSWX, SoilGrids, HWSD):
 | U14 | CO2         | ppm          | —             | µmol/mol        | 1:1 (same)                    | none     |
 | U15 | Wind speed  | m/s          | ERA5          | m/s             | 1:1 (check u/v components)    | degraded |
 
+## 8. Unit Conversion Table
+
+This unit table restates the KI's pipeline unit conversions and the dag's headline
+output conversion. It is the quick-check table; detailed I/O shapes remain in
+`docs/format_spec.yaml`, and the headline output identity remains in `dag.yaml`.
+
+| Variable | Source unit / common source | Model or reported unit | Conversion | Type |
+|----------|-----------------------------|------------------------|------------|------|
+| Radiation (`radn`) | W/m² (ERA5/CMFD instant) | MJ/m²/day | × 0.0864 (÷ 11.574) | multiplicative |
+| Temperature (`maxt`, `mint`) | K (ERA5/CMFD) | °C | − 273.15 | additive |
+| Vapor pressure (`vp`) | kPa (ERA5) | hPa | × 10 | multiplicative |
+| Rainfall (`rain`) | mm/3hr (CMFD) | mm/day | Sum 8 intervals | aggregation |
+| `Grain.Wt` | `g/m^2` | kg/ha | x10 | multiplicative |
+| `Grain.Wt` | `g/m^2` | t/ha | /100 | multiplicative |
+| Population | plants/ha | plants/m² | ÷ 10000 | multiplicative |
+| Soil water | % (v/v) | mm/mm | ÷ 100 | multiplicative |
+| Thickness | cm | mm | × 10 | multiplicative |
+| Bulk density | kg/m³ | g/cc | ÷ 1000 | multiplicative |
+| KS | cm/hr | mm/day | × 240 | multiplicative |
+| Row spacing | cm | mm | × 10 | multiplicative |
+| Sowing depth | cm | mm | × 10 | multiplicative |
+| Root depth | cm or m | mm | × 10 or × 1000 | multiplicative |
+| CO2 | µmol/mol | ppm | 1:1 (same) | identity |
+| Wind speed | m/s | m/s | 1:1 (check u/v components) | identity |
+
 ## 6. Tool Reference
 
 | Tool                  | Stage | Purpose                                        |
@@ -380,14 +449,14 @@ Or use `--csv` flag to auto-export to `{filename}.Report.csv`.
 
 ## 8. Validation Metrics for Crop Models
 
-| Metric | Formula / Description                           | Good Value        |
+| Metric | Formula / Description                           | Grading source    |
 |--------|------------------------------------------------|-------------------|
-| RMSE   | √(mean((sim-obs)²))                           | < 15% of obs mean |
-| nRMSE  | RMSE / mean(obs) × 100                         | < 15%             |
-| R²     | Coefficient of determination                    | > 0.80            |
-| PBIAS  | 100 × Σ(sim-obs) / Σ(obs)                      | |PBIAS| < 15%     |
-| d      | Willmott index of agreement                    | > 0.85            |
-| EF     | Nash-Sutcliffe model efficiency (=NSE)         | > 0.50            |
+| RMSE   | √(mean((sim-obs)²))                           | no cited threshold in the provided `Grain.Wt` convention |
+| nRMSE  | RMSE / mean(obs) × 100                         | use Section 11 / `docs/validation_convention.yaml` |
+| R²     | Coefficient of determination                    | no cited threshold in the provided `Grain.Wt` convention |
+| PBIAS  | 100 × Σ(sim-obs) / Σ(obs)                      | choose by dag obs-shape rules; no `Grain.Wt` convention bar stated here |
+| d      | Willmott index of agreement                    | no cited threshold in the provided `Grain.Wt` convention |
+| EF     | Nash-Sutcliffe model efficiency (=NSE)         | use Section 11 / `docs/validation_convention.yaml` |
 
 Common validation targets:
 - **Grain yield** (t/ha): Primary metric for crop models
@@ -429,11 +498,11 @@ m = all_metrics(obs, sim)           # magnitude_accuracy: PBIAS, RMSE
 m.update(trend_metrics(obs, sim))   # trend_match: r_detr, r_firstdiff, slope_ratio
 
 
-| Metric | Meaning | Good |
+| Metric | Meaning | Use |
 |---|---|---|
-| `pbias` | determining metric; magnitude vs the aggregate | abs(PBIAS) < 15% |
-| `r_detr` | interannual skill after removing each series own linear trend | > 0.3 |
-| `r_firstdiff` | year-over-year change skill (trend-free by construction) | > 0.3 |
+| `pbias` | determining metric; magnitude vs the aggregate | grade only against the applicable convention bar |
+| `r_detr` | interannual skill after removing each series own linear trend | trend diagnostic |
+| `r_firstdiff` | year-over-year change skill (trend-free by construction) | trend diagnostic |
 | `slope_ratio` | sim trend / obs trend; near 0 is EXPECTED under constant management | report, do not score |
 | `r` (raw), `nse` | NOT skill metrics for this shape | report as `r_raw` for transparency only |
 
@@ -458,6 +527,35 @@ window twice, so that `nse_val` is bit-identical to `nse_cal`, reports no
 independent information. For an uncalibrated forward run, either split the
 seasons into two disjoint periods or declare a single period and omit the
 `_cal` / `_val` fields.
+
+## 11. Validated Results
+
+No achieved calibration, validation, or full-period metric values are stated in
+the provided KI facts. Grade `Grain.Wt` runs against `docs/validation_convention.yaml`;
+do not substitute remembered crop-model thresholds.
+
+### Performance Metrics — convention bars for `Grain.Wt`
+
+Each row below restates one convention entry for `Grain.Wt`. For minimize metrics,
+lower values are better; for maximize metrics, higher values are better.
+
+| Variable | Metric | Direction | Very good band | Good band | Satisfactory band |
+|----------|--------|-----------|----------------|-----------|-------------------|
+| `Grain.Wt` | `nrmse` | minimize | <= 10 (`zhao2012`, `brown2018`) | <= 20 (`zhao2012`, `brown2018`) | <= 30 (`zhao2012`, `brown2018`) |
+| `Grain.Wt` | `ef` | maximize | >= 1.0 (`brown2018`) | no cited threshold | >= 0.0 (`brown2018`) |
+| `Grain.Wt` | `nrmse` | minimize | <= 10 (`zhao2012`, `brown2018`) | <= 20 (`zhao2012`, `brown2018`) | <= 30 (`zhao2012`, `brown2018`) |
+| `Grain.Wt` | `nse` | maximize | >= 0.75 (`pasley2023`) | >= 0.65 (`pasley2023`) | >= 0.5 (`pasley2023`) |
+| `Grain.Wt` | `nrmse` | minimize | <= 10 (`zhao2012`, `lu2022`) | <= 20 (`zhao2012`, `lu2022`) | <= 30 (`zhao2012`, `lu2022`) |
+| `Grain.Wt` | `nse` | maximize | >= 0.75 (`pasley2023`) | >= 0.65 (`pasley2023`) | >= 0.5 (`pasley2023`) |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending validation result in this document | Use `preflight_check.py` before any run. |
+| Soil | Pipeline | Pending validation result in this document | Use KI soil conversion tools and `docs/format_spec.yaml`. |
+| APSIM execution | Actual APSIM binary/package | Required | Do not substitute a simplified formula or approximation. |
+| Observations | Observation-binding workflow | Pending validation result in this document | Choose obs shape from the dag before computing metrics. |
 
 ## 9. File Structure
 

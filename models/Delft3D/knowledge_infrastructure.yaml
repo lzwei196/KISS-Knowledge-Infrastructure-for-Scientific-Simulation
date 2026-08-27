@@ -1,77 +1,115 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:01:03.587243'
-  domain: ocean
   name: Delft3D
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: dflowfm
+    version: 2026.02 (engines built from github.com/Deltares/Delft3D)
+    provenance: Fortran 90; Deltares D-Flow FM (dflowfm) unstructured-grid kernel, orchestrated under
+      DIMR.
+  scientific_reference_version: D-Flow Flexible Mesh shallow-water hydrodynamics (Deltares Delft3D FM
+    lineage; Kernkamp et al. 2011 unstructured-grid scheme)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Delft3D/build_flow2d3d/d_hydro/d_hydro
+    type: executable
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_grid_generation
+  - s2_bathymetry
+  - s3_meteorological_forcing
+  - s4_boundary_conditions
+  - s5_model_configuration
+  - s6_execution
+  - s7_output_analysis
+tools:
+  count: 5
+  files:
+  - tools/convert_bathymetry.py
+  - tools/convert_boundary_conditions.py
+  - tools/convert_forcing_to_delft3d.py
+  - tools/parse_delft3d_output.py
+  - tools/run_delft3d.py
+inputs:
+  forcing:
+  - name: wind_speed
+    unit: m/s at 10 m
+  - name: wind_direction
+    unit: degrees nautical (FROM North)
+  - name: atmospheric_pressure
+    unit: Pa
+  - name: air_temperature
+    unit: degC
+  - name: relative_humidity
+    unit: '% (0-100)'
+  - name: cloud_cover
+    unit: fraction (0-1)
+  - name: shortwave_radiation
+    unit: W/m2
+  - name: precipitation
+    unit: mm/hr
+  parameters:
+  - name: friction_type_and_coefficient
+    unit: Chezy m^(1/2)/s | Manning s/m^(1/3) | White-Colebrook
+  - name: horizontal_eddy_viscosity
+    unit: m2/s
+  - name: horizontal_eddy_diffusivity
+    unit: m2/s
+  - name: bed_level
+    unit: 'm (Delft3D convention: depth positive DOWN)'
+  - name: reference_density
+    unit: kg/m3
+  initial_conditions:
+  - name: initial_water_level
+    unit: m (MSL)
+  - name: initial_velocity
+    unit: m/s
+  - name: initial_salinity
+    unit: PSU
+  - name: initial_temperature
+    unit: degC
+  boundary_conditions:
+  - name: water_level_boundary
+    unit: m (datum-referenced)
+  - name: velocity_boundary
+    unit: m/s
+  - name: river_discharge_boundary
+    unit: m3/s
+  - name: salinity_boundary
+    unit: PSU
+  - name: temperature_boundary
+    unit: degC
+  - name: tidal_harmonic_boundary
+    unit: amplitude m, phase deg, period MINUTES
+  - name: vertical_structure_Kmx
+    unit: count
+  - name: time_reference_and_unit
+    unit: RefDate YYYYMMDD; Tunit S/M/H
+  - name: friction_type_switch_UnifFrictType
+    unit: enum (0=Chezy,1=Manning,2=White-Colebrook)
+  - name: heat_flux_model_selector
+    unit: enum (Temperature module mode)
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - water_level
+  - velocity
+  - salinity
+  - temperature
+  - bed_shear_stress
+  - bed_level_change
+  - significant_wave_height
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: NSE=0.986, R=0.993, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.986
+    best_r: 0.993
+summary:
+  total_tools: 5
+  total_stage_docs: 7
+  total_diagnostic_triplets: 16
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

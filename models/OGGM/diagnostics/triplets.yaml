@@ -1,152 +1,151 @@
-triplets:
+# ========================================================================
+# OGGM Diagnostic Triplets
+# ========================================================================
+# 26 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+# Field names normalised to the controlled vocabulary 2026-08-12
+# (see ki_vocabulary.py). Values unchanged; only keys were renamed.
+
 - id: dt_oggm_001
   stage: s1_glacier_inventory
   failure_domain: dependency_mismatch
   severity: fatal
-  title: RGI Download Failure (Server Unreachable)
-  symptom: 'Attempting to download RGI region shapefiles via oggm.utils.get_rgi_dir()
-    raises HTTPError (404, 503), ConnectionError, or TimeoutError. The OGGM data server
-    at cluster.klima.uni-innsbruck.at is unreachable.
+  name: RGI Download Failure (Server Unreachable)
+  symptom: 'Attempting to download RGI region shapefiles via oggm.utils.get_rgi_dir() raises HTTPError
+    (404, 503), ConnectionError, or TimeoutError. The OGGM data server at cluster.klima.uni-innsbruck.at
+    is unreachable.
 
     '
-  diagnosis: 'The OGGM Bremen server is down for maintenance, experiencing high load,
-    or the URL structure has changed with a new OGGM version. The server is maintained
-    by the University of Innsbruck IT department and has occasional outages (typically
-    a few hours). Alternatively, a corporate proxy/firewall may be blocking the connection.
+  diagnosis: 'The OGGM Bremen server is down for maintenance, experiencing high load, or the URL structure
+    has changed with a new OGGM version. The server is maintained by the University of Innsbruck IT department
+    and has occasional outages (typically a few hours). Alternatively, a corporate proxy/firewall may
+    be blocking the connection.
 
     '
-  remedy: "1. Retry 3 times with exponential backoff (30s, 120s, 300s). 2. Check server\
-    \ status: curl -I https://cluster.klima.uni-innsbruck.at/~oggm/ 3. If server is\
-    \ down, wait and retry later (usually recovers within hours). 4. Alternative:\
-    \ Download RGI manually from https://www.glims.org/RGI/ and\n   provide the local\
-    \ path via --rgi_dir.\n5. Check if OGGM version changed the base URL \u2014 compare\
+  remedy: "1. Retry 3 times with exponential backoff (30s, 120s, 300s). 2. Check server status: curl -I\
+    \ https://cluster.klima.uni-innsbruck.at/~oggm/ 3. If server is down, wait and retry later (usually\
+    \ recovers within hours). 4. Alternative: Download RGI manually from https://www.glims.org/RGI/ and\n\
+    \   provide the local path via --rgi_dir.\n5. Check if OGGM version changed the base URL — compare\
     \ oggm.DEFAULT_BASE_URL\n   with the expected URL.\n"
 - id: dt_oggm_002
   stage: s1_glacier_inventory
   failure_domain: silent_error
   severity: silent
-  title: CRS Mismatch in Spatial Intersection (Returns 0 Glaciers)
-  symptom: 'find_glaciers_in_basin.py returns 0 glaciers despite the basin being in
-    a known glacierized region (e.g., Himalaya, Alps, Andes). No error message is
-    produced. The output CSV is empty.
+  name: CRS Mismatch in Spatial Intersection (Returns 0 Glaciers)
+  symptom: 'find_glaciers_in_basin.py returns 0 glaciers despite the basin being in a known glacierized
+    region (e.g., Himalaya, Alps, Andes). No error message is produced. The output CSV is empty.
 
     '
-  diagnosis: "The basin shapefile CRS does not match RGI's EPSG:4326. Common in China\
-    \ (Gauss-Kruger projection), India (Everest 1830), or UTM zones. The geopandas\
-    \ spatial join finds no intersecting geometries because the coordinates are in\
-    \ completely different reference systems. This is completely silent \u2014 no\
-    \ warning or error is raised.\n"
-  remedy: "1. Check basin CRS: basin_gdf = gpd.read_file(shp); print(basin_gdf.crs)\
-    \ 2. If not EPSG:4326, reproject: basin_gdf = basin_gdf.to_crs('EPSG:4326') 3.\
-    \ Re-run the spatial intersection after reprojection. 4. Add CRS check to the\
-    \ tool: if crs != 4326, auto-reproject with warning. 5. Sanity check: if basin\
-    \ centroid lat/lon are outside [-90,90]/[-180,180],\n   it is definitely a projected\
-    \ CRS.\n"
+  diagnosis: 'The basin shapefile CRS does not match RGI''s EPSG:4326. Common in China (Gauss-Kruger projection),
+    India (Everest 1830), or UTM zones. The geopandas spatial join finds no intersecting geometries because
+    the coordinates are in completely different reference systems. This is completely silent — no warning
+    or error is raised.
+
+    '
+  remedy: "1. Check basin CRS: basin_gdf = gpd.read_file(shp); print(basin_gdf.crs) 2. If not EPSG:4326,\
+    \ reproject: basin_gdf = basin_gdf.to_crs('EPSG:4326') 3. Re-run the spatial intersection after reprojection.\
+    \ 4. Add CRS check to the tool: if crs != 4326, auto-reproject with warning. 5. Sanity check: if basin\
+    \ centroid lat/lon are outside [-90,90]/[-180,180],\n   it is definitely a projected CRS.\n"
 - id: dt_oggm_003
   stage: s2_preprocessing
   failure_domain: runtime
   severity: degraded
-  title: Glacier Too Small for Flowline Computation
-  symptom: 'OGGM logs WARNING: "Glacier RGI60-XX.XXXXX is too small for centerline
-    computation" or raises RuntimeError during compute_centerlines. The glacier is
-    skipped and does not get a GDir with flowlines.
+  name: Glacier Too Small for Flowline Computation
+  symptom: 'OGGM logs WARNING: "Glacier RGI60-XX.XXXXX is too small for centerline computation" or raises
+    RuntimeError during compute_centerlines. The glacier is skipped and does not get a GDir with flowlines.
 
     '
-  diagnosis: 'Glaciers smaller than ~0.01 km2 (10,000 m2) may not have enough DEM
-    pixels to compute a meaningful centerline. The contour-based centerline algorithm
-    requires at least 3-4 elevation contour levels. Very small glaciers also have
-    unreliable RGI outlines (resolution-limited).
+  diagnosis: 'Glaciers smaller than ~0.01 km2 (10,000 m2) may not have enough DEM pixels to compute a
+    meaningful centerline. The contour-based centerline algorithm requires at least 3-4 elevation contour
+    levels. Very small glaciers also have unreliable RGI outlines (resolution-limited).
 
     '
-  remedy: "1. Filter glaciers < 0.01 km2 in Stage 1 (min_area_km2 parameter). 2. For\
-    \ glaciers between 0.01-0.1 km2, use simplified geometry (single\n   flowline\
-    \ from highest to lowest point).\n3. Log the skipped glacier and continue \u2014\
-    \ small glaciers contribute\n   negligibly to basin discharge.\n4. Report the\
-    \ total area of skipped glaciers to quantify the omission.\n"
+  remedy: "1. Filter glaciers < 0.01 km2 in Stage 1 (min_area_km2 parameter). 2. For glaciers between\
+    \ 0.01-0.1 km2, use simplified geometry (single\n   flowline from highest to lowest point).\n3. Log\
+    \ the skipped glacier and continue — small glaciers contribute\n   negligibly to basin discharge.\n\
+    4. Report the total area of skipped glaciers to quantify the omission.\n"
 - id: dt_oggm_004
   stage: s2_preprocessing
   failure_domain: dependency_mismatch
   severity: fatal
-  title: DEM Download Failure (SRTM Voids Above 60N)
-  symptom: "define_glacier_region raises an error: \"Could not find a valid DEM source\"\
-    \ or HTTPError when downloading SRTM tiles. Affects glaciers in Svalbard (RGI-07),\
-    \ Scandinavia (RGI-08), Russian Arctic (RGI-09), parts of Alaska (RGI-01), and\
-    \ Iceland (RGI-06) \u2014 all above 60 degrees north.\n"
-  diagnosis: 'SRTM (Shuttle Radar Topography Mission) only covers latitudes 60S to
-    60N. Glaciers at higher latitudes have no SRTM coverage. If SRTM is the configured
-    DEM source (default in some OGGM versions), the download fails or returns void
-    data.
+  name: DEM Download Failure (SRTM Voids Above 60N)
+  symptom: 'define_glacier_region raises an error: "Could not find a valid DEM source" or HTTPError when
+    downloading SRTM tiles. Affects glaciers in Svalbard (RGI-07), Scandinavia (RGI-08), Russian Arctic
+    (RGI-09), parts of Alaska (RGI-01), and Iceland (RGI-06) — all above 60 degrees north.
 
     '
-  remedy: "1. Set cfg.PARAMS['dem_source'] = 'COPDEM' (Copernicus DEM, global coverage).\
-    \ 2. Alternative: 'AW3D30' (ALOS, also global) or 'DEM3' (Iceland-specific). 3.\
-    \ If using pre-processed directories (from_prepro=True), the DEM source\n   is\
-    \ already chosen \u2014 ensure the prepro uses COPDEM for high-latitude regions.\n\
-    4. Check glacier latitude before processing: if any glacier lat > 60 or < -60,\n\
-    \   switch DEM source automatically.\n"
+  diagnosis: 'SRTM (Shuttle Radar Topography Mission) only covers latitudes 60S to 60N. Glaciers at higher
+    latitudes have no SRTM coverage. If SRTM is the configured DEM source (default in some OGGM versions),
+    the download fails or returns void data.
+
+    '
+  remedy: "1. Set cfg.PARAMS['dem_source'] = 'COPDEM' (Copernicus DEM, global coverage). 2. Alternative:\
+    \ 'AW3D30' (ALOS, also global) or 'DEM3' (Iceland-specific). 3. If using pre-processed directories\
+    \ (from_prepro=True), the DEM source\n   is already chosen — ensure the prepro uses COPDEM for high-latitude\
+    \ regions.\n4. Check glacier latitude before processing: if any glacier lat > 60 or < -60,\n   switch\
+    \ DEM source automatically.\n"
 - id: dt_oggm_005
   stage: s2_preprocessing
   failure_domain: runtime
   severity: degraded
-  title: Centerline Computation Fails (Complex Glacier Shape)
-  symptom: 'compute_centerlines raises RuntimeError or produces no valid centerlines
-    for a glacier with an unusual shape (very wide, fragmented, ice cap with multiple
-    lobes). The GDir exists but model_flowlines.pkl is missing.
+  name: Centerline Computation Fails (Complex Glacier Shape)
+  symptom: 'compute_centerlines raises RuntimeError or produces no valid centerlines for a glacier with
+    an unusual shape (very wide, fragmented, ice cap with multiple lobes). The GDir exists but model_flowlines.pkl
+    is missing.
 
     '
-  diagnosis: 'The contour-based centerline algorithm assumes a roughly elongated glacier
-    shape with a clear highest-to-lowest path. Glacier complexes (connected ice masses),
-    ice caps with radial flow, or heavily debris- covered glaciers with irregular
-    outlines can confuse the algorithm.
+  diagnosis: 'The contour-based centerline algorithm assumes a roughly elongated glacier shape with a
+    clear highest-to-lowest path. Glacier complexes (connected ice masses), ice caps with radial flow,
+    or heavily debris- covered glaciers with irregular outlines can confuse the algorithm.
 
     '
-  remedy: "1. Try with increased border: border=160 instead of 80. 2. If still failing,\
-    \ use tasks.compute_centerlines with\n   is_first_call=False to retry with relaxed\
-    \ parameters.\n3. For ice caps, consider splitting into individual outlet glaciers.\
-    \ 4. As last resort, create a manual flowline from highest to lowest point. 5.\
-    \ Exclude the glacier and transfer parameters from a nearby similar glacier.\n"
+  remedy: "1. Try with increased border: border=160 instead of 80. 2. If still failing, use tasks.compute_centerlines\
+    \ with\n   is_first_call=False to retry with relaxed parameters.\n3. For ice caps, consider splitting\
+    \ into individual outlet glaciers. 4. As last resort, create a manual flowline from highest to lowest\
+    \ point. 5. Exclude the glacier and transfer parameters from a nearby similar glacier.\n"
 - id: dt_oggm_006
   stage: s2_preprocessing
   failure_domain: runtime
   severity: degraded
-  title: Negative Thickness from Bed Inversion
-  symptom: 'After mass_conservation_inversion, some flowline grid points have negative
-    ice thickness. filter_inversion_output clips these to zero but the bed geometry
-    may be unrealistic. Total volume may be underestimated.
+  name: Negative Thickness from Bed Inversion
+  symptom: 'After mass_conservation_inversion, some flowline grid points have negative ice thickness.
+    filter_inversion_output clips these to zero but the bed geometry may be unrealistic. Total volume
+    may be underestimated.
 
     '
-  diagnosis: "Negative thickness arises from DEM artifacts (noise, voids filled with\
-    \ interpolation), very thin glacier margins where the shallow-ice approximation\
-    \ breaks down, or steep icefalls where ice flow is dominated by sliding rather\
-    \ than deformation. The inversion solves for thickness assuming \u03C4 = \u03C1\
-    gH sin(\u03B1), which can give H<0 if the surface slope is very small or locally\
-    \ reversed.\n"
-  remedy: "1. Check DEM quality at the negative-thickness locations. 2. filter_inversion_output\
-    \ clips to zero \u2014 acceptable for most uses. 3. For critical glaciers, try\
-    \ a different DEM source (COPDEM vs SRTM). 4. Use pre-processed L4+ directories\
-    \ where inversion is quality-controlled. 5. For science applications, consider\
-    \ Farinotti consensus thickness instead.\n"
+  diagnosis: 'Negative thickness arises from DEM artifacts (noise, voids filled with interpolation), very
+    thin glacier margins where the shallow-ice approximation breaks down, or steep icefalls where ice
+    flow is dominated by sliding rather than deformation. The inversion solves for thickness assuming
+    τ = ρgH sin(α), which can give H<0 if the surface slope is very small or locally reversed.
+
+    '
+  remedy: '1. Check DEM quality at the negative-thickness locations. 2. filter_inversion_output clips
+    to zero — acceptable for most uses. 3. For critical glaciers, try a different DEM source (COPDEM vs
+    SRTM). 4. Use pre-processed L4+ directories where inversion is quality-controlled. 5. For science
+    applications, consider Farinotti consensus thickness instead.
+
+    '
 - id: dt_oggm_007
   stage: s2_preprocessing
   failure_domain: runtime
   severity: fatal
-  title: Disk Space Exhaustion During Preprocessing
-  symptom: 'OSError: [Errno 28] No space left on device. Processing halts partway
-    through GDir initialization or DEM download. Some GDirs may be partially written
-    (corrupted).
+  name: Disk Space Exhaustion During Preprocessing
+  symptom: 'OSError: [Errno 28] No space left on device. Processing halts partway through GDir initialization
+    or DEM download. Some GDirs may be partially written (corrupted).
 
     '
-  diagnosis: 'Each glacier directory uses 5-50 MB (depending on prepro level). For
-    a basin with 1000+ glaciers, this is 5-50 GB. DEM tiles and climate data downloads
-    add another 5-10 GB. If the working directory is on a partition with insufficient
-    space, processing fails mid-way.
+  diagnosis: 'Each glacier directory uses 5-50 MB (depending on prepro level). For a basin with 1000+
+    glaciers, this is 5-50 GB. DEM tiles and climate data downloads add another 5-10 GB. If the working
+    directory is on a partition with insufficient space, processing fails mid-way.
 
     '
-  remedy: '1. Check available space before starting: df -h {working_dir} 2. Estimate
-    required space: n_glaciers * 20 MB (conservative) + 10 GB (downloads). 3. If insufficient,
-    move working_dir to a larger partition. 4. Clean up failed/partial GDirs: rm -rf
-    {working_dir}/per_glacier/ 5. Use pre-processed L5 (more compressed) instead of
-    processing from scratch. 6. Process in batches: 500 glaciers at a time, compile,
+  remedy: '1. Check available space before starting: df -h {working_dir} 2. Estimate required space: n_glaciers
+    * 20 MB (conservative) + 10 GB (downloads). 3. If insufficient, move working_dir to a larger partition.
+    4. Clean up failed/partial GDirs: rm -rf {working_dir}/per_glacier/ 5. Use pre-processed L5 (more
+    compressed) instead of processing from scratch. 6. Process in batches: 500 glaciers at a time, compile,
     then clean.
 
     '
@@ -154,437 +153,395 @@ triplets:
   stage: s3_climate_input
   failure_domain: dependency_mismatch
   severity: fatal
-  title: Climate Data Download Failure
-  symptom: 'process_w5e5_data or process_cru_data raises ConnectionError, HTTPError,
-    or TimeoutError when attempting to download climate data files from the OGGM server
-    or CRU server.
+  name: Climate Data Download Failure
+  symptom: 'process_w5e5_data or process_cru_data raises ConnectionError, HTTPError, or TimeoutError when
+    attempting to download climate data files from the OGGM server or CRU server.
 
     '
-  diagnosis: 'Climate data files (W5E5: ~4 GB, CRU: ~1 GB) are downloaded from remote
-    servers on first use and cached locally. Server outages, network issues, or firewall
-    restrictions can prevent download. ERA5 additionally requires a Climate Data Store
-    API key.
+  diagnosis: 'Climate data files (W5E5: ~4 GB, CRU: ~1 GB) are downloaded from remote servers on first
+    use and cached locally. Server outages, network issues, or firewall restrictions can prevent download.
+    ERA5 additionally requires a Climate Data Store API key.
 
     '
-  remedy: "1. Check internet connectivity: curl -I https://cluster.klima.uni-innsbruck.at\
-    \ 2. Retry with exponential backoff. 3. For ERA5: ensure ~/.cdsapirc has valid\
-    \ API credentials. 4. If server is persistently down: download data manually and\
-    \ place\n   in OGGM's cache directory (cfg.CACHE_DIR).\n5. Alternative: switch\
-    \ to a different climate source (W5E5 -> CRU or vice versa).\n"
+  remedy: "1. Check internet connectivity: curl -I https://cluster.klima.uni-innsbruck.at 2. Retry with\
+    \ exponential backoff. 3. For ERA5: ensure ~/.cdsapirc has valid API credentials. 4. If server is\
+    \ persistently down: download data manually and place\n   in OGGM's cache directory (cfg.CACHE_DIR).\n\
+    5. Alternative: switch to a different climate source (W5E5 -> CRU or vice versa).\n"
 - id: dt_oggm_009
   stage: s3_climate_input
   failure_domain: silent_error
   severity: silent
-  title: Climate Period Doesn't Overlap Geodetic MB Period
-  symptom: 'Mass balance calibration in Stage 4 produces poor results or fails to
-    converge, despite correct climate data processing. No error in Stage 3 itself.
+  name: Climate Period Doesn't Overlap Geodetic MB Period
+  symptom: 'Mass balance calibration in Stage 4 produces poor results or fails to converge, despite correct
+    climate data processing. No error in Stage 3 itself.
 
     '
-  diagnosis: 'The climate data period doesn''t overlap sufficiently with the Hugonnet
-    2021 geodetic mass balance reference period (2000-2020). For example, if using
-    CMFD (1979-2018), there is only partial overlap (2000-2018). If using a custom
-    dataset ending in 1999, there is zero overlap. OGGM will attempt calibration over
-    the available overlap but accuracy degrades with shorter overlap.
+  diagnosis: 'The climate data period doesn''t overlap sufficiently with the Hugonnet 2021 geodetic mass
+    balance reference period (2000-2020). For example, if using CMFD (1979-2018), there is only partial
+    overlap (2000-2018). If using a custom dataset ending in 1999, there is zero overlap. OGGM will attempt
+    calibration over the available overlap but accuracy degrades with shorter overlap.
 
     '
-  remedy: '1. Check climate data period: xr.open_dataset(''climate_historical.nc'').time
-    2. Ensure at least 10 years of overlap with 2000-2020. 3. If period is too short,
-    supplement with W5E5 or extend with ERA5. 4. For CMFD (ends 2018): 18 years of
-    overlap (2000-2018) is sufficient. 5. Log a warning if overlap < 15 years.
+  remedy: '1. Check climate data period: xr.open_dataset(''climate_historical.nc'').time 2. Ensure at
+    least 10 years of overlap with 2000-2020. 3. If period is too short, supplement with W5E5 or extend
+    with ERA5. 4. For CMFD (ends 2018): 18 years of overlap (2000-2018) is sufficient. 5. Log a warning
+    if overlap < 15 years.
 
     '
 - id: dt_oggm_010
   stage: s3_climate_input
   failure_domain: silent_error
   severity: silent
-  title: CMIP6 Temperature in Kelvin Not Celsius
-  symptom: 'Future glacier projections show all glaciers gaining mass or remaining
-    stable even under SSP585 (extreme warming). Alternatively, all glaciers disappear
-    within the first few years of simulation. No error message.
+  name: CMIP6 Temperature in Kelvin Not Celsius
+  symptom: 'Future glacier projections show all glaciers gaining mass or remaining stable even under SSP585
+    (extreme warming). Alternatively, all glaciers disappear within the first few years of simulation.
+    No error message.
 
     '
-  diagnosis: "CMIP6 GCM temperature data is in Kelvin (values ~270-290 K). OGGM's\
-    \ mass balance model expects Celsius (values ~-20 to +15 C). If Kelvin is not\
-    \ converted, the model sees temperatures of 270+ degrees, meaning either: (a)\
-    \ everything melts instantly (if interpreted as hot), or (b) the delta method\
-    \ produces wildly wrong anomalies. This is completely silent \u2014 no error or\
-    \ warning is raised.\n"
-  remedy: "1. Before processing: check mean temperature values. If > 100, it's Kelvin.\
-    \ 2. Convert: temp_celsius = temp_kelvin - 273.15 3. Add automatic detection to\
-    \ process_cmip6_projections.py:\n   if temp.mean() > 100: temp -= 273.15; log.warning(\"\
-    Converted K to C\")\n4. Verify after processing: mean annual temp at glacier altitude\
-    \ should be\n   between -30 and +15 C for most glaciers.\n"
+  diagnosis: 'CMIP6 GCM temperature data is in Kelvin (values ~270-290 K). OGGM''s mass balance model
+    expects Celsius (values ~-20 to +15 C). If Kelvin is not converted, the model sees temperatures of
+    270+ degrees, meaning either: (a) everything melts instantly (if interpreted as hot), or (b) the delta
+    method produces wildly wrong anomalies. This is completely silent — no error or warning is raised.
+
+    '
+  remedy: "1. Before processing: check mean temperature values. If > 100, it's Kelvin. 2. Convert: temp_celsius\
+    \ = temp_kelvin - 273.15 3. Add automatic detection to process_cmip6_projections.py:\n   if temp.mean()\
+    \ > 100: temp -= 273.15; log.warning(\"Converted K to C\")\n4. Verify after processing: mean annual\
+    \ temp at glacier altitude should be\n   between -30 and +15 C for most glaciers.\n"
 - id: dt_oggm_011
   stage: s4_calibration
   failure_domain: runtime
   severity: degraded
-  title: Mass Balance Calibration Doesn't Converge
-  symptom: 'mb_calibration_from_geodetic_mb raises RuntimeError or logs WARNING that
-    calibration did not converge for one or more glaciers. The glacier''s climate_info.pkl
-    may have default/fallback parameters.
+  name: Mass Balance Calibration Doesn't Converge
+  symptom: 'mb_calibration_from_geodetic_mb raises RuntimeError or logs WARNING that calibration did not
+    converge for one or more glaciers. The glacier''s climate_info.pkl may have default/fallback parameters.
 
     '
-  diagnosis: "The optimization cannot find a (mu_star, pcf, tbias) combination that\
-    \ matches the observed geodetic mass balance. Common causes: (a) Wrong climate\
-    \ data \u2014 temperature or precipitation systematically biased for this glacier's\
-    \ location. (b) Surge-type glacier \u2014 mass redistribution not driven by climate.\
-    \ (c) Calving glacier \u2014 frontal ablation is a significant mass loss not modeled\
-    \ by surface MB. (d) DEM or outline errors \u2014 glacier area/elevation wrong.\n"
-  remedy: "1. Check if the glacier is surge-type (RGI surge flag). 2. Check if it's\
-    \ a tidewater/calving glacier (RGI TermType). 3. Verify climate data quality at\
-    \ this location. 4. Try wider parameter bounds: mu_star [0, 1500], pcf [0.1, 10].\
-    \ 5. If still failing, use regional mean parameters (average of nearby\n   successfully\
-    \ calibrated glaciers).\n6. Exclude the glacier from simulation if it's very small\
-    \ (<0.5 km2). 7. Report the failure with RGI ID and reason.\n"
+  diagnosis: 'The optimization cannot find a (mu_star, pcf, tbias) combination that matches the observed
+    geodetic mass balance. Common causes: (a) Wrong climate data — temperature or precipitation systematically
+    biased for this glacier''s location. (b) Surge-type glacier — mass redistribution not driven by climate.
+    (c) Calving glacier — frontal ablation is a significant mass loss not modeled by surface MB. (d) DEM
+    or outline errors — glacier area/elevation wrong.
+
+    '
+  remedy: "1. Check if the glacier is surge-type (RGI surge flag). 2. Check if it's a tidewater/calving\
+    \ glacier (RGI TermType). 3. Verify climate data quality at this location. 4. Try wider parameter\
+    \ bounds: mu_star [0, 1500], pcf [0.1, 10]. 5. If still failing, use regional mean parameters (average\
+    \ of nearby\n   successfully calibrated glaciers).\n6. Exclude the glacier from simulation if it's\
+    \ very small (<0.5 km2). 7. Report the failure with RGI ID and reason.\n"
 - id: dt_oggm_012
   stage: s4_calibration
   failure_domain: runtime
   severity: degraded
-  title: No Geodetic Mass Balance Data for Glacier
-  symptom: 'Calibration reports "No geodetic MB data available" for a glacier. The
-    glacier cannot be individually calibrated. This typically affects very small,
-    newly mapped, or peripheral glaciers not covered by Hugonnet 2021.
+  name: No Geodetic Mass Balance Data for Glacier
+  symptom: 'Calibration reports "No geodetic MB data available" for a glacier. The glacier cannot be individually
+    calibrated. This typically affects very small, newly mapped, or peripheral glaciers not covered by
+    Hugonnet 2021.
 
     '
-  diagnosis: 'Hugonnet et al. (2021) covers nearly all RGI v6 glaciers, but a small
-    fraction (~1-3%) may lack geodetic MB data due to DEM gaps, cloud cover in stereo
-    imagery, or outline mismatches between RGI and the altimetry processing. These
-    tend to be very small glaciers or those in regions with poor satellite coverage.
+  diagnosis: 'Hugonnet et al. (2021) covers nearly all RGI v6 glaciers, but a small fraction (~1-3%) may
+    lack geodetic MB data due to DEM gaps, cloud cover in stereo imagery, or outline mismatches between
+    RGI and the altimetry processing. These tend to be very small glaciers or those in regions with poor
+    satellite coverage.
 
     '
-  remedy: "1. Use the regional mean geodetic MB as the calibration target. 2. Transfer\
-    \ mu_star/pcf from the nearest glacier of similar size and elevation. 3. If the\
-    \ glacier is very small (<0.1 km2), its contribution is negligible \u2014\n  \
-    \ use default parameters and flag.\n4. Check if RGI v7 has updated data for this\
-    \ glacier.\n"
+  remedy: "1. Use the regional mean geodetic MB as the calibration target. 2. Transfer mu_star/pcf from\
+    \ the nearest glacier of similar size and elevation. 3. If the glacier is very small (<0.1 km2), its\
+    \ contribution is negligible —\n   use default parameters and flag.\n4. Check if RGI v7 has updated\
+    \ data for this glacier.\n"
 - id: dt_oggm_013
   stage: s4_calibration
   failure_domain: parameter_format
   severity: degraded
-  title: mu_star at Parameter Bounds
-  symptom: 'After calibration, mu_star = 0 or mu_star = 1000 (the default bounds).
-    The glacier''s calibrated mass balance exactly matches at the boundary but the
-    parameter is not physically realistic.
+  name: mu_star at Parameter Bounds
+  symptom: 'After calibration, mu_star = 0 or mu_star = 1000 (the default bounds). The glacier''s calibrated
+    mass balance exactly matches at the boundary but the parameter is not physically realistic.
 
     '
-  diagnosis: 'mu_star at its lower bound (0): The model cannot produce enough mass
-    loss even with zero melt sensitivity. Climate is too cold or precipitation too
-    high. Likely cause: wrong climate data, or the glacier is in an equilibrium/advancing
-    state that the calibration period can''t capture. mu_star at upper bound (1000):
-    The model cannot produce enough mass gain even with maximum melt sensitivity.
-    Climate is too warm or precipitation too low. Likely: wrong climate or extreme
-    negative MB.
+  diagnosis: 'mu_star at its lower bound (0): The model cannot produce enough mass loss even with zero
+    melt sensitivity. Climate is too cold or precipitation too high. Likely cause: wrong climate data,
+    or the glacier is in an equilibrium/advancing state that the calibration period can''t capture. mu_star
+    at upper bound (1000): The model cannot produce enough mass gain even with maximum melt sensitivity.
+    Climate is too warm or precipitation too low. Likely: wrong climate or extreme negative MB.
 
     '
-  remedy: '1. Check climate data at this glacier (temp, precip values reasonable?).
-    2. For mu_star=0: try increasing tbias (warmer) or decreasing pcf. 3. For mu_star=1000:
-    try decreasing tbias (cooler) or increasing pcf. 4. Expand bounds: mu_star [0,
-    2000] may allow convergence. 5. Flag the glacier as "boundary-calibrated" in output.
-    6. Consider using a different climate dataset for this region.
+  remedy: '1. Check climate data at this glacier (temp, precip values reasonable?). 2. For mu_star=0:
+    try increasing tbias (warmer) or decreasing pcf. 3. For mu_star=1000: try decreasing tbias (cooler)
+    or increasing pcf. 4. Expand bounds: mu_star [0, 2000] may allow convergence. 5. Flag the glacier
+    as "boundary-calibrated" in output. 6. Consider using a different climate dataset for this region.
 
     '
 - id: dt_oggm_014
   stage: s5_simulation
   failure_domain: runtime
   severity: degraded
-  title: FluxBasedModel Extremely Slow (Numerical Instability)
-  symptom: 'Glacier simulation takes orders of magnitude longer than expected. The
-    FluxBasedModel reduces its timestep to seconds or sub-seconds due to CFL violations.
-    A single glacier may take hours instead of seconds. CPU usage is 100% but no progress.
+  name: FluxBasedModel Extremely Slow (Numerical Instability)
+  symptom: 'Glacier simulation takes orders of magnitude longer than expected. The FluxBasedModel reduces
+    its timestep to seconds or sub-seconds due to CFL violations. A single glacier may take hours instead
+    of seconds. CPU usage is 100% but no progress.
 
     '
-  diagnosis: 'The CFL condition dt < dx / (velocity + c) becomes extremely restrictive
-    when: (a) the glacier has a very steep section (icefall) with high velocity, (b)
-    ice thickness is very thin (near-zero, causing numerical noise), (c) bed topography
-    has sharp features. The model adaptively reduces timestep but cannot completely
-    avoid the stiff region.
+  diagnosis: 'The CFL condition dt < dx / (velocity + c) becomes extremely restrictive when: (a) the glacier
+    has a very steep section (icefall) with high velocity, (b) ice thickness is very thin (near-zero,
+    causing numerical noise), (c) bed topography has sharp features. The model adaptively reduces timestep
+    but cannot completely avoid the stiff region.
 
     '
-  remedy: "1. Switch to SemiImplicitModel: model_type='SemiImplicit'. It is\n   unconditionally\
-    \ stable and avoids CFL-related slowdowns.\n2. If FluxBased is required: try increasing\
-    \ glen_a (ice softness)\n   slightly to reduce velocities.\n3. Check for DEM artifacts\
-    \ causing unrealistic bed slopes. 4. Exclude the problematic glacier and use compiled\
-    \ regional output. 5. Set a timeout per glacier (e.g., 300 seconds) and fall back\
-    \ to\n   SemiImplicit for glaciers that exceed it.\n"
+  remedy: "1. Switch to SemiImplicitModel: model_type='SemiImplicit'. It is\n   unconditionally stable\
+    \ and avoids CFL-related slowdowns.\n2. If FluxBased is required: try increasing glen_a (ice softness)\n\
+    \   slightly to reduce velocities.\n3. Check for DEM artifacts causing unrealistic bed slopes. 4.\
+    \ Exclude the problematic glacier and use compiled regional output. 5. Set a timeout per glacier (e.g.,\
+    \ 300 seconds) and fall back to\n   SemiImplicit for glaciers that exceed it.\n"
 - id: dt_oggm_015
   stage: s5_simulation
   failure_domain: runtime
   severity: degraded
-  title: Dynamic Spinup Doesn't Converge to Observed Area
-  symptom: 'run_dynamic_spinup raises RuntimeError: "Spinup did not converge" or the
-    spinup-adjusted glacier area at the RGI date differs from the observed RGI area
-    by more than 10%. The simulation continues but the initial state is unreliable.
+  name: Dynamic Spinup Doesn't Converge to Observed Area
+  symptom: 'run_dynamic_spinup raises RuntimeError: "Spinup did not converge" or the spinup-adjusted glacier
+    area at the RGI date differs from the observed RGI area by more than 10%. The simulation continues
+    but the initial state is unreliable.
 
     '
-  diagnosis: 'Dynamic spinup iteratively adjusts the starting glacier geometry (at
-    an earlier date) so that the modeled glacier at the RGI inventory date matches
-    the observed area. Convergence fails when: (a) the climate is too warm (glacier
-    retreats below RGI area before reaching RGI date), (b) surge-type glacier (non-climatic
-    area changes), (c) calving glacier (area changes via terminus breakup), (d) the
-    historical period is too short for the glacier to reach equilibrium.
+  diagnosis: 'Dynamic spinup iteratively adjusts the starting glacier geometry (at an earlier date) so
+    that the modeled glacier at the RGI inventory date matches the observed area. Convergence fails when:
+    (a) the climate is too warm (glacier retreats below RGI area before reaching RGI date), (b) surge-type
+    glacier (non-climatic area changes), (c) calving glacier (area changes via terminus breakup), (d)
+    the historical period is too short for the glacier to reach equilibrium.
 
     '
-  remedy: "1. Skip spinup: start simulation directly from RGI date geometry.\n   This\
-    \ may cause an initial \"shock\" (rapid adjustment) but stabilizes\n   within\
-    \ a few years.\n2. Extend spinup period: start from an earlier date (e.g., 1960\
-    \ instead of 1979). 3. Increase tolerance: accept 20% area mismatch at RGI date.\
-    \ 4. For surge-type glaciers: spinup is fundamentally inappropriate \u2014 use\
-    \ RGI date start.\n"
+  remedy: "1. Skip spinup: start simulation directly from RGI date geometry.\n   This may cause an initial\
+    \ \"shock\" (rapid adjustment) but stabilizes\n   within a few years.\n2. Extend spinup period: start\
+    \ from an earlier date (e.g., 1960 instead of 1979). 3. Increase tolerance: accept 20% area mismatch\
+    \ at RGI date. 4. For surge-type glaciers: spinup is fundamentally inappropriate — use RGI date start.\n"
 - id: dt_oggm_020
   stage: s5_simulation
   failure_domain: runtime
   severity: fatal
-  title: Memory Error Processing Many Glaciers Simultaneously
-  symptom: 'MemoryError or system OOM killer terminates the process during run_with_hydro
-    or compile_run_output with >500 glaciers. The machine has insufficient RAM for
-    the combined output arrays.
+  name: Memory Error Processing Many Glaciers Simultaneously
+  symptom: 'MemoryError or system OOM killer terminates the process during run_with_hydro or compile_run_output
+    with >500 glaciers. The machine has insufficient RAM for the combined output arrays.
 
     '
-  diagnosis: 'With store_monthly_hydro=True, each glacier stores ~7 variables * 12
-    months * N_years of float64 data. For 1000 glaciers over 40 years: 1000 * 7 *
-    12 * 40 * 8 bytes = ~2.7 GB. Compilation loads all into memory simultaneously.
-    Combined with DEM arrays and flowline data, this can exceed available RAM on machines
-    with <16 GB.
+  diagnosis: 'With store_monthly_hydro=True, each glacier stores ~7 variables * 12 months * N_years of
+    float64 data. For 1000 glaciers over 40 years: 1000 * 7 * 12 * 40 * 8 bytes = ~2.7 GB. Compilation
+    loads all into memory simultaneously. Combined with DEM arrays and flowline data, this can exceed
+    available RAM on machines with <16 GB.
 
     '
-  remedy: '1. Process in batches: divide glaciers into groups of 100-500. 2. Compile
-    each batch separately, then merge compiled outputs. 3. Disable store_monthly_hydro
-    if monthly data isn''t needed. 4. Increase swap space (temporary fix). 5. Use
-    a machine with more RAM for large-basin simulations (>1000 glaciers). 6. Set cfg.PARAMS[''use_multiprocessing'']
-    = False to reduce memory footprint.
+  remedy: '1. Process in batches: divide glaciers into groups of 100-500. 2. Compile each batch separately,
+    then merge compiled outputs. 3. Disable store_monthly_hydro if monthly data isn''t needed. 4. Increase
+    swap space (temporary fix). 5. Use a machine with more RAM for large-basin simulations (>1000 glaciers).
+    6. Set cfg.PARAMS[''use_multiprocessing''] = False to reduce memory footprint.
 
     '
 - id: dt_oggm_016
   stage: s6_vic_coupling
   failure_domain: silent_error
   severity: silent
-  title: Hydrological Year Mismatch (Oct-Sep vs Jan-Dec)
-  symptom: 'After coupling, the glacier contribution shows peak melt in winter (December-February)
-    instead of summer (June-August) for Northern Hemisphere basins. The seasonal pattern
-    is shifted by ~3 months. Total annual values may still be approximately correct.
+  name: Hydrological Year Mismatch (Oct-Sep vs Jan-Dec)
+  symptom: 'After coupling, the glacier contribution shows peak melt in winter (December-February) instead
+    of summer (June-August) for Northern Hemisphere basins. The seasonal pattern is shifted by ~3 months.
+    Total annual values may still be approximately correct.
 
     '
-  diagnosis: "OGGM uses hydrological year (October 1 - September 30 in NH). If the\
-    \ coupling code uses OGGM's month indices (1-12) as calendar months, month 1 (=October)\
-    \ is mapped to January, shifting the entire seasonal cycle by 3 months. This is\
-    \ completely silent \u2014 the values are plausible, just temporally displaced.\n"
-  remedy: "1. ALWAYS use OGGM's time coordinate (actual dates), NOT month indices.\
-    \ 2. ds = xr.open_dataset('run_output_hydro.nc')\n   monthly_data = ds['melt_on_glacier'].groupby('time.month')\
-    \  # Uses actual dates\n3. Add a sanity check: peak glacier melt should occur\
-    \ in JJA for NH,\n   DJF for SH. If peak is in wrong season, temporal alignment\
-    \ is wrong.\n4. The oggm_to_vic_runoff.py tool should auto-detect and warn about\
+  diagnosis: 'OGGM uses hydrological year (October 1 - September 30 in NH). If the coupling code uses
+    OGGM''s month indices (1-12) as calendar months, month 1 (=October) is mapped to January, shifting
+    the entire seasonal cycle by 3 months. This is completely silent — the values are plausible, just
+    temporally displaced.
+
+    '
+  remedy: "1. ALWAYS use OGGM's time coordinate (actual dates), NOT month indices. 2. ds = xr.open_dataset('run_output_hydro.nc')\n\
+    \   monthly_data = ds['melt_on_glacier'].groupby('time.month')  # Uses actual dates\n3. Add a sanity\
+    \ check: peak glacier melt should occur in JJA for NH,\n   DJF for SH. If peak is in wrong season,\
+    \ temporal alignment is wrong.\n4. The oggm_to_vic_runoff.py tool should auto-detect and warn about\
     \ this.\n"
 - id: dt_oggm_017
   stage: s6_vic_coupling
   failure_domain: silent_error
   severity: silent
-  title: Double-Counting Snowmelt on Glacier Cells
-  symptom: 'After adding OGGM glacier melt to VIC discharge, the total basin discharge
-    is 10-30% higher than observed. The bias is proportional to the glacier fraction
-    of the basin. Removing the OGGM addition brings discharge closer to observations.
+  name: Double-Counting Snowmelt on Glacier Cells
+  symptom: 'After adding OGGM glacier melt to VIC discharge, the total basin discharge is 10-30% higher
+    than observed. The bias is proportional to the glacier fraction of the basin. Removing the OGGM addition
+    brings discharge closer to observations.
 
     '
-  diagnosis: 'VIC simulates snowmelt on ALL grid cells, including glacier cells. OGGM
-    also computes melt (ice + snow) on glacier surfaces. Adding OGGM output directly
-    to VIC discharge counts snowmelt twice on glacier areas. For a basin with 10%
-    glacier coverage, this can inflate discharge by ~10-20%.
+  diagnosis: 'VIC simulates snowmelt on ALL grid cells, including glacier cells. OGGM also computes melt
+    (ice + snow) on glacier surfaces. Adding OGGM output directly to VIC discharge counts snowmelt twice
+    on glacier areas. For a basin with 10% glacier coverage, this can inflate discharge by ~10-20%.
 
     '
-  remedy: "1. Compute VIC snowmelt on glacier cells: extract VIC runoff for cells\n\
-    \   with glacier coverage, multiply by glacier fraction in each cell.\n2. Subtract\
-    \ double-counted amount: net_glacier = OGGM_melt - VIC_snowmelt_on_glacier. 3.\
-    \ Clamp to zero: net_glacier = max(0, net_glacier). OGGM melt should\n   always\
-    \ exceed VIC snowmelt because OGGM includes ice melt.\n4. Alternatively: re-run\
-    \ VIC with glacier cells masked (set to bare rock). 5. For glacier fraction <\
-    \ 1%, the double-counting is < 1% \u2014 acceptable\n   to ignore with a note.\n"
+  remedy: "1. Compute VIC snowmelt on glacier cells: extract VIC runoff for cells\n   with glacier coverage,\
+    \ multiply by glacier fraction in each cell.\n2. Subtract double-counted amount: net_glacier = OGGM_melt\
+    \ - VIC_snowmelt_on_glacier. 3. Clamp to zero: net_glacier = max(0, net_glacier). OGGM melt should\n\
+    \   always exceed VIC snowmelt because OGGM includes ice melt.\n4. Alternatively: re-run VIC with\
+    \ glacier cells masked (set to bare rock). 5. For glacier fraction < 1%, the double-counting is <\
+    \ 1% — acceptable\n   to ignore with a note.\n"
 - id: dt_oggm_018
   stage: s6_vic_coupling
   failure_domain: unit_conversion
   severity: silent
-  title: Unit Conversion Error (mm w.e. to m3/s)
-  symptom: 'Glacier discharge contribution is off by orders of magnitude (e.g., glacier
-    melt > total basin discharge, or glacier contribution is negligibly small even
-    for a heavily glacierized basin). No error message is produced.
+  name: Unit Conversion Error (mm w.e. to m3/s)
+  symptom: 'Glacier discharge contribution is off by orders of magnitude (e.g., glacier melt > total basin
+    discharge, or glacier contribution is negligibly small even for a heavily glacierized basin). No error
+    message is produced.
 
     '
-  diagnosis: 'The conversion from OGGM''s mm w.e./month to m3/s involves multiple
-    factors: glacier_area (km2 -> m2 = *1e6), depth (mm -> m = /1000), time (month
-    -> seconds). Common errors: (a) forgetting the 1e6 for km2 to m2, (b) using days
-    instead of seconds, (c) using 30 days/month instead of actual month length, (d)
-    confusing mm/month with mm/day.
+  diagnosis: 'The conversion from OGGM''s mm w.e./month to m3/s involves multiple factors: glacier_area
+    (km2 -> m2 = *1e6), depth (mm -> m = /1000), time (month -> seconds). Common errors: (a) forgetting
+    the 1e6 for km2 to m2, (b) using days instead of seconds, (c) using 30 days/month instead of actual
+    month length, (d) confusing mm/month with mm/day.
 
     '
-  remedy: "1. Verify formula: Q(m3/s) = melt(mm_we/month) * area(km2) * 1e6 / (1000\
-    \ * seconds_in_month)\n   Simplified: Q = melt * area_km2 * 1000 / seconds_in_month\n\
-    2. Use actual month lengths (28-31 days) not a fixed 30. 3. Sanity check: for\
-    \ Yarlung Tsangpo (~20000 km2 glaciers, ~500 mm/yr melt):\n   Q ~ 500 * 20000\
-    \ * 1000 / (365.25 * 86400) ~ 317 m3/s. If your value\n   differs by >10x, there\
-    \ is a unit error.\n4. Cross-check with published glacier runoff estimates for\
-    \ the region.\n"
+  remedy: "1. Verify formula: Q(m3/s) = melt(mm_we/month) * area(km2) * 1e6 / (1000 * seconds_in_month)\n\
+    \   Simplified: Q = melt * area_km2 * 1000 / seconds_in_month\n2. Use actual month lengths (28-31\
+    \ days) not a fixed 30. 3. Sanity check: for Yarlung Tsangpo (~20000 km2 glaciers, ~500 mm/yr melt):\n\
+    \   Q ~ 500 * 20000 * 1000 / (365.25 * 86400) ~ 317 m3/s. If your value\n   differs by >10x, there\
+    \ is a unit error.\n4. Cross-check with published glacier runoff estimates for the region.\n"
 - id: dt_oggm_019
   stage: s6_vic_coupling
   failure_domain: silent_error
   severity: silent
-  title: Spatial Mapping Error (Glacier Between VIC Grid Cells)
-  symptom: 'A VIC grid cell has glacier area fraction > 100% in the mapping output.
-    Or, a glacier''s melt is entirely assigned to a cell where it is only partially
-    located, while the cell where most of the glacier is located gets no glacier runoff.
+  name: Spatial Mapping Error (Glacier Between VIC Grid Cells)
+  symptom: 'A VIC grid cell has glacier area fraction > 100% in the mapping output. Or, a glacier''s melt
+    is entirely assigned to a cell where it is only partially located, while the cell where most of the
+    glacier is located gets no glacier runoff.
 
     '
-  diagnosis: 'When using centroid-based assignment, a glacier whose centroid falls
-    near a cell boundary may be entirely assigned to the "wrong" cell. For large glaciers
-    spanning multiple cells (common at 0.1 deg resolution), centroid assignment loses
-    spatial detail. Multiple small glaciers in the same cell may also cause area >
-    cell area.
+  diagnosis: 'When using centroid-based assignment, a glacier whose centroid falls near a cell boundary
+    may be entirely assigned to the "wrong" cell. For large glaciers spanning multiple cells (common at
+    0.1 deg resolution), centroid assignment loses spatial detail. Multiple small glaciers in the same
+    cell may also cause area > cell area.
 
     '
-  remedy: "1. For large glaciers (area > 0.5 * cell_area): use area-weighted\n   distribution\
-    \ across all cells the glacier intersects.\n2. For small glaciers: centroid-based\
-    \ assignment is acceptable. 3. Cap glacier fraction per cell at 1.0 (100%). 4.\
-    \ Verify total glacier area is conserved: sum of (glacier_fraction *\n   cell_area)\
-    \ across all cells should equal total glacier area.\n5. If using VIC at 0.25 deg:\
-    \ most glaciers fit in one cell. At 0.1 deg:\n   some large glaciers may span\
-    \ 2-4 cells.\n"
+  remedy: "1. For large glaciers (area > 0.5 * cell_area): use area-weighted\n   distribution across all\
+    \ cells the glacier intersects.\n2. For small glaciers: centroid-based assignment is acceptable. 3.\
+    \ Cap glacier fraction per cell at 1.0 (100%). 4. Verify total glacier area is conserved: sum of (glacier_fraction\
+    \ *\n   cell_area) across all cells should equal total glacier area.\n5. If using VIC at 0.25 deg:\
+    \ most glaciers fit in one cell. At 0.1 deg:\n   some large glaciers may span 2-4 cells.\n"
 - id: dt_oggm_021
   stage: s2_preprocessing
   failure_domain: environment
   severity: fatal
-  title: OGGM v1.6 Requires Explicit prepro_base_url
-  symptom: 'Calling workflow.init_glacier_directories with from_prepro_level raises
-    InvalidParamsError: "Starting with v1.6, users now have to explicitly indicate
-    the url they want to start from."
+  name: OGGM v1.6 Requires Explicit prepro_base_url
+  symptom: 'Calling workflow.init_glacier_directories with from_prepro_level raises InvalidParamsError:
+    "Starting with v1.6, users now have to explicitly indicate the url they want to start from."
 
     '
-  diagnosis: 'OGGM v1.6 removed automatic detection of the pre-processed directory
-    URL. In earlier versions, OGGM would default to the latest available pre-processed
-    directory on the Bremen server. Starting with v1.6, the URL must be passed explicitly
-    via the prepro_base_url parameter. This was an intentional API change to prevent
-    users from unknowingly using stale or incompatible pre-processed data when the
+  diagnosis: 'OGGM v1.6 removed automatic detection of the pre-processed directory URL. In earlier versions,
+    OGGM would default to the latest available pre-processed directory on the Bremen server. Starting
+    with v1.6, the URL must be passed explicitly via the prepro_base_url parameter. This was an intentional
+    API change to prevent users from unknowingly using stale or incompatible pre-processed data when the
     server structure changes.
 
     '
-  remedy: "1. Pass prepro_base_url explicitly when initializing glacier directories:\n\
-    \   workflow.init_glacier_directories(rgidf, from_prepro_level=5,\n     prepro_base_url='https://cluster.klima.uni-bremen.de/~oggm/gdirs/oggm_v1.6/L3-L5_files/2023.3/elev_bands/W5E5/')\n\
-    2. Choose the correct URL for your OGGM version \u2014 check the OGGM docs for\
-    \ the\n   latest recommended URL.\n3. For OGGM v1.6 with W5E5 climate: use the\
-    \ 2023.3/elev_bands/W5E5/ path. 4. Verify the URL is accessible: curl -I <url>\n"
+  remedy: "1. Pass prepro_base_url explicitly when initializing glacier directories:\n   workflow.init_glacier_directories(rgidf,\
+    \ from_prepro_level=5,\n     prepro_base_url='https://cluster.klima.uni-bremen.de/~oggm/gdirs/oggm_v1.6/L3-L5_files/2023.3/elev_bands/W5E5/')\n\
+    2. Choose the correct URL for your OGGM version — check the OGGM docs for the\n   latest recommended\
+    \ URL.\n3. For OGGM v1.6 with W5E5 climate: use the 2023.3/elev_bands/W5E5/ path. 4. Verify the URL\
+    \ is accessible: curl -I <url>\n"
   verified: 2026-03-20, Yarlung Tsangpo basin
 - id: dt_oggm_022
   stage: s5_simulation
   failure_domain: parameter_format
   severity: fatal
-  title: store_model_geometry Must Be True for run_with_hydro
-  symptom: 'Calling tasks.run_with_hydro raises InvalidParamsError: "run_with_hydro
-    only works with PARAMS[''store_model_geometry''] = True for now."
+  name: store_model_geometry Must Be True for run_with_hydro
+  symptom: 'Calling tasks.run_with_hydro raises InvalidParamsError: "run_with_hydro only works with PARAMS[''store_model_geometry'']
+    = True for now."
 
     '
-  diagnosis: 'OGGM requires cfg.PARAMS[''store_model_geometry''] = True before calling
-    run_with_hydro. The default value is False. run_with_hydro needs access to the
-    full glacier geometry (width, thickness along flowlines) at each timestep to compute
-    hydrological variables (melt, refreezing, liquid precipitation runoff). Without
-    stored geometry, these spatial calculations cannot be performed.
+  diagnosis: 'OGGM requires cfg.PARAMS[''store_model_geometry''] = True before calling run_with_hydro.
+    The default value is False. run_with_hydro needs access to the full glacier geometry (width, thickness
+    along flowlines) at each timestep to compute hydrological variables (melt, refreezing, liquid precipitation
+    runoff). Without stored geometry, these spatial calculations cannot be performed.
 
     '
-  remedy: "1. Set cfg.PARAMS['store_model_geometry'] = True during OGGM initialization,\n\
-    \   BEFORE calling any run tasks.\n2. Place this immediately after cfg.initialize()\
-    \ and cfg.set_intersects_db():\n   cfg.PARAMS['store_model_geometry'] = True\n\
-    3. Note: this increases disk usage and memory footprint because the full\n   glacier\
-    \ geometry is saved at each output timestep.\n4. If disk space is a concern, set\
-    \ store_fl_diagnostics=False in run_with_hydro\n   to reduce output size.\n"
+  remedy: "1. Set cfg.PARAMS['store_model_geometry'] = True during OGGM initialization,\n   BEFORE calling\
+    \ any run tasks.\n2. Place this immediately after cfg.initialize() and cfg.set_intersects_db():\n\
+    \   cfg.PARAMS['store_model_geometry'] = True\n3. Note: this increases disk usage and memory footprint\
+    \ because the full\n   glacier geometry is saved at each output timestep.\n4. If disk space is a concern,\
+    \ set store_fl_diagnostics=False in run_with_hydro\n   to reduce output size.\n"
   verified: 2026-03-20, Yarlung Tsangpo basin
 - id: dt_oggm_023
   stage: s2_preprocessing
   failure_domain: environment
   severity: fatal
-  title: PyTables (tables) Required for Download Verification
-  symptom: 'During OGGM initialization or data download, ImportError is raised: "Missing
-    optional dependency ''pytables''. Use pip or conda to install pytables."
+  name: PyTables (tables) Required for Download Verification
+  symptom: 'During OGGM initialization or data download, ImportError is raised: "Missing optional dependency
+    ''pytables''. Use pip or conda to install pytables."
 
     '
-  diagnosis: 'OGGM stores download verification checksums in HDF5 format (.sha256.hdf
-    files). The PyTables library (Python package name: ''tables'') is required to
-    read these HDF5 files. While listed as an optional dependency in OGGM''s setup.py,
-    it is effectively required for any workflow that downloads data from the Bremen
-    server (which is virtually all workflows). pip install oggm may not install it
+  diagnosis: 'OGGM stores download verification checksums in HDF5 format (.sha256.hdf files). The PyTables
+    library (Python package name: ''tables'') is required to read these HDF5 files. While listed as an
+    optional dependency in OGGM''s setup.py, it is effectively required for any workflow that downloads
+    data from the Bremen server (which is virtually all workflows). pip install oggm may not install it
     automatically on all systems.
 
     '
-  remedy: "1. Install PyTables: pip install tables 2. On some systems, you may need\
-    \ HDF5 development headers first:\n   apt-get install libhdf5-dev  (Ubuntu/Debian)\n\
-    \   yum install hdf5-devel  (CentOS/RHEL)\n3. Verify installation: python -c \"\
-    import tables; print(tables.__version__)\" 4. Add to requirements.txt: tables>=3.7\n"
+  remedy: "1. Install PyTables: pip install tables 2. On some systems, you may need HDF5 development headers\
+    \ first:\n   apt-get install libhdf5-dev  (Ubuntu/Debian)\n   yum install hdf5-devel  (CentOS/RHEL)\n\
+    3. Verify installation: python -c \"import tables; print(tables.__version__)\" 4. Add to requirements.txt:\
+    \ tables>=3.7\n"
   verified: '2026-03-20'
 - id: dt_oggm_024
   stage: s2_preprocessing
   failure_domain: environment
   severity: fatal
-  title: Salem Dependency Not Installed by Default
-  symptom: 'Importing oggm or running any OGGM workflow raises ModuleNotFoundError:
-    "No module named ''salem''".
+  name: Salem Dependency Not Installed by Default
+  symptom: 'Importing oggm or running any OGGM workflow raises ModuleNotFoundError: "No module named ''salem''".
 
     '
-  diagnosis: "OGGM depends on the salem library (a geoscience utility package by the\
-    \ same developer, Fabien Maussion). While listed as a dependency in OGGM's setup.py,\
-    \ pip may not install it automatically on all systems \u2014 particularly when\
-    \ using --no-deps, installing from source, or when dependency resolution fails\
-    \ due to conflicting version requirements. Salem itself has dependencies on xarray,\
-    \ matplotlib, and other scientific packages.\n"
-  remedy: "1. Install salem: pip install salem 2. Verify: python -c \"import salem;\
-    \ print(salem.__version__)\" 3. If salem installation fails due to dependency\
-    \ conflicts, install its\n   dependencies first: pip install xarray matplotlib\
-    \ joblib\n4. Add to requirements.txt alongside oggm: salem>=0.3\n"
+  diagnosis: 'OGGM depends on the salem library (a geoscience utility package by the same developer, Fabien
+    Maussion). While listed as a dependency in OGGM''s setup.py, pip may not install it automatically
+    on all systems — particularly when using --no-deps, installing from source, or when dependency resolution
+    fails due to conflicting version requirements. Salem itself has dependencies on xarray, matplotlib,
+    and other scientific packages.
+
+    '
+  remedy: "1. Install salem: pip install salem 2. Verify: python -c \"import salem; print(salem.__version__)\"\
+    \ 3. If salem installation fails due to dependency conflicts, install its\n   dependencies first:\
+    \ pip install xarray matplotlib joblib\n4. Add to requirements.txt alongside oggm: salem>=0.3\n"
   verified: '2026-03-20'
 - id: dt_oggm_025
   stage: all
   failure_domain: environment
   severity: fatal
-  title: Site-Packages Path Mismatch in Symlinked Venv
-  symptom: 'ModuleNotFoundError: "No module named ''oggm''" (or any newly installed
-    package) despite successful pip install showing the package was installed. pip
-    list shows the package, but import fails.
+  name: Site-Packages Path Mismatch in Symlinked Venv
+  symptom: 'ModuleNotFoundError: "No module named ''oggm''" (or any newly installed package) despite successful
+    pip install showing the package was installed. pip list shows the package, but import fails.
 
     '
-  diagnosis: 'When a Python venv is created at one path and later accessed via a symlink
-    or mount to a different path, the venv''s internal paths can become inconsistent.
-    For example, a venv at /home/user/project/python_env/ that is also accessible
-    via KISSPATH_ROOT/python_env/ may have pip installing to the original path''s
-    site-packages while sys.path references the symlinked path. This is because the
-    venv''s pyvenv.cfg and pip''s internal path resolution may resolve the symlink
-    differently from the Python interpreter.
+  diagnosis: 'When a Python venv is created at one path and later accessed via a symlink or mount to a
+    different path, the venv''s internal paths can become inconsistent. For example, a venv at /home/user/project/python_env/
+    that is also accessible via KISSPATH_ROOT/python_env/ may have pip installing to the original
+    path''s site-packages while sys.path references the symlinked path. This is because the venv''s pyvenv.cfg
+    and pip''s internal path resolution may resolve the symlink differently from the Python interpreter.
 
     '
-  remedy: "1. Check where pip installs: pip show oggm | grep Location 2. Check where\
-    \ Python looks: python -c \"import sys; print(sys.path)\" 3. If paths differ,\
-    \ set PYTHONPATH to include the actual install location:\n   export PYTHONPATH=\"\
-    /actual/install/path/lib/python3.12/site-packages\"\n4. Or create a .pth file\
-    \ in the venv's site-packages that points to the\n   actual install location.\n\
-    5. Long-term fix: recreate the venv at the canonical (non-symlinked) path\n  \
-    \ and always activate from that path.\n"
+  remedy: "1. Check where pip installs: pip show oggm | grep Location 2. Check where Python looks: python\
+    \ -c \"import sys; print(sys.path)\" 3. If paths differ, set PYTHONPATH to include the actual install\
+    \ location:\n   export PYTHONPATH=\"/actual/install/path/lib/python3.12/site-packages\"\n4. Or create\
+    \ a .pth file in the venv's site-packages that points to the\n   actual install location.\n5. Long-term\
+    \ fix: recreate the venv at the canonical (non-symlinked) path\n   and always activate from that path.\n"
   verified: '2026-03-20'
 - id: dt_oggm_degenerate_self_obs
   symptom:
-    description: "specific_mass_balance metrics are ~perfect (NSE\u22481.0, r=1.0,\
-      \ RMSE\u22480.003, PBIAS\u22480) and run_validity.attribution=='workflow_incomplete';\
-      \ the 'obs' series is OGGM's own run_output_hist.nc produced with byte-identical\
-      \ downloaded calibration params (melt_f/prcp_fac/temp_bias), and cal period\
-      \ == val period."
+    description: specific_mass_balance metrics are ~perfect (NSE≈1.0, r=1.0, RMSE≈0.003, PBIAS≈0) and
+      run_validity.attribution=='workflow_incomplete'; the 'obs' series is OGGM's own run_output_hist.nc
+      produced with byte-identical downloaded calibration params (melt_f/prcp_fac/temp_bias), and cal
+      period == val period.
   diagnosis:
-    root_cause: Degenerate model-reproduces-itself consistency check, not validation.
-      dag.yaml outputs[specific_mass_balance] (validation_rank 1, determining_metric
-      pbias) prescribes an INDEPENDENT glaciological/WGMS annual MB series as obs
-      and warns the 2000-2020 geodetic period is not independent validation. The KI
-      ships only SIM-side tools (init/run/compile); no tool loads independent obs
-      or scores against it.
+    root_cause: Degenerate model-reproduces-itself consistency check, not validation. dag.yaml outputs[specific_mass_balance]
+      (validation_rank 1, determining_metric pbias) prescribes an INDEPENDENT glaciological/WGMS annual
+      MB series as obs and warns the 2000-2020 geodetic period is not independent validation. The KI ships
+      only SIM-side tools (init/run/compile); no tool loads independent obs or scores against it.
   remedy:
-    action: 'Author/run tools/s5_simulation/validate_wgms_reference_mb.py: select
-      region-N WGMS reference glaciers (rgi_wgms_links table, N_MB_YRS>=15), init
-      prepro L3 gdirs (Bremen elev_bands/W5E5), compute MonthlyTIModel.get_specific_mb(h,w,year=yrs)
-      vs gdir.get_ref_mb_data()[''ANNUAL_BALANCE''], score all_metrics with a pre-2000
-      out-of-calibration holdout split. WGMS obs verified on disk (~/.oggm/oggm-sample-data-*/wgms/,
-      290 series, 18 region-13 glaciers >=15 yr). Ensure the tool_summary output-destination
-      contract matches the code (write default <working_dir>/result.json always; --out
-      additionally) or codex REQUEST_CHANGES.'
-  format_spec_violated: none (dag.yaml outputs[specific_mass_balance].observability
-    contract, not a Tier-2 format_spec rule)
+    action: 'Author/run tools/s5_simulation/validate_wgms_reference_mb.py: select region-N WGMS reference
+      glaciers (rgi_wgms_links table, N_MB_YRS>=15), init prepro L3 gdirs (Bremen elev_bands/W5E5), compute
+      MonthlyTIModel.get_specific_mb(h,w,year=yrs) vs gdir.get_ref_mb_data()[''ANNUAL_BALANCE''], score
+      all_metrics with a pre-2000 out-of-calibration holdout split. WGMS obs verified on disk (~/.oggm/oggm-sample-data-*/wgms/,
+      290 series, 18 region-13 glaciers >=15 yr). Ensure the tool_summary output-destination contract
+      matches the code (write default <working_dir>/result.json always; --out additionally) or codex REQUEST_CHANGES.'
+  format_spec_violated: none (dag.yaml outputs[specific_mass_balance].observability contract, not a Tier-2
+    format_spec rule)
   canonical_intent: ki_local_if_pass
   added_by_run: OGGM_retry2

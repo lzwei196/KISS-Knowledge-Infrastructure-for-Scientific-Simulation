@@ -1,0 +1,315 @@
+schema_version: 1
+model_id: PyDeltaRCM
+domain: hydrology
+generated_by: "Step-B agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+# PyDeltaRCM/DeltaRCM validation literature is morphodynamic and ensemble-statistical:
+# published assessments compare channel-network, planform, surface/subsurface, and flow-
+# partition metrics against theory, experiments, field deltas, or Delft3D. The fetched set
+# does not provide a numeric pass/fail CSI or IoU threshold for any dag output, so headline
+# CSI bands are intentionally null and low-confidence. Null bands must not loosen a gate.
+
+references:
+  moodie2021:
+    doi: 10.21105/joss.03398
+    title: "pyDeltaRCM: a flexible numerical delta model"
+    venue: "Journal of Open Source Software"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.21105_joss.03398.txt
+  liang2015a:
+    doi: 10.5194/esurf-3-67-2015
+    title: "A reduced-complexity model for river delta formation - Part 1: Modeling deltas with channel dynamics"
+    venue: "Earth Surface Dynamics"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_esurf-3-67-2015.txt
+  liang2015b:
+    doi: 10.5194/esurf-3-87-2015
+    title: "A reduced-complexity model for river delta formation - Part 2: Assessment of the flow routing scheme"
+    venue: "Earth Surface Dynamics"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_esurf-3-87-2015.txt
+  liang2016:
+    doi: 10.1002/2015jf003653
+    title: "Quantifying the patterns and dynamics of river deltas under conditions of steady forcing and relative sea level rise"
+    venue: "Journal of Geophysical Research: Earth Surface"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2015jf003653.txt
+  edmonds2011:
+    doi: 10.1029/2010jf001955
+    title: "Quantitative metrics that describe river deltas and their channel networks"
+    venue: "Journal of Geophysical Research: Earth Surface"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2010jf001955.txt
+  schwenk2020:
+    doi: 10.5194/esurf-8-87-2020
+    title: "Determining flow directions in river channel networks using planform morphology and topology"
+    venue: "Earth Surface Dynamics"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_esurf-8-87-2020.txt
+
+validation:
+  - dag_variable: eta
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI/IoU pass threshold for bed-elevation or land-mask snapshots in delta morphodynamic validation; fetched papers use morphometrics and visual/statistical comparison instead."
+        cites: []
+    secondary_metrics:
+      - metric: delta_morphometric_similarity
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DeltaRCM is assessed by comparing metric distributions for model, field, experimental, and numerical deltas."
+        cites: [liang2016, edmonds2011]
+      - metric: cellwise_elevation_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Reduced-complexity delta models are used for emergent pattern/process comparison, not deterministic cellwise reproduction of a particular natural bed surface."
+        cites: [liang2015b, moodie2021]
+    validated_when: "UNRESOLVED numeric gate - retain dag CSI, but treat validation as ensemble agreement in delta morphometrics until a fetched CSI/IoU threshold is available."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Liang 2016 says DeltaRCM was assessed by "quantitatively comparing metrics measured on model results"
+      with field, experimental, and Delft3D data, and reports that it captures fractality, wet/dry spatial
+      distributions, and planform-correlation dynamics. Edmonds 2011 states that quantitative measures provide
+      a "common language for comparison" of delta morphology. Neither source defines a CSI pass band.
+
+  - dag_variable: eta
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric temporal CSI pass threshold for evolving bed-elevation maps; DeltaRCM assessment uses channel mobility, avulsion/reworking timescales, and planform-correlation decay."
+        cites: []
+    secondary_metrics:
+      - metric: channel_planform_correlation_decay
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Temporal validation is framed through channel-scale process dynamics and the decay of channel planform correlation rather than cellwise map persistence."
+        cites: [liang2016]
+      - metric: ensemble_morphodynamic_statistics
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Autogenic variability makes single-realization temporal alignment weak; published DeltaRCM work compares patterns and dynamics across metric ensembles."
+        cites: [liang2016]
+    validated_when: "UNRESOLVED numeric gate - retain dag CSI, but require temporal morphodynamic statistics to be compared with field/experiment/model benchmarks."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Liang 2016 explicitly includes "temporal dynamics of channel-scale processes such as the decay of
+      channel planform correlation" among the model assessment targets. No fetched source turns this into
+      a numeric CSI threshold for spatial time series.
+
+  - dag_variable: stage
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass threshold for water-surface-elevation snapshots in FlowRCM/PyDeltaRCM."
+        cites: []
+    secondary_metrics:
+      - metric: water_surface_profile_error
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "FlowRCM can reproduce backwater/superelevation/drawdown patterns, but the paper states surface-elevation accuracy can be relaxed for delta modeling and reports overprediction in a bifurcation test."
+        cites: [liang2015b]
+      - metric: hydrodynamic_plausibility
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The flow-routing paper frames the assessment as model plausibility and process credibility, not full numerical validation."
+        cites: [liang2015b]
+    validated_when: "UNRESOLVED numeric gate - stage is credible when water-surface patterns are hydrodynamically plausible at network scale; no fetched CSI band exists."
+    evidence_strength: moderate
+    confidence: 0.35
+    notes: >-
+      Liang 2015b reports FlowRCM captures surface-profile patterns but states its goal is not to match
+      Delft3D simulations exactly. The same paper says "its accuracy can be relaxed when modeling deltas";
+      this supports a structural ceiling on exact stage error, not a numeric pass threshold.
+
+  - dag_variable: depth
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass threshold for depth-map validation; fetched DeltaRCM papers use wet/dry extraction and morphometrics."
+        cites: []
+    secondary_metrics:
+      - metric: wet_dry_pattern_match
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DeltaRCM assessments extract wetted maps from channel pixels and depth thresholds, so wet/dry structure is more defensible than exact shallow depth magnitude."
+        cites: [liang2016, liang2015a]
+    validated_when: "UNRESOLVED numeric gate - retain dag CSI for wet/depth spatial pattern, but do not auto-validate without a fetched threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Liang 2016 creates a binary wetted map from channel pixels or depth greater than 0.5 m for its analysis.
+      Liang 2015a marks cells wet using a dry-depth threshold. These are processing conventions, not pass bands.
+
+  - dag_variable: velocity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass threshold for velocity-field snapshots in FlowRCM/PyDeltaRCM."
+        cites: []
+    secondary_metrics:
+      - metric: velocity_hotspot_pattern
+        direction: maximize
+        status: supportive
+        ceiling_reason: "FlowRCM and Delft3D produce similar flow distributions and high-velocity zones in channels at network scale."
+        cites: [liang2015b]
+      - metric: cellwise_velocity_rmse
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "FlowRCM is explicitly reported to fall short of Delft3D in detailed hydrodynamic features and to show local effects/noisy maps from probabilistic parcel routing."
+        cites: [liang2015b]
+    validated_when: "UNRESOLVED numeric gate - velocity should be judged by spatial hotspot/network-scale flow-pattern agreement unless a fetched CSI/RMSE threshold is added."
+    evidence_strength: moderate
+    confidence: 0.35
+    notes: >-
+      Liang 2015b states FlowRCM performs well where "spatial flux distribution matters more than detailed
+      channel flow structure." That supports pattern comparison and a structural ceiling on exact velocity fields.
+
+  - dag_variable: discharge
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass threshold for spatial discharge-pattern validation in PyDeltaRCM."
+        cites: []
+    secondary_metrics:
+      - metric: discharge_partition_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "FlowRCM was assessed against Delft3D for discharge partitioning at bifurcations and whole distributary networks."
+        cites: [liang2015b]
+      - metric: absolute_gauged_discharge_error
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "The flow-routing benchmark compares normalized flux partition and notes field surveyed data are needed to know which model better reproduces Wax Lake behavior."
+        cites: [liang2015b]
+      - metric: directed_channel_network_accuracy
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Planform/topology methods can validate inferred channel-network flow directions against expert labels, but this is a network-direction metric rather than an absolute discharge metric."
+        cites: [schwenk2020]
+    validated_when: "UNRESOLVED numeric gate - discharge is conventionally assessed as channel-network flux partition and directionality, not absolute spatial CSI, until a fetched threshold exists."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Liang 2015b reports discharge asymmetry within 7 percent of Delft3D in one bifurcation test and similar
+      network-scale partition patterns, but no pass band. Schwenk 2020 provides an adjacent channel-network
+      direction validation benchmark with 97.0 percent agreement for delta recipes.
+
+  - dag_variable: sedflux
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass threshold for sediment-flux spatial snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: synthetic_sediment_flux_distribution
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Delta morphodynamic validation uses synthetic sediment flux and nourishment-area metrics to compare network sediment delivery patterns."
+        cites: [edmonds2011, liang2016]
+      - metric: morphodynamic_metric_ensemble
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Published DeltaRCM assessment computes the same metrics for model results and benchmark natural, experimental, and numerical deltas."
+        cites: [liang2016]
+    validated_when: "UNRESOLVED numeric gate - sediment flux should be compared through delta sediment-delivery morphometrics; no fetched CSI band exists."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Edmonds 2011 includes synthetic sediment flux among five delta metrics and reports that about 20 percent
+      of channels carry about 50 percent of sediment in the analyzed river-dominated deltas. Liang 2016 applies
+      the metric framework to DeltaRCM, but does not define a pass/fail threshold.
+
+  - dag_variable: sandfrac
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass threshold for surface sand-fraction spatial patterns."
+        cites: []
+    secondary_metrics:
+      - metric: relative_sand_mud_pattern
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DeltaRCM varies inlet sand/mud parcel ratios and compares resulting delta patterns; this supports relative facies-pattern checks, not absolute cellwise sand fraction validation."
+        cites: [liang2015a, liang2016]
+    validated_when: "UNRESOLVED numeric gate - compare relative sand/mud facies patterns and morphometrics; do not auto-validate CSI without a fetched threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Liang 2015a states the sand/mud parcel ratio sets inlet sediment composition, while Liang 2016 compares
+      resulting morphodynamic metrics. No fetched source provides a surface sand-fraction CSI threshold.
+
+  - dag_variable: strata_sand_frac
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass threshold for subsurface/stratigraphic sand-fraction patterns."
+        cites: []
+    secondary_metrics:
+      - metric: sedimentograph_similarity
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Liang 2016 introduces the sedimentograph to connect surface processes and subsurface structures via coarse-to-fine ratios, but without a pass band."
+        cites: [liang2016]
+      - metric: surface_subsurface_connectivity
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched benchmark identifies a gap in metrics linking surface patterns to the stratigraphic record and adapts net-to-gross as a diagnostic metric."
+        cites: [liang2016]
+    validated_when: "UNRESOLVED numeric gate - use sedimentograph/net-to-gross style diagnostics for stratigraphic architecture; no fetched CSI band exists."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Liang 2016 says no then-current metric quantified linkage between surface processes and subsurface
+      structures, then adapts net-to-gross into a sedimentograph. This is a diagnostic convention, not a
+      numeric validation band.
+
+deferred_paywalled:
+  - ref: "Validation of a reduced-complexity numerical model for resolving deltaic dynamic processes"
+    doi: 10.15781/t2ms5g
+    needed_for: [eta, stage, depth, velocity, discharge, sedflux, sandfrac, strata_sand_frac]

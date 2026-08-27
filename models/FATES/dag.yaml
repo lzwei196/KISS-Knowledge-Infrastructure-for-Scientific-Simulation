@@ -359,7 +359,7 @@ outputs:
   - var: "FATES_GPP"
     validation_rank: 1
     unit: "kgC/m2/s"
-    description: "Gross primary production."
+    description: "Vegetation gross primary production."
     emitted_in: "host history stream (*.clm2.h0.*.nc)"
     observability:
       comparable_obs_shapes:
@@ -377,7 +377,7 @@ outputs:
   - var: "FATES_NPP"
     validation_rank: 2
     unit: "kgC/m2/s"
-    description: "Net primary production (GPP minus autotrophic respiration)."
+    description: "Vegetation net primary production (GPP minus autotrophic respiration)."
     emitted_in: "host history stream (*.clm2.h0.*.nc)"
     observability:
       comparable_obs_shapes:
@@ -395,7 +395,7 @@ outputs:
   - var: "FATES_LAI"
     validation_rank: 4
     unit: "m2/m2"
-    description: "Leaf area index."
+    description: "Vegetation leaf area index."
     emitted_in: "host history stream (*.clm2.h0.*.nc)"
     observability:
       comparable_obs_shapes:
@@ -426,7 +426,7 @@ outputs:
   - var: "FATES_MORTALITY"
     validation_rank: 6
     unit: "stems/m2/yr"
-    description: "Total cohort mortality rate."
+    description: "Total vegetation cohort mortality rate."
     emitted_in: "host history stream (*.clm2.h0.*.nc)"
     observability:
       comparable_obs_shapes:
@@ -562,3 +562,21 @@ safety:
       scope: "processes and states blocks"
       source: "FATES history/parameter interface metadata (Fortran source not available in this dissection)"
       status: "tentative"
+
+medium_evidence:
+  - var: "FATES_GPP"
+    source: "dag.yaml"
+    quote: "leaf photosynthesis and autotrophic respiration"
+    note: "scope_in places GPP in the plant/vegetation process medium."
+  - var: "FATES_NPP"
+    source: "dag.yaml"
+    quote: "plant carbon allocation among organs (PARTEH)"
+    note: "scope_in places NPP and allocation in the plant/vegetation carbon medium."
+  - var: "FATES_LAI"
+    source: "dag.yaml"
+    quote: "canopy radiative transfer / light competition (PPA)"
+    note: "scope_in places LAI in the vegetation canopy medium."
+  - var: "FATES_MORTALITY"
+    source: "dag.yaml"
+    quote: "vegetation demographics (recruitment, growth, mortality of size-structured cohorts)"
+    note: "scope_in declares cohort mortality as a vegetation demographic process."

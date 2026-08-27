@@ -310,7 +310,7 @@ outputs:
   - var: "drawdown"
     validation_rank: 2
     unit: "m"
-    description: "Head change relative to starting head, used for pumping-test and stress-response analysis."
+    description: "Groundwater head change relative to starting head, used for pumping-test and aquifer stress-response analysis."
     emitted_in: ".ddn"
     observability:
       comparable_obs_shapes:
@@ -324,7 +324,7 @@ outputs:
   - var: "cell-by-cell flow budget"
     validation_rank: 3
     unit: "m3/day"
-    description: "Per-cell volumetric flows by budget term (STO, FLOW-JA-FACE, CHD, RCH, WEL, RIV, DRN, GHB, EVT, DATA-SPDIS)."
+    description: "Per-cell groundwater volumetric flows by budget term (STO, FLOW-JA-FACE, CHD, RCH, WEL, RIV, DRN, GHB, EVT, DATA-SPDIS)."
     emitted_in: ".cbc / .bud"
     observability:
       comparable_obs_shapes:
@@ -344,7 +344,7 @@ outputs:
   - var: "specific discharge"
     validation_rank: 4
     unit: "m/day"
-    description: "Darcy flux vectors (qx,qy,qz) derived from the converged flow field for velocity/transport analysis."
+    description: "Groundwater Darcy flux vectors (qx,qy,qz) derived from the converged flow field for velocity/transport analysis."
     emitted_in: ".cbc (DATA-SPDIS record)"
     observability:
       comparable_obs_shapes:
@@ -602,3 +602,17 @@ safety:
       scope: "boundary.temporal"
       source: "DIS/TDIS ITMUNI codes documented in FloPy ModflowDis and MF6 TDIS"
       status: "tentative"
+
+medium_evidence:
+  - var: "drawdown"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous construction, execution, and post-processing of MODFLOW-based groundwater models using FloPy."
+    note: "KI overview declares FloPy outputs are groundwater model artifacts."
+  - var: "cell-by-cell flow budget"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous construction, execution, and post-processing of MODFLOW-based groundwater models using FloPy."
+    note: "KI overview declares FloPy outputs are groundwater model artifacts."
+  - var: "specific discharge"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous construction, execution, and post-processing of MODFLOW-based groundwater models using FloPy."
+    note: "KI overview declares FloPy outputs are groundwater model artifacts."

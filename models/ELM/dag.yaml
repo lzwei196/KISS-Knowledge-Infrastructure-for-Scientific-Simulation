@@ -166,7 +166,7 @@ outputs:
   - var: "EFLX_LH_TOT"
     validation_rank: 4
     unit: "W/m2"
-    description: "Total latent heat flux (evapotranspiration in energy units)."
+    description: "Total latent heat flux from the land surface to the atmosphere (land evapotranspiration in energy units)."
     emitted_in: "ELM history file"
     observability:
       comparable_obs_shapes:
@@ -306,3 +306,9 @@ safety:
       scope: "input routing / parameter treatment"
       source: "Cosby et al. (1984) pedotransfer scheme as used in CLM/ELM soil hydrology"
       status: "adopted"
+
+medium_evidence:
+  - var: "EFLX_LH_TOT"
+    source: "dag.yaml"
+    quote: "Surface energy balance (latent and sensible heat flux, ground/soil heat, soil temperature with phase change)"
+    note: "scope_in declares ELM latent heat as a surface energy-balance flux in the land-surface medium."

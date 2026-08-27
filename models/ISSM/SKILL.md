@@ -1,14 +1,3 @@
----
-name: issm
-description: >-
-  ISSM (Ice-sheet and Sea-level System Model) v2026.x finite-element ice-sheet/sea-level
-  formulation. Covers Ice flow / stress balance (Full-Stokes, Higher-Order/Blatter-Pattyn,
-  SSA/MacAyeal, SIA, L1L2, MOLHO); Thermal state of ice (temperature or enthalpy
-  formulation; basal melting); Mass transport (depth-integrated thickness evolution,
-  free-surface evolution). Use when the task involves running, configuring, calibrating or
-  interpreting ISSM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (21 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (24 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_issm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_issm.py --help` |
+| `tools/convert_geometry_to_issm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_geometry_to_issm.py --help` |
+| `tools/parse_issm_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_issm_output.py --help` |
+| `tools/run_issm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_issm.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # ISSM (Ice-sheet and Sea-level System Model) — Knowledge Infrastructure
 
@@ -355,6 +378,31 @@ MATLAB or Python scripts executed with `md` in scope. These load data, interpola
 
 ---
 
+## Output Description (dag.yaml; template section 6)
+
+**Source of truth**: `dag.yaml`. This section restates the dag so an agent reading
+only `SKILL.md` can identify the observable outputs and the headline variable. If
+this section ever disagrees with `dag.yaml`, the dag wins.
+
+**Headline output**: `IceVolume / GroundedArea / TotalSmb`
+
+> `IceVolume / GroundedArea / TotalSmb` — Integrated transient diagnostics: total ice volume, grounded area, total surface mass balance per timestep. (`m^3 / m^2 / m^3 ice eq`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `IceVolume / GroundedArea / TotalSmb` | 1 | `m^3 / m^2 / m^3 ice eq` | Integrated transient diagnostics: total ice volume, grounded area, total surface mass balance per timestep. |
+| `Vel (and Vx, Vy, Vz)` | dag output | `m/yr` | Ice velocity magnitude and components. |
+| `Thickness` | dag output | `m` | Ice thickness. |
+| `Surface (and Base)` | dag output | `m` | Ice surface and base elevation. |
+| `Temperature` | dag output | `K` | Ice temperature. |
+| `grounding-line position (MaskOceanLevelset)` | dag output | level-set field | Grounding-line position through `MaskOceanLevelset`. |
+| `relative sea level (S)` | dag output | sea-level field | Relative sea level. |
+
+The rank-1 output is transient and integrated: it is not a point snowpack SWE
+quantity, and it must not be validated against non-glacier station snowpack data.
+
+---
+
 ## Output Format
 
 Results stored in `md.results.<SolutionType>`:
@@ -382,6 +430,30 @@ md.results.TransientSolution[i].Thickness  # thickness at timestep i
 - NetCDF via `export_netCDF(md, 'output.nc')`
 - ParaView VTU format
 - Binary ISSM format
+
+---
+
+## Unit Table (template section 8)
+
+Exact I/O shapes live in `docs/format_spec.yaml`; this table summarizes the units
+that matter when preparing ISSM inputs and interpreting dag outputs. The dag is the
+authority for output units, and ISSM documentation/examples are the authority for
+model object fields.
+
+| Variable or field | Source/common unit | ISSM or dag unit | Conversion / convention | Diagnostic guard |
+|-------------------|--------------------|------------------|-------------------------|------------------|
+| Velocity (`Vel`, `Vx`, `Vy`, `Vz`) | m/s in some satellite products | `m/yr` | multiply m/s by `3.1536e7` | `dt_001` |
+| Temperature | degC in some climate products | `K` | add `273.15` | `dt_002` |
+| Thickness | km in some GIS datasets | `m` | multiply by `1000` | `dt_003` |
+| Coordinates | degrees longitude/latitude | `m` projected coordinates | project to a polar/alpine meter CRS before meshing | `dt_004` |
+| SMB (`md.smb.mass_balance`) | mm/yr water equivalent or kg/m^2/yr | `m/yr ice equiv.` as prescribed forcing | convert to ice-equivalent model forcing before solve | `dt_007` |
+| Geothermal flux | mW/m^2 | `W/m^2` | divide by `1000` | `dt_008` |
+| Pressure | MPa or kPa | `Pa` | multiply MPa by `1e6`; multiply kPa by `1e3` | `dt_009` |
+| Mesh resolution | km | `m` | multiply by `1000` | `dt_010` |
+| `IceVolume / GroundedArea / TotalSmb` | model transient diagnostics | `m^3 / m^2 / m^3 ice eq` | dag rank-1 output; parse as integrated diagnostics per timestep | dag output |
+| `Surface (and Base)` | elevation products | `m` | maintain `surface = base + thickness` consistency | `dt_003`, `dt_018` |
+| `grounding-line position (MaskOceanLevelset)` | mask / grounding-line products | level-set field | respect ISSM mask sign convention | `dt_011` |
+| `relative sea level (S)` | sea-level field | sea-level field | use ISSM sea-level output convention from `dag.yaml` and post-processing docs | dag output |
 
 ---
 
@@ -489,6 +561,47 @@ In ISSM, prescribed boundary conditions (spcvx, spcvy, spctemperature) use NaN t
 | dt_020 | **silent** | physics_coupling | Wrong density constants (ρ_ice, ρ_water) |
 
 **Silent error count**: 13/20 (65%) — extremely high due to the model's tolerance of physically unreasonable inputs.
+
+---
+
+## Validated Results (template section 11)
+
+**Current validation status**: `synthetic_only`. The KI has executed only the
+SquareIceShelf/SquareSheet NightlyRun benchmarks in
+`_work/ISSM/issm_run_test{101,201,301}.py`; the `Square.exp` domain is a
+5-point square, not a real glacier. Real-site validation is not done.
+
+Before claiming a real-site result, fetch BedMachine geometry and MEaSUREs surface
+velocity for a glaciated target such as Pine Island Glacier, Thwaites, or Jakobshavn,
+then use `tools/convert_geometry_to_issm.py` to build a real `md`. The current
+`outputs/` and `_work/ISSM/` contents contain no real-glacier mesh, geometry,
+friction, or velocity data.
+
+### Convention Bars from `docs/validation_convention.yaml`
+
+These bars are the KI's sourced validation convention. The convention wins over
+remembered thresholds. Null convention bands are written as `no cited threshold`;
+they are not pass/fail guesses.
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation keys |
+|--------------|--------|-----------|-----------|------|--------------|---------------|
+| `Vel (and Vx, Vy, Vz)` | `rmse` | minimize | `50.0` (`seroussi2019_initmip_antarctica`, `larour2012_issm`) | `94.5` (`seroussi2019_initmip_antarctica`, `larour2012_issm`) | `308.0` (`seroussi2019_initmip_antarctica`, `larour2012_issm`) | `seroussi2019_initmip_antarctica`, `larour2012_issm` |
+| `Vel (and Vx, Vy, Vz)` | `nse` | maximize | no cited threshold | no cited threshold | no cited threshold | none in convention |
+| `Vel (and Vx, Vy, Vz)` | `rmse` | minimize | no cited threshold | no cited threshold | no cited threshold | none in convention |
+| `Thickness` | `rmse` | minimize | `304.0` (`quiquet2018_grisli`, `seroussi2019_initmip_antarctica`) | `350.0` (`quiquet2018_grisli`, `seroussi2019_initmip_antarctica`) | `422.3` (`quiquet2018_grisli`, `seroussi2019_initmip_antarctica`) | `quiquet2018_grisli`, `seroussi2019_initmip_antarctica` |
+
+No convention bar was provided in the extracted KI facts for the rank-1 output
+`IceVolume / GroundedArea / TotalSmb`; do not assign a validation verdict for that
+headline output unless `docs/validation_convention.yaml` supplies a cited threshold.
+
+### Validation Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Geometry | BedMachine | pending real-site replacement | Needed before real-site validation. |
+| Surface velocity | MEaSUREs | pending real-site replacement | Needed for `Vel (and Vx, Vy, Vz)` validation. |
+| Surface mass balance forcing | CMFD/MSWX/NASA POWER or domain-specific SMB product | pending real-site replacement | `md.smb.mass_balance` is prescribed forcing, not computed SWE. |
+| Synthetic benchmark domain | SquareIceShelf/SquareSheet NightlyRun | executed | Synthetic only; not a real glacier. |
 
 ---
 

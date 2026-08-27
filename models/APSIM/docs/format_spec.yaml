@@ -1,155 +1,582 @@
-model:
-  name: "APSIM"
-  full_name: "Agricultural Production Systems sIMulator (Next Generation)"
-  domain: "crop"
-  language: "C# (.NET 8.0)"
-  build_system: "dotnet (MSBuild, ApsimX.sln)"
-  binary_path: "KISSPATH_BINARIES/APSIM/source/repo/bin/Release/net8.0/apsim"
-  timestep: "daily"
-  spatial_scale: "point/field (zone-based, area in ha)"
-  repository: "https://github.com/APSIMInitiative/ApsimX"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: APSIM
+  language: csharp
+  implementation:
+    id: apsim-ng
+    version: APSIM Next Generation (ApsimX, .NET 8.0 build)
+    provenance: C#; APSIM Initiative ApsimX Next Generation, JSON .apsimx simulations with SQLite output.
+  scientific_reference_version: APSIM Next Generation (Plant Modelling Framework lineage; daily soil-plant-atmosphere
+    continuum)
 inputs:
   forcing:
-    - name: "radn"
-      unit: "MJ/m^2/day"
-      valid_range: [0, 50]
-      description: "Daily solar radiation"
-    - name: "maxt"
-      unit: "degC"
-      valid_range: [-50, 60]
-      description: "Daily maximum air temperature"
-    - name: "mint"
-      unit: "degC"
-      valid_range: [-60, 50]
-      description: "Daily minimum air temperature"
-    - name: "rain"
-      unit: "mm/day"
-      valid_range: [0, 500]
-      description: "Daily rainfall"
-    - name: "vp"
-      unit: "hPa"
-      valid_range: [0, 100]
-      description: "Vapor pressure (optional)"
-    - name: "wind"
-      unit: "m/s"
-      valid_range: [0, 50]
-      description: "Wind speed (optional)"
-    - name: "co2"
-      unit: "ppm"
-      valid_range: [200, 1000]
-      description: "Atmospheric CO2 concentration (optional)"
-  forcing_format: "APSIM .met text file with [weather.met.weather] header"
-  forcing_metadata:
-    - name: "tav"
-      unit: "degC"
-      description: "Annual average ambient temperature (REQUIRED)"
-    - name: "amp"
-      unit: "degC"
-      description: "Annual amplitude in mean monthly temperature (REQUIRED)"
-
+  - name: Solar radiation (radn)
+    unit: MJ/m^2/day
+    category: weather
+    source_kind: forcing
+    model_input_format: .met text file daily column
+    notes: Drives biomass via RUE x intercepted radiation; APSIM reads each value as MJ/m^2 (W/m^2 or
+      J/m^2/day cause 10-50x biomass error).
+  - name: Maximum temperature (maxt)
+    unit: degC
+    category: weather
+    source_kind: forcing
+    model_input_format: .met text file daily column
+    notes: Thermal time uses 3-hourly temps interpolated from daily max/min.
+  - name: Minimum temperature (mint)
+    unit: degC
+    category: weather
+    source_kind: forcing
+    model_input_format: .met text file daily column
+  - name: Rainfall (rain)
+    unit: mm/day
+    category: weather
+    source_kind: forcing
+    model_input_format: .met text file daily column
+    notes: Must be daily totals; sub-daily (mm/3hr) drivers must be summed.
+  - name: Vapour pressure (vp)
+    unit: hPa
+    category: weather
+    source_kind: forcing
+    model_input_format: .met optional daily column
+    notes: Drives VPD/ET; optional.
+  - name: Wind (wind)
+    unit: m/s
+    category: weather
+    source_kind: forcing
+    model_input_format: .met optional daily column
+  - name: Pan evaporation (pan)
+    unit: mm/day
+    category: weather
+    source_kind: forcing
+    model_input_format: .met optional daily column
+  - name: Atmospheric CO2 (co2)
+    unit: ppm
+    category: weather
+    source_kind: forcing
+    model_input_format: .met optional daily column / scalar
+    notes: Defaults to ambient if absent; affects RUE and transpiration efficiency.
+  - name: Air pressure
+    unit: hPa
+    category: weather
+    source_kind: forcing
+    model_input_format: .met optional column
+    notes: Silently defaults to 1010 hPa when absent from the weather file.
   parameters:
-    critical:
-      - name: "Thickness"
-        unit: "mm"
-        valid_range: [50, 1000]
-        description: "Soil layer thickness (array by layer)"
-      - name: "BD"
-        unit: "g/cm3"
-        valid_range: [0.8, 2.0]
-        description: "Bulk density"
-      - name: "LL15"
-        unit: "mm/mm"
-        valid_range: [0.01, 0.40]
-        description: "Lower limit (wilting point) - volumetric"
-      - name: "DUL"
-        unit: "mm/mm"
-        valid_range: [0.10, 0.55]
-        description: "Drained upper limit (field capacity) - volumetric"
-      - name: "SAT"
-        unit: "mm/mm"
-        valid_range: [0.20, 0.60]
-        description: "Saturation - volumetric"
-      - name: "KS"
-        unit: "mm/day"
-        valid_range: [0.1, 1000]
-        description: "Saturated hydraulic conductivity"
-      - name: "CN2Bare"
-        unit: "dimensionless"
-        valid_range: [30, 100]
-        description: "SCS curve number for bare soil"
-    constraints:
-      - "AirDry <= LL15 <= DUL <= SAT (per layer)"
-      - "Crop LL >= LL15 (per layer)"
-      - "All layer arrays must have same length"
-
-    crop_sowing:
-      - name: "Population"
-        unit: "plants/m2"
-        valid_range: [1, 1000]
-        description: "Plant population density (NOT per hectare)"
-      - name: "Cultivar"
-        unit: "string"
-        description: "Cultivar name - must match available list exactly"
-      - name: "RowSpacing"
-        unit: "mm"
-        valid_range: [50, 2000]
-        description: "Row spacing"
-      - name: "Depth"
-        unit: "mm"
-        valid_range: [10, 200]
-        description: "Sowing depth"
-
-  simulation_file:
-    format: "JSON (.apsimx)"
-    description: "Nested JSON tree with $type, Name, Children nodes"
-
+  - name: tav (annual average ambient temperature)
+    unit: degC
+    category: weather_metadata
+    source_kind: dataset_lookup
+    model_input_format: .met header metadata
+    notes: Drives the CERES soil-temperature model; missing tav/amp gives wrong soil temps and germination
+      timing.
+  - name: amp (annual amplitude of mean monthly temperature)
+    unit: degC
+    category: weather_metadata
+    source_kind: dataset_lookup
+    model_input_format: .met header metadata
+  - name: latitude / longitude
+    unit: decimal degrees
+    category: site
+    source_kind: dataset_lookup
+    model_input_format: .met header metadata
+    notes: Latitude sets day length / radiation geometry.
+  - name: Layer thickness
+    unit: mm
+    category: soil_physical
+    source_kind: dataset_lookup
+    model_input_format: Physical layer array in .apsimx JSON
+    notes: Typical 100-300 mm; cm input gives a 10x-too-shallow profile.
+  - name: Bulk density (BD)
+    unit: g/cc
+    category: soil_physical
+    source_kind: dataset_lookup
+    model_input_format: Physical layer array in .apsimx JSON
+    notes: Typical 1.0-1.8; kg/m^3 input crashes the water balance.
+  - name: AirDry / LL15 / DUL / SAT
+    unit: mm/mm
+    category: soil_physical
+    source_kind: dataset_lookup
+    model_input_format: Physical layer array in .apsimx JSON
+    notes: Volumetric water limits; must satisfy AirDry <= LL15 <= DUL <= SAT per layer.
+  - name: Saturated hydraulic conductivity (KS)
+    unit: mm/day
+    category: soil_physical
+    source_kind: dataset_lookup
+    model_input_format: Physical layer array in .apsimx JSON
+  - name: Crop lower limit (LL)
+    unit: mm/mm
+    category: crop_soil
+    source_kind: calibrated
+    model_input_format: SoilCrop layer array in .apsimx JSON
+    notes: Crop extraction limit; must be >= LL15.
+  - name: Root uptake rate (KL)
+    unit: /day
+    category: crop_soil
+    source_kind: calibrated
+    model_input_format: SoilCrop layer array in .apsimx JSON
+    notes: Typically decreases with depth (0.01-0.10).
+  - name: Root exploration factor (XF)
+    unit: dimensionless
+    category: crop_soil
+    source_kind: calibrated
+    model_input_format: SoilCrop layer array in .apsimx JSON
+  - name: Soil evaporation U / Cona (Summer/Winter)
+    unit: mm; mm/d^0.5
+    category: water_balance
+    source_kind: calibrated
+    model_input_format: WaterBalance node in .apsimx JSON
+    notes: Ritchie stage-1 (U) and stage-2 (Cona) drying limits; defaults U=6, summer Cona 3.5 / winter
+      2.5.
+  - name: Bare-soil curve number (CN2Bare) / Salb / SWCON / diffusivity
+    unit: dimensionless; 0-1; 0-1
+    category: water_balance
+    source_kind: calibrated
+    model_input_format: WaterBalance node in .apsimx JSON
+    notes: SCS-CN runoff, bare-soil albedo, per-layer drainage conductivity, unsaturated-flow diffusivity.
+  - name: Crop/cultivar genetic coefficients
+    unit: mixed (degC.d, g/MJ, dimensionless)
+    category: cultivar
+    source_kind: calibrated
+    model_input_format: named built-in cultivar in crop resource files (case-sensitive)
+    notes: Phenology thermal-time targets, base/optimum/ceiling temperatures, vernalisation x_vernal_temp/y_vernal_days,
+      photoperiod sensitivity, RUE, extinction coefficient, SLA, harvest index, grain-number and grain-size
+      parameters. Not all exposed as scene inputs; live in cultivar resource files.
+  initial_conditions:
+  - name: Initial soil water per layer (SW)
+    unit: mm/mm
+    category: soil_water
+    source_kind: user_provided
+    model_input_format: WaterBalance/Sample node in .apsimx JSON
+  - name: Initial mineral N pools (NO3, NH4, Urea per layer)
+    unit: kg/ha
+    category: soil_nitrogen
+    source_kind: user_provided
+    model_input_format: Nutrient/solute initial arrays in .apsimx JSON
+    notes: High initial NO3 silently inflates yield.
+  - name: Initial organic C/N pools and surface residue
+    unit: kg/ha; %
+    category: soil_carbon
+    source_kind: user_provided
+    model_input_format: Organic / SurfaceOrganicMatter nodes in .apsimx JSON
+  boundary_conditions:
+  - name: Sowing (Population, Cultivar, Depth, RowSpacing)
+    unit: plants/m^2; string; mm; mm
+    category: management
+    source_kind: user_provided
+    model_input_format: Manager script (SowingRule) in .apsimx
+    notes: Population is plants/m^2 (wheat ~100-250, maize ~7-10), NOT plants/ha; cultivar name must match
+      a built-in exactly.
+  - name: Fertiliser application (Amount, Depth, Type)
+    unit: kg/ha; mm; enum (NO3N/NH4N/UreaN)
+    category: management
+    source_kind: user_provided
+    model_input_format: Manager script / Fertiliser node in .apsimx
+  - name: Irrigation application (Amount, Depth, Efficiency)
+    unit: mm; mm; 0-1
+    category: management
+    source_kind: user_provided
+    model_input_format: Manager script / Irrigation node in .apsimx
+  - name: Harvest operation
+    unit: event/date
+    category: management
+    source_kind: user_provided
+    model_input_format: Manager script (HarvestRule) in .apsimx
+  - name: Simulation period (Clock Start/End)
+    unit: date
+    category: control
+    source_kind: user_provided
+    model_input_format: Clock node in .apsimx
+  - name: Zone area
+    unit: ha
+    category: control
+    source_kind: user_provided
+    model_input_format: Zone node in .apsimx (default 1.0 ha)
+  - name: Reported variables and reporting event
+    unit: variable list; event name
+    category: control
+    source_kind: user_provided
+    model_input_format: Report node EventNames in .apsimx
+    notes: Requires [Clock].DoReport (or a crop event) to emit rows.
 outputs:
-  format: "SQLite (.db)"
   primary:
-    - name: "Yield"
-      unit: "kg/ha"
-      valid_range: [0, 20000]
-      description: "Grain yield (auto-computed as Grain.Wt * 10)"
-    - name: "Wheat.AboveGround.Wt"
-      unit: "g/m2"
-      valid_range: [0, 5000]
-      description: "Above-ground biomass"
-    - name: "Wheat.Grain.Total.Wt"
-      unit: "g/m2"
-      valid_range: [0, 2000]
-      description: "Grain dry weight"
-    - name: "Wheat.LAI"
-      unit: "m2/m2"
-      valid_range: [0, 12]
-      description: "Leaf area index"
-    - name: "Wheat.Phenology.Zadok.Stage"
-      unit: "code"
-      valid_range: [0, 100]
-      description: "Zadoks phenological stage"
-    - name: "Wheat.Grain.Protein"
-      unit: "%"
-      valid_range: [5, 25]
-      description: "Grain protein percentage"
-    - name: "Wheat.Grain.Size"
-      unit: "g"
-      valid_range: [0.01, 0.08]
-      description: "Individual grain mass"
-
+  - name: Grain.Wt
+    unit: g/m^2
+    description: Crop grain dry weight (yield) in the plant/crop biomass medium; g/m^2 x10 = kg/ha, /100
+      = t/ha.
+    validation_rank: 1
+    emitted_in: SQLite Report table (.db)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compare at maturity, not the daily series; convert g/m^2 to the obs unit (t/ha or kg/ha) before
+          computing metrics.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Multi-season point yields; unit conversion required.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Point/field model vs regional yield statistics that average many fields and carry a technology
+          trend the weather-driven model cannot reproduce; detrend before comparing.
+      detrending_options:
+      - none
+      - linear_residual
+      - decadal_mean
+  - name: AboveGround.Wt
+    unit: g/m^2
+    description: Above-ground biomass.
+    validation_rank: 5
+    emitted_in: SQLite Report table (.db)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Convert g/m^2 to obs unit; compare at sampling date.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+      - first_difference
+  - name: Leaf.LAI
+    unit: m^2/m^2
+    description: Crop canopy leaf area index in the plant canopy medium; peak typically 3-8.
+    validation_rank: 2
+    emitted_in: SQLite Report table (.db)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Match sampling dates; peak LAI and its timing are the informative features.
+      detrending_options:
+      - none
+  - name: Phenology.Stage / flowering & maturity date
+    unit: stage code / day-of-year
+    description: Crop phenological development stage in the plant/crop medium and derived flowering/maturity
+      timing.
+    validation_rank: 6
+    emitted_in: SQLite Report table (.db)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - timing_accuracy
+        determining_metric: day_bias
+        caveats:
+        - Compare observed flowering/maturity DOY to the day the stage threshold is crossed.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - timing_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: Root.RootingDepth
+    unit: mm
+    description: Rooting depth in the soil profile/root-zone medium.
+    validation_rank: 7
+    emitted_in: SQLite Report table (.db)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: Soil.Water.SW / ESW
+    unit: mm/mm; mm
+    description: Volumetric and extractable soil water per layer.
+    validation_rank: 3
+    emitted_in: SQLite Report table (.db)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - Match model layer depths to sensor depths; SW is volumetric (mm/mm), not percent.
+      detrending_options:
+      - none
+  - name: SoilWater.Drainage / Runoff / Es
+    unit: mm
+    description: Deep drainage, surface runoff, and soil evaporation fluxes.
+    validation_rank: 4
+    emitted_in: SQLite Report table (.db)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: r
+        caveats:
+        - Field-scale fluxes rarely measured directly; often only cumulative balances are observable.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "runtime_missing"
-    description: ".NET 8.0 runtime not installed on server; binary cannot execute"
-    severity: "BLOCKING"
-    workaround: "Install dotnet-runtime-8.0 or use existing output databases"
-  - id: "unit_trap_radiation"
-    description: "Radiation W/m2 vs MJ/m2/day - factor ~11.6 error causes biomass explosion"
-    severity: "FATAL"
-    triplet: "dt_001"
-  - id: "unit_trap_population"
-    description: "Population plants/m2 vs plants/ha - factor 10000 error"
-    severity: "FATAL"
-    triplet: "dt_005"
-  - id: "missing_tav_amp"
-    description: "Missing tav/amp in .met header causes silent soil temperature failure"
-    severity: "FATAL"
-    triplet: "dt_002"
+- id: dt_001
+  symptom: Biomass production is 10-50x higher than expected. Grain yield exceeds 50 t/ha for wheat.
+  diagnosis: Solar radiation supplied in W/m² instead of MJ/m²/day; ERA5 ssrd is in J/m²/day (divide by
+    1e6). CMFD srad is often in W/m² (multiply by 0.0864). If radiation column values are 100-400 instead
+    of 5-30, the units are wrong. APSIM interprets each value as MJ/m², so 200 W/m² becomes 200 MJ/m²
+    — about 8
+  remedy: 'Convert radiation to MJ/m²/day before creating .met file; convert_met.py; [''Check .met file:
+    radn values should be 0-35 MJ/m²/day'', ''If values are 50-400, multiply by 0.0864 (W/m² → MJ/m²/day)'',
+    ''If values are 1e6+, divide by 1e6 (J/m²/day → MJ/m²/day)'']; convert_met.py auto-detects and converts;
+    va'
+  severity: fatal
+- id: dt_002
+  symptom: Germination timing is wrong. Soil temperatures unrealistic. Crops emerge too early or too late.
+  diagnosis: 'Missing tav and amp values in .met file header; APSIM''s CERES soil temperature model requires
+    annual average temperature (tav) and annual temperature amplitude (amp) in the .met header. Without
+    them, soil temperature defaults may be completely wrong for the site, affecting germination, root
+    growth, '
+  remedy: 'Add tav and amp to .met file header; convert_met.py; [''Compute tav = mean of all daily (maxt+mint)/2'',
+    ''Compute amp = max(monthly_mean) - min(monthly_mean)'', ''Add lines: tav = XX.XX (oC) and amp = YY.YY
+    (oC) to header'']; convert_met.py automatically computes and writes tav/amp'
+  severity: degraded
+- id: dt_003
+  symptom: APSIM crashes with water balance error. Negative soil water content. Simulation aborts immediately.
+  diagnosis: 'Soil water limits not ordered: AirDry ≤ LL15 ≤ DUL ≤ SAT violated; APSIM requires strict
+    ordering of water retention limits for each soil layer. If DUL > SAT or LL15 > DUL, the water balance
+    equations produce negative or impossible water contents, causing immediate crash.
+
+    ; [''Physical'', ''WaterBalanc'
+  remedy: 'Reorder water limits to satisfy AirDry ≤ LL15 ≤ DUL ≤ SAT; convert_soil.py; [''For each layer,
+    verify: AirDry ≤ LL15 ≤ DUL ≤ SAT'', ''If violated, clamp values: SAT = max(DUL+0.01, SAT), etc.'',
+    ''Check all layers have same count in all arrays'']; convert_soil.py validates and auto-corrects ordering'
+  severity: fatal
+- id: dt_004
+  symptom: APSIM fails with 'Could not find file' error at startup. Weather data not loaded.
+  diagnosis: Weather file path in .apsimx uses %root% macro that doesn't resolve correctly; The %root%
+    macro in .apsimx files is replaced at runtime with the directory containing the .apsimx file. If the
+    .apsimx is moved to a different directory without moving the .met file, or if the relative path is
+    wrong, the
+  remedy: Fix the Weather.FileName path in the .apsimx JSON; build_apsimx.py; ['Open .apsimx in text editor',
+    'Find FileName entry under Weather node', 'Verify %root% resolves to correct directory', 'Or use absolute
+    path for testing']; run_apsim.py preflight checks verify .met file accessibility
+  severity: fatal
+- id: dt_005
+  symptom: Plant population impossibly high. Extreme competition. All plants die immediately or LAI is
+    astronomical.
+  diagnosis: Plant population specified in plants/ha instead of plants/m²; APSIM expects plant population
+    in plants/m². Agronomic literature often reports plants/ha. 100 plants/m² = 1,000,000 plants/ha. Supplying
+    100,000 (intended as plants/ha) as plants/m² gives 10^9 plants/ha, causing immediate resource compet
+  remedy: 'Divide population by 10000 to convert from plants/ha to plants/m²; build_apsimx.py; [''Check
+    sowing population: typical wheat = 100-250 plants/m²'', "If value > 1000, it''s likely plants/ha —
+    divide by 10000", ''Maize typical: 7-10 plants/m² (70,000-100,000 plants/ha)'']; build_apsimx.py validates
+    popula'
+  severity: fatal
+- id: dt_006
+  symptom: Reported yield appears 10x too low or 10x too high when compared to literature values.
+  diagnosis: 'APSIM biomass outputs are in g/m², not kg/ha or t/ha; All APSIM biomass variables (Grain.Wt,
+    AboveGround.Wt, etc.) are reported in g/m². Literature typically uses kg/ha or t/ha. Conversion: g/m²
+    × 10 = kg/ha; g/m² ÷ 100 = t/ha. A wheat yield of 350 g/m² = 3500 kg/ha = 3.5 t/ha.
+
+    ; [''Report'', ''DataSto'
+  remedy: 'Apply unit conversion when extracting results; parse_output.py --convert-yield; [''For kg/ha:
+    multiply g/m² by 10'', ''For t/ha: divide g/m² by 100'', ''Use --convert-yield flag to auto-add converted
+    columns'']; parse_output.py --convert-yield adds _kg_ha and _t_ha columns'
+  severity: silent
+- id: dt_007
+  symptom: All temperatures in .met file are around 280-310. Crops fail to develop normally.
+  diagnosis: 'Temperature supplied in Kelvin instead of Celsius; ERA5 and some reanalysis products report
+    temperature in Kelvin. APSIM expects Celsius. 300 K = 27°C. If left unconverted, APSIM interprets
+    300°C, causing thermal time to accumulate at extreme rates.
+
+    ; [''Weather'', ''Phenology'', ''MicroClimate'']'
+  remedy: 'Subtract 273.15 from temperature values; convert_met.py; [''Check .met maxt/mint columns: values
+    should be -30 to 50°C'', ''If values are 240-320, subtract 273.15'']; convert_met.py auto-detects
+    K (values > 100) and converts'
+  severity: fatal
+- id: dt_008
+  symptom: Soil profile is only 15 cm deep instead of 150 cm. Roots hit bottom immediately. Severe water
+    stress.
+  diagnosis: 'Soil layer thickness in cm instead of mm; APSIM expects Thickness array in mm. HWSD and
+    SoilGrids report depths in cm. A 30 cm layer entered as 30 (without conversion) becomes 30 mm (3 cm).
+    A 5-layer profile of [15,15,30,40,50] cm becomes 150 mm total instead of 1500 mm.
+
+    ; [''Physical'', ''Root'', ''Wate'
+  remedy: 'Multiply layer thickness by 10 to convert cm to mm; convert_soil.py; [''Check Thickness array:
+    values should be 100-300 mm typically'', "If values are 10-30, they''re in cm — multiply by 10"];
+    convert_soil.py converts cm → mm automatically'
+  severity: fatal
+- id: dt_009
+  symptom: APSIM crashes or produces zero drainage. Soil water balance fails.
+  diagnosis: 'Bulk density in kg/m³ instead of g/cc; SoilGrids reports BD in kg/m³ (e.g., 1400). APSIM
+    expects g/cc (e.g., 1.4). If 1400 is entered directly, APSIM may crash or produce nonsensical water
+    balance results since BD is used to compute porosity.
+
+    ; [''Physical'', ''WaterBalance'']'
+  remedy: 'Divide bulk density by 1000 to convert kg/m³ to g/cc; convert_soil.py; [''Check BD array: values
+    should be 0.5-2.2 g/cc'', ''If values are 500-2200, divide by 1000'']; convert_soil.py auto-detects
+    units > 100 and converts'
+  severity: fatal
+- id: dt_010
+  symptom: Simulation crashes with unhelpful error. 'Cannot find cultivar' or NullReferenceException on
+    sowing.
+  diagnosis: 'Cultivar name does not match any entry in APSIM''s resource database; Cultivar names are
+    case-sensitive and must match exactly. Common errors: lowercase (''hartog'' vs ''Hartog''), spaces
+    (''Pioneer 3153'' vs ''Pioneer_3153''), or outdated names from older APSIM versions.
+
+    ; [''Plant'', ''Phenology'']'
+  remedy: 'Use correct cultivar name from APSIM''s built-in list; None; [''Open APSIM GUI and browse crop
+    model to see available cultivars'', "Or grep source: grep -r ''Cultivar'' Models/Resources/{Crop}.json",
+    ''Or check APSIM documentation for cultivar lists'', "Cultivar names are case-sensitive: ''Hartog''
+    not ''hart'
+  severity: fatal
+- id: dt_011
+  symptom: Rainfall is 1/8 of expected. Severe drought stress even in wet regions. Irrigation needed everywhere.
+  diagnosis: 'Sub-daily rainfall (mm/3hr) not summed to daily totals; CMFD and some ERA5 products provide
+    rainfall at 3-hourly intervals. APSIM requires daily totals. Using a single 3-hour interval as the
+    daily value gives approximately 1/8 of actual rainfall.
+
+    ; [''Weather'', ''SoilWater'']'
+  remedy: Sum 8 three-hourly intervals to get daily rainfall; convert_met.py; ['Group rainfall by date
+    and sum all intervals', 'Verify annual total makes sense for the climate zone']; convert_met.py handles
+    temporal aggregation from sub-daily sources
+  severity: fatal
+- id: dt_012
+  symptom: Command 'apsim' not found. Or 'No suitable .NET runtime found'.
+  diagnosis: 'APSIM binary not built or .NET 8.0 runtime not installed; APSIM requires .NET 8.0 runtime.
+    The CLI binary is built to APSIM.Cli/bin/Release/net8.0/apsim (no .exe extension on Linux). On Linux,
+    also requires libsqlite3.
+
+    ; [''CLI'', ''Runtime'']'
+  remedy: 'Install .NET 8.0 and build APSIM; run_apsim.py; [''Install .NET 8.0 SDK: sudo apt-get install
+    dotnet-sdk-8.0'', ''Install SQLite: sudo apt-get install libsqlite3-dev'', ''Build: cd ApsimX && dotnet
+    build -c Release -f net8.0'', ''Binary at: APSIM.Cli/bin/Release/net8.0/apsim'']; run_apsim.py checks
+    binary e'
+  severity: fatal
+- id: dt_013
+  symptom: 'Weather data shows constant default values. Or error: ''Cannot read met file''.'
+  diagnosis: '.met file path not correctly resolved from .apsimx location; APSIM resolves relative paths
+    from the .apsimx file''s directory. The %root% macro is replaced with this directory. If files are
+    rearranged or the .apsimx is run from a different working directory than expected, paths break.
+
+    ; [''Weather'', '''
+  remedy: Verify .met file path resolves correctly; run_apsim.py; ['Check Weather.FileName in .apsimx
+    JSON', 'Replace %root% with .apsimx directory and verify file exists', 'Consider using absolute paths
+    for debugging']; run_apsim.py preflight checks resolve and verify all .met paths
+  severity: fatal
+- id: dt_014
+  symptom: Database locked error. Cannot write output. Simulation hangs or fails.
+  diagnosis: 'Previous run left .db-wal and .db-shm lock files; SQLite uses Write-Ahead Logging (WAL).
+    If a previous APSIM run crashed, the WAL and SHM files may persist, preventing new writes. Also occurs
+    if another process has the .db file open.
+
+    ; [''DataStore'', ''Storage'']'
+  remedy: Remove stale lock files or the entire .db; None; ['Delete simulation.db-wal and simulation.db-shm',
+    'If persists, delete simulation.db entirely (output will be recreated)', 'Ensure no other process
+    has the .db open']; run_apsim.py warns about existing lock files in preflight
+  severity: degraded
+- id: dt_015
+  symptom: Report table exists but has zero rows. No output data despite successful simulation.
+  diagnosis: 'Report.EventNames not triggering during simulation; The Report model writes data only when
+    its EventNames fire. ''[Clock].DoReport'' fires daily. If using a custom event that never fires (wrong
+    event name, or crop not sown so crop events don''t occur), no rows are written.
+
+    ; [''Report'', ''Clock'']'
+  remedy: Check Report.EventNames in .apsimx; None; ["Ensure EventNames contains '[Clock].DoReport' for
+    daily output", 'For crop events (e.g., Harvesting), verify the crop was actually sown', 'Check _Messages
+    table for simulation errors']; build_apsimx.py uses '[Clock].DoReport' by default
+  severity: silent
+- id: dt_016
+  symptom: Array index out of bounds error. Mismatched layer counts between soil components.
+  diagnosis: 'Different number of layers in Physical, Chemical, Organic, and WaterBalance arrays; All
+    soil arrays (Thickness, BD, LL15, DUL, SAT, SWCON, PH, Carbon, etc.) must have the same number of
+    elements. If Physical has 7 layers but Chemical has 6, APSIM crashes when accessing the 7th layer.
+
+    ; [''Soil'', ''Phy'
+  remedy: Ensure all soil arrays have identical length; convert_soil.py; ['Check array lengths in all
+    soil children', 'Pad shorter arrays with reasonable values for deeper layers', 'Or trim longer arrays
+    to match the shortest']; convert_soil.py generates all arrays from same layer data
+  severity: fatal
+- id: dt_017
+  symptom: Validation metrics look terrible despite correct setup. R² near 0, huge PBIAS.
+  diagnosis: 'Comparing APSIM g/m² directly to literature t/ha without conversion; APSIM yield of 350
+    g/m² compared to observed 3.5 t/ha. If both are treated as the same unit, the sim/obs ratio is 100:1
+    and all metrics fail. Must convert g/m² ÷ 100 = t/ha before comparison.
+
+    ; [''Validation'']'
+  remedy: 'Convert APSIM output to same units as observations; parse_output.py --convert-yield; [''Check
+    units of both datasets'', ''Convert APSIM: g/m² × 10 = kg/ha, g/m² ÷ 100 = t/ha'', ''Re-compute metrics
+    with aligned units'']; parse_output.py --convert-yield adds converted columns'
+  severity: silent
+- id: dt_018
+  symptom: Vapor pressure deficit calculations wrong. ET estimates too high or low.
+  diagnosis: 'Vapor pressure in kPa instead of hPa; APSIM expects VP in hPa. ERA5 often provides vapor
+    pressure in kPa. 2.0 kPa = 20 hPa. If 2.0 is passed as hPa (very low VP), VPD is overestimated, inflating
+    evapotranspiration.
+
+    ; [''Weather'', ''MicroClimate'', ''Leaf'']'
+  remedy: 'Multiply vapor pressure by 10 to convert kPa to hPa; convert_met.py; [''Check VP column: should
+    be 5-40 hPa for most climates'', "If values are 0.5-4.0, they''re in kPa — multiply by 10"]; convert_met.py
+    flags VP outside 1-60 hPa range'
+  severity: degraded
+- id: dt_019
+  symptom: Point crop simulation over-predicts a regional ACTUAL-yield aggregate (SPAM/FAOSTAT) by ~1.5-2.5x
+    with low cross-cell r. PBIAS large and positive despite correct units and a physically sensible sim
+    yield.
+  diagnosis: 'Attainable-vs-actual yield-gap mismatch: default point run with generic HWSD soils + uniform
+    adequate N simulates attainable (water/radiation-limited) yield; SPAM _Y_ / FAOSTAT report ACTUAL
+    on-farm yield depressed by the regional yield gap (nutrient/subsoil constraints, frost, weeds). Distinct
+    from'
+  remedy: Region-match management (regional-average N, realistic low-PAWC soils, cultivar/rainfed status)
+    before running, OR score against attainable-yield references; report residual +PBIAS as the yield
+    gap.; build_apsimx.py / convert_soil.py (region-matched inputs); ['Confirm sim/obs ratio is ~2x (not
+    10x/1
+  severity: silent
+- id: dt_020
+  symptom: Inter-annual Pearson r is near zero or NEGATIVE (and NSE strongly negative) when a multi-season
+    point run is compared to a GRIDDED or district/national yield product (GDHY, SPAM, FAOSTAT), even
+    though simulated yields are physically sensible and PBIAS is moderate.
+  diagnosis: Point-series metric family (raw NSE/r/KGE via all_metrics) applied to a regional_aggregate_time_series
+    obs that carries a secular technology/management trend.; dag.yaml outputs[Grain.Wt].observability
+    declares obs_shape regional_aggregate_time_series -> comparison_mode aggregate_trend_comparison, de
+  remedy: Set obs_shape to regional_aggregate_time_series and score with ki_tools_common.metrics.trend_metrics
+    (linear_residual detrending); keep pbias as the determining metric.; ki_tools_common.metrics.trend_metrics
+    (metrics.py:492); ["If resolved_obs.granularity == 'grid' or the obs is a statistical aggreg
+  severity: silent

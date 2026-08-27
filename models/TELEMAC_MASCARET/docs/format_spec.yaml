@@ -1,261 +1,468 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: TELEMAC
-  domain: flood
-  binary_path: ''
-  language: unknown
+  name: TELEMAC-MASCARET
+  language: fortran
+  implementation:
+    id: telemac-mascaret-v910
+    version: v9.1.0
+    provenance: Fortran 90 with BIEF/HERMES libraries; openTELEMAC consortium (EDF-R&D LNHE originated)
+      finite-element / finite-volume solver, telemac2d as the 2D hydrodynamics host module.
+  scientific_reference_version: TELEMAC-2D depth-averaged shallow-water (Saint-Venant) hydrodynamics;
+    openTELEMAC consortium release v9.1.0 (governing-equation theory per Hervouet 2007 / TELEMAC-2D User
+    Manual)
 inputs:
-  forcing: []
+  forcing:
+  - name: Wind velocity (X, Y)
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: SELAFIN (.slf) field on mesh or ASCII time series; WIND VELOCITY ALONG X / ALONG
+      Y
+    notes: Wind stress scales ~ speed^2; must be in m/s (knots over-strengthen stress).
+  - name: Atmospheric pressure
+    unit: Pa
+    category: forcing
+    source_kind: forcing
+    model_input_format: SELAFIN field or ASCII time series
+    notes: Drives pressure-gradient / inverse-barometer surge response; expected in Pa, not hPa/mbar.
+  - name: Rain / evaporation
+    unit: mm/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: Steering-file rain/evaporation keywords or forcing field
+  - name: River discharge at liquid boundaries
+    unit: m^3/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: PRESCRIBED FLOWRATES keyword or liquid-boundaries ASCII time series
+  - name: Tidal elevation / constituents at open-sea boundaries
+    unit: m (amplitude), degrees (phase)
+    category: forcing
+    source_kind: forcing
+    model_input_format: PRESCRIBED ELEVATIONS, liquid-boundaries file, or interfaced tidal-harmonic database
+  parameters:
+  - name: Bottom friction coefficient
+    unit: Manning n (s/m^(1/3)) or Strickler K (m^(1/3)/s) depending on law
+    category: parameters
+    source_kind: calibrated
+    model_input_format: FRICTION COEFFICIENT keyword (constant), per-node value in geometry file, or friction-data
+      file
+    notes: Coefficient meaning is tied to LAW OF BOTTOM FRICTION; K = 1/n between Strickler and Manning.
+  - name: Velocity (turbulent) diffusivity
+    unit: m^2/s
+    category: parameters
+    source_kind: calibrated
+    model_input_format: VELOCITY DIFFUSIVITY keyword (default 1e-6 = molecular viscosity of water)
+    notes: Viscosity dissipating eddies smaller than ~two mesh elements has virtually no effect; choose
+      relative to mesh size.
+  - name: Coefficient of wind influence (drag)
+    unit: '-'
+    category: parameters
+    source_kind: calibrated
+    model_input_format: COEFFICIENT OF WIND INFLUENCE keyword (typ. 0.001-0.003)
+  - name: Coriolis coefficient
+    unit: s^-1
+    category: parameters
+    source_kind: calibrated
+    model_input_format: CORIOLIS COEFFICIENT keyword (latitude-dependent)
+  - name: Gravity acceleration
+    unit: m/s^2
+    category: parameters
+    source_kind: default
+    model_input_format: GRAVITY ACCELERATION keyword (default 9.81)
+  - name: Water density
+    unit: kg/m^3
+    category: parameters
+    source_kind: default
+    model_input_format: WATER DENSITY keyword (default 1000)
+  - name: Bottom (bathymetry) elevation field
+    unit: m (positive upward from datum)
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: Per-node bottom elevation carried in the SELAFIN geometry (.slf) or a separate
+      bottom-topography file
+    notes: Sign convention is elevation positive-upward, not depth positive-downward.
+  initial_conditions:
+  - name: Initial free-surface / depth state
+    unit: m
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: INITIAL CONDITIONS keyword (ZERO ELEVATION / CONSTANT ELEVATION / ZERO DEPTH /
+      CONSTANT DEPTH / PARTICULAR via CONDIN)
+  - name: Previous-computation restart state
+    unit: varies (h, u, v, T fields)
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: COMPUTATION CONTINUED = YES + PREVIOUS COMPUTATION FILE (mesh must be identical;
+      double-precision SERAFIND recommended)
+  boundary_conditions:
+  - name: Boundary-condition type per edge node
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: 'Boundary-conditions file (.cli): LIHBOR/LIUBOR/LIVBOR codes + HBOR/UBOR/VBOR
+      values per boundary node'
+    notes: Codes distinguish prescribed (Dirichlet), free/zero-flux (Neumann), velocity-imposed, elevation-imposed,
+      open-sea, and wall conditions; turbulence k/epsilon BCs are set internally by the model.
+  - name: Law of bottom friction (method switch)
+    unit: code
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: LAW OF BOTTOM FRICTION (0 none, 1 Haaland, 2 Chezy, 3 Strickler, 4 Manning, 5
+      Nikuradse, 6 log-law, 7 Colebrook-White)
+  - name: Turbulence model (method switch)
+    unit: code
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: TURBULENCE MODEL (1 constant viscosity, 2 Elder, 3 k-epsilon, 4 Smagorinski)
+  - name: Equation/solver scheme selector
+    unit: code
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: Equations option (SAINT-VENANT FE / SAINT-VENANT FV / BOUSSINESQ); SOLVER and
+      SOLVER ACCURACY keywords
+  - name: Wetting/drying treatment
+    unit: switch
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: TIDAL FLATS = YES with TREATMENT OF NEGATIVE DEPTHS = 2
+    notes: Required for coastal/estuarine intertidal runs to avoid negative depths.
+  - name: Time-stepping control
+    unit: s / switch
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: TIME STEP (seconds); VARIABLE TIME-STEP = YES with DESIRED COURANT NUMBER for
+      adaptive stepping
+  - name: Implicitation coefficients
+    unit: '-'
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: IMPLICITATION FOR DEPTH / IMPLICITATION FOR VELOCITY (0.5-1.0)
 outputs:
   primary:
-  - name: Head
-    unit: 80-char title, variable names (32 chars each)
-    format: ''
-    source: skill_md
-  - name: Discharge
+  - name: H
+    unit: m
+    description: Water depth at each mesh node, the primary depth-averaged hydrodynamic result.
+    validation_rank: 1
+    emitted_in: Results file (.slf SELAFIN), VARIABLES FOR GRAPHIC PRINTOUTS
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Gauge depth/stage must share the model's vertical datum; node nearest the gauge is used.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Flood-extent / max-depth maps require interpolation from mesh nodes to the observation grid.
+      detrending_options:
+      - none
+  - name: S
+    unit: m
+    description: Free surface (water level) elevation = bottom elevation + water depth.
+    validation_rank: 3
+    emitted_in: Results file (.slf SELAFIN)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Tide-gauge water level must reference the same datum; tidal timing/phase matters as much as
+          amplitude.
+      detrending_options:
+      - none
+      - first_difference
+  - name: U
+    unit: m/s
+    description: Depth-averaged water velocity component along X.
+    validation_rank: 4
+    emitted_in: Results file (.slf SELAFIN)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - ADCP / current-meter velocities are depth-averaged for comparison; vector orientation must align
+          with model axes.
+      detrending_options:
+      - none
+  - name: V
+    unit: m/s
+    description: Depth-averaged water velocity component along Y.
+    validation_rank: 5
+    emitted_in: Results file (.slf SELAFIN)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - ADCP / current-meter velocities are depth-averaged for comparison; vector orientation must align
+          with model axes.
+      detrending_options:
+      - none
+  - name: M
+    unit: m/s
+    description: Depth-averaged water velocity magnitude (scalar current speed).
+    validation_rank: 2
+    emitted_in: Results file (.slf SELAFIN)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against observed current-speed magnitude to avoid direction-convention ambiguity.
+      detrending_options:
+      - none
+  - name: T
+    unit: g/l or degC
+    description: Passive tracer concentration in the water (e.g. salinity, temperature) advected/diffused
+      by the flow.
+    validation_rank: 6
+    emitted_in: Results file (.slf SELAFIN)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Only meaningful when the matching tracer (salinity/temperature) is activated; tracer treated
+          as passive (non-buoyant) unless density coupling enabled.
+      detrending_options:
+      - none
+  - name: section_discharge
     unit: m^3/s
-    format: ''
-    source: skill_md
-  - name: flood_depth
-    canonical_id: flood_depth
-    unit: m
-  - name: water_surface_elevation
-    canonical_id: water_surface_elevation
-    unit: m
-  - name: inundation_extent
-    canonical_id: inundation_extent
-    unit: km2
+    description: Water flowrate integrated across user-defined control sections.
+    validation_rank: 7
+    emitted_in: Sections output file
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Observation must be a discharge time series at the same cross-section.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: '{''description'': ''Gravity acceleration appears as 981 in TELEMAC
-    output or produces unrealistically fast wave propagation'', ''error_pattern'':
-    ''gravity|GRAV|wave speed'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Gravity set in CGS (cm/s^2) instead of SI (m/s^2)'',
-    ''explanation'': ''TELEMAC expects GRAVITY ACCELERATION in m/s^2 (default 9.81).
-    Using CGS value 981 cm/s^2 amplifies all gravity-drive'
-  detection: '{''root_cause'': ''Gravity set in CGS (cm/s^2) instead of SI (m/s^2)'',
-    ''explanation'': ''TELEMAC expects GRAVITY ACCELERATION in m/s^2 (default 9.81).
-    Using CGS value 981 cm/s^2 amplifies all gravity-drive'
-  fix: '{''action'': ''Set GRAVITY ACCELERATION = 9.81 in steering file'', ''tool_to_run'':
-    '''', ''manual_steps'': [''Check .cas file for GRAVITY ACCELERATION keyword'',
-    ''Ensure value is 9.81 (m/s^2), not 981 (cm/s^2)'']'
+  symptom: Gravity acceleration appears as 981 in TELEMAC output or produces unrealistically fast wave
+    propagation
+  diagnosis: 'Gravity set in CGS (cm/s^2) instead of SI (m/s^2); TELEMAC expects GRAVITY ACCELERATION
+    in m/s^2 (default 9.81). Using CGS value 981 cm/s^2 amplifies all gravity-driven flow by 100x, producing
+    extreme velocities and immediate CFL violation.
+
+    ; [''telemac2d'', ''telemac3d'', ''tomawac'']'
+  remedy: Set GRAVITY ACCELERATION = 9.81 in steering file; ; ['Check .cas file for GRAVITY ACCELERATION
+    keyword', 'Ensure value is 9.81 (m/s^2), not 981 (cm/s^2)']; Always use SI units for all TELEMAC parameters
+  severity: fatal
 - id: dt_002
-  description: '{''description'': ''Extreme water levels or model crash. Manning n
-    (0.025) used where Strickler K (40) expected, or vice versa'', ''error_pattern'':
-    ''friction|CHESTR|negative depth|divergence'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Manning-Strickler friction coefficient confusion'',
-    ''explanation'': ''LAW OF BOTTOM FRICTION = 3 (Strickler) expects K in m^(1/3)/s
-    (typical 10-90). LAW OF BOTTOM FRICTION = 4 (Manning) e'
-  detection: '{''root_cause'': ''Manning-Strickler friction coefficient confusion'',
-    ''explanation'': ''LAW OF BOTTOM FRICTION = 3 (Strickler) expects K in m^(1/3)/s
-    (typical 10-90). LAW OF BOTTOM FRICTION = 4 (Manning) e'
-  fix: '{''action'': ''Match FRICTION COEFFICIENT to LAW OF BOTTOM FRICTION'', ''tool_to_run'':
-    '''', ''manual_steps'': [''If LAW=3 (Strickler): coefficient should be 10-90 (K
-    = 1/n)'', ''If LAW=4 (Manning): coefficient s'
+  symptom: Extreme water levels or model crash. Manning n (0.025) used where Strickler K (40) expected,
+    or vice versa
+  diagnosis: Manning-Strickler friction coefficient confusion; LAW OF BOTTOM FRICTION = 3 (Strickler)
+    expects K in m^(1/3)/s (typical 10-90). LAW OF BOTTOM FRICTION = 4 (Manning) expects n in s/m^(1/3)
+    (typical 0.01-0.10). Using Manning n=0.025 with Strickler law produces near-zero friction (K=0.025),
+    while usin
+  remedy: 'Match FRICTION COEFFICIENT to LAW OF BOTTOM FRICTION; ; [''If LAW=3 (Strickler): coefficient
+    should be 10-90 (K = 1/n)'', ''If LAW=4 (Manning): coefficient should be 0.01-0.10'', ''Conversion:
+    K_strickler = 1 / n_manning'']; run_telemac.py validates friction law vs coefficient range'
+  severity: silent
 - id: dt_003
-  description: '{''description'': ''Wind-driven currents approximately 2x too strong'',
-    ''error_pattern'': ''wind|velocity|current'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Wind speed in knots instead of m/s'', ''explanation'':
-    ''TELEMAC expects wind speed in m/s. If source data is in knots, the wind stress
-    (proportional to wind speed squared) is overestimate'
-  detection: '{''root_cause'': ''Wind speed in knots instead of m/s'', ''explanation'':
-    ''TELEMAC expects wind speed in m/s. If source data is in knots, the wind stress
-    (proportional to wind speed squared) is overestimate'
-  fix: '{''action'': ''Convert wind speed: knots x 0.5144 = m/s'', ''tool_to_run'':
-    ''convert_forcing.py --wind-unit knots'', ''manual_steps'': [''Check wind data
-    source for units'', ''Apply conversion factor 0.5144 if in'
+  symptom: Wind-driven currents approximately 2x too strong
+  diagnosis: 'Wind speed in knots instead of m/s; TELEMAC expects wind speed in m/s. If source data is
+    in knots, the wind stress (proportional to wind speed squared) is overestimated by a factor of ~3.8
+    (1/0.5144^2).
+
+    ; [''telemac2d'', ''telemac3d'', ''tomawac'']'
+  remedy: 'Convert wind speed: knots x 0.5144 = m/s; convert_forcing.py --wind-unit knots; [''Check wind
+    data source for units'', ''Apply conversion factor 0.5144 if in knots'']; convert_forcing.py applies
+    conversion when --wind-unit knots specified'
+  severity: silent
 - id: dt_004
-  description: '{''description'': ''Atmospheric pressure gradient forces negligible;
-    storm surge response absent'', ''error_pattern'': ''pressure|PATMOS|surge'', ''detection_method'':
-    ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Atmospheric pressure in hPa/mbar instead of
-    Pa'', ''explanation'': ''TELEMAC expects atmospheric pressure in Pa. Using hPa
-    (typical 1013) instead of Pa (101300) underestimates pressure by '
-  detection: '{''root_cause'': ''Atmospheric pressure in hPa/mbar instead of Pa'',
-    ''explanation'': ''TELEMAC expects atmospheric pressure in Pa. Using hPa (typical
-    1013) instead of Pa (101300) underestimates pressure by '
-  fix: '{''action'': ''Convert pressure: hPa x 100 = Pa'', ''tool_to_run'': ''convert_forcing.py
-    --pressure-unit hPa'', ''manual_steps'': [''Verify pressure values: should be
-    ~101325 Pa, not ~1013'', ''Multiply by 100 if '
+  symptom: Atmospheric pressure gradient forces negligible; storm surge response absent
+  diagnosis: 'Atmospheric pressure in hPa/mbar instead of Pa; TELEMAC expects atmospheric pressure in
+    Pa. Using hPa (typical 1013) instead of Pa (101300) underestimates pressure by 100x. The inverse barometer
+    effect and pressure gradient force become negligible.
+
+    ; [''telemac2d'', ''telemac3d'']'
+  remedy: 'Convert pressure: hPa x 100 = Pa; convert_forcing.py --pressure-unit hPa; [''Verify pressure
+    values: should be ~101325 Pa, not ~1013'', ''Multiply by 100 if values are ~1000'']; convert_forcing.py
+    applies conversion when --pressure-unit hPa specified'
+  severity: silent
 - id: dt_005
-  description: '{''description'': ''Density-driven flow completely absent in baroclinic
-    simulations'', ''error_pattern'': ''density|ROEAU|stratification'', ''detection_method'':
-    ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Water density in g/cm^3 (1.0) instead of kg/m^3
-    (1000)'', ''explanation'': ''The keyword WATER DENSITY expects kg/m^3 (default
-    1000). Using CGS density 1.0 g/cm^3 reduces buoyancy forces b'
-  detection: '{''root_cause'': ''Water density in g/cm^3 (1.0) instead of kg/m^3 (1000)'',
-    ''explanation'': ''The keyword WATER DENSITY expects kg/m^3 (default 1000). Using
-    CGS density 1.0 g/cm^3 reduces buoyancy forces b'
-  fix: '{''action'': ''Set WATER DENSITY = 1000 (kg/m^3)'', ''tool_to_run'': '''',
-    ''manual_steps'': [''Check WATER DENSITY keyword in .cas file'', ''Ensure value
-    is ~1000, not ~1.0''], ''prevention'': ''Validate density rang'
+  symptom: Density-driven flow completely absent in baroclinic simulations
+  diagnosis: 'Water density in g/cm^3 (1.0) instead of kg/m^3 (1000); The keyword WATER DENSITY expects
+    kg/m^3 (default 1000). Using CGS density 1.0 g/cm^3 reduces buoyancy forces by 1000x.
+
+    ; [''telemac3d'']'
+  remedy: Set WATER DENSITY = 1000 (kg/m^3); ; ['Check WATER DENSITY keyword in .cas file', 'Ensure value
+    is ~1000, not ~1.0']; Validate density range in steering file checks
+  severity: silent
 - id: dt_006
-  description: '{''description'': ''Domain is approximately 1m x 1m; CFL violation
-    on first timestep'', ''error_pattern'': ''CFL|Courant|STOP|negative depth'', ''detection_method'':
-    ''structural_check''}'
-  affected_output: '{''root_cause'': ''Mesh coordinates in WGS84 degrees instead of
-    metric projection'', ''explanation'': ''TELEMAC requires metric coordinates (meters).
-    If WGS84 longitude/latitude (degrees) are used directly, '
-  detection: '{''root_cause'': ''Mesh coordinates in WGS84 degrees instead of metric
-    projection'', ''explanation'': ''TELEMAC requires metric coordinates (meters).
-    If WGS84 longitude/latitude (degrees) are used directly, '
-  fix: '{''action'': ''Project mesh coordinates to a metric CRS (UTM, Lambert) before
-    meshing'', ''tool_to_run'': '''', ''manual_steps'': [''Check mesh coordinate ranges:
-    should be thousands, not single digits'', ''Re-pro'
+  symptom: Domain is approximately 1m x 1m; CFL violation on first timestep
+  diagnosis: Mesh coordinates in WGS84 degrees instead of metric projection; TELEMAC requires metric coordinates
+    (meters). If WGS84 longitude/latitude (degrees) are used directly, the domain spans ~1 degree ≈ 111
+    km in reality but only ~1 unit in the mesh. Element sizes become ~0.001 units, requiring sub-millise
+  remedy: 'Project mesh coordinates to a metric CRS (UTM, Lambert) before meshing; ; [''Check mesh coordinate
+    ranges: should be thousands, not single digits'', ''Re-project using ogr2ogr or pyproj'', ''Regenerate
+    mesh in the projected CRS'']; convert_bathymetry.py validates coordinate ranges'
+  severity: fatal
 - id: dt_007
-  description: '{''description'': ''Water flows uphill; mountains appear where valleys
-    should be'', ''error_pattern'': ''bottom|FOND|elevation|bathymetry'', ''detection_method'':
-    ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Bathymetry sign convention inverted (depth
-    vs elevation)'', ''explanation'': ''TELEMAC uses bottom ELEVATION (positive upward
-    from datum). Nautical charts and many data sources provide DEP'
-  detection: '{''root_cause'': ''Bathymetry sign convention inverted (depth vs elevation)'',
-    ''explanation'': ''TELEMAC uses bottom ELEVATION (positive upward from datum).
-    Nautical charts and many data sources provide DEP'
-  fix: '{''action'': ''Negate depth values to get elevation: Z_bottom = -depth'',
-    ''tool_to_run'': ''convert_bathymetry.py --negate'', ''manual_steps'': [''Check
-    if source data provides depth (positive downward) or elev'
+  symptom: Water flows uphill; mountains appear where valleys should be
+  diagnosis: Bathymetry sign convention inverted (depth vs elevation); TELEMAC uses bottom ELEVATION (positive
+    upward from datum). Nautical charts and many data sources provide DEPTH (positive downward). Failing
+    to negate produces inverted topography where deep channels become ridges and shallow areas become
+    dep
+  remedy: 'Negate depth values to get elevation: Z_bottom = -depth; convert_bathymetry.py --negate; [''Check
+    if source data provides depth (positive downward) or elevation'', ''Use --negate flag in convert_bathymetry.py'',
+    ''Verify: deep channels should have negative or small Z values'']; convert_bathymetry.py warns'
+  severity: silent
 - id: dt_008
-  description: '{''description'': ''River inflow has negligible effect on simulation
-    despite large real discharge'', ''error_pattern'': ''discharge|DEBIT|inflow|boundary'',
-    ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Discharge in L/s instead of m^3/s'', ''explanation'':
-    ''TELEMAC expects PRESCRIBED FLOWRATES in m^3/s. Using L/s (1000x smaller) makes
-    river inflows negligible. A 150 L/s river appears as '
-  detection: '{''root_cause'': ''Discharge in L/s instead of m^3/s'', ''explanation'':
-    ''TELEMAC expects PRESCRIBED FLOWRATES in m^3/s. Using L/s (1000x smaller) makes
-    river inflows negligible. A 150 L/s river appears as '
-  fix: '{''action'': ''Convert discharge: L/s x 0.001 = m^3/s'', ''tool_to_run'':
-    '''', ''manual_steps'': [''Verify discharge magnitudes against known river flows'',
-    ''Convert from L/s to m^3/s if needed''], ''prevention'': '
+  symptom: River inflow has negligible effect on simulation despite large real discharge
+  diagnosis: 'Discharge in L/s instead of m^3/s; TELEMAC expects PRESCRIBED FLOWRATES in m^3/s. Using
+    L/s (1000x smaller) makes river inflows negligible. A 150 L/s river appears as 150 m^3/s if units
+    are accidentally correct, or as 0.15 m^3/s if L/s is treated as m^3/s.
+
+    ; [''telemac2d'', ''telemac3d'']'
+  remedy: 'Convert discharge: L/s x 0.001 = m^3/s; ; [''Verify discharge magnitudes against known river
+    flows'', ''Convert from L/s to m^3/s if needed'']; convert_forcing.py logs the expected unit for each
+    variable'
+  severity: silent
 - id: dt_009
-  description: '{''description'': ''Simulation finishes instantly (too few effective
-    timesteps) or takes forever'', ''error_pattern'': ''TIME STEP|duration|number
-    of time steps'', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Time step in minutes or hours instead of seconds'',
-    ''explanation'': ''TIME STEP keyword is in seconds. Setting dt=1.0 when intending
-    1 minute produces 60x more timesteps than expected (or'
-  detection: '{''root_cause'': ''Time step in minutes or hours instead of seconds'',
-    ''explanation'': ''TIME STEP keyword is in seconds. Setting dt=1.0 when intending
-    1 minute produces 60x more timesteps than expected (or'
-  fix: '{''action'': ''Ensure TIME STEP value is in seconds'', ''tool_to_run'': '''',
-    ''manual_steps'': [''Check TIME STEP value: typical range 0.01-100 seconds'',
-    ''Calculate total simulation time: dt x NUMBER OF TIME ST'
+  symptom: Simulation finishes instantly (too few effective timesteps) or takes forever
+  diagnosis: Time step in minutes or hours instead of seconds; TIME STEP keyword is in seconds. Setting
+    dt=1.0 when intending 1 minute produces 60x more timesteps than expected (or 60x shorter simulation
+    if NUMBER OF TIME STEPS is fixed). Setting dt=60 when intending 60 seconds may violate CFL if the
+    mesh is fin
+  remedy: 'Ensure TIME STEP value is in seconds; ; [''Check TIME STEP value: typical range 0.01-100 seconds'',
+    ''Calculate total simulation time: dt x NUMBER OF TIME STEPS'', ''Verify CFL: dt < dx_min / (sqrt(g*h_max)
+    + U_max)'']; run_telemac.py warns if TIME STEP > 3600s'
+  severity: degraded
 - id: dt_010
-  description: '{''description'': ''Tidal range 100x too large or too small at open
-    boundaries'', ''error_pattern'': ''tidal|harmonic|amplitude|elevation'', ''detection_method'':
-    ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Tidal amplitudes in cm instead of m, or phases
-    in radians instead of degrees'', ''explanation'': ''TELEMAC expects tidal amplitudes
-    in meters and phases in degrees. Using cm amplitudes (e.'
-  detection: '{''root_cause'': ''Tidal amplitudes in cm instead of m, or phases in
-    radians instead of degrees'', ''explanation'': ''TELEMAC expects tidal amplitudes
-    in meters and phases in degrees. Using cm amplitudes (e.'
-  fix: '{''action'': ''Convert amplitudes: cm / 100 = m. Convert phases: radians x
-    180/pi = degrees'', ''tool_to_run'': '''', ''manual_steps'': [''Check tidal database
-    documentation for units'', ''Amplitudes should be O(1'
+  symptom: Tidal range 100x too large or too small at open boundaries
+  diagnosis: 'Tidal amplitudes in cm instead of m, or phases in radians instead of degrees; TELEMAC expects
+    tidal amplitudes in meters and phases in degrees. Using cm amplitudes (e.g., 120 cm instead of 1.2
+    m) produces 100x overestimation. Using radian phases shifts tidal timing incorrectly.
+
+    ; [''telemac2d'', ''tele'
+  remedy: 'Convert amplitudes: cm / 100 = m. Convert phases: radians x 180/pi = degrees; ; [''Check tidal
+    database documentation for units'', ''Amplitudes should be O(1) meters for typical tides'', ''Phases
+    should be 0-360 degrees'']; Validate amplitude range against expected tidal regime'
+  severity: silent
 - id: dt_011
-  description: '{''description'': ''Extreme flooding from rainfall; water depth rises
-    by meters per hour'', ''error_pattern'': ''rain|precipitation|depth|flooding'',
-    ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Rainfall intensity in mm/hr instead of mm/s'',
-    ''explanation'': ''TELEMAC expects rainfall in mm/s (or m/s depending on the keyword).
-    Providing mm/hr values directly (e.g., 10 mm/hr as 10 '
-  detection: '{''root_cause'': ''Rainfall intensity in mm/hr instead of mm/s'', ''explanation'':
-    ''TELEMAC expects rainfall in mm/s (or m/s depending on the keyword). Providing
-    mm/hr values directly (e.g., 10 mm/hr as 10 '
-  fix: '{''action'': ''Convert rainfall: mm/hr / 3600 = mm/s'', ''tool_to_run'': ''convert_forcing.py
-    --rain-unit mmhr'', ''manual_steps'': [''Check rain data units: typical intensities
-    are 0-50 mm/hr'', ''Divide by 3600 '
+  symptom: Extreme flooding from rainfall; water depth rises by meters per hour
+  diagnosis: 'Rainfall intensity in mm/hr instead of mm/s; TELEMAC expects rainfall in mm/s (or m/s depending
+    on the keyword). Providing mm/hr values directly (e.g., 10 mm/hr as 10 mm/s) overestimates rainfall
+    by 3600x. A moderate 10 mm/hr rain becomes a catastrophic 36000 mm/hr = 36 m/hr deluge.
+
+    ; [''telemac2d'']'
+  remedy: 'Convert rainfall: mm/hr / 3600 = mm/s; convert_forcing.py --rain-unit mmhr; [''Check rain data
+    units: typical intensities are 0-50 mm/hr'', ''Divide by 3600 to get mm/s'']; convert_forcing.py applies
+    conversion when --rain-unit mmhr'
+  severity: silent
 - id: dt_012
-  description: '{''description'': ''Turbulent diffusion is negligible; unrealistic
-    sharp gradients in tracer fields'', ''error_pattern'': ''diffusivity|viscosity|tracer|gradient'',
-    ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Velocity diffusivity in cm^2/s instead of m^2/s'',
-    ''explanation'': ''VELOCITY DIFFUSIVITY expects m^2/s. Using CGS cm^2/s (e.g.,
-    100 cm^2/s instead of 0.01 m^2/s) underestimates diffusion'
-  detection: '{''root_cause'': ''Velocity diffusivity in cm^2/s instead of m^2/s'',
-    ''explanation'': ''VELOCITY DIFFUSIVITY expects m^2/s. Using CGS cm^2/s (e.g.,
-    100 cm^2/s instead of 0.01 m^2/s) underestimates diffusion'
-  fix: '{''action'': ''Ensure VELOCITY DIFFUSIVITY is in m^2/s (typical 0.01-10.0)'',
-    ''tool_to_run'': '''', ''manual_steps'': [''Check value: should be O(0.01-10)
-    for rivers, O(1-100) for coastal'', ''Convert: cm^2/s x 0'
+  symptom: Turbulent diffusion is negligible; unrealistic sharp gradients in tracer fields
+  diagnosis: 'Velocity diffusivity in cm^2/s instead of m^2/s; VELOCITY DIFFUSIVITY expects m^2/s. Using
+    CGS cm^2/s (e.g., 100 cm^2/s instead of 0.01 m^2/s) underestimates diffusion by 10000x if entered
+    as 0.01, or overestimates by 100x if entered as 100.
+
+    ; [''telemac2d'', ''telemac3d'', ''waqtel'']'
+  remedy: 'Ensure VELOCITY DIFFUSIVITY is in m^2/s (typical 0.01-10.0); ; [''Check value: should be O(0.01-10)
+    for rivers, O(1-100) for coastal'', ''Convert: cm^2/s x 0.0001 = m^2/s'']; Validate diffusivity range
+    in steering file checks'
+  severity: degraded
 - id: dt_013
-  description: '{''description'': ''SELAFIN file appears corrupt; all values are NaN
-    or extremely large numbers'', ''error_pattern'': ''NaN|inf|corrupt|unreadable'',
-    ''detection_method'': ''structural_check''}'
-  affected_output: '{''root_cause'': ''Byte order mismatch reading big-endian SELAFIN
-    on little-endian system'', ''explanation'': ''TELEMAC writes SELAFIN files in
-    big-endian format by default (-fconvert=big-endian compiler fla'
-  detection: '{''root_cause'': ''Byte order mismatch reading big-endian SELAFIN on
-    little-endian system'', ''explanation'': ''TELEMAC writes SELAFIN files in big-endian
-    format by default (-fconvert=big-endian compiler fla'
-  fix: '{''action'': "Use big-endian byte order (''>'') when reading SELAFIN with
-    struct", ''tool_to_run'': ''parse_selafin.py'', ''manual_steps'': ["Use struct.unpack(''>f'',
-    ...) not struct.unpack(''f'', ...)", ''Or use t'
+  symptom: SELAFIN file appears corrupt; all values are NaN or extremely large numbers
+  diagnosis: Byte order mismatch reading big-endian SELAFIN on little-endian system; TELEMAC writes SELAFIN
+    files in big-endian format by default (-fconvert=big-endian compiler flag). Custom parsers on little-endian
+    systems (most modern x86) that do not byte-swap will interpret all floating-point values incorrec
+  remedy: Use big-endian byte order ('>') when reading SELAFIN with struct; parse_selafin.py; ["Use struct.unpack('>f',
+    ...) not struct.unpack('f', ...)", 'Or use the provided parse_selafin.py which handles endianness',
+    'The HERMES Python wrapper also handles this correctly']; parse_selafin.py defaults to big
+  severity: fatal
 - id: dt_014
-  description: '{''description'': ''Negative water depths in listing; simulation may
-    crash or produce unrealistic results in intertidal zones'', ''error_pattern'':
-    ''NEGATIVE DEPTH|negative|wetting|drying|tidal flat'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''TIDAL FLATS not enabled for simulation with
-    wetting/drying'', ''explanation'': ''When water recedes and cells go dry, TELEMAC
-    needs the TIDAL FLATS = YES keyword to handle wetting/drying c'
-  detection: '{''root_cause'': ''TIDAL FLATS not enabled for simulation with wetting/drying'',
-    ''explanation'': ''When water recedes and cells go dry, TELEMAC needs the TIDAL
-    FLATS = YES keyword to handle wetting/drying c'
-  fix: '{''action'': ''Add TIDAL FLATS = YES to steering file'', ''tool_to_run'':
-    '''', ''manual_steps'': [''Add: TIDAL FLATS = YES'', ''Also set: TREATMENT OF
-    NEGATIVE DEPTHS = 2 (conservative)'', ''Consider: OPTION FOR TH'
+  symptom: Negative water depths in listing; simulation may crash or produce unrealistic results in intertidal
+    zones
+  diagnosis: TIDAL FLATS not enabled for simulation with wetting/drying; When water recedes and cells
+    go dry, TELEMAC needs the TIDAL FLATS = YES keyword to handle wetting/drying correctly. Without it,
+    water depth can go negative, velocities become undefined, and the solver may diverge. This is essential
+    for any
+  remedy: 'Add TIDAL FLATS = YES to steering file; ; [''Add: TIDAL FLATS = YES'', ''Also set: TREATMENT
+    OF NEGATIVE DEPTHS = 2 (conservative)'', ''Consider: OPTION FOR THE TREATMENT OF TIDAL FLATS = 1''];
+    run_telemac.py warns if tidal simulation lacks TIDAL FLATS'
+  severity: degraded
 - id: dt_015
-  description: '{''description'': ''Simulation crashes with STOP or produces NaN;
-    Courant number exceeds 1'', ''error_pattern'': ''STOP|CFL|Courant|NaN|diverge|blow
-    up'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''Time step too large for mesh resolution (CFL
-    violation)'', ''explanation'': ''The CFL condition requires: dt < dx / (sqrt(g*h)
-    + |U|). For a mesh with minimum element size dx=10m and water'
-  detection: '{''root_cause'': ''Time step too large for mesh resolution (CFL violation)'',
-    ''explanation'': ''The CFL condition requires: dt < dx / (sqrt(g*h) + |U|). For
-    a mesh with minimum element size dx=10m and water'
-  fix: '{''action'': ''Reduce TIME STEP or enable VARIABLE TIME-STEP = YES'', ''tool_to_run'':
-    '''', ''manual_steps'': [''Calculate CFL: dt_max = dx_min / (sqrt(g * h_max) +
-    U_max)'', ''Set TIME STEP < dt_max'', ''Or add: V'
+  symptom: Simulation crashes with STOP or produces NaN; Courant number exceeds 1
+  diagnosis: 'Time step too large for mesh resolution (CFL violation); The CFL condition requires: dt
+    < dx / (sqrt(g*h) + |U|). For a mesh with minimum element size dx=10m and water depth h=5m, the maximum
+    stable dt ~ 10 / (sqrt(9.81*5) + 1) ≈ 1.2 seconds. Exceeding this causes exponential growth in errors
+    and cr'
+  remedy: 'Reduce TIME STEP or enable VARIABLE TIME-STEP = YES; ; [''Calculate CFL: dt_max = dx_min /
+    (sqrt(g * h_max) + U_max)'', ''Set TIME STEP < dt_max'', ''Or add: VARIABLE TIME-STEP = YES and DESIRED
+    COURANT NUMBER = 0.9'']; run_telemac.py estimates CFL from mesh and parameters'
+  severity: fatal
 - id: dt_016
-  description: '{''description'': ''Parallel simulation hangs indefinitely or crashes
-    with segfault'', ''error_pattern'': ''hang|segfault|MPI|decomposition|METIS'',
-    ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''MPI process count does not match METIS domain
-    decomposition'', ''explanation'': ''When running with --ncsize N, TELEMAC decomposes
-    the mesh into N subdomains using METIS. If the MPI launch'
-  detection: '{''root_cause'': ''MPI process count does not match METIS domain decomposition'',
-    ''explanation'': ''When running with --ncsize N, TELEMAC decomposes the mesh into
-    N subdomains using METIS. If the MPI launch'
-  fix: '{''action'': ''Ensure --ncsize matches the number of MPI processes'', ''tool_to_run'':
-    '''', ''manual_steps'': [''Check: --ncsize value must equal mpiexec -n value'',
-    ''Delete old decomposition files if changing n'
+  symptom: Parallel simulation hangs indefinitely or crashes with segfault
+  diagnosis: MPI process count does not match METIS domain decomposition; When running with --ncsize N,
+    TELEMAC decomposes the mesh into N subdomains using METIS. If the MPI launch creates a different number
+    of processes, the simulation hangs waiting for communication that never arrives, or crashes with memory
+    a
+  remedy: 'Ensure --ncsize matches the number of MPI processes; ; [''Check: --ncsize value must equal
+    mpiexec -n value'', ''Delete old decomposition files if changing ncsize'', ''Verify METIS is installed
+    and linked correctly'']; run_telemac.py validates parallel configuration'
+  severity: fatal
 - id: dt_017
-  description: '{''description'': "User Fortran compilation fails with ''undefined
-    reference'' or ''symbol not found''", ''error_pattern'': ''undefined reference|symbol
-    not found|link error|user_fortran'', ''detection_method'': ''log_match''}'
-  affected_output: '{''root_cause'': ''User Fortran compiled with different compiler
-    than main TELEMAC build'', ''explanation'': ''User Fortran files must be compiled
-    with the exact same Fortran compiler and flags used to build'
-  detection: '{''root_cause'': ''User Fortran compiled with different compiler than
-    main TELEMAC build'', ''explanation'': ''User Fortran files must be compiled with
-    the exact same Fortran compiler and flags used to build'
-  fix: '{''action'': ''Recompile user Fortran with the same compiler used for TELEMAC'',
-    ''tool_to_run'': '''', ''manual_steps'': [''Check build_commands.json for the
-    correct compiler and flags'', ''Ensure FORTRAN FILE in'
+  symptom: User Fortran compilation fails with 'undefined reference' or 'symbol not found'
+  diagnosis: User Fortran compiled with different compiler than main TELEMAC build; User Fortran files
+    must be compiled with the exact same Fortran compiler and flags used to build the main TELEMAC libraries.
+    Mixing gfortran with ifort (or different versions of the same compiler) produces incompatible object
+    fil
+  remedy: Recompile user Fortran with the same compiler used for TELEMAC; ; ['Check build_commands.json
+    for the correct compiler and flags', 'Ensure FORTRAN FILE in .cas points to source directory, not
+    pre-compiled objects', 'Rebuild TELEMAC if compiler version changed']; TELEMAC build system auto-compiles
+    us
+  severity: fatal
 - id: dt_018
-  description: '{''description'': "Post-processing reads wrong variable; column labelled
-    ''H'' contains velocity data", ''error_pattern'': ''variable order|mismatch|wrong
-    column|unexpected values'', ''detection_method'': ''structural_check''}'
-  affected_output: '{''root_cause'': ''SELAFIN variable order does not match post-processing
-    assumptions'', ''explanation'': ''The SELAFIN file stores variables in the order
-    specified by VARIABLES FOR GRAPHIC PRINTOUTS. If a po'
-  detection: '{''root_cause'': ''SELAFIN variable order does not match post-processing
-    assumptions'', ''explanation'': ''The SELAFIN file stores variables in the order
-    specified by VARIABLES FOR GRAPHIC PRINTOUTS. If a po'
-  fix: '{''action'': ''Always read variable names from the SELAFIN header, never assume
-    order'', ''tool_to_run'': ''parse_selafin.py --info'', ''manual_steps'': [''Run:
-    python parse_selafin.py results.slf --info'', ''Chec'
-unit_conversions: []
+  symptom: Post-processing reads wrong variable; column labelled 'H' contains velocity data
+  diagnosis: SELAFIN variable order does not match post-processing assumptions; The SELAFIN file stores
+    variables in the order specified by VARIABLES FOR GRAPHIC PRINTOUTS. If a post-processing script assumes
+    a fixed order (e.g., U,V,H) but the .cas specifies (H,U,V), the extracted data will be misaligned.
+    Custo
+  remedy: 'Always read variable names from the SELAFIN header, never assume order; parse_selafin.py --info;
+    [''Run: python parse_selafin.py results.slf --info'', ''Check variable names and order in output'',
+    ''Use variable names (not indices) when extracting data'']; parse_selafin.py uses header variable
+    names for C'
+  severity: degraded

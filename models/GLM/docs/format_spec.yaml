@@ -1,281 +1,903 @@
-# format_spec.yaml — GLM v3.3.3 (enriched with coupling inputs)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: GLM v3.3.3
-  domain: lake
-  secondary_domains:
-  - water_quality
-  binary: glm
-  binary_path: KISSPATH_BINARIES/glm/bin/glm
-  language: Fortran / C
-  working_directory: directory containing glm3.nml
-  notes: 1D vertical hydrodynamic model for lakes and reservoirs. Optional AED2 water quality library.
+  name: GLM
+  language: c
+  implementation:
+    id: glm-aed-333
+    version: 3.3.3
+    provenance: C (core) with Fortran AED2 modules; AquaticEcoDynamics (UWA) General Lake Model + AED2
+      library, single compiled binary.
+  scientific_reference_version: GLM 3.0 science (Hipsey et al. 2019, GMD 12:473-523); AED2 water-quality
+    coupling
 inputs:
   forcing:
-  - name: shortwave_radiation
-    file: met CSV (ShortWave column)
+  - name: ShortWave (incoming shortwave radiation)
     unit: W/m2
-    valid_range:
-    - 0.0
-    - 1400.0
-    format: CSV, column header ShortWave
-  - name: longwave_radiation
-    file: met CSV (LongWave column)
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met CSV column read per &meteorology; required for rad_mode 0-3
+    notes: Must be clipped to >= 0; un-clipped night-time negatives after interpolation can drive NaN
+      temperatures. Daily values internally disaggregated to an idealized diurnal cycle.
+  - name: LongWave (incoming longwave radiation)
     unit: W/m2
-    valid_range:
-    - 50.0
-    - 600.0
-    format: CSV, column header LongWave
-    notes: Used when lw_type = 'LW_IN'. If lw_type = 'LW_CC', GLM computes LW from cloud cover.
-  - name: air_temperature
-    file: met CSV (AirTemp column)
-    unit: degC
-    valid_range:
-    - -50.0
-    - 55.0
-    format: CSV, column header AirTemp
-  - name: relative_humidity
-    file: met CSV (RelHum column)
-    unit: percent (0-100)
-    valid_range:
-    - 0.0
-    - 100.0
-    format: CSV, column header RelHum
-    conversion_from_vic: 'VP (kPa) to RH%: RH = 100 * VP / (0.6108 * exp(17.27*T/(T+237.3)))'
-    notes: GLM expects 0-100%. If RH is 0.7 instead of 70, GLM computes extreme evaporation.
-  - name: wind_speed
-    file: met CSV (WindSpeed column)
-    unit: m/s
-    valid_range:
-    - 0.0
-    - 80.0
-    format: CSV, column header WindSpeed
-  - name: precipitation
-    file: met CSV (Rain column)
-    unit: m/day
-    valid_range:
-    - 0.0
-    - 0.5
-    format: CSV, column header Rain
-    conversion_from_cmfd: CMFD mm/3hr * 8 / 1000 = m/day
-    notes: GLM expects m/day, NOT mm/day. Off by 1000x if /1000 is skipped.
-  - name: cloud_cover
-    file: met CSV (Cloud column)
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met CSV column; consumed when lw_type=LW_IN / rad_mode=2
+    notes: 'lw_type selects handling: LW_IN reads this column, LW_CC computes longwave from cloud cover.
+      Mismatch double-counts longwave and warms summer surface by 3-5 degC.'
+  - name: Clouds (cloud cover fraction)
     unit: fraction (0-1)
-    valid_range:
-    - 0.0
-    - 1.0
-    format: CSV, column header Cloud
-    notes: Used when lw_type = 'LW_CC'.
-  parameters:
-    critical:
-    - name: Kw
-      file: glm3.nml (&light block)
-      description: Light extinction coefficient
-      valid_range:
-      - 0.1
-      - 5.0
-      default: 0.5
-      unit: 1/m
-      bug_history: 'Single most sensitive parameter. Too high (>3): no stratification. Too low (<0.1): unrealistic deep heating.
-        Rule: Kw ~ 1.7 / Secchi_depth_m. Triplet dt_019.
-
-        '
-    - name: bsn_vals
-      file: glm3.nml (&morphometry block)
-      description: Number of elevation-area pairs in morphometry
-      valid_range:
-      - 2
-      - 1000
-      unit: count
-      bug_history: 'Must exactly match length of H[] and A[] arrays. Mismatch crashes GLM at startup. Always auto-compute
-        from len(H). Triplet dt_008.
-
-        '
-    - name: H_and_A_arrays
-      file: glm3.nml (&morphometry block)
-      description: Elevation (H) and area (A) arrays for lake bathymetry
-      unit: m, m2
-      bug_history: 'H[] and A[] must be ascending (bottom to top). H[0] is deepest point, H[n] is crest. A[0] should be 0
-        (point at bottom). Reversed arrays crash GLM. Triplet dt_006.
-
-        '
-    - name: dt_iceon_avg
-      file: glm3.nml (&snowice block)
-      description: Ice onset averaging window
-      valid_range:
-      - 0.001
-      - 0.04
-      default: 0.02
-      unit: days
-      bug_history: 'Without dt_iceon_avg, ice model is SILENTLY DISABLED. Surface temp asymptotes to ~0.002 C but never freezes,
-        producing zero ice even with -15 C air. For deep reservoirs (>50m), must be <= 0.04 days. Triplet dt_027.
-
-        '
-    - name: lw_type
-      file: glm3.nml (&meteorology block)
-      description: Longwave radiation input type
-      valid_range:
-      - LW_IN
-      - LW_CC
-      - LW_NET
-      default: LW_CC
-      bug_history: 'Using LW_IN with incorrect LW values causes 3-5 degC warm bias in summer. Double-counting if forcing has
-        LW but lw_type=LW_CC also computes it. Triplet dt_020.
-
-        '
-    - name: inflow_salinity
-      file: inflow CSV (SALT column)
-      description: Inflow salinity for freshwater lakes
-      valid_range:
-      - 0.0
-      - 0.0
-      default: 0.0
-      unit: PSU
-      bug_history: 'Non-zero inflow salinity changes density calculation, causing inflow to insert at wrong depth. Creates
-        artificial intrusion layers and disrupts thermal structure silently. Triplet dt_022.
-
-        '
-  files:
-    required:
-    - name: glm3.nml
-      description: Master namelist file (13 Fortran namelist blocks)
-      format: Fortran namelist — string values MUST use single quotes
-    - name: met CSV
-      description: Meteorological forcing time series
-      format: CSV with datetime + ShortWave, LongWave, AirTemp, RelHum, WindSpeed, Rain, Cloud
-    optional:
-    - name: inflow CSV
-      description: Lake inflow time series (from CaMa-Flood or VIC)
-      format: CSV with FLOW (m3/s), TEMP (degC), SALT (PSU)
-    - name: outflow CSV
-      description: Lake outflow configuration
-    - name: aed2.nml
-      description: AED2 water quality configuration
-      format: Fortran namelist — required for WQ simulation
-  boundary_conditions:
-  - name: inflow_discharge
-    file: inflow CSV (FLOW column)
-    unit: m3/s
-    valid_range:
-    - 0.0
-    - null
-    format: 'CSV with columns: time, FLOW, TEMP, SALT'
-    notes: Lake inflow from upstream catchment. Typically from CaMa-Flood discharge or VIC runoff aggregation. Density-driven
-      insertion at neutral buoyancy depth.
-    conversion_from_cama: 'CaMa outflw (m3/s) → GLM FLOW (m3/s): direct, same unit'
-  - name: inflow_temperature
-    file: inflow CSV (TEMP column)
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met CSV column; required for rad_mode 0,1,4 / lw_type=LW_CC
+  - name: AirTemp (air temperature at ~10 m)
     unit: degC
-    valid_range:
-    - 0.0
-    - 35.0
-    format: CSV
-    notes: Temperature of inflowing water. Affects insertion depth.
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met CSV column
+  - name: RelHum (relative humidity at ~10 m)
+    unit: '% (0-100)'
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met CSV column
+    notes: Must be percent (0-100), NOT fraction (0-1); a fractional value is read literally (0.7 -> 0.7%
+      RH) and produces runaway evaporation.
+  - name: WindSpeed (at ~10 m)
+    unit: m/s
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met CSV column
+    notes: Outliers (>30 m/s) can destabilize the mixing solver and yield NaN temperatures.
+  - name: Rain (rainfall depth)
+    unit: m/day
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met CSV column
+    notes: Native unit is m/day, NOT mm/day; an mm/day value is 1000x too large and causes continuous
+      overflow. Rain partitioned to snow below snow_threshold.
+  - name: Snow (snowfall depth)
+    unit: m/day
+    category: meteorology
+    source_kind: forcing
+    model_input_format: met CSV column; consumed when snow_sw / snowice active
+  - name: inflow FLOW (riverine inflow rate)
+    unit: ML/day
+    category: boundary_inflow
+    source_kind: forcing
+    model_input_format: inflow CSV column (daily); one file per configured inflow
+    notes: Inflow inserted at neutral-buoyancy depth set by its density relative to the column.
+  - name: inflow TEMP (inflow water temperature)
+    unit: degC
+    category: boundary_inflow
+    source_kind: forcing
+    model_input_format: inflow CSV column
+    notes: Required; a missing/zero TEMP inserts 0 degC water forming an artificial cold density current
+      that disrupts thermal structure.
+  - name: inflow SALT (inflow salinity)
+    unit: mg/L
+    category: boundary_inflow
+    source_kind: forcing
+    model_input_format: inflow CSV column
+    notes: Must be 0 for freshwater lakes; non-zero salinity raises inflow density and inserts the inflow
+      too deep.
+  - name: inflow WQ constituents (AED2)
+    unit: mmol/m3
+    category: boundary_inflow
+    source_kind: forcing
+    model_input_format: extra inflow CSV columns (NIT_nit, NIT_amm, PHS_frp, OGM_*, OXY_oxy, SIL_rsi,
+      PHY_*) when AED2 enabled
+    notes: Absent nutrient columns give zero external loading; AED2 phytoplankton then collapse to near-zero
+      biomass.
+  - name: outflow FLOW (withdrawal/release rate)
+    unit: ML/day
+    category: boundary_outflow
+    source_kind: forcing
+    model_input_format: outflow CSV column (daily); one column per configured outlet; or internal natural
+      overflow
+  parameters:
+  - name: Kw (light extinction coefficient)
+    unit: 1/m
+    category: light
+    source_kind: calibrated
+    model_input_format: '&light namelist'
+    notes: Controls thermocline depth and light penetration; Kw ~ 1.7/Secchi_depth_m. Too high (>3) suppresses
+      stratification; too low (<0.1) gives unrealistic deep heating.
+  - name: coef_wind_stir (wind stirring coefficient)
+    unit: '-'
+    category: mixing
+    source_kind: calibrated
+    model_input_format: '&mixing namelist'
+    notes: Sets surface mixed-layer depth; too high prevents stratification in small sheltered lakes.
+  - name: coef_mix_hyp (hypolimnetic/deep mixing coefficient)
+    unit: '-'
+    category: mixing
+    source_kind: calibrated
+    model_input_format: '&mixing namelist'
+  - name: coef_mix_conv (convective mixing coefficient)
+    unit: '-'
+    category: mixing
+    source_kind: calibrated
+    model_input_format: '&mixing namelist'
+  - name: ce, ch, cd (bulk transfer coefficients for latent, sensible, momentum flux)
+    unit: '-'
+    category: meteorology
+    source_kind: calibrated
+    model_input_format: '&meteorology namelist'
+  - name: wind_factor, sw_factor, lw_factor, rain_factor, at_factor, rh_factor (forcing scaling factors)
+    unit: '-'
+    category: meteorology
+    source_kind: calibrated
+    model_input_format: '&meteorology namelist'
+    notes: Multiplicative scalings applied to met forcing variables; wind_factor and sw_factor are dominant
+      temperature calibration levers.
+  - name: hypsographic curve H[] / A[] (depth-area, optionally volume)
+    unit: m / m2
+    category: morphometry
+    source_kind: dataset_lookup
+    model_input_format: '&morphometry namelist (bsn_vals points)'
+    notes: H[] and A[] must be monotonically ascending bottom-to-top with A[0]~0 and crest_elev=max(H);
+      >=10-15 points recommended for realistic volume.
+  - name: min_layer_thick / max_layer_thick (h_min / h_max)
+    unit: m
+    category: layer_control
+    source_kind: calibrated
+    model_input_format: '&glm_setup namelist'
+    notes: Bound the adaptive Lagrangian layer thickness; max_layer_thick too small triggers layer-merge
+      errors/hangs.
+  - name: strm_hf_angle, strmbd_slope, strmbd_drag, submerged
+    unit: '-'
+    category: inflow_geometry
+    source_kind: calibrated
+    model_input_format: '&inflow namelist (per inflow)'
+  - name: outl_elevs, bsn_len_outl, bsn_wid_outl, seepage_rate
+    unit: m / m / m / m/day
+    category: outflow_geometry
+    source_kind: calibrated
+    model_input_format: '&outflow namelist'
+  - name: R_growth (max phytoplankton growth rate)
+    unit: 1/day
+    category: aed2
+    source_kind: calibrated
+    model_input_format: aed2.nml (phytoplankton); AED2 enabled
+    notes: Sets total phytoplankton biomass level.
+  - name: I_S (light saturation)
+    unit: W/m2
+    category: aed2
+    source_kind: calibrated
+    model_input_format: aed2.nml (phytoplankton); AED2 enabled
+  - name: w_p (phytoplankton sedimentation velocity)
+    unit: m/day
+    category: aed2
+    source_kind: calibrated
+    model_input_format: aed2.nml (phytoplankton); AED2 enabled
+    notes: Negative sinks, positive floats.
+  - name: Fsed_frp (sediment P release / internal loading)
+    unit: mmol/m2/day
+    category: aed2
+    source_kind: calibrated
+    model_input_format: aed2.nml (phosphorus); AED2 enabled
+  - name: Fsed_oxy (sediment oxygen demand)
+    unit: mmol/m2/day
+    category: aed2
+    source_kind: calibrated
+    model_input_format: aed2.nml (oxygen); AED2 enabled
+  initial_conditions:
+  - name: initial temperature/salinity depth profiles
+    unit: degC / mg/L
+    category: profiles
+    source_kind: user_provided
+    model_input_format: '&init_profiles namelist (depth-value pairs; initial layers equal thickness)'
+    notes: lake_depth must not exceed morphometry max depth (max(H)-min(H)).
+  - name: initial AED2 WQ depth profiles
+    unit: mmol/m3 (AED2 vars)
+    category: profiles
+    source_kind: user_provided
+    model_input_format: '&init_profiles WQ entries; count must equal num_wq_vars * num_depths'
+  boundary_conditions:
+  - name: rad_mode (radiation mode selector)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: '&meteorology namelist'
+    notes: Selects required shortwave/longwave/cloud combination; the supplied met columns must be consistent
+      with it.
+  - name: 'lw_type (longwave handling: LW_IN vs LW_CC)'
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: '&meteorology namelist'
+  - name: subdaily (sub-daily forcing switch)
+    unit: boolean
+    category: control
+    source_kind: user_provided
+    model_input_format: '&meteorology namelist'
+    notes: subdaily=.true. with 3-hourly forcing produces flat/unrealistic temperatures; use daily forcing
+      with subdaily=.false. unless forcing is hourly.
+  - name: timefmt + start/stop (simulation time configuration)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: '&time namelist'
+    notes: timefmt=2 for datetime strings, timefmt=3 for integer seconds; mismatch crashes the namelist
+      read.
+  - name: dt_iceon_avg + min_ice_thickness (ice model enablement)
+    unit: days / m
+    category: control
+    source_kind: user_provided
+    model_input_format: '&snowice namelist'
+    notes: Both must be set to enable the ice model; otherwise ice is silently disabled and surface temperature
+      floors near 0.002 degC. For deep reservoirs (>50 m) dt_iceon_avg <= 0.04.
+  - name: outflow mode (natural overflow / constant / scheduled / balance)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: '&outflow namelist'
+  - name: num_inflows / num_outlets (inflow & outlet counts)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: '&inflow / &outflow namelist'
+    notes: num_inflows must match the number of inflow files; a count of 0 with files listed silently
+      ignores all inflow.
+  - name: AED2 module activation list (&aed_models)
+    unit: '-'
+    category: control
+    source_kind: user_provided
+    model_input_format: aed2.nml
+    notes: Phytoplankton requires oxygen, nitrogen, phosphorus and organic_matter modules (silica for
+      diatoms) listed before it; missing dependencies crash at init.
 outputs:
   primary:
-  - name: temperature_profile
-    file: output/output.nc
+  - name: temp
     unit: degC
-    valid_range:
-    - 0.0
-    - 40.0
-    key_columns:
-    - temp
-    format: NetCDF (time x depth)
-    notes: Vertical temperature profile at each timestep.
+    description: Water temperature per Lagrangian layer (depth x time profile).
+    validation_rank: 2
+    emitted_in: output.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare at matched depths; Lagrangian layers shift between outputs so interpolate to fixed observation
+          depths.
+        - Documented warm bias (~3-5 degC summer surface) driven by longwave handling.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - The 'spatial' axis here is the vertical depth-time temperature field, not a horizontal grid.
+      detrending_options:
+      - none
+  - name: surface_temp
+    unit: degC
+    description: Surface (mixed-layer) water temperature.
+    validation_rank: 3
+    emitted_in: lake.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Satellite LSWT is a skin temperature; bulk surface-layer temperature differs slightly.
+      detrending_options:
+      - none
+  - name: bottom_temp
+    unit: degC
+    description: Bottom (hypolimnetic) water temperature.
+    validation_rank: 4
+    emitted_in: lake.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
   - name: lake_level
-    file: output/lake.csv
     unit: m
-    valid_range: null
-    key_columns:
-    - Lake Level
-    format: CSV time series
-  - name: surface_temperature
-    file: output/lake.csv
-    unit: degC
-    valid_range:
-    - 0.0
-    - 35.0
-    key_columns:
-    - Surface Temp
-  - name: aed2_wq_output
-    file: output/output.nc
-    unit: various (mmol/m3)
-    notes: Only present when AED2 is enabled. Includes DO, nutrients, Chl-a.
-  diagnostics:
-  - name: thermal_stratification
-    check: Summer surface-bottom temperature difference > 5 degC for stratified lakes
-    notes: Lack of stratification usually means Kw is too high or wind is too strong.
-  - name: ice_cover
-    check: Ice forms when air temp < 0 for sustained periods
-    notes: If no ice despite cold temperatures, check dt_iceon_avg setting.
-  - name: water_balance
-    check: Lake level stable or follows expected seasonal pattern
-    notes: Rapid lake level drop suggests excessive evaporation (check RH units).
+    description: Water surface elevation.
+    validation_rank: 1
+    emitted_in: lake.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Sensitive to the water-balance closure; check inflow/outflow gauging and seepage.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: lake_volume
+    unit: m3
+    description: Total lake/reservoir storage volume.
+    validation_rank: 5
+    emitted_in: lake.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Storage usually derived from observed level via the same hypsographic curve.
+      detrending_options:
+      - none
+  - name: ice_thickness
+    unit: m
+    description: Combined blue/white ice (and snow) cover thickness and duration.
+    validation_rank: 6
+    emitted_in: output.nc / lake.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Requires dt_iceon_avg/min_ice_thickness set or ice is silently zero; ice days tend to be underestimated.
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Ice-on/ice-off as event dates; evaluate freeze/thaw DOY timing.
+      detrending_options:
+      - none
+  - name: evaporation
+    unit: ML/day
+    description: Daily lake evaporative mass flux.
+    validation_rank: 7
+    emitted_in: lake.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Direct evaporation observations are rare; often inferred from energy-balance or water-balance
+          residual.
+      detrending_options:
+      - none
+  - name: thermocline_depth
+    unit: m
+    description: Depth of the thermocline in lake/reservoir water (derived when stratified).
+    validation_rank: 8
+    emitted_in: derived
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Derived from the profile via a consistent definition (e.g., max density gradient) for both model
+          and obs.
+      detrending_options:
+      - none
+  - name: schmidt_stability
+    unit: J/m2
+    description: Schmidt stability of the water column (derived stratification strength).
+    validation_rank: 9
+    emitted_in: derived
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Computed from the temperature profile and hypsography; use the same algorithm (e.g., LakeAnalyzer)
+          for model and obs.
+      detrending_options:
+      - none
+  - name: PHY_tchla
+    unit: ug/L
+    description: Total chlorophyll-a (AED2 phytoplankton).
+    validation_rank: 10
+    emitted_in: output.nc (AED2 enabled)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Requires nutrient inflow loading or biomass collapses to near-zero; chlorophyll is highly parameter-sensitive.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Trophic-state comparison (e.g., seasonal mean chlorophyll) rather than instantaneous match.
+      detrending_options:
+      - none
+  - name: OXY_oxy
+    unit: mmol O2/m3
+    description: Dissolved oxygen concentration in lake/reservoir water (AED2).
+    validation_rank: 11
+    emitted_in: output.nc (AED2 enabled)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Hypolimnetic DO depletion strongly controlled by Fsed_oxy sediment demand.
+      detrending_options:
+      - none
+  - name: NIT_nit, NIT_amm, PHS_frp
+    unit: mmol/m3
+    description: 'Dissolved nutrient species in lake/reservoir water: nitrate, ammonium, filterable reactive
+      phosphorus (AED2).'
+    validation_rank: 12
+    emitted_in: output.nc (AED2 enabled)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Depends on inflow nutrient loading and Fsed_frp internal loading.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- id: rain_unit_error
-  triplet: dt_001
-  description: Rain in mm/day instead of m/day — lake floods continuously
-  affected_output: Lake level, all outputs
-  detection: Lake level rises unrealistically
-  fix: 'Divide by 1000: m/day = mm/day / 1000'
-- id: rh_fraction_not_pct
-  triplet: dt_002
-  description: Relative humidity 0-1 instead of 0-100% — extreme evaporation
-  affected_output: Lake level, surface temperature
-  detection: Lake level drops rapidly, extreme evaporation
-  fix: 'Multiply by 100: RH% = RH_fraction * 100'
-- id: fortran_double_quotes
-  triplet: dt_005
-  description: Double quotes in glm3.nml cause Fortran parse error
-  affected_output: GLM fails to start
-  detection: Fortran namelist read error
-  fix: Use single quotes for all string values in namelist
-- id: morphometry_reversed
-  triplet: dt_006
-  description: H[] and A[] arrays in descending order — crash
-  affected_output: GLM crashes at startup
-  detection: GLM abort on morphometry read
-  fix: Sort H[] and A[] ascending (bottom to top)
-- id: bsn_vals_mismatch
-  triplet: dt_008
-  description: bsn_vals does not match H/A array length — crash
-  affected_output: GLM crashes at startup
-  detection: Array bounds error
-  fix: Set bsn_vals = len(H)
-- id: aed2_nan_thermal_only
-  triplet: dt_028
-  description: AED2 phytoplankton module without dependencies produces NaN
-  affected_output: AED2 WQ outputs
-  detection: NaN values in WQ variables
-  fix: Enable all dependency modules (oxygen, nitrogen, phosphorus, organic_matter) or use thermal-only mode (disable AED2)
-- id: aed2_no_inflow_nutrients
-  triplet: dt_029
-  description: AED2 with zero inflow nutrient loading depletes nutrients rapidly
-  affected_output: Phytoplankton, nutrient concentrations
-  detection: Nutrients drop to zero within weeks
-  fix: Use configure_inflow_wq.py to add nutrient columns to inflow CSV
-- id: ice_silently_disabled
-  triplet: dt_027
-  description: Missing dt_iceon_avg silently disables ice model
-  affected_output: Ice thickness = 0 despite freezing conditions
-  detection: Surface temp ~0.002 C, zero ice
-  fix: Set dt_iceon_avg = 0.02, min_ice_thickness = 0.001
-- id: lw_double_counting
-  triplet: dt_020
-  description: LongWave double-counting when lw_type mismatches forcing
-  affected_output: Surface temperature (3-5 degC warm bias)
-  detection: Systematic warm bias in summer
-  fix: 'Match lw_type to forcing content: LW_IN if forcing has LW, LW_CC if cloud cover'
-expected_ranges:
-  miyun_reservoir:
-    validation_period: 2001-2010
-    surface_temp_range_degC:
-    - 0
-    - 30
-    bottom_temp_range_degC:
-    - 4
-    - 15
-    summer_stratification_diff_degC: '>5'
-    runtime_seconds: <1 for 32 years (Sparkling Lake example)
+- id: dt_001
+  symptom: Lake level rises continuously, overflow every day. Lake volume grows unrealistically.
+  diagnosis: 'Rain in mm/day instead of m/day — 1000x too much precipitation input; GLM expects rain in
+    meters per day (m/day). CMFD and MSWX provide precipitation in mm per 3-hour timestep. The correct
+    conversion is: mm/3hr * 8 / 1000 = m/day. If the /1000 step is omitted, the lake receives 1000x too
+    much rain.
+
+    '
+  remedy: Divide rain values by 1000 in convert_met_to_glm.py; convert_met_to_glm; ['Check max rain value
+    in met CSV — should be < 0.5 m/day for most climates', 'If max rain > 1.0 m/day, values are likely
+    in mm/day — divide by 1000']; validate_outputs() in convert_met_to_glm checks for unrealistic rain
+    values
+  severity: silent
+- id: dt_002
+  symptom: Lake dries up rapidly. Extreme evaporation. Lake level drops to zero.
+  diagnosis: RelHum as fraction (0-1) instead of percentage (0-100); GLM expects relative humidity as
+    percentage (0-100). CMFD/MSWX provide vapor pressure in kPa, which must be converted to RH%. If the
+    conversion yields values in 0-1 range instead of 0-100, GLM computes enormous evaporation because
+    it interprets
+  remedy: Multiply RH by 100 if values are in 0-1 range; convert_met_to_glm; ['Check max RelHum in met
+    CSV — should be 60-100 for most climates', 'If max RelHum < 1.0, values are fraction — multiply by
+    100']; validate_outputs() checks for RH < 1.0 and warns
+  severity: silent
+- id: dt_003
+  symptom: Negative shortwave radiation values in forcing CSV. May cause NaN in temperature.
+  diagnosis: 'Night-time shortwave radiation not clipped to zero after temporal interpolation; When interpolating
+    3-hourly forcing to hourly, linear interpolation can produce small negative values for shortwave radiation
+    during night-time transitions. GLM may handle these as-is or produce numerical artifacts.
+
+    ; ['
+  remedy: Apply max(0, SW) after interpolation; convert_met_to_glm; ['Check min ShortWave value in met
+    CSV — must be >= 0']; convert_met_to_glm applies np.maximum(sw, 0.0) by default
+  severity: silent
+- id: dt_004
+  symptom: Inflow temperature always 0 degC or NaN. Artificial cold layer forms at insertion depth.
+  diagnosis: 'Temperature column missing from inflow CSV or not estimated from air temperature; GLM reads
+    TEMP from inflow CSV. If the column is missing or all zeros, the inflow water enters at 0 degC, creating
+    an artificially cold density current that sinks to the bottom and disrupts the thermal structure.
+
+    ; [''c'
+  remedy: Estimate inflow temperature from air temperature using T_water = 0.9*T_air + 1.5; convert_inflow_to_glm;
+    ['Verify TEMP column exists in inflow CSV', 'Check that values are physically reasonable (0-30 degC
+    typically)']; convert_inflow_to_glm auto-estimates T from met CSV if available
+  severity: degraded
+- id: dt_005
+  symptom: Fortran read error on namelist. GLM crashes at startup with parse error.
+  diagnosis: 'String values use double quotes instead of single quotes in Fortran namelist; Fortran namelists
+    require single-quoted strings (''value''). Double-quoted strings ("value") cause a parse error. This
+    is a common mistake when generating namelists from Python, which prefers double quotes.
+
+    ; [''generate_glm_'
+  remedy: Replace all double quotes with single quotes in glm3.nml; generate_glm_nml; ['sed -i "s/\\"/\'/g"
+    glm3.nml']; generate_glm_nml uses fmt_str() which always produces single quotes
+  severity: fatal
+- id: dt_006
+  symptom: GLM crashes at startup with layer thickness or morphometry error.
+  diagnosis: H[] and A[] arrays not monotonically increasing (bottom to top); GLM requires the morphometry
+    arrays H[] (elevation) and A[] (area) to be in ascending order from the lake bottom to the surface.
+    If they are reversed (top to bottom), or contain non-monotonic values, GLM cannot construct the Lagrangian
+  remedy: Sort H[] in ascending order and ensure A[] corresponds correctly; build_morphometry; ['Verify
+    H[0] < H[1] < ... < H[n]', 'Verify A[0] <= A[1] <= ... <= A[n]', 'A[0] should be 0 or near-0 (lake
+    bottom)']; build_morphometry validates monotonicity in validate_outputs()
+  severity: fatal
+- id: dt_007
+  symptom: Lake volume is unrealistic. Stratification develops at wrong depth.
+  diagnosis: 'Depth-area curve has too few points (< 5); With fewer than 5 points in the hypsographic
+    curve, the volume approximation is very crude. This can cause the lake to have significantly wrong
+    total volume, which affects all water balance calculations and stratification dynamics.
+
+    ; [''build_morphometry'']'
+  remedy: Interpolate to at least 10-15 depth levels; build_morphometry; ['Use --num_levels 15 (default)
+    when running build_morphometry']; build_morphometry defaults to 15 levels
+  severity: degraded
+- id: dt_008
+  symptom: 'GLM crashes: bsn_vals does not match number of H/A values'
+  diagnosis: 'bsn_vals manually set but does not match actual H[] and A[] array lengths; The bsn_vals
+    parameter must exactly equal the number of elements in both H[] and A[] arrays. If set manually (e.g.,
+    from an old namelist), it may not match the arrays generated by build_morphometry.
+
+    ; [''generate_glm_nml'', ''mo'
+  remedy: Auto-compute bsn_vals from len(H) in generate_glm_nml; generate_glm_nml; ['Count elements in
+    H array and set bsn_vals to that number']; generate_glm_nml auto-computes bsn_vals = len(H)
+  severity: fatal
+- id: dt_009
+  symptom: 'GLM crashes: lake_depth exceeds morphometry maximum depth'
+  diagnosis: 'init_profiles lake_depth > max(H) - min(H); The initial lake depth cannot exceed the maximum
+    depth defined by the morphometry (crest_elev - bottom_elev). If it does, GLM cannot create the initial
+    layer structure.
+
+    ; [''build_init_profiles'', ''init_profiles_block'']'
+  remedy: Clip lake_depth to morphometry range; build_init_profiles; ['Set lake_depth = max(H) - min(H)
+    or slightly less']; build_init_profiles clips when --max_morph_depth is provided
+  severity: fatal
+- id: dt_010
+  symptom: num_inflows is 0 but inflow CSV files are referenced. Inflow is silently ignored.
+  diagnosis: 'Inconsistency between num_inflows count and inflow file list; If num_inflows = 0, GLM ignores
+    all inflow_fl entries. The lake runs without any river input, which may be incorrect. This produces
+    no error message.
+
+    ; [''generate_glm_nml'', ''inflow_block'']'
+  remedy: Set num_inflows to match the number of inflow CSV files; generate_glm_nml; ['Count inflow CSV
+    files and set num_inflows accordingly']; generate_glm_nml auto-sets num_inflows from inflow_csv argument
+  severity: silent
+- id: dt_011
+  symptom: Unable to open meteo file. GLM exits immediately.
+  diagnosis: 'meteo_fl path in namelist is relative but GLM run from wrong directory; GLM resolves file
+    paths relative to the current working directory, not the namelist file location. If you run GLM from
+    a different directory than where the namelist and data files are, all relative paths will fail.
+
+    ; [''run_glm'','
+  remedy: Use absolute paths in namelist, or ensure cd to run directory before executing; run_glm; ['cd
+    to the directory containing glm3.nml before running', 'Or convert all paths in glm3.nml to absolute
+    paths']; run_glm uses cwd=run_dir to ensure correct working directory
+  severity: fatal
+- id: dt_012
+  symptom: Unable to open inflow file. GLM exits during setup.
+  diagnosis: 'inflow_fl path does not match actual file location; Same as dt_011 but for inflow files.
+    The inflow_fl path must be resolvable from the GLM working directory.
+
+    ; [''run_glm'', ''inflow_block'']'
+  remedy: Verify all file paths in namelist exist before running GLM; run_glm; ['run_glm preflight check
+    validates all referenced file paths']; run_glm validates met, inflow, and outflow file paths before
+    execution
+  severity: fatal
+- id: dt_013
+  symptom: GLM crashes with NaN in temperature. Simulation aborts mid-run.
+  diagnosis: 'Extremely large wind speed or unrealistic forcing causing numerical instability; Very high
+    wind speeds (>50 m/s sustained), zero timestep, or extreme temperature swings can cause the mixing
+    calculations to produce NaN values, which propagate through the temperature profile and crash the
+    model.
+
+    ; [''m'
+  remedy: Check forcing data for outliers. Ensure dt >= 60 seconds.; ; ['Check WindSpeed column for values
+    > 30 m/s', 'Check AirTemp for sudden jumps > 20 degC between timesteps', 'Ensure dt = 3600 (standard
+    hourly timestep)', 'Try reducing wind_factor if wind data is noisy']; validate_outputs in convert_met_
+  severity: fatal
+- id: dt_014
+  symptom: Ice model produces unrealistic thickness (>5m). Permanent ice cover in warm climate.
+  diagnosis: Snow accumulation without melt in warm/tropical climate due to temperature data issues; For
+    tropical lakes (latitude < 23), the snowice model should produce negligible or zero ice. If ice thickness
+    grows unrealistically, it usually means the temperature data has errors (e.g., negative bias) or the
+    s
+  remedy: For tropical lakes, verify temperature data. Consider increasing min_layer_thick.; ; ['Check
+    if AirTemp is consistently below 0 degC (wrong for tropical)', 'Verify latitude is correct in morphometry
+    block', 'GLM handles ice automatically — if data is correct, ice should be zero']; verify latitude
+    an
+  severity: degraded
+- id: dt_015
+  symptom: Layer merge error or GLM appears to hang in infinite loop
+  diagnosis: max_layer_thick too small relative to lake depth, causing excessive layer splitting; If max_layer_thick
+    is too small, GLM creates many layers that constantly split and merge, potentially causing performance
+    issues or numerical errors. For very deep lakes (>100m), increase max_layer_thick to 1.0-2.0m
+  remedy: 'Increase max_layer_thick. For deep lakes (>100m), use 1.0-2.0m.; ; [''Edit glm3.nml: max_layer_thick
+    = 1.0 (for deep lakes)'', ''Optionally reduce max_layers from 500 to 200'']; generate_glm_nml scales
+    max_layer_thick based on depth'
+  severity: fatal
+- id: dt_016
+  symptom: Inflow timing offset — flow arrives 1 day early or late
+  diagnosis: 'Timezone mismatch between forcing and inflow data; If the meteorological CSV uses UTC timestamps
+    but the inflow CSV uses local time (or vice versa), there is a systematic offset. For Chinese lakes
+    (UTC+8), this is an 8-hour shift that can place peak inflows at the wrong time of day.
+
+    ; [''convert_met_'
+  remedy: Ensure all CSV timestamps use the same timezone as GLM timezone parameter; ; ['Check timezone
+    parameter in &time block', 'Verify met CSV and inflow CSV use consistent time references']; Use the
+    same timezone convention throughout the pipeline
+  severity: silent
+- id: dt_017
+  symptom: CaMa-Flood discharge is inconsistent with GLM inflow. Water balance does not close.
+  diagnosis: 'CaMa grid cell does not correspond to the actual lake inlet; When extracting CaMa-Flood
+    discharge for GLM inflow, the grid cell must be the one immediately upstream of the lake, not the
+    lake cell itself. Using the wrong cell produces flow from a different tributary.
+
+    ; [''convert_inflow_to_glm'', ''glm_'
+  remedy: Verify spatial alignment of CaMa output point with GLM inflow location; ; ['Check CaMa river
+    network to find the correct upstream cell', 'Compare total inflow volume to expected watershed runoff'];
+    Verify inflow makes hydrological sense (Q ~ P * A * runoff_coeff)
+  severity: silent
+- id: dt_018
+  symptom: Temperature heatmap shows artifacts at depth boundaries. Stripy patterns.
+  diagnosis: 'Output nsave too large — misses diurnal cycle and layer dynamics; If nsave is set too high
+    (e.g., 168 = weekly), the output captures only snapshots of the evolving layer structure. The Lagrangian
+    layers change depth between outputs, creating visual artifacts in the heatmap.
+
+    ; [''output_block'']'
+  remedy: Set nsave to 24 (daily) or lower for thermal analysis; generate_glm_nml; ['Edit nsave in &output
+    block to 24 (daily, with dt=3600)']; generate_glm_nml defaults to nsave=24
+  severity: degraded
+- id: dt_019
+  symptom: Stratification never develops in deep lake. Surface-to-bottom temp difference < 2 degC.
+  diagnosis: Kw (light extinction) too high — all solar energy absorbed near surface; High Kw values (>3
+    m^-1) cause all shortwave radiation to be absorbed in the top 1-2 meters. No heat penetrates deeper,
+    so the surface warms but the deep water stays cold — BUT wind mixing then immediately redistributes
+    this su
+  remedy: 'Use literature Kw values. Clear lakes: 0.2-0.5, moderate: 0.5-1.5, turbid: 1.5-3.0; calibrate_glm;
+    [''Check Kw value in &light block'', ''For clear oligotrophic lakes, start with Kw = 0.3'', ''For
+    eutrophic lakes with algae, Kw = 1.0-2.0'', ''Secchi depth relationship: Kw ~ 1.7 / Secchi_depth_m''];
+    generate'
+  severity: silent
+- id: dt_020
+  symptom: Summer surface temperatures 3-5 degC too warm. Excessive heating.
+  diagnosis: 'Longwave radiation double-counted — both computed internally and provided in forcing; GLM
+    has two longwave modes: ''LW_IN'' (incoming LW provided in forcing CSV) and ''LW_CC'' (computed from
+    cloud cover). If lw_type=''LW_CC'' but the forcing CSV also contains a LongWave column, the column
+    is ignored. But '
+  remedy: 'Set lw_type consistently: ''LW_IN'' if forcing has measured/modeled LW, ''LW_CC'' if only cloud
+    cover; generate_glm_nml; [''Check if LongWave column in met CSV contains real incoming LW data'',
+    "If so, use lw_type = ''LW_IN''", "If LW is computed from cloud cover, use lw_type = ''LW_CC'' and
+    provide Cloud col'
+  severity: silent
+- id: dt_021
+  symptom: Mixing too strong — no thermal stratification develops even in summer
+  diagnosis: 'coef_wind_stir or wind_factor too high for sheltered or small lake; Large wind_factor (>1.5)
+    or coef_wind_stir (>0.8) can prevent stratification by mixing surface heat into deeper water faster
+    than solar heating can maintain the temperature gradient. Small sheltered lakes need lower values.
+
+    ; [''mixi'
+  remedy: Reduce wind_factor or coef_wind_stir for small/sheltered lakes; calibrate_glm; ['Start with
+    wind_factor = 0.7-0.8 for small sheltered lakes', 'Start with coef_wind_stir = 0.2-0.3 for small lakes'];
+    calibrate_glm optimizes these parameters against observed temperature
+  severity: silent
+- id: dt_022
+  symptom: Artificial cold or warm layer forms at wrong depth. Density instability.
+  diagnosis: 'Inflow salinity set to non-zero when lake is freshwater; GLM computes inflow density from
+    both temperature AND salinity. If the inflow CSV has SALT = 0.5 psu (a small non-zero value) but the
+    lake is fresh (SALT = 0), the inflow is denser than expected and inserts deeper than it should. This
+    creates '
+  remedy: Set inflow SALT = 0.0 for all freshwater lakes; convert_inflow_to_glm; ['Check SALT column in
+    inflow CSV — should be 0.0 for freshwater', 'convert_inflow_to_glm defaults to salinity=0.0']; convert_inflow_to_glm
+    defaults to --salinity 0.0
+  severity: silent
+- id: dt_023
+  symptom: Surface T asymptotes to 0.002 C but never crosses 0 C. No ice forms despite air temp reaching
+    -15 C. All mixing/wind/LW parameters exhaustively tested.
+  diagnosis: 'Missing dt_iceon_avg parameter in &snowice block (see dt_027). Originally diagnosed as thermal
+    inertia issue, but true cause was the missing ice onset parameter.; Exhaustively tested: coef_wind_stir
+    0.18-0.40, wind_factor 0.7-1.0, lw_factor 0.50-1.00, coef_mix_conv 0.05-0.20, sed_temp_mean 5-8 —
+    NON'
+  remedy: Add dt_iceon_avg=0.02 and min_ice_thickness=0.001 to &snowice block; generate_glm_nml; ['See
+    dt_027 for full fix']; generate_glm_nml now always includes dt_iceon_avg and min_ice_thickness
+  severity: silent
+- id: dt_024
+  symptom: GLM met CSV has zero precipitation (Rain=0, Snow=0) for entire simulation. No direct rainfall
+    on lake surface.
+  diagnosis: convert_met_to_glm.py does not extract CMFD precipitation. VIC forcing files may not have
+    precipitation mapped to GLM Rain/Snow columns.; Miyun Reservoir receives ~480 mm/yr precipitation
+    but the met CSV has Rain=0 and Snow=0 for all timesteps. This affects water balance (no direct rainfall)
+    and ice
+  remedy: 'Add precipitation extraction to convert_met_to_glm.py using CMFD prec variable; convert_met_to_glm;
+    [''Extract CMFD precipitation (mm/3hr) and convert to m/day'', ''Split rain vs snow using air temperature
+    threshold at 0 degC'', ''Validate: annual sum should approximate basin MAP in meters (e.g., 0.48 m '
+  severity: silent
+- id: dt_025
+  symptom: GLM crashes at startup when timefmt=3 but start/stop are datetime strings
+  diagnosis: generate_glm_nml.py hardcoded timefmt=3 (seconds since epoch) but generates datetime string
+    start/stop values like '2001-01-01 00:00:00'; timefmt=2 expects datetime strings ('YYYY-MM-DD HH:MM:SS'),
+    timefmt=3 expects integer seconds. The generator always outputs datetime strings but set timefmt=3,
+    ca
+  remedy: Auto-detect timefmt from start date format in generate_glm_nml.py; generate_glm_nml; ["Check
+    start and stop format — if they contain '-', set timefmt=2", 'If they are integer seconds, set timefmt=3'];
+    generate_glm_nml.py now auto-detects timefmt from start format
+  severity: fatal
+- id: dt_026
+  symptom: subdaily=.true. with 3-hourly CMFD forcing produces flat temperature (max ~4.5 C). No seasonal
+    cycle despite correct forcing data.
+  diagnosis: 'Timestamp alignment issue between 3-hourly CMFD forcing and GLM internal dt=3600s. GLM may
+    not correctly interpolate between 3-hourly records.; With met_miyun.csv (3-hourly, 29217 rows) and
+    subdaily=.true., GLM produces unrealistic output: max surface T = 4.55 C instead of ~30 C. The same
+    forcing da'
+  remedy: Use daily forcing with subdaily=.false. for CMFD data until 3-hourly parsing is debugged; convert_met_to_glm;
+    ['Average 3-hourly forcing to daily before providing to GLM', 'Validate first week of output matches
+    expected seasonal pattern']; Default to subdaily=.false. with daily met. Only use subdail
+  severity: silent
+- id: dt_027
+  symptom: Zero ice formation despite sub-zero air temperatures. Surface temp asymptotes to 0.002 C but
+    never freezes. All ice columns remain zero.
+  diagnosis: 'Missing dt_iceon_avg and min_ice_thickness parameters in &snowice block. Without these,
+    GLM ice model is silently disabled.; The &snowice block in most GLM examples only includes snow_albedo_factor,
+    snow_rho_max, and snow_rho_min. But GLM v3.3.3 requires dt_iceon_avg (the ice onset averaging period '
+  remedy: 'Add dt_iceon_avg and min_ice_thickness to &snowice block; generate_glm_nml; [''Add to &snowice:
+    dt_iceon_avg = 0.02'', ''Add to &snowice: min_ice_thickness = 0.001'', ''For deep reservoirs (>50m),
+    dt_iceon_avg may need to be <=0.04'', ''For shallow lakes (<20m), dt_iceon_avg = 0.05-0.10 may work''];
+    generat'
+  severity: silent
+- id: dt_028
+  symptom: GLM-AED2 crashes at startup with module initialization error when phytoplankton is enabled.
+  diagnosis: 'Phytoplankton module enabled without required dependency modules (oxygen, nitrogen, phosphorus,
+    organic_matter); The &aed_phytoplankton block couples with oxygen (photosynthetic O2 production),
+    nitrogen (NO3/NH4 uptake), phosphorus (PO4 uptake), and organic matter (excretion/mortality products).
+    If '
+  remedy: 'Ensure all dependency modules are in the &aed_models list before aed_phytoplankton; generate_aed_config;
+    ["Add to &aed_models: ''aed_oxygen'', ''aed_nitrogen'', ''aed_phosphorus'', ''aed_organic_matter''",
+    "If diatoms are enabled, also add ''aed_silica''", ''Module order in &aed_models list matters — dependenc'
+  severity: fatal
+- id: dt_029
+  symptom: AED2 runs successfully but phytoplankton biomass collapses to near-zero within weeks. Chlorophyll-a
+    is unrealistically low (<0.1 ug/L) even for eutrophic lakes.
+  diagnosis: 'Inflow CSV has no nutrient columns — AED2 receives zero external nutrient loading; When
+    the inflow CSV only contains FLOW, TEMP, SALT (no NIT_nit, NIT_amm, PHS_frp, etc.), AED2 runs with
+    zero external nutrient input. The initial nutrient pool is consumed by phytoplankton within the first
+    few weeks, '
+  remedy: 'Add nutrient concentrations to inflow CSV using configure_inflow_wq.py; configure_inflow_wq;
+    [''Run configure_inflow_wq.py --inflow_csv <path> --trophic <state> --output <path>'', ''Update glm3.nml
+    &inflow block: inflow_varnum = 17, add all WQ vars to inflow_vars'', ''Update &init_profiles: num_wq_vars, '
+  severity: silent
+- id: dt_030
+  symptom: GLM-AED2 crashes at startup with WQ initialization error. Error references num_wq_vars or wq_init_vals
+    count.
+  diagnosis: Number of WQ initial values does not match num_wq_vars * num_depths; The &init_profiles block
+    in glm3.nml requires wq_init_vals to have exactly num_wq_vars * num_depths values. Each WQ variable
+    needs one concentration value per depth level. For example, with 14 WQ variables and 3 depth levels,
+    you n
+  remedy: Ensure wq_init_vals has exactly num_wq_vars * num_depths values; generate_glm_nml; ['Count WQ
+    variables in aed2.nml — each module contributes state variables', 'Set num_wq_vars = total count of
+    WQ state variables', 'Provide num_depths values per variable in wq_init_vals (comma-separated)', 'Use
+    AED2
+  severity: fatal
+- id: dt_031
+  symptom: Requested comparison variable is discharge/streamflow at a creek or river gauge; all metrics
+    null; lookup_hydrolakes finds no lake (or only endorheic sloughs with dis_avg=0.0) at the site.
+  diagnosis: 'Domain mismatch: GLM is a 1D vertical lake/reservoir thermodynamic model with no rainfall-runoff
+    process and no discharge output variable. lake.csv ''Tot Outflow Vol'' is a prescribed boundary rule,
+    not simulated discharge. No variable->metric_family contract can produce discharge_m3s.'
+  remedy: 'REJECT_WRONG_MODEL. Do not run forcing/calibration. Use the SKILL.md Applicability Guard: gate
+    on lookup_hydrolakes (no lake within radius / dis_avg==0.0 / lake too small or >5km away / discharge
+    requested). Validate GLM only against in-lake temperature profiles, surface/bottom temp, lake level,
+    or '
+- id: dt_032
+  symptom: GLM-AED2 runs to completion (exit 0, "Model Run Complete") but ALL AED2 water-column STATE
+    variables are NaN/fill everywhere - output.nc OXY_oxy/NIT_*/PHS_frp etc. are entirely _FillValue (parse_aed_output
+    flags all_fill_in_output_nc), and csv_point WQ columns print '-nan' from the first timestep wh
+  diagnosis: The phytoplankton/silica/noncohesive modules poison the coupled AED2 ODE solver with a NaN
+    that propagates to the ENTIRE water-column state vector (AED2 solves all S(i) vars jointly; one NaN
+    nulls all of them). repair_state=.true. does not recover it and GLM does NOT abort - it silently writes
+    fill/
+  remedy: 'Use the simplified core-nutrient module set that produces finite WQ state: &aed2_models models
+    = ''aed2_oxygen'',''aed2_nitrogen'',''aed2_phosphorus'',''aed2_organic_matter'',''aed2_totals'' (10
+    water-column vars: OXY_oxy, NIT_amm, NIT_nit, PHS_frp, OGM_doc/poc/don/pon/dop/pop). Drop aed2_phytoplankton,
+    aed2_'
+- id: dt_033
+  symptom: AED2 enabled and WQ state is finite, but parse_aed_output.py returns an empty timeseries (only
+    a 'time' column) and total_nitrogen/total_phosphorus mean 0.0. output.nc WQ vars have shape (time,
+    z, lat, lon) = 4-D.
+  diagnosis: parse_aed_output.py assumed 2-D (time, layers) arrays; GLM writes 4-D (time, z, lat, lon)
+    with singleton lat/lon. ndim==2 branches were skipped so surface extraction produced nothing and nanmean
+    over padded layers gave 0. Separately, generate_glm_nml.py does NOT wire AED2 (emits num_wq_vars=0,
+    no &w
+  remedy: 'parse_aed_output.py now squeezes trailing singleton dims to (time, layers) and flags all-fill
+    vars. For surface WQ validation prefer the csv_point output: set in &output csv_point_nlevs/csv_point_at
+    (depth from surface with csv_point_frombot=.false.) and csv_point_vars including the AED2 var names; '
+- id: dt_034
+  symptom: 'Validating a depth-resolved AED2 variable (e.g. OXY_oxy dissolved oxygen) over the FULL water
+    column. Two failure modes appear: (1) csv_point fixed-depth output (csv_point_at = 1,5,10,15,20,30,40
+    from surface) returns spurious EXACTLY-0.0 values at some interior depths (e.g. 5 m and 20 m) in stratif'
+  diagnosis: csv_point samples a FIXED depth-below-surface; as the lake level moves and the adaptive Lagrangian
+    layers split/merge, the requested fixed depth intermittently lands on a layer boundary / below the
+    active column and GLM writes 0.0 (or the oxy_min floor) for that level - so csv_point is reliable
+    only
+  remedy: 'For column / profile WQ statistics read output.nc ONE timestep at a time at only the dates
+    you need: oxy_i = np.squeeze(ds.variables["OXY_oxy"][i])[:NS[i]] using NS (active-layer count per
+    time) and H (layer-top heights) to get the TRUE depth-resolved profile; never bulk-[:] the padded
+    variable. Com'
+- id: dt_036
+  symptom: 'Validating simulated water TEMPERATURE against an observation taken at a FIXED depth (thermistor
+    chain, profile logger, buried sensor at 5/10/20/50/100 cm). output.nc has no variable that is "temperature
+    at 0.5 m": temp is (time, z=500, lat, lon) on the ADAPTIVE LAGRANGIAN grid, so column index k is'
+  diagnosis: 'GLM discretises the column into Lagrangian layers that split, merge and move with volume
+    change; z[] holds LAYER TOP heights ABOVE THE LAKE BOTTOM (ascending, valid only for the first NS
+    entries) and the water surface is z[NS-1], which itself moves with lake level. Depth below surface
+    therefore has '
+  remedy: Use parse_glm_output.py --depths "<d1,d2,...>" --depth_timeseries <csv> (added 2026-08-11).
+    It reads output.nc ONE timestep at a time (dt_034 - a bulk [:] read of the padded z=500 variable segfaults
+    libnetcdf), rebuilds layer centres from z[] and NS, converts to depth-below-surface, np.interp-s onto
+- id: dt_037
+  symptom: 'Scoring GLM against an in-situ TEMPERATURE network (ISMN KISSPATH_DATA/ismn_clean.db - SCAN
+    / SNOTEL / USCRN / COSMOS-UK ... soil and near-surface temperature) with hand-rolled sqlite code.
+    Three failure modes: sqlite3.OperationalError "unable to open database file" on the read-only mount;
+    a depth m'
+  diagnosis: ismn_clean.db is WAL-journalled on read-only media, so a plain file:...?mode=ro URI still
+    fails - immutable=1 is required (same class as the MODFLOW6 yearbook.db trap). depth_cm is a ROUNDED
+    label; the physical depth is depth_from_m / depth_to_m in metres (0.0508, 0.1016, 0.2032, 0.508, 1.016
+    for th
+  remedy: 'Use tools/s9_output_analysis/load_ismn_obs.py (added 2026-08-11): --list (+ --lat/--lon/--radius_km)
+    discovers qc_pass stations near the lake, and --station/--network/--variable/--start/--end writes
+    a long-form date,depth_cm,depth_m,value CSV with G-flag filtering and per-(date,depth) sensor averagi'
+- id: dth
+  symptom: 'Configured outflow is numerically valid, but the simulated lake level or release volume is
+    implausible because the outlet geometry was left at the generic KI defaults: crest_width=100 m, bsn_len_outl=100
+    m, bsn_wid_outl=50 m, or outflow_elev=crest_elev-5 m.'
+  diagnosis: tools/s4_outflow/configure_outflow.py can run with default outlet dimensions when site-specific
+    spillway and withdrawal geometry were not provided.; In natural mode GLM computes overflow from crest_width
+    and crest_factor, and in managed outlet modes generate_glm_nml.py carries outl_elvs, bsn_len_out
+  remedy: 'Re-run configure_outflow.py with observed crest/outlet geometry or a documented reservoir-release
+    schedule, then inspect outflow_config.json before s6.; configure_outflow; [''For natural overflow,
+    set --crest_elev, --crest_width, and --crest_factor from the real spillway.'', ''For managed release,
+    set '
+  severity: silent
+- id: dt_iceon_avg
+  symptom: Ice remains zero or nearly zero in a freezing-climate run even though glm3.nml contains an
+    &snowice block and sub-zero air temperatures occur.
+  diagnosis: The &snowice dt_iceon_avg/min_ice_thickness settings are missing, stale, or unsuitable for
+    the lake depth; values around or above 0.05 days disabled ice again in the Miyun deep-reservoir validation.;
+    generate_glm_nml.py now writes dt_iceon_avg = 0.02 and min_ice_thickness = 0.001, matching the Miyun
+  remedy: Inspect glm3.nml &snowice before s8 and regenerate with this KI tool if the ice-onset settings
+    are absent or too large.; generate_glm_nml; ['Confirm &snowice includes dt_iceon_avg = 0.02 and min_ice_thickness
+    = 0.001.', 'For deep reservoirs (>50 m), keep dt_iceon_avg <= 0.04 days.', 'After s8, check
+  severity: silent
+- id: dt_035
+  symptom: Dissolved oxygen validation reports an acceptable column-mean metric for depthless grab samples
+    while surface and bottom dissolved oxygen tell opposite stories.
+  diagnosis: Depthless OXY_oxy observations do not define a vertical support, while dag.yaml exposes OXY_oxy
+    as point_time_series for the 1-D lake column.; A thickness-weighted column mean is an invented aggregate
+    when the provider gives no sample depth. In the DeGray DO case documented in SKILL.md, a column-mea
+  remedy: Score depthless OXY_oxy observations as surface DO only, or mark bottom/column DO validation
+    as requires_data until depth-resolved observations are available.; parse_aed_output; ['For surface
+    DO, read the top active layer or a validated near-surface csv_point output.', 'Do not headline a thickness-w
+  severity: silent

@@ -1,106 +1,108 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:03:34.433583'
-  domain: landslide
   name: TRIGRS
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: trigrs-2100c
+    version: 2.1.00c (build 02 Feb 2022)
+    provenance: Fortran 90/95; USGS serial TRIGRS (trg) by Baum, Savage & Godt; companion TopoIndex (tpx)
+      preprocessor and optional MPI-parallel build (prg).
+  scientific_reference_version: TRIGRS 2.0 (USGS Open-File Report 2008-1159) infiltration + infinite-slope
+    theory, as realized by the v2.1.00c serial code
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TRIGRS/source/trigrs_full/src/TRIGRS/trg
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s1_dem_slope_preparation
+  - s2_soil_parameters
+  - s3_rainfall_forcing
+  - s4_execution
+  - s5_output_analysis
+  - s6_calibration_validation
+tools:
+  count: 5
+  files:
+  - tools/convert_rainfall_to_trigrs.py
+  - tools/convert_soil_to_trigrs.py
+  - tools/generate_tr_in.py
+  - tools/parse_trigrs_output.py
+  - tools/run_trigrs.py
+inputs:
+  forcing:
+  - name: rainfall_intensity
+    unit: m/s
+  - name: steady_background_infiltration_rate
+    unit: m/s
+  parameters:
+  - name: cohesion
+    unit: Pa
+  - name: friction_angle
+    unit: degrees
+  - name: total_unit_weight_of_soil
+    unit: N/m^3
+  - name: saturated_hydraulic_conductivity
+    unit: m/s
+  - name: saturated_hydraulic_diffusivity
+    unit: m^2/s
+  - name: saturated_volumetric_water_content
+    unit: dimensionless
+  - name: residual_volumetric_water_content
+    unit: dimensionless
+  - name: gardner_alpha
+    unit: 1/m
+  - name: unit_weight_of_water
+    unit: N/m^3
+  - name: property_zone_assignment
+    unit: integer zone ID
+  initial_conditions:
+  - name: initial_water_table_depth
+    unit: m
+  boundary_conditions:
+  - name: DEM_elevation
+    unit: m
+  - name: slope_angle
+    unit: degrees
+  - name: flow_direction
+    unit: integer D8 code (1-8)
+  - name: maximum_soil_depth
+    unit: m
+  - name: basal_boundary_depth_model
+    unit: n/a
+  - name: flow_direction_beta_option
+    unit: n/a
+  - name: computation_depth_range
+    unit: m / integer
+  - name: storm_timing
+    unit: seconds
+  - name: minimum_slope_threshold
+    unit: degrees
+  - name: background_flux_option
+    unit: n/a
+  - name: series_solution_controls
+    unit: integer
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - minimum_factor_of_safety
+  - depth_of_minimum_FS
+  - pressure_head_at_min_FS
+  - water_table_depth
+  - actual_infiltration_rate
+  - surface_runoff
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=1.000, KGE=1.000, R=1.000, 2 scorecard(s)'
+  metrics:
+    best_nse: 1.0
+    best_kge: 1.0
+    best_r: 1.0
+summary:
+  total_tools: 5
+  total_stage_docs: 6
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

@@ -1,0 +1,98 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
+package:
+  name: VELMA
+  language: python
+  implementation:
+    id: velma-python-4layer
+    version: run_velma.py velma_4layer (lumped daily reimplementation)
+    provenance: Python; self-contained lumped daily 4-layer analytic water-balance engine (velma_4layer
+      in run_velma.py); not the EPA Java spatial VELMA.
+  scientific_reference_version: VELMA-inspired lumped daily 4-layer water-balance model (Python re-implementation;
+    conceptually after EPA VELMA 2.0 soil-column hydrology, Stieglitz-family layered drainage)
+  binary:
+    path: KISSPATH_KI_ROOT/VELMA/knowledge_infrastructure/tools/run_velma.py
+    type: Python
+pipeline:
+  stages: []
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_velma.py
+  - tools/convert_soil_to_velma.py
+  - tools/parse_output_velma.py
+  - tools/run_velma.py
+inputs:
+  forcing:
+  - name: precipitation
+    unit: mm/d
+  - name: air temperature
+    unit: K
+  - name: incoming solar radiation
+    unit: W/m2
+  parameters:
+  - name: layer porosity fraction (layer_porosity)
+    unit: v/v fraction
+  - name: layer field-capacity fraction (layer_fc_frac)
+    unit: fraction of layer_cap
+  - name: layer wilting-point fraction (layer_wp_frac)
+    unit: fraction of layer_cap
+  - name: saturated hydraulic conductivity (layer_ks_mm_d)
+    unit: mm/d
+  - name: vertical percolation rate coefficients (perc1-3)
+    unit: 1/d (fraction of above-FC storage)
+  - name: lateral flow coefficients (klat1-4)
+    unit: 1/d
+  - name: baseflow recession coefficient (k_base)
+    unit: 1/d
+  - name: fast/slow reservoir recession (k_fast, k_slow)
+    unit: 1/d
+  - name: PET scale factor (pet_scale)
+    unit: unitless
+  - name: degree-day melt factor (ddf)
+    unit: mm/d/K
+  - name: basin area
+    unit: km2
+  - name: direct-runoff fraction (f_direct)
+    unit: fraction
+  initial_conditions:
+  - name: per-layer soil water (sw[4])
+    unit: mm
+  - name: snow water equivalent (swe)
+    unit: mm
+  - name: fast/slow routing storage (S_fast, S_slow)
+    unit: mm
+  boundary_conditions:
+  - name: snow/rain and melt temperature thresholds (t_snow, t_melt)
+    unit: K
+  - name: routing split fraction (split)
+    unit: fraction
+  - name: run mode (simulate vs calibrate)
+    unit: switch
+  - name: calibration window start / warmup
+    unit: date / days
+  - name: observed discharge (calibrate mode)
+    unit: m3/s
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - Q_sim_m3s
+  - mean_et_mm_d
+  - mean_runoff_mm_d
+  - final_swe_mm
+  - final_sw_mm[4]
+  other: []
+validation:
+  tier: not_runnable
+  tier_justification: 'measured: NSE=0.902, KGE=0.950, R=0.951'
+  metrics:
+    best_nse: 0.9016
+    best_kge: 0.9504
+    best_r: 0.9506
+summary:
+  total_tools: 4
+  total_stage_docs: 0
+  total_diagnostic_triplets: 24
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

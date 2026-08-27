@@ -271,7 +271,7 @@ outputs:
   - var: "pH"
     validation_rank: 1
     unit: "dimensionless"
-    description: "Negative log of hydrogen-ion activity of the solution"
+    description: "Negative log of hydrogen-ion activity in the modeled water solution"
     emitted_in: "output.pqo; .sel via SELECTED_OUTPUT -pH"
     observability:
       comparable_obs_shapes:
@@ -289,7 +289,7 @@ outputs:
   - var: "pe"
     validation_rank: 2
     unit: "dimensionless"
-    description: "Negative log of electron activity (redox state)"
+    description: "Negative log of electron activity in the modeled water solution (redox state)"
     emitted_in: "output.pqo; .sel via SELECTED_OUTPUT -pe"
     observability:
       comparable_obs_shapes:
@@ -302,7 +302,7 @@ outputs:
   - var: "element_totals"
     validation_rank: 3
     unit: "mol/kgw"
-    description: "Total dissolved concentration of each element in solution"
+    description: "Total dissolved concentration of each element in the modeled water solution"
     emitted_in: "output.pqo; .sel via SELECTED_OUTPUT -totals"
     observability:
       comparable_obs_shapes:
@@ -320,7 +320,7 @@ outputs:
   - var: "species_distribution"
     validation_rank: 4
     unit: "mol/kgw molality; dimensionless activity"
-    description: "Speciated aqueous species molalities, activities, and activity coefficients"
+    description: "Speciated aqueous species molalities, activities, and activity coefficients in the modeled water solution"
     emitted_in: "output.pqo; .sel via -molalities / -activities"
     observability:
       comparable_obs_shapes:
@@ -333,7 +333,7 @@ outputs:
   - var: "saturation_index"
     validation_rank: 5
     unit: "dimensionless"
-    description: "log(IAP/K) per mineral phase; >0 supersaturated, <0 undersaturated, 0 equilibrium"
+    description: "Mineral saturation index for the modeled water solution, log(IAP/K) per phase; >0 supersaturated, <0 undersaturated, 0 equilibrium"
     emitted_in: "output.pqo; .sel via -saturation_indices"
     observability:
       comparable_obs_shapes:
@@ -346,7 +346,7 @@ outputs:
   - var: "ionic_strength"
     validation_rank: 6
     unit: "mol/kgw"
-    description: "Solution ionic strength"
+    description: "Ionic strength of the modeled water solution"
     emitted_in: "output.pqo; .sel via -ionic_strength"
     observability:
       comparable_obs_shapes:
@@ -359,7 +359,7 @@ outputs:
   - var: "specific_conductance"
     validation_rank: 7
     unit: "uS/cm"
-    description: "Calculated electrical conductivity of the solution"
+    description: "Calculated electrical conductivity of the modeled water solution"
     emitted_in: "output.pqo"
     observability:
       comparable_obs_shapes:
@@ -385,7 +385,7 @@ outputs:
   - var: "transport_profiles"
     validation_rank: 9
     unit: "mol/kgw vs cell/time"
-    description: "Solute concentration profiles along the 1-D column over cells and time shifts (breakthrough curves)"
+    description: "Solute concentration profiles in 1-D column water over cells and time shifts (breakthrough curves)"
     emitted_in: "output.pqo; .sel per shift"
     observability:
       comparable_obs_shapes:
@@ -591,3 +591,37 @@ safety:
       scope: "parameter / structural uncertainty"
       source: "Nitzsche et al. 2000 (10.1016/S0169-7722(00)00106-6); Lu et al. 2022 (10.1016/j.earscirev.2021.103888)"
       status: "adopted"
+
+medium_evidence:
+  - var: "pH"
+    source: "SKILL.md"
+    quote: "PHREEQC (pH-REdox-EQuilibrium in C) is the USGS standard program for simulating chemical reactions and transport processes in natural or polluted water."
+    note: "The overview defines PHREEQC's modeled medium as water."
+  - var: "pe"
+    source: "SKILL.md"
+    quote: "PHREEQC (pH-REdox-EQuilibrium in C) is the USGS standard program for simulating chemical reactions and transport processes in natural or polluted water."
+    note: "The overview defines PHREEQC's modeled medium as water."
+  - var: "element_totals"
+    source: "SKILL.md"
+    quote: "PHREEQC (pH-REdox-EQuilibrium in C) is the USGS standard program for simulating chemical reactions and transport processes in natural or polluted water."
+    note: "The overview defines PHREEQC's modeled medium as water."
+  - var: "species_distribution"
+    source: "SKILL.md"
+    quote: "PHREEQC (pH-REdox-EQuilibrium in C) is the USGS standard program for simulating chemical reactions and transport processes in natural or polluted water."
+    note: "The overview defines PHREEQC's modeled medium as water."
+  - var: "saturation_index"
+    source: "SKILL.md"
+    quote: "PHREEQC (pH-REdox-EQuilibrium in C) is the USGS standard program for simulating chemical reactions and transport processes in natural or polluted water."
+    note: "The overview defines PHREEQC's modeled medium as water."
+  - var: "ionic_strength"
+    source: "SKILL.md"
+    quote: "PHREEQC (pH-REdox-EQuilibrium in C) is the USGS standard program for simulating chemical reactions and transport processes in natural or polluted water."
+    note: "The overview defines PHREEQC's modeled medium as water."
+  - var: "specific_conductance"
+    source: "SKILL.md"
+    quote: "PHREEQC (pH-REdox-EQuilibrium in C) is the USGS standard program for simulating chemical reactions and transport processes in natural or polluted water."
+    note: "The overview defines PHREEQC's modeled medium as water."
+  - var: "transport_profiles"
+    source: "SKILL.md"
+    quote: "PHREEQC (pH-REdox-EQuilibrium in C) is the USGS standard program for simulating chemical reactions and transport processes in natural or polluted water."
+    note: "The overview defines PHREEQC's modeled medium as water."

@@ -233,7 +233,44 @@ def _wgn_is_wellformed(path, station_names):
     return True
 
 
+def _stations_from_rout_unit(txtinout):
+    """Deposited 2026-08-24 (dt_053, Xixian campaign): the deck's own rout_unit.con is the
+    AUTHORITATIVE per-station wst binding — column 9 (index 8) the station name, columns
+    5/6 (indexes 4/5) lat/lon. A deck once shipped 35 stations all pointing at STA01; the
+    distinct-coordinate count below is the diagnostic that exposed it. Returns
+    (names, coords) or ([], []) when the file is absent/unparseable."""
+    names, coords = [], []
+    try:
+        ru = Path(txtinout) / "rout_unit.con"
+        if not ru.is_file():
+            return [], []
+        lines = ru.read_text().splitlines()
+        if len(lines) < 3:
+            return [], []
+        # codex review: parse the HEADER by column name — deck variants disagree on
+        # positions (define_subbasins.py writes wst at idx 6, the quickstart layout at 8).
+        hdr = [h.lower() for h in lines[1].split()]
+        try:
+            i_wst, i_lat, i_lon = hdr.index("wst"), hdr.index("lat"), hdr.index("lon")
+        except ValueError:
+            logger.warning(f"rout_unit.con header lacks wst/lat/lon columns "
+                           f"(header: {' '.join(hdr[:12])}) — unsupported layout, skipping")
+            return [], []
+        need = max(i_wst, i_lat, i_lon) + 1
+        for ln in lines[2:]:
+            p = ln.split()
+            if len(p) < need:
+                continue
+            names.append(p[i_wst])
+            coords.append([float(p[i_lat]), float(p[i_lon])])
+    except Exception as e:
+        logger.warning(f"rout_unit.con parse failed ({e}) — proceeding without it")
+        return [], []
+    return names, coords
+
+
 def process():
+    global STATION_COORDS
     output_dir = Path(OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -242,6 +279,22 @@ def process():
     station_names = [Path(f).stem for f in station_files]
     if not station_names:
         raise ValueError(f"no station entries parsed from {PCP_CLI_PATH}")
+
+    # dt_053: cross-check against the deck's authoritative station registry.
+    ru_names, ru_coords = _stations_from_rout_unit(output_dir)
+    if ru_coords:
+        n_uniq = len({tuple(c) for c in ru_coords})
+        logger.info(f"rout_unit.con: {len(ru_names)} stations, {n_uniq} UNIQUE coords "
+                    f"(1 unique = the single-point forcing ceiling of the pre-fix Xixian deck)")
+        if not STATION_COORDS:
+            STATION_COORDS = ru_coords
+            logger.info("STATION_COORDS not supplied — using per-station lat/lon "
+                        "from rout_unit.con (authoritative wst binding)")
+        if len(ru_names) > 1 and len(station_names) == 1:
+            raise ValueError(
+                f"pcp.cli carries ONE station but rout_unit.con declares {len(ru_names)} — "
+                f"the deck would run every subbasin on one gauge. Prepare per-station weather "
+                f"files (s3/prepare_weather_files.py) for the rout_unit.con stations first (dt_053)")
 
     # ---- weather-sta.cli : name wgn pcp tmp slr hmd wnd wnd_dir atmo_dep
     wsta_path = output_dir / "weather-sta.cli"

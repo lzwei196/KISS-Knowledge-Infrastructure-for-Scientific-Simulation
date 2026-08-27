@@ -1,35 +1,822 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: APEX 1501 (Agricultural Policy / Environmental eXtender)
-  domain: crop
-  binary_path: ''
-  language: unknown
+  name: APEX
+  language: fortran
+  implementation:
+    id: apex-0806
+    version: v0806
+    provenance: Fortran 90 binary (APEX0806) shipped by Texas A&M AgriLife / Blackland Research and Extension
+      Center, realizing the APEX v0604 science lineage.
+  scientific_reference_version: 'APEX (Agricultural Policy/Environmental eXtender); Theoretical Documentation
+    v0604 (BREC #2008-17, 2008) science lineage, run as the v0806 user-guide binding'
 inputs:
   forcing:
-  - name: temp
-    unit: unknown
-    format: ''
-    source: skill_md
+  - name: Daily precipitation (PRCP)
+    unit: mm/day
+    category: weather
+    source_kind: forcing
+    model_input_format: '*.DLY daily weather file (Fortran I6,2I4,6F6.2)'
+    notes: May be read or stochastically generated (first-order Markov chain, Nicks 1974); partitioned
+      to snowfall when mean of Tmax and surface soil temperature <= 0 C
+  - name: Maximum air temperature (TMAX)
+    unit: degC
+    category: weather
+    source_kind: forcing
+    model_input_format: '*.DLY'
+    notes: Read or generated (Richardson 1981 multivariate model)
+  - name: Minimum air temperature (TMIN)
+    unit: degC
+    category: weather
+    source_kind: forcing
+    model_input_format: '*.DLY'
+    notes: Read or generated
+  - name: Solar radiation (SRAD)
+    unit: MJ/m2/day
+    category: weather
+    source_kind: forcing
+    model_input_format: '*.DLY'
+    notes: Required for Penman-family PET. Expected ~10-25 MJ/m2/day; supplying W/m2 (multiply by 0.0864)
+      silently distorts ET/water yield
+  - name: Wind speed
+    unit: m/s
+    category: weather
+    source_kind: forcing
+    model_input_format: '*.DLY'
+    notes: Required for Penman PET and wind erosion
+  - name: Relative humidity (RHM)
+    unit: fraction (0-1)
+    category: weather
+    source_kind: forcing
+    model_input_format: '*.DLY'
+    notes: Required for Penman PET; fraction not percent
+  - name: Atmospheric CO2 concentration
+    unit: ppm by volume
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: APEXCONT.DAT / *.SIT
+    notes: Drives radiation-use-efficiency CO2 response (bc1, bc2). ~420 ppm modern
+  parameters:
+  - name: Crop growth coefficients
+    unit: mixed
+    category: crop
+    source_kind: dataset_lookup
+    model_input_format: CROPCOM.DAT / PLANTABLE.DAT (~120 crops)
+    notes: TBSC base temp, TOPC optimal temp, potential heat units, DMLA/XLAI max LAI, HMX max height,
+      RDMX max root depth, RUE radiation-use efficiency and CO2 response, WAVP VPD coefficient, HIP/WSYF
+      harvest index, optimal N/P concentration coefficients, aluminum tolerance, critical aeration factor
+  - name: Soil profile hydraulic and chemical properties
+    unit: mixed
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: '*.SOL (up to 30 layers x 50+ properties)'
+    notes: Layer depths, sand/silt/clay, bulk density (g/cm3), field capacity, wilting point, porosity,
+      organic C (% wt), pH, saturated K Ksat (mm/h), labile P, curve number
+  - name: Site geometry
+    unit: mixed
+    category: site
+    source_kind: user_provided
+    model_input_format: '*.SIT (9 lines, F8.2 fields)'
+    notes: Latitude/longitude (decimal degrees; southern hemisphere negative), elevation (m, not feet),
+      azimuth, slope
+  - name: Subarea routing geometry
+    unit: mixed
+    category: hydrology
+    source_kind: user_provided
+    model_input_format: '*.SUB'
+    notes: WSA watershed area (ha; negative WSA adds this subarea's runoff to another before routing),
+      CHL/RCHL channel length (km), CHS channel slope (m/m fraction, 0.05 = 5%); CHL==RCHL marks a headwater
+      subarea
+  - name: Monthly weather-generator statistics
+    unit: mixed
+    category: weather_generator
+    source_kind: dataset_lookup
+    model_input_format: '*.WP1 (12 months x 13 variables), *.WND, WPM1.DAT/WINDCOM.DAT station lists'
+    notes: Monthly storm mean/std/skew, wet-dry probabilities, monthly mean/std of Tmax/Tmin, monthly
+      mean solar radiation, wind statistics
+  - name: APEX general/internal parameters (PARM)
+    unit: dimensionless
+    category: internal
+    source_kind: calibrated
+    model_input_format: APEXPARM.DAT / PARM1102.DAT
+    notes: Internal coefficients including PARM42 (NRCS curve-number index), PARM23, PARM34, PARM84 used
+      in calibration
+  initial_conditions:
+  - name: Initial soil water content by layer
+    unit: mm or fraction
+    category: soil_water
+    source_kind: user_provided
+    model_input_format: '*.SOL / template'
+    notes: Soil/nutrient pools start at the template's equilibrium (e.g. Texas climate); a non-template
+      climate needs 20-25 year spin-up before pools reach steady state
+  - name: Initial soil N (NO3) and P pool states
+    unit: kg/ha
+    category: nutrient
+    source_kind: user_provided
+    model_input_format: '*.SOL'
+    notes: Initial NO3 per layer, labile/active/stable P, organic N/C pools
+  - name: Initial surface residue mass
+    unit: t/ha
+    category: residue
+    source_kind: user_provided
+    model_input_format: '*.SOL / *.OPC'
+    notes: Surface residue carried into simulation start
+  boundary_conditions:
+  - name: Operation schedule (planting, tillage, fertilization, irrigation, harvest, kill, grazing)
+    unit: date + rate
+    category: management
+    source_kind: user_provided
+    model_input_format: '*.OPC/*.MGT (fixed-width rows: yr I3, month I3, day I3, opcode + 4 code fields
+      I5, 8x F9.2 op params)'
+    notes: 'Column 6 is the PLANT_ID (from CROPCOM.DAT) selecting the crop. APEX0806 operation codes:
+      plant/drill 136, fertilize 261, harvest-grain 292, field cultivator 160, kill-crop 451; fertilizer
+      elemental N 53 / P 54'
+  - name: Run control settings
+    unit: codes
+    category: control
+    source_kind: user_provided
+    model_input_format: APEXCONT.DAT (line 1 Fortran I4 fixed-width)
+    notes: NBYR years, IYR/IMO/IDA start, IPD print frequency, NGN weather generate/read code, IET PET-equation
+      code, ISCN stochastic-CN code, ITYP peak-rate code, LPYR leap-year flag
+  - name: PET equation selector (IET)
+    unit: code
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: APEXCONT.DAT
+    notes: Selects Penman-Monteith / Penman / Priestley-Taylor / Hargreaves / Baier-Robertson
+  - name: Water-erosion equation selector
+    unit: code
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: APEXPRNT.DAT / control
+    notes: Selects among USLE, MUSLE, MUST, MUSS, MUSI, RUSLE, RUSLE2 plus WEQ wind erosion
+  - name: Weather input/generate code (NGN)
+    unit: code
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: APEXCONT.DAT
+    notes: Digits select which variables are generated vs read from *.DLY (1=PRCP,2=TMAX,3=TMIN,4=SRAD,5=WIND,6=RH);
+      NGN=0 reads all from *.DLY
 outputs:
   primary:
-  - name: CO2
-    unit: '**ppm** (volume)'
-    format: ''
-    source: skill_md
-  - name: Nutrient
-    unit: unknown
-    format: ''
-    source: skill_md
-  - name: yield
-    canonical_id: yield
-    unit: kg/ha
-  - name: biomass
-    canonical_id: biomass
-    unit: kg/ha
-  - name: leaf_area_index
-    canonical_id: leaf_area_index
+  - name: YLDG
+    unit: t/ha
+    description: Crop grain yield, dry matter (harvest index x above-ground biomass, reduced by water
+      stress and pest factor)
+    validation_rank: 1
+    emitted_in: <run>.ACY (also <run>.OUT)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Requires 20-25 year spin-up for non-template climates or early-year yields are artificially
+          low (WS>50)
+        - Field-trial yields are point/plot scale matching a single homogeneous subarea
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/regional aggregate yields carry a technology trend a weather-driven process model cannot
+          reproduce; detrend before comparing inter-annual variability
+      detrending_options:
+      - decadal_mean
+      - linear_residual
+      - first_difference
+      - none
+  - name: BIOM
+    unit: t/ha
+    description: Total / above-ground biomass accumulated via radiation-use efficiency
+    validation_rank: 4
+    emitted_in: <run>.OUT (.ACY crop columns)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Plot-scale biomass harvest compared against a homogeneous subarea
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Regional aggregate biomass carries a technology trend a weather-driven process model cannot
+          reproduce; detrend before comparing inter-annual variability (same audit case as YLDG)
+      detrending_options:
+      - decadal_mean
+      - linear_residual
+      - first_difference
+      - none
+  - name: LAI
     unit: m2/m2
-  - name: evapotranspiration
-    canonical_id: evapotranspiration
-    unit: mm/day
-known_issues: []
-unit_conversions: []
+    description: Crop-canopy leaf area index from heat-unit-driven development and senescence
+    validation_rank: 2
+    emitted_in: <run>.OUT / .SAD
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Timing of LAI peak depends on heat-unit accumulation and planting date
+      detrending_options:
+      - none
+  - name: WYLD
+    unit: mm
+    description: Water yield (surface runoff + lateral + return flow) leaving the subarea/watershed
+    validation_rank: 5
+    emitted_in: <run>.OUT (m3 in the watershed mass-balance block)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Outlet water yield compared against gauged streamflow at the watershed outlet
+      detrending_options:
+      - none
+  - name: ET
+    unit: mm
+    description: Actual evapotranspiration water flux from the soil-plant land surface
+    validation_rank: 3
+    emitted_in: <run>.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - ET magnitude is sensitive to the selected PET equation and to SRAD units
+      detrending_options:
+      - none
+  - name: DPRK
+    unit: mm
+    description: Deep percolation of water below the crop root zone into the subsurface groundwater system
+    validation_rank: 6
+    emitted_in: <run>.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Rarely directly observed; usually inferred from a water-balance residual
+      detrending_options:
+      - none
+  - name: Y
+    unit: t/ha
+    description: Sediment (soil-loss) yield from water erosion
+    validation_rank: 7
+    emitted_in: <run>.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Event-driven and heavy-tailed; magnitude depends strongly on the selected erosion equation
+      detrending_options:
+      - none
+  - name: N losses (leaching / runoff / sediment)
+    unit: kg/ha
+    description: Nitrogen lost via nitrate leaching, runoff, lateral flow, and organic N on sediment
+    validation_rank: 8
+    emitted_in: <run>.OUT / outlet loads
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Outlet load or concentration (mg/L) comparisons; sensitive to runoff partitioning
+      detrending_options:
+      - none
+  - name: P losses (soluble runoff / sediment / tile)
+    unit: kg/ha
+    description: Phosphorus lost as soluble P in runoff, P on sediment, and through tile drains
+    validation_rank: 9
+    emitted_in: <run>.OUT / outlet loads
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: pbias
+        caveats:
+        - Tile-drain dissolved P controlled by drainage and P-cycling parameters
+      detrending_options:
+      - none
+  - name: outlet hydrograph (HYC)
+    unit: m3/s
+    description: Routed streamflow hydrograph at the watershed outlet
+    validation_rank: 10
+    emitted_in: <run>.HYC
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compared against gauged discharge; peak timing depends on routing method choice
+      detrending_options:
+      - none
+  secondary: []
+known_issues:
+- id: file_missing_uppercase
+  symptom: File ... IS MISSING
+  diagnosis: 'apex1501 reads filenames literally from APEXFILE.DAT and *LIST.DAT. On
+
+    Linux the filesystem is case-sensitive, so SITE01.SIT (uppercase) and
+
+    SITE01.sit (lowercase) are different files. APEX silently exits 0
+
+    after this error.
+
+    '
+  remedy: 'Rename all per-subarea files on disk to UPPERCASE extensions (.SIT,
+
+    .SUB, .SOL, .OPC/.MGT, .WP1, .WND, .DLY) and verify the *LIST.DAT
+
+    entries match exactly.
+
+    '
+- id: lwe_dat_missing
+  symptom: 'forrtl: severe (24): end-of-file during read, unit 22'
+  diagnosis: 'Pre-1501 APEXFILE.DAT lacks the ''FLWE LWE.DAT'' line. The 1501 binary
+
+    requires an LWE.DAT entry (for the Long-term Water-Erosion module),
+
+    and EOFs at unit 22 (APEXFILE) when it''s missing.
+
+    '
+  remedy: 'Append a line `FLWE     LWE.DAT` to APEXFILE.DAT and `touch LWE.DAT`
+
+    in the workspace. The example dataset already ships with both.
+
+    '
+- id: sub_too_short
+  symptom: MAIN_1501.f90:2858
+  diagnosis: 'apex1501 reads beyond the 12 documented lines of *.SUB and EOFs if
+
+    the file has fewer than 22 lines.
+
+    '
+  remedy: 'Pad the *.SUB file with rows of ''0.00'' until it has 22 lines. The
+
+    shipped SUBA01.SUB template already has the required padding.
+
+    '
+- id: weather_units_srad
+  symptom: ET implausibly low, or WYLD too high
+  diagnosis: 'SRAD provided in W/m² instead of MJ/m²/day. APEX expects MJ/m²/day.
+
+    A typical mid-latitude daily value is 10–25 MJ/m²/day, NOT 200–300.
+
+    '
+  remedy: 'Multiply W/m² by 0.0864 to get MJ/m²/day. s2_convert_forcing.py
+
+    already applies this conversion when reading from CMFD/MSWX/POWER.
+
+    '
+- id: zero_exit_silent_crash
+  symptom: exit code 0 but RUN1501.SUM missing or empty
+  diagnosis: 'apex1501 returns 0 even on Fortran severe errors. Never trust the
+
+    exit code; always check that RUN1501.SUM was written and look at
+
+    EPICERR.DAT for the real diagnostic.
+
+    '
+  remedy: 's6_run_apex.py already verifies RUN1501.SUM exists and is non-empty
+
+    after every invocation, and surfaces EPICERR.DAT in the exception
+
+    message.
+
+    '
+- id: ngn_weather_mismatch
+  symptom: weather generator spinning random sequence
+  diagnosis: 'NGN in APEXCONT.DAT controls which weather variables are GENERATED
+
+    (digits 1=PRCP, 2=TMAX, 3=TMIN, 4=SRAD, 5=WIND, 6=RH). If a digit
+
+    lists a variable but that column is also populated in *.DLY, APEX
+
+    may use the generator and ignore the file.
+
+    '
+  remedy: 'To read all variables from *.DLY, set NGN=0 in APEXCONT.DAT. To
+
+    use the validated default of NGN=2345 (generate srad/temps/wind),
+
+    leave the corresponding *.DLY columns blank.
+
+    '
+- id: hwsd_lookup_failed
+  symptom: HWSD raster lookup failed
+  diagnosis: 'Either the HWSD raster path is wrong, the lat/lon falls outside the
+
+    raster bounds, or rasterio is not installed in the active environment.
+
+    '
+  remedy: 'Verify HWSD raster path with `ls KISSPATH_DATA`,
+
+    ensure -180<=lon<=180 and -60<=lat<=85, and `pip install rasterio`
+
+    if missing. lookup_hwsd falls back to texture defaults so soil build
+
+    will still proceed but with imprecise numbers.
+
+    '
+- id: fert_code_pause
+  symptom: subprocess hangs for >60s then raises TimeoutExpired, no ACY output
+  diagnosis: 'APEX0806 uses fertilizer codes 1-72 (FERTCOM.DAT). Codes 92 (Elem-N)
+
+    and 93 (Elem-P) come from APEX1501''s FERT2012.DAT which has >90 entries.
+
+    When APEX0806 encounters an unknown fert code it executes a Fortran PAUSE
+
+    statement and waits for keyboard input. With subprocess capture_output=True
+
+    there is'
+  remedy: "Replace fert codes 92→53 (Elem-N, 100%N) and 93→54 (Elem-P, 100%P) in\nevery *.OPC file in\
+    \ the workspace:\n  grep -rn \" 92 \\| 93 \" outputs/<ws>/*.OPC\n  sed -i 's/   92/   53/g; s/   93/\
+    \   54/g' outputs/<ws>/*.OPC\ns9_generate_crop_opc.py already outputs codes 53/54 after the 2026 fix.\n"
+- id: conout_wine_error
+  symptom: 'forrtl: severe (38): error during write, unit -1, file CONOUT$'
+  diagnosis: 'Wine translates CONOUT$ (Windows console handle) to the process''s
+
+    controlling terminal. When APEX0806 is run under nohup, backgrounded
+
+    (&), or inside a subprocess without a tty, there is no console and
+
+    Fortran''s WRITE(*,...) or WRITE(0,...) fails with unit -1.
+
+    '
+  remedy: "Always invoke APEX0806 via Python subprocess with capture_output=True:\n  subprocess.run([\"\
+    wine\", \"./APEX0806.exe\"], cwd=ws,\n                 capture_output=True, text=True, timeout=300)\n\
+    This captures stdout/stderr so Wine can satisfy the console write.\ns6_run_apex.py already uses this\
+    \ pattern. Never"
+- id: spinup_low_yields
+  symptom: crop yield implausibly low (< 2 t/ha for corn/wheat) with WS > 50
+  diagnosis: 'The ex1_RiselTX template workspace has Texas soil at Texas-climate
+
+    equilibrium (dry, alkaline, ~OC 1.2%). For a humid/temperate location
+
+    (e.g. eastern China, 800+ mm/yr), the soil water content starts near
+
+    field capacity (Texas value) which is far below what the new climate
+
+    would equilibrate to. The'
+  remedy: 'Add a spin-up period: set total NBYR = spinup_years + actual_years,
+
+    IYR = actual_start - spinup_years. s5_update_control.py accepts
+
+    --spinup-years N (default 25). APEX recycles the forcing dataset over
+
+    the spin-up years until the soil equilibrates, then produces realistic
+
+    yields in the actual analys'
+- id: apex0806_opcode_mismatch
+  symptom: zero yield (YLDG=0) or wrong harvest with APEX0806 but OPC came from APEX1501 run
+  diagnosis: "APEX0806 and APEX1501 use different operation codes for the same actions:\n  APEX0806: \
+    \ plant=136  fertilize=261  harvest_grain=292\n  APEX1501:  plant=132  fertilize=580  harvest_grain=316\n\
+    Using APEX1501 codes in APEX0806 may silently misinterpret the operation\n(e.g., op 132 in APEX0806\
+    \ = undefined/d"
+  remedy: 'Check OPC files with: grep -n "132\|316\|580" outputs/<ws>/*.OPC
+
+    Replace with APEX0806 codes: 132→136, 316→292, 580→261.
+
+    s9_generate_crop_opc.py (post-2026 fix) always emits APEX0806 codes.
+
+    '
+- id: apexcont_free_format_nbyr
+  symptom: simulation runs far more years than expected (e.g. 62 instead of 6)
+  diagnosis: 'APEX0806 reads APEXCONT.DAT line 1 with Fortran I4 fixed-width format,
+
+    NOT list-directed. If the file was written in free format with spaces
+
+    (e.g. "6  2010  1  6  2  0..."), Fortran I4 reads characters 1-4 as one
+
+    field: "6  2" → BN blank removal → "62" → NBYR=62, not 6. All subsequent
+
+    fields also sh'
+  remedy: 'Always write APEXCONT.DAT line 1 in I4 fixed-width: every field occupies
+
+    exactly 4 characters. s5_update_control.py does this correctly via
+
+    `"".join(f"{int(v):4d}" for v, w in zip(fields, _CONT_WIDTHS))`.
+
+    To diagnose: check `head -1 APEXCONT.DAT | cut -c1-4` — it must be the
+
+    NBYR value (right-justif'
+- id: apex0806_opc_5i5_phú_shift
+  symptom: BIOM and YLDG are ~0 in all years despite crop planting in OPC; TS and WS both 0
+  diagnosis: 's9_generate_crop_opc.py _op_line() used 5×I5 fields (adding an OPV0 field)
+
+    instead of the correct 4×I5 format. APEX reads PHU from OPV1 position;
+
+    the extra OPV0 field shifts all F8.2 values right by one slot, so APEX
+
+    reads PHU=0 from the zero-filled OPV0. PHU=0 → crop "matures" on the
+
+    day of plantin'
+  remedy: "Regenerate OPC with fixed s9_generate_crop_opc.py (post-2026-05-14 fix).\nManually verify format:\
+    \ `head -5 OPSC01.mgt | awk '{print NF}'` — each\ndata line must have 14 fields (3×I3 + 4×I5 + 7×F8.2).\
+    \ If NF=15, you\nhave the bug.\nReference line (Bengbu Y10.OPC, working):\n  \"  1  5 15  160    0\
+    \    2    0"
+- id: apex0806_opc_tillage_151_pause
+  symptom: APEX process hangs indefinitely (ps shows wine process, CPU=100%, no output files)
+  diagnosis: 'Tillage operation code 151 is not present in TILLCOM.DAT for APEX0806.
+
+    When APEX encounters an unknown equipment code it issues a Fortran PAUSE
+
+    statement (waiting for stdin Enter key). Since the process is run with
+
+    capture_output=True (no tty), it hangs forever.
+
+    '
+  remedy: 'Replace op code 151 with 160 (FIELD CULTIVATOR 36FT, present in TILLCOM.DAT).
+
+    Quick fix: sed -i ''s/  151    0/  160    0/g'' workspace/OPSC01.mgt
+
+    (verify with grep "  151    0" workspace/*.mgt — should return nothing)
+
+    s9_generate_crop_opc.py (post-2026-05-14 fix) always emits code 160.
+
+    '
+- id: apex0806_opc_missing_kill_op
+  symptom: 'Years 1-2 produce correct yield; year 3 onward YLDG=0, BIOM~1 t/ha constant,
+
+    HUI frozen at same value all 12 months. Two identical ACY rows appear per
+
+    subarea per year from year 3+.
+
+    '
+  diagnosis: "Without op 451 (kill crop) after harvest (op 292), grain is removed but the\ncrop canopy\
+    \ stays \"alive\" with remaining vegetative biomass. When frost doesn't\nexplicitly kill this residual\
+    \ in APEX's phenology model, the carry-over state\ncompounds across years:\n  Year 1: harvest fires,\
+    \ YLDG ok, vegetati"
+  remedy: "Add op 451 (kill crop) the day after harvest in every year of the OPC:\n  e.g. if harvest is\
+    \ Sep 6 (op 292), add Sep 7 op 451 with all zeros.\ns9_generate_crop_opc.py (post-2026-05-14 fix)\
+    \ automatically inserts op 451\nthe day after harvest for every year.\n"
+- id: apex0806_s2_weather_template_mismatch
+  symptom: 's2_convert_forcing raises "Required template file missing in workspace:
+
+    WEATHER01.dly" on a fresh s1 workspace; or forcing appears to write but
+
+    APEX still uses Texas climate (site moved but runoff/ET look like Riesel TX).
+
+    '
+  diagnosis: 's1 ships the APEX0806 ex1_RiselTX template, which selects weather stations
+
+    by EXPLICIT ID (APEXRUN.DAT IWP1/IWND tokens; SUB file line-2 col 8 daily id)
+
+    pointing at A48309.DLY / 109.WP1 / 25.WND via the COM-style list files
+
+    (WDLSTCOM.DAT/WPM1.DAT/WIND.DAT referenced in APEXFILE.DAT). The legacy s2
+
+    a'
+  remedy: 's2 (post-2026-06-23 fix) adds _resolve_weather_targets(ws): it parses
+
+    APEXRUN.DAT (IWP1,IWND) + WPM1.DAT/WIND.DAT and SUB col 8 + WDLSTCOM.DAT to
+
+    find the ID-referenced files and OVERWRITES THEM IN PLACE (with both case
+
+    variants). Legacy WEATHER01 layout still works via fallback. No manual edit
+
+    need'
+- id: apex0806_apexcont_split_field_shift
+  symptom: 'Non-deterministic runs (NSE/r differ run-to-run with identical inputs);
+
+    ET method (IET) or other control flags (LPYR, ISCN) take corrupted values
+
+    (e.g. LPYR=4) after s5_update_control; setting iet=N has no/erratic effect.
+
+    '
+  diagnosis: 'Canonical APEXCONT.DAT line 1 writes NBYR and IYR with NO separating space
+
+    ("222001"). s5 parsed line 1 with str.split(), merging NBYR+IYR into one
+
+    token and shifting every flag at index >=1 by one Fortran I4 column. Dates/
+
+    IPD/NGN survived (overwritten by value) but LPYR/IET/ISCN/... got scrambled,'
+  remedy: 's5 (post-2026-06-23 fix) parses line 1 as FIXED-WIDTH I4 (20 x 4-char
+
+    fields) instead of split(), matching how APEX reads and how s5 writes. After
+
+    the fix, NGN=2 runs are byte-reproducible. NOTE: with a complete real DLY,
+
+    NGN=0 ("read ALL weather from DLY") collapses surface runoff to ~15 mm/yr
+
+    (a D'
+- id: apex0806_apexcont_freeformat_crash
+  symptom: 's5_update_control raises "ValueError: invalid literal for int() with base
+
+    10: ''0  0''" (or silently corrupts NBYR/IYR) when run on a PRISTINE example
+
+    or validated workspace whose APEXCONT.DAT line 1 is still FREE format with
+
+    2-space separators (e.g. "6  2010  1  6  2  0 ...", the shipped
+
+    ex1_RiselTX '
+  diagnosis: 's5''s fixed-width I4 parser slices line 1 in 4-char chunks. On a free-format
+
+    line a chunk like "6  2" keeps an internal space -> int() crashes; other
+
+    chunks map fields onto the wrong columns. The parser assumed the file had
+
+    ALREADY been normalised to I4 (true only after a prior s5 pass), so the
+
+    first'
+  remedy: 's5 (post-2026-07-04 fix) detects free format (>=6 leading space-separated
+
+    integer tokens, field0 <=4 chars) and parses line 1 with split(); otherwise
+
+    falls back to fixed-width I4 for the "222001" packed case. Either way it
+
+    re-emits canonical I4. Works on both pristine free-format templates and
+
+    alrea'
+- id: apex0806_opc_generated_not_wired
+  symptom: 'Generated crop schedule seems ignored: yields ~0.3 t/ha with BIOM ~1 t/ha
+
+    but LOW water/N stress (WS~10, NS~0) at a non-Texas site; ACY shows the
+
+    shipped rotation crops (SGHY/WWHT/FALW) or Texas dryland corn, not the
+
+    requested continuous crop.
+
+    '
+  diagnosis: 'quickstart.py / s9.write_opc WRITE OPSC01.mgt but never repoint
+
+    OPSCCOM.DAT, so APEX keeps reading the Riesel-TX rotation OPCs
+
+    (Y10/RNGE/Y6/Y8.OPC). A Texas dryland rotation at a China site collapses
+
+    to near-zero yield (crop matures/senesces almost immediately -> tiny
+
+    biomass, hence LOW stress rathe'
+  remedy: 'Call s9_generate_crop_opc.wire_management_list(workspace,
+
+    opc_name="OPSC01.MGT") after write_opc (quickstart.py post-2026-07-04 fix
+
+    does this automatically). Verify with: cat OPSCCOM.DAT -> every subarea id
+
+    must reference OPSC01.MGT (CRLF line endings). To represent a 0.5deg
+
+    AREA-average (e.g. GDHY '
+- id: apex0806_sit_column_shift_co2_starvation
+  symptom: 'Maize (or any annual) yields 0.3-0.7 t/ha with BIOM 1-2 t/ha at a new
+
+    lat/lon, while EVERY stress column in *.ACY is near zero (WS~0.1, NS~0.5,
+
+    PS~1, TS~16) and the run exits cleanly. Swapping the OPC, the soil or the
+
+    weather changes nothing; restoring the TEMPLATE''s *.SIT restores yield.
+
+    '
+  diagnosis: 's4_update_site.py (pre-2026-08-09) rebuilt *.SIT line 4 as
+
+    "   " + "".join(f"{v:8.2f}") — a 3-space pad in front of Fortran F8.2
+
+    columns. APEX re-reads the row by COLUMN, so every field shifts one slot:
+
+    YLAT=32, XLOG=0.25, ELEV=0.25, APM=0.0, CO2X=0.25 ppm. At 0.25 ppm CO2 the
+
+    radiation-use-efficien'
+  remedy: 'Line 4 of *.SIT is TEN 8-character F8.2 columns with NO leading pad
+
+    (template: "   31.47  -96.88  166.06    0.25  330.00 ..."). Fixed in
+
+    s4_update_site.update_site (prefix removed) and validate_outputs now
+
+    re-parses the row by column and range-checks CO2X to [100,1200] ppm.
+
+    Quick check: `cut -c1-8,9'
+- id: apex0806_template_outputs_parsed_as_results
+  symptom: 's7_parse_output returns a full, plausible yield/water time series for a
+
+    workspace whose binary never ran (or crashed); the years in *.ACY are the
+
+    TEMPLATE''s (1998-2011 Riesel TX) and do not match APEXCONT.DAT''s IYR/NBYR.
+
+    '
+  diagnosis: 'examples/ex1_RiselTX ships its own run products (OUTPUT.ACY/.OUT/.RCH/
+
+    .AWS/.DWS/.MWS and fort.102/108/112/128). s1_setup_workspace copytree''d
+
+    them into every fresh workspace, so any "did the run produce output?"
+
+    guard — and s7 itself — matched the EXAMPLE''s Texas results.
+
+    '
+  remedy: 's1_setup_workspace.setup() now calls purge_template_outputs(ws) which
+
+    deletes *.OUT/.ACY/.SAD/.SUS/.MAN/.MSW/.MWS/.DWS/.AWS/.DPS/.AWP/.HYC/
+
+    .RCH/.SUM, fort.* and EPICERR.DAT after the copy. Always sanity-check
+
+    that the YR column in *.ACY spans APEXCONT.DAT''s IYR..IYR+NBYR-1.
+
+    '
+- id: apex0806_only_first_soil_rewritten
+  symptom: 'build_soil reports success, but 3 of the 4 subareas still simulate the
+
+    template''s Texas Houston-Black clay; only one subarea reflects HWSD.
+
+    '
+  diagnosis: 'SOILCOM.DAT lists three soils and the shipped *.SUB files reference soil
+
+    ids 1 AND 2 (line 2 field 1 = INPS). s3_build_soil rewrote only the FIRST
+
+    entry. The third entry ("Houston.sol") is also a dangling reference — the
+
+    on-disk file is HOUSTON.SOL.
+
+    '
+  remedy: 's3_build_soil.build_soil(..., all_soils=True) (the new default) rewrites
+
+    every soil in SOILCOM.DAT, resolves filenames case-insensitively and
+
+    warns-and-skips dangling entries. Pass --first-soil-only for the old
+
+    behaviour.
+
+    '
+- id: apex0806_wp1_rainfall_rows_shifted
+  symptom: '*.WP1 written by s2 has zeros in rows 7-8 and values of 5-20 in row 9
+
+    (PRW1), whose valid range is 0-1.
+
+    '
+  diagnosis: '_build_wp1_text wrote SDRF and SKRF as zeros and put the mean rain-day
+
+    COUNT into the PRW1 slot. The 12-row block order is
+
+    OBMX, OBMN, SDTMX, SDTMN, RMO, SDRF, SKRF, PRW1, PRW2, WI.
+
+    '
+  remedy: 'Fixed 2026-08-09: SDRF/SKRF are computed from wet-day daily rainfall,
+
+    PRW1/PRW2 from the wet/dry transition counts, and the rain-day count goes
+
+    into WI (row 10 of the block).
+
+    '
+- id: apex0806_multidecade_forcing_not_resumable
+  symptom: 'A detached multi-decade run spends >2 h in s2_convert_forcing and restarts
+
+    that work from zero after any crash, timeout or relaunch.
+
+    '
+  diagnosis: 'A CMFD 3-hourly point build costs ~150 s/year (12 monthly NetCDFs x 7
+
+    variables); build_forcing held nothing on disk until the whole period was
+
+    loaded.
+
+    '
+  remedy: 'Pass cache_dir= (CLI: --cache-dir) to s2_convert_forcing.build_forcing.
+
+    Each year is memoised as <source>_<lat>_<lon>_<year>.npz via an atomic
+
+    temp-then-replace, so a relaunch resumes at the first missing year.
+
+    '

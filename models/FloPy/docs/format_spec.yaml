@@ -1,141 +1,497 @@
-model:
-  name: "FloPy"
-  version: "3.11.0"
-  domain: "groundwater flow and transport modeling"
-  description: "Python interface to MODFLOW 6, MODFLOW-2005, MODFLOW-NWT, MODFLOW-USG, MT3DMS, SEAWAT, MODPATH"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  solver_binary: "KISSPATH_HOME/.local/share/flopy/bin/mf6"
-  unit_system: "user-defined (unit-agnostic — all inputs must be self-consistent)"
-  common_units:
-    length: "meters (LENUNI=2)"
-    time: "days (ITMUNI=4)"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: FloPy
+  language: python
+  implementation:
+    id: flopy
+    version: 3.11.0
+    provenance: Python; U.S. Geological Survey FloPy model-builder/pre-post-processor (Bakker, Post, Hughes
+      et al.) that writes MODFLOW input files, invokes the external compiled MODFLOW binary, and parses
+      its binary/text output.
+  scientific_reference_version: MODFLOW-family finite-difference groundwater flow/transport (MODFLOW 6,
+    MODFLOW-2005/NWT/USG, MT3D/SEAWAT) as built and post-processed by FloPy
 inputs:
   forcing:
-    - name: "recharge"
-      unit: "m/day"
-      valid_range: [0.0, 0.01]
-      description: "Areal recharge rate (RCHA package). Source data often in mm/day — divide by 1000."
-      trap: "dt_002"
-    - name: "well_pumping_rate"
-      unit: "m3/day"
-      valid_range: [-50000.0, 0.0]
-      description: "Volumetric pumping rate (WEL package). Negative = extraction. Source data often in L/s — multiply by 86.4."
-      trap: "dt_003"
-    - name: "river_stage"
-      unit: "m"
-      valid_range: [-100.0, 5000.0]
-      description: "River water surface elevation (RIV package). Must match grid datum."
-      trap: "dt_006"
-    - name: "evapotranspiration"
-      unit: "m/day"
-      valid_range: [0.0, 0.015]
-      description: "ET rate (EVT package). Source data often in mm/day — divide by 1000."
-      trap: "dt_008"
-    - name: "constant_head"
-      unit: "m"
-      valid_range: [-100.0, 5000.0]
-      description: "Fixed head boundary value (CHD package). Must be between top and bottom of cell."
-      trap: "dt_006"
-
+  - name: recharge
+    unit: m/day (model L/T)
+    category: forcing
+    source_kind: user_provided
+    model_input_format: areal flux array (nrow,ncol) per stress period via RCH/RCHA package
+    notes: Commonly derived as R = P x recharge_fraction; source data typically in mm/day and must be
+      divided by 1000 to model units. Unit mismatch is silent (heads can rise above land surface yet still
+      converge).
+  - name: evapotranspiration
+    unit: m/day (model L/T)
+    category: forcing
+    source_kind: user_provided
+    model_input_format: head-dependent ET sink via EVT/EVTA package (max rate evtr, extinction depth exdp,
+      ET surface surf, option nevtop)
+    notes: Head-dependent sink; source data typically in mm/day and must be converted to model length/time
+      units. FloPy EVT defaults are placeholders (nevtop=3 highest-active-cell, evtr=1e-3 L/T, exdp=1.0
+      L, surf=0.0); a run left at default ET surf=0.0 / evtr placeholder gives meaningless extraction.
+  - name: well pumping / injection
+    unit: m3/day (model L^3/T)
+    category: forcing
+    source_kind: user_provided
+    model_input_format: per-stress-period list of [lay,row,col,flux] via WEL package
+    notes: Extraction is NEGATIVE, injection POSITIVE in MODFLOW convention. Source rates in L/s (x86.4)
+      or m3/hr (x24) must be converted to m3/day.
   parameters:
-    critical:
-      - name: "hydraulic_conductivity"
-        unit: "m/day"
-        valid_range: [1.0e-7, 1000.0]
-        description: "Horizontal hydraulic conductivity (NPF/LPF package). Must match length/time units."
-        trap: "dt_001"
-      - name: "specific_storage"
-        unit: "1/m"
-        valid_range: [1.0e-6, 1.0e-2]
-        description: "Specific storage for confined layers (STO package). Only active in transient stress periods."
-        trap: "dt_004"
-      - name: "specific_yield"
-        unit: "dimensionless"
-        valid_range: [0.01, 0.45]
-        description: "Specific yield for unconfined layers (STO package). Fraction of pore volume that drains by gravity."
-      - name: "river_conductance"
-        unit: "m2/day"
-        valid_range: [0.01, 100000.0]
-        description: "River-aquifer conductance = K_bed * length * width / bed_thickness (RIV package)."
-        trap: "dt_005"
-
-    grid:
-      - name: "nlay"
-        valid_range: [1, 100]
-        description: "Number of model layers"
-      - name: "nrow"
-        valid_range: [1, 10000]
-        description: "Number of grid rows (structured grid)"
-      - name: "ncol"
-        valid_range: [1, 10000]
-        description: "Number of grid columns (structured grid)"
-      - name: "delr"
-        unit: "m"
-        valid_range: [1.0, 100000.0]
-        description: "Column width (cell size in row direction)"
-      - name: "delc"
-        unit: "m"
-        valid_range: [1.0, 100000.0]
-        description: "Row height (cell size in column direction)"
-      - name: "top"
-        unit: "m"
-        valid_range: [-500.0, 9000.0]
-        description: "Top elevation of model grid"
-      - name: "botm"
-        unit: "m"
-        valid_range: [-5000.0, 9000.0]
-        description: "Bottom elevation of each layer"
-
+  - name: horizontal hydraulic conductivity (K / hk)
+    unit: m/day (model L/T)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: NPF (MF6) / LPF-UPW (MF2005) array; hardcoded FloPy default hk=1.0 (placeholder)
+    notes: Literature K often in cm/s (x864) or m/s (x86400) to convert to m/day. Default value is an
+      unphysical placeholder; a run left at default produces meaningless heads.
+  - name: vertical hydraulic conductivity / anisotropy (K33 / vka)
+    unit: m/day (model L/T)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: NPF (MF6) / LPF-UPW (MF2005); interpretation depends on layvka; FloPy default
+      vka=1.0
+    notes: Typically 0.01-0.1 x horizontal K.
+  - name: specific storage (Ss / ss)
+    unit: 1/m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: STO package; FloPy default ss=1e-5
+    notes: Typical 1e-6 to 1e-4; governs confined transient storage response.
+  - name: specific yield (Sy / sy)
+    unit: dimensionless (0-1)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: STO package; FloPy default sy=0.15
+    notes: Typical 0.01-0.35; governs unconfined transient storage response.
+  - name: riverbed / streambed conductance
+    unit: m2/day
+    category: parameter
+    source_kind: calibrated
+    model_input_format: RIV record [lay,row,col,stage,cond,rbot]; GHB/DRN conductance terms
+    notes: C = K_bed x L_cell x W / d_bed; K_bed typically 0.01-1 m/day. Using aquifer K or wrong geometry
+      makes the river over/under-connected.
+  - name: layer type (laytyp / convertible flag)
+    unit: dimensionless code
+    category: parameter
+    source_kind: user_provided
+    model_input_format: LPF/UPW laytyp (0=confined; >0=convertible/water-table); MF6 NPF icelltype; FloPy
+      default laytyp=0
+    notes: Default 0 (confined) is a common silent trap; water-table behavior requires convertible layers.
+  initial_conditions:
+  - name: starting heads (strt)
+    unit: m
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: IC (MF6) / BAS (MF2005); FloPy default strt=1.0
+    notes: Should be above layer bottoms to avoid initial dry cells; default 1.0 everywhere is unphysical
+      for transient/nonlinear runs.
+  - name: active-cell domain (ibound / idomain)
+    unit: integer flag
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: BAS ibound (active/inactive/CHD flags) / MF6 idomain; hnoflo no-flow sentinel
+    notes: Activates/deactivates cells for the solver; inactive cells carry the hnoflo sentinel (-999.99
+      FloPy default).
+  - name: initial concentration (transport)
+    unit: mass/L^3
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: MT3D/SEAWAT initial concentration arrays
+    notes: Only for solute/density-transport runs.
+  boundary_conditions:
+  - name: constant-head boundary (CHD)
+    unit: m ASL
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: CHD package per-stress-period specified-head cells
+    notes: Specified-head Dirichlet boundary; too many or too-low CHD cells can drain the model.
+  - name: river / general-head / drain boundary (RIV/GHB/DRN)
+    unit: stage & rbot in m ASL
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: RIV/GHB/DRN head-dependent boundary records (conductance-based)
+    notes: Exchange flux = conductance x (boundary head - cell head); stage/datum must match grid elevation
+      datum.
+  - name: spatial & temporal discretization (DIS/TDIS)
+    unit: m (cell sizes), model time units (perlen)
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: DIS (nlay,nrow,ncol,delr,delc,top,botm) + stress periods (nper,perlen,nstp,tsmult,steady);
+      MF6 splits into DIS+TDIS
+    notes: Steady vs transient flag per period; perlen units must match ITMUNI.
+  - name: unit-system codes (LENUNI / ITMUNI)
+    unit: code
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: 'DIS metadata: LENUNI (1=ft,2=m,3=cm), ITMUNI (1=s,2=min,3=hr,4=day,5=yr)'
+    notes: MODFLOW is unit-agnostic; all quantities must be in the chosen consistent length/time units.
+      0=undefined is dangerous.
+  - name: solver configuration (IMS / PCG / NWT / SMS)
+    unit: dimensionless
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: IMS (MF6) complexity (SIMPLE/MODERATE/COMPLEX), outer/inner_maximum, outer/inner_dvclose;
+      PCG/NWT for MF2005
+    notes: Iteration limits, closure criteria, under-relaxation, and Newton formulation determine whether
+      and how the head field converges.
+  - name: output control (OC)
+    unit: schedule
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: OC package + ipakcb/save_flows flags selecting which timesteps save HEAD/BUDGET
+    notes: Heads and budget outputs are ABSENT (not zero) if OC is misconfigured; gates the existence
+      of .hds/.cbc.
 outputs:
   primary:
-    - name: "head"
-      unit: "m"
-      valid_range: [-500.0, 9000.0]
-      file: "*.hds"
-      format: "binary (float32 or float64)"
-      description: "Hydraulic head per cell per time step. HDRY sentinel = -1e30 for dry cells."
-    - name: "cell_budget"
-      unit: "m3/day"
-      valid_range: [-1.0e8, 1.0e8]
-      file: "*.bud / *.cbc"
-      format: "binary (structured records)"
-      description: "Cell-by-cell flow budget for each package (recharge, wells, rivers, etc.)"
-    - name: "drawdown"
-      unit: "m"
-      valid_range: [-1000.0, 1000.0]
-      file: "*.ddn"
-      format: "binary"
-      description: "Head change from initial conditions"
-    - name: "specific_discharge"
-      unit: "m/day"
-      valid_range: [-100.0, 100.0]
-      file: "within *.bud (DATA-SPDIS record)"
-      format: "binary structured"
-      description: "Darcy velocity components (qx, qy, qz) per cell. Requires save_specific_discharge=True in NPF."
-  secondary:
-    - name: "listing_file"
-      file: "*.lst"
-      format: "text"
-      description: "Solver convergence log and volumetric water balance summary"
-    - name: "concentration"
-      unit: "mg/L or user-defined"
-      file: "*.ucn"
-      format: "binary"
-      description: "Solute concentration per cell (MT3DMS/MT3D-USGS transport)"
-    - name: "pathlines"
-      file: "*.mp7.pathline"
-      format: "binary"
-      description: "Particle tracking pathlines (MODPATH 6/7)"
-
+  - name: hydraulic head
+    unit: m
+    description: Simulated hydraulic head per cell (layer, row, col) and timestep, the primary state of
+      the groundwater-flow solution.
+    validation_rank: 1
+    emitted_in: .hds
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Compare at the observation-well cell after masking HDRY (-1e30) and hnoflo (-999.99) sentinels
+        - Steady-state head only; datum (m ASL) must match the well measurement datum
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - Transient runs require correct STO storage and transient flagging; a period mis-flagged steady-state
+          cannot reproduce the gradual drawdown response
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Interpolated water-table surfaces carry interpolation error; compare on consistent layer/datum
+      detrending_options:
+      - none
+  - name: drawdown
+    unit: m
+    description: Groundwater head change relative to starting head, used for pumping-test and aquifer
+      stress-response analysis.
+    validation_rank: 2
+    emitted_in: .ddn
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Requires transient simulation with realistic Ss/Sy; mask dry-cell sentinels before differencing
+      detrending_options:
+      - none
+      - first_difference
+  - name: cell-by-cell flow budget
+    unit: m3/day
+    description: Per-cell groundwater volumetric flows by budget term (STO, FLOW-JA-FACE, CHD, RCH, WEL,
+      RIV, DRN, GHB, EVT, DATA-SPDIS).
+    validation_rank: 3
+    emitted_in: .cbc / .bud
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Term-by-term budget magnitudes (e.g., total recharge, net pumping) compared against independent
+          water-balance estimates
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Stream-aquifer baseflow exchange (RIV/DRN term) compared against gauged baseflow separation
+      detrending_options:
+      - none
+  - name: specific discharge
+    unit: m/day
+    description: Groundwater Darcy flux vectors (qx,qy,qz) derived from the converged flow field for velocity/transport
+      analysis.
+    validation_rank: 4
+    emitted_in: .cbc (DATA-SPDIS record)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Requires save_specific_discharge=True; direct flux observations are rare, usually compared qualitatively
+      detrending_options:
+      - none
+  - name: solute concentration
+    unit: mass/L^3
+    description: Advection-dispersion solute concentration from MT3D/SEAWAT transport runs.
+    validation_rank: 5
+    emitted_in: .ucn
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Only for transport runs; breakthrough timing depends on dispersivity and porosity parameterization
+      detrending_options:
+      - none
+  - name: volumetric water-balance discrepancy
+    unit: percent
+    description: Global mass-balance closure error (PERCENT_DISCREPANCY) from the listing file; a convergence/closure
+      QA diagnostic.
+    validation_rank: 6
+    emitted_in: .lst / .list
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Internal closure metric, not an external observation; acceptance threshold <1% (well-converged)
+          rather than a measured value
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_002"
-    description: "Recharge unit mismatch: source data in mm/day entered as m/day gives 1000x too much water"
-  - id: "dt_003"
-    description: "Well rate unit mismatch: source data in L/s entered as m3/day gives 86.4x wrong rate"
-  - id: "dt_009"
-    description: "Zero-based indexing: FloPy uses 0-based, MODFLOW docs use 1-based — off-by-one errors"
-  - id: "dt_012"
-    description: "Dry cell sentinel HDRY (-1e30) corrupts statistics if not filtered"
-  - id: "dt_013"
-    description: "Binary precision mismatch (single vs double) produces garbage data silently"
+- id: dt_001
+  symptom: Hydraulic conductivity has no effect — water table is flat regardless of boundary conditions.
+  diagnosis: K in cm/s instead of m/day — values 864× too small; MODFLOW requires K in model length/time
+    units. If LENUNI=meters and ITMUNI=days, K must be in m/day. Literature values are often reported
+    in cm/s. A K of 0.01 cm/s = 8.64 m/day. If entered as 0.01 m/day, the aquifer is 864× less permeable
+    than inte
+  remedy: 'Convert K: m/day = cm/s × 864; convert_soil_to_aquifer; [''Check K units in source data'',
+    ''If K < 0.01 m/day for sand/gravel, likely in cm/s'', ''Multiply by 864 to convert cm/s → m/day''];
+    validate_outputs() checks K against typical ranges per texture class'
+  severity: silent
+- id: dt_002
+  symptom: Heads rise unrealistically. Water table above land surface. Model may still converge.
+  diagnosis: Recharge in mm/day instead of m/day — 1000× too much water input; MODFLOW expects recharge
+    in model length/time units (typically m/day). Precipitation data is commonly in mm/day. If 3 mm/day
+    is entered as 3.0 m/day, the aquifer receives 1000× too much water. The water table rises to or above
+    land su
+  remedy: 'Divide recharge by 1000: m/day = mm/day ÷ 1000; convert_forcing_to_modflow; [''Check: is recharge
+    > 0.05 m/day (50 mm/day)?'', ''If yes, values are likely in mm/day — divide by 1000'', ''Typical recharge:
+    0.0001 to 0.003 m/day (0.1 to 3 mm/day)'']; validate_outputs() warns if recharge > 0.1 m/day'
+  severity: silent
+- id: dt_003
+  symptom: Pumping wells have negligible effect on heads. Drawdown cone much smaller than expected.
+  diagnosis: Well pumping rate in L/s instead of m³/day — 86× too small; MODFLOW expects well flux in
+    model length³/time (typically m³/day). Field data often reports pumping in L/s or m³/hr. 10 L/s =
+    864 m³/day. If entered as 10 m³/day, the well pumps 86× less than intended. The model converges but
+    drawdown is m
+  remedy: 'Convert: m³/day = L/s × 86.4; m³/day = m³/hr × 24; convert_forcing_to_modflow; [''Check well
+    rate units in source data'', ''If rate < 100 m³/day for a production well, likely in L/s'', ''Multiply
+    L/s by 86.4 to get m³/day'']; Tool checks for flux_unit column and auto-converts'
+  severity: silent
+- id: dt_004
+  symptom: Transient model shows no storage response. Heads change instantly between stress periods.
+  diagnosis: 'Specific storage (Ss) too small by orders of magnitude, or Sy not set for unconfined layer;
+    Ss typical range is 1e-6 to 1e-4 (1/m). If Ss is accidentally set to 1e-10, storage release is negligible
+    and the model behaves as quasi-steady-state. For unconfined layers, Sy (0.01-0.35) dominates storage; '
+  remedy: 'Use typical Ss = 1e-5 to 1e-4. Set Sy = 0.1 to 0.3 for unconfined layers.; convert_soil_to_aquifer;
+    [''Check Ss values — should be 1e-6 to 1e-4'', ''Check Sy for top layer — should be 0.01 to 0.35'',
+    ''Ensure STO package has transient={kper: True} for transient periods'']; validate_outputs() checks
+    Ss and'
+  severity: silent
+- id: dt_005
+  symptom: River-aquifer interaction too strong or too weak. River acts as constant head or is disconnected.
+  diagnosis: 'River conductance calculated incorrectly — using aquifer K instead of riverbed K, or wrong
+    geometry; River conductance C = K_bed × Length × Width / bed_thickness. Common errors: (1) Using aquifer
+    K (1-100 m/day) instead of riverbed K (0.01-1 m/day) — 10-1000× too high. (2) Omitting cell dimensions
+    —'
+  remedy: 'C = K_bed × L_cell × W_river / d_bed. K_bed typically 0.01-1 m/day.; convert_forcing_to_modflow;
+    [''Typical riverbed K: 0.01 to 1 m/day (much less than aquifer K)'', ''Bed thickness: 0.3 to 1 m'',
+    ''Conductance per cell: 10 to 1000 m²/day typically'']; Tool provides default conductance based on
+    cell geome'
+  severity: degraded
+- id: dt_006
+  symptom: Groundwater flows in wrong direction near boundaries. Gradient reversed.
+  diagnosis: Boundary head/stage values in different datum than grid elevation; All elevations in MODFLOW
+    must use the same vertical datum. If the DEM is in meters ASL (above sea level) but river stages are
+    in local datum or relative values, the hydraulic gradient is wrong. Water may flow away from rivers
+    instea
+  remedy: Ensure all elevations use the same datum (typically meters ASL); convert_forcing_to_modflow;
+    ['Compare river stage values to DEM elevation at same location', 'River stage should be close to (but
+    below) land surface elevation', 'If stages are < 0 but DEM is > 100, datum mismatch']; Cross-check
+    bounda
+  severity: silent
+- id: dt_007
+  symptom: Stress period too short or too long. Model runs for wrong simulation duration.
+  diagnosis: Stress period length in wrong time units (seconds vs days, or months vs days); If ITMUNI=4
+    (days) but stress period length is entered as 365 thinking it's years, the model runs for 365 days
+    (correct). But if entered as 1 thinking '1 year' when ITMUNI=4, the model runs for 1 day only. Conversely,
+    ent
+  remedy: Match perlen values to ITMUNI setting; None; ['Check ITMUNI setting (4=days is most common)',
+    'Verify perlen values are in matching time unit', 'Total simulation = sum(perlen values)']; Print
+    total simulation duration after assembly for user verification
+  severity: silent
+- id: dt_008
+  symptom: ET removes far too much water. Water table drops rapidly. Heads much too low.
+  diagnosis: ET rate in mm/day instead of m/day — 1000× too much extraction; Same unit trap as recharge.
+    ET rates in MODFLOW must be in model length/time units. Typical ET is 2-8 mm/day (0.002-0.008 m/day).
+    If entered as 5.0 m/day instead of 0.005 m/day, each cell loses 1000× too much water. The water table
+    drop
+  remedy: 'Divide ET by 1000: m/day = mm/day ÷ 1000; convert_forcing_to_modflow; [''Check: is ET > 0.02
+    m/day (20 mm/day)?'', ''If yes, likely in mm/day — divide by 1000'', ''Max physically reasonable ET
+    ≈ 0.012 m/day (12 mm/day)'']; validate_outputs() warns if ET > 0.02 m/day'
+  severity: silent
+- id: dt_009
+  symptom: Boundary conditions placed in wrong cells. Wells pump from wrong layer/location.
+  diagnosis: 'Using 1-based indexing from MODFLOW docs instead of FloPy''s 0-based indexing; FloPy uses
+    zero-based indexing (Python convention): Layer 0, Row 0, Col 0 is the first cell. MODFLOW documentation
+    and many references use 1-based indexing. A well at ''Layer 1, Row 5, Column 10'' in MODFLOW terms
+    should be '
+  remedy: 'Subtract 1 from all MODFLOW documentation indices when using FloPy; None; [''FloPy: layer 0
+    = first layer, row 0 = first row'', ''MODFLOW docs: layer 1 = first layer'', ''Always subtract 1 when
+    converting from MODFLOW docs to FloPy'']; Validate boundary cell locations against grid extent'
+  severity: silent
+- id: dt_010
+  symptom: Boundaries disappear in later stress periods or persist when they should be removed.
+  diagnosis: 'Stress period data dictionary keys not matching expected behavior; FloPy boundary packages
+    use dicts keyed by stress period (0-based). If dict has keys {0: data, 2: data}, period 1 repeats
+    period 0''s data (not zero). To remove all boundaries in a period, use an empty list: {1: []}. Missing
+    keys DON'''
+  remedy: 'Explicitly specify data for every stress period, or use [] to remove; None; [''For pumping
+    that stops: {0: well_data, 1: []}'', ''For pumping that continues: {0: well_data} (repeats)'', "Don''t
+    skip keys expecting zero default"]; Always verify stress period data covers all periods'
+  severity: degraded
+- id: dt_011
+  symptom: AttributeError or 'package not found' when mixing MF6 and MF2005 API calls.
+  diagnosis: 'Mixing MODFLOW 6 and MODFLOW-2005 FloPy classes in same model; FloPy has separate class
+    hierarchies: flopy.mf6.* for MODFLOW 6 and flopy.modflow.* for MODFLOW-2005. Using flopy.modflow.ModflowDis
+    with a MF6 simulation or flopy.mf6.ModflowGwfdis with a MF2005 model causes AttributeError. Package
+    name'
+  remedy: 'Use consistent API: all flopy.mf6.* for MF6, all flopy.modflow.* for MF2005; None; [''MF6:
+    flopy.mf6.MFSimulation, ModflowGwf, ModflowGwfdis, ModflowGwfnpf'', ''MF2005: flopy.modflow.Modflow,
+    ModflowDis, ModflowLpf'', "Don''t mix the two hierarchies"]; Check import statements — use only one
+    API family'
+  severity: crash
+- id: dt_012
+  symptom: Head statistics show extreme values (-1e30). Plots have artifacts. Mean head is negative.
+  diagnosis: HDRY values (-1e30) not masked before computing statistics or plotting; Cells that go dry
+    during simulation are assigned HDRY = -1e30 (default). These values must be masked (set to NaN) before
+    any analysis. Computing mean, min, or plotting without masking produces garbage results. The model
+    ran corr
+  remedy: 'Mask dry cells: head[head < -1e29] = np.nan; parse_modflow_output; [''After reading head: head
+    = np.where(head < -1e29, np.nan, head)'', ''Use np.nanmean(), np.nanmin() for statistics'', ''matplotlib
+    will skip NaN values in plots'']; parse_modflow_output.py applies HDRY masking automatically'
+  severity: degraded
+- id: dt_013
+  symptom: Garbage values when reading .hds or .bud file. Array shapes wrong. Random large numbers.
+  diagnosis: Binary file precision mismatch — reading single-precision file as double or vice versa; MODFLOW
+    binary output defaults to single precision (float32). Some MF6 configurations or older MF2005 compilations
+    use double precision (float64). HeadFile and CellBudgetFile must be opened with the matching prec
+  remedy: 'Try both precisions: HeadFile(path, precision=''double''); parse_modflow_output; ["Default:
+    precision=''single''", "If data looks wrong, try precision=''double''", ''Check file size: double
+    precision files are 2× larger'']; parse_modflow_output.py auto-detects by trying both precisions'
+  severity: degraded
+- id: dt_014
+  symptom: All layers have identical properties despite providing per-layer arrays.
+  diagnosis: Missing LAYERED keyword in MF6 package — all layers use first layer's values; In MODFLOW
+    6, array data must be preceded by the LAYERED keyword to indicate per-layer specification. Without
+    it, a single array is read and applied to all layers. FloPy handles this correctly when you pass a
+    3D numpy arra
+  remedy: 'Ensure arrays are 3D (nlay, nrow, ncol) when passing to FloPy MF6 packages; None; [''Check
+    array shape: should be (nlay, nrow, ncol) for layered data'', ''FloPy auto-adds LAYERED when shape
+    is 3D'', "If editing files manually, add ''LAYERED'' before per-layer blocks"]; Verify array dimensions
+    match nlay b'
+  severity: silent
+- id: dt_015
+  symptom: Heads change instantaneously between stress periods. No gradual drawdown response.
+  diagnosis: Transient stress period flagged as steady-state — storage terms ignored; In MODFLOW-2005,
+    each stress period is set as steady or transient in the DIS package. In MF6, this is in the STO package
+    via steady_state/transient dictionaries. If a transient period is accidentally set as steady-state,
+    storag
+  remedy: 'Set transient={period: True} for transient periods in STO package; None; [''MF6: flopy.mf6.ModflowGwfsto(gwf,
+    steady_state={0: True}, transient={1: True})'', ''MF2005: flopy.modflow.ModflowDis(model, steady=[True,
+    False, False, ...])'', "Verify in listing file: STRESS PERIOD should say ''TRANSIENT''"]; Pr'
+  severity: silent
+- id: dt_016
+  symptom: FAILED TO CONVERGE in listing file. Model does not reach solution.
+  diagnosis: Insufficient iterations or closure criteria too tight for model complexity; MODFLOW iterative
+    solvers (IMS for MF6, PCG for MF2005) need enough iterations to converge. Default settings may be
+    insufficient for models with strong nonlinearities (unconfined layers, rewetting, high K contrasts).
+    Non-con
+  remedy: 'Increase outer_maximum (100→500), inner_maximum (50→200). Try COMPLEXITY COMPLEX.; run_modflow;
+    [''Increase MXITER / outer_maximum to 500'', ''Increase inner iterations to 200'', ''Relax closure:
+    outer_dvclose = 1e-3'', ''For unconfined: use Newton (COMPLEXITY COMPLEX in MF6, or MODFLOW-NWT)''];
+    Start with '
+  severity: crash
+- id: dt_017
+  symptom: Heads oscillate between two values. Convergence bounces. Dry-wet cell cycling.
+  diagnosis: 'Cell alternately going dry and wet between iterations (dry-wet cycling); In unconfined models,
+    a cell can go dry (head drops below bottom), causing it to be deactivated, which redirects flow to
+    neighbors, raising their heads, which may re-wet the original cell. This cycle prevents convergence.
+    It''s '
+  remedy: 'Use Newton-Raphson solver (COMPLEXITY COMPLEX), or add under-relaxation; run_modflow; [''MF6:
+    Set COMPLEXITY COMPLEX in IMS package'', "Or add under_relaxation=''DBD'' with theta=0.85", ''Consider
+    thickening thin layers'', ''MF2005: Switch to MODFLOW-NWT'']; Use Newton solver by default for models
+    with unco'
+  severity: crash
+- id: dt_018
+  symptom: Model takes hours for a simple problem. Progress is extremely slow.
+  diagnosis: Poor grid quality or extreme parameter contrasts causing slow convergence; Very high K contrasts
+    between adjacent cells (>1000×), extremely thin layers, or highly irregular grid spacing creates ill-conditioned
+    matrix systems. The solver requires many more iterations per time step. Also check for acc
+  remedy: Smooth K transitions, increase thin layer thickness, check cell sizes; None; ['Check grid cell
+    count — may be too large', 'Smooth K transitions (no 1000× jumps between cells)', 'Minimum layer thickness
+    > 1m', 'Try BICGSTAB linear acceleration']; Review grid statistics before running
+  severity: degraded
+- id: dt_019
+  symptom: Well extraction is positive but should produce drawdown. Injection instead of pumping.
+  diagnosis: 'Well flux sign convention: extraction must be NEGATIVE in MODFLOW; MODFLOW convention: negative
+    flux = extraction (removing water from aquifer), positive flux = injection (adding water). Many operational
+    databases report pumping as positive values. If not negated, the ''pumping'' well actually injects'
+  remedy: 'Negate pumping rates: flux = -abs(pumping_rate); convert_forcing_to_modflow; [''Check: extraction
+    wells should have negative flux'', ''Injection wells should have positive flux'', ''convert_forcing_to_modflow
+    auto-negates if all values are positive'']; validate_outputs() warns if all well fluxes are posit'
+  severity: silent
+- id: dt_020
+  symptom: Constant head boundary drains the entire model. All heads converge to CHD value.
+  diagnosis: Too many constant head cells or CHD values set too low; Constant head boundaries are infinitely
+    permeable — they supply or remove any amount of water to maintain the specified head. If too many
+    cells are set as CHD, or CHD heads are much lower than natural water table, the boundary dominates
+    the sol
+  remedy: 'Minimize CHD cells. Use GHB (general head) for distant boundaries instead.; None; [''CHD should
+    only be at well-known boundaries (ocean, large lake)'', ''For distant/uncertain boundaries, use GHB
+    with finite conductance'', ''Check water balance: CHD in/out should not dominate total budget''];
+    Review water'
+  severity: degraded
+- id: dt_021
+  symptom: Verification obs is an above-canopy eddy-covariance latent-heat / ET / carbon flux (FLUXNET2015
+    LE_F_MDS/LE_CORR/GPP_NT_VUT_REF) but all MODFLOW outputs are hydraulic; r/NSE/KGE return null because
+    no model output is comparable.
+  diagnosis: 'Wrong-variable / wrong-domain: MODFLOW is a saturated-zone groundwater-flow model with no
+    surface energy budget (dag.yaml:582). The EVT budget term is an input-prescribed water sink (m3/day),
+    not ecosystem latent heat (W/m2), so it is not a valid LE surrogate.'
+  remedy: 'SKIP — do not retry, do not tune. The r<0.5 trigger is uncomputable (no comparable output).
+    Verify FloPy only against hydraulic obs: well heads, pumping-test drawdown, gauged baseflow (RIV/DRN
+    budget term), or solute breakthrough concentration.'

@@ -1,0 +1,484 @@
+schema_version: 1
+model_id: CLASSIC
+domain: hydrology
+generated_by: "Step-B fleet agent; literature-grounded validation convention"
+generated_at: 2026-08-14
+
+# One block per declared CLASSIC DAG output name and observation shape. Numeric
+# bands are cited only where a fetched full text reports criteria or benchmark
+# skill. Continuous spatial fields retain the DAG csi metric but use null bands
+# where the fetched land-model literature does not define a CSI convention.
+
+references:
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  melton2020:
+    doi: 10.5194/gmd-13-2825-2020
+    title: "CLASSIC v1.0: the open-source community successor to the Canadian Land Surface Scheme (CLASS) and the Canadian Terrestrial Ecosystem Model (CTEM) - Part 1"
+    venue: "Geoscientific Model Development"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-2825-2020.txt
+  brown2006:
+    doi: 10.3137/ao.440302
+    title: "Evaluation of snow cover in CLASS for SnowMIP"
+    venue: "Atmosphere-Ocean"
+    year: 2006
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3137_ao.440302.txt
+  wang2025:
+    doi: 10.5194/gmd-18-6597-2025
+    title: "Impact of topography and meteorological forcing on snow simulation in the Canadian Land Surface Scheme Including Biogeochemical Cycles (CLASSIC)"
+    venue: "Geoscientific Model Development"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-18-6597-2025.txt
+  luo2012:
+    doi: 10.5194/bg-9-3857-2012
+    title: "A framework for benchmarking land models"
+    venue: "Biogeosciences"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-9-3857-2012.txt
+  hayek2024:
+    doi: 10.5194/bg-21-869-2024
+    title: "Multiscale assessment of North American terrestrial carbon balance"
+    venue: "Biogeosciences"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-21-869-2024.txt
+  jung2020:
+    doi: 10.5194/bg-17-1343-2020
+    title: "Scaling carbon fluxes from eddy covariance sites to globe: synthesis and evaluation of the FLUXCOM approach"
+    venue: "Biogeosciences"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-17-1343-2020.txt
+  beck2017:
+    doi: 10.5194/hess-21-2881-2017
+    title: "Global evaluation of runoff from 10 state-of-the-art hydrological models"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-21-2881-2017.txt
+  zhang2020:
+    doi: 10.5194/hess-24-1485-2020
+    title: "Evaluation of global terrestrial evapotranspiration using state-of-the-art approaches in remote sensing, machine learning and land surface modeling"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-24-1485-2020.txt
+  mahowald2016:
+    doi: 10.5194/esd-7-211-2016
+    title: "Projections of leaf area index in Earth system models"
+    venue: "Earth System Dynamics"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_esd-7-211-2016.txt
+  toddbrown2013:
+    doi: 10.5194/bg-10-1717-2013
+    title: "Causes of variation in soil carbon simulations from CMIP5 Earth system models and comparison with observations"
+    venue: "Biogeosciences"
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-10-1717-2013.txt
+
+validation:
+  - dag_variable: rss
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred from Moriasi 2015 general NSE PEC; CLASSIC reports RNS RMSE/R2 rather than an rss-specific NSE threshold."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CLASSIC site-level net radiation benchmark reports average RMSE 19 W m-2 and median R2 0.86."
+        cites: [melton2020]
+    validated_when: "NSE >= 0.5 for point time series, with CLASSIC net-radiation benchmark context."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Moriasi 2015 says flow model performance is satisfactory when NSE > 0.50; Melton 2020 uses AMBER scores and warns absolute score thresholds are arbitrary."
+
+  - dag_variable: rss
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched CLASSIC or land-model paper defines a CSI threshold for continuous spatial radiation fields."
+        cites: []
+    secondary_metrics:
+      - metric: spatial_distribution_score
+        direction: maximize
+        status: supportive
+        ceiling_reason: "AMBER includes spatial distribution among component scores but does not use absolute scores to define acceptable performance."
+        cites: [melton2020]
+    validated_when: "UNRESOLVED - CSI convention for continuous spatial radiation fields was not found in fetched texts."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Luo 2012 calls for benchmark metrics such as RMSE, global deviations, and correlations, but not a fixed CSI band."
+
+  - dag_variable: hfss
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred field/watershed NSE criterion; flux-tower evaluations more often report RMSE, R2, and AMBER scores."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Eddy-covariance energy non-closure complicates direct sensible/latent heat validation because CLASSIC enforces closure while tower residuals are 10-30% of net radiation."
+        cites: [melton2020]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "CLASSIC sensible heat benchmark reports mean RMSE 24.7 W m-2, median R2 0.31, Srmse 0.52, and overall score 0.66."
+        cites: [melton2020]
+    validated_when: "NSE >= 0.5, but failing NSE should be interpreted with the documented tower energy-closure ceiling."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Melton 2020 reports HFSS closer to tower observations than HFLS, but also documents EC non-closure."
+
+  - dag_variable: hfls
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred field/watershed NSE criterion; flux-tower LE evaluations more often report RMSE, R2, and AMBER scores."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Eddy-covariance energy non-closure complicates HFLS validation because CLASSIC closes the energy budget while EC latent heat may carry the residual."
+        cites: [melton2020]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "CLASSIC latent heat benchmark reports mean RMSE 31.5 W m-2, median R2 0.08, Srmse 0.50, and overall score 0.66."
+        cites: [melton2020]
+    validated_when: "NSE >= 0.5, but failing NSE should be interpreted with the documented tower energy-closure ceiling."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Zhang 2020 evaluates ET products as benchmarks and notes ET/LAI drivers, but does not provide an hfls NSE pass band."
+
+  - dag_variable: hfls
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched ET/land-model benchmark defines a CSI threshold for continuous latent-heat spatial time series."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Global ET benchmark products are compared by trends, interannual variability, and sensitivities, not fixed CSI."
+        cites: [zhang2020]
+    validated_when: "UNRESOLVED - use ET benchmark intercomparison context; no CSI pass band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Luo 2012 states that land-model benchmarking needs justified thresholds; the fetched ET papers did not supply one for CSI."
+
+  - dag_variable: gpp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred general NSE PEC; CLASSIC site benchmarking reports GPP RMSE/R2/AMBER instead of a fixed NSE band."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "CLASSIC GPP site benchmark reports average RMSE 0.07 kg C m-2 month-1, median R2 0.15, Srmse 0.48, and overall score 0.69."
+        cites: [melton2020]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "FLUXCOM global GPP patterns are consistent across ensembles with R2 > 0.94, while pixel-wise SIF agreement is about R2 0.75 for FLUXCOM and 0.6 for DGVMs."
+        cites: [jung2020]
+    validated_when: "NSE >= 0.5 for tower time-series skill; use RMSE/R2 benchmark values as context."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Tower GPP is partitioned from NEE, so low time-series skill should be interpreted against FLUXNET/FLUXCOM uncertainty."
+
+  - dag_variable: gpp
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched carbon-flux benchmark papers use R2/RMSE/benchmark scores, not CSI for continuous GPP fields."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "FLUXCOM reports mean GPP spatial patterns consistent across products and better SIF agreement than DGVMs."
+        cites: [jung2020]
+    validated_when: "UNRESOLVED - no CSI pass band for spatial GPP in fetched texts."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Luo 2012 lists GPP benchmarks but leaves threshold development as a community benchmarking task."
+
+  - dag_variable: nep
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred general NSE PEC; CLASSIC reports NEE benchmark scores, and NEP sign conventions must be harmonized."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "NEE/NEP is a residual carbon flux; CLASSIC reports NEE evaluation is confounded by issues affecting GPP and ecosystem respiration."
+        cites: [melton2020]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "CLASSIC NEE site benchmark reports Srmse 0.33, spatial distribution score 0, and overall score 0.44."
+        cites: [melton2020]
+    validated_when: "NSE >= 0.5 after harmonizing NEP/NEE sign; failures may indicate observation partitioning/residual-flux ceiling."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "Hayek 2024 evaluates carbon balance using atmospheric CO2 drawdown R2/RMSE baselines, not a fixed NEP NSE band."
+
+  - dag_variable: nbp
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched carbon-balance paper gives a fixed PBIAS pass band for regional NBP."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hayek 2024 removes models whose atmospheric CO2 signal R2 is below an APAR lower benchmark rather than applying a fixed PBIAS threshold."
+        cites: [hayek2024]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Hayek 2024 removes models with RMSE higher than rescaled APAR, a dynamic baseline without a universal numeric band."
+        cites: [hayek2024]
+    validated_when: "UNRESOLVED - compare decadal mean and trend to carbon-budget/inversion products; no cited numeric PBIAS threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "FLUXCOM/TRENDY/inversion studies emphasize cross-product consistency and dynamic benchmarks; a fixed regional NBP PBIAS convention was not fetched."
+
+  - dag_variable: rh
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an RH-specific NSE threshold; tower and chamber products often observe total ecosystem/soil respiration, not RH alone."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "CLASSIC reports RECO rather than RH: mean RMSE 0.06 kg C m-2 month-1, median R2 0.12, Srmse 0.49."
+        cites: [melton2020]
+    validated_when: "UNRESOLVED - RH requires partitioned respiration observations or an RH-specific benchmark."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The closest fetched CLASSIC evidence is RECO, not heterotrophic respiration; keep bands null."
+
+  - dag_variable: mrro
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow PEC: satisfactory when NSE > 0.50."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final flow PEC: satisfactory when PBIAS is within 15 percent."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Beck 2017 evaluates routed runoff with temporal correlations, runoff signatures, and notes negative median NSE for many uncalibrated global models."
+        cites: [beck2017]
+    validated_when: "NSE >= 0.5 AND abs(PBIAS) <= 15% for runoff-like time-series validation."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: "Use cautiously because CLASSIC mrro is unrouted grid-cell runoff, while Moriasi flow criteria and Beck 2017 routed runoff benchmarks are not identical."
+
+  - dag_variable: snw
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Transferred Moriasi flow PBIAS criterion; Brown 2006 reports CLASS SWE mean bias of +21 mm, 6.7% of observed mean."
+        cites: [moriasi2015, brown2006]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Brown 2006 reports CLASS 3.1 SWE r2 = 0.94 and calls CLASS one of the better single-layer SnowMIP models."
+        cites: [brown2006]
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Wang 2025 finds SWE biases depend strongly on topography and meteorological forcing, and can propagate into snow-cover fraction bias."
+        cites: [wang2025]
+    validated_when: "abs(PBIAS) <= 15% for point SWE, with snow-specific R2/bias benchmark context."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Brown 2006 reports CLASS 3.1 SWE slope 0.89, r2 0.94, and +6.7% mean SWE bias; the PBIAS pass band is transferred."
+
+  - dag_variable: snw
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched CLASSIC snow papers use bias, uRMSE, correlation, and AMBER scores, not CSI thresholds."
+        cites: []
+    secondary_metrics:
+      - metric: correlation
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Wang 2025 reports SCF/SWE evaluation by mean bias, unbiased RMSE, and Pearson correlation."
+        cites: [wang2025]
+    validated_when: "UNRESOLVED - no CSI pass band for spatial snow fields in fetched CLASSIC snow texts."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Use Wang 2025 bias/uRMSE/correlation as benchmark context, but do not auto-validate CSI."
+
+  - dag_variable: lai
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched LAI model-evaluation papers report mean ratio, spatial correlation, and seasonal/interannual correlation, not CSI."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Mahowald 2016 reports satellite LAI estimate RMSE about 0.68 LAI across LAI values below 1 to almost 6."
+        cites: [mahowald2016]
+      - metric: spatial_correlation
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Mahowald 2016 uses annual mean LAI, spatial correlation, and seasonal-cycle temporal correlation for evaluation."
+        cites: [mahowald2016]
+    validated_when: "UNRESOLVED - no CSI threshold; evaluate with satellite LAI correlation and uncertainty context."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Satellite LAI saturation/high-cloud biases are documented, so a fixed CSI gate would be unjustified from fetched evidence."
+
+  - dag_variable: cSoil
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched soil-carbon benchmark reports correlations/RMSE/Taylor scores, not CSI thresholds."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Todd-Brown 2013 reports grid-cell soil-carbon RMSE ranges of 9.4-20.7 kg C m-2 versus HWSD and 18.0-27.7 versus NCSCD."
+        cites: [toddbrown2013]
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Todd-Brown 2013 reports soil-carbon spatial correlations often below 0.4, with biome-level model-data agreement only moderate."
+        cites: [toddbrown2013]
+    validated_when: "UNRESOLVED - compare spatial SOC against matched-depth maps using RMSE/correlation; no CSI pass band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "SOC map depth and structural uncertainty dominate; fetched literature does not justify a fixed CSI gate."
+
+  - dag_variable: cSoil
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a point-profile soil-carbon PBIAS pass band; depth matching is mandatory."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Todd-Brown 2013 emphasizes matching soil carbon depth assumptions and reports large map/model uncertainty."
+        cites: [toddbrown2013]
+    validated_when: "UNRESOLVED - point SOC validation requires matched depth and uncertainty; no cited PBIAS band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Do not use the Moriasi PBIAS band here; soil-carbon stock comparison has different units, depth support, and uncertainty structure."
+
+deferred_paywalled:
+  - ref: "Wilson et al. 2002 - Energy balance closure at FLUXNET sites"
+    doi: unknown_not_fetched
+    needed_for: [hfss, hfls]
+  - ref: "Etchevers et al. 2002 - SnowMIP SWE rms-error intercomparison"
+    doi: unknown_not_fetched
+    needed_for: [snw]
+  - ref: "Collier et al. 2018 - ILAMB stoplight/score interpretation"
+    doi: unknown_not_fetched
+    needed_for: [rss, hfls, gpp, lai, cSoil]

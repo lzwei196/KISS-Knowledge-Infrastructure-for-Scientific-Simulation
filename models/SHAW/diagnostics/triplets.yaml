@@ -1,374 +1,388 @@
+# ========================================================================
+# SHAW Diagnostic Triplets
+# ========================================================================
+# 33 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+# Comments preserved from the previous file:
 # SHAW Model Error Triplets (Knowledge Base)
 # Format: symptom -> diagnosis -> remedy
 # Each triplet captures a known failure pattern for the SHAW model.
-
-triplets:
-
-  - id: shaw_001
-    symptom: "SHAW reads input from stdin prompt, not command-line argument"
-    diagnosis: "Running './shaw303 trial.inp' passes inp as argument, but SHAW ignores it and waits for stdin input, causing the process to hang indefinitely"
-    remedy: "Pipe the .inp filename to stdin: echo 'trial.inp' | ./shaw303. Or use Python subprocess with input='trial.inp\\n'. SHAW always prompts for the .inp filename interactively."
-    severity: high
-    category: execution
-    silent: true
-
-  - id: shaw_002
-    symptom: "File paths in .inp file exceed 80 characters"
-    diagnosis: "SHAW Fortran 77 reads file paths into CHARACTER*80 variables. Paths longer than 80 chars are truncated silently, causing 'file not found' or reading wrong files"
-    remedy: "Keep all file paths in .inp < 80 characters. Use relative paths from the working directory, or create symlinks for deeply nested paths. Validate with validate_shaw_inputs.py."
-    severity: critical
-    category: fortran_trap
-    silent: true
-    cfp: cfp_001
-
-  - id: shaw_003
-    symptom: "Wind speed units mismatch with IFLAGSI flag"
-    diagnosis: "IFLAGSI=0 expects wind in mph (hourly) or miles/day (daily). CMFD/MSWX/NASA POWER provide wind in m/s. Using m/s with IFLAGSI=0 gives ~2.2x wrong wind speed, causing wrong ET and energy balance"
-    remedy: "Always set IFLAGSI=1 when using CMFD, MSWX, or NASA POWER forcing. IFLAGSI=1 means all SI units: wind in m/s, precipitation in mm."
-    severity: critical
-    category: unit_conversion
-    silent: true
-    cfp: cfp_002
-
-  - id: shaw_004
-    symptom: "Precipitation units mismatch with IFLAGSI flag"
-    diagnosis: "IFLAGSI=0 expects precipitation in inches. CMFD/MSWX provide mm. Using mm with IFLAGSI=0 gives ~25.4x wrong precipitation"
-    remedy: "Set IFLAGSI=1 for metric units (mm). This is the most common SHAW setup error."
-    severity: critical
-    category: unit_conversion
-    silent: true
-    cfp: cfp_002
-
-  - id: shaw_005
-    symptom: "Daily wind speed in miles/day not m/s when IFLAGSI=0"
-    diagnosis: "For MTSTEP=1 (daily) with IFLAGSI=0, SHAW expects wind in miles/day (NOT mph). This is different from hourly format where it expects mph. Using m/s here gives ~53.7x wrong wind"
-    remedy: "Use IFLAGSI=1 consistently with HydroCraft forcing. Daily wind is m/s with IFLAGSI=1."
-    severity: high
-    category: unit_conversion
-    silent: true
-
-  - id: shaw_006
-    symptom: "Soil Ksat is always in cm/hr regardless of IFLAGSI"
-    diagnosis: "SHAW soil Ksat (SATCON) is in cm/hr, not affected by IFLAGSI flag. VIC Ksat is in mm/s. Using VIC mm/s value directly gives 360x wrong Ksat"
-    remedy: "Convert VIC Ksat: SHAW_Ksat_cm_hr = VIC_Ksat_mm_s * 360.0. The vic_to_shaw_soil.py tool handles this automatically."
-    severity: critical
-    category: unit_conversion
-    silent: true
-    cfp: cfp_002
-
-  - id: shaw_007
-    symptom: "VIC exponent to Campbell b conversion"
-    diagnosis: "VIC 'expt' parameter = 2*b + 3 (where b is Campbell's pore size distribution). Using VIC expt directly as SHAW 'b' gives wildly wrong water retention"
-    remedy: "SHAW_b = (VIC_expt - 3) / 2. Example: VIC expt=9 -> SHAW b=3.0"
-    severity: critical
-    category: unit_conversion
-    silent: true
-
-  - id: shaw_008
-    symptom: "VIC bubble pressure to SHAW air-entry potential"
-    diagnosis: "VIC 'bubble' is in cm (positive). SHAW 'psi_e' is in meters (negative). Using VIC bubble directly gives wrong magnitude and sign"
-    remedy: "SHAW_psi_e_m = -VIC_bubble_cm / 100.0. Example: VIC bubble=30cm -> SHAW psi_e=-0.30m"
-    severity: high
-    category: unit_conversion
-    silent: true
-
-  - id: shaw_009
-    symptom: "Too few soil nodes for freeze-thaw simulation"
-    diagnosis: "Using NS=5 or fewer nodes with 4m soil depth gives coarse vertical resolution (80cm+ per node). Frost penetration depth (typically 30-150cm) cannot be resolved, producing step-function frost profiles"
-    remedy: "Use NS >= 11 with finer spacing near surface. Recommended: 5cm intervals in top 30cm, then increasing to 50cm at depth. The create_site_file.py tool generates optimal node spacing automatically."
-    severity: high
-    category: discretization
-    silent: false
-
-  - id: shaw_010
-    symptom: "ZS(1) not equal to 0.0 in soil layers"
-    diagnosis: "SHAW requires the first soil node depth ZS(1) = 0.0 (surface). If ZS(1) > 0, the model may crash or produce wrong surface energy balance"
-    remedy: "Always set ZS(1) = 0.000 (the soil surface). Depths increase downward from there."
-    severity: high
-    category: input_format
-    silent: false
-
-  - id: shaw_011
-    symptom: "Moisture file has fewer than 2 profiles"
-    diagnosis: "SHAW requires at least 2 moisture profiles: one on/before start date and one on/after end date. With only 1 profile, SHAW cannot interpolate the lower boundary condition"
-    remedy: "Always provide 2 profiles in .moi file. The set_initial_conditions.py tool generates both start and end profiles automatically."
-    severity: high
-    category: input_format
-    silent: false
-
-  - id: shaw_012
-    symptom: "99999 sentinel value in temperature file"
-    diagnosis: "Temperature value 99999 means 'no measurement' and SHAW will interpolate. But if ALL values at a time step are 99999, SHAW may crash or produce garbage"
-    remedy: "Ensure at least some nodes have valid temperatures in each profile. Use set_initial_conditions.py to generate complete profiles."
-    severity: medium
-    category: input_format
-    silent: false
-
-  - id: shaw_013
-    symptom: "SHAW uses 2-digit year codes"
-    diagnosis: "SHAW uses 2-digit year codes (86 = 1986, 05 = 2005). If full 4-digit years are written (2005), SHAW may misparse the weather/moisture/temperature files"
-    remedy: "Convert 4-digit years to 2-digit: year % 100. For year < 2000, values > 50 are interpreted as 1900s. For year >= 2000, values < 50 are 2000s."
-    severity: high
-    category: input_format
-    silent: true
-
-  - id: shaw_014
-    symptom: "Snow density set to 0 in weather file"
-    diagnosis: "SNODEN=0 is valid — it tells SHAW to compute snow density from air temperature. This is NOT an error, just potentially less accurate than measured density"
-    remedy: "SNODEN=0 is the recommended default when snow density data is unavailable. SHAW uses an empirical T-density relationship."
-    severity: info
-    category: parameterization
-    silent: false
-
-  - id: shaw_015
-    symptom: "Convergence tolerance too large"
-    diagnosis: "TOLER > 0.05 causes the Newton-Raphson solver to accept inaccurate solutions, especially during freeze-thaw transitions where the latent heat term creates strong nonlinearity"
-    remedy: "Set TOLER = 0.001 to 0.01 (suggested in manual). Smaller values increase accuracy but slow computation. For freeze-thaw studies, use TOLER=0.001."
-    severity: medium
-    category: convergence
-    silent: true
-
-  - id: shaw_016
-    symptom: "PONDMX=0 causes all excess water to run off immediately"
-    diagnosis: "With PONDMX=0 (max ponding depth), any water exceeding infiltration capacity runs off instantly. This overestimates runoff and underestimates infiltration on flat terrain"
-    remedy: "Set PONDMX > 0 for flat sites. Typical values: 0.5-2.0 cm for flat agricultural land, 0.0 for steep slopes. Check site topography."
-    severity: medium
-    category: parameterization
-    silent: true
-
-  - id: shaw_017
-    symptom: "Measurement height (HEIGHT) less than canopy height"
-    diagnosis: "SHAW requires HEIGHT > max canopy height. If HEIGHT < plant height, the wind/temperature profile extrapolation becomes physically impossible"
-    remedy: "Set HEIGHT to at least 1m above the maximum expected canopy height. Typical: 2-3m for crops, 15m+ for forests."
-    severity: high
-    category: parameterization
-    silent: false
-
-  - id: shaw_018
-    symptom: "SHAW STOP with no error message"
-    diagnosis: "SHAW may call Fortran STOP (exit code 0) when encountering numerical problems. No error message is printed, and output files may be incomplete or empty"
-    remedy: "Check: (1) Are all output files non-empty? (2) Does simulation period in output match input? (3) Run with LEVEL(1)=1 for debug output. Common cause: extreme weather values causing solver divergence."
-    severity: high
-    category: fortran_trap
-    silent: true
-    cfp: cfp_003
-
-  - id: shaw_019
-    symptom: "Initial moisture too high causes saturation excess in first timestep"
-    diagnosis: "Setting initial moisture near saturation (theta > 0.45) at all depths causes immediate drainage and runoff in the first timestep, creating a large water balance artifact in the first day"
-    remedy: "Use field capacity (typically 0.25-0.35 m3/m3) as initial moisture. Run a 1-year spinup and discard the first year from analysis."
-    severity: medium
-    category: initialization
-    silent: true
-
-  - id: shaw_020
-    symptom: "Solar radiation in wrong time convention"
-    diagnosis: "SHAW expects solar radiation (SUNHOR) as instantaneous value at the measurement hour (W/m2). Some datasets provide cumulative or period-average radiation, leading to wrong diurnal energy partition"
-    remedy: "CMFD/MSWX provide period-average W/m2 — this is acceptable for SHAW. NASA POWER hourly provides instantaneous — also fine. For daily mode, provide average daily radiation in W/m2."
-    severity: medium
-    category: unit_conversion
-    silent: true
-
-  - id: shaw_021
-    symptom: "SHAW residue RESTKB value wrong for crop type"
-    diagnosis: "RESTKB controls wind influence on heat/vapor transfer through residue. Using RESTKB=4.0 (wheat) for corn stalks underestimates wind exposure, keeping residue too moist"
-    remedy: "RESTKB=4.0 for small/lying residue (wheat, grass). RESTKB=8.5 for large/standing residue (corn stalks). The configure_residue.py tool selects correct values per crop."
-    severity: medium
-    category: parameterization
-    silent: true
-
-  - id: shaw_022
-    symptom: "Van Genuchten psi_e must be set to 0 in SHAW"
-    diagnosis: "When IWRC=3 (Van Genuchten), SHAW requires SOILWRC(I,1) = psi_e = 0.0. If a non-zero air-entry value is used, SHAW applies both VG and Campbell corrections"
-    remedy: "Always set psi_e = 0.0 when using Van Genuchten (IWRC=3). The alpha parameter in VG handles the air-entry behavior instead."
-    severity: high
-    category: parameterization
-    silent: true
-
-  - id: shaw_023
-    symptom: "Windows backslash paths in SHAW input files on Linux"
-    diagnosis: "SHAW distribution uses Windows backslash paths (e.g., US-Rms-Input\\US-Rms.sit). On Linux, backslash is a literal character in filenames, not a path separator, causing 'file not found' errors"
-    remedy: "Replace ALL backslashes with forward slashes in .inp AND .sit files. Both files reference other files: .inp references .sit/.wea/.moi/.tem, and .sit references plant growth files (.gro). Use: sed -i 's|\\\\|/|g' *.inp *.sit"
-    severity: critical
-    category: platform_trap
-    silent: false
-    cfp: cfp_009
-
-  - id: shaw_024
-    symptom: "SHAW executable reads input filename from stdin, not command-line arguments"
-    diagnosis: "SHAW prompts interactively for the .inp filename AND prompts 'Press Enter to end' at completion. If the process runs non-interactively without sufficient stdin input, it hangs or crashes with EOF error"
-    remedy: "Always provide 2 newlines to stdin: printf 'filename.inp\\n\\n' | ./shaw303. The second newline handles the 'Press Enter to end' prompt. In Python subprocess, use input='filename.inp\\n\\n'."
-    severity: high
-    category: execution
-    silent: false
-
-  - id: shaw_025
-    symptom: "SHAW year format in .inp PEST section uses 4-digit years but model expects 2-digit elsewhere"
-    diagnosis: "The PEST comparison section at the bottom of .inp (lines 27+) uses 4-digit years, while weather/moisture/temperature data uses 2-digit years. Mixing conventions in the same file is confusing but correct"
-    remedy: "This is by design. PEST section lines use 4-digit years. Weather/moisture/temp data files use 2-digit years. Do NOT 'fix' the PEST section to 2-digit."
-    severity: info
-    category: input_format
-    silent: false
-
   # =========================================================================
   # VALIDATION-DISCOVERED ERRORS (Manitoba Station 544, 2026-03-24)
   # =========================================================================
+# Field names normalised to the controlled vocabulary 2026-08-12
+# (see ki_vocabulary.py). Values unchanged; only keys were renamed.
 
-  - id: shaw_026
-    symptom: "MTSTEP=0 (hourly) but weather file has daily data (8 columns)"
-    diagnosis: >
-      SHAW reads weather differently based on MTSTEP flag in .inp Line B.
-      MTSTEP=0 expects 9 hourly columns (JD JH JYR TA WIND HUM PRECIP SNODEN SUNHOR).
-      MTSTEP=1 expects 8 daily columns (JD JYR TMAX TMIN TDEW WIND PRECIP SOLAR).
-      Using daily data with MTSTEP=0 causes SHAW to misread all columns —
-      year is read as hour, TMAX as temperature, etc. The model may run without
-      error but produces completely wrong results (zero precip, wrong temperatures).
-    remedy: >
-      Set MTSTEP=1 in .inp Line B for daily weather data.
-      Set MTSTEP=0 for hourly data. The daily format has NO hour column
-      and uses TMAX/TMIN instead of hourly TA. Verify column count: 8=daily, 9=hourly.
-      The setup_shaw_from_template.py must detect data frequency and set MTSTEP accordingly.
-    severity: critical
-    category: input_format
-    silent: true
-    discovered_at: "Manitoba Station 544, 2026-03-24"
+- id: shaw_001
+  symptom: SHAW reads input from stdin prompt, not command-line argument
+  diagnosis: Running './shaw303 trial.inp' passes inp as argument, but SHAW ignores it and waits for stdin
+    input, causing the process to hang indefinitely
+  remedy: 'Pipe the .inp filename to stdin: echo ''trial.inp'' | ./shaw303. Or use Python subprocess with
+    input=''trial.inp\n''. SHAW always prompts for the .inp filename interactively.'
+  severity: high
+  failure_domain: execution
+  silent: true
+- id: shaw_002
+  symptom: File paths in .inp file exceed 80 characters
+  diagnosis: SHAW Fortran 77 reads file paths into CHARACTER*80 variables. Paths longer than 80 chars
+    are truncated silently, causing 'file not found' or reading wrong files
+  remedy: Keep all file paths in .inp < 80 characters. Use relative paths from the working directory,
+    or create symlinks for deeply nested paths. Validate with validate_shaw_inputs.py.
+  severity: critical
+  failure_domain: fortran_trap
+  silent: true
+  cfp: cfp_001
+- id: shaw_003
+  symptom: Wind speed units mismatch with IFLAGSI flag
+  diagnosis: IFLAGSI=0 expects wind in mph (hourly) or miles/day (daily). CMFD/MSWX/NASA POWER provide
+    wind in m/s. Using m/s with IFLAGSI=0 gives ~2.2x wrong wind speed, causing wrong ET and energy balance
+  remedy: 'Always set IFLAGSI=1 when using CMFD, MSWX, or NASA POWER forcing. IFLAGSI=1 means all SI units:
+    wind in m/s, precipitation in mm.'
+  severity: critical
+  failure_domain: unit_conversion
+  silent: true
+  cfp: cfp_002
+- id: shaw_004
+  symptom: Precipitation units mismatch with IFLAGSI flag
+  diagnosis: IFLAGSI=0 expects precipitation in inches. CMFD/MSWX provide mm. Using mm with IFLAGSI=0
+    gives ~25.4x wrong precipitation
+  remedy: Set IFLAGSI=1 for metric units (mm). This is the most common SHAW setup error.
+  severity: critical
+  failure_domain: unit_conversion
+  silent: true
+  cfp: cfp_002
+- id: shaw_005
+  symptom: Daily wind speed in miles/day not m/s when IFLAGSI=0
+  diagnosis: For MTSTEP=1 (daily) with IFLAGSI=0, SHAW expects wind in miles/day (NOT mph). This is different
+    from hourly format where it expects mph. Using m/s here gives ~53.7x wrong wind
+  remedy: Use IFLAGSI=1 consistently with HydroCraft forcing. Daily wind is m/s with IFLAGSI=1.
+  severity: high
+  failure_domain: unit_conversion
+  silent: true
+- id: shaw_006
+  symptom: Soil Ksat is always in cm/hr regardless of IFLAGSI
+  diagnosis: SHAW soil Ksat (SATCON) is in cm/hr, not affected by IFLAGSI flag. VIC Ksat is in mm/s. Using
+    VIC mm/s value directly gives 360x wrong Ksat
+  remedy: 'Convert VIC Ksat: SHAW_Ksat_cm_hr = VIC_Ksat_mm_s * 360.0. The vic_to_shaw_soil.py tool handles
+    this automatically.'
+  severity: critical
+  failure_domain: unit_conversion
+  silent: true
+  cfp: cfp_002
+- id: shaw_007
+  symptom: VIC exponent to Campbell b conversion
+  diagnosis: VIC 'expt' parameter = 2*b + 3 (where b is Campbell's pore size distribution). Using VIC
+    expt directly as SHAW 'b' gives wildly wrong water retention
+  remedy: 'SHAW_b = (VIC_expt - 3) / 2. Example: VIC expt=9 -> SHAW b=3.0'
+  severity: critical
+  failure_domain: unit_conversion
+  silent: true
+- id: shaw_008
+  symptom: VIC bubble pressure to SHAW air-entry potential
+  diagnosis: VIC 'bubble' is in cm (positive). SHAW 'psi_e' is in meters (negative). Using VIC bubble
+    directly gives wrong magnitude and sign
+  remedy: 'SHAW_psi_e_m = -VIC_bubble_cm / 100.0. Example: VIC bubble=30cm -> SHAW psi_e=-0.30m'
+  severity: high
+  failure_domain: unit_conversion
+  silent: true
+- id: shaw_009
+  symptom: Too few soil nodes for freeze-thaw simulation
+  diagnosis: Using NS=5 or fewer nodes with 4m soil depth gives coarse vertical resolution (80cm+ per
+    node). Frost penetration depth (typically 30-150cm) cannot be resolved, producing step-function frost
+    profiles
+  remedy: 'Use NS >= 11 with finer spacing near surface. Recommended: 5cm intervals in top 30cm, then
+    increasing to 50cm at depth. The create_site_file.py tool generates optimal node spacing automatically.'
+  severity: high
+  failure_domain: discretization
+  silent: false
+- id: shaw_010
+  symptom: ZS(1) not equal to 0.0 in soil layers
+  diagnosis: SHAW requires the first soil node depth ZS(1) = 0.0 (surface). If ZS(1) > 0, the model may
+    crash or produce wrong surface energy balance
+  remedy: Always set ZS(1) = 0.000 (the soil surface). Depths increase downward from there.
+  severity: high
+  failure_domain: input_format
+  silent: false
+- id: shaw_011
+  symptom: Moisture file has fewer than 2 profiles
+  diagnosis: 'SHAW requires at least 2 moisture profiles: one on/before start date and one on/after end
+    date. With only 1 profile, SHAW cannot interpolate the lower boundary condition'
+  remedy: Always provide 2 profiles in .moi file. The set_initial_conditions.py tool generates both start
+    and end profiles automatically.
+  severity: high
+  failure_domain: input_format
+  silent: false
+- id: shaw_012
+  symptom: 99999 sentinel value in temperature file
+  diagnosis: Temperature value 99999 means 'no measurement' and SHAW will interpolate. But if ALL values
+    at a time step are 99999, SHAW may crash or produce garbage
+  remedy: Ensure at least some nodes have valid temperatures in each profile. Use set_initial_conditions.py
+    to generate complete profiles.
+  severity: medium
+  failure_domain: input_format
+  silent: false
+- id: shaw_013
+  symptom: SHAW uses 2-digit year codes
+  diagnosis: SHAW uses 2-digit year codes (86 = 1986, 05 = 2005). If full 4-digit years are written (2005),
+    SHAW may misparse the weather/moisture/temperature files
+  remedy: 'Convert 4-digit years to 2-digit: year % 100. For year < 2000, values > 50 are interpreted
+    as 1900s. For year >= 2000, values < 50 are 2000s.'
+  severity: high
+  failure_domain: input_format
+  silent: true
+- id: shaw_014
+  symptom: Snow density set to 0 in weather file
+  diagnosis: SNODEN=0 is valid — it tells SHAW to compute snow density from air temperature. This is NOT
+    an error, just potentially less accurate than measured density
+  remedy: SNODEN=0 is the recommended default when snow density data is unavailable. SHAW uses an empirical
+    T-density relationship.
+  severity: info
+  failure_domain: parameterization
+  silent: false
+- id: shaw_015
+  symptom: Convergence tolerance too large
+  diagnosis: TOLER > 0.05 causes the Newton-Raphson solver to accept inaccurate solutions, especially
+    during freeze-thaw transitions where the latent heat term creates strong nonlinearity
+  remedy: Set TOLER = 0.001 to 0.01 (suggested in manual). Smaller values increase accuracy but slow computation.
+    For freeze-thaw studies, use TOLER=0.001.
+  severity: medium
+  failure_domain: convergence
+  silent: true
+- id: shaw_016
+  symptom: PONDMX=0 causes all excess water to run off immediately
+  diagnosis: With PONDMX=0 (max ponding depth), any water exceeding infiltration capacity runs off instantly.
+    This overestimates runoff and underestimates infiltration on flat terrain
+  remedy: 'Set PONDMX > 0 for flat sites. Typical values: 0.5-2.0 cm for flat agricultural land, 0.0 for
+    steep slopes. Check site topography.'
+  severity: medium
+  failure_domain: parameterization
+  silent: true
+- id: shaw_017
+  symptom: Measurement height (HEIGHT) less than canopy height
+  diagnosis: SHAW requires HEIGHT > max canopy height. If HEIGHT < plant height, the wind/temperature
+    profile extrapolation becomes physically impossible
+  remedy: 'Set HEIGHT to at least 1m above the maximum expected canopy height. Typical: 2-3m for crops,
+    15m+ for forests.'
+  severity: high
+  failure_domain: parameterization
+  silent: false
+- id: shaw_018
+  symptom: SHAW STOP with no error message
+  diagnosis: SHAW may call Fortran STOP (exit code 0) when encountering numerical problems. No error message
+    is printed, and output files may be incomplete or empty
+  remedy: 'Check: (1) Are all output files non-empty? (2) Does simulation period in output match input?
+    (3) Run with LEVEL(1)=1 for debug output. Common cause: extreme weather values causing solver divergence.'
+  severity: high
+  failure_domain: fortran_trap
+  silent: true
+  cfp: cfp_003
+- id: shaw_019
+  symptom: Initial moisture too high causes saturation excess in first timestep
+  diagnosis: Setting initial moisture near saturation (theta > 0.45) at all depths causes immediate drainage
+    and runoff in the first timestep, creating a large water balance artifact in the first day
+  remedy: Use field capacity (typically 0.25-0.35 m3/m3) as initial moisture. Run a 1-year spinup and
+    discard the first year from analysis.
+  severity: medium
+  failure_domain: initialization
+  silent: true
+- id: shaw_020
+  symptom: Solar radiation in wrong time convention
+  diagnosis: SHAW expects solar radiation (SUNHOR) as instantaneous value at the measurement hour (W/m2).
+    Some datasets provide cumulative or period-average radiation, leading to wrong diurnal energy partition
+  remedy: CMFD/MSWX provide period-average W/m2 — this is acceptable for SHAW. NASA POWER hourly provides
+    instantaneous — also fine. For daily mode, provide average daily radiation in W/m2.
+  severity: medium
+  failure_domain: unit_conversion
+  silent: true
+- id: shaw_021
+  symptom: SHAW residue RESTKB value wrong for crop type
+  diagnosis: RESTKB controls wind influence on heat/vapor transfer through residue. Using RESTKB=4.0 (wheat)
+    for corn stalks underestimates wind exposure, keeping residue too moist
+  remedy: RESTKB=4.0 for small/lying residue (wheat, grass). RESTKB=8.5 for large/standing residue (corn
+    stalks). The configure_residue.py tool selects correct values per crop.
+  severity: medium
+  failure_domain: parameterization
+  silent: true
+- id: shaw_022
+  symptom: Van Genuchten psi_e must be set to 0 in SHAW
+  diagnosis: When IWRC=3 (Van Genuchten), SHAW requires SOILWRC(I,1) = psi_e = 0.0. If a non-zero air-entry
+    value is used, SHAW applies both VG and Campbell corrections
+  remedy: Always set psi_e = 0.0 when using Van Genuchten (IWRC=3). The alpha parameter in VG handles
+    the air-entry behavior instead.
+  severity: high
+  failure_domain: parameterization
+  silent: true
+- id: shaw_023
+  symptom: Windows backslash paths in SHAW input files on Linux
+  diagnosis: SHAW distribution uses Windows backslash paths (e.g., US-Rms-Input\US-Rms.sit). On Linux,
+    backslash is a literal character in filenames, not a path separator, causing 'file not found' errors
+  remedy: 'Replace ALL backslashes with forward slashes in .inp AND .sit files. Both files reference other
+    files: .inp references .sit/.wea/.moi/.tem, and .sit references plant growth files (.gro). Use: sed
+    -i ''s|\\|/|g'' *.inp *.sit'
+  severity: critical
+  failure_domain: platform_trap
+  silent: false
+  cfp: cfp_009
+- id: shaw_024
+  symptom: SHAW executable reads input filename from stdin, not command-line arguments
+  diagnosis: SHAW prompts interactively for the .inp filename AND prompts 'Press Enter to end' at completion.
+    If the process runs non-interactively without sufficient stdin input, it hangs or crashes with EOF
+    error
+  remedy: 'Always provide 2 newlines to stdin: printf ''filename.inp\n\n'' | ./shaw303. The second newline
+    handles the ''Press Enter to end'' prompt. In Python subprocess, use input=''filename.inp\n\n''.'
+  severity: high
+  failure_domain: execution
+  silent: false
+- id: shaw_025
+  symptom: SHAW year format in .inp PEST section uses 4-digit years but model expects 2-digit elsewhere
+  diagnosis: The PEST comparison section at the bottom of .inp (lines 27+) uses 4-digit years, while weather/moisture/temperature
+    data uses 2-digit years. Mixing conventions in the same file is confusing but correct
+  remedy: This is by design. PEST section lines use 4-digit years. Weather/moisture/temp data files use
+    2-digit years. Do NOT 'fix' the PEST section to 2-digit.
+  severity: info
+  failure_domain: input_format
+  silent: false
+- id: shaw_026
+  symptom: MTSTEP=0 (hourly) but weather file has daily data (8 columns)
+  diagnosis: 'SHAW reads weather differently based on MTSTEP flag in .inp Line B. MTSTEP=0 expects 9 hourly
+    columns (JD JH JYR TA WIND HUM PRECIP SNODEN SUNHOR). MTSTEP=1 expects 8 daily columns (JD JYR TMAX
+    TMIN TDEW WIND PRECIP SOLAR). Using daily data with MTSTEP=0 causes SHAW to misread all columns —
+    year is read as hour, TMAX as temperature, etc. The model may run without error but produces completely
+    wrong results (zero precip, wrong temperatures).
 
-  - id: shaw_027
-    symptom: "Weather file has columns in YR DOY order instead of DOY YR"
-    diagnosis: >
-      SHAW daily format (MTSTEP=1) expects JD first, then JYR:
-        JD JYR TMAX TMIN TDEW WIND PRECIP SOLAR
-      If the file has YR first (YR DOY ...), SHAW reads year as day-of-year
-      and vice versa. For year 19 and DOY 305: SHAW reads JD=19, JYR=305.
-      It then searches for day 305 which doesn't match day 19, causing either
-      a date mismatch abort or skipping to wrong data. Silent when data
-      accidentally aligns.
-    remedy: >
-      Always write DOY first, then year: JD JYR. This applies to ALL SHAW
-      data files (.wea, .tem, .moi). Verify: first column should be 1-366
-      (day of year), second column should be 2-digit year (19, 20, etc.).
-    severity: critical
-    category: input_format
-    silent: true
-    discovered_at: "Manitoba Station 544, 2026-03-24"
+    '
+  remedy: 'Set MTSTEP=1 in .inp Line B for daily weather data. Set MTSTEP=0 for hourly data. The daily
+    format has NO hour column and uses TMAX/TMIN instead of hourly TA. Verify column count: 8=daily, 9=hourly.
+    The setup_shaw_from_template.py must detect data frequency and set MTSTEP accordingly.
 
-  - id: shaw_028
-    symptom: "Solar noon (HRNOON) parameter set to wrong value in .sit Line C"
-    diagnosis: >
-      HRNOON in .sit Line C controls the timing of the diurnal temperature,
-      radiation, and wind cycles. A value of 0.01 (instead of ~12.0-12.5)
-      shifts the entire diurnal cycle, making SHAW compute sunrise/sunset
-      at wrong times. This causes daily precipitation to be assigned to
-      hour 0 instead of the correct hour, and the radiation disaggregation
-      produces wrong energy partitioning. Most critically, precipitation
-      may be placed at an hour that gets zero radiation, reducing snowmelt
-      and ET. In Manitoba, HRNOON=0.01 caused ZERO effective precipitation
-      despite valid precip data in the weather file.
-    remedy: >
-      HRNOON = 12.0 + (standard_meridian - longitude) / 15.0
-      For Manitoba (100.37W, Central time zone, std meridian=105W):
-        HRNOON = 12.0 + (105 - 100.37) / 15 = 12.3 hours
-      For Saskatchewan (104.7W): HRNOON = 12.0 + (105 - 104.7)/15 = 12.02
-      JackPine used HRNOON=12.0 which was close enough. Always compute
-      from longitude — never use a placeholder value.
-    severity: critical
-    category: parameterization
-    silent: true
-    discovered_at: "Manitoba Station 544, 2026-03-24"
+    '
+  severity: critical
+  failure_domain: input_format
+  silent: true
+  discovered_at: Manitoba Station 544, 2026-03-24
+- id: shaw_027
+  symptom: Weather file has columns in YR DOY order instead of DOY YR
+  diagnosis: "SHAW daily format (MTSTEP=1) expects JD first, then JYR:\n  JD JYR TMAX TMIN TDEW WIND PRECIP\
+    \ SOLAR\nIf the file has YR first (YR DOY ...), SHAW reads year as day-of-year and vice versa. For\
+    \ year 19 and DOY 305: SHAW reads JD=19, JYR=305. It then searches for day 305 which doesn't match\
+    \ day 19, causing either a date mismatch abort or skipping to wrong data. Silent when data accidentally\
+    \ aligns.\n"
+  remedy: 'Always write DOY first, then year: JD JYR. This applies to ALL SHAW data files (.wea, .tem,
+    .moi). Verify: first column should be 1-366 (day of year), second column should be 2-digit year (19,
+    20, etc.).
 
-  - id: shaw_029
-    symptom: "Solar radiation in MJ/m2/day not converted to W/m2 for daily mode"
-    diagnosis: >
-      Manitoba MAWP stations report daily total solar radiation as TotRS_MJ
-      (MJ/m2/day). SHAW daily mode expects average daily solar radiation in
-      W/m2. Without conversion, values are ~11.6x too low (e.g., 3.08 instead
-      of 35.6 W/m2). This underestimates energy input, causing too-low ET,
-      wrong snow melt timing, and cold bias in soil temperatures.
-    remedy: >
-      Convert: W_m2 = MJ_m2_day * 1e6 / 86400 (= multiply by 11.574).
-      Verify: daily average solar should be 30-300 W/m2 depending on latitude
-      and season. If values are < 10, the MJ→W conversion was likely missed.
-      Note: CMFD/MSWX already provide W/m2 — this only applies to station data
-      that reports MJ/m2/day (Manitoba MAWP, Environment Canada, FLUXNET).
-    severity: critical
-    category: unit_conversion
-    silent: true
-    cfp: cfp_002
-    discovered_at: "Manitoba Station 544, 2026-03-24"
+    '
+  severity: critical
+  failure_domain: input_format
+  silent: true
+  discovered_at: Manitoba Station 544, 2026-03-24
+- id: shaw_028
+  symptom: Solar noon (HRNOON) parameter set to wrong value in .sit Line C
+  diagnosis: 'HRNOON in .sit Line C controls the timing of the diurnal temperature, radiation, and wind
+    cycles. A value of 0.01 (instead of ~12.0-12.5) shifts the entire diurnal cycle, making SHAW compute
+    sunrise/sunset at wrong times. This causes daily precipitation to be assigned to hour 0 instead of
+    the correct hour, and the radiation disaggregation produces wrong energy partitioning. Most critically,
+    precipitation may be placed at an hour that gets zero radiation, reducing snowmelt and ET. In Manitoba,
+    HRNOON=0.01 caused ZERO effective precipitation despite valid precip data in the weather file.
 
-  - id: shaw_030
-    symptom: "Simulation start date must be 1 day AFTER first weather line"
-    diagnosis: >
-      SHAW's DAY2HR subroutine reads the PREVIOUS day's TMAX/TMIN for
-      temperature interpolation (lines 3388-3395 in Shaw303.for). If
-      JSTART in .sit equals the first DOY in .wea, SHAW has no previous
-      day data and either reads wrong values or the date matching fails.
-      The .out file shows "SIMULATION BEGINS ON DAY X, HOUR 24" which is
-      actually midnight of day X+1.
-    remedy: >
-      Set JSTART in .sit Line B to be at least 1 day AFTER the first line
-      in the .wea file. Example: if .wea starts at DOY 305, set JSTART=306.
-      The first .wea line provides the "previous day" data for interpolation.
-      Also ensure .tem and .moi first profiles match JSTART (not the .wea start).
-    severity: high
-    category: input_format
-    silent: false
-    discovered_at: "Manitoba Station 544, 2026-03-24"
+    '
+  remedy: "HRNOON = 12.0 + (standard_meridian - longitude) / 15.0 For Manitoba (100.37W, Central time\
+    \ zone, std meridian=105W):\n  HRNOON = 12.0 + (105 - 100.37) / 15 = 12.3 hours\nFor Saskatchewan\
+    \ (104.7W): HRNOON = 12.0 + (105 - 104.7)/15 = 12.02 JackPine used HRNOON=12.0 which was close enough.\
+    \ Always compute from longitude — never use a placeholder value.\n"
+  severity: critical
+  failure_domain: parameterization
+  silent: true
+  discovered_at: Manitoba Station 544, 2026-03-24
+- id: shaw_029
+  symptom: Solar radiation in MJ/m2/day not converted to W/m2 for daily mode
+  diagnosis: 'Manitoba MAWP stations report daily total solar radiation as TotRS_MJ (MJ/m2/day). SHAW
+    daily mode expects average daily solar radiation in W/m2. Without conversion, values are ~11.6x too
+    low (e.g., 3.08 instead of 35.6 W/m2). This underestimates energy input, causing too-low ET, wrong
+    snow melt timing, and cold bias in soil temperatures.
 
-  - id: shaw_032
-    symptom: "4-digit year in .sit/.wea/.moi/.tem causes SHAW to stop after 1 day"
-    diagnosis: >
-      Using 4-digit year (e.g. IYEAR=2015 in .sit Line B and JYR=2015 in .wea/.moi/.tem)
-      causes SHAW to run exactly 1 day and exit with "Normal completion". The simulation
-      output headers show the correct end date (e.g. DOY 365) but execution stops after
-      the first complete day. No error message is printed.
-    remedy: >
-      Use 2-digit year throughout ALL input files consistently:
-      - .sit Line B: "   1  0 15 365  20" (not 2015)
-      - .wea: "  1  15   -4.8 ..." (not 2015)
-      - .moi: "   1   0  15 0.120 ..." (not 2015)
-      - .tem: "   1   0  15  -4.0 ..." (not 2015)
-      Verified: switching from 2015→15 across all files fixes the 1-day termination.
-      This was discovered during Quebec station runs (Compton, Sainte-Famille, Barraute) 2026-04-09.
-    severity: critical
-    category: input_format
-    silent: true
-    discovered_at: "Quebec stations (Compton/Sainte-Famille/Barraute), 2026-04-09"
+    '
+  remedy: 'Convert: W_m2 = MJ_m2_day * 1e6 / 86400 (= multiply by 11.574). Verify: daily average solar
+    should be 30-300 W/m2 depending on latitude and season. If values are < 10, the MJ→W conversion was
+    likely missed. Note: CMFD/MSWX already provide W/m2 — this only applies to station data that reports
+    MJ/m2/day (Manitoba MAWP, Environment Canada, FLUXNET).
 
-  - id: shaw_033
-    symptom: ".tem/.moi last entry is before JEND — simulation stops early"
-    diagnosis: >
-      SHAW stops the simulation when it reaches the last entry in the .tem or .moi file
-      and cannot interpolate further. If the last profile entry is at DOY X < JEND,
-      the simulation terminates at DOY X-1 with "Normal completion" — no error.
-      Example: last .moi entry at DOY 320, JEND=365 → simulation stops at DOY 319.
-    remedy: >
-      Always ensure the last entry in .tem and .moi is at or after JEND (the simulation
-      end day). For a full-year run (JEND=365), add a final profile at DOY 365:
-        " 365   0  15  -5.0  -4.0  -2.5  -1.0   1.0   2.5   3.5   4.5   5.0   5.0   5.0"
-      The Manitoba and Quebec validated cases both follow this rule.
-    severity: high
-    category: input_format
-    silent: true
-    discovered_at: "Quebec stations (Compton/Sainte-Famille/Barraute), 2026-04-09"
+    '
+  severity: critical
+  failure_domain: unit_conversion
+  silent: true
+  cfp: cfp_002
+  discovered_at: Manitoba Station 544, 2026-03-24
+- id: shaw_030
+  symptom: Simulation start date must be 1 day AFTER first weather line
+  diagnosis: 'SHAW''s DAY2HR subroutine reads the PREVIOUS day''s TMAX/TMIN for temperature interpolation
+    (lines 3388-3395 in Shaw303.for). If JSTART in .sit equals the first DOY in .wea, SHAW has no previous
+    day data and either reads wrong values or the date matching fails. The .out file shows "SIMULATION
+    BEGINS ON DAY X, HOUR 24" which is actually midnight of day X+1.
 
-  - id: shaw_031
-    symptom: "Copy-first rule violated — .sit generated from scratch instead of template"
-    diagnosis: >
-      Generating SHAW .sit files from scratch (even following the manual)
-      misses implicit format requirements: exact line structure (Lines A-J),
-      flag-dependent sections (F-series only if MCANFLG=1/3), soil node
-      columns (12 per node for Campbell, different for VG). The Manitoba
-      initial attempt generated .sit from scratch and had wrong HRNOON,
-      wrong MCANFLG section handling, and missing snow parameters.
-      JackPine succeeded by copying Trial.30.sit and modifying values.
-    remedy: >
-      ALWAYS use setup_shaw_from_template.py which copies the validated
-      JackPine .sit/.inp/.tem/.moi templates and updates only site-specific
-      values. Never generate .sit from scratch. This follows cross-model
-      rule cm_026 (copy-first for Fortran control files).
-    severity: high
-    category: methodology
-    silent: false
-    cfp: cm_026
-    discovered_at: "Manitoba Station 544, 2026-03-24"
+    '
+  remedy: 'Set JSTART in .sit Line B to be at least 1 day AFTER the first line in the .wea file. Example:
+    if .wea starts at DOY 305, set JSTART=306. The first .wea line provides the "previous day" data for
+    interpolation. Also ensure .tem and .moi first profiles match JSTART (not the .wea start).
+
+    '
+  severity: high
+  failure_domain: input_format
+  silent: false
+  discovered_at: Manitoba Station 544, 2026-03-24
+- id: shaw_032
+  symptom: 4-digit year in .sit/.wea/.moi/.tem causes SHAW to stop after 1 day
+  diagnosis: 'Using 4-digit year (e.g. IYEAR=2015 in .sit Line B and JYR=2015 in .wea/.moi/.tem) causes
+    SHAW to run exactly 1 day and exit with "Normal completion". The simulation output headers show the
+    correct end date (e.g. DOY 365) but execution stops after the first complete day. No error message
+    is printed.
+
+    '
+  remedy: 'Use 2-digit year throughout ALL input files consistently: - .sit Line B: "   1  0 15 365  20"
+    (not 2015) - .wea: "  1  15   -4.8 ..." (not 2015) - .moi: "   1   0  15 0.120 ..." (not 2015) - .tem:
+    "   1   0  15  -4.0 ..." (not 2015) Verified: switching from 2015→15 across all files fixes the 1-day
+    termination. This was discovered during Quebec station runs (Compton, Sainte-Famille, Barraute) 2026-04-09.
+
+    '
+  severity: critical
+  failure_domain: input_format
+  silent: true
+  discovered_at: Quebec stations (Compton/Sainte-Famille/Barraute), 2026-04-09
+- id: shaw_033
+  symptom: .tem/.moi last entry is before JEND — simulation stops early
+  diagnosis: 'SHAW stops the simulation when it reaches the last entry in the .tem or .moi file and cannot
+    interpolate further. If the last profile entry is at DOY X < JEND, the simulation terminates at DOY
+    X-1 with "Normal completion" — no error. Example: last .moi entry at DOY 320, JEND=365 → simulation
+    stops at DOY 319.
+
+    '
+  remedy: "Always ensure the last entry in .tem and .moi is at or after JEND (the simulation end day).\
+    \ For a full-year run (JEND=365), add a final profile at DOY 365:\n  \" 365   0  15  -5.0  -4.0  -2.5\
+    \  -1.0   1.0   2.5   3.5   4.5   5.0   5.0   5.0\"\nThe Manitoba and Quebec validated cases both\
+    \ follow this rule.\n"
+  severity: high
+  failure_domain: input_format
+  silent: true
+  discovered_at: Quebec stations (Compton/Sainte-Famille/Barraute), 2026-04-09
+- id: shaw_031
+  symptom: Copy-first rule violated — .sit generated from scratch instead of template
+  diagnosis: 'Generating SHAW .sit files from scratch (even following the manual) misses implicit format
+    requirements: exact line structure (Lines A-J), flag-dependent sections (F-series only if MCANFLG=1/3),
+    soil node columns (12 per node for Campbell, different for VG). The Manitoba initial attempt generated
+    .sit from scratch and had wrong HRNOON, wrong MCANFLG section handling, and missing snow parameters.
+    JackPine succeeded by copying Trial.30.sit and modifying values.
+
+    '
+  remedy: 'ALWAYS use setup_shaw_from_template.py which copies the validated JackPine .sit/.inp/.tem/.moi
+    templates and updates only site-specific values. Never generate .sit from scratch. This follows cross-model
+    rule cm_026 (copy-first for Fortran control files).
+
+    '
+  severity: high
+  failure_domain: methodology
+  silent: false
+  cfp: cm_026
+  discovered_at: Manitoba Station 544, 2026-03-24

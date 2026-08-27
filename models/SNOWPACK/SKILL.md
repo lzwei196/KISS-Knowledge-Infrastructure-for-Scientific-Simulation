@@ -1,14 +1,3 @@
----
-name: snowpack
-description: >-
-  SNOWPACK 3.7.1. Covers 1D vertical snowpack evolution from meteorological forcing
-  through a winter season; Mass and energy exchange between atmosphere, snow, optional
-  vegetation canopy, and underlying soil; Instationary heat conduction and viscous
-  settlement (finite-element column); Snow microstructure and stratigraphy (grain size,
-  bond radius, dendricity, sphericity). Use when the task involves running, configuring,
-  calibrating or interpreting SNOWPACK.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (28 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (23 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_sno_profile.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_sno_profile.py --help` |
+| `tools/convert_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing.py --help` |
+| `tools/generate_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_config.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_snowpack.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_snowpack.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # SNOWPACK Knowledge Infrastructure
 
@@ -88,6 +112,32 @@ thermodynamics, and snow storage optimization.
 - `snowpack` — CLI application that calls libsnowpack for point simulations
 - `MeteoIO` — Required I/O library for data reading/preprocessing
 - `Alpine3D` — Optional 3D distributed wrapper (not covered here)
+
+---
+
+## Output Description
+
+**Source of truth:** `dag.yaml`. This section restates the KI dag; if this
+body ever disagrees with the dag, the dag wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `HS` — Total snow height (vertical) of the modeled column. (`cm`)
+
+| Output variable (dag `var`) | Validation rank | Unit / dag expression | Dag-restated description |
+|-----------------------------|-----------------|-----------------------|--------------------------|
+| `HS` | 1 | `cm` | Total snow height (vertical) of the modeled column. |
+| `SWE` | dag output | stated in `dag.yaml` | listed dag output |
+| `TSS` | dag output | stated in `dag.yaml` | listed dag output |
+| `MS_SNOWPACK_RUNOFF` | dag output | stated in `dag.yaml` | listed dag output |
+| `energy_balance_fluxes` | dag output | `qs`, `ql`, `qg`, `OLWR`, `lw_net`, `qw` | listed dag output |
+| `RHO_mean` | dag output | stated in `dag.yaml` | listed dag output |
+| `layer_profile` | dag output | `T`, `Rho`, `rg`, grain type, stability indices | listed dag output |
+| `avalanche_hazard_indices` | dag output | stated in `dag.yaml` | listed dag output |
+
+For raw SNOWPACK files, `.met` and `.pro` column units are described in
+`docs/format_spec.yaml` and the output-format reference below. Convert raw
+columns to dag units before scoring or binding observations.
 
 ---
 
@@ -296,7 +346,11 @@ turbulent fluxes.
 
 ---
 
-## Unit Trap Table
+## Unit Conversion Table
+
+This table documents the unit conversions and traps used by the SNOWPACK KI
+tools. Exact I/O shapes live in `docs/format_spec.yaml`; regenerate that file
+from the dag and triplets rather than hand-editing it.
 
 | Variable | SNOWPACK expects        | Common source format     | Conversion                           | Trap ID |
 |----------|------------------------|--------------------------|--------------------------------------|---------|
@@ -311,10 +365,31 @@ turbulent fluxes.
 | TSG/TSS  | K                      | °C                       | Same as TA                           | dt_001  |
 | Layer_Thick | m                  | cm, mm                   | cm / 100                             | dt_015  |
 | Timestep | **60 s exactly**       | any other value          | Must be 60 for HzDump correctness    | dt_021  |
+| HS       | raw `.met` m           | dag/scoring `HS` cm      | m × 100                              | dt_013  |
 
 ---
 
-## Validation Summary
+## Validated Results
+
+### Performance Bars from `docs/validation_convention.yaml`
+
+These are the cited convention bars carried by this KI. A `null` convention
+band is written here as `no cited threshold`; do not replace it with a guessed
+number.
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation keys |
+|--------------|--------|-----------|-----------|------|--------------|---------------|
+| `HS` | `rmse` | minimize | ≤ 4.2 | no cited threshold | ≤ 23.1 | `wever2015`, `schmucki2014` |
+| `HS` | `mean_bias` | zero-centered | \|mean_bias\| ≤ 1.4 | \|mean_bias\| ≤ 4.7 | \|mean_bias\| ≤ 8.0 | `schmucki2014` |
+| `SWE` | `rmse` | minimize | ≤ 40.0 | no cited threshold | ≤ 99.0 | `wever2015`, `schmucki2014` |
+| `SWE` | `mean_bias` | zero-centered | \|mean_bias\| ≤ 9.3 | \|mean_bias\| ≤ 36.0 | \|mean_bias\| ≤ 55.0 | `wever2015`, `schmucki2014` |
+| `MS_SNOWPACK_RUNOFF` | `nse` | maximize | ≥ 0.73 | ≥ 0.66 | ≥ 0.57 | `wever2015` |
+| `MS_SNOWPACK_RUNOFF` | `r2` | maximize | ≥ 0.87 | ≥ 0.78 | ≥ 0.68 | `wever2015` |
+
+The SNOTEL batch below is a production validation result for HS behavior. Its
+legacy NSE counts are descriptive run diagnostics, not convention pass-bands
+for `HS`; grade HS against the cited `rmse` and `mean_bias` bars above when
+those metrics are available.
 
 ### HydroCraft SNOTEL 49-site batch (2026-04-30)
 
@@ -330,9 +405,9 @@ turbulent fluxes.
 | Sites with valid NSE (n_matched ≥ 30) | 33 / 49 |
 | Median NSE | **0.776** |
 | Mean NSE | 0.564 |
-| NSE > 0.5 | 26 / 33 |
-| NSE > 0.0 | 28 / 33 |
-| NSE < 0.0 | 5 / 33 |
+| Sites above legacy positive-skill screening count | 26 / 33 |
+| Sites with positive NSE | 28 / 33 |
+| Sites with negative NSE | 5 / 33 |
 
 **Top 5 sites:**
 
@@ -413,7 +488,7 @@ python tools/generate_config.py \
   --station_id MST96 \
   --meteo_path ./input \
   --output_path ./output \
-  --calculation_step 900 \
+  --calculation_step 60 \
   --variant DEFAULT
 
 # Step 4: Spinup (optional, stabilize soil temperatures)

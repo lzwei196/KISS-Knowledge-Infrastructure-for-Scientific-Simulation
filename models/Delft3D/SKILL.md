@@ -1,14 +1,3 @@
----
-name: delft3d
-description: >-
-  D-Flow Flexible Mesh shallow-water hydrodynamics. Covers Non-steady 2D-horizontal
-  (depth-averaged) and 3D shallow-water hydrodynamics on a staggered…; Tidal and
-  wind-driven flow: water level and velocity; Advection-diffusion transport of salinity,
-  temperature, and conservative tracers; Baroclinic (density-driven) circulation via
-  equation of state. Use when the task involves running, configuring, calibrating or
-  interpreting Delft3D.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (16 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (16 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_bathymetry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_bathymetry.py --help` |
+| `tools/convert_boundary_conditions.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_boundary_conditions.py --help` |
+| `tools/convert_forcing_to_delft3d.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_delft3d.py --help` |
+| `tools/parse_delft3d_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_delft3d_output.py --help` |
+| `tools/run_delft3d.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_delft3d.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # Delft3D — Knowledge Infrastructure
 
@@ -246,6 +270,51 @@ Stage 7 depends on stage 6.
 | Sig. wave height | hwav | m | _map.nc | From D-Waves |
 | Sediment conc. | sed | kg/m³ | _map.nc | Suspended load |
 | Bedload transport | sbcx, sbcy | kg/(m·s) | _map.nc | Bed sediment flux |
+
+---
+
+## Output Description
+
+This section restates `dag.yaml`. The dag is the source of truth for model
+outputs, validation rank, units, and medium-named descriptions. If this section
+and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output**: `water_level` is the dag's rank-1 output variable and is
+the variable this model is judged by.
+
+> `water_level` -- Sea surface elevation (s1) at cell centres (m)
+
+| Output variable (dag `var`) | Validation rank | Unit | Description |
+|-----------------------------|-----------------|------|-------------|
+| `water_level` | 1 | m | Sea surface elevation (s1) at cell centres |
+
+Other dag outputs are: `velocity`, `salinity`, `temperature`,
+`bed_shear_stress`, `bed_level_change`, and `significant_wave_height`.
+
+---
+
+## Validated Results
+
+**Validation status**: `example_validated` using the F34 test case with
+structured and unstructured grids.
+
+Judgement uses `docs/validation_convention.yaml`, not intuition. The convention
+defines metric direction and cited pass-bands per dag variable. Bands that the
+convention records as null are written here as `no cited threshold`.
+
+### Performance Metrics -- Convention Bars
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band |
+|--------------|--------|-----------|----------------|-----------|-------------------|
+| `water_level` | rmse | minimize | <= 0.1 (whitehouse2017) | <= 0.2 (whitehouse2017) | <= 0.3 (whitehouse2017) |
+| `water_level` | bias | zero_centered | abs(bias) <= 0.1 (whitehouse2017) | abs(bias) <= 0.1 (whitehouse2017) | abs(bias) <= 0.2 (whitehouse2017) |
+| `water_level` | csi | maximize | no cited threshold | no cited threshold | no cited threshold |
+| `velocity` | rmse | minimize | <= 0.05 (whitehouse2017) | <= 0.1 (whitehouse2017) | <= 0.2 (whitehouse2017) |
+| `velocity` | bias | zero_centered | abs(bias) <= 0.1 (whitehouse2017, mohid2019) | abs(bias) <= 0.1 (whitehouse2017, mohid2019) | abs(bias) <= 0.2 (whitehouse2017, mohid2019) |
+
+No run-specific achieved metric values are embedded in this skill document.
+Compute achieved values from model outputs and observations with
+`parse_delft3d_output`, then grade them against the cited convention bars above.
 
 ---
 

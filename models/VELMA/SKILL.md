@@ -1,14 +1,3 @@
----
-name: velma
-description: >-
-  VELMA-inspired lumped daily 4-layer water-balance model (Python re-implementation;
-  conceptually after EPA VELMA 2.0 soil-column hydrology…. Covers Basin-lumped daily
-  streamflow at a single outlet (m3/s); Degree-day snow accumulation and melt (snow water
-  equivalent); Radiation-driven potential evapotranspiration (Priestley-Taylor /
-  Hargreaves-style). Use when the task involves running, configuring, calibrating or
-  interpreting VELMA.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (24 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (12 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_velma.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_velma.py --help` |
+| `tools/convert_soil_to_velma.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_velma.py --help` |
+| `tools/parse_output_velma.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output_velma.py --help` |
+| `tools/run_velma.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_velma.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # VELMA Knowledge Infrastructure
 
@@ -178,9 +201,21 @@ java -jar VelmaSimRunner.jar --config velma_config.xml
 **Parallelism**: Stages 1--2 can run in parallel. Stage 5 depends on 1--2.
 Stage 6 depends on 5. Stage 7 is iterative on 5--6.
 
+### Stage documents
+
+Per-stage operating docs live under `docs/`:
+
+- [Stage 1: Forcing preparation](docs/s1_forcing_preparation.md)
+- [Stage 2: Soil parameter setup](docs/s2_soil_parameter_setup.md)
+- [Stage 3: Model configuration](docs/s3_model_configuration.md)
+- [Stage 4: PET computation](docs/s4_pet_computation.md)
+- [Stage 5: Execution](docs/s5_execution.md)
+- [Stage 6: Output parsing](docs/s6_output_parsing.md)
+- [Stage 7: Calibration](docs/s7_calibration.md)
+
 ---
 
-## 4. Unit Trap Table
+## 4. Unit Table and Unit Trap Table
 
 These unit conversions cause **silent failures** if wrong. VELMA expects
 specific units at each interface -- errors propagate without warnings.
@@ -201,6 +236,28 @@ specific units at each interface -- errors propagate without warnings.
 | Basin area            | **km2**         | ha                  | / 100                                  | dt_012  |
 | Observed Q            | **m3/s**        | mm/d                | x area_km2 x 1e6 / 86400 / 1000       | dt_013  |
 | mm/d to m3/s          | conversion      | mm/d over basin     | x area_km2 x 1e6 / 86400 x 1e-3       | dt_014  |
+
+### Unit conversion table
+
+Exact I/O shapes live in `docs/format_spec.yaml`; this table restates the
+pipeline-level conversions that agents must verify before execution.
+
+| Variable | Source unit (verified) | Model / output unit | Factor | Type |
+|----------|-------------------------|---------------------|--------|------|
+| Precipitation | kg/m2/s (CMFD) | mm/d | x 86400 | multiplicative |
+| Precipitation | mm/3h (CMFD) | mm/d | sum 8 values per day | aggregation |
+| Precipitation | m/d (some GCMs) | mm/d | x 1000 | multiplicative |
+| Temperature | deg C | K | + 273.15 | additive |
+| Temperature | deg F | K | (F - 32) x 5/9 + 273.15 | affine |
+| Solar radiation | MJ/m2/d | W/m2 | / 0.0864 | multiplicative |
+| Solar radiation | kJ/m2/d | W/m2 | / 86.4 | multiplicative |
+| Ksat (per layer) | mm/h (HWSD) | mm/d | x 24 | multiplicative |
+| Ksat (per layer) | cm/h (some tables) | mm/d | x 240 | multiplicative |
+| Porosity | percent | fraction | / 100 | multiplicative |
+| Layer thickness | cm | mm | x 10 | multiplicative |
+| Basin area | ha | km2 | / 100 | multiplicative |
+| Observed Q | mm/d | m3/s | x area_km2 x 1e6 / 86400 / 1000 | basin-area conversion |
+| Simulated runoff depth | mm/d over basin | m3/s | x area_km2 x 1e6 / 86400 x 1e-3 | basin-area conversion |
 
 **Rule**: If simulated discharge is 86400x too high or too low, precipitation
 units are almost certainly wrong (kg/m2/s vs mm/d). If PET is absurdly high
@@ -229,6 +286,32 @@ All tools follow the **validate -> process -> validate** pattern:
 3. Process (convert, run, parse)
 4. Validate outputs (physical plausibility, diagnostic warnings)
 5. Return JSON: `{"status": "success/error", "output": {...}, "log": [...]}`
+
+---
+
+## 6. Output Description
+
+**Source**: `dag.yaml`. The dag is the model's identity; if this section and
+`dag.yaml` ever disagree, `dag.yaml` wins and this section is the bug.
+
+**Headline output** (the dag's rank-1 variable -- the one this model is judged by):
+
+> `Q_sim_m3s` -- Simulated daily discharge at the basin outlet (lumped fast+slow reservoir release scaled by basin area). (`m3/s`)
+
+Other dag outputs: `mean_et_mm_d`, `mean_runoff_mm_d`, `final_swe_mm`,
+`final_sw_mm[4]`.
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `Q_sim_m3s` | 1 | `m3/s` | Simulated daily discharge at the basin outlet (lumped fast+slow reservoir release scaled by basin area). |
+| `mean_et_mm_d` | other dag output | see `dag.yaml` | listed in `dag.yaml` as an output |
+| `mean_runoff_mm_d` | other dag output | see `dag.yaml` | listed in `dag.yaml` as an output |
+| `final_swe_mm` | other dag output | see `dag.yaml` | listed in `dag.yaml` as an output |
+| `final_sw_mm[4]` | other dag output | see `dag.yaml` | listed in `dag.yaml` as an output |
+
+Use `Q_sim_m3s` for the headline validation and observed-discharge binding.
+The other outputs are supporting dag outputs; read `dag.yaml` before making
+unit, medium, rank, or description claims about them.
 
 ---
 
@@ -370,7 +453,7 @@ else:
 
 ---
 
-## 9. Validation Results
+## 9. Validated Results
 
 **Basin**: Huai River at Bengbu (Station 51080), China
 **Area**: 121,330 km2
@@ -385,6 +468,27 @@ else:
 Calibration method: Differential evolution (scipy), 80 iterations, population 20.
 Objective: -(0.5*NSE + 0.5*KGE - 0.002*|PBIAS|) on 1981--1985 calibration period.
 Spinup year: 1980.
+
+### Performance bars from validation convention
+
+**Source**: `docs/validation_convention.yaml`. The convention is the authority
+for metric direction, pass-bands, and citation keys; if these bars and the
+convention ever disagree, the convention wins.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Citation keys |
+|--------------|--------|-----------|-------------------|-----------|----------------|---------------|
+| `Q_sim_m3s` | nse | maximize | >= 0.5 (`ortuani2020`, `golmohammadi2014`) | >= 0.65 (`ortuani2020`, `golmohammadi2014`) | no cited threshold (`ortuani2020`, `golmohammadi2014`) | `ortuani2020`, `golmohammadi2014` |
+| `Q_sim_m3s` | pbias | zero_centered | <= 15.0 absolute PBIAS (`ortuani2020`, `golmohammadi2014`) | <= 10.0 absolute PBIAS (`ortuani2020`, `golmohammadi2014`) | no cited threshold (`ortuani2020`, `golmohammadi2014`) | `ortuani2020`, `golmohammadi2014` |
+| `Q_sim_m3s` | pbias | zero_centered | <= 15.0 absolute PBIAS (`ortuani2020`, `golmohammadi2014`) | <= 10.0 absolute PBIAS (`ortuani2020`, `golmohammadi2014`) | no cited threshold (`ortuani2020`, `golmohammadi2014`) | `ortuani2020`, `golmohammadi2014` |
+| `mean_et_mm_d` | nse | maximize | >= 0.5 (`ahn2017`) | no cited threshold (`ahn2017`) | no cited threshold (`ahn2017`) | `ahn2017` |
+
+For `Q_sim_m3s`, the reported calibration NSE of 0.80 is above the cited good
+threshold of 0.65 (`ortuani2020`, `golmohammadi2014`); the convention provides
+no cited very-good threshold for NSE. The reported calibration PBIAS of <10%
+is within the cited good absolute-PBIAS threshold of 10.0 (`ortuani2020`,
+`golmohammadi2014`); the convention provides no cited very-good threshold for
+PBIAS. The validation PBIAS of <15% is within the cited satisfactory
+absolute-PBIAS threshold of 15.0 (`ortuani2020`, `golmohammadi2014`).
 
 ---
 

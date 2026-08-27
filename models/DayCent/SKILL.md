@@ -1,13 +1,3 @@
----
-name: daycent
-description: >-
-  DayCent (Daily Century) ecosystem/biogeochemistry model, DDcentEVI lineage with
-  methanogenesis; CSU/NREL User Manual & Scientific Basis. Covers Long-term C, N, P, S
-  dynamics for point-scale plant-soil systems; Plant production / NPP and above- and
-  below-ground allocation (grassland/crop, forest, savanna…. Use when the task involves
-  running, configuring, calibrating or interpreting DayCent.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -35,9 +25,57 @@ description: >-
 > Resist the urge to write diagnostic/debug Python scripts. The answers are almost
 > always in the official docs and working examples, not in reverse-engineering the binary.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (27 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (26 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_daycent.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_daycent.py --help` |
+| `tools/convert_soil_to_daycent.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_daycent.py --help` |
+| `tools/parse_daycent_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_daycent_output.py --help` |
+| `tools/run_daycent.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_daycent.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # DayCent — Daily Century Soil Organic Matter, Plant Production, and Trace-Gas Model
 
-## Overview
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | DayCent — Daily Century Soil Organic Matter, Plant Production, and Trace-Gas Model |
+| Version | `DDcentEVI` revision 491, trunk dated 2023-07-10 |
+| Language | Precompiled ELF 64-bit Linux binary; upstream Fortran/C source is not bundled |
+| License | Public binary distribution from CSU NREL; consult upstream distribution terms |
+| Repository/source in this KI | `source/repo/Linux_Version_491/DDcentEVI_rev491` |
+| Companion executable | `source/repo/Linux_Version_491/DDlist100_rev491` |
+| Primary domain | Agroecosystem biogeochemistry, plant production, soil organic matter, water balance, and trace gases |
+| Spatial mode | Point/site simulation with daily weather, Century-style site files, and schedule-driven management |
+| Validation status | Real benchmark tier for bundled Wooster SOC example; broader site-adaptation campaigns remain task-specific |
+
+## 2. What This Model Does
 
 DayCent (Daily-DAYCENT, also `DDcentEVI`) is the daily time-step version of the
 Century ecosystem model. It simulates plant production, soil organic matter
@@ -82,6 +120,17 @@ the public binary distribution.
 - **Used by U.S. EPA and USDA** for the GHG inventory of agricultural lands,
   so its outputs are the operational reference for U.S. cropland N2O.
 
+## 3. Input Requirements
+
+Exact machine-readable input/output shapes live in `docs/format_spec.yaml`
+(projected from `dag.yaml` plus `diagnostics/triplets.yaml`). Regenerate that
+spec after changing the dag or triplets; do not hand-edit the generated spec.
+
+DayCent inputs are Century-style site files, DayCent-specific physical site
+parameters, multi-layer soil hydraulic profiles, daily weather, management
+schedules, and output toggles. The detailed file reference below gives the
+fixed-format expectations and common unit traps.
+
 ## Pipeline (DayCent canonical 3-step run)
 
 DayCent simulations almost always follow the *equilibrium → base history →
@@ -103,7 +152,7 @@ The three-stage spin-up scheme is essential: DayCent SOM pools take centuries
 to equilibrate, and the `ACEQ` (Adaptive Century Equilibrium) block in a `.sch`
 file lets the model stop when pools converge.
 
-## Installation
+## 4. Build Instructions
 
 The model is shipped as a precompiled statically-linked ELF binary; no build
 step is required on a modern Linux x86-64 host:
@@ -273,7 +322,7 @@ filename. The Wooster example provides three presets:
 - `few_outfiles.in` — `bio.out`, `harvest.csv`, `summary.out`, `year_summary.out`
 - `outfiles.in` — full output (large files)
 
-## Execution
+## 5. Execution
 
 ```
 DDcentEVI_rev491 [-s] schedule-file [options]
@@ -293,7 +342,27 @@ DDcentEVI_rev491 [-s] schedule-file [options]
 Typical usage chains three calls (`-N` writes the eq binary, then `-e eq`
 extends it through history, then `-e base` extends through treatment).
 
-## Output files
+## 6. Output Description
+
+This section restates `dag.yaml`; if this section and the dag disagree, the dag
+wins. The dag's `validation_rank: 1` variable is the headline output by which
+the KI is judged:
+
+> `cprodc (daily net C production, GPP proxy)` — Daily net C production
+> reported in summary.out; the closest DayCent variable to daily GPP for
+> cropland/grassland (an approximation, not true gross primary productivity).
+> (`gC/m2/day`)
+
+| Output variable (dag `var`) | Rank | File / medium | Unit | Description |
+|-----------------------------|------|---------------|------|-------------|
+| `cprodc (daily net C production, GPP proxy)` | 1 | `summary.out` daily output | `gC/m2/day` | Daily net C production reported in summary.out; the closest DayCent variable to daily GPP for cropland/grassland (an approximation, not true gross primary productivity). |
+
+Other dag outputs named by this KI are: `n2o_emission`, `no_emission`,
+`ch4_flux`, `co2_heterotrophic`, `nee`, `reco`, `aboveground_biomass (aglivc)`,
+`crop_yield (cgrain)`, `soil_organic_carbon (somsc)`, `soil_moisture_layers`,
+`soil_temperature_layers`, and `evapotranspiration / water_balance`.
+
+### Output files
 
 | File | Frequency | Contents |
 |------|-----------|----------|
@@ -339,27 +408,7 @@ running DDlist100 for daily GPP. The `.lis` alternative (`agcprd + bgcprd`
 summed over a day) is also valid but is harder to wire up for a daily
 comparison because the `.lis` tables are typically annualised.
 
-## Unit traps (READ BEFORE WRITING A FORCING CONVERTER)
-
-| Variable | DayCent unit | Common forcing unit | Conversion |
-|----------|--------------|---------------------|------------|
-| Precipitation | **cm/day** in `.wth`, **cm/month** in `.100` | mm/day (CMFD, MSWX, NASA-POWER) | `cm = mm / 10` |
-| Tmin, Tmax | °C | K (CMFD raw), °C (NASA-POWER) | `°C = K − 273.15` |
-| Solar radiation | langleys/day (1 ly = 41.84 kJ m⁻²) | W/m² (CMFD srad) | `ly/day ≈ Wm⁻² × 2.064` |
-| Bulk density | g/cm³ | kg/m³ (HWSD raw `BULK_DENS`) | `g/cm³ = kg/m³ / 1000` |
-| Sand/silt/clay | fraction (0–1) | percent (HWSD `T_SAND` etc.) | `frac = pct / 100` |
-| Field capacity / wilting | vol/vol (0–1) | same | none |
-| Saturated K | cm/sec | mm/hour or m/day | see `units.convert` |
-| Soil pH | unitless | unitless | none |
-| Latitude/longitude | decimal degrees, **+N / +E** | same | none |
-
-**Most common silent failure:** leaving precipitation in mm/day. The model
-runs without error but the basin is 10× too wet, the crop drowns, soil
-moisture saturates, and SOM accumulates uncontrollably. Always validate
-mean annual precip in cm/year against a known reference for the site
-(Wooster: ~95 cm/yr, eastern Nebraska: ~75 cm/yr).
-
-## Tools provided in this KI
+## 7. Tool Inventory
 
 | Tool | Purpose |
 |------|---------|
@@ -371,7 +420,76 @@ mean annual precip in cm/year against a known reference for the site
 Each tool follows the validate → process → validate pattern from the KDT v5.1
 specification and imports shared utilities from `ki_tools_common`.
 
-## Validation tier
+## 8. Unit Conversion Table
+
+The table documents unit conversions that the DayCent pipeline uses or checks.
+Use `docs/format_spec.yaml` as the generated contract and the model's own input
+files/manual as the authority for file-level units.
+
+| Variable | Source unit (verified) | Model unit | Factor / transform | Type |
+|----------|------------------------|------------|--------------------|------|
+| Precipitation forcing | mm/day (CMFD, MSWX, NASA-POWER) | cm/day in `.wth` | `cm = mm / 10` | multiplicative |
+| Monthly precipitation climatology | daily `.wth` precipitation in cm/day | cm/month in `.100` | monthly daily mean times days/month | aggregation |
+| Tmin, Tmax | K (CMFD raw) | °C | `°C = K - 273.15` | additive |
+| Tmin, Tmax | °C (NASA-POWER, FLUXNET CSV after loading) | °C | none | identity |
+| Solar radiation | W/m² | langleys/day | `ly/day ~= W/m² * 2.064` | multiplicative |
+| Bulk density | kg/m³ (HWSD raw `BULK_DENS`) | g/cm³ | `g/cm³ = kg/m³ / 1000` | multiplicative |
+| Sand/silt/clay | percent (HWSD `T_SAND` etc.) | fraction (0-1) | `frac = pct / 100` | multiplicative |
+| Field capacity / wilting point | vol/vol (0-1) | vol/vol (0-1) | none | identity |
+| Saturated hydraulic conductivity | mm/hour or m/day | cm/sec | use `ki_tools_common.units.convert` | unit conversion |
+| Soil pH | unitless | unitless | none | identity |
+| Latitude/longitude | decimal degrees, +N / +E | decimal degrees, +N / +E | none | identity |
+
+### Unit traps (READ BEFORE WRITING A FORCING CONVERTER)
+
+**Most common silent failure:** leaving precipitation in mm/day. The model
+runs without error but the basin is 10× too wet, the crop drowns, soil
+moisture saturates, and SOM accumulates uncontrollably. Always validate
+mean annual precip in cm/year against a known reference for the site
+(Wooster: ~95 cm/yr, eastern Nebraska: ~75 cm/yr).
+
+## 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| `cprodc` | Daily net C production in `summary.out`; GPP proxy for cropland/grassland, not true gross primary productivity | Treating it as true GPP | Overstates the mechanistic meaning of the validation target |
+| `NEE` | Positive = uptake in `summary.out` | FLUXNET positive = release to atmosphere | Correlation and bias can be sign-flipped unless observations are converted |
+| `resp` / RECO | Autotrophic plus heterotrophic respiration in `summary.out` | Component-only respiration | Mismatched carbon-flux comparison |
+| `evap + trans` / ET | Water loss reported from `watrbal.out`; use mm/day after parsing | Latent heat flux (`LE`) in energy units | Requires LE-to-ET conversion before metrics |
+| Soil moisture layers | Volumetric profile values from `vswc.out` | Depth-integrated water storage | Layer aggregation errors if compared directly |
+
+## 9. Diagnostic Triplets (Top 5)
+
+Check `diagnostics/triplets.yaml` before debugging any failed or suspicious
+run. Do not duplicate the full corpus in this file; use these five real IDs as
+the fastest first scan.
+
+| ID | Error / symptom | Diagnosis | Remedy |
+|----|-----------------|-----------|--------|
+| 1 | Soil moisture saturated every day; runoff in `summary.out` greater than expected. | Precipitation in the `.wth` file is in mm/day instead of cm/day. | Re-run `convert_forcing_to_daycent.py`; verify column 7 is cm/day. |
+| 2 | Daily Tmin and Tmax appear around 270 in `summary.out`. | Temperature columns are in Kelvin. | Subtract 273.15 or use the converter's auto-detection. |
+| 5 | Initialisation cannot find `<site>.100`. | The schedule's site file is missing from the run directory or library path. | Copy the file into place or run with `-l /path/to/100/lib`. |
+| 24 | Forest flux-site task cannot run with bundled artifacts. | Public `WoosterExampleLinux` ships an empty `tree.100`. | Obtain populated `tree.100` from CSU NREL or clearly report a grassland surrogate. |
+| 25 | Daily GPP requested but `.lis` variables do not include a GPP-labeled daily variable. | DayCent reports daily net C production as `cprodc` in `summary.out`. | Parse `summary.out` directly for `cprodc`. |
+
+## 10. Coupling Interfaces
+
+DayCent is normally run as a standalone site model in this KI. Coupling work
+should bind to dag variables rather than ad hoc column names.
+
+| Upstream model / data source | Variable exchanged | Unit | Temporal resolution |
+|------------------------------|-------------------|------|---------------------|
+| FLUXNET CSV | `TA_F`, `P_F`, `SW_IN_F` converted into DayCent weather columns | °C, cm/day, langleys/day | daily |
+| CMFD/MSWX/NASA-POWER forcing | precipitation and temperature converted into `.wth` | cm/day and °C | daily |
+| HWSD / site soil metadata | soil texture, bulk density, hydraulic properties | fractions, g/cm³, vol/vol, cm/sec | static profile |
+
+| Downstream model / analysis | Variable exchanged | Unit | Temporal resolution |
+|-----------------------------|-------------------|------|---------------------|
+| FLUXNET-style validation | `cprodc (daily net C production, GPP proxy)` | `gC/m2/day` | daily |
+| Greenhouse-gas analysis | `n2o_emission`, `no_emission`, `ch4_flux` | see `dag.yaml` | daily or annual by output file |
+| Soil-carbon analysis | `soil_organic_carbon (somsc)` | see `dag.yaml` | annual / sampled years |
+
+## 11. Validated Results
 
 ### Primary — Wooster SOC (bundled example, coarse annual)
 
@@ -383,6 +501,41 @@ specification and imports shared utilities from `ki_tools_common`.
   the DayCent distribution.
 - **Metric:** Pearson r and RMSE between simulated `somsc` and observed SOC at
   the four sample years.
+
+### Headline Dag Variable
+
+The dag's rank-1 validation variable is `cprodc (daily net C production, GPP
+proxy)`, unit `gC/m2/day`. Its dag description is: Daily net C production
+reported in summary.out; the closest DayCent variable to daily GPP for
+cropland/grassland (an approximation, not true gross primary productivity).
+
+### Performance Metrics — judged against the field's bar, not intuition
+
+State pass/fail bars only from `docs/validation_convention.yaml`. Null bands in
+that file are written here as `no cited threshold`; do not replace them with
+remembered or generic cutoffs.
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band | Citation key(s) |
+|--------------|--------|-----------|----------------|-----------|-------------------|-----------------|
+| `n2o_emission` | NSE | maximize | no cited threshold | no cited threshold | no cited threshold | none in convention |
+| `n2o_emission` | PBIAS | zero_centered | no cited threshold | no cited threshold | `8.74` | `cui2014` |
+| `no_emission` | NSE | maximize | no cited threshold | no cited threshold | no cited threshold | none in convention |
+
+No validated numeric campaign result is embedded in this SKILL body for the
+rank-1 `cprodc (daily net C production, GPP proxy)` output. Run-level reports
+must compute achieved metrics from the task's observation set and judge them
+against `docs/validation_convention.yaml`; if the convention has no cited band
+for the metric, report `no cited threshold` instead of inventing one.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | `tools/convert_forcing_to_daycent.py` | Task-specific | FLUXNET CSV is preferred for FLUXNET tower tasks; CMFD only covers the China domain. |
+| Soil | `tools/convert_soil_to_daycent.py` | Task-specific | Uses HWSD plus ROSETTA or site soil CSV when available. |
+| Management schedules | Century `.sch` files | Task-specific | Site crop/grass choice, rotations, fertilisation, and phenology must be documented. |
+| Initial conditions | Equilibrium run | Required | Use eq → base → treatment sequence; do not skip spin-up. |
+| Output parsing | `tools/parse_daycent_output.py` | Task-specific | Parse `summary.out` directly for rank-1 daily `cprodc`. |
 
 ### Daily GPP at a FLUXNET cropland/grassland site
 
@@ -400,10 +553,21 @@ Reference workflow:
    GPP in g C m⁻² d⁻¹.
 5. Align on date with the FLUXNET `GPP_NT_VUT_REF` column (filter out
    `-9999` missing) and compute **Pearson r, NSE, KGE** over the overlap.
-6. Acceptance bands (typical published DayCent GPP skill against FLUXNET
-   crops/grass): `r > 0.7`, `NSE > 0.4`, bias |·| < 20%. A run that
-   falls outside these bands is not necessarily wrong — check phenology
-   (CROP/LAST dates) and N fertilisation schedule first before retuning.
+6. Judge the run only against cited bars present in
+   `docs/validation_convention.yaml`. If a needed metric has no cited band,
+   state `no cited threshold`; do not substitute a generic pass/fail cutoff.
+   Check phenology (CROP/LAST dates) and N fertilisation schedule before
+   retuning.
+
+## 12. Parameter Selection by Region
+
+Use physically informed site inputs, not generic calibration shortcuts. For
+cropland and grassland tasks, start from the `WoosterExampleLinux` schedule and
+edit site climate, soil, crop/grass parameterisation, rotation, fertilisation,
+and phenology to match the target. For forest tasks, the bundled public example
+does not include a populated `tree.100`, so a true forest DayCent run requires
+that upstream parameter library from CSU NREL or an explicitly reported
+grassland surrogate.
 
 ## References
 

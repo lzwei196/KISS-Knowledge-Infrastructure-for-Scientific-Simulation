@@ -1,13 +1,3 @@
----
-name: elmfire
-description: >-
-  ELMFIRE 2025.1002. Covers Surface and crown wildland fire spread across a landscape
-  raster; Fire arrival time, rate of spread, fireline intensity, flame length; Crown fire
-  initiation and class (passive/active); Ensemble burn probability via Monte Carlo over
-  perturbed weather/ignitions; Optional ember transport / spot-fire ignition. Use when the
-  task involves running, configuring, calibrating or interpreting ELMFIRE.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,39 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (20 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_landscape_to_elmfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_landscape_to_elmfire.py --help` |
+| `tools/convert_weather_to_elmfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_weather_to_elmfire.py --help` |
+| `tools/parse_elmfire_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_elmfire_output.py --help` |
+| `tools/run_elmfire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_elmfire.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # ELMFIRE (Eulerian Level Set Model of FIRE Spread) — Knowledge Infrastructure
 
@@ -277,6 +300,115 @@ Case,Ensemble_Member,Time(sec),Area(acres),Area(hectares),Perimeter(feet),Perime
 - `burn_probability.tif` — fraction of ensemble members that burned each pixel
 - `time_of_arrival_pNN.tif` — Nth percentile arrival time
 - `fire_size_percentiles.csv` — ensemble fire size distribution
+
+---
+
+## 6. Output Description (sourced from dag.yaml)
+
+The dag is the source of truth for observable outputs. If this section ever disagrees with
+`dag.yaml`, the dag wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `fire_size` — Cumulative burned area (and perimeter) time series per case. (acres (and hectares))
+
+| Output variable (dag `var`) | Dag unit | Dag description / supplied dag fact |
+|---|---|---|
+| `fire_size` | acres (and hectares) | Cumulative burned area (and perimeter) time series per case. |
+| `time_of_arrival` | See `dag.yaml` | Listed as an additional dag output. |
+| `spread_rate` | See `dag.yaml` | Listed as an additional dag output. |
+| `fireline_intensity` | See `dag.yaml` | Listed as an additional dag output. |
+| `flame_length` | See `dag.yaml` | Listed as an additional dag output. |
+| `crown_fire` | See `dag.yaml` | Listed as an additional dag output. |
+| `burn_probability` | See `dag.yaml` | Listed as an additional dag output. |
+
+The dag output list is: `fire_size`, `time_of_arrival`, `spread_rate`,
+`fireline_intensity`, `flame_length`, `crown_fire`, and `burn_probability`.
+
+---
+
+## 8. Unit Conversion and Unit Table
+
+This table restates the pipeline's unit-sensitive conversions and output units already
+documented in this KI body. Use `docs/format_spec.yaml` for exact machine-readable shapes.
+
+### Input conversion table
+
+| Variable | Source unit / common source | ELMFIRE unit | Conversion or rule |
+|---|---|---|---|
+| Wind speed | m/s at 10 m | mph at 20 ft | ×2.237 for m/s→mph; ×1.15 for 10m→20ft |
+| Wind direction | math convention, direction TO | degrees, meteorological convention, direction FROM | Add 180° if using "to" convention |
+| Dead fuel moisture (`M1`, `M10`, `M100`) | fraction, e.g. 0.05 | percent, e.g. 5.0 | ×100 if source is fraction |
+| Live fuel moisture (`MLH`, `MLW`) | fraction, e.g. 0.60 | percent, e.g. 60.0 | ×100 if source is fraction |
+| Slope | percent rise or radians | degrees, 0–90 | degrees = atan(rise/100)×180/π |
+| Aspect | 0=E mathematical | degrees, 0=N, 90=E, 180=S | aspect_geo = 90 - aspect_math |
+| Canopy base height | meters | meters ×10 integer | Multiply by 10 when `CBH_TIMES_10=.TRUE.` |
+| Canopy bulk density | kg/m³ | kg/m³ ×100 integer | Multiply by 100 when `CBD_TIMES_100=.TRUE.` |
+| Canopy cover | fraction, 0–1 | percent, 0–100 | ×100 if `CC_IN_PERCENT=.TRUE.` |
+| Canopy height | meters | meters ×10 integer | Multiply by 10 when `CH_TIMES_10=.TRUE.` |
+| Domain coordinates | lat/lon degrees | UTM meters | Reproject to the UTM zone used by `A_SRS` |
+| Simulation time | hours or minutes | seconds | ×3600 for hours |
+| `DTDUMP` | hours | seconds | ×3600 |
+| Cell size | feet or km | meters | 1 km = 1000 m |
+
+### Output unit table
+
+| Output variable | Unit |
+|---|---|
+| `fire_size` | acres (and hectares) |
+| `time_of_arrival` | seconds |
+| `spread_rate` | ft/min |
+| `fireline_intensity` | kW/m |
+| `flame_length` | feet |
+| `crown_fire` | 0/1 |
+| `burn_probability` | fraction of ensemble members that burned each pixel |
+
+### Output interpretation conversions
+
+| Output variable | ELMFIRE output unit | Common comparison unit | Conversion |
+|---|---|---|---|
+| `fireline_intensity` | kW/m | BTU/ft/s | ×3.46 from BTU/ft/s |
+| `spread_rate` | ft/min | m/s | ×0.3048/60 to m/s |
+| `flame_length` | feet | meters | ×0.3048 to meters |
+
+---
+
+## 11. Validated Results
+
+### Current validation status
+
+| Property | Value |
+|---|---|
+| Validation status | `tutorial_validated` |
+| Validated tutorial | Tutorial 01 — Constant Wind |
+| Headline dag output | `fire_size` |
+| Headline dag output unit | acres (and hectares) |
+| Headline dag output description | Cumulative burned area (and perimeter) time series per case. |
+| Body validation campaign | pending |
+
+### Performance metrics — judged against convention bars
+
+`docs/validation_convention.yaml` is the source of truth for metric direction and pass-bands.
+Null bands in the convention are written here as "no cited threshold"; no substitute thresholds
+are inferred.
+
+No cited convention bar for the rank-1 dag output `fire_size` is stated in the supplied KI
+facts for this edit. Do not use another variable's bar as a proxy for `fire_size`.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Citation key |
+|---|---|---|---|---|---|---|
+| `time_of_arrival` | `sorensen` | maximize | 0.4 (`giannaros2020`) | 0.6 (`giannaros2020`) | 0.8 (`giannaros2020`) | `giannaros2020` |
+| `spread_rate` | `absolute_percent_error` | minimize | 35.0 (`gale2025`) | no cited threshold (`gale2025`) | no cited threshold (`gale2025`) | `gale2025` |
+
+### Data replacement tracking
+
+| Component | Source | Status | Notes |
+|---|---|---|---|
+| Landscape data | `convert_landscape_to_elmfire.py` | Pipeline available | Fuel, topography, and canopy GeoTIFFs |
+| Weather forcing | `convert_weather_to_elmfire.py` | Pipeline available | Wind speed, wind direction, and fuel moisture GeoTIFFs |
+| Execution | `run_elmfire.py` | Pipeline available | Preflight checks, `mpirun`, and output validation |
+| Output parsing | `parse_elmfire_output.py` | Pipeline available | CSV time series and metrics JSON |
+| Body validation campaign | KI body | pending | Keep numeric achieved metrics out of this section until produced by the real model run |
 
 ---
 

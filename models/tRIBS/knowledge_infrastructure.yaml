@@ -1,106 +1,144 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:55:51.788528'
-  domain: hydrology
   name: tRIBS
-  version: auto-generated
+  language: c++
+  implementation:
+    id: tribs-5.3.1
+    version: 5.3.1
+    provenance: C++ (C++17); object-oriented tRIBS distributed hydrologic model (Ivanov/Vivoni/Bras lineage);
+      serial and MPI-parallel (tRIBSpar) binaries.
+  scientific_reference_version: tRIBS 5.3.x (TIN-based Real-time Integrated Basin Simulator; Ivanov et
+    al. 2004 WRR/JoH formulation)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/tRIBS/source/repo/build/tRIBS
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s1_mesh_preparation
+  - s2_soil_landuse
+  - s3_met_forcing
+  - s4_execution
+  - s5_output_analysis
+tools:
+  count: 6
+  files:
+  - tools/build_tribs_mesh.py
+  - tools/build_tribs_spatial_maps.py
+  - tools/convert_met_forcing.py
+  - tools/convert_soil_params.py
+  - tools/parse_tribs_output.py
+  - tools/run_tribs.py
+inputs:
+  forcing:
+  - name: Rainfall
+    unit: mm/hr
+  - name: Air temperature (TA)
+    unit: degC
+  - name: Dew point temperature (TD) / relative humidity
+    unit: degC / fraction (0-1)
+  - name: Wind speed (US)
+    unit: m/s
+  - name: Atmospheric pressure (PA)
+    unit: mb (hPa)
+  - name: Incoming shortwave / net radiation (NR)
+    unit: W/m^2
+  - name: Sky cover (XC)
+    unit: tenths (0-10)
+  - name: Surface temperature (TS)
+    unit: degC
+  parameters:
+  - name: Saturated hydraulic conductivity (Ks / K0n)
+    unit: mm/hr
+  - name: Soil porosity / saturation moisture content (ThetaS)
+    unit: dimensionless (0-1)
+  - name: Residual soil moisture (ThetaR)
+    unit: dimensionless (0-1)
+  - name: Air-entry pressure (PsiB)
+    unit: mm
+  - name: Pore-size distribution index (lambda_o)
+    unit: dimensionless
+  - name: Conductivity decay parameter (f)
+    unit: 1/mm
+  - name: Anisotropy ratio (ar)
+    unit: dimensionless
+  - name: Depth to bedrock (DEPTHTOBEDROCK)
+    unit: mm
+  - name: Surface soil depth / root-zone depth
+    unit: mm
+  - name: Interception coefficients (a, b1) and canopy partitioning (P, S, K)
+    unit: varies
+  - name: Vegetation fraction (bv / v)
+    unit: dimensionless (0-1)
+  - name: Leaf area index (LAI)
+    unit: m^2/m^2
+  - name: Stomatal resistance (rs)
+    unit: s/m
+  - name: Optical transmission coefficient (Kt)
+    unit: dimensionless
+  - name: Hillslope velocity coefficient/exponent (cv, r)
+    unit: m/s, dimensionless
+  - name: Channel/stream velocity coefficient (STREAM_KSE)
+    unit: m/s
+  - name: Manning's channel roughness (ne)
+    unit: s/m^(1/3)
+  - name: TIN mesh geometry (nodes, edges, triangles, elevation)
+    unit: UTM meters / m MSL
+  - name: Terrain sheltering horizon angles
+    unit: radians
+  initial_conditions:
+  - name: Groundwater table depth (Nwt)
+    unit: mm
+  - name: Initial soil moisture / unsaturated storage (Mu)
+    unit: mm
+  - name: Initial snow water equivalent (liqWEq / iceWEq)
+    unit: mm
+  - name: Reservoir initial water-surface elevation
+    unit: m
+  - name: Full model state for warm start
+    unit: mixed
+  boundary_conditions:
+  - name: Node boundary code
+    unit: code
+  - name: Simulation start/end and time stepping (STARTDATE, ENDDATE, METSTEP, RAINFALL step)
+    unit: date / hours
+  - name: Evapotranspiration method switch (OPTEVAP)
+    unit: enum
+  - name: Interception scheme switch (OPTINTERC)
+    unit: enum
+  - name: Snow module toggle (OPTSNOW)
+    unit: enum
+  - name: Groundwater module toggle (OPTGROUNDWATER, GFLUXOPTION)
+    unit: enum
+  - name: Mesh input mode (OPTMESHINPUT)
+    unit: enum
+  - name: Restart mode (RESTARTMODE)
+    unit: enum
+  - name: Reservoir operations rule set
+    unit: elevation-discharge-storage
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - Discharge at outlet (Qstrm)
+  - Channel stage (HLevel)
+  - Total evapotranspiration (EvpTtrs / EvapoTranspiration)
+  - Depth to groundwater table (Nwt)
+  - Soil moisture (top 10 cm / root zone)
+  - Snow water equivalent (SnWE; liqWEq/iceWEq)
+  - Runoff-mechanism hydrograph separation (Hsrf, Sbsrf, Psrf, Satsrf)
+  - Mean areal precipitation and basin-averaged water-balance terms
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.906, KGE=0.945, R=0.952, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.9063
+    best_kge: 0.9452
+    best_r: 0.9523
+summary:
+  total_tools: 6
+  total_stage_docs: 5
+  total_diagnostic_triplets: 20
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

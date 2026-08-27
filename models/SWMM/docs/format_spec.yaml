@@ -1,253 +1,674 @@
-# format_spec.yaml — EPA SWMM 5.2 (enriched with coupling inputs)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: EPA SWMM 5.2
-  domain: urban
-  secondary_domains:
-  - stormwater
-  - water_quality
-  binary: pyswmm (C library via Python)
-  binary_path: pip install pyswmm
-  language: C (engine) / Python (API)
-  working_directory: directory containing INP file
-  notes: No separate binary needed. pyswmm bundles the SWMM 5.2 C engine.
+  name: SWMM
+  language: c
+  implementation:
+    id: pyswmm-swmm5
+    version: SWMM 5.2.x engine (pyswmm 1.x/2.1 + swmm-toolkit bindings)
+    provenance: C; EPA SWMM5 open-source engine (US EPA + CDM-Smith), driven through the pyswmm Python
+      API which bundles the compiled engine.
+  scientific_reference_version: EPA SWMM 5 (Reference Manual Vol I Hydrology, EPA/600/R-15/162A rev. Jan
+    2016; engine line SWMM 5.2.x)
 inputs:
   forcing:
-  - name: rainfall
-    file: '[TIMESERIES] section in INP file'
-    unit: mm/hr (INTENSITY) or mm/interval (VOLUME)
-    valid_range:
-    - 0.0
-    - 300.0
-    format: 'INP text: date/time value pairs in [TIMESERIES] section'
-    conversion_from_cmfd: CMFD mm/3hr -> depends on FORMAT in [RAINGAGES]
-    notes: FORMAT must match data type. INTENSITY=rate, VOLUME=depth per interval. Mismatch causes 12x error for 5-min data.
-  - name: evaporation
-    file: '[EVAPORATION] section in INP file'
-    unit: mm/day
-    valid_range:
-    - 0.0
-    - 15.0
-    format: 'INP text: constant or monthly or timeseries'
+  - name: Precipitation (rainfall)
+    unit: mm/hr (intensity) or mm/interval (volume), CMS; in/hr or in (CFS)
+    category: meteorology
+    source_kind: forcing
+    model_input_format: '[RAINGAGES] + [TIMESERIES] in INP; FORMAT INTENSITY|VOLUME|CUMULATIVE, held constant
+      within a runoff timestep'
+    notes: FORMAT (INTENSITY vs VOLUME) must match the data encoding; an interval mismatch scales runoff
+      by intervals-per-hour with no warning.
+  - name: Air temperature
+    unit: deg C/F
+    category: meteorology
+    source_kind: forcing
+    model_input_format: '[TEMPERATURE] daily max-min or continuous series'
+    notes: Drives snowmelt partitioning and Hargreaves evaporation.
+  - name: Evaporation
+    unit: mm/day (SI) or in/day (US)
+    category: meteorology
+    source_kind: forcing
+    model_input_format: '[EVAPORATION] time series (actual; pan x ~0.7) or Hargreaves from temperature'
+    notes: SWMM expects actual evaporation; Hargreaves needs a multi-day (7-day running) temperature average.
+  - name: Wind speed
+    unit: km/hr (SI) or mph (US)
+    category: meteorology
+    source_kind: forcing
+    model_input_format: '[WIND] series'
+    notes: Refines snowmelt rate during rain-on-snow.
   parameters:
-    critical:
-    - name: flow_units
-      file: INP [OPTIONS] FLOW_UNITS
-      description: Unit system selector — determines ALL input/output units
-      valid_range:
-      - CFS
-      - GPM
-      - MGD
-      - CMS
-      - LPS
-      - MLD
-      default: CMS
-      unit: selector
-      bug_history: 'FLOW_UNITS determines the ENTIRE unit system. CMS = metric (m, ha, mm, m3/s). CFS = US customary (ft,
-        acres, in, ft3/s). If FLOW_UNITS=CMS but pipe diameters entered in mm instead of m, SWMM treats 600mm as 600 meters
-        diameter. NO warning. Triplet dt_004.
-
-        '
-    - name: routing_model
-      file: INP [OPTIONS] ROUTING_MODEL
-      description: Hydraulic routing method
-      valid_range:
-      - DYNWAVE
-      - KINWAVE
-      - STEADY
-      default: DYNWAVE
-      notes: DYNWAVE for backwater/surcharging. KINWAVE for simple steep systems.
-    - name: routing_step
-      file: INP [OPTIONS] ROUTING_STEP
-      description: Routing timestep
-      valid_range:
-      - 00:00:05
-      - 00:01:00
-      default: 00:00:15
-      unit: HH:MM:SS
-      bug_history: 'For DYNWAVE, must satisfy Courant: dt <= dx / sqrt(g * h_max). 100m conduit, 3m depth: dt_max = 18.4s.
-        Start with 15s, reduce to 5-10s if continuity error > 1%. Triplet dt_001.
-
-        '
-    - name: percent_imperv
-      file: INP [SUBCATCHMENTS]
-      description: Percent impervious area per subcatchment
-      valid_range:
-      - 0.0
-      - 100.0
-      unit: percent
-      notes: 'Major driver of runoff volume. Urban: 50-95%. Suburban: 20-50%. Rural: 0-10%.'
-    - name: subcatchment_width
-      file: INP [SUBCATCHMENTS]
-      description: Characteristic overland flow width
-      valid_range:
-      - 10
-      - 10000
-      unit: m (for CMS units)
-      bug_history: 'Width = Area / longest_overland_flow_path. Too large = too-peaked hydrograph. Too small = too-attenuated.
-        NOT arbitrary. Triplet dt_016.
-
-        '
-    - name: conduit_roughness
-      file: INP [CONDUITS]
-      description: Manning's n for pipes/channels
-      valid_range:
-      - 0.01
-      - 0.03
-      default: 0.013
-      unit: s/m^(1/3)
-      notes: 0.013 for concrete, 0.015 for corrugated metal, 0.025 for natural channels.
-    - name: infiltration_method
-      file: INP [OPTIONS] INFILTRATION
-      description: Infiltration calculation method
-      valid_range:
-      - HORTON
-      - GREEN_AMPT
-      - CURVE_NUMBER
-      default: HORTON
-    - name: allow_ponding
-      file: INP [OPTIONS] ALLOW_PONDING
-      description: Allow surface ponding at flooded nodes
-      valid_range:
-      - 'YES'
-      - 'NO'
-      default: 'NO'
-      bug_history: 'Default NO causes water loss when nodes flood — excess water disappears. Always set YES for continuous
-        simulations. Triplet dt_003.
-
-        '
-    - name: rainfall_format
-      file: INP [RAINGAGES] FORMAT
-      description: 'Rainfall data format: INTENSITY or VOLUME'
-      valid_range:
-      - INTENSITY
-      - VOLUME
-      bug_history: 'If FORMAT=INTENSITY but data is mm/interval, runoff is multiplied by intervals/hour. For 5-min data: 12x
-        error. SILENT — SWMM runs fine but peak flows are wildly wrong. Triplet dt_009.
-
-        '
-  files:
-    required:
-    - name: model.inp
-      description: Master input file with all sections
-      format: Text, bracketed section headers [TITLE], [OPTIONS], etc.
-    optional:
-    - name: External rain files
-      description: Rain gage data files (referenced by [RAINGAGES])
-    - name: Hotstart files
-      description: Saved model state for continuous simulations
+  - name: Area (A)
+    unit: ha (CMS) / acre (CFS)
+    category: subcatchment_geometry
+    source_kind: user_provided
+    model_input_format: '[SUBCATCHMENTS]'
+  - name: Characteristic width (W)
+    unit: m (CMS) / ft (CFS)
+    category: subcatchment_geometry
+    source_kind: user_provided
+    model_input_format: '[SUBCATCHMENTS]'
+    notes: Implied overland flow length L = Area/Width; over-large W (e.g., sqrt(Area) shortcut) artificially
+      peaks the hydrograph.
+  - name: Slope (S)
+    unit: ft/ft (dimensionless)
+    category: subcatchment_geometry
+    source_kind: user_provided
+    model_input_format: '[SUBCATCHMENTS]'
+  - name: Percent imperviousness
+    unit: '%'
+    category: subcatchment_geometry
+    source_kind: user_provided
+    model_input_format: '[SUBCATCHMENTS]'
+  - name: '% Zero-Imperv (impervious area with no depression storage)'
+    unit: '%'
+    category: subcatchment_geometry
+    source_kind: user_provided
+    model_input_format: '[SUBAREAS]'
+  - name: Manning's n (pervious n_P, impervious n_I)
+    unit: dimensionless
+    category: surface_roughness
+    source_kind: calibrated
+    model_input_format: '[SUBAREAS]'
+    notes: No range check; a dropped/added zero shifts velocity 10-13x. Typical range [0.005, 0.100].
+  - name: Depression storage (pervious S-perv, impervious S-imperv)
+    unit: mm (CMS) / in (CFS)
+    category: surface_storage
+    source_kind: calibrated
+    model_input_format: '[SUBAREAS]'
+  - name: Infiltration parameters
+    unit: rates mm/hr; decay /hr; suction mm
+    category: infiltration
+    source_kind: calibrated
+    model_input_format: '[INFILTRATION]: Horton (MaxRate,MinRate,Decay,DryTime,MaxInfil), Green-Ampt (Suction,Ksat,IMD),
+      or SCS CN'
+    notes: Column layout MUST match the method in [OPTIONS] INFILTRATION; mismatch silently misreads columns.
+  - name: Aquifer parameters (up to 14 per subcatchment)
+    unit: mixed
+    category: groundwater
+    source_kind: calibrated
+    model_input_format: '[AQUIFERS]/[GROUNDWATER]'
+    notes: Only required when groundwater is modeled.
+  - name: Node attributes (invert elev, max depth, surcharge depth, ponded area Aponded)
+    unit: m (CMS) / ft (CFS); Aponded m2
+    category: network_geometry
+    source_kind: user_provided
+    model_input_format: '[JUNCTIONS], [STORAGE]'
+  - name: Conduit attributes (length, Manning roughness, inlet/outlet offsets, cross-section)
+    unit: m (CMS) / ft (CFS)
+    category: network_geometry
+    source_kind: user_provided
+    model_input_format: '[CONDUITS] + [XSECTIONS]'
+    notes: Length=0 (coincident nodes) causes division-by-zero/NaN.
+  - name: LID layer properties (Surface/Soil/Pavement/Storage/Drain)
+    unit: thicknesses mm; porosity/FC/WP fractions; conductivity mm/hr
+    category: lid
+    source_kind: calibrated
+    model_input_format: '[LID_CONTROLS]'
+    notes: Soil layer must satisfy Wilting Point < Field Capacity < Porosity; SWMM does not validate this.
+  - name: Pollutant buildup/washoff and treatment coefficients
+    unit: mixed (mass, mass/volume)
+    category: water_quality
+    source_kind: calibrated
+    model_input_format: '[POLLUTANTS], [BUILDUP], [WASHOFF], [LANDUSES], [TREATMENT]'
+  initial_conditions:
+  - name: Ponded runoff depth d
+    unit: mm
+    category: runoff
+    source_kind: default
+    model_input_format: initialized to 0
+  - name: Infiltration sub-states / antecedent dry time
+    unit: mixed
+    category: infiltration
+    source_kind: default
+    model_input_format: Horton DryTime / soil moisture storage S
+    notes: Most infiltration sub-states (t_p, F_e, Fu, T, P) start at 0; soil moisture storage S is user-supplied.
+  - name: Snow pack initial state (w_snow, fw, ati)
+    unit: mm water equivalent; deg
+    category: snowmelt
+    source_kind: user_provided
+    model_input_format: '[SNOWPACKS] initial conditions'
+  - name: Initial unsaturated moisture theta_u and saturated depth d_L
+    unit: fraction; m
+    category: groundwater
+    source_kind: user_provided
+    model_input_format: '[GROUNDWATER] initial values'
+  - name: Node initial depth / link initial flow
+    unit: m (CMS); m3/s (CMS)
+    category: network
+    source_kind: user_provided
+    model_input_format: '[JUNCTIONS] Init_Depth (usually 0); link initial flow'
+  - name: LID initial soil saturation (InitSat)
+    unit: '%'
+    category: lid
+    source_kind: user_provided
+    model_input_format: '[LID_USAGE]'
+    notes: 30-50% typical for event runs; washes out over continuous simulation.
   boundary_conditions:
-  - name: outfall_water_level
-    file: '[OUTFALLS] section in .inp file or TIMESERIES reference'
-    unit: m
-    valid_range:
-    - 0.0
-    - 100.0
-    format: 'INP file section: outfall elevation + boundary type (FREE, FIXED, TIDAL, TIMESERIES)'
-    notes: Downstream water level at outfall nodes. When type=TIMESERIES, reads time-varying stage from CaMa-Flood water_surface_elevation.
-      Controls backwater effects.
-    conversion_from_cama: 'CaMa sfcelv (m) → SWMM outfall stage (m): direct, same unit. Must match datum.'
-  - name: subcatchment_inflow
-    file: '[INFLOWS] section in .inp file'
-    unit: m3/s
-    valid_range:
-    - 0.0
-    - null
-    format: 'INP file: external inflow time series at junction nodes'
-    notes: External runoff from VIC/hydrology model injected at junction nodes. Converts VIC runoff (mm/day) to point inflow
-      (m3/s) via subcatchment area.
+  - name: FLOW_UNITS
+    unit: enum CFS|GPM|MGD|CMS|LPS|MLD
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: '[OPTIONS]'
+    notes: Silently sets the unit system for ALL inputs and outputs; no dimension validation. Single most
+      dangerous silent error.
+  - name: INFILTRATION method
+    unit: enum HORTON|MOD_HORTON|GREEN_AMPT|CURVE_NUMBER
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: '[OPTIONS]'
+  - name: ROUTING_MODEL
+    unit: enum STEADY|KINWAVE|DYNWAVE
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: '[OPTIONS]'
+    notes: Kinematic wave cannot represent adverse slopes, backwater, or surcharging; only dynamic wave
+      handles reverse flow.
+  - name: ALLOW_PONDING
+    unit: enum YES|NO
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: '[OPTIONS]'
+    notes: Default NO removes flood water as a mass sink; YES with Aponded>0 conserves it.
+  - name: Timesteps (WET_STEP, DRY_STEP, ROUTING_STEP, REPORT_STEP) and VARIABLE_STEP
+    unit: s; min for report
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: '[OPTIONS]'
+    notes: ROUTING_STEP must satisfy the Courant condition for dynamic wave.
+  - name: Outfall stage boundary
+    unit: m (CMS) / ft (CFS)
+    category: boundary_data
+    source_kind: user_provided
+    model_input_format: '[OUTFALLS] FREE|NORMAL|FIXED|TIDAL|TIMESERIES (+ [TIMESERIES] for a head series)'
+    notes: Time-varying head boundary (e.g., downstream river stage). TIMESERIES name must exist and span
+      the simulation period.
+  - name: External inflow hydrographs / pollutographs at nodes
+    unit: m3/s (CMS); mass/volume
+    category: boundary_data
+    source_kind: user_provided
+    model_input_format: '[INFLOWS]'
+    notes: External lateral inflow (e.g., upstream rural runoff coupling).
+  - name: Dry-weather sanitary flow
+    unit: FLOW_UNITS
+    category: boundary_data
+    source_kind: user_provided
+    model_input_format: '[DWF] + optional [PATTERNS]'
+    notes: Required for combined-sewer dry-weather base flow.
+  - name: Control rules for pumps and regulators
+    unit: n/a
+    category: management
+    source_kind: user_provided
+    model_input_format: '[CONTROLS] IF-THEN-ELSE rules'
 outputs:
   primary:
-  - name: outfall_discharge
-    file: model.out (binary) / model.rpt (text summary)
-    unit: m3/s (for CMS units)
-    valid_range:
-    - 0.0
-    - null
-    format: Binary OUT file (read with pyswmm) or text RPT file
-    notes: Runoff coefficient = total_runoff_volume / total_rainfall_volume.
+  - name: subcatchment_runoff
+    unit: m3/s (CMS) or cfs (US)
+    description: Surface runoff flow rate generated by a subcatchment.
+    validation_rank: 1
+    emitted_in: .out (SubcatchResult RUNOFF) and .rpt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Subcatchment runoff is rarely observed directly; usually compared at a gauged outlet/link rather
+          than per-subcatchment.
+      detrending_options:
+      - none
+  - name: node_depth_head
+    unit: m (CMS) or ft (US)
+    description: Water depth above invert and hydraulic head at a node (junction, storage, outfall).
+    validation_rank: 2
+    emitted_in: .out (NodeResult DEPTH/HEAD)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: r
+        caveats:
+        - Compared against pressure-transducer/stage records at instrumented manholes; requires datum
+          alignment between model invert and sensor reference.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Peak-stage or high-water-mark comparison at a single node.
+      detrending_options:
+      - none
   - name: node_flooding
-    file: model.out / model.rpt
-    unit: m3
-    valid_range:
-    - 0.0
-    - null
-    notes: Volume of flooding at each node.
-  - name: node_depth
-    file: model.out
-    unit: m (for CMS units)
-    valid_range:
-    - 0.0
-    - null
-  - name: conduit_flow
-    file: model.out
-    unit: m3/s (for CMS units)
-    valid_range: null
-  diagnostics:
-  - name: runoff_continuity_error
-    file: model.rpt
-    check: Runoff continuity error < 5%
-    tolerance_pct: 5.0
-    notes: Error > 5% indicates infiltration parameter issues or timestep problems.
-  - name: routing_continuity_error
-    file: model.rpt
-    check: Routing continuity error < 5%
-    tolerance_pct: 5.0
-    notes: 'Error > 1% for DYNWAVE: reduce routing timestep. Triplet dt_001.'
-  - name: runoff_coefficient
-    check: Runoff volume / rainfall volume = 0.4-0.9 for urban areas
-    notes: < 0.3 suggests too much infiltration. > 0.95 suggests wrong impervious fraction.
-  - name: node_surcharging
-    check: Surcharge duration as fraction of total simulation
-    notes: Extensive surcharging may indicate undersized pipes or wrong invert elevations.
+    unit: flow m3/s; volume m3
+    description: Surface-water overflow rate and total surface floodwater volume at a drainage-network
+      node when capacity is exceeded.
+    validation_rank: 3
+    emitted_in: .out (NodeResult FLOOD) and .rpt node flooding summary
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Flood volume is mass-balance-sensitive to ALLOW_PONDING; compare only when ponding is configured
+          consistently with the observation context.
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Flood/no-flood per node against reported flooding locations; threshold-dependent.
+      detrending_options:
+      - none
+  - name: link_flow
+    unit: m3/s (CMS) or cfs (US)
+    description: Stormwater flow rate through a drainage-network conduit/link; outfall discharge equals
+      total inflow at the outfall node.
+    validation_rank: 4
+    emitted_in: .out (LinkResult FLOW) and .rpt outfall loading summary
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Primary calibration target; compared against flow-gauge records at an outfall or trunk conduit.
+      detrending_options:
+      - none
+  - name: link_depth_velocity
+    unit: depth m; velocity m/s; capacity fraction
+    description: Stormwater flow depth, velocity, and fraction-of-full capacity in a drainage-network
+      conduit.
+    validation_rank: 5
+    emitted_in: .out (LinkResult DEPTH/velocity)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Velocity rarely directly observed; depth comparable where a sensor exists in the conduit.
+      detrending_options:
+      - none
+  - name: subcatchment_infiltration
+    unit: mm/hr
+    description: Infiltration rate into pervious soil per subcatchment.
+    validation_rank: 6
+    emitted_in: .out (SubcatchResult INFILTRATION)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Seldom directly observed; usually inferred from a runoff-coefficient or water-balance closure
+          rather than a direct sensor.
+      detrending_options:
+      - none
+  - name: groundwater_outflow
+    unit: flow m3/s; table elev m
+    description: Groundwater table elevation and lateral groundwater outflow per subcatchment.
+    validation_rank: 7
+    emitted_in: .out (SubcatchResult / SystemAttribute GW_INFLOW)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Compared against monitoring-well table elevations where aquifer parameters are calibrated; only
+          meaningful when groundwater is enabled.
+      detrending_options:
+      - none
+  - name: pollutant_concentration_load
+    unit: mass/volume; mass
+    description: Pollutant concentration and washoff load at subcatchments, nodes, and links.
+    validation_rank: 8
+    emitted_in: .out (pollutant per element) and .rpt
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Grab-sample / EMC data are sparse and noisy; event-mean concentration comparison is often the
+          only defensible match.
+      detrending_options:
+      - none
+  - name: continuity_error
+    unit: percent
+    description: Surface-runoff water and drainage-network water flow-routing continuity errors; primary
+      internal mass-balance/numerical-stability diagnostic.
+    validation_rank: 9
+    emitted_in: .rpt continuity tables
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Self-diagnostic, not an observation; checked against acceptance thresholds (<5%, <1% for dynamic
+          wave), not against field data.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-- id: high_continuity_error
-  triplet: dt_001
-  description: Routing continuity error > 5% — timestep too large for DYNWAVE
-  affected_output: All flow routing results
-  detection: Check model.rpt for % routing continuity error
-  fix: Reduce ROUTING_STEP to 5-10 seconds
-- id: unstable_oscillation
-  triplet: dt_002
-  description: Unstable oscillating flow in conduits with adverse slopes
-  affected_output: Conduit flow oscillates wildly
-  detection: Flow values alternate sign or oscillate
-  fix: Use KINWAVE for systems with adverse slopes, or fix slopes
-- id: water_loss_no_ponding
-  triplet: dt_003
-  description: ALLOW_PONDING=NO causes permanent water loss at flooded nodes
-  affected_output: Negative routing continuity error
-  detection: Routing error negative (water leaving system)
-  fix: Set ALLOW_PONDING=YES with non-zero Aponded
-- id: unit_system_mismatch
-  triplet: dt_004
-  description: FLOW_UNITS vs input dimensions mismatch — silent wrong results
-  affected_output: All results wrong by orders of magnitude
-  detection: Results off by ~3 (ft/m) or ~10 (acres/ha)
-  fix: Verify ALL dimensions match FLOW_UNITS system
-- id: rainfall_format_mismatch
-  triplet: dt_009
-  description: INTENSITY vs VOLUME format mismatch — 12x error for 5-min data
-  affected_output: Peak flows wildly wrong
-  detection: Runoff coefficient > 1.0 or unrealistic peak flows
-  fix: Match FORMAT to actual data type in RAINGAGES
-- id: vic_inflow_conversion
-  triplet: dt_010
-  description: VIC mm/day to m3/s conversion error — missing /1000 or /86400
-  affected_output: External inflows 1000x or 86400x wrong
-  detection: Inflow magnitude unrealistic
-  fix: Q (m3/s) = runoff (mm/day) * area (m2) / 86400000
-- id: subcatchment_width_wrong
-  triplet: dt_016
-  description: Subcatchment width too large produces too-peaked hydrograph
-  affected_output: Hydrograph shape (timing and peak)
-  detection: Runoff response much faster than expected
-  fix: Width = Area / longest_overland_flow_path
-expected_ranges:
-  typical_urban:
-    runoff_coefficient:
-    - 0.4
-    - 0.9
-    continuity_error_pct: <5
-    peak_flow_note: Scale with catchment area and design storm intensity
-    notes: Runoff coefficient increases with impervious fraction
+- id: dt_001
+  symptom: SWMM simulation completes but the routing continuity error reported in the RPT file exceeds
+    5%. Results are numerically unreliable.
+  diagnosis: The routing timestep is too large for the dynamic wave solver to resolve flow transitions
+    in the pipe network.; Dynamic wave routing solves the full Saint-Venant equations using an explicit
+    finite difference scheme. The Courant condition requires dt <= dx / sqrt(g * h), where dx is the shortest
+    cond
+  remedy: 'Reduce ROUTING_STEP and WET_STEP in [OPTIONS]. Start with 15s, then try 10s, then 5s. Each
+    reduction approximately halves the continuity error at the cost of doubling runtime.; configure_simulation_options;
+    [''Check RPT file for routing continuity error percentage'', ''Identify shortest conduit: sort ['
+  severity: degraded
+- id: dt_002
+  symptom: Dynamic wave routing produces oscillating flow directions in some conduits. Link flow alternates
+    between positive and negative values every timestep. Continuity error may be very high (>20%). Simulation
+    may crash with NaN values.
+  diagnosis: One or more conduits have adverse slopes (outlet invert higher than inlet invert), causing
+    the dynamic wave solver to oscillate between forward and reverse flow.; An adverse slope means water
+    must flow uphill. The dynamic wave solver can handle pressurized flow (surcharging), but adverse slopes
+    crea
+  remedy: 'Identify conduits with adverse slopes and correct invert elevations. Use the validate_network_connectivity
+    tool to find all adverse slopes.; validate_network_connectivity; [''For each conduit, compute slope:
+    (from_invert + in_offset - to_invert - out_offset) / length'', ''Flag conduits with negative sl'
+  severity: fatal
+- id: dt_003
+  symptom: RPT file shows nodes flooding with non-zero flood volumes, but routing continuity error is
+    negative (water leaving the system). No physical flooding is modeled — water simply disappears at
+    the flooded nodes.
+  diagnosis: ALLOW_PONDING is set to NO (default) or Aponded is 0 for flooded junctions. When a node's
+    water depth exceeds max_depth, excess water is removed from the system.; SWMM's default behavior at
+    flooded nodes is to lose the excess water. This is a mass balance sink — water enters the system as
+    rainfall b
+  remedy: 'Set ALLOW_PONDING=YES in [OPTIONS] and set Aponded > 0 for all junctions that may flood. Typical
+    ponded area: 500-2000 m2 for urban manholes, 5000-50000 m2 for major intersections.; configure_simulation_options;
+    [''Set ALLOW_PONDING YES in [OPTIONS]'', ''For each junction in [JUNCTIONS], set Aponded to'
+  severity: degraded
+- id: dt_004
+  symptom: SWMM simulation runs to completion without errors, but flow magnitudes, velocities, or water
+    depths are wrong by orders of magnitude. Pipe capacities seem impossibly large or small. No error
+    messages in RPT.
+  diagnosis: FLOW_UNITS setting (CFS vs CMS) does not match the units used for pipe dimensions, subcatchment
+    areas, rainfall depths, or invert elevations.; FLOW_UNITS=CMS means ALL dimensions in meters, areas
+    in hectares, rainfall in mm, flow in m3/s. FLOW_UNITS=CFS means feet, acres, inches, ft3/s. If FLOW_UNIT
+  remedy: 'Verify every dimensional input matches the FLOW_UNITS convention. Check pipe diameters (m for
+    CMS), areas (ha for CMS), elevations (m for CMS), rainfall (mm for CMS).; validate_inp_file; [''Check
+    [OPTIONS] FLOW_UNITS'', ''If CMS: verify all pipe Geom1 values are in meters (0.15 - 5.0 typical)'',
+    ''If CMS'
+  severity: silent
+- id: dt_005
+  symptom: 'SWMM reports an error at startup: ''ERROR 142: node/link/subcatchment [name] refers to undefined
+    object [outlet_name]''. Simulation does not start.'
+  diagnosis: A subcatchment's outlet references a junction, outfall, or subcatchment ID that does not
+    exist in the model.; Each subcatchment in [SUBCATCHMENTS] has an Outlet column that must match an
+    existing node ID (in [JUNCTIONS], [OUTFALLS], [STORAGE], or [DIVIDERS]) or another subcatchment ID.
+    If the refere
+  remedy: Check the outlet ID referenced in the error message. Either create the missing node or correct
+    the outlet reference in [SUBCATCHMENTS].; validate_subcatchments; ['Find the subcatchment referenced
+    in the error message', 'Check its Outlet value in [SUBCATCHMENTS]', 'Verify the outlet ID exists in
+    [JUN
+  severity: fatal
+- id: dt_006
+  symptom: Simulation runs but infiltration behavior is wrong — either excessive infiltration in clay
+    soils or no infiltration in sandy soils. Runoff volumes do not match expectations. No error message.
+  diagnosis: 'The [INFILTRATION] parameters do not match the infiltration method set in [OPTIONS]. SWMM
+    reads different columns depending on the method.; If [OPTIONS] INFILTRATION=HORTON, SWMM reads 5 columns:
+    MaxRate, MinRate, Decay, DryTime, MaxInfil. If INFILTRATION=GREEN_AMPT, it reads 3 columns: Suction,
+    Ksa'
+  remedy: 'Verify that [INFILTRATION] parameters match the method in [OPTIONS]. Check column meanings
+    for the chosen method.; validate_subcatchments; [''Check [OPTIONS] INFILTRATION method'', ''Verify
+    [INFILTRATION] has correct number of columns for the method'', ''For HORTON: MaxRate > MinRate (both
+    in mm/hr for C'
+  severity: degraded
+- id: dt_007
+  symptom: 'SWMM crashes during simulation with a division by zero or produces NaN flow values. The RPT
+    file may show ''ERROR 141: conduit [name] has zero length'' or the simulation produces NaN/Inf in
+    results.'
+  diagnosis: A conduit has length = 0, which causes division by zero when computing conduit slope, velocity,
+    or friction losses.; Conduit hydraulic computations require dividing by length (slope = dz/L, travel
+    time = L/v). A zero-length conduit makes these divisions undefined. This typically happens when two
+    jun
+  remedy: 'Find and fix zero-length conduits. Either merge the connected junctions into one, remove the
+    conduit, or assign a minimum length (1 meter).; validate_network_connectivity; [''Search [CONDUITS]
+    for Length = 0 or Length < 0.1'', ''For each: check if From_Node and To_Node are at the same coordinates'',
+    ''Op'
+  severity: fatal
+- id: dt_008
+  symptom: 'SWMM reports ''ERROR 143: no outfall node defined'' or simulation runs but all nodes flood
+    because water has no exit from the system.'
+  diagnosis: The [OUTFALLS] section is missing or empty. Without an outfall, water entering the drainage
+    system has nowhere to exit.; Every SWMM model must have at least one outfall node that serves as the
+    boundary where water exits the model domain. Without an outfall, all water that enters (from rainfall
+    and e
+  remedy: 'Add at least one outfall node to the [OUTFALLS] section. Connect it to the downstream end of
+    the drainage network via a conduit.; create_drainage_network; [''Identify the downstream end of the
+    drainage network (lowest-elevation junction)'', ''Add an outfall node downstream: e.g., OF1 with elevation
+    bel'
+  severity: fatal
+- id: dt_009
+  symptom: SWMM simulation runs successfully but runoff volumes are wrong by a factor equal to the number
+    of intervals per hour. For 5-minute data, runoff is 12x too high (FORMAT=INTENSITY with VOLUME data)
+    or 12x too low (FORMAT=VOLUME with INTENSITY data). No error message.
+  diagnosis: 'The RAINGAGE FORMAT field (INTENSITY or VOLUME) does not match how the rainfall data values
+    are encoded.; If data records depth per interval (e.g., 2.5 mm fell in this 5 minutes) and FORMAT=INTENSITY,
+    SWMM treats 2.5 as a rate of 2.5 mm/hr. The actual rate was 2.5 mm / (5/60 hr) = 30 mm/hr. So SWMM '
+  remedy: 'Verify the data convention by checking the original data source documentation. Most automated
+    gauges record VOLUME (depth per interval). Most gridded model forcing provides INTENSITY (rate).;
+    validate_rainfall_input; [''Check the raw data source documentation for format convention'', "Look
+    at a heavy '
+  severity: silent
+- id: dt_010
+  symptom: VIC runoff is successfully converted to SWMM inflow, but the flow magnitude is wrong by 3-5
+    orders of magnitude. Either flooding occurs immediately at all boundary nodes, or external inflow
+    is negligible compared to direct rainfall. No error message.
+  diagnosis: 'The unit conversion from VIC runoff (mm/day per grid cell) to SWMM flow (m3/s) has a missing
+    or wrong conversion factor.; The correct conversion is Q(m3/s) = runoff(mm/day) * area(m2) / 86400000.
+    Three common errors: (1) Forgetting /1000 to convert mm to m — flow is 1000x too large. (2) Forgetting
+    /'
+  remedy: 'Validate the conversion by computing the expected flow independently. For a 0.25-degree cell
+    at 30N with 5 mm/day runoff: Q = 5 * 6.25e8 / 86400000 = 36.2 m3/s. Compare with the tool output.;
+    validate_coupling_water_balance; [''Compute cell area in m2: for lat/lon grid, area = dlon * dlat
+    * cos(lat) '
+  severity: silent
+- id: dt_011
+  symptom: LID controls appear to have no soil water retention. Bioretention cells produce runoff immediately
+    without storing water in the soil layer. Or soil never drains — stays permanently saturated.
+  diagnosis: 'LID soil layer parameters violate the physical constraint: Wilting Point < Field Capacity
+    < Porosity.; Available water capacity = Field Capacity - Wilting Point. If WP >= FC, there is no available
+    water — the soil cannot retain any water between drainage and permanent wilting. If FC >= Porosity,
+    the'
+  remedy: 'Verify soil parameters satisfy WP < FC < Porosity. Typical values: WP=0.10, FC=0.20, Porosity=0.50.;
+    validate_lid_params; [''For each LID control with a Soil layer, check: Wilting_Point < Field_Capacity
+    < Porosity'', ''If WP >= FC: reduce WP or increase FC'', ''If FC >= Porosity: reduce FC or increase
+    Po'
+  severity: degraded
+- id: dt_012
+  symptom: Combined sewer model shows zero flow during dry weather periods. Pipes that should carry sanitary
+    flow are empty. Overflow frequency at CSO structures is underestimated.
+  diagnosis: The [DWF] (Dry Weather Flow) section is missing or empty for a combined sewer system model.;
+    Combined sewers carry both stormwater and sanitary wastewater. During dry weather, only sanitary flow
+    exists. If [DWF] is not defined, SWMM assumes zero base flow in all pipes. This underestimates total
+    flow
+  remedy: 'Add [DWF] entries for junctions receiving sanitary flow. Specify average dry weather flow rate
+    and optional time patterns (hourly, daily, monthly variation).; ; [''Estimate average sanitary flow
+    per junction from population served and per-capita wastewater generation (200-400 L/person/day typical)'', '
+  severity: degraded
+- id: dt_013
+  symptom: SWMM fails to parse the INP file with cryptic errors about unexpected characters, wrong format,
+    or file structure. Errors may reference specific line numbers but the lines look correct when viewed
+    in a text editor.
+  diagnosis: 'The INP file contains non-ASCII characters, BOM (Byte Order Mark), tabs mixed with spaces,
+    or encoding that the SWMM C engine cannot parse.; The SWMM C engine expects plain ASCII text. UTF-8
+    BOM (3 bytes at file start: EF BB BF) is invisible in most editors but causes SWMM to misinterpret
+    the first '
+  remedy: 'Re-encode the INP file as plain ASCII without BOM. Replace tabs with spaces. Remove non-ASCII
+    characters from comments.; ; [''Check for BOM: hexdump -C model.inp | head -1 (look for ef bb bf)'',
+    "Remove BOM: sed -i ''1s/^\\xEF\\xBB\\xBF//'' model.inp", "Replace tabs: sed -i ''s/\\t/  /g'' model.inp",
+    ''Rem'
+  severity: fatal
+- id: dt_014
+  symptom: Simulated velocities are unreasonably fast or slow. Flow reaches the outfall much faster or
+    slower than expected. Peak flow timing is off but magnitude may be reasonable.
+  diagnosis: 'Manning''s roughness coefficient (n) is wrong — too low (smooth, fast) or too high (rough,
+    slow) for the pipe material and condition.; Manning''s equation relates flow velocity to slope, hydraulic
+    radius, and roughness: V = (1/n) * R^(2/3) * S^(1/2). Velocity is inversely proportional to n. If
+    n=0.001'
+  remedy: 'Verify Manning''s n values against standard tables for the pipe material. Typical range for
+    pipes: 0.009-0.025.; validate_network_connectivity; ["Review all Manning''s n values in [CONDUITS]",
+    ''Flag values outside [0.008, 0.060] for pipes and [0.015, 0.100] for channels'', ''Cross-reference
+    with pipe ma'
+  severity: degraded
+- id: dt_015
+  symptom: CaMa-Flood boundary condition is applied to SWMM outfall, but backwater effects occur at the
+    wrong river stage. Urban flooding is triggered too early (datum offset too low) or too late (offset
+    too high). No error message.
+  diagnosis: The elevation datum used in SWMM does not match CaMa-Flood's global MSL datum. The datum_offset_m
+    parameter is missing, wrong, or has wrong sign.; CaMa-Flood reports water surface elevation (sfcelv)
+    in meters above mean sea level. SWMM may use a local datum (arbitrary benchmark, project datum, or
+    MS
+  remedy: Determine the correct datum offset by comparing the DEM elevation at the outfall with the SWMM
+    outfall invert elevation.; convert_cama_stage_to_outfall_bc; ['Get CaMa-Flood DEM elevation at the
+    outfall grid cell', 'Get SWMM outfall invert elevation from [OUTFALLS]', 'datum_offset = CaMa_DEM_elev
+    - S
+  severity: silent
+- id: dt_016
+  symptom: Runoff hydrograph is too peaked and too fast — time to peak is much shorter than expected.
+    Total volume may be correct but the hydrograph shape is wrong. No error message.
+  diagnosis: Subcatchment width is too large, causing overland flow to reach the outlet too quickly.;
+    SWMM models subcatchment runoff using the nonlinear reservoir equation with Manning's equation for
+    overland flow. The characteristic width determines the overland flow path length (L = Area / Width).
+    A larger wi
+  remedy: 'Recompute width as Area / longest_overland_flow_path for each subcatchment.; compute_subcatchment_params;
+    [''For each subcatchment, estimate the longest flow path from the hydraulically most remote point
+    to the outlet'', ''Width = Area / longest_flow_path'', ''For irregular shapes, the longest flow path '
+  severity: silent
+- id: dt_017
+  symptom: Multiple conduits alternate between free-surface and pressurized flow every few timesteps.
+    Continuity error gradually increases. Simulation may become progressively slower due to adaptive timestep
+    reduction.
+  diagnosis: The transition between open-channel flow and pressurized (surcharged) flow is numerically
+    unstable, especially when many conduits are near capacity simultaneously.; Dynamic wave routing handles
+    both free-surface and pressurized flow, but the transition between them involves a discontinuity in
+    the go
+  remedy: Reduce routing timestep or enable VARIABLE_STEP to allow adaptive timestep control. Consider
+    increasing pipe sizes if persistent surcharging indicates an undersized system.; configure_simulation_options;
+    ['Reduce ROUTING_STEP to 5-10 seconds', 'Add VARIABLE_STEP 0.75 to [OPTIONS] for adaptive timest
+  severity: degraded
+- id: dt_018
+  symptom: pyswmm throws an ImportError, AttributeError, or crashes with a segmentation fault when running
+    the simulation. The INP file is valid and works in other SWMM interfaces.
+  diagnosis: 'The installed pyswmm version bundles a SWMM engine version that is incompatible with the
+    INP file format or the Python API calls being made.; Different pyswmm versions bundle different SWMM
+    C engine versions: pyswmm 0.x bundled SWMM 5.1.x, pyswmm 1.x bundles SWMM 5.2.x. The SWMM 5.2 INP
+    format has m'
+  remedy: 'Check pyswmm version and ensure compatibility. For SWMM 5.2 INP files, use pyswmm >= 1.0.;
+    ; ["python -c ''import pyswmm; print(pyswmm.__version__)''", ''For pyswmm 1.x: from pyswmm import
+    Simulation (no Output class changes)'', ''For pyswmm 0.x: upgrade with pip install --upgrade pyswmm'',
+    ''Ensure swmm-t'
+  severity: fatal
+- id: dt_019
+  symptom: SWMM warns or silently clips LID area. Reported LID performance (volume captured, runoff reduced)
+    is lower than expected for the specified LID area. Or the remaining non-LID subcatchment area becomes
+    negative.
+  diagnosis: The total LID area assigned to a subcatchment (Number * Area across all LID types) exceeds
+    the subcatchment's total area.; In [LID_USAGE], each entry specifies Number (replicate units) * Area
+    (per unit). If a subcatchment has 10,000 m2 and two LID assignments of 4,000 m2 and 7,000 m2 (total
+    11,000 m
+  remedy: Verify total LID area per subcatchment does not exceed subcatchment area. Reduce LID Number
+    or Area if needed.; validate_lid_params; ['For each subcatchment, sum (Number * Area) across all LID_USAGE
+    entries', 'Compare with subcatchment total area from [SUBCATCHMENTS]', 'If LID_total > subcatchment_a
+  severity: fatal
+- id: dt_020
+  symptom: 'SWMM crashes at startup with ''ERROR: undefined time series [name]'' or runs but uses a constant
+    boundary condition instead of the time-varying series. Outfall stage does not change during the simulation.'
+  diagnosis: An outfall with type TIMESERIES references a time series name that is not defined in the
+    [TIMESERIES] section, or the time series does not cover the simulation period.; When an outfall has
+    Type=TIMESERIES, SWMM looks up the referenced time series name in [TIMESERIES]. If the name does not
+    exist (typ
+  remedy: Verify the time series name in [OUTFALLS] matches exactly (case-sensitive) a name in [TIMESERIES].
+    Verify the time series covers the simulation period.; validate_inp_file; ['Find the outfall with Type=TIMESERIES
+    in [OUTFALLS]', 'Get the Data field (time series name)', 'Search [TIMESERIES] for that e
+  severity: fatal
+- id: dt_021
+  symptom: After SWMM simulation completes successfully via pyswmm, accessing Simulation.routing_error
+    or Simulation.runoff_error raises AttributeError. The simulation itself ran fine — only post-processing
+    of continuity errors fails.
+  diagnosis: pyswmm v2.1.0 removed the .routing_error and .runoff_error attributes from the Simulation
+    object. These were available in pyswmm 1.x but silently dropped in the v2 API refactor.; In pyswmm
+    1.x, Simulation objects exposed .routing_error and .runoff_error as float attributes after the simulation
+    finis
+  remedy: Parse the .rpt file for continuity errors instead of accessing Simulation attributes. Use check_continuity_errors.py
+    or manually grep the RPT file for 'Continuity Error'.; check_continuity_errors; ['Run simulation normally
+    — it completes successfully', 'Open the .rpt file (same name as .inp but with
+  severity: degraded
+- id: dt_022_swmmanywhere_offline_and_continuity_obs
+  symptom: 'swmmanywhere model build aborts in prepare_data.download_buildings_bbox with OSError ''AWS
+    Error NETWORK_CONNECTION during HeadObject ... overturemaps-us-west-2 ... curlCode: 28 Timeout'' (or
+    OSMNX/Overpass timeout); no INP produced, all metrics null. Or: obs_source/variable is continuity_error
+    and th'
+  diagnosis: 'swmmanywhere''s data acquisition (Overture Maps S3, STAC catalog, OSMNX/Overpass, elevation)
+    is entirely internet-bound and cannot run on the offline KDT server; no cached city geodata exists
+    to substitute. Separately, continuity_error is a dag-declared self-diagnostic (dag.yaml: ''Self-diagnostic,
+    no'
+  remedy: Do not auto-build via swmmanywhere offline and do not validate continuity_error. Use a self-contained
+    offline SWMM model (e.g. swmmanywhere/defs/bellinge_small.inp via pyswmm) AND a genuine field observable
+    per the dag — link_flow at a gauged outfall/trunk, node_depth_head at an instrumented manhole
+- id: dt_022
+  symptom: swmmanywhere-built SWMM runs to completion but Runoff Quantity Continuity Error in the .rpt
+    is 'nan' (continuity_has_nan=true), while Flow Routing Continuity is finite; flooring DEM-flat %Slope
+    did not fix it.
+  diagnosis: swmmanywhere's swmm_conversion.yml writes [SUBAREAS] Manning's n=0 for all subcatchments.
+    Overland alpha = 1.49*W*sqrt(S)/(A*n) = x/0 = +inf for every positive-slope cell, which SWMM propagates
+    to NaN ponded depth -> NaN runoff continuity. Slope is NOT the governing zero; n is.
+  remedy: Floor [SUBAREAS] N-Imperv and N-Perv to a small positive value (0.01) after the swmmanywhere
+    rebuild (run_city_swmm._floor_subarea_manning), in addition to the %Slope floor. Re-read .rpt continuity
+    after swmm_end.
+- id: dt_swmmanywhere_imperv_overshoot
+  symptom: swmmanywhere-built SWMM model runs but Runoff-Quantity Continuity Error in the .rpt is 'nan'
+    with 'Final Storage = nan', while Total Precipitation/Surface Runoff/Infiltration/Evaporation are
+    all finite and Flow Routing continuity is finite. n and %Slope floors did not fix it.
+  diagnosis: swmmanywhere's derive_rc emits [SUBCATCHMENTS] %Imperv slightly over 100 (float ULP, e.g.
+    100.00000000000003). %Imperv>100 gives a negative pervious subarea area (Area*(100-%Imperv)/100<0);
+    SWMM's overland nonlinear reservoir raises a negative ponded depth to the 5/3 power -> NaN ponded
+    depth -> NaN
+  remedy: Clamp [SUBCATCHMENTS] %Imperv (0-based column 4) into [0,100] in place before running, alongside
+    the existing %Slope and Manning-n floors (run_city_swmm._clamp_subcatchment_imperv). Then both continuity
+    terms are finite and scorable.

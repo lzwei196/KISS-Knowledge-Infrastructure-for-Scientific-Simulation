@@ -1,14 +1,3 @@
----
-name: pihm
-description: >-
-  MM-PIHM v1.0.0 — semi-discrete finite-volume coupled surface-subsurface watershed
-  formulation. Covers Spatially-distributed physically-based watershed hydrology on an
-  unstructured triangular (TIN) mesh; Overland (surface) flow per element; Unsaturated
-  (vadose) zone soil water and infiltration; Saturated (groundwater) zone lateral and
-  vertical flow, recharge. Use when the task involves running, configuring, calibrating or
-  interpreting PIHM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,46 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (9 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (27 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/config_writer.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/config_writer.py --help` |
+| `tools/forcing_converter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/forcing_converter.py --help` |
+| `tools/mesh_builder.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/mesh_builder.py --help` |
+| `tools/output_parser.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/output_parser.py --help` |
+| `tools/pihm_metrics.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/pihm_metrics.py --help` |
+| `tools/pihm_metrics_corrected.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/pihm_metrics_corrected.py --help` |
+| `tools/pihm_shalehills_metrics.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/pihm_shalehills_metrics.py --help` |
+| `tools/run_pihm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_pihm.py --help` |
+| `tools/soil_converter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/soil_converter.py --help` |
+
+*9 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # MM-PIHM Knowledge Infrastructure
 **Package**: `pihm-ki` | **Version**: 1.0.0 | **Model**: MM-PIHM v1.0.0
@@ -282,7 +311,30 @@ TIME           VALUE(m or m3/s)
 
 ---
 
-## 5. Unit Trap Table
+## 5. Unit Conversion Table and Unit Trap Table
+
+### 5.1 Unit Conversion Table
+
+This body-level table records the unit conversions called out by the current KI
+tools, docs, and diagnostic triplets. Source-specific unit attributes remain in
+the data KIs named above; exact file shapes live in `docs/format_spec.yaml`.
+
+| Variable | Source/common unit | PIHM/model unit | Conversion | Type |
+|----------|--------------------|-----------------|------------|------|
+| Precipitation | mm/day | kg/m2/s | mm/day ÷ 86400 ÷ 1000 = kg/m2/s | multiplicative |
+| Temperature | °C | K | +273.15 | additive |
+| Pressure | hPa/mbar | Pa | ×100 | multiplicative |
+| Humidity | specific humidity (kg/kg) | % RH | Requires Clausius-Clapeyron conversion | derived |
+| Solar radiation | MJ/m2/day | W/m2 | MJ/m2/day ÷ 0.0864 = W/m2 | multiplicative |
+| Longwave radiation | MJ/m2/day | W/m2 | MJ/m2/day ÷ 0.0864 = W/m2 | multiplicative |
+| Wind speed | km/hr | m/s | ÷ 3.6 | multiplicative |
+| Hydraulic conductivity | cm/hr | m/s | cm/hr ÷ 360000 = m/s | multiplicative |
+| van Genuchten alpha | 1/cm | 1/m | ×100 | multiplicative |
+| Soil depth/elevation | cm or ft | m | ÷ 100 or ÷ 3.281 | multiplicative |
+| Bulk density | kg/m3 | g/cm3 | ÷ 1000 | multiplicative |
+| River roughness | Manning's n | s/m^(1/3) | Same unit | identity |
+
+### 5.2 Unit Trap Table
 
 | Variable | PIHM Internal Unit | Common External Unit | Conversion | Triplet |
 |----------|--------------------|---------------------|------------|---------|
@@ -355,6 +407,23 @@ massive output files that fill disk.
 ---
 
 ## 8. Output Variables
+
+### 8.0 Output Description (`dag.yaml` source of truth)
+
+`dag.yaml` is the source of truth for observable outputs. If this section and
+`dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `RIVFLX1` — Downstream channel flux; outlet streamflow taken at the last river segment. (m3/s)
+
+Other dag outputs: `GW`, `SURF`, `UNSAT`, `SOILM`, `ETT`, `SNOW`.
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| RIVFLX1 | 1 | m3/s | Downstream channel flux; outlet streamflow taken at the last river segment. |
+
+The dag also lists these outputs: `GW`, `SURF`, `UNSAT`, `SOILM`, `ETT`, `SNOW`.
 
 ### 8.1 Element-based outputs (per triangular element)
 | Variable | File suffix | Unit | Description |
@@ -467,7 +536,9 @@ cp output/spinup_run/ShaleHills.ic input/ShaleHills/ShaleHills.ic
 
 ---
 
-## 11. Validation Reference
+## 11. Validated Results
+
+### 11.1 Test Basin
 
 **Test Basin:** Shale Hills, Pennsylvania, USA
 **Coordinates:** 40.66°N, 77.91°W
@@ -475,6 +546,29 @@ cp output/spinup_run/ShaleHills.ic input/ShaleHills/ShaleHills.ic
 **Period:** 2009-01-01 to 2009-12-31
 **Elements:** 535 triangular elements, 20 river segments
 **Data Source:** Bundled ShaleHills example
+
+### 11.2 Performance Metrics
+
+Current body campaign status: pending. No achieved calibration, validation, or
+full-period metric values are recorded in this SKILL body. Judge future runs
+against `docs/validation_convention.yaml`, not intuition.
+
+| Dag variable | Metric | Direction | Convention bar (cited) | Achieved value |
+|--------------|--------|-----------|-------------------------|----------------|
+| RIVFLX1 | nse | maximize | satisfactory ≥ 0.5 (`moriasi2015`, `moriasi2007`); good ≥ 0.65 (`moriasi2015`, `moriasi2007`); very_good ≥ 0.75 (`moriasi2015`, `moriasi2007`) | body campaign pending |
+| RIVFLX1 | pbias | zero_centered | very_good ≤ 3.0 absolute bias from zero (`moriasi2015`, `moriasi2007`); good ≤ 10.0 absolute bias from zero (`moriasi2015`, `moriasi2007`); satisfactory ≤ 15.0 absolute bias from zero (`moriasi2015`, `moriasi2007`) | body campaign pending |
+| GW | rmse | minimize | good ≤ 1.0 (`swgw2005`, `qin2013`, `da2016`); satisfactory ≤ 3.0 (`swgw2005`, `qin2013`, `da2016`); very_good: no cited threshold | body campaign pending |
+| SOILM | rmse | minimize | satisfactory ≤ 0.05 (`da2016`); good: no cited threshold; very_good: no cited threshold | body campaign pending |
+
+### 11.3 Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending | Body campaign pending |
+| Soil | Pipeline | Pending | Body campaign pending |
+| Land cover | Pipeline | Pending | Body campaign pending |
+| DEM | Pipeline | Pending | Body campaign pending |
+| Initial conditions | Pipeline | Pending | Body campaign pending |
 
 ---
 

@@ -1,77 +1,115 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:00:17.929969'
-  domain: biogeochemistry
-  name: CLM5___CTSM
-  version: auto-generated
+  name: CLM5_CTSM
+  language: fortran
+  implementation:
+    id: clm5-ctsm
+    version: CTSM 5.4
+    provenance: Fortran 2003+; NCAR/UCAR CTSM 5.4, the land component of CESM, realizing the CLM5/CLM6
+      land-surface science.
+  scientific_reference_version: CLM5/CTSM (CTSM 5.4 framework; CLM4.5/CLM5.0/CLM6.0 selectable physics)
+  binary:
+    path: KISSPATH_HOME/cesm/scratch/test_clm5/bld/cesm.exe
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s0_configuration_skill
+  - s2_forcing_skill
+  - s3_soil_params_skill
+  - s6_execution_skill
+  - s7_output_analysis_skill
+tools:
+  count: 5
+  files:
+  - tools/convert_forcing_to_clm.py
+  - tools/convert_soil_params.py
+  - tools/make_site_dataset.py
+  - tools/parse_clm_output.py
+  - tools/run_clm.py
+inputs:
+  forcing:
+  - name: TBOT
+    unit: K
+  - name: QBOT
+    unit: kg/kg
+  - name: WIND
+    unit: m/s
+  - name: PRECTmms
+    unit: mm/s (kg/m2/s)
+  - name: FSDS
+    unit: W/m2
+  - name: FLDS
+    unit: W/m2
+  - name: PSRF
+    unit: Pa
+  - name: co2_ppmv
+    unit: ppmv
+  parameters:
+  - name: PFT/CFT fractions
+    unit: fraction
+  - name: soil texture (sand/clay/silt %)
+    unit: '%'
+  - name: soil organic matter
+    unit: kg/m3
+  - name: soil bulk density / soil color
+    unit: kg/m3 / index
+  - name: PFT physiological parameters
+    unit: various
+  - name: medlynslope
+    unit: dimensionless
+  - name: baseflow_scalar
+    unit: dimensionless
+  - name: fff
+    unit: 1/m
+  initial_conditions:
+  - name: finidat
+    unit: n/a
+  - name: soil/vegetation carbon-nitrogen pools
+    unit: gC/m2
+  - name: initial soil moisture/temperature, snow state
+    unit: mm3/mm3, K, mm
+  boundary_conditions:
+  - name: physics/compset mode
+    unit: n/a
+  - name: calendar
+    unit: n/a
+  - name: spinup_state / CLM_ACCELERATED_SPINUP
+    unit: n/a
+  - name: land use transitions
+    unit: fraction
+  - name: co2_type
+    unit: n/a
+  - name: resolution / domain file
+    unit: n/a
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - GPP
+  - NPP
+  - NEE
+  - EFLX_LH_TOT
+  - FSH
+  - QRUNOFF
+  - QDRAI
+  - H2OSOI
+  - TSOI
+  - TOTSOMC
+  - TOTVEGC
+  - SNOW_DEPTH
+  - FSNO
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.550, KGE=0.758, R=0.830, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.55
+    best_kge: 0.7583
+    best_r: 0.8301
+summary:
+  total_tools: 5
+  total_stage_docs: 5
+  total_diagnostic_triplets: 22
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

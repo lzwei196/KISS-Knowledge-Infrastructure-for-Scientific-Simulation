@@ -1,461 +1,245 @@
-# ============================================================================
-# Knowledge Infrastructure Schema — DSSAT Crop Simulation Model
-# ============================================================================
-# Created via knowledge dissection of DSSAT v4.8.5 (CSM Build 41)
-# Target: Decision Support System for Agrotechnology Transfer (DSSAT-CSM)
-#
-# Three layers:
-#   1. Validated Tools    → agent CALLS (procedural knowledge)
-#   2. Skill Documents    → agent READS (evaluative & sequencing knowledge)
-#   3. Diagnostic Triplets → agent LOOKS UP (operational debugging knowledge)
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
-# --- Package metadata ---
 package:
-  name: "dssat-csm-knowledge"
-  version: "0.1.0"
-  description: "Knowledge infrastructure for autonomous DSSAT crop simulation"
-  target_model: "DSSAT-CSM v4.8.5 (Build 41)"
-  domain: "crop simulation / agrotechnology transfer"
-  authors:
-    - "Leo (Hohai University / Zhang Research Group)"
-  license: "CC-BY-4.0"
-  related_packages:
-    - id: "dssat-crop-run"
-      name: "HydroCraft DSSAT Coupling Layer"
-      path: "KISSPATH_ROOT/skills/dssat-crop-run/"
-      relationship: "This standalone package handles 'how to run DSSAT'. The coupling layer handles 'how to feed VIC/CaMa data into DSSAT and run across a basin grid'. Bridge tools: vic_forcing_to_wth.py (C1), vic_soil_to_dssat_sol.py (C2), initialize_from_vic.py (C3)."
-
-# --- Pipeline definition ---
-# The 9-stage DSSAT simulation pipeline, validated against source code.
-# Stages 1-7 are INPUT PREPARATION (parallel branches that converge).
-# Stage 8 is EXECUTION. Stage 9 is OUTPUT PARSING.
-#
-# Key insight: Stages 1-7 all write sections of the experiment file (FileX)
-# or reference external files (weather, soil, genotype). The FileX is the
-# central orchestration document. Stage 8 reads the FileX via INPUT_SUB
-# and runs the DYNAMIC state machine. Stage 9 parses output files.
+  name: DSSAT
+  language: fortran
+  implementation:
+    id: dssat-csm-485
+    version: 4.8.5 Build 41
+    provenance: DSSAT-CSM Fortran source build 41 from github.com/DSSAT/dssat-csm-os; CMake + gfortran/Intel
+      IFort; binary dscsm048.
+  scientific_reference_version: DSSAT 4.8.5 cropping-system shell (Jones et al. 2003 modular CSM architecture;
+    Hoogenboom et al. 2019)
+  binary:
+    path: KISSPATH_HOME/DSSAT/build/bin/dscsm048
+    type: null
 pipeline:
   stages:
-
-    # -----------------------------------------------------------------------
-    # STAGE 1: EXPERIMENT DESIGN
-    # -----------------------------------------------------------------------
-    - id: "s1_experiment_design"
-      name: "Experiment Design"
-      description: >
-        Define the experiment structure: treatments, factors, field site,
-        and the overall FileX (.MZX/.SNX/.SBX) that orchestrates the entire
-        simulation. This is the master document that references all other
-        input files.
-      order: 1
-      depends_on: []
-      knowledge_type: "evaluative"
-      skill_document: "docs/s1_experiment_design_skill.md"
-      tools:
-        - "create_filex_skeleton"
-        - "validate_filex_structure"
-      milestones:
-        - id: "m1_filex_created"
-          description: "FileX file exists with valid header and *EXP.DETAILS section"
-          verification: "Check file exists, starts with *EXP.DETAILS, has valid 8-char experiment code"
-        - id: "m1_treatments_defined"
-          description: "Treatment table populated with factor level cross-references"
-          verification: "Parse *TREATMENTS section; each treatment has valid CU, FL, SA, IC, MP, MI, MF, MR, MC, MT, ME, MH, SM codes"
-
-    # -----------------------------------------------------------------------
-    # STAGE 2: WEATHER PREPARATION
-    # -----------------------------------------------------------------------
-    - id: "s2_weather_prep"
-      name: "Weather Data Preparation"
-      description: >
-        Prepare daily weather files (.WTH) with SRAD, TMAX, TMIN, RAIN,
-        and optionally WIND, RHUM, PAR, CO2. Weather station must match
-        the WSTA code in FileX *FIELDS section. Includes header with
-        station coordinates (LAT, LONG, ELEV) and annual statistics
-        (TAV, AMP).
-      order: 2
-      depends_on: []
-      knowledge_type: "procedural"
-      skill_document: "docs/s2_weather_prep_skill.md"
-      tools:
-        - "convert_weather_to_wth"
-        - "validate_weather_file"
-        - "calculate_tav_amp"
-      milestones:
-        - id: "m2_wth_exists"
-          description: ".WTH file exists with correct station code naming"
-          verification: "File matches pattern [SSSS]YYMM.WTH, header has @INSI LAT LONG ELEV TAV AMP"
-        - id: "m2_daily_complete"
-          description: "No missing days in the simulation period"
-          verification: "Count records matches expected days; no -99.0 in SRAD/TMAX/TMIN/RAIN"
-        - id: "m2_units_correct"
-          description: "Units match DSSAT expectations"
-          verification: "SRAD in MJ/m2/day, TMAX/TMIN in degC, RAIN in mm/day"
-
-    # -----------------------------------------------------------------------
-    # STAGE 3: SOIL SETUP
-    # -----------------------------------------------------------------------
-    - id: "s3_soil_setup"
-      name: "Soil Profile Setup"
-      description: >
-        Prepare soil profile in .SOL file format. Each profile identified
-        by a 10-character PEDON code (e.g., IBMZ910014). Must include
-        layer-by-layer physical properties (SLLL, SDUL, SSAT, SBDM, SLOC,
-        SLCL, SLSI) plus surface parameters (SALB, SLU1, SLDR, SLRO).
-        Maximum 20 layers. Soil ID in FileX *FIELDS must match.
-      order: 3
-      depends_on: []
-      knowledge_type: "procedural"
-      skill_document: "docs/s3_soil_setup_skill.md"
-      tools:
-        - "convert_soil_to_sol"
-        - "validate_soil_profile"
-        - "check_water_limits"
-      milestones:
-        - id: "m3_sol_exists"
-          description: ".SOL file contains the target soil profile"
-          verification: "Grep for PEDON code; verify NLAYR layers present"
-        - id: "m3_physical_valid"
-          description: "Water limits satisfy SLLL < SDUL < SSAT for all layers"
-          verification: "For each layer: SLLL < SDUL < SSAT and all > 0"
-        - id: "m3_depth_monotonic"
-          description: "Layer depths (SLB) are monotonically increasing"
-          verification: "SLB values strictly increasing from layer 1 to NLAYR"
-
-    # -----------------------------------------------------------------------
-    # STAGE 4: GENOTYPE CONFIGURATION
-    # -----------------------------------------------------------------------
-    - id: "s4_genotype_config"
-      name: "Genotype Configuration"
-      description: >
-        Select or calibrate cultivar coefficients (.CUL), ecotype parameters
-        (.ECO), and species parameters (.SPE). The cultivar code (INGENO)
-        in FileX *CULTIVARS must match an entry in the .CUL file for the
-        selected crop model. Coefficients are model-specific (CERES-Maize
-        uses P1/P2/P5/G2/G3/PHINT; CROPGRO uses CSDL/PPSEN/LFMAX/etc.).
-      order: 4
-      depends_on: []
-      knowledge_type: "evaluative"
-      skill_document: "docs/s4_genotype_config_skill.md"
-      tools:
-        - "list_available_cultivars"
-        - "validate_cultivar_match"
-      milestones:
-        - id: "m4_cultivar_exists"
-          description: "Cultivar code in FileX matches an entry in the .CUL file"
-          verification: "INGENO from *CULTIVARS found in [CROP][MODEL]048.CUL"
-        - id: "m4_ecotype_exists"
-          description: "Ecotype code (ECO#) referenced by cultivar exists in .ECO file"
-          verification: "ECO# from .CUL entry found in [CROP][MODEL]048.ECO"
-
-    # -----------------------------------------------------------------------
-    # STAGE 5: SIMULATION CONTROLS
-    # -----------------------------------------------------------------------
-    - id: "s5_simulation_controls"
-      name: "Simulation Controls"
-      description: >
-        Configure the *SIMULATION CONTROLS section of FileX. Sets the
-        simulation method switches (ISWWAT, ISWNIT, MEEVP, MESOM, etc.),
-        timing (start date, number of years), and output detail levels
-        (IDETO, IDETS, etc.). These switches route the simulation through
-        different model algorithms.
-      order: 5
-      depends_on:
-        - "s1_experiment_design"
-      knowledge_type: "evaluative"
-      skill_document: "docs/s5_simulation_controls_skill.md"
-      tools:
-        - "generate_simulation_controls"
-        - "validate_switch_consistency"
-      milestones:
-        - id: "m5_controls_valid"
-          description: "All method switches have valid values"
-          verification: "Each switch matches its allowed enumeration (e.g., MEEVP in {R,P,M,F,D})"
-        - id: "m5_dates_consistent"
-          description: "Start date precedes planting date; NYRS covers simulation period"
-          verification: "SDATE <= PDATE; SDATE + NYRS*365 >= expected end"
-
-    # -----------------------------------------------------------------------
-    # STAGE 6: INITIAL CONDITIONS
-    # -----------------------------------------------------------------------
-    - id: "s6_initial_conditions"
-      name: "Initial Conditions"
-      description: >
-        Set the starting state of soil water (SH2O), inorganic nitrogen
-        (SNO3, SNH4), and organic residue in the *INITIAL CONDITIONS
-        section of FileX. Layer depths must match the soil profile.
-        Critical for getting correct early-season simulation.
-      order: 6
-      depends_on:
-        - "s3_soil_setup"
-      knowledge_type: "evaluative"
-      skill_document: "docs/s6_initial_conditions_skill.md"
-      tools:
-        - "generate_initial_conditions"
-        - "validate_ic_vs_soil"
-      milestones:
-        - id: "m6_layers_match"
-          description: "IC layer depths match soil profile layer depths"
-          verification: "ICBL values in *INITIAL CONDITIONS match SLB values in .SOL"
-        - id: "m6_water_in_range"
-          description: "Initial soil water between LL and SAT for each layer"
-          verification: "For each layer: SLLL <= SH2O <= SSAT"
-
-    # -----------------------------------------------------------------------
-    # STAGE 7: MANAGEMENT SPECIFICATION
-    # -----------------------------------------------------------------------
-    - id: "s7_management_spec"
-      name: "Management Specification"
-      description: >
-        Define all management operations in FileX: planting (*PLANTING
-        DETAILS), irrigation (*IRRIGATION), fertilizer (*FERTILIZERS),
-        tillage (*TILLAGE), residue (*RESIDUES), harvest (*HARVEST),
-        and environmental modifications (*ENVIRONMENT). Each operation
-        has a date, method code, and amount.
-      order: 7
-      depends_on:
-        - "s1_experiment_design"
-      knowledge_type: "evaluative"
-      skill_document: "docs/s7_management_spec_skill.md"
-      tools:
-        - "generate_management_section"
-        - "validate_management_dates"
-      milestones:
-        - id: "m7_planting_defined"
-          description: "Planting date, population, and depth specified"
-          verification: "*PLANTING DETAILS has valid PDATE, PPOP > 0, PLDP > 0"
-        - id: "m7_dates_sequential"
-          description: "All management dates fall within simulation period"
-          verification: "All operation dates >= SDATE and <= YREND"
-        - id: "m7_codes_valid"
-          description: "All method codes (FMCD, IROP, etc.) are valid DSSAT codes"
-          verification: "Each code matches DSSAT method code lookup table"
-
-    # -----------------------------------------------------------------------
-    # STAGE 8: BATCH EXECUTION
-    # -----------------------------------------------------------------------
-    - id: "s8_batch_execution"
-      name: "Batch Execution"
-      description: >
-        Compile DSSAT (if needed) and execute the simulation. Create a
-        batch file (DSSBatch.v48) referencing the FileX and treatment(s).
-        Run the dscsm048 executable. The DYNAMIC state machine processes:
-        RUNINIT → SEASINIT → [RATE → INTEGR → OUTPUT]daily → SEASEND →
-        ENDRUN. Monitor for runtime errors via MODEL.ERR.
-      order: 8
-      depends_on:
-        - "s1_experiment_design"
-        - "s2_weather_prep"
-        - "s3_soil_setup"
-        - "s4_genotype_config"
-        - "s5_simulation_controls"
-        - "s6_initial_conditions"
-        - "s7_management_spec"
-      knowledge_type: "debugging"
-      skill_document: "docs/s8_batch_execution_skill.md"
-      tools:
-        - "build_dssat"
-        - "create_batch_file"
-        - "run_dssat"
-        - "check_model_errors"
-      milestones:
-        - id: "m8_compiled"
-          description: "dscsm048 executable exists and is current"
-          verification: "File exists at expected path; check build timestamp"
-        - id: "m8_batch_valid"
-          description: "Batch file references valid FileX and treatment numbers"
-          verification: "DSSBatch.v48 contains valid path to FileX; TRTNO exists in FileX"
-        - id: "m8_run_complete"
-          description: "Simulation completed without fatal errors"
-          verification: "Exit code 0; no FATAL entries in MODEL.ERR; Summary.OUT has output line"
-        - id: "m8_outputs_exist"
-          description: "Expected output files were created"
-          verification: "Summary.OUT exists and has data rows; check for PlantGro.OUT if IDETG=Y"
-
-    # -----------------------------------------------------------------------
-    # STAGE 9: OUTPUT PARSING
-    # -----------------------------------------------------------------------
-    - id: "s9_output_parsing"
-      name: "Output Parsing and Evaluation"
-      description: >
-        Parse DSSAT output files (Summary.OUT, PlantGro.OUT, SoilWat.OUT,
-        Evaluate.OUT, etc.) into analysis-ready formats. Compare simulated
-        vs observed data if available. Extract key metrics: yield (HWAH),
-        anthesis date (ADAT), maturity date (MDAT), ET (ETCM), N uptake
-        (NUCM).
-      order: 9
-      depends_on:
-        - "s8_batch_execution"
-      knowledge_type: "procedural"
-      skill_document: "docs/s9_output_parsing_skill.md"
-      tools:
-        - "parse_summary_out"
-        - "parse_plantgro_out"
-        - "parse_evaluate_out"
-        - "compare_sim_obs"
-      milestones:
-        - id: "m9_summary_parsed"
-          description: "Summary.OUT parsed into structured data"
-          verification: "DataFrame/dict with HWAH, ADAT, MDAT values; no -99 in key fields"
-        - id: "m9_yield_reasonable"
-          description: "Simulated yield is physically reasonable"
-          verification: "HWAH > 0 and < 25000 kg/ha for grain crops"
-        - id: "m9_dates_reasonable"
-          description: "Phenological dates are in expected order"
-          verification: "PDAT < ADAT < MDAT; growing season length within expected range"
-
-# --- Layer 1: Validated Tools ---
-# Agent CALLS these — procedural knowledge encoded as executable scripts.
+  - s1_experiment_design_skill
+  - s2_weather_prep_skill
+  - s3_soil_setup_skill
+  - s4_genotype_config_skill
+  - s5_simulation_controls_skill
+  - s6_initial_conditions_skill
+  - s7_management_spec_skill
+  - s8_batch_execution_skill
+  - s9_output_parsing_skill
 tools:
-  - id: "validate_filex_structure"
-    stage: "s1_experiment_design"
-    path: "tools/s1_experiment_design/validate_filex_structure.py"
-    lines: 741
-    description: "Validates FileX sections, treatment factor cross-references, WSTA/ID_SOIL/INGENO external file checks"
-
-  - id: "validate_weather_file"
-    stage: "s2_weather_prep"
-    path: "tools/s2_weather_prep/validate_weather_file.py"
-    lines: 642
-    description: "Validates .WTH header, date continuity, variable ranges, NaN/-99 detection"
-
-  - id: "calculate_tav_amp"
-    stage: "s2_weather_prep"
-    path: "tools/s2_weather_prep/calculate_tav_amp.py"
-    lines: 507
-    description: "Computes TAV (annual mean temp) and AMP (monthly amplitude) from daily weather data"
-
-  - id: "validate_soil_profile"
-    stage: "s3_soil_setup"
-    path: "tools/s3_soil_setup/validate_soil_profile.py"
-    lines: 651
-    description: "Validates water limits (LL<DUL<SAT), NL<=20, depth monotonicity, shallow soil warning"
-
-  - id: "create_batch_file"
-    stage: "s8_batch_execution"
-    path: "tools/s8_batch_execution/create_batch_file.py"
-    lines: 377
-    description: "Creates DSSBatch.v48 with exact Fortran column layout (92-char path field)"
-
-  - id: "parse_summary_out"
-    stage: "s9_output_parsing"
-    path: "tools/s9_output_parsing/parse_summary_out.py"
-    lines: 504
-    description: "Parses Summary.OUT into structured data, YYDDD-to-ISO date conversion, yield/phenology sanity checks"
-
-# --- Layer 2: Skill Documents ---
-# Agent READS these — evaluative and sequencing knowledge.
-skill_documents:
-  - id: "s1_experiment_design_skill"
-    stage: "s1_experiment_design"
-    path: "docs/s1_experiment_design_skill.md"
-    words: 3619
-
-  - id: "s2_weather_prep_skill"
-    stage: "s2_weather_prep"
-    path: "docs/s2_weather_prep_skill.md"
-    words: 2851
-
-  - id: "s3_soil_setup_skill"
-    stage: "s3_soil_setup"
-    path: "docs/s3_soil_setup_skill.md"
-    words: 3453
-
-  - id: "s4_genotype_config_skill"
-    stage: "s4_genotype_config"
-    path: "docs/s4_genotype_config_skill.md"
-    words: 3875
-
-  - id: "s5_simulation_controls_skill"
-    stage: "s5_simulation_controls"
-    path: "docs/s5_simulation_controls_skill.md"
-    words: 4785
-
-  - id: "s6_initial_conditions_skill"
-    stage: "s6_initial_conditions"
-    path: "docs/s6_initial_conditions_skill.md"
-    words: 2491
-
-  - id: "s7_management_spec_skill"
-    stage: "s7_management_spec"
-    path: "docs/s7_management_spec_skill.md"
-    words: 4169
-
-  - id: "s8_batch_execution_skill"
-    stage: "s8_batch_execution"
-    path: "docs/s8_batch_execution_skill.md"
-    words: 2866
-
-  - id: "s9_output_parsing_skill"
-    stage: "s9_output_parsing"
-    path: "docs/s9_output_parsing_skill.md"
-    words: 3634
-
-# --- Layer 3: Diagnostic Triplets ---
-# Agent LOOKS UP these — operational debugging knowledge.
-diagnostic_triplets:
-  path: "diagnostics/triplets.yaml"
-  count: 44
-  stages_covered: ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9"]
-
-# --- Summary statistics ---
+  count: 19
+  files:
+  - tools/calib_run.py
+  - tools/dssat_workdir_setup.py
+  - tools/parse_plantgro.py
+  - tools/s10_calibrate_rice_nsga2.py
+  - tools/s1_experiment_design/validate_filex_structure.py
+  - tools/s2_weather_prep/calculate_tav_amp.py
+  - tools/s2_weather_prep/convert_cmfd_to_wth.py
+  - tools/s2_weather_prep/extract_cmfd_points.py
+  - tools/s2_weather_prep/validate_weather_file.py
+  - tools/s3_soil_setup/convert_hwsd_to_sol.py
+  - tools/s3_soil_setup/convert_soilgrids_to_sol.py
+  - tools/s3_soil_setup/validate_soil_profile.py
+  - tools/s8_batch_execution/create_batch_file.py
+  - tools/s8_batch_execution/run_grid_ensemble.py
+  - tools/s9_output_parsing/aggregate_grid_to_pixel.py
+  - tools/s9_output_parsing/parse_summary_out.py
+  - tools/s9_output_parsing/validate_yield_timeseries.py
+  - tools/setup_rice_experiment.py
+  - tools/setup_soybean_experiment.py
+inputs:
+  forcing:
+  - name: SRAD (solar radiation)
+    unit: MJ/m2/day
+  - name: TMAX (max air temperature)
+    unit: deg C
+  - name: TMIN (min air temperature)
+    unit: deg C
+  - name: RAIN (precipitation)
+    unit: mm/day
+  - name: WIND
+    unit: km/day
+  - name: TDEW / DEWP (dew-point temperature)
+    unit: deg C
+  - name: RHUM (relative humidity)
+    unit: '%'
+  - name: PAR (photosynthetically active radiation)
+    unit: moles/m2/day
+  - name: CO2 (atmospheric CO2 concentration)
+    unit: ppm
+  parameters:
+  - name: SALB (bare/dry surface albedo)
+    unit: fraction
+  - name: SLU1 (stage-1 soil evaporation upper limit U)
+    unit: mm
+  - name: SLDR (drainage rate SWCON)
+    unit: fraction/day
+  - name: SLRO (SCS runoff curve number CN)
+    unit: dimensionless
+  - name: SLNF (N mineralization factor)
+    unit: fraction
+  - name: SLPF (photosynthesis/growth factor)
+    unit: fraction
+  - name: SLB (layer bottom depth)
+    unit: cm
+  - name: SLLL (lower limit / wilting point LL)
+    unit: cm3/cm3
+  - name: SDUL (drained upper limit / field capacity DUL)
+    unit: cm3/cm3
+  - name: SSAT (saturated water content SAT)
+    unit: cm3/cm3
+  - name: SRGF (relative root growth factor)
+    unit: fraction
+  - name: SSKS (saturated hydraulic conductivity)
+    unit: cm/hr
+  - name: SBDM (bulk density)
+    unit: g/cm3
+  - name: SLOC (organic carbon)
+    unit: '%'
+  - name: SLCL/SLSI/SLCF (clay/silt/coarse-fragment fractions)
+    unit: '%'
+  - name: SLNI (total N)
+    unit: '%'
+  - name: SLHW/SLHB (pH in water / buffer)
+    unit: pH units
+  - name: SCEC (cation exchange capacity)
+    unit: cmol/kg
+  - name: TAV (annual mean air temperature)
+    unit: deg C
+  - name: AMP / TAMP (annual amplitude of monthly mean T)
+    unit: deg C
+  - name: LAT, LONG, ELEV, REFHT, WNDHT (station geometry)
+    unit: degrees / m
+  - name: CERES grain coefficients (e.g., P1, P2/P2O, P2R, P5, G1, G2, G3, PHINT, P1D, P1V, VEFF, THOT)
+    unit: mixed (GDD, hours, GDD/h, count, g, dimensionless)
+  - name: CROPGRO photothermal coefficients (CSDL, PPSEN, EM-FL, FL-SD, SD-PM, LFMAX, SLAVR, WTPSD, etc.)
+    unit: mixed (h, 1/h, photothermal days, mg CO2/m2/s, cm2/g, g)
+  - name: Ecotype coefficients
+    unit: mixed
+  - name: Species coefficients (cardinal temperatures, RUE, partitioning rules, MINIMA/MAXIMA bounds)
+    unit: mixed
+  initial_conditions:
+  - name: SH2O (initial volumetric soil water by layer)
+    unit: cm3/cm3
+  - name: SNO3 (initial soil nitrate by layer)
+    unit: ppm
+  - name: SNH4 (initial soil ammonium by layer)
+    unit: ppm
+  - name: ICRES (initial surface residue mass)
+    unit: kg/ha
+  - name: ICREN, ICREP, ICRIP, ICRID (residue %N, %P, % incorporated, incorporation depth)
+    unit: '% / cm'
+  - name: PCR (previous crop code)
+    unit: 2-char code
+  - name: ICRT, ICND, ICRN, ICRE (initial root weight, nodules, root N, root growth params)
+    unit: kg/ha / mixed
+  - name: ICWD (water-table depth)
+    unit: cm (-99 if none)
+  - name: ICDAT (initial-conditions date)
+    unit: YYDDD Julian
+  boundary_conditions:
+  - name: SDATE (simulation start date)
+    unit: YYDDD Julian
+  - name: NYERS (number of simulated years)
+    unit: count
+  - name: SMODEL (8-char crop model identifier)
+    unit: code
+  - name: WATER, NITRO, SYMBI, PHOSP, POTAS, DISES, CHEM, TILL (process toggles ISWWAT/ISWNIT/ISWSYM/ISWPHO/ISWPOT/ISWDIS/ISWCHE/ISWTIL)
+    unit: Y/N
+  - name: MEEVP / EVAPO (ET method)
+    unit: code (R/P/F/Z/D/M/H/T)
+  - name: MESEV (soil evaporation method)
+    unit: code (S/R)
+  - name: MEINF / INFIL (infiltration method)
+    unit: code (S/N/R)
+  - name: MEPHO / PHOTO (photosynthesis method)
+    unit: code (L/C/R)
+  - name: MEHYD / HYDRO (hydrology method)
+    unit: code (R)
+  - name: MESOM (SOM engine)
+    unit: code (G/P)
+  - name: MESOL (soil-layer redistribution)
+    unit: code (1/2/3)
+  - name: METMP (soil temperature method)
+    unit: code (D/E)
+  - name: MEGHG (greenhouse-gas method)
+    unit: code (0/1)
+  - name: MEWTH / WTHER (weather source)
+    unit: code (M/G/S)
+  - name: ICO2 (CO2 source switch)
+    unit: code (M/D/W)
+  - name: INCON (initial-conditions source)
+    unit: code (M/S)
+  - name: NSWIT (N routine selector)
+    unit: code (1)
+  - name: 'IPLTI, IIRRI, IFERI, IHARI (planting/irrigation/fertilizer/harvest mode: R reported, A automatic,
+      N none, F/D variants)'
+    unit: code
+  - name: PDATE (planting date)
+    unit: YYDDD Julian
+  - name: PPOP (plant population)
+    unit: plants/m2
+  - name: PLRS (row spacing)
+    unit: cm
+  - name: PLDP (planting depth)
+    unit: cm
+  - name: INGENO (cultivar code)
+    unit: 6-char code
+  - name: Irrigation events {IDATE, IRVAL amount, IROP method, EFIR efficiency}
+    unit: YYDDD / mm / code / fraction
+  - name: Fertilizer events {FDATE, FAMN N rate, FAMP P rate, FAMK K rate, FMCD method code, FDEP depth}
+    unit: YYDDD / kg/ha / code / cm
+  - name: Organic-residue events
+    unit: mixed
+  - name: Tillage events
+    unit: mixed
+  - name: Chemical/pesticide events
+    unit: mixed
+  - name: Harvest events {HDATE, HPC harvest %, HBPC by-product %, HSTG harvest stage}
+    unit: YYDDD / %
+  - name: Automatic-management thresholds (PWDINF/PWDINL window, soil-moisture/temperature criteria, irrigation/fertilizer
+      triggers)
+    unit: mixed
+  - name: WSTA (4-char weather-station code linking to .WTH)
+    unit: code
+  - name: ID_SOIL (10-char soil-profile code linking to .SOL pedon)
+    unit: code
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - HWAM (harvested grain yield at maturity, dry)
+  - HWAH (harvested yield, dry, at harvest date)
+  - CWAM (aboveground biomass at maturity)
+  - HIAM (harvest index at maturity)
+  - ADAT (anthesis date)
+  - MDAT (physiological maturity date)
+  - EDAT (emergence date)
+  - LAIX (maximum LAI during season)
+  - LAID / XLAI (daily leaf area index)
+  - CWAD (daily aboveground dry weight)
+  - GWAD (daily grain dry weight)
+  - ETCM (cumulative evapotranspiration)
+  - ET (daily actual evapotranspiration)
+  - SW (daily volumetric soil water by layer)
+  - ROCM (cumulative runoff)
+  - DRCM (cumulative deep drainage)
+  - NLCM (cumulative N leached)
+  - NUCM (cumulative crop N uptake)
+  - NFXM (cumulative N fixed)
+  - GNAM (grain N content at maturity)
+  - N2OEM (cumulative N2O-N emissions)
+  - CH4EM (cumulative CH4-C emissions, paddy)
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=-6.043, KGE=-0.151, R=-0.005, 6 scorecard(s)'
+  metrics:
+    best_nse: -6.042867894730793
+    best_kge: -0.15117749986948148
+    best_r: -0.005492540795535065
 summary:
-  total_tools: 6
-  total_tool_lines: 3422
-  total_skill_documents: 9
-  total_skill_words: 31743
-  total_diagnostic_triplets: 50
-  total_failure_episodes: 9
-  failure_domains:
-    - "array_overflow"
-    - "build_failure"
-    - "data_sequence"
-    - "date_confusion"
-    - "date_ordering"
-    - "division_by_zero"
-    - "empty_output"
-    - "file_not_found"
-    - "incomplete_output"
-    - "infinite_loop"
-    - "layer_mismatch"
-    - "missing_section"
-    - "numerical_instability"
-    - "parameter_ordering"
-    - "parameter_range"
-    - "runtime_crash"
-    - "silent_clamp"
-    - "silent_conversion"
-    - "silent_default"
-    - "silent_misconfiguration"
-    - "string_overflow"
-    - "switch_inconsistency"
-    - "unit_mismatch"
-    - "zero_yield"
-    - "environment"
-    - "linux_deployment"
-  pipeline_stages: 9
-  pipeline_milestones: 20
-  coverage:
-    layer_1_tools: "6/24 referenced tools implemented (25%)"
-    layer_2_skill_docs: "9/9 stages covered (100%)"
-    layer_3_triplets: "50 triplets across 26 failure domains + 9 failure episodes (100%)"
-  missing_tools:
-    - "create_filex_skeleton"
-    - "convert_weather_to_wth"
-    - "convert_soil_to_sol"
-    - "check_water_limits"
-    - "list_available_cultivars"
-    - "validate_cultivar_match"
-    - "generate_simulation_controls"
-    - "validate_switch_consistency"
-    - "generate_initial_conditions"
-    - "validate_ic_vs_soil"
-    - "generate_management_section"
-    - "validate_management_dates"
-    - "build_dssat"
-    - "run_dssat"
-    - "check_model_errors"
-    - "parse_plantgro_out"
-    - "parse_evaluate_out"
-    - "compare_sim_obs"
+  total_tools: 19
+  total_stage_docs: 9
+  total_diagnostic_triplets: 56
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

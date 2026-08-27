@@ -216,7 +216,84 @@ def write_tif_grid(filepath, data, geo_transform, nodata=-9999.0):
         ds.FlushCache()
         ds = None
     except ImportError:
-        write_asc_grid(filepath.replace(".tif", ".asc"), data, nodata=nodata)
+        # EF5 loads *_grid parameter files ONLY through ReadFloatTifGrid
+        # (src/Simulator.cpp InitializeGridParams -> src/TifGrid.cpp: float32
+        # IEEE, STRIPED GeoTIFF with a GDAL_NODATA tag). The project python env
+        # has no osgeo bindings, so the former ASC fallback silently produced
+        # files EF5 cannot open ("Failed to load water balance parameter grid
+        # ..."). Write the same striped float32 GeoTIFF with rasterio instead.
+        try:
+            import rasterio
+            from rasterio.transform import Affine
+        except ImportError:
+            raise RuntimeError(
+                "GDAL or rasterio is required: EF5 reads *_grid files only as "
+                "float32 GeoTIFF (ASC parameter grids are NOT supported by "
+                "src/TifGrid.cpp).")
+        nrows, ncols = data.shape
+        out = data.astype(np.float32).copy()
+        out[np.isnan(out)] = nodata
+        tr = Affine.from_gdal(*geo_transform)
+        with rasterio.open(filepath, "w", driver="GTiff", height=nrows, width=ncols,
+                           count=1, dtype="float32", crs="EPSG:4326", transform=tr,
+                           nodata=nodata, tiled=False) as dst:
+            dst.write(out, 1)
+
+
+def build_hwsd_texture_grids(dem_path, soil_dir, hwsd_raster=None, hwsd_csv=None,
+                             margin_deg=0.05):
+    """Derive sand/clay/silt (%) GeoTIFFs over the DEM extent from HWSD v1.2.
+
+    Uses the same HWSD raster (MU_GLOBAL, 30 arcsec) + HWSD_DATA.csv that
+    ki_tools_common.soil_utils.lookup_hwsd uses point-wise, but reads the
+    window ONCE (lookup_hwsd re-reads the CSV per point, far too slow for a
+    grid). Per mapping unit the dominant component (max SHARE) supplies
+    T_SAND/T_SILT/T_CLAY; units without a CSV row get the soil_utils default
+    40/40/20. Grids are written on the HWSD window grid with their own
+    georeference; EF5 samples parameter grids by lat/lon (CRESTModel.cpp
+    InitializeParameters -> grid->GetGridLoc) so they need not match the DEM
+    cell size.
+    """
+    import rasterio
+    from rasterio.windows import from_bounds
+    try:
+        from ki_tools_common import soil_utils as _su
+        hwsd_raster = hwsd_raster or _su.HWSD_RASTER
+        hwsd_csv = hwsd_csv or _su.HWSD_CSV
+    except ImportError:
+        pass
+    if not (hwsd_raster and os.path.isfile(hwsd_raster)):
+        raise FileNotFoundError(f"HWSD raster not found: {hwsd_raster}")
+    if not (hwsd_csv and os.path.isfile(hwsd_csv)):
+        raise FileNotFoundError(f"HWSD_DATA.csv not found: {hwsd_csv}")
+    with rasterio.open(dem_path) as d:
+        w, s, e, n = d.bounds
+    with rasterio.open(hwsd_raster) as src:
+        win = from_bounds(w - margin_deg, s - margin_deg, e + margin_deg,
+                          n + margin_deg, src.transform).round_offsets().round_lengths()
+        mu = src.read(1, window=win)
+        tr = src.window_transform(win)
+    import pandas as pd
+    df = pd.read_csv(hwsd_csv, low_memory=False,
+                     usecols=["MU_GLOBAL", "SHARE", "T_SAND", "T_SILT", "T_CLAY"])
+    df = df.sort_values("SHARE", ascending=False).drop_duplicates("MU_GLOBAL")
+    lut = {int(r.MU_GLOBAL): (r.T_SAND, r.T_SILT, r.T_CLAY) for r in df.itertuples()}
+    out = {k: np.full(mu.shape, np.nan, dtype=np.float32) for k in ("sand", "silt", "clay")}
+    n_default = 0
+    for u in np.unique(mu):
+        vals = lut.get(int(u))
+        if vals is None or any((v is None) or (not np.isfinite(v)) or v <= 0 for v in vals):
+            vals = (40.0, 40.0, 20.0)
+            n_default += int((mu == u).sum())
+        m = mu == u
+        out["sand"][m], out["silt"][m], out["clay"][m] = vals
+    os.makedirs(soil_dir, exist_ok=True)
+    gt = [tr.c, tr.a, 0.0, tr.f, 0.0, tr.e]
+    for k, arr in out.items():
+        write_tif_grid(os.path.join(soil_dir, f"{k}.tif"), arr, gt)
+    print(f"[OK] HWSD texture grids {mu.shape} written to {soil_dir} "
+          f"({n_default} cells on soil_utils default 40/40/20)")
+    return gt
 
 
 def write_asc_grid(filepath, data, xll=0.0, yll=0.0, cellsize=0.1, nodata=-9999.0):
@@ -270,10 +347,14 @@ def compute_crest_params(sand_pct, clay_pct, silt_pct, depth_cm, urban_pct=None)
     wm = np.clip(wm, 10.0, 2000.0)
 
     # B exponent: Cosby (1984): B = 3.10 + 15.7*clay_frac - 0.3*sand_frac
+    # (Clapp-Hornberger b, range ~2.8-18), scaled /10 to the CREST VIC-curve
+    # range (0.1-1.5, cf. TEXTURE_TO_B above). The scale-down MUST precede the
+    # clip: clipping the raw Cosby b to [0.01, 2.0] first pinned it at 2.0 for
+    # every texture (raw b >= 2.8 always) and the /10 then made B == 0.2
+    # everywhere, i.e. the grid carried no texture information.
     b = 3.10 + 15.7 * clay_frac - 0.3 * sand_frac
-    b = np.clip(b, 0.01, 2.0)
-    # Normalize to typical CREST range (0.1-1.5)
     b = b / 10.0  # Scale down from Cosby raw
+    b = np.clip(b, 0.05, 1.5)
 
     # Ksat from Cosby: log10(Ksat) = -0.6 + 1.26*sand_frac - 0.64*clay_frac (cm/hr)
     log_ksat = -0.6 + 1.26 * (sand_pct / 100.0) - 0.64 * (clay_pct / 100.0)
@@ -340,7 +421,8 @@ def compute_sac_params(sand_pct, clay_pct, silt_pct, depth_cm):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def convert_params(soil_dir, output_dir, model="crest", dem_path=None, depth_cm=100):
+def convert_params(soil_dir, output_dir, model="crest", dem_path=None, depth_cm=100,
+                   hwsd=False):
     """
     Convert soil property grids to EF5 parameter grids.
 
@@ -351,7 +433,15 @@ def convert_params(soil_dir, output_dir, model="crest", dem_path=None, depth_cm=
     model : str — "crest" or "sac"
     dem_path : str — DEM file for geo-reference
     depth_cm : float — Soil depth in cm (default 100)
+    hwsd : bool — build sand/clay/silt.tif in soil_dir from HWSD over the
+        DEM extent first (requires dem_path; see build_hwsd_texture_grids)
     """
+    soil_gt = None
+    if hwsd:
+        if not dem_path:
+            print("[ERROR] --hwsd requires --dem (defines the extent)", file=sys.stderr)
+            return False
+        soil_gt = build_hwsd_texture_grids(dem_path, soil_dir)
     if not validate_inputs(soil_dir, dem_path, output_dir):
         return False
 
@@ -395,17 +485,34 @@ def convert_params(soil_dir, output_dir, model="crest", dem_path=None, depth_cm=
         print(f"[ERROR] Unknown model: {model}", file=sys.stderr)
         return False
 
-    # Get geo-reference from DEM or sand grid
+    # Geo-reference: the soil grid's OWN georeference is authoritative (the
+    # parameter arrays have the soil grid's shape). The DEM georeference is
+    # used only when the soil grids are already on the DEM grid (same shape);
+    # stamping DEM origin/cellsize onto a differently-shaped soil array would
+    # mislabel every cell.
     geo_transform = [0.0, 0.1, 0, 0.0, 0, -0.1]  # default
-    if dem_path:
-        try:
-            from osgeo import gdal
-            ds = gdal.Open(dem_path)
-            if ds:
-                geo_transform = list(ds.GetGeoTransform())
-                ds = None
-        except ImportError:
-            pass
+    try:
+        import rasterio
+        soil_georef = False
+        for cand in ("sand.tif", "sand.tiff"):
+            p = os.path.join(soil_dir, cand)
+            if os.path.exists(p):
+                with rasterio.open(p) as ds:
+                    if ds.transform and not ds.transform.is_identity:
+                        geo_transform = list(ds.transform.to_gdal())
+                        soil_georef = True
+                break
+        if dem_path and not soil_georef:
+            with rasterio.open(dem_path) as ds:
+                if (ds.height, ds.width) == tuple(sand.shape):
+                    geo_transform = list(ds.transform.to_gdal())
+                else:
+                    print(f"[WARNING] soil grid shape {sand.shape} != DEM shape "
+                          f"({ds.height}, {ds.width}) and sand grid has no "
+                          f"georeference; output georeference is the 0.1-deg default",
+                          file=sys.stderr)
+    except ImportError:
+        pass
 
     # Write parameter grids
     for pname, pdata in params.items():
@@ -425,9 +532,14 @@ def main():
     parser.add_argument("--model", default="crest", choices=["crest", "sac"])
     parser.add_argument("--dem", help="DEM file for geo-reference")
     parser.add_argument("--depth", type=float, default=100, help="Soil depth in cm")
+    parser.add_argument("--hwsd", action="store_true",
+                        help="Build sand/clay/silt.tif in --soil-dir from HWSD v1.2 over "
+                             "the --dem extent first (HWSD_RASTER/HWSD_DATA.csv from "
+                             "ki_tools_common.soil_utils)")
     args = parser.parse_args()
 
-    success = convert_params(args.soil_dir, args.output_dir, args.model, args.dem, args.depth)
+    success = convert_params(args.soil_dir, args.output_dir, args.model, args.dem, args.depth,
+                             hwsd=args.hwsd)
     sys.exit(0 if success else 1)
 
 

@@ -1,106 +1,110 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:58:41.088102'
-  domain: hydrology
   name: PIHM
-  version: auto-generated
+  language: c
+  implementation:
+    id: mm-pihm
+    version: v1.0.0
+    provenance: C (with OpenMP); Penn State PSUmodeling MM-PIHM core hydrology build, embedding SUNDIALS
+      CVODE for implicit ODE integration.
+  scientific_reference_version: MM-PIHM v1.0.0 — semi-discrete finite-volume coupled surface-subsurface
+    watershed formulation (Qu & Duffy 2007, WRR)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PIHM/source/repo/flux-pihm
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s3_forcing_preparation
+  - s4_soil_parameterization
+  - s5_configuration
+  - s7_model_execution
+  - s8_output_analysis
+tools:
+  count: 9
+  files:
+  - tools/config_writer.py
+  - tools/forcing_converter.py
+  - tools/mesh_builder.py
+  - tools/output_parser.py
+  - tools/pihm_metrics.py
+  - tools/pihm_metrics_corrected.py
+  - tools/pihm_shalehills_metrics.py
+  - tools/run_pihm.py
+  - tools/soil_converter.py
+inputs:
+  forcing:
+  - name: PRCP
+    unit: kg/m2/s
+  - name: SFCTMP
+    unit: K
+  - name: RH
+    unit: '% (0-100)'
+  - name: SFCSPD
+    unit: m/s
+  - name: SOLAR
+    unit: W/m2
+  - name: LONGWV
+    unit: W/m2
+  - name: PRES
+    unit: Pa
+  - name: LAI
+    unit: m2/m2
+  parameters:
+  - name: soil hydraulic + macropore properties (SILT, CLAY, OM, BD, KINF, KSATV, KSATH, MAXSMC, MINSMC,
+      ALPHA, BETA, MACHF, MACVF, DMAC, QTZ; globals DINF, KMACV_RO, KMACH_RO)
+    unit: '% / g/cm3 / m/s / m3/m3 / 1/m / - / m'
+  - name: geology/bedrock hydraulic properties (KSATV, KSATH, MAXSMC, MINSMC, ALPHA, BETA, MACHF, MACVF,
+      DMAC)
+    unit: m/s / m3/m3 / 1/m / - / m
+  - name: land-cover/vegetation properties (roughness, albedo, rooting depth, veg fraction)
+    unit: various
+  - name: river topology and hydraulics (FROM/TO/DOWN/LEFT/RIGHT, DPTH, OINT, CWID, ROUGH, CWR, KH)
+    unit: m / s·m^-1/3 / m/s
+  - name: TIN mesh topology (NUMELE elements NODE1-3/NABR1-3, NUMNODE nodes X/Y/ZMIN/ZMAX)
+    unit: m
+  - name: per-element attribute indices (SOIL, GEOL, LC, METEO, LAI)
+    unit: '-'
+  - name: calibration multipliers (KSATH, KSATV, KINFV, POROSITY, ALPHA, BETA, DMAC, AREAFH, AREAFV, KMACV,
+      KMACH, PRCP; SFCTMP offset)
+    unit: '- (multiplier); SFCTMP in K (additive)'
+  initial_conditions:
+  - name: per-element initial states (surface water, unsaturated storage, groundwater, snow, canopy storage,
+      soil temperature)
+    unit: m (K for soil temperature)
+  - name: per-river initial stage
+    unit: m
+  boundary_conditions:
+  - name: domain edge boundary conditions (TYPE 1 Dirichlet prescribed head, TYPE 2 Neumann prescribed
+      flux)
+    unit: m (head) / m3/s (flux)
+  - name: simulation control switches (SIMULATION_MODE spinup/normal, INIT_MODE relaxation/ic, START/END,
+      MODEL_STEPSIZE, LSM_STEP, MAX_SPINUP_YEAR, output interval codes)
+    unit: various (s)
+  - name: CVODE solver controls (ABSTOL, RELTOL, MAX_NONLIN_ITER, step controls)
+    unit: m (ABSTOL) / - (RELTOL)
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - GW
+  - RIVFLX1
+  - SURF
+  - UNSAT
+  - SOILM
+  - ETT
+  - SNOW
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.732, KGE=0.676, R=0.866, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.732
+    best_kge: 0.676
+    best_r: 0.866
+summary:
+  total_tools: 9
+  total_stage_docs: 5
+  total_diagnostic_triplets: 27
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

@@ -1,0 +1,79 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
+package:
+  name: KINEROS2
+  language: python
+  implementation:
+    id: hydrocraft-kineros2-lumped
+    version: 1.0.0
+    provenance: Python; HydroCraft lumped daily continuous reimplementation of KINEROS2 physics (Green-Ampt
+      infiltration + dual nonlinear/linear reservoir kinematic-wave routing). NOT the canonical USDA-ARS
+      event-based distributed Fortran binary.
+  scientific_reference_version: KINEROS2 (USDA-ARS Kinematic Runoff and Erosion Model lineage; Woolhiser/Smith/Goodrich),
+    instantiated here as a lumped daily continuous Green-Ampt + dual-reservoir kinematic-wave reimplementation
+  binary:
+    path: KISSPATH_KI_ROOT/KINEROS2/knowledge_infrastructure/tools/run_kineros2.py
+    type: Python
+pipeline:
+  stages: []
+tools:
+  count: 4
+  files:
+  - tools/convert_forcing_to_kineros2.py
+  - tools/convert_soil_to_kineros2.py
+  - tools/parse_output_kineros2.py
+  - tools/run_kineros2.py
+inputs:
+  forcing:
+  - name: precipitation
+    unit: mm/d
+  - name: temperature
+    unit: deg C
+  parameters:
+  - name: Ks
+    unit: mm/d
+  - name: psi_f
+    unit: mm
+  - name: Smax
+    unit: mm
+  - name: fc
+    unit: fraction
+  - name: k_fast
+    unit: 1/d
+  - name: k_slow
+    unit: 1/d
+  - name: f_slow
+    unit: fraction
+  - name: alpha
+    unit: unitless
+  - name: basin_area
+    unit: km2
+  - name: latitude
+    unit: deg
+  initial_conditions:
+  - name: initial_soil_moisture_storage
+    unit: mm
+  - name: initial_reservoir_storage
+    unit: mm
+  boundary_conditions: []
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - discharge
+  - infiltration
+  - surface_excess
+  other: []
+validation:
+  tier: not_runnable
+  tier_justification: 'measured: NSE=0.851, KGE=0.882, R=0.923'
+  metrics:
+    best_nse: 0.8512
+    best_kge: 0.8819
+    best_r: 0.9235
+summary:
+  total_tools: 4
+  total_stage_docs: 0
+  total_diagnostic_triplets: 26
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

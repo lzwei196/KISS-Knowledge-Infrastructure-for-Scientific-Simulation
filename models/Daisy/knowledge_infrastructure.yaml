@@ -1,106 +1,113 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:00:02.962325'
-  domain: soil
   name: Daisy
-  version: auto-generated
+  language: c++
+  implementation:
+    id: daisy-cpp
+    version: 7.1.4
+    provenance: C++; University of Copenhagen Agrohydrology group (Per Abrahamsen, Søren Hansen); 1D mechanistic
+      soil-plant-atmosphere system model.
+  scientific_reference_version: Daisy 7.1.x — open Soil-Plant-Atmosphere system model (Abrahamsen & Hansen
+    2000 lineage; University of Copenhagen Agrohydrology group)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Daisy/source/repo/build/linux-gcc-portable/daisy
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s1_weather_preparation
+  - s2_soil_definition
+  - s3_management_setup
+  - s4_execution
+  - s5_output_analysis
+  - s6_validation
+tools:
+  count: 5
+  files:
+  - tools/calib_run.py
+  - tools/convert_soil_to_dai.py
+  - tools/convert_weather_to_dwf.py
+  - tools/parse_daisy_output.py
+  - tools/run_daisy.py
+inputs:
+  forcing:
+  - name: GlobRad
+    unit: W/m^2
+  - name: AirTemp
+    unit: dgC
+  - name: Precip
+    unit: mm/d
+  - name: RefEvap
+    unit: mm/d
+  - name: Wind
+    unit: m/s
+  - name: RelHum
+    unit: '% (0-100)'
+  - name: VapPres
+    unit: Pa
+  - name: Atmospheric N deposition (NH4/NO3 wet/dry)
+    unit: ppm / kg N/ha/year
+  parameters:
+  - name: Soil texture (clay / silt / sand fractions)
+    unit: fraction 0-1
+  - name: Humus / organic fraction
+    unit: fraction 0-1
+  - name: Dry bulk density
+    unit: g/cm^3
+  - name: C/N ratio
+    unit: g C / g N
+  - name: van Genuchten-Mualem retention parameters (Theta_res, Theta_sat, alpha, n)
+    unit: dimensionless; alpha in cm^-1
+  - name: Saturated hydraulic conductivity K_sat
+    unit: cm/h
+  - name: Crop / vegetation parameters
+    unit: various
+  - name: Organic-matter pool initialization (input C, root C, end depth)
+    unit: kg C/ha/y; cm
+  initial_conditions:
+  - name: Initial soil water content per layer
+    unit: cm^3/cm^3 (or pressure h in cm)
+  - name: Initial soil mineral N pools (NH4, NO3) per layer
+    unit: kg N/ha
+  - name: Initial soil organic-matter and microbial-biomass pools
+    unit: kg C/ha; kg N/ha
+  boundary_conditions:
+  - name: Simulation period (start / stop dates)
+    unit: YYYY MM DD HH
+  - name: Groundwater lower-boundary model
+    unit: categorical
+  - name: SVAT / energy-balance option
+    unit: categorical (None | PMSW | SSOC)
+  - name: MaxRootingDepth
+    unit: cm
+  - name: Management operations (sow, fertilize, irrigate, plow, seedbed prep, harvest, tillage)
+    unit: various (kg N/ha mineral; T w.w./ha organic; mm irrigation; cm tillage)
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - sorg_DM
+  - harvest_index
+  - Harvest_N
+  - Leaching
+  - Denitrification
+  - Evapotranspiration
+  - Drain / Percolation
+  - Theta
+  - Soil temperature
+  - DS
+  - LAI
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.651, KGE=0.727, R=0.807, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.6511
+    best_kge: 0.7272
+    best_r: 0.8072
+summary:
+  total_tools: 5
+  total_stage_docs: 6
+  total_diagnostic_triplets: 19
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

@@ -333,7 +333,8 @@ def stage_score(ndays, q_full, p_ann, t_mean, n_cells):
 
     spec = importlib.util.spec_from_file_location(
         "standard_calval",
-        "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/validators/standard_calval.py")
+        "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/"
+        "validators/standard_calval.py")
     scv = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(scv)
 

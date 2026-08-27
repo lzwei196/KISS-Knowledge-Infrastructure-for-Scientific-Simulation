@@ -1,346 +1,824 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "wflow v1.1.0 (Wflow.jl)"
-  domain: "hydrology"
-  secondary_domains: ["sediment"]
-  binary: "julia wflow_runner.jl"
-  binary_path: "KISSPATH_BINARIES/julia-1.10.7/bin/julia"
-  language: "Julia"
-  working_directory: "directory containing wflow_sbm.toml"
-  dependencies: "Julia 1.10+, Wflow.jl package"
-  notes: >
-    Distributed hydrology (wflow_sbm) + sediment transport (wflow_sediment).
-    Uses TOML config, NetCDF I/O, built-in kinematic wave routing.
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: wflow
+  language: julia
+  implementation:
+    id: wflow-jl
+    version: 1.1.0-dev
+    provenance: Julia; Deltares Wflow.jl package (github.com/Deltares/Wflow.jl), CSDMS standard-name TOML
+      configuration.
+  scientific_reference_version: Wflow.jl v1.x (CSDMS standard-name TOML era); wflow_sbm SBM concept per
+    van Verseveld et al. 2024 GMD
 inputs:
-
   forcing:
-    - name: "precipitation"
-      file: "forcing.nc"
-      variable: "precip"
-      unit: "mm/timestep"
-      valid_range: [0.0, 500.0]
-      format: "NetCDF; dimensions (time, y, x)"
-      conversion_from_cmfd: "mm/3hr -> mm/day: SUM 8 timesteps"
-      bug_history: "mm/s instead of mm/day -> runoff 86400x too high, no error (dt_w001)"
-
-    - name: "temperature"
-      file: "forcing.nc"
-      variable: "temp"
-      unit: "degC"
-      valid_range: [-60.0, 60.0]
-      conversion_from_cmfd: "K -> degC: subtract 273.15"
-      bug_history: "Kelvin -> wrong PET, wrong snow (dt_w002)"
-
-    - name: "potential_evapotranspiration"
-      file: "forcing.nc"
-      variable: "pet"
-      unit: "mm/timestep"
-      valid_range: [0.0, 20.0]
-      notes: "MUST be provided or configured. Missing PET -> all precip becomes runoff (dt_w003)"
-      conversion: "Compute via calculate_pet.py (Hargreaves or Penman-Monteith)"
-
+  - name: precipitation
+    unit: mm Δt⁻¹
+    category: forcing
+    source_kind: forcing
+    model_input_format: gridded NetCDF forcing variable (precip), per cell per timestep
+    notes: MUST be mm/timestep (mm/day at daily Δt), NOT mm/s or mm/3hr; no internal unit check, so a
+      wrong unit silently scales runoff by up to 86400x.
+  - name: air temperature
+    unit: °C
+    category: forcing
+    source_kind: forcing
+    model_input_format: gridded NetCDF forcing variable (temp), per cell per timestep
+    notes: MUST be Celsius, NOT Kelvin; drives snow precipitation-phase split (threshold tt) and degree-day
+      melt. Kelvin values silently break the snow module and PET.
+  - name: potential (reference) evapotranspiration
+    unit: mm Δt⁻¹
+    category: forcing
+    source_kind: forcing
+    model_input_format: gridded NetCDF forcing variable (pet), per cell per timestep
+    notes: Required unless wflow computes PET internally (Penman-Monteith / De Bruin) from individual
+      met variables; if missing or zero, all precipitation becomes runoff.
   parameters:
-    critical:
-      - name: "KsatVer"
-        file: "staticmaps.nc"
-        description: "Vertical saturated hydraulic conductivity"
-        valid_range: [10, 10000]
-        unit: "mm/day"
-        sensitivity: "very high"
-        bug_history: >
-          VIC uses mm/s for Ksat. If VIC values used directly in wflow,
-          soil is 86400x too permeable (dt_w026). Always convert.
-
-      - name: "f (KsatVer decay)"
-        file: "staticmaps.nc or TOML scale/offset"
-        description: "Exponential decay rate of Ksat with depth"
-        valid_range: [0.0005, 0.005]
-        unit: "1/mm"
-        sensitivity: "very high"
-        bug_history: "f too low -> flat hydrograph, no peaks (dt_w017)"
-
-      - name: "SoilThickness"
-        file: "staticmaps.nc"
-        description: "Total soil column depth"
-        valid_range: [500, 5000]
-        unit: "mm"
-        sensitivity: "high"
-
-      - name: "wflow_ldd"
-        file: "staticmaps.nc"
-        description: "Local drain direction (flow direction)"
-        format: "PCRaster LDD encoding (1-9)"
-        bug_history: >
-          Naive D8 on coarse grids creates CYCLES in flat areas.
-          Use priority-flood algorithm from outlet (dt_w027).
-          Y-axis MUST be descending (north first) (dt_w034).
-
-      - name: "wflow_subcatch"
-        file: "staticmaps.nc"
-        description: "Subcatchment IDs"
-        notes: "Must use float64 with NaN for inactive cells, NOT int with 0 (dt_w035)"
-
-      - name: "grain_size_fractions"
-        file: "staticmaps_sediment.nc"
-        description: "Clay, silt, sand, small/large aggregate fractions"
-        valid_range: "each >= 0; sum must equal 1.0 per cell (dt_w019)"
-
-    calibration:
-      - name: "KsatVer"
-        valid_range: [10, 10000]
-        unit: "mm/day"
-        sensitivity: "HIGH"
-        controls: "Infiltration"
-
-      - name: "f"
-        valid_range: [0.0005, 0.005]
-        unit: "1/mm"
-        sensitivity: "HIGH"
-        controls: "Baseflow partitioning"
-
-      - name: "SoilThickness"
-        valid_range: [500, 5000]
-        unit: "mm"
-        sensitivity: "HIGH"
-        controls: "Water storage"
-
-      - name: "RootingDepth"
-        valid_range: [100, 2000]
-        unit: "mm"
-        sensitivity: "MEDIUM"
-        controls: "ET depth"
-
-      - name: "N_River"
-        valid_range: [0.02, 0.1]
-        unit: "s/m^(1/3)"
-        sensitivity: "MEDIUM"
-        controls: "Flow timing"
-
-      - name: "PathFrac"
-        valid_range: [0, 0.3]
-        sensitivity: "MEDIUM"
-        controls: "Direct runoff fraction"
-
-      - name: "InfiltCapSoil"
-        valid_range: [50, 500]
-        unit: "mm/day"
-        sensitivity: "MEDIUM"
-        controls: "Surface runoff threshold"
-
-  files:
-    required:
-      - name: "wflow_sbm.toml"
-        description: "Main TOML configuration file (v1.0+ CSDMS standard names)"
-        format: "TOML"
-        notes: >
-          v1.0 format is DIFFERENT from pre-v1.0 (dt_w006, dt_w022).
-          Use generate_wflow_toml.py which produces correct v1.0+ format.
-
-      - name: "staticmaps.nc"
-        description: "All spatial parameters, DEM, LDD, subcatchments, river network"
-        format: "NetCDF with y descending (north first)"
-        notes: "Inactive cells must be NaN, not 0 (dt_w029)"
-
-      - name: "forcing.nc"
-        description: "Meteorological forcing (precip, temp, PET)"
-        format: "NetCDF; dimensions matching staticmaps grid"
-
-    optional:
-      - name: "staticmaps_sediment.nc"
-        description: "Sediment model parameters (USLE K, C, grain fractions)"
-        notes: "Required for wflow_sediment"
-
-      - name: "instates.nc"
-        description: "Initial conditions for warm start"
-
-  state_variables:
-    notes: "All 11 state variables MUST be listed in TOML even for cold start (dt_w030)"
-    required:
-      - "satwaterdepth"
-      - "snow"
-      - "tsoil"
-      - "ustorelayerdepth"
-      - "snowwater"
-      - "canopystorage"
-      - "q_av"
-      - "h_av"
-      - "ssf"
-      - "glacierstore"
-      - "glacierfrac"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: vertical saturated hydraulic conductivity (KsatVer)
+    unit: mm Δt⁻¹
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grid
+    notes: Typical 10-10000 mm/day. Units differ across models (VIC mm/s, MODFLOW m/day); cross-model
+      transfer without conversion makes the soil 86400x too permeable.
+  - name: horizontal conductivity fraction (KsatHorFrac)
+    unit: dimensionless
+    category: soil
+    source_kind: calibrated
+    model_input_format: staticmaps.nc per-cell grid (multiplier on KsatVer for lateral subsurface flow)
+    notes: Sets lateral subsurface saturated conductivity = KsatHorFrac × KsatVer; in practice the primary
+      streamflow calibration parameter.
+  - name: Ksat exponential decay parameter (f)
+    unit: m⁻¹ (mm⁻¹ in KI parameter table)
+    category: soil
+    source_kind: calibrated
+    model_input_format: staticmaps.nc per-cell grid
+    notes: Exponential decline of saturated conductivity with depth; controls baseflow-vs-quickflow partitioning
+      and recession. Too low → flat baseflow-dominated hydrograph.
+  - name: soil thickness (SoilThickness)
+    unit: mm
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grid
+    notes: Typical 500-5000 mm; controls total column water storage capacity.
+  - name: Brooks-Corey exponent (c)
+    unit: dimensionless
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc with a (layer, y, x) dimension
+    notes: Pore-size index; pore-size lambda derived internally as 2/(c-3). MUST carry a layer dimension
+      or wflow raises a 'type InputEntries has no field' (3D-vs-2D) error.
+  - name: saturated / residual water content (θS, θR)
+    unit: dimensionless
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grid
+    notes: θS > θR required everywhere.
+  - name: compacted infiltration capacity (InfiltCapSoil)
+    unit: mm Δt⁻¹
+    category: soil
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grid
+    notes: Typical 50-500 mm/day; limits infiltration and thus saturation/infiltration-excess runoff.
+  - name: rooting depth (RootingDepth)
+    unit: mm
+    category: vegetation
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grid
+    notes: Controls ET extraction depth and soil-moisture availability.
+  - name: canopy/LAI parameters (max canopy storage, LAI, light extinction, canopy gap fraction, crop
+      coefficient)
+    unit: mm / m² m⁻² / dimensionless
+    category: vegetation
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grids
+    notes: Drive Gash/modified-Rutter interception and transpiration.
+  - name: snow degree-day and threshold parameters (degree-day coefficient, snowfall/melt thresholds,
+      liquid water holding capacity)
+    unit: mm °C⁻¹ Δt⁻¹ / °C / fraction
+    category: snow
+    source_kind: default
+    model_input_format: staticmaps.nc grids or config defaults (degree-day coeff default 3.75)
+    notes: HBV temperature-index snow; precipitation phase split at temperature threshold.
+  - name: glacier parameters (initial ice equivalent, melting threshold, degree-day coefficient, accumulation
+      fraction, glacier area fraction)
+    unit: mm / °C / mm °C⁻¹ Δt⁻¹ / dimensionless
+    category: glacier
+    source_kind: default
+    model_input_format: staticmaps.nc grids or config defaults (initial ice eq. default 5500, ddf default
+      3.0)
+    notes: Built-in degree-day glacier; GlacierFrac all-zeros silently disables glacier melt.
+  - name: river Manning roughness (N_River) and overland Manning roughness
+    unit: s m⁻¹ᐟ³
+    category: routing
+    source_kind: calibrated
+    model_input_format: staticmaps.nc per-cell grids (defaults 0.036 river, 0.072 overland when absent)
+    notes: Controls routed flow velocity and flood-peak timing/magnitude.
+  - name: river/land geometry (slope, river width, bankfull depth, river length)
+    unit: m m⁻¹ / m
+    category: routing
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grids (DEM-derived)
+    notes: Placeholder (non-DEM-derived) geometry gives correct timing but 2-3x magnitude error.
+  - name: paved/impervious fraction (PathFrac)
+    unit: dimensionless
+    category: surface
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grid
+    notes: Typical 0-0.3; sets direct-runoff fraction.
+  - name: USLE C cover-management factor
+    unit: dimensionless
+    category: sediment
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grid (from land-cover classification)
+    notes: Typical 0.01-0.3 (forest ~0.004, cropland ~0.30, bare ~0.90); near-zero everywhere → silent
+      zero erosion. (sediment model only)
+  - name: USLE K soil-erodibility factor
+    unit: t·ha·h·ha⁻¹·MJ⁻¹·mm⁻¹ (SI)
+    category: sediment
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grid
+    notes: SI range 0.001-0.1; US-customary values must be ×0.1317 to SI or sediment yield is ~7.6x off.
+      (sediment model only)
+  - name: grain-size fractions (clay/silt/sand/small-agg/large-agg) and river-bed D50
+    unit: fraction / mm
+    category: sediment
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc per-cell grids
+    notes: Five grain classes MUST sum to 1.0 per cell or the sediment budget is unclosed. (sediment model
+      only)
+  initial_conditions:
+  - name: initial model states (soil/snow/glacier/interception/surface/river storages)
+    unit: mm / m / m³ s⁻¹
+    category: state_init
+    source_kind: user_provided
+    model_input_format: instates NetCDF (warm start) or cold_start__flag defaults
+    notes: cold_start__flag=true initializes from defaults but the TOML must still declare all 11 state
+      variables under [state.variables].
+  - name: initial reservoir water level (waterlevel_reservoir)
+    unit: m
+    category: state_init
+    source_kind: user_provided
+    model_input_format: staticmaps.nc / instates; reservoir storage re-derived from water level on state
+      load
+    notes: Active when reservoir__flag is set.
+  boundary_conditions:
+  - name: DEM / elevation (wflow_dem)
+    unit: m
+    category: domain
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc grid; y-axis MUST be descending (north first)
+    notes: Ascending y-axis inverts the LDD; wflow internally transposes (y,x) and reverses y.
+  - name: local drain direction (wflow_ldd)
+    unit: dimensionless (D8 code)
+    category: domain
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc, float64 with NaN for inactive cells; must be cycle-free
+    notes: Cycles → 'cycles detected in flow graph' fatal; boundary cells must be pits in both numpy-
+      and wflow-space.
+  - name: subcatchment mask (wflow_subcatch) and river mask (wflow_river)
+    unit: dimensionless
+    category: domain
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc, float64 with NaN inactive; river mask 1 = river cell
+    notes: Inactive cells set to 0 instead of NaN are treated as active zero-parameter cells; all-zero
+      river mask → zero flow.
+  - name: model configuration switches (variant sbm/sbm_gwf/sediment, routing method kinematic vs local_inertial,
+      reservoir__flag, lake__flag, glacier toggle, cold_start__flag)
+    unit: dimensionless
+    category: config_switch
+    source_kind: user_provided
+    model_input_format: TOML configuration keys
+    notes: Select which process and routing modules are active; structural levers.
+  - name: simulation window and timestep (starttime, endtime, timestepsecs)
+    unit: datetime / s
+    category: config
+    source_kind: user_provided
+    model_input_format: TOML [time] section (backfilled from NetCDF time axis if absent)
+    notes: timestepsecs=86400 for daily.
+  - name: lateral/external inflows and abstractions
+    unit: m³ s⁻¹ (routing) / mm Δt⁻¹ (land)
+    category: external_flux
+    source_kind: user_provided
+    model_input_format: NetCDF/config-specified external flux fields
+    notes: Optional prescribed inflows/abstractions; outlet discharge itself is an emergent output, not
+      a prescribed BC.
+  - name: reservoir operating parameters (ResMaxVolume, reservoir_area, ResDemand, ResMaxRelease, ResTargetFullFrac,
+      ResTargetMinFrac, outflowfunc, storfunc)
+    unit: m³ / m² / m³ s⁻¹ / dimensionless
+    category: reservoir
+    source_kind: dataset_lookup
+    model_input_format: staticmaps.nc / reservoir tables; outflowfunc 1-4, storfunc 1-2
+    notes: ResMaxVolume in MCM instead of m³ (1e6 too small) → immediate overflow with no regulation;
+      reservoir_area in km² instead of m² → negligible evaporation; reservoir not on a river cell is silently
+      ignored. Active when reservoir__flag is set.
 outputs:
-
   primary:
-    - name: "discharge"
-      file: "output_grid.nc or output_scalar.nc"
-      variable: "q_river"
-      unit: "m3/s"
-      valid_range: [0, null]
-      notes: "Routed discharge at river cells"
-
-    - name: "runoff"
-      file: "output_grid.nc"
-      variable: "runoff"
-      unit: "mm/timestep"
-      notes: "Unrouted lateral runoff — use this for CaMa-Flood coupling (dt_w025)"
-
-    - name: "evapotranspiration"
-      file: "output_grid.nc"
-      variable: "actevap"
-      unit: "mm/timestep"
-      valid_range: [0, 20.0]
-
-  sediment:
-    - name: "soil_erosion"
-      file: "output_sediment.nc"
-      variable: "soilloss"
-      unit: "ton/timestep"
-
-    - name: "sediment_yield"
-      file: "output_sediment.nc"
-      variable: "TCsed"
-      unit: "ton/timestep"
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: river discharge (q_river / river_water__volume_flow_rate)
+    unit: m³ s⁻¹
+    description: Routed river discharge per cell and at gauge points.
+    validation_rank: 1
+    emitted_in: output_grid.nc (every cell) and output_scalar.nc (gauge points)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Uncalibrated wflow vs another model (e.g. VIC) can differ 3-5x in magnitude from structural
+          uncertainty — assess timing/correlation separately from magnitude.
+        - Placeholder (non-DEM-derived) river geometry yields correct timing but 2-3x magnitude bias.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Gridded discharge fields are routing-network dependent; compare on the river mask only.
+      detrending_options:
+      - none
+  - name: unrouted runoff (runoff)
+    unit: mm Δt⁻¹
+    description: Cell runoff (overland + subsurface lateral) before river routing.
+    validation_rank: 2
+    emitted_in: output_grid.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Correct variable for external routing coupling; do not compare routed q_river against runoff.
+      detrending_options:
+      - none
+  - name: actual evapotranspiration (actevap)
+    unit: mm Δt⁻¹
+    description: Actual evapotranspiration (interception + bare-soil + transpiration).
+    validation_rank: 3
+    emitted_in: output_grid.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Annual ~200-1500 mm is plausible; remote-sensing ET products carry their own retrieval uncertainty.
+      detrending_options:
+      - none
+  - name: soil moisture / saturated water depth (satwaterdepth)
+    unit: mm
+    description: Saturated-zone water depth / soil water storage state.
+    validation_rank: 4
+    emitted_in: output_grid.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Model storage is in mm depth; satellite soil moisture is a surface volumetric fraction — compare
+          anomalies/patterns, not absolute values.
+      detrending_options:
+      - none
+      - linear_residual
+  - name: snow water equivalent (SWE)
+    unit: mm
+    description: Total snow water equivalent (dry snow + liquid water in pack).
+    validation_rank: 5
+    emitted_in: output_grid.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: csi
+        caveats:
+        - Degree-day (temperature-index) snow; depends critically on temperature being in Celsius.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Point SNOTEL-style comparison sensitive to sub-grid elevation.
+      detrending_options:
+      - none
+  - name: groundwater recharge
+    unit: mm Δt⁻¹
+    description: Recharge flux from the soil column to lateral subsurface / aquifer.
+    validation_rank: 6
+    emitted_in: output_grid.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Recharge is rarely directly observed; usually evaluated via downstream baseflow or coupled-model
+          fluxes.
+      detrending_options:
+      - none
+  - name: reservoir storage (storage_reservoir / reservoir_water__volume)
+    unit: m³
+    description: Reservoir stored water volume.
+    validation_rank: 7
+    emitted_in: output_scalar.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Depends on correct ResMaxVolume units (m³, not MCM) and the reservoir being on a river cell.
+      detrending_options:
+      - none
+  - name: soil loss / erosion rate (soilloss)
+    unit: t ha⁻¹ yr⁻¹
+    description: Gross soil erosion rate per cell (wflow_sediment).
+    validation_rank: 8
+    emitted_in: output_grid.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Typical 0.5-50 t/ha/yr; sensitive to USLE K SI-vs-US units (~7.6x) and C-factor land-cover lookup.
+      detrending_options:
+      - none
+  - name: sediment yield / specific yield at outlet
+    unit: t yr⁻¹ (yield) / t km⁻² yr⁻¹ (specific)
+    description: In-stream sediment yield at the basin outlet (wflow_sediment).
+    validation_rank: 9
+    emitted_in: output_scalar.nc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Specific yield typically 10-1000 t/km²/yr; grain fractions must sum to 1.0 for a closed budget.
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Long-term mean specific yield against basin-aggregate sediment surveys.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "precip_mm_s"
-    triplet: "dt_w001"
-    description: "Precipitation in mm/s instead of mm/day — runoff 86400x too high"
-    severity: "silent"
-    fix: "Convert to mm/timestep in convert_forcing_to_wflow.py"
+- id: dt_w001
+  symptom: Runoff is much too high (10x-100x expected) or much too low
+  diagnosis: Precipitation is in mm/s or mm/3hr instead of mm/timestep (mm/day for daily wflow); wflow
+    expects precipitation in mm per timestep. For daily runs (timestepsecs=86400), that is mm/day. CMFD
+    provides mm/3hr (8 values per day). If these are summed to daily without adjusting the total, or if
+    mm/s value
+  remedy: 'Verify precipitation conversion. For CMFD 3-hourly: sum 8 values per day. For mm/s: multiply
+    by 86400.; convert_forcing_to_wflow; [''Check forcing.nc: ncdump -v precip forcing.nc | tail -5'',
+    ''Mean daily precip should be 1-10 mm/day for most basins'', ''If mean is <0.01 or >100, units are
+    wrong'']; Alway'
+  severity: silent
+- id: dt_w002
+  symptom: Extremely high or zero actual ET throughout simulation
+  diagnosis: Temperature is in Kelvin instead of Celsius; wflow expects temperature in degrees Celsius.
+    CMFD and MSWX provide Kelvin. If temperature is not converted (subtract 273.15), the snow module will
+    never activate (everything above 0K is rain), and PET calculations will be wrong. The model produces
+    result
+  remedy: 'Convert temperature from Kelvin to Celsius: T_C = T_K - 273.15; convert_forcing_to_wflow; [''Check
+    forcing.nc temperature: ncdump -v temp forcing.nc | head -20'', ''If mean temperature is >200, it
+    is in Kelvin'', ''Subtract 273.15'']; The convert_forcing_to_wflow.py tool auto-detects Kelvin and
+    converts.'
+  severity: silent
+- id: dt_w003
+  symptom: Zero PET everywhere, or PET is 10x too high
+  diagnosis: 'PET variable missing, has wrong units, or was not calculated; wflow_sbm requires potential
+    evapotranspiration (PET) as forcing input (unless configured to compute it internally from individual
+    met variables). If PET is missing or zero, actual ET will be zero and all precipitation becomes runoff.
+    If '
+  remedy: 'Calculate PET using calculate_pet.py tool (Hargreaves or Penman-Monteith method); calculate_pet;
+    ["Check forcing.nc for ''pet'' variable: ncdump -h forcing.nc | grep pet", ''If missing, run calculate_pet.py'',
+    ''Expected mean PET: 1-8 mm/day depending on climate'']; Always include PET calculation in forci'
+  severity: silent
+- id: dt_w004
+  symptom: Snow accumulates in tropical basins where it should never snow
+  diagnosis: Temperature offset not applied — values still in Kelvin make snow threshold meaningless;
+    The wflow snow module uses temperature threshold 'tt' (default 0 degC) to partition precipitation
+    into rain and snow. If temperature is in Kelvin (~280-310), ALL precipitation falls as rain (>0),
+    which is correc
+  remedy: 'Ensure temperature is in Celsius. If Kelvin detected, subtract 273.15.; ; [''Check minimum
+    temperature in forcing: should be < 0 for cold basins'', ''If min temp > 200, data is in Kelvin''];
+    Use convert_forcing_to_wflow.py which auto-detects Kelvin.'
+  severity: silent
+- id: dt_w005
+  symptom: Sediment yield is 1000x too high or too low
+  diagnosis: USLE K factor is in US customary units instead of SI, or C factor lookup uses wrong land
+    cover classification; USLE K factor has different units in US customary (t*acre*h/(100*ft-tonf*acre*in))
+    and SI (t*ha*h/(ha*MJ*mm)). The conversion factor is approximately 0.1317. If US values are used directly,
+  remedy: 'Verify USLE K units. SI range: 0.001-0.1. US range: 0.01-0.7.; ; [''Check mean K value: should
+    be 0.01-0.06 in SI for most soils'', ''If K > 0.1, likely US units — multiply by 0.1317'']; build_sediment_model.py
+    uses SI units by default.'
+  severity: silent
+- id: dt_w006
+  symptom: Julia throws MethodError on startup when loading Wflow
+  diagnosis: 'Wflow.jl version does not match the TOML format used; wflow v1.0 introduced breaking changes
+    to the TOML configuration format, using CSDMS standard names. TOMLs generated for pre-v1.0 will cause
+    MethodError or KeyError when loaded by v1.0+. Similarly, v1.0+ TOMLs will fail on older Wflow versions.
 
-  - id: "temp_kelvin"
-    triplet: "dt_w002"
-    description: "Temperature in Kelvin instead of Celsius"
-    severity: "silent"
-    fix: "Subtract 273.15"
+    ;'
+  remedy: 'Check Wflow.jl version and regenerate TOML for the installed version; generate_wflow_toml;
+    [''Check version: julia -e \''using Pkg; Pkg.status("Wflow")\'''', ''If v1.0+, use generate_wflow_toml.py
+    (generates v1.0 format)'', ''If pre-v1.0, use --legacy flag'']; Always use generate_wflow_toml.py
+    to match inst'
+  severity: fatal
+- id: dt_w007
+  symptom: Julia OutOfMemoryError during wflow execution
+  diagnosis: Domain too large for available RAM — wflow loads entire spatial grid into memory; Unlike
+    VIC which processes cells sequentially, wflow loads the entire staticmaps.nc and forcing.nc into memory.
+    For large basins (>100,000 km2) at fine resolution (0.1 deg), memory requirements can exceed 16 GB.
+    A 1000
+  remedy: 'Reduce domain size or resolution. 0.25 deg uses ~6x less memory than 0.1 deg.; ; ["Check grid
+    size: ncdump -h staticmaps.nc | grep ''x = ''", ''If grid > 500x500, consider using 0.25 deg resolution'',
+    ''Or split simulation into shorter periods'', ''Monitor memory: julia --threads=1 to reduce memory
+    overhea'
+  severity: fatal
+- id: dt_w008
+  symptom: DimensionMismatch error during wflow execution
+  diagnosis: staticmaps.nc and forcing.nc have different spatial dimensions; wflow requires the forcing
+    grid to match the staticmaps grid exactly — same number of rows (y) and columns (x), same coordinate
+    values. If they were generated separately (e.g., staticmaps from HydroMT, forcing from convert_forcing_to_wf
+  remedy: 'Ensure staticmaps.nc and forcing.nc have identical y and x dimensions; ; ["ncdump -h staticmaps.nc
+    | grep -E ''y|x''", "ncdump -h forcing.nc | grep -E ''y|x''", ''Compare coordinate values: must be
+    identical'', ''If different, regenerate forcing using staticmaps.nc as grid reference'']; Use --staticmaps_nc '
+  severity: fatal
+- id: dt_w009
+  symptom: wflow takes 30-60 seconds before any output appears, then runs normally
+  diagnosis: Julia JIT compilation on first run — this is normal behavior, not an error; Julia compiles
+    code just-in-time on first execution. Loading Wflow.jl triggers compilation of thousands of methods.
+    This takes 30-60 seconds on first run, ~5 seconds on subsequent runs in the same Julia session. This
+    is a fu
+  remedy: 'Wait patiently. This is normal Julia behavior.; ; [''First run: expect 30-60s delay before
+    progress output'', ''Subsequent runs: ~5s startup'', ''For production: use PackageCompiler.jl to create
+    sysimage (~2s startup)'']; Use PackageCompiler sysimage for production deployments.'
+  severity: degraded
+- id: dt_w010
+  symptom: KeyError or 'variable not found' when wflow reads TOML config
+  diagnosis: TOML references variable names not present in staticmaps.nc, or uses old naming convention;
+    wflow v1.0 uses CSDMS standard names for variables. If the TOML references 'ksat' but staticmaps.nc
+    has 'KsatVer', or vice versa, wflow will fail with KeyError. Most online tutorials and examples use
+    pre-v1.0
+  remedy: 'Check variable names in staticmaps.nc match TOML references; ; [''List variables: ncdump -h
+    staticmaps.nc'', ''Compare with TOML [input.static] section'', ''Use generate_wflow_toml.py to regenerate
+    TOML'']; Always generate TOML and staticmaps together or verify name consistency.'
+  severity: fatal
+- id: dt_w011
+  symptom: TOML parse error on wflow startup
+  diagnosis: 'Invalid TOML syntax — missing quotes, wrong brackets, or malformed values; TOML is strict
+    about syntax: string values need quotes, arrays use brackets, nested sections use dotted keys or [[double
+    brackets]] for arrays of tables. A common mistake is using = without quotes for string values, or
+    mixing'
+  remedy: Validate TOML syntax with a linter before running wflow; ; ['python -c "import tomllib; tomllib.load(open(\'wflow_sbm.toml\',\'rb\'))"',
+    'Fix reported syntax errors', 'Or regenerate TOML using generate_wflow_toml.py']; Always use generate_wflow_toml.py
+    which produces valid TOML.
+  severity: fatal
+- id: dt_w012
+  symptom: All cells have identical parameter values despite spatial parameter map
+  diagnosis: TOML scale=0 or offset dominates — the spatial variation is overridden; If the TOML sets
+    scale=0 for a parameter, all values become 0 regardless of the NetCDF map. If offset is set to a large
+    value with scale=0, all cells get the offset value uniformly. This is a calibration mistake, not a
+    code erro
+  remedy: Check TOML scale/offset values. scale=0 zeroes the parameter. Default should be scale=1, offset=0.;
+    adjust_parameters; ["grep 'scale' wflow_sbm.toml", 'Verify no scale=0 entries', 'Use adjust_parameters.py
+    --list_params to see valid ranges']; Review parameter adjustments before running.
+  severity: silent
+- id: dt_w013
+  symptom: River routing produces zero flow everywhere
+  diagnosis: River network not properly defined in staticmaps.nc — wflow_river mask is all zeros; The
+    kinematic wave routing requires a river network defined in staticmaps.nc (wflow_river variable). If
+    this is all zeros or all ones, routing will fail silently. The manual build uses a placeholder that
+    marks all c
+  remedy: Verify wflow_river in staticmaps.nc has a proper channel network pattern; ; ['python -c "import
+    xarray; ds=xarray.open_dataset(\'staticmaps.nc\'); print(ds.wflow_river.sum())"', 'River cells should
+    be a small fraction of total cells (5-20%)', 'If all 0 or all 1, rebuild using HydroMT or compute
+    from
+  severity: silent
+- id: dt_w014
+  symptom: BoundsError or phantom cycles — boundary cells route outside active domain
+  diagnosis: 'Boundary cells must be pits in BOTH numpy-space AND wflow''s transformed space; wflow reads
+    NetCDF (y,x), transposes to Julia (x,y), reverses y to ascending. A cell at numpy (j, i) becomes wflow
+    (x=i, y=ny-1-j) for descending-y grids. PCR_DIR offsets apply in wflow-space: e.g. LDD 8 (North) =
+    Cartesi'
+  remedy: 'Check boundary conditions in BOTH coordinate spaces; run_hydromt_build.py (fixed 2026-04-10);
+    [''For each active cell with LDD != 5:'', ''  Check 1 (numpy): target (j+dj, i+di) must be active
+    in the raw mask'', ''  Check 2 (wflow): target (i+dx, ny-1-j+dy) must be active in wf_mask[x, y_asc]'',
+    ''  If eith'
+  severity: fatal
+- id: dt_w015
+  symptom: Discharge timing is correct but magnitude is 2-3x off
+  diagnosis: Wrong upstream area in staticmaps.nc or wrong river width/slope parameters; wflow discharge
+    depends on the upstream area and river geometry stored in staticmaps.nc. If these are placeholder
+    values (from manual build) instead of DEM-derived values, the discharge magnitude will be systematically
+    wrong
+  remedy: 'Use DEM-derived river geometry. Rebuild with HydroMT for proper values.; run_hydromt_build;
+    [''Check RiverWidth values: should vary from 5m (headwater) to 100+m (main river)'', ''Check RiverSlope:
+    should vary from 0.001 (flat) to 0.1 (steep)'', ''If uniform values, rebuild from DEM'']; Use HydroMT
+    build f'
+  severity: silent
+- id: dt_w016
+  symptom: Glacier melt absent despite glacier flag enabled in TOML
+  diagnosis: Glacier fraction map is all zeros because the dataset does not cover the region; Setting
+    glacier=true in the TOML activates the glacier module, but it needs a 'GlacierFrac' variable in staticmaps.nc
+    with glacier coverage > 0. If the glacier dataset (RGI) was not properly clipped to the basin, or
+    the
+  remedy: Check GlacierFrac in staticmaps.nc. If all zeros, disable glacier flag or provide glacier data.;
+    ; ['python -c "import xarray; ds=xarray.open_dataset(\'staticmaps.nc\'); print(ds.GlacierFrac.max())"',
+    'If max is 0, no glacier data exists for this basin', 'Either download RGI data or disable glacier=
+  severity: silent
+- id: dt_w017
+  symptom: Baseflow dominates, no peak flows, hydrograph is flat
+  diagnosis: 'Parameter f (exponential Ksat decay) is too low — Ksat does not decay with depth, all water
+    percolates; The parameter ''f'' controls how quickly vertical hydraulic conductivity decays with depth:
+    Ksat(z) = KsatVer * exp(-f*z). If f is too low (e.g., 0.0001), Ksat remains high throughout the soil
+    profi'
+  remedy: 'Increase f parameter. Typical range: 0.001-0.005 (1/mm).; adjust_parameters; [''Check f value:
+    python -c "import xarray; print(xarray.open_dataset(\''staticmaps.nc\'').f.mean())"'', ''If f < 0.0005,
+    increase to 0.001-0.003'', ''python adjust_parameters.py --staticmaps staticmaps.nc --param f --multiply
+    3'']'
+  severity: silent
+- id: dt_w018
+  symptom: Sediment model produces zero erosion everywhere
+  diagnosis: USLE C factor is 0 for all cells — typically because default forest C factor is near-zero;
+    If the land cover classification assigns most cells to forest (C~0.003) or water (C=0), total erosion
+    will be near-zero. This is physically correct for dense forests but may indicate the wrong land cover
+    datas
+  remedy: 'Check C factor distribution. If all near-zero, verify land cover classification.; ; [''python
+    -c "import xarray; ds=xarray.open_dataset(\''staticmaps_sediment.nc\''); print(ds.USLE_C.where(ds.USLE_C>0).mean())"'',
+    ''Expected: 0.01-0.3 depending on land use mix'', ''If < 0.005, check land cover classificati'
+  severity: silent
+- id: dt_w019
+  symptom: Grain size fractions do not sum to 1.0 — sediment budget not closed
+  diagnosis: Grain size class fractions (clay+silt+sand+sagg+lagg) do not sum to 100% per cell; wflow_sediment
+    distributes eroded soil into 5 grain classes. The fractions must sum to 1.0 for mass conservation.
+    If they don't (e.g., due to rounding or missing a class), the sediment budget will not close, and
+    total
+  remedy: 'Normalize grain fractions to sum to 1.0 per cell; ; [''Check sum: python -c "import xarray;
+    ds=xarray.open_dataset(\''staticmaps_sediment.nc\''); print((ds.ClayFrac+ds.SiltFrac+ds.SandFrac+ds.SAggFrac+ds.LAggFrac).mean())"'',
+    ''If not ~1.0, normalize by dividing each fraction by the total'']; build_sedime'
+  severity: silent
+- id: dt_w020
+  symptom: wflow and VIC discharge differ by 3-5x for the same basin and forcing
+  diagnosis: Different infiltration physics, PET methods, and routing — this is expected model structural
+    uncertainty; wflow_sbm and VIC use fundamentally different soil physics (exponential Ksat decay vs
+    3-layer variable infiltration capacity), different snow models (degree-day vs energy balance), and
+    potential
+  remedy: This is expected behavior. Report as model intercomparison, not validation failure.; compare_with_vic;
+    ['Verify both models use identical forcing (same CMFD/MSWX source)', 'Compare PET methods and values',
+    'Report correlation and timing agreement separately from magnitude']; Calibrate both models in
+  severity: silent
+- id: dt_w021
+  symptom: Package Wflow not found in Julia environment
+  diagnosis: 'Julia environment not activated or Wflow.jl not installed; Julia uses project-specific environments
+    (like Python virtualenvs). If --project is not specified or points to wrong directory, Julia will
+    not find Wflow.jl even if installed elsewhere.
 
-  - id: "pet_missing"
-    triplet: "dt_w003"
-    description: "PET missing or zero — all precip becomes runoff"
-    severity: "silent"
-    fix: "Compute PET via calculate_pet.py"
+    ; [''Julia environment'', ''run_wflow.py --julia_env'']'
+  remedy: 'Install Wflow.jl or point to correct Julia environment; ; [''Install: julia -e \''using Pkg;
+    Pkg.add("Wflow")\'''', ''Verify: julia -e \''using Wflow; println("OK")\'''', ''Check --julia_env
+    path points to directory with Project.toml'']; Install Wflow.jl once and record the environment path.'
+  severity: fatal
+- id: dt_w022
+  symptom: TOML config works on one machine but fails on another with 'Unknown key' errors
+  diagnosis: Different Wflow.jl versions — v1.0 uses CSDMS standard names, pre-v1.0 uses short names;
+    wflow v1.0 (Dec 2024) was a breaking release that changed the TOML configuration format. Variable
+    names, section structure, and some parameter names changed to follow CSDMS standard naming. A TOML
+    file generated
+  remedy: 'Check Wflow.jl version and use matching TOML format; generate_wflow_toml; [''Check version:
+    julia -e \''using Pkg; println(Pkg.status("Wflow"))\'''', ''v1.0+: use CSDMS standard names (generate_wflow_toml.py
+    default)'', ''pre-v1.0: use generate_wflow_toml.py --legacy'']; Pin Wflow.jl version in Project.toml'
+  severity: fatal
+- id: dt_w023
+  symptom: LoadError during Wflow precompilation — NetCDF library conflict
+  diagnosis: Julia's NetCDF library conflicts with system NetCDF or Python's NetCDF4; Julia installs its
+    own copies of shared libraries (NetCDF, HDF5) via BinaryBuilder. If LD_LIBRARY_PATH is set (e.g.,
+    by conda or the Python venv), Julia may pick up the wrong libnetcdf.so, causing precompilation to
+    fail. This i
+  remedy: Unset LD_LIBRARY_PATH before running Julia, or use a clean shell; ; ['unset LD_LIBRARY_PATH',
+    "julia -e 'using Wflow'", "If that works, add 'unset LD_LIBRARY_PATH' to the wflow wrapper script"];
+    run_wflow.py should sanitize LD_LIBRARY_PATH before calling Julia.
+  severity: fatal
+- id: dt_w024
+  symptom: HydroMT-wflow generates TOML that causes errors in Wflow.jl
+  diagnosis: HydroMT-wflow version does not match installed Wflow.jl version; HydroMT-wflow generates
+    TOML configurations and staticmaps for a specific Wflow.jl version. If hydromt_wflow v0.5 generates
+    a TOML for wflow v0.7, but Wflow.jl v1.0 is installed, the TOML format will be incompatible. Always
+    check versi
+  remedy: Ensure hydromt_wflow version matches Wflow.jl version; ; ['pip show hydromt_wflow', 'julia -e
+    \'using Pkg; Pkg.status("Wflow")\'', 'Check compatibility table in HydroMT-wflow docs']; Pin both
+    versions and test compatibility before deployment.
+  severity: degraded
+- id: dt_w025
+  symptom: wflow + CaMa-Flood produces discharge 2x too high with correct timing
+  diagnosis: Double-counting routing — wflow already routes internally, CaMa-Flood re-routes; wflow performs
+    internal river routing (kinematic wave or local inertial). If routed discharge (q_river) is passed
+    to CaMa-Flood, the flow is routed TWICE, producing systematically higher discharge with artificially
+    dela
+  remedy: Use unrouted runoff (not q_river) as CaMa-Flood input; wflow_to_cama; ["Use 'runoff' variable
+    instead of 'q_river' in wflow_to_cama.py", 'Or run wflow without routing (land-only mode) and let
+    CaMa-Flood handle all routing']; wflow_to_cama.py warns if q_river is used. Always use unrouted runoff.
+  severity: silent
+- id: dt_w026
+  symptom: Cross-model parameter transfer produces wrong results (e.g., VIC Ksat to wflow KsatVer)
+  diagnosis: 'Unit mismatch: VIC Ksat is mm/s, wflow KsatVer is mm/day, MODFLOW K is m/day; Hydraulic
+    conductivity units differ across models: - VIC: mm/s (multiply by 86400 for mm/day) - wflow: mm/day
+    - MODFLOW: m/day (divide by 1000 for mm/day) - ParFlow: m/hr Using VIC Ksat (mm/s) directly as wflow
+    KsatVer (mm'
+  remedy: 'Always apply unit conversion when transferring Ksat between models; ; [''VIC -> wflow: multiply
+    Ksat by 86400 (mm/s -> mm/day)'', ''MODFLOW -> wflow: multiply K by 1000 (m/day -> mm/day)'', ''Check
+    resulting KsatVer is in range 10-10000 mm/day'']; Use adjust_parameters.py which validates parameter
+    ranges.'
+  severity: silent
+- id: dt_w027
+  symptom: wflow crashes with 'One or more cycles detected in flow graph'
+  diagnosis: 'LDD has cycles from THREE interacting causes (all must be fixed); Three problems interact
+    to create LDD cycles. Fixing only one leaves the others:
 
-  - id: "toml_version_mismatch"
-    triplet: "dt_w006"
-    description: "v1.0 TOML format is different from pre-v1.0 — most online examples are OLD"
-    severity: "fatal"
-    fix: "Use generate_wflow_toml.py for v1.0+ format"
+    CAUSE 1 — Naive D8 creates cycles on coarse grids: Flat areas at 0.25° produce ties where cell A→B
+    and B→A. Fix: use WhiteboxTools breach_depressions + d'
+  remedy: 'Use the fixed run_hydromt_build.py which handles all three causes; run_hydromt_build.py; [''1.
+    Sample FULL DEM (all cells, not just basin mask)'', ''2. Run WhiteboxTools: breach_depressions then
+    d8_pointer'', ''3. Convert WBT encoding to PCRaster LDD (wbt_to_ldd map)'', ''4. Mark boundary cells
+    as pits in '
+  severity: fatal
+- id: dt_w031
+  symptom: Reservoir overflows immediately, releasing all inflow uncontrolled
+  diagnosis: Reservoir maxstorage is in MCM instead of m^3 -- 1e6 too small; GRanD reports capacity in
+    MCM (million cubic meters). wflow maxstorage expects m^3. If MCM values are used directly, the reservoir
+    appears 1e6 too small. Storage immediately exceeds maxstorage, and all inflow is released as overflow.
+    Th
+  remedy: 'Multiply GRanD CAP_MCM by 1e6 to get m^3; lookup_dams; [''Check: python -c "import xarray;
+    ds=xarray.open_dataset(\''staticmaps.nc\''); print(ds.ResMaxVolume.max())"'', ''If max is < 1e6, values
+    are likely still in MCM'', ''Expected range: 1e7 to 1e11 m^3 for large reservoirs'']; Always use lookup_dams.py
+    w'
+  severity: silent
+- id: dt_w028
+  symptom: 0 forcing files found or coordinates misparsed
+  diagnosis: 'VIC forcing file naming pattern {basin}_{res}deg_{lat}_{lon} not recognized; HydroCraft
+    VIC forcing uses bengbu_0.25deg_31.1250_115.6250 pattern. Fixed in v1.1.0 by adding *_*deg_* glob
+    and parsing parts[2]/parts[3].
 
-  - id: "julia_jit_delay"
-    triplet: "dt_w009"
-    description: "First run takes 30-60 seconds before output (Julia JIT compilation)"
-    severity: "normal behavior"
-    fix: "Do NOT kill the process — this is normal"
+    ; [''convert_forcing_to_wflow.py'']'
+  remedy: Use updated convert_forcing_to_wflow.py; convert_forcing_to_wflow.py; []; Updated tool handles
+    all known HydroCraft naming patterns.
+  severity: fatal
+- id: dt_w029
+  symptom: Inactive cells have zero instead of NaN, wrong runoff
+  diagnosis: 'Inactive cells set to 0 instead of NaN in staticmaps.nc; wflow uses NaN to identify inactive
+    cells. Zeros are treated as active with zero parameter values, silently corrupting the simulation.
 
-  - id: "double_routing_cama"
-    triplet: "dt_w025"
-    description: "Sending routed q_river to CaMa-Flood double-counts routing"
-    severity: "silent"
-    fix: "Use UNROUTED runoff variable for CaMa-Flood coupling"
+    ; [''All variables in staticmaps.nc'']'
+  remedy: Initialize arrays with np.full(..., np.nan), only fill active cells; ; []; Always use NaN for
+    inactive cells in all wflow NetCDF files.
+  severity: silent
+- id: dt_w030
+  symptom: 'Cold start crash: state variable not found'
+  diagnosis: 'Missing state variable mappings in TOML for cold start; All 11 state variables must be in
+    [state.variables] even with cold_start__flag=true. wflow needs names for writing output state file.
 
-  - id: "ksat_unit_mismatch"
-    triplet: "dt_w026"
-    description: "wflow uses mm/day for Ksat; VIC uses mm/s; MODFLOW uses m/day"
-    severity: "silent"
-    fix: "Convert Ksat to mm/day for wflow"
+    ; [''wflow_sbm.toml [state.variables]'']'
+  remedy: Use generate_wflow_toml.py which includes all 11 state variables; generate_wflow_toml.py; [];
+    Always use generate_wflow_toml.py, never hand-write TOML.
+  severity: fatal
+- id: dt_w032
+  symptom: Reservoir flag is true but discharge is identical to no-reservoir run
+  diagnosis: Reservoir location not on a river cell -- wflow silently ignores it; wflow only activates
+    reservoirs at cells where wflow_reservoirlocs > 0 AND the cell is on the river network (wflow_river
+    = 1). If the reservoir location falls on a non-river cell (e.g., due to coordinate rounding on a coarse
+    grid),
+  remedy: Verify reservoir locations overlap with river cells; configure_reservoirs; ['python -c "import
+    xarray as xr; ds=xr.open_dataset(\'staticmaps.nc\'); locs=ds.wflow_reservoirlocs; riv=ds.wflow_river;
+    print(\'Res on river:\', int((locs.where(riv==1)>0).sum()))"', 'If 0, rerun configure_reservoirs.py
+    whi
+  severity: silent
+- id: dt_w033
+  symptom: Reservoir evaporation is wrong or reservoir area much larger than grid cell
+  diagnosis: Reservoir area in km^2 instead of m^2 -- 1e6 too small; GRanD area_ori is in km^2. wflow
+    reservoir_area expects m^2. If km^2 values are used directly, the reservoir area is 1e6 too small,
+    causing evaporation to be negligible and the linear storage curve (S = A*H) to produce unrealistic
+    water levels.
+  remedy: 'Multiply GRanD area (km^2) by 1e6 to get m^2; lookup_dams; [''Check: python -c "import xarray;
+    print(xarray.open_dataset(\''staticmaps.nc\'').reservoir_area.max())"'', ''Expected range: 1e6 to
+    1e11 m^2 for typical reservoirs'', ''If max < 1e5, values are likely in km^2'']; Always use lookup_dams.py
+    which co'
+  severity: silent
+- id: dt_w036
+  symptom: 'Basin has MANY outlets (LDD == 5) instead of one. wflow runs with no error, but discharge
+    at the gauge is far too low because most of the catchment drains into fabricated internal pits instead
+    of reaching the outlet.
 
-  - id: "ldd_cycles"
-    triplet: "dt_w027"
-    description: "Naive D8 on coarse grids creates cycles in flat areas"
-    severity: "fatal"
-    fix: "Use priority-flood algorithm"
+    '
+  diagnosis: 'The routing domain was rasterised from a basin SHAPEFILE while the LDD was derived from
+    the coarse-grid DEM. The two disagree cell-for-cell, and dt_w014''s "target outside the mask -> set
+    LDD = 5" rule then turns every misaligned edge cell into a pit.
 
-  - id: "y_axis_ascending"
-    triplet: "dt_w034"
-    description: "Y-axis in staticmaps.nc must be DESCENDING (north first)"
-    severity: "fatal"
-    fix: "Create y as np.arange(max_lat, min_lat, -step)"
+    ; dt_w014''s pit fallback is correct only when the'
+  remedy: 'Delineate the domain by upstream tracing on the model''s own flow network; run_hydromt_build.py;
+    [''Check the s1 build output: n_outlets MUST be 1'', ''python -c "import xarray,numpy; d=xarray.open_dataset(\''staticmaps.nc\'');
+    print(int(numpy.nansum(d.wflow_ldd.values==5)))"'', ''If > 1, rebuild -- do NOT '
+  severity: silent
+- id: dt_w037
+  symptom: 'On a flat/floodplain basin the delineated area is far off the published catchment area, and
+    the snapped outlet sits tens of km from the gauge.
 
-  - id: "nan_not_zero_inactive"
-    triplet: "dt_w035"
-    description: "Mask variables must use NaN for inactive cells, NOT integer 0"
-    severity: "silent"
-    fix: "Use np.float64 with np.nan for inactive cells"
+    '
+  diagnosis: 'D8 derived from a nearest-neighbour-resampled DEM on low-relief terrain; Neighbouring coarse
+    cells on a floodplain differ by only a few metres, so resampling noise -- not terrain -- decides the
+    drainage direction. At Xixian the coarse-DEM network snapped the outlet ~30 km away and got the area
+    +13% '
+  remedy: Upscale MERIT-Hydro's corrected 3-arcsec D8 instead of resampling a raw DEM; run_hydromt_build.py
+    --merit_hydro_dir <dir>; ['Extract the 5x5 deg tile from KISSPATH_DATA/MERIT_Hydro/v1.0.1/{dir,upa}_<block>.tar',
+    'Pass --merit_hydro_dir and --expected_area_km2 (published gauge area)', 'Verify area_er
+  severity: silent
+- id: dt_w038
+  symptom: 'The CSV discharge series does not match the gauge cell -- it tracks a different channel, or
+    jumps between cells during flood peaks.
 
-  - id: "grand_capacity_mcm"
-    triplet: "dt_w031"
-    description: "GRanD CAP_MCM is in million m3; wflow maxstorage is in m3"
-    severity: "silent"
-    fix: "Multiply by 1e6 or use lookup_dams.py"
+    '
+  diagnosis: '[[output.csv.column]] used reducer = "maximum" instead of a coordinate; A domain-wide maximum
+    of river_water__volume_flow_rate equals outlet discharge only by accident. If the padded window contains
+    a larger neighbouring channel, or a tributary peaks above the outlet, the reported series silently
+    co'
+  remedy: Sample the gauge cell explicitly with coordinate.x / coordinate.y; generate_wflow_toml.py --outlet_lat
+    <lat> --outlet_lon <lon>; ["grep -A3 'output.csv.column' wflow_sbm.toml", 'Prefer coordinate.x/coordinate.y
+    over reducer']; Always pass --outlet_lat/--outlet_lon from the s1 build result.
+  severity: silent
+- id: dt_w039_gridded_discharge_var_order
+  symptom: Discharge extraction from output_grid.nc picks the wrong variable, or scores unrouted runoff
+    (q_land) as discharge when the routed variable is absent/renamed
+  diagnosis: Gridded discharge variable discovery must follow q_river, q_av, discharge, Q — q_river is
+    this KI's TOML-declared output name, q_av is Wflow.jl's native averaged-discharge name; q_land/run
+    are UNROUTED runoff (mm/timestep) and must never be silently substituted for discharge on the gridded
+    path (see
+  remedy: extract_discharge.py extract_from_gridded searches exactly [q_river, q_av, discharge, Q] and
+    hard-fails listing available variables when none is present; unrouted names remain acceptable only
+    on the scalar-gauge path where the user explicitly targeted that file
+- id: dt_w040
+  symptom: 'Any basin OUTSIDE China: s1 prints "WARNING: DEM sampling failed ... using 500m placeholder"
+    (or a DEM range of exactly 500-500 m), and the resulting staticmaps has Slope == RiverSlope == 1e-4
+    everywhere. wflow then runs without error but kinematic-wave routing has no terrain gradient.
 
-# =========================================================================
-# EXPECTED RANGES (Bengbu reference)
-# =========================================================================
-expected_ranges:
-  bengbu_huai_river:
-    period: "2003-2005 (2003 warmup)"
-    resolution: "0.25 deg (224 cells)"
-    wflow_mean_q_m3s: 1088
-    vic_mean_q_m3s: 1767
-    correlation_r: 0.621
-    correlation_lag: "-3 days (wflow routing lag)"
-    annual_precip_mm: 1125
-    annual_pet_mm: 1009
-    annual_runoff_mm: 283
-    runtime_seconds: 14
+    '
+  diagnosis: run_hydromt_build.py defaulted dem_path to china_dem_90m.tif, which returns nodata for every
+    cell outside China; The DEM default was the China 90 m tile. Outside China every sample is nodata,
+    the nearest-neighbour gap fill has no valid donor, and the except branch substituted a FLAT 500 m
+    placeholde
+  remedy: Resolve the DEM per basin; never fall back to a flat placeholder; run_hydromt_build.py --dem_path
+    <GeoTIFF or MERIT DEM tile dir>; ['Leave --dem_path unset to auto-select (China 90 m DEM inside China,
+    the global MERIT DEM tile directory KISSPATH_DATA/MERIT_DEM elsewhere)', 'A directory of MERIT 5x5-
+  severity: silent
+- id: dt_w041
+  symptom: 'MERIT-Hydro mode reports a correct domain and then deletes it: "Domain: 80 cells, 8,726 km2
+    (+4.3%)" followed by "Pruned 79 cell(s) that do not drain to the outlet" and "Domain after prune:
+    1 cells". The build then fails with "only 1 river cell(s)".
 
-# =========================================================================
-# CALIBRATION REFERENCE
-# =========================================================================
-calibration_reference:
-  recommended_sequence:
-    - "KsatVer (infiltration, mm/day)"
-    - "f (Ksat decay, 1/mm)"
-    - "SoilThickness (storage, mm)"
-    - "RootingDepth (ET depth, mm)"
-    - "N_River (channel Manning)"
-    - "PathFrac (direct runoff)"
-    - "InfiltCapSoil (infiltration capacity)"
-
-  target_metrics:
-    - "NSE > 0.5"
-    - "KGE > 0.5"
-    - "PBIAS < 25%"
-
-  warmup: "1-2 years (soil moisture equilibration)"
-
-# =========================================================================
-# UNIT CONVERSION TABLE
-# =========================================================================
-unit_conversions:
-  - variable: "precipitation"
-    source: "CMFD (mm/3hr)"
-    target: "wflow (mm/day)"
-    operation: "SUM 8 timesteps per day"
-    trap_if_wrong: "Runoff 86400x too high (if mm/s) or 8x wrong"
-
-  - variable: "temperature"
-    source: "CMFD (K)"
-    target: "wflow (degC)"
-    offset: -273.15
-    operation: "subtract"
-
-  - variable: "KsatVer"
-    source: "VIC (mm/s)"
-    target: "wflow (mm/day)"
-    factor: 86400
-    operation: "multiply"
-    trap_if_wrong: "Soil 86400x too permeable"
+    '
+  diagnosis: the gauge cell was activated AFTER the coarse LDD was built, so no upstream cell routed to
+    it; The outlet sits at the downstream tip of the basin, so its coarse cell is usually well below the
+    --merit_cell_fraction (0.5) in-basin threshold — 24% at Rio Pelotas. The upscaling loop skips inactive
+    cells
+  remedy: Force the gauge cell active BEFORE building the coarse LDD; run_hydromt_build.py --merit_hydro_dir
+    <cache>; ['s1 now prints "Outlet cell (j,i) is only N% in-basin — activating it anyway"', 'Confirm
+    the prune line is absent or prunes only a handful of cells', 'n_outlets must still be exactly 1 (dt_w0
+  severity: fatal

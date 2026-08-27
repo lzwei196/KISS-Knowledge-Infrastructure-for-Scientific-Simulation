@@ -333,7 +333,7 @@ outputs:
   - var: "inundation_extent"
     validation_rank: 1
     unit: "km^2 (or boolean wet/dry field)"
-    description: "Flooded area, derived by thresholding depth over the mesh at peak inundation."
+    description: "Surface-water flooded area, derived by thresholding water depth over the mesh at peak inundation."
     emitted_in: "derived from SWW depth field"
     observability:
       comparable_obs_shapes:
@@ -353,7 +353,7 @@ outputs:
   - var: "xmomentum"
     validation_rank: 6
     unit: "m^2/s"
-    description: "Depth-integrated momentum in x (uh); conserved quantity."
+    description: "Depth-integrated surface-water momentum in x (uh); conserved quantity."
     emitted_in: "SWW (NetCDF) dynamic variable"
     observability:
       comparable_obs_shapes:
@@ -366,7 +366,7 @@ outputs:
   - var: "ymomentum"
     validation_rank: 7
     unit: "m^2/s"
-    description: "Depth-integrated momentum in y (vh); conserved quantity."
+    description: "Depth-integrated surface-water momentum in y (vh); conserved quantity."
     emitted_in: "SWW (NetCDF) dynamic variable"
     observability:
       comparable_obs_shapes:
@@ -379,7 +379,7 @@ outputs:
   - var: "discharge"
     validation_rank: 2
     unit: "m^3/s"
-    description: "Flow through a cross-section: integral of momentum (uh, vh) normal to a polyline."
+    description: "Surface-water flow through a cross-section: integral of water momentum (uh, vh) normal to a polyline."
     emitted_in: "derived via get_flow_through_cross_section()"
     observability:
       comparable_obs_shapes:
@@ -410,6 +410,24 @@ outputs:
             - "Validation is against analytical/closed-form solutions (Stoker/Ritter, Carrier-Greenspan, Thacker), not gauge NSE/KGE."
             - "Metrics (NSE, Pearson r, KGE) are computed on the numerical-vs-analytical stage profile at fixed x."
       detrending_options: ["none"]
+
+medium_evidence:
+  - var: inundation_extent
+    source: dag.yaml
+    quote: "Wetting and drying of cells as water advances onto dry land / recedes"
+    note: "scope_in declares wet/dry advancement by water over land; inundation_extent thresholds that water depth."
+  - var: xmomentum
+    source: dag.yaml
+    quote: "Water surface elevation (stage) and depth-integrated horizontal momentum over time"
+    note: "scope_in declares horizontal momentum as part of the water-surface/depth-integrated hydrodynamic state."
+  - var: ymomentum
+    source: dag.yaml
+    quote: "Water surface elevation (stage) and depth-integrated horizontal momentum over time"
+    note: "scope_in declares horizontal momentum as part of the water-surface/depth-integrated hydrodynamic state."
+  - var: discharge
+    source: SKILL.md
+    quote: "**Type:** 2D depth-averaged shallow-water hydrodynamics (finite-volume, unstructured triangular mesh)"
+    note: "SKILL.md declares ANUGA's physical medium; discharge is derived from that shallow-water hydrodynamic state."
 
 influence:
   edges:

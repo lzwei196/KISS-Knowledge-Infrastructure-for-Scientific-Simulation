@@ -232,7 +232,7 @@ outputs:
   - var: "RAINC+RAINNC"
     validation_rank: 3
     unit: "mm"
-    description: "Total accumulated precipitation (convective RAINC plus grid-scale RAINNC), accumulated from simulation start"
+    description: "Total accumulated atmospheric precipitation at the land/ocean surface (convective RAINC plus grid-scale RAINNC), accumulated from simulation start"
     emitted_in: "wrfout_d0N"
     observability:
       comparable_obs_shapes:
@@ -255,7 +255,7 @@ outputs:
   - var: "U10/V10"
     validation_rank: 2
     unit: "m s-1"
-    description: "10-metre wind components (grid-relative on the C-grid; require COSALPHA/SINALPHA rotation to earth-relative for direction comparison)"
+    description: "10-metre atmospheric wind components (grid-relative on the C-grid; require COSALPHA/SINALPHA rotation to earth-relative for direction comparison)"
     emitted_in: "wrfout_d0N"
     observability:
       comparable_obs_shapes:
@@ -281,7 +281,7 @@ outputs:
   - var: "T"
     validation_rank: 5
     unit: "K"
-    description: "3-D perturbation potential temperature (theta - 300 K); actual temperature = (T+300)*((P+PB)/100000)^(Rd/cp)"
+    description: "3-D atmospheric perturbation potential temperature (theta - 300 K); actual temperature = (T+300)*((P+PB)/100000)^(Rd/cp)"
     emitted_in: "wrfout_d0N"
     observability:
       comparable_obs_shapes:
@@ -551,3 +551,17 @@ safety:
       scope: "Radiation-microphysics coupling"
       source: "share/module_model_constants.F and radiation_driver behavior in WRF source"
       status: "adopted"
+
+medium_evidence:
+  - var: "RAINC+RAINNC"
+    source: "docs/s6_model_execution.md"
+    quote: "Run the WRF atmospheric model to produce the time-varying forecast/simulation output."
+    note: "Stage 6 declares WRF history output as atmospheric model output; RAINC+RAINNC is a wrfout precipitation accumulator."
+  - var: "U10/V10"
+    source: "docs/s6_model_execution.md"
+    quote: "Run the WRF atmospheric model to produce the time-varying forecast/simulation output."
+    note: "Stage 6 declares WRF history output as atmospheric model output; U10/V10 are wrfout 10-m wind components."
+  - var: "T"
+    source: "docs/s6_model_execution.md"
+    quote: "Run the WRF atmospheric model to produce the time-varying forecast/simulation output."
+    note: "Stage 6 declares WRF history output as atmospheric model output; T is wrfout perturbation potential temperature."

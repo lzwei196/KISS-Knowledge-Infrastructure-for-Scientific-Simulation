@@ -1,262 +1,487 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: WSIMOD Knowledge Infrastructure v1.0.0
-  domain: urban
-  binary_path: ''
-  language: unknown
+  name: WSIMOD
+  language: python
+  implementation:
+    id: wsimod
+    version: 0.8.1
+    provenance: Python; WSIMOD package (Barnaby Dobson / Imperial College London), node-arc VQIP message-passing
+      framework integrating CityWat urban and CatchWat rural processes.
+  scientific_reference_version: WSIMOD (Water Systems Integrated Modelling framework), node-arc message-passing
+    integrated water-cycle model per Dobson et al. 2024 GMD (CityWat urban + CatchWat rural lineage)
 inputs:
   forcing:
-  - name: Precipitation
+  - name: precipitation
     unit: m/timestep
-    format: ''
-    source: skill_md
-  - name: Radiation
-    unit: "MJ/m\xB2"
-    format: ''
-    source: skill_md
+    category: forcing
+    source_kind: forcing
+    model_input_format: Land-node data_input_dict keyed by (variable, pandas.Timestamp); depth carries
+      an associated VQIP quality
+    notes: WSIMOD expects m/timestep; common mm/day sources are 1000x too large (dt_001). Convert via
+      MM_TO_M=1e-3.
+  - name: potential evapotranspiration (ET0)
+    unit: m/timestep
+    category: forcing
+    source_kind: forcing
+    model_input_format: Land-node data_input_dict; crop ET via Allen et al. 1998 crop coefficients
+    notes: Common mm/day sources are 1000x too large (dt_015). Convert via MM_TO_M=1e-3.
+  - name: temperature
+    unit: degC
+    category: forcing
+    source_kind: forcing
+    model_input_format: Land-node data_input_dict; drives decay, crop growth, treatment transformations,
+      demand wastewater quality
+    notes: Reference 20 degC for decay k(T)=k_ref*coeff^(T-20). Kelvin/Fahrenheit make the exponent astronomically
+      wrong (dt_007).
+  - name: atmospheric deposition
+    unit: kg/timestep (N load)
+    category: forcing
+    source_kind: forcing
+    model_input_format: Nutrient (N) input to Land surfaces
+  - name: prescribed catchment inflow (flow + pollutant timeseries)
+    unit: m3/d or ML/d (flow); kg/timestep or mg/L (quality)
+    category: forcing
+    source_kind: forcing
+    model_input_format: Catchment-node data_input_dict keyed by (variable, pandas.Timestamp); primary
+      external-model coupling point
+    notes: Flow from m3/s sources must be x86400 to m3/d (dt_018). This is the coupling surface to upstream
+      hydrology/quality models.
+  parameters:
+  - name: surface area
+    unit: m2
+    category: parameters
+    source_kind: calibrated
+    model_input_format: Per-surface attribute on Land/ImperviousSurface/PerviousSurface/Groundwater nodes
+    notes: km2 or ha not converted gives 1e6x runoff error (dt_008). KM2_TO_M2=1e6.
+  - name: soil depth
+    unit: m
+    category: parameters
+    source_kind: calibrated
+    model_input_format: PerviousSurface attribute; typical 0.1-2.0 m
+    notes: mm not converted gives instant saturation or overflow (dt_011).
+  - name: field_capacity / wilting_point
+    unit: fraction
+    category: parameters
+    source_kind: calibrated
+    model_input_format: PerviousSurface soil-moisture thresholds (e.g. 0.3 / 0.12); IHACRES infiltration/ET/runoff
+      partitioning
+  - name: tank / storage capacity
+    unit: ML (or m3)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: Groundwater / Reservoir node capacity
+    notes: Default simulation volume is ML; mixing ML and m3 gives 1000x error and mass-balance violations
+      (dt_002).
+  - name: sewer capacity
+    unit: m3/d
+    category: parameters
+    source_kind: calibrated
+    model_input_format: Sewer node capacity (NOT ML/d)
+    notes: ML/d makes capacity 1000x too high so CSO never triggers (dt_006).
+  - name: residence / pipe routing time
+    unit: days
+    category: parameters
+    source_kind: calibrated
+    model_input_format: Sewer pipe_time, and time-area routing parameters on Land/Groundwater
+  - name: per-capita demand
+    unit: ML/person/d
+    category: parameters
+    source_kind: calibrated
+    model_input_format: ResidentialDemand factor (~1.5e-4 ML/person/d ~ 150 L/d)
+  - name: treatment throughput capacity
+    unit: ML/d
+    category: parameters
+    source_kind: calibrated
+    model_input_format: FWTW / WWTW treatment_throughput_capacity and process_parameters
+  - name: leakage rate
+    unit: fraction
+    category: parameters
+    source_kind: calibrated
+    model_input_format: Distribution-node loss fraction
+  - name: pollutant decay / transformation coefficients
+    unit: per day
+    category: parameters
+    source_kind: calibrated
+    model_input_format: DecayObj-bearing nodes; k(T)=k_ref*coeff^(T-20)
+    notes: Rates specified per day; per-second values are not auto-converted (dt_010 unit-table).
+  - name: surface pollutant_load / nutrient export coefficients
+    unit: kg/timestep (or kg/km2 for nutrient export)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: Per-surface pollutant generation; fertilizer application for agricultural surfaces
+    notes: Units stated inconsistently (kg/timestep per surface vs kg/km2 nutrient export); g/m2 vs kg/km2
+      confusion gives 1000x error (dt_012).
+  - name: reservoir / environmental-flow thresholds
+    unit: ML/d (or volume)
+    category: parameters
+    source_kind: calibrated
+    model_input_format: Reservoir/RiverReservoir abstraction and environmental-flow limits
+  initial_conditions:
+  - name: initial tank storage volume
+    unit: ML or m3
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: Groundwater/Reservoir/River initial_storage (volume + associated VQIP pollutant
+      masses)
+  - name: initial soil moisture
+    unit: m (or fraction of capacity)
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: PerviousSurface/Land initial soil-water state
+  - name: initial VQIP pollutant pools
+    unit: kg (additive) / mg/L,degC,pH (non-additive)
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: Per-node VQIP initialisation; pollutant in POLLUTANTS list but never loaded stays
+      constant zero (dt_010)
+  boundary_conditions:
+  - name: node-arc graph topology
+    unit: dimensionless
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: User-specified nodes and arcs (in_port/out_port must match node names exactly,
+      case-sensitive); at least one Waste terminal node required
+    notes: Mismatched arc port names raise KeyError at add_arcs() construction (dt_005).
+  - name: orchestration sequence
+    unit: dimensionless
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: Ordered list of per-timestep node function calls (default 13-step sequence, customizable
+      via model.orchestration)
+    notes: Sequence is deterministic and order-dependent; changing it changes results (dt_014). Default
+      order is not invariant.
+  - name: population / land-use fractions
+    unit: persons; fraction
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: Demand population and Land surface-area fractions (should sum to ~1.0)
+  - name: pollutant set definition (additive vs non-additive)
+    unit: dimensionless
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: constants POLLUTANTS / additive / non-additive lists; controls mixing rule (sum
+      vs volume-weighted)
+    notes: A non-additive pollutant placed in the additive list is summed instead of averaged, doubling
+      concentration at junctions (dt_003).
 outputs:
   primary:
-  - name: ET
-    unit: m/timestep
-    format: ''
-    source: skill_md
-  - name: Flood
-    unit: unknown
-    format: ''
-    source: skill_md
-  - name: discharge
-    canonical_id: discharge
-    unit: m3/s
-  - name: water_surface_elevation
-    canonical_id: water_surface_elevation
-    unit: m
-  - name: surcharge_volume
-    canonical_id: surcharge_volume
-    unit: m3
+  - name: flows
+    unit: volume per timestep (m3 or ML) plus VQIP pollutant masses/concentrations
+    description: Water volume and water-quality (VQIP) transferred along each arc; one record per arc
+      per timestep.
+    validation_rank: 2
+    emitted_in: flows.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Volume units are config-dependent (m3 vs ML); reconcile units before comparison.
+        - Aggregated/parsimonious representation prioritises cross-system fluxes over hydraulic detail.
+      detrending_options:
+      - none
+  - name: river flow / discharge
+    unit: m3/d or ML/d
+    description: Routed river discharge at a node, a subset of the flows record commonly compared to gauge
+      data.
+    validation_rank: 1
+    emitted_in: flows.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - 'Semi-distributed aggregation: a node represents an aggregated reach, not a precise gauge cross-section.'
+      detrending_options:
+      - none
+  - name: pollutant concentration / mass
+    unit: kg (additive) or mg/L, degC, pH (non-additive)
+    description: In-river / in-arc water-quality indicators (ammonia, phosphate, nitrate, BOD, DO, etc.).
+    validation_rank: 3
+    emitted_in: flows.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Validated against spot/grab samples in the GMD paper; observations are sparse and irregular
+          in time.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Spot-sample concentrations match a single instant; high temporal variability between samples.
+      detrending_options:
+      - none
+  - name: storage / tank levels
+    unit: volume (m3 or ML)
+    description: Storage levels at reservoir, groundwater, soil and treatment storm tanks; one record
+      per storage node per timestep.
+    validation_rank: 4
+    emitted_in: tanks.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Conceptual tank storage; absolute volume depends on configured capacity and units.
+      detrending_options:
+      - none
+  - name: land surface states (soil moisture, runoff, percolation)
+    unit: m or m3 per timestep
+    description: 'Per-surface land states: soil moisture, surface runoff/infiltration excess, percolation,
+      ET.'
+    validation_rank: 5
+    emitted_in: surfaces.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Conceptual IHACRES-style soil store; soil moisture is a relative state, not a directly measured
+          volumetric content.
+      detrending_options:
+      - none
+  - name: CSO spill / flood volume
+    unit: volume (m3 or ML)
+    description: Combined-sewer overflow spill and flood volumes from the sewer network.
+    validation_rank: 6
+    emitted_in: flows.csv
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Instantaneous rainfall response (no time-of-concentration) shifts spill timing; volume accuracy
+          ~78-83% vs detailed hydraulic models.
+      - obs_shape: categorical_event
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - CSO triggering is sensitive to sewer-capacity units (dt_006); spill timing less reliable than
+          spill volume.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: '{''description'': ''All nodes flood, river overflows, storage tanks
-    overflow every timestep.'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
-  affected_output: "{'root_cause': 'Precipitation in mm/day instead of m/day \u2014\
-    \ 1000\xD7 too much rainfall.', 'explanation': 'WSIMOD expects precipitation in\
-    \ meters per timestep. Most weather datasets provide mm/day. If MM_T"
-  detection: "{'root_cause': 'Precipitation in mm/day instead of m/day \u2014 1000\xD7\
-    \ too much rainfall.', 'explanation': 'WSIMOD expects precipitation in meters\
-    \ per timestep. Most weather datasets provide mm/day. If MM_T"
-  fix: "{'action': 'Multiply precipitation values by constants.MM_TO_M (1e-3)', 'tool_to_run':\
-    \ 'convert_forcing_data', 'manual_steps': ['Check max(precipitation) \u2014 should\
-    \ be < 0.5 m/d for most climates', 'If "
+  symptom: All nodes flood, river overflows, storage tanks overflow every timestep.
+  diagnosis: 'Precipitation in mm/day instead of m/day — 1000× too much rainfall.; WSIMOD expects precipitation
+    in meters per timestep. Most weather datasets provide mm/day. If MM_TO_M (1e-3) conversion is not
+    applied, the model receives 1000× too much rain. The model runs without error.
+
+    ; [''data_input_dict'', ''La'
+  remedy: Multiply precipitation values by constants.MM_TO_M (1e-3); convert_forcing_data; ['Check max(precipitation)
+    — should be < 0.5 m/d for most climates', 'If max > 1.0 m/d, divide by 1000']; validate_outputs()
+    in convert_forcing_data.py checks for unrealistic values
+  severity: silent
 - id: dt_002
-  description: "{'description': 'Mass balance violations in storage nodes. Volume\
-    \ numbers 1000\xD7 too large or small.', 'error_pattern': '', 'detection_method':\
-    \ 'value_comparison'}"
-  affected_output: "{'root_cause': 'Mixing ML (megalitres) and m\xB3 units \u2014\
-    \ ML_TO_M3 = 1000.', 'explanation': \"WSIMOD's default simulation volume is ML\
-    \ (megalitres). Some node parameters like sewer capacity use m\xB3. Mixing "
-  detection: "{'root_cause': 'Mixing ML (megalitres) and m\xB3 units \u2014 ML_TO_M3\
-    \ = 1000.', 'explanation': \"WSIMOD's default simulation volume is ML (megalitres).\
-    \ Some node parameters like sewer capacity use m\xB3. Mixing "
-  fix: "{'action': 'Verify all volume parameters use consistent units \u2014 ML for\
-    \ storage, m\xB3/d for sewer', 'tool_to_run': 'convert_parameters', 'manual_steps':\
-    \ ['Check node capacity units in the model documenta"
+  symptom: Mass balance violations in storage nodes. Volume numbers 1000× too large or small.
+  diagnosis: 'Mixing ML (megalitres) and m³ units — ML_TO_M3 = 1000.; WSIMOD''s default simulation volume
+    is ML (megalitres). Some node parameters like sewer capacity use m³. Mixing units causes 1000× errors
+    in water routing. MM_M2_TO_SIM_VOLUME converts precipitation × area to ML.
+
+    ; [''constants.ML_TO_M3'', ''consta'
+  remedy: Verify all volume parameters use consistent units — ML for storage, m³/d for sewer; convert_parameters;
+    ['Check node capacity units in the model documentation', 'Sewer capacity is m³/d; Groundwater/Reservoir
+    capacity may be m³ or ML']; Use convert_parameters.py which handles conversions automaticall
+  severity: silent
 - id: dt_003
-  description: '{''description'': ''Pollutant concentrations double when two flows
-    merge at a junction node.'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
-  affected_output: "{'root_cause': 'Non-additive pollutant (DO, temperature, pH) treated\
-    \ as additive \u2014 masses summed instead of volume-weighted average.', 'explanation':\
-    \ 'WSIMOD has two pollutant types: additive (kg, mas"
-  detection: "{'root_cause': 'Non-additive pollutant (DO, temperature, pH) treated\
-    \ as additive \u2014 masses summed instead of volume-weighted average.', 'explanation':\
-    \ 'WSIMOD has two pollutant types: additive (kg, mas"
-  fix: '{''action'': ''Ensure custom pollutants are in the correct list in constants.py'',
-    ''tool_to_run'': None, ''manual_steps'': [''Check if pollutant is mass-based (additive)
-    or concentration-based (non-additive)'''
+  symptom: Pollutant concentrations double when two flows merge at a junction node.
+  diagnosis: 'Non-additive pollutant (DO, temperature, pH) treated as additive — masses summed instead
+    of volume-weighted average.; WSIMOD has two pollutant types: additive (kg, mass sums) and non-additive
+    (mg/L, volume-weighted average). If a custom pollutant is placed in the wrong list, mixing produces
+    incorrec'
+  remedy: Ensure custom pollutants are in the correct list in constants.py; None; ['Check if pollutant
+    is mass-based (additive) or concentration-based (non-additive)', 'Move to correct list in POLLUTANTS/ADDITIVE_POLLUTANTS/NON_ADDITIVE_POLLUTANTS'];
+    Review constants.py before adding custom pollutants
+  severity: silent
 - id: dt_004
-  description: "{'description': 'KeyError during model.run() \u2014 model cannot find\
-    \ forcing data for any timestep.', 'error_pattern': 'KeyError', 'detection_method':\
-    \ 'log_match'}"
-  affected_output: '{''root_cause'': ''data_input_dict keys use string dates instead
-    of Timestamp/to_datetime objects.'', ''explanation'': "WSIMOD looks up forcing
-    data using (variable, model_date) where model_date is a to_dat'
-  detection: '{''root_cause'': ''data_input_dict keys use string dates instead of
-    Timestamp/to_datetime objects.'', ''explanation'': "WSIMOD looks up forcing data
-    using (variable, model_date) where model_date is a to_dat'
-  fix: '{''action'': ''Ensure dates are converted to Timestamps before building data_input_dict'',
-    ''tool_to_run'': ''convert_forcing_data'', ''manual_steps'': [''data.date = pd.to_datetime(data.date)
-    before set_index()'
+  symptom: KeyError during model.run() — model cannot find forcing data for any timestep.
+  diagnosis: 'data_input_dict keys use string dates instead of Timestamp/to_datetime objects.; WSIMOD
+    looks up forcing data using (variable, model_date) where model_date is a to_datetime or pandas Timestamp.
+    If keys are plain strings like ''2009-01-01'', the lookup fails with KeyError because str != Timestamp.
+
+    ; ['''
+  remedy: Ensure dates are converted to Timestamps before building data_input_dict; convert_forcing_data;
+    ['data.date = pd.to_datetime(data.date) before set_index().to_dict()', 'Or use YAML data loading which
+    handles this automatically']; Always pd.to_datetime() date columns before building dicts
+  severity: fatal
 - id: dt_005
-  description: "{'description': 'KeyError when calling model.add_arcs() \u2014 node\
-    \ name not found.', 'error_pattern': 'KeyError', 'detection_method': 'log_match'}"
-  affected_output: '{''root_cause'': ''Arc in_port or out_port name does not match
-    any defined node name (case-sensitive).'', ''explanation'': "WSIMOD looks up nodes
-    by exact name match. ''My_River'' != ''my_river''. The error occ'
-  detection: '{''root_cause'': ''Arc in_port or out_port name does not match any defined
-    node name (case-sensitive).'', ''explanation'': "WSIMOD looks up nodes by exact
-    name match. ''My_River'' != ''my_river''. The error occ'
-  fix: '{''action'': ''Verify all arc in_port/out_port values match node names exactly'',
-    ''tool_to_run'': ''run_wsimod'', ''manual_steps'': ["List all node names: [n[''name'']
-    for n in nodes]", "Check each arc''s in_port'
+  symptom: KeyError when calling model.add_arcs() — node name not found.
+  diagnosis: 'Arc in_port or out_port name does not match any defined node name (case-sensitive).; WSIMOD
+    looks up nodes by exact name match. ''My_River'' != ''my_river''. The error occurs at model construction,
+    not during simulation.
+
+    ; [''Model.add_arcs'', ''arcs.Arc.__init__'']'
+  remedy: 'Verify all arc in_port/out_port values match node names exactly; run_wsimod; ["List all node
+    names: [n[''name''] for n in nodes]", "Check each arc''s in_port and out_port against that list"];
+    run_wsimod.py preflight checks validate arc→node references'
+  severity: fatal
 - id: dt_006
-  description: '{''description'': ''No combined sewer overflow (CSO) events even during
-    heavy rainfall.'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
-  affected_output: "{'root_cause': 'Sewer capacity specified in ML/d instead of m\xB3\
-    /d \u2014 1000\xD7 too high.', 'explanation': 'Sewer capacity parameter is in\
-    \ m\xB3/d. If the user provides ML/d values (e.g., capacity=10 meaning 10"
-  detection: "{'root_cause': 'Sewer capacity specified in ML/d instead of m\xB3/d\
-    \ \u2014 1000\xD7 too high.', 'explanation': 'Sewer capacity parameter is in m\xB3\
-    /d. If the user provides ML/d values (e.g., capacity=10 meaning 10"
-  fix: "{'action': 'Use m\xB3/d for sewer capacity. If you have ML/d, multiply by\
-    \ ML_TO_M3 (1000)', 'tool_to_run': 'convert_parameters', 'manual_steps': ['Check\
-    \ sewer capacity: typical urban = 0.001 \xD7 contributi"
+  symptom: No combined sewer overflow (CSO) events even during heavy rainfall.
+  diagnosis: 'Sewer capacity specified in ML/d instead of m³/d — 1000× too high.; Sewer capacity parameter
+    is in m³/d. If the user provides ML/d values (e.g., capacity=10 meaning 10 ML/d = 10,000 m³/d), the
+    sewer never overflows. The model runs silently with no CSO events.
+
+    ; [''Sewer.__init__'', ''Sewer.make_dischar'
+  remedy: 'Use m³/d for sewer capacity. If you have ML/d, multiply by ML_TO_M3 (1000); convert_parameters;
+    [''Check sewer capacity: typical urban = 0.001 × contributing_area_m²'', ''For a 1 km² urban area,
+    capacity ≈ 1000 m³/d'']; convert_parameters.py calculates sewer capacity from area automatically'
+  severity: silent
 - id: dt_007
-  description: "{'description': 'Pollutant decay rates are wildly wrong \u2014 too\
-    \ fast or too slow.', 'error_pattern': '', 'detection_method': 'value_comparison'}"
-  affected_output: "{'root_cause': 'Temperature not in \xB0C \u2014 decay rate adjusts\
-    \ exponentially using T-20.', 'explanation': \"WSIMOD's DecayObj uses k(T) = k_ref\
-    \ \xD7 (coeff ^ (T - 20)). If temperature is in Kelvin (e.g., 293 "
-  detection: "{'root_cause': 'Temperature not in \xB0C \u2014 decay rate adjusts exponentially\
-    \ using T-20.', 'explanation': \"WSIMOD's DecayObj uses k(T) = k_ref \xD7 (coeff\
-    \ ^ (T - 20)). If temperature is in Kelvin (e.g., 293 "
-  fix: "{'action': 'Ensure temperature input is in \xB0C, not Kelvin or Fahrenheit',\
-    \ 'tool_to_run': 'convert_forcing_data', 'manual_steps': ['Check temperature range:\
-    \ should be -30 to +45\xB0C for most locations', "
+  symptom: Pollutant decay rates are wildly wrong — too fast or too slow.
+  diagnosis: 'Temperature not in °C — decay rate adjusts exponentially using T-20.; WSIMOD''s DecayObj
+    uses k(T) = k_ref × (coeff ^ (T - 20)). If temperature is in Kelvin (e.g., 293 instead of 20), the
+    exponent is 273 — producing astronomically wrong decay rates. The model runs without error.
+
+    ; [''DecayObj.decay_po'
+  remedy: 'Ensure temperature input is in °C, not Kelvin or Fahrenheit; convert_forcing_data; [''Check
+    temperature range: should be -30 to +45°C for most locations'', ''If > 200, likely Kelvin — subtract
+    273.15'']; convert_forcing_data.py validates temperature range'
+  severity: silent
 - id: dt_008
-  description: "{'description': 'Runoff volume 1e6\xD7 too high or too low compared\
-    \ to expected.', 'error_pattern': '', 'detection_method': 'value_comparison'}"
-  affected_output: "{'root_cause': 'Land surface area in km\xB2 instead of m\xB2 \u2014\
-    \ missing KM2_TO_M2 conversion.', 'explanation': 'WSIMOD expects surface area\
-    \ in m\xB2. If area is given as 50 (meaning 50 km\xB2) but interpreted as 5"
-  detection: "{'root_cause': 'Land surface area in km\xB2 instead of m\xB2 \u2014\
-    \ missing KM2_TO_M2 conversion.', 'explanation': 'WSIMOD expects surface area\
-    \ in m\xB2. If area is given as 50 (meaning 50 km\xB2) but interpreted as 5"
-  fix: "{'action': 'Multiply km\xB2 by KM2_TO_M2 (1e6) before passing to surface area\
-    \ parameter', 'tool_to_run': 'convert_parameters', 'manual_steps': ['Verify: area\
-    \ in m\xB2 for a 50 km\xB2 catchment = 50e6 m\xB2', 'If "
+  symptom: Runoff volume 1e6× too high or too low compared to expected.
+  diagnosis: 'Land surface area in km² instead of m² — missing KM2_TO_M2 conversion.; WSIMOD expects surface
+    area in m². If area is given as 50 (meaning 50 km²) but interpreted as 50 m², the runoff volume is
+    1e6× too small. Conversely, if m² value is used where km² is expected, volume is 1e6× too large.
+
+    ; [''Land.'
+  remedy: 'Multiply km² by KM2_TO_M2 (1e6) before passing to surface area parameter; convert_parameters;
+    [''Verify: area in m² for a 50 km² catchment = 50e6 m²'', ''If runoff is unrealistic, check area units
+    first'']; convert_parameters.py auto-converts area based on --area-unit flag'
+  severity: silent
 - id: dt_009
-  description: "{'description': 'Mass balance violations occur but are not reported\
-    \ \u2014 errors silently masked.', 'error_pattern': '', 'detection_method': 'value_comparison'}"
-  affected_output: '{''root_cause'': ''FLOAT_ACCURACY = 1e-11 tolerance masks small
-    but accumulating errors.'', ''explanation'': ''WSIMOD checks mass balance at each
-    node with tolerance 1e-11. Floating-point arithmetic can accu'
-  detection: '{''root_cause'': ''FLOAT_ACCURACY = 1e-11 tolerance masks small but
-    accumulating errors.'', ''explanation'': ''WSIMOD checks mass balance at each
-    node with tolerance 1e-11. Floating-point arithmetic can accu'
-  fix: '{''action'': ''Monitor cumulative mass balance over the full simulation period'',
-    ''tool_to_run'': ''parse_wsimod_output'', ''manual_steps'': [''Compare total inflow
-    vs total outflow + storage change'', ''If cumul'
+  symptom: Mass balance violations occur but are not reported — errors silently masked.
+  diagnosis: 'FLOAT_ACCURACY = 1e-11 tolerance masks small but accumulating errors.; WSIMOD checks mass
+    balance at each node with tolerance 1e-11. Floating-point arithmetic can accumulate errors over many
+    timesteps, especially with custom node implementations. Small violations pass the check but accumulate.
+
+    ; [''N'
+  remedy: Monitor cumulative mass balance over the full simulation period; parse_wsimod_output; ['Compare
+    total inflow vs total outflow + storage change', 'If cumulative imbalance > 1% of total flow, investigate'];
+    Add cumulative mass balance check in post-processing
+  severity: silent
 - id: dt_010
-  description: '{''description'': ''A pollutant appears in VQIP but with constant
-    zero value throughout simulation.'', ''error_pattern'': '''', ''detection_method'':
-    ''value_comparison''}'
-  affected_output: '{''root_cause'': "Pollutant defined in POLLUTANTS list but not
-    initialized in any node''s VQIP or pollutant_load.", ''explanation'': ''If a pollutant
-    is in the global POLLUTANTS list but no node generates i'
-  detection: '{''root_cause'': "Pollutant defined in POLLUTANTS list but not initialized
-    in any node''s VQIP or pollutant_load.", ''explanation'': ''If a pollutant is
-    in the global POLLUTANTS list but no node generates i'
-  fix: '{''action'': ''Add pollutant loads to relevant surfaces or use set_simple_pollutants()'',
-    ''tool_to_run'': None, ''manual_steps'': [''Check which pollutants you need to
-    track'', ''Set pollutant_load in each surf'
+  symptom: A pollutant appears in VQIP but with constant zero value throughout simulation.
+  diagnosis: Pollutant defined in POLLUTANTS list but not initialized in any node's VQIP or pollutant_load.;
+    If a pollutant is in the global POLLUTANTS list but no node generates it (via pollutant_load, data_input_dict,
+    or initial conditions), it remains zero throughout the simulation. This is technically correc
+  remedy: Add pollutant loads to relevant surfaces or use set_simple_pollutants(); None; ['Check which
+    pollutants you need to track', 'Set pollutant_load in each surface that generates that pollutant',
+    'Or use set_simple_pollutants() for phosphate + temperature only']; Review pollutant configuration
+    before ru
+  severity: degraded
 - id: dt_011
-  description: '{''description'': ''Soil saturates instantly after first rain event,
-    or never saturates.'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
-  affected_output: "{'root_cause': 'Soil depth in mm instead of m \u2014 depth=500\
-    \ interpreted as 500 m, not 0.5 m.', 'explanation': 'PerviousSurface depth parameter\
-    \ is in meters. If soil depth from HWSD (typically in mm, e.g"
-  detection: "{'root_cause': 'Soil depth in mm instead of m \u2014 depth=500 interpreted\
-    \ as 500 m, not 0.5 m.', 'explanation': 'PerviousSurface depth parameter is in\
-    \ meters. If soil depth from HWSD (typically in mm, e.g"
-  fix: '{''action'': ''Convert depth from mm to m using MM_TO_M (1e-3) only if source
-    is in mm'', ''tool_to_run'': ''convert_parameters'', ''manual_steps'': [''Check
-    source units: HWSD typically gives mm'', ''depth_m = de'
+  symptom: Soil saturates instantly after first rain event, or never saturates.
+  diagnosis: Soil depth in mm instead of m — depth=500 interpreted as 500 m, not 0.5 m.; PerviousSurface
+    depth parameter is in meters. If soil depth from HWSD (typically in mm, e.g., 500 mm) is passed directly
+    as 500, the soil tank has 500 m depth — effectively infinite. Soil never saturates. If depth from
+    a dat
+  remedy: 'Convert depth from mm to m using MM_TO_M (1e-3) only if source is in mm; convert_parameters;
+    [''Check source units: HWSD typically gives mm'', ''depth_m = depth_mm * 1e-3'', ''Typical range:
+    0.1 to 2.0 m'']; convert_parameters.py handles --depth-unit flag'
+  severity: silent
 - id: dt_012
-  description: "{'description': 'Nutrient export from land surfaces is 1000\xD7 too\
-    \ high or too low.', 'error_pattern': '', 'detection_method': 'value_comparison'}"
-  affected_output: "{'root_cause': 'Pollutant load in wrong units \u2014 g/m\xB2 vs\
-    \ kg/km\xB2 vs kg/m\xB2.', 'explanation': 'Surface pollutant_load is in kg per\
-    \ timestep per unit. Literature values may be in g/m\xB2/yr, kg/km\xB2/yr, or\
-    \ mg/"
-  detection: "{'root_cause': 'Pollutant load in wrong units \u2014 g/m\xB2 vs kg/km\xB2\
-    \ vs kg/m\xB2.', 'explanation': 'Surface pollutant_load is in kg per timestep\
-    \ per unit. Literature values may be in g/m\xB2/yr, kg/km\xB2/yr, or mg/"
-  fix: "{'action': 'Convert literature values to kg/timestep using appropriate constants',\
-    \ 'tool_to_run': 'convert_parameters', 'manual_steps': ['Typical phosphate load:\
-    \ 1e-8 to 1e-6 kg/timestep for 100 m\xB2 su"
+  symptom: Nutrient export from land surfaces is 1000× too high or too low.
+  diagnosis: 'Pollutant load in wrong units — g/m² vs kg/km² vs kg/m².; Surface pollutant_load is in kg
+    per timestep per unit. Literature values may be in g/m²/yr, kg/km²/yr, or mg/L concentration. Converting
+    incorrectly gives wrong nutrient export. G_M2_TO_KG_KM2 = 1e3.
+
+    ; [''PerviousSurface.pollutant_load'', ''Impe'
+  remedy: 'Convert literature values to kg/timestep using appropriate constants; convert_parameters; [''Typical
+    phosphate load: 1e-8 to 1e-6 kg/timestep for 100 m² surface'', ''Check model output against expected
+    nutrient export'']; Cross-check with published nutrient export coefficients'
+  severity: silent
 - id: dt_013
-  description: "{'description': 'KeyError during simulation \u2014 model cannot find\
-    \ data for a specific date.', 'error_pattern': 'KeyError', 'detection_method':\
-    \ 'log_match'}"
-  affected_output: '{''root_cause'': ''data_input_dict does not cover the full simulation
-    date range.'', ''explanation'': "If model.dates includes dates not present in
-    data_input_dict, a KeyError occurs when the model tries to'
-  detection: '{''root_cause'': ''data_input_dict does not cover the full simulation
-    date range.'', ''explanation'': "If model.dates includes dates not present in
-    data_input_dict, a KeyError occurs when the model tries to'
-  fix: '{''action'': ''Ensure data_input_dict covers all dates in model.dates'', ''tool_to_run'':
-    ''convert_forcing_data'', ''manual_steps'': [''Compare date ranges: min/max of
-    data vs min/max of model.dates'', ''Fill gap'
+  symptom: KeyError during simulation — model cannot find data for a specific date.
+  diagnosis: 'data_input_dict does not cover the full simulation date range.; If model.dates includes
+    dates not present in data_input_dict, a KeyError occurs when the model tries to look up forcing for
+    that date. This can happen when the CSV data has gaps or doesn''t cover the full period.
+
+    ; [''Land.run'', ''Catchmen'
+  remedy: 'Ensure data_input_dict covers all dates in model.dates; convert_forcing_data; [''Compare date
+    ranges: min/max of data vs min/max of model.dates'', ''Fill gaps with interpolation or reduce simulation
+    period'']; convert_forcing_data.py reports date range coverage'
+  severity: fatal
 - id: dt_014
-  description: '{''description'': ''Same model produces different results when orchestration
-    order is changed.'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': "WSIMOD''s orchestration sequence determines
-    when each node processes water.", ''explanation'': ''The order in which nodes
-    are called each timestep matters. If a Land node runs before Deman'
-  detection: '{''root_cause'': "WSIMOD''s orchestration sequence determines when each
-    node processes water.", ''explanation'': ''The order in which nodes are called
-    each timestep matters. If a Land node runs before Deman'
-  fix: '{''action'': ''Use the default orchestration order unless you have a specific
-    reason to change'', ''tool_to_run'': None, ''manual_steps'': [''Check model.orchestration
-    to see the current order'', ''Only customiz'
+  symptom: Same model produces different results when orchestration order is changed.
+  diagnosis: WSIMOD's orchestration sequence determines when each node processes water.; The order in
+    which nodes are called each timestep matters. If a Land node runs before Demand, the land receives
+    all precipitation. If Demand runs first, it may abstract water before land processes it. The default
+    order is de
+  remedy: Use the default orchestration order unless you have a specific reason to change; None; ['Check
+    model.orchestration to see the current order', 'Only customize if your system requires non-standard
+    routing']; Document any custom orchestration with rationale
+  severity: degraded
 - id: dt_015
-  description: '{''description'': ''Evapotranspiration dries out all storage in a
-    few days, or has no effect.'', ''error_pattern'': '''', ''detection_method'':
-    ''value_comparison''}'
-  affected_output: "{'root_cause': 'ET\u2080 in mm/day instead of m/day \u2014 1000\xD7\
-    \ too high or too low.', 'explanation': \"Like precipitation, ET\u2080 must be\
-    \ in m/timestep. If ET\u2080 is 5 mm/d and not converted, it's interpreted as\
-    \ 5 m"
-  detection: "{'root_cause': 'ET\u2080 in mm/day instead of m/day \u2014 1000\xD7\
-    \ too high or too low.', 'explanation': \"Like precipitation, ET\u2080 must be\
-    \ in m/timestep. If ET\u2080 is 5 mm/d and not converted, it's interpreted as\
-    \ 5 m"
-  fix: "{'action': 'Apply MM_TO_M conversion to ET\u2080 only if source is in mm/day',\
-    \ 'tool_to_run': 'convert_forcing_data', 'manual_steps': ['Typical ET\u2080: 0.001\
-    \ to 0.008 m/d (1-8 mm/d)', 'If ET\u2080 > 0.02 m/d, like"
+  symptom: Evapotranspiration dries out all storage in a few days, or has no effect.
+  diagnosis: 'ET₀ in mm/day instead of m/day — 1000× too high or too low.; Like precipitation, ET₀ must
+    be in m/timestep. If ET₀ is 5 mm/d and not converted, it''s interpreted as 5 m/d — drying everything
+    instantly. Conversely, if already in m and multiplied by 1e-3 again, ET₀ becomes negligible.
+
+    ; [''Land.run'', ''P'
+  remedy: 'Apply MM_TO_M conversion to ET₀ only if source is in mm/day; convert_forcing_data; [''Typical
+    ET₀: 0.001 to 0.008 m/d (1-8 mm/d)'', ''If ET₀ > 0.02 m/d, likely still in mm'']; validate_outputs()
+    checks ET₀ range'
+  severity: silent
 - id: dt_016
-  description: '{''description'': ''ImportError when importing wsimod or running CLI.'',
-    ''error_pattern'': ''ImportError|ModuleNotFoundError'', ''detection_method'':
-    ''log_match''}'
-  affected_output: "{'root_cause': 'Missing Python dependency \u2014 PyYAML, pandas,\
-    \ dill, or tqdm not installed.', 'explanation': 'WSIMOD requires PyYAML, pandas,\
-    \ dill, and tqdm. If any is missing, import fails. This is comm"
-  detection: "{'root_cause': 'Missing Python dependency \u2014 PyYAML, pandas, dill,\
-    \ or tqdm not installed.', 'explanation': 'WSIMOD requires PyYAML, pandas, dill,\
-    \ and tqdm. If any is missing, import fails. This is comm"
-  fix: '{''action'': ''Install WSIMOD with all dependencies: pip install wsimod'',
-    ''tool_to_run'': None, ''manual_steps'': [''pip install PyYAML pandas dill tqdm'',
-    ''Or pip install wsimod (installs all automatically)'''
+  symptom: ImportError when importing wsimod or running CLI.
+  diagnosis: 'Missing Python dependency — PyYAML, pandas, dill, or tqdm not installed.; WSIMOD requires
+    PyYAML, pandas, dill, and tqdm. If any is missing, import fails. This is common in fresh virtual environments
+    or when installing from source without dependencies.
+
+    ; [''wsimod.__init__'', ''wsimod.orchestration.mod'
+  remedy: 'Install WSIMOD with all dependencies: pip install wsimod; None; [''pip install PyYAML pandas
+    dill tqdm'', ''Or pip install wsimod (installs all automatically)'']; Use pip install wsimod rather
+    than manual dependency management'
+  severity: fatal
 - id: dt_017
-  description: '{''description'': ''Cumulative water balance drifts over long simulations
-    (>5 years).'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
-  affected_output: '{''root_cause'': ''Floating-point precision in VQIP operations
-    accumulates over many timesteps.'', ''explanation'': ''Each VQIP operation (blend,
-    dilute, extract) involves floating-point arithmetic. Over tho'
-  detection: '{''root_cause'': ''Floating-point precision in VQIP operations accumulates
-    over many timesteps.'', ''explanation'': ''Each VQIP operation (blend, dilute,
-    extract) involves floating-point arithmetic. Over tho'
-  fix: '{''action'': ''Monitor cumulative mass balance and report drift as percentage
-    of total flow'', ''tool_to_run'': ''parse_wsimod_output'', ''manual_steps'': [''Sum
-    all inflows and outflows over the full simulation'
+  symptom: Cumulative water balance drifts over long simulations (>5 years).
+  diagnosis: Floating-point precision in VQIP operations accumulates over many timesteps.; Each VQIP operation
+    (blend, dilute, extract) involves floating-point arithmetic. Over thousands of timesteps, small rounding
+    errors accumulate. Individual errors are below FLOAT_ACCURACY (1e-11) but cumulative drift can re
+  remedy: 'Monitor cumulative mass balance and report drift as percentage of total flow; parse_wsimod_output;
+    [''Sum all inflows and outflows over the full simulation'', ''Compare: |total_in - total_out - delta_storage|
+    / total_in'', ''If > 0.1%, investigate node-by-node'']; Run shorter simulations and verify mass b'
+  severity: degraded
 - id: dt_018
-  description: "{'description': 'River flow values are 86400\xD7 too high or too low.',\
-    \ 'error_pattern': '', 'detection_method': 'value_comparison'}"
-  affected_output: "{'root_cause': 'Flow rate in m\xB3/s not converted to m\xB3/d\
-    \ \u2014 missing \xD7 M3_S_TO_M3_DT (86400).', 'explanation': \"If flow data is\
-    \ in m\xB3/s and used directly as m\xB3/timestep (where timestep is 1 day), the\
-    \ flo"
-  detection: "{'root_cause': 'Flow rate in m\xB3/s not converted to m\xB3/d \u2014\
-    \ missing \xD7 M3_S_TO_M3_DT (86400).', 'explanation': \"If flow data is in m\xB3\
-    /s and used directly as m\xB3/timestep (where timestep is 1 day), the flo"
-  fix: "{'action': 'Apply M3_S_TO_M3_DT (86400) conversion only if source is in m\xB3\
-    /s', 'tool_to_run': 'convert_forcing_data', 'manual_steps': ['Check source flow\
-    \ units: m\xB3/s, m\xB3/d, ML/d?', 'm\xB3/s \xD7 86400 = m\xB3/"
-unit_conversions: []
+  symptom: River flow values are 86400× too high or too low.
+  diagnosis: Flow rate in m³/s not converted to m³/d — missing × M3_S_TO_M3_DT (86400).; If flow data
+    is in m³/s and used directly as m³/timestep (where timestep is 1 day), the flow is 86400× too small.
+    Conversely, if m³/d data is multiplied by 86400, it's 86400× too large. The constant M3_S_TO_M3_DT
+    converts m³
+  remedy: 'Apply M3_S_TO_M3_DT (86400) conversion only if source is in m³/s; convert_forcing_data; [''Check
+    source flow units: m³/s, m³/d, ML/d?'', ''m³/s × 86400 = m³/d; m³/s × 86.4 = ML/d'']; convert_forcing_data.py
+    handles --flow-unit flag'
+  severity: silent

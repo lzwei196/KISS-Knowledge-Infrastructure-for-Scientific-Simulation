@@ -240,7 +240,7 @@ outputs:
   - var: "Average Net Power"
     validation_rank: 4
     unit: "MW (MWe or MWth)"
-    description: "Average net electricity or direct-use heat production over the lifetime."
+    description: "Average surface-plant net electricity or direct-use heat production over the lifetime."
     emitted_in: "HDR.out — Summary of Results"
     observability:
       comparable_obs_shapes:
@@ -253,7 +253,7 @@ outputs:
   - var: "geofluid_production_temperature"
     validation_rank: 1
     unit: "degC"
-    description: "Year-by-year production (geofluid) temperature profile reflecting thermal drawdown."
+    description: "Year-by-year subsurface produced-geofluid temperature profile reflecting thermal drawdown."
     emitted_in: "HDR.out — Production Profile table"
     observability:
       comparable_obs_shapes:
@@ -279,7 +279,7 @@ outputs:
   - var: "annual_energy_production"
     validation_rank: 6
     unit: "GWh/year"
-    description: "Average annual electricity (or heat) generation profile."
+    description: "Average annual surface-plant electricity (or direct-use heat) generation profile."
     emitted_in: "HDR.out — Energy Profile table"
     observability:
       comparable_obs_shapes:
@@ -376,3 +376,17 @@ safety:
     - {statement: "The reservoir/well-field is represented as a lumped 0-D system with no spatial mesh.", scope: "spatial geometry", source: "GEOPHIRES-X documentation and Reservoir.py module structure", status: adopted}
     - {statement: "Energy and economic accounting are closed over the plant lifetime (default 30 yr); the surface plant uses efficiency/exergy correlations rather than a resolved surface energy balance.", scope: "closure", source: "GEOPHIRES-X Theoretical-Basis (Surface Plant Conversion, Economic Calculation Methods)", status: adopted}
     - {statement: "100% drilling success is assumed by default unless multipliers are applied.", scope: "economic cost model", source: "GEOPHIRES-X Theoretical-Basis (Key Assumptions)", status: tentative}
+
+medium_evidence:
+  - var: "Average Net Power"
+    source: dag.yaml
+    quote: "Surface-plant energy conversion (electricity ORC/flash, direct-use heat, cogeneration)"
+    note: "scope_in identifies the output medium as surface-plant electricity or direct-use heat."
+  - var: "geofluid_production_temperature"
+    source: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.61435_ijred.2025.61071.txt
+    quote: "These codes are often used to simulate subsurface fluid flow and heat transfer via the implementation of different numerical algorithms or methods (e.g. finite difference/element/volume; boundary/discrete element)."
+    note: "The cached geothermal reservoir review identifies the temperature medium as subsurface fluid."
+  - var: "annual_energy_production"
+    source: dag.yaml
+    quote: "Surface-plant energy conversion (electricity ORC/flash, direct-use heat, cogeneration)"
+    note: "scope_in identifies annual energy as surface-plant electricity or direct-use heat."

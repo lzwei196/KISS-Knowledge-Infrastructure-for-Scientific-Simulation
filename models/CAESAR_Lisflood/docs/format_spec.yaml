@@ -1,152 +1,423 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
-  name: "CAESAR_Lisflood"
-  full_name: "HAIL-CAESAR (High-performance Architecture Independent LISFLOOD-CAESAR)"
-  version: "1.0"
-  domain: "Geomorphology / Flood inundation / Landscape evolution"
-  language: "C++"
-  parallelism: "OpenMP shared-memory"
-  binary_path: "KISSPATH_BINARIES/CAESAR_Lisflood/source/repo/bin/HAIL-CAESAR.exe"
-  source_url: "https://github.com/dvalters/HAIL-CAESAR"
-
+  name: CAESAR_Lisflood
+  language: c++
+  implementation:
+    id: hail-caesar
+    version: v1.0
+    provenance: C++ (OpenMP-parallel); HAIL-CAESAR, the High-performance Architecture-Independent LISFLOOD-CAESAR
+      port of CAESAR-Lisflood (D. Valters), github.com/dvalters/HAIL-CAESAR
+  scientific_reference_version: CAESAR-Lisflood (Coulthard et al. 2013, ESPL 38:1897-1906) — LISFLOOD-FP
+    inertial shallow-water routing (Bates et al. 2010) coupled to the CAESAR cellular-automaton LEM with
+    spatially variable TOPMODEL hydrology
 inputs:
-  dem:
-    - name: "surface_elevation"
-      format: "ESRI ASCII Grid (.asc)"
-      unit: "metres"
-      valid_range: [-500, 9000]
-      required: true
-      notes: "Outlet must touch DEM edge. NODATA_value must match header exactly (-9999)."
   forcing:
-    - name: "rainfall_rate"
-      format: "Plain text, headerless, space-delimited"
-      unit: "mm/hr"
-      valid_range: [0, 500]
-      required: true
-      notes: "One row per timestep. Multiple columns for spatially variable rainfall (matching hydroindex zones)."
-  supplementary:
-    - name: "hydroindex"
-      format: "ESRI ASCII Grid (.asc)"
-      unit: "integer zone IDs"
-      required: false
-      notes: "Same extent as DEM. Integer zone IDs matching rainfall columns."
-    - name: "grain_data"
-      format: "Special text (index, x, y, grain fractions)"
-      required: false
-    - name: "bedrock_dem"
-      format: "ESRI ASCII Grid (.asc)"
-      unit: "metres"
-      required: false
-      notes: "Elevations must be lower than surface DEM."
+  - name: Rainfall timeseries
+    unit: mm/hr (instantaneous rate, independent of timestep)
+    category: precipitation
+    source_kind: forcing
+    model_input_format: Headerless space-delimited text; one row per timestep, N columns matching N hydroindex
+      zones (1 column for uniform rainfall)
+    notes: rain_data_time_step (minutes) must match the file's temporal resolution exactly. Wrong units
+      (mm/day, m/s, kg/m2/s) silently mis-scale runoff. Drives the TOPMODEL runoff module.
   parameters:
-    critical:
-      - name: "max_run_duration"
-        unit: "hours"
-        valid_range: [0, 100000]
-        description: "Simulation duration. Must be set to T-1 (e.g., 71 for 72hr simulation)."
-      - name: "topmodel_m_value"
-        unit: "metres"
-        valid_range: [0.001, 0.05]
-        description: "TOPMODEL m parameter controlling subsurface flow. 0.005=flashy, 0.02=slow response."
-      - name: "mannings_n"
-        unit: "s/m^(1/3)"
-        valid_range: [0.01, 0.3]
-        description: "Manning's roughness coefficient. 0.03-0.06 for channels, 0.1+ for floodplains."
-      - name: "courant_number"
-        unit: "dimensionless"
-        valid_range: [0.3, 0.7]
-        description: "CFL stability control. 0.3 for <2m DEMs, 0.7 for 20-50m DEMs."
-      - name: "froude_num_limit"
-        unit: "dimensionless"
-        valid_range: [0.5, 1.0]
-        description: "Froude number limit for subcritical flow. Default 0.8."
-      - name: "rain_data_time_step"
-        unit: "minutes"
-        valid_range: [1, 1440]
-        description: "Timestep of rainfall input file. Must match actual file resolution."
-    sediment:
-      - name: "transport_law"
-        valid_values: ["wilcock", "einstein"]
-        description: "Sediment transport law: Wilcock-Crowe or Einstein-Brown."
-      - name: "active_layer_thickness"
-        unit: "metres"
-        valid_range: [0.01, 2.0]
-        description: "Surface layer thickness. Must be >= 4x erode_limit."
-      - name: "erode_limit"
-        unit: "metres"
-        valid_range: [0.001, 0.5]
-        description: "Max erosion/deposition per cell per step. ~0.01 for <=10m DEMs."
-    hillslope:
-      - name: "creep_rate"
-        unit: "m/yr"
-        valid_range: [0, 0.1]
-        description: "Soil creep rate."
-      - name: "slope_failure_thresh"
-        unit: "degrees"
-        valid_range: [20, 90]
-        description: "Critical angle for landslide."
-
+  - name: topmodel_m_value (TOPMODEL m / soil-store decay)
+    unit: m
+    category: hydrology
+    source_kind: calibrated
+    model_input_format: param-file key:value
+    notes: Controls hydrograph shape; ~0.002-0.005 flashy, ~0.02 slow. Expects metres, not mm.
+  - name: mannings_n (Manning roughness)
+    unit: s/m^(1/3)
+    category: hydraulics
+    source_kind: calibrated
+    model_input_format: param-file key:value (can be spatially variable raster)
+    notes: 0.03-0.06 channels, 0.1+ floodplains. Default 0.04.
+  - name: grain-size fractions and proportions (9 fractions)
+    unit: m diameter; proportions sum to 1
+    category: sediment
+    source_kind: dataset_lookup
+    model_input_format: param-file values or optional grain data file (index x y [9 surface] [9 subsurface]
+      fractions)
+    notes: Default Swale diameters [0.000065..0.128 m] and proportions used if no grain data file supplied.
+  - name: active_layer_thickness
+    unit: m
+    category: sediment
+    source_kind: calibrated
+    model_input_format: param-file key:value
+    notes: Default 0.2; must be >= 4x erode_limit or numerical instability results.
+  - name: erode_limit (max erode limit)
+    unit: m
+    category: sediment
+    source_kind: calibrated
+    model_input_format: param-file key:value
+    notes: Max erosion/deposition per cell per step; ~0.01 for DEMs <=10 m to prevent instability.
+  - name: chann_lateral_erosion / lateral erosion rate
+    unit: dimensionless
+    category: sediment
+    source_kind: calibrated
+    model_input_format: param-file key:value
+    notes: In-channel ~10-20; bank rate 0.01-0.001 braided to ~0.0001 meandering.
+  - name: creep_rate (soil creep)
+    unit: m/yr
+    category: hillslope
+    source_kind: calibrated
+    model_input_format: param-file key:value
+  - name: slope_failure_thresh (landslide critical angle)
+    unit: degrees
+    category: hillslope
+    source_kind: calibrated
+    model_input_format: param-file key:value
+    notes: Default 45 deg; can vary with j_mean soil saturation.
+  - name: vegetation critical shear / grass maturity
+    unit: shear-stress threshold; maturity 0-1
+    category: vegetation
+    source_kind: calibrated
+    model_input_format: param-file key:value (vegetation_on)
+  - name: Bedrock DEM (optional)
+    unit: m elevation
+    category: substrate
+    source_kind: dataset_lookup
+    model_input_format: ESRI ASCII Grid (.asc), same extent as DEM; elevations below surface
+    notes: Hard floor below which erosion cannot occur (bedrock_layer_on).
+  initial_conditions:
+  - name: DEM (surface elevation)
+    unit: m above datum
+    category: topography
+    source_kind: dataset_lookup
+    model_input_format: 'ESRI ASCII Grid (.asc): exactly 6 header lines + grid; cellsize in metres; NODATA
+      -9999; Unix line endings'
+    notes: 'Sets DX, grid dimensions, no_data. Must be hydrologically conditioned: sinks removed, continuous
+      non-NODATA path from interior to a single grid-edge outlet. read_fname must NOT include the .asc
+      extension.'
+  - name: initial grain-size distribution per cell
+    unit: 9 fractions across active + subsurface layers
+    category: sediment
+    source_kind: default
+    model_input_format: default proportions or grain data file
+  - name: initial groundwater store (optional)
+    unit: m head
+    category: subsurface
+    source_kind: default
+    model_input_format: groundwater_mode (basic/SLiM) initialisation
+  boundary_conditions:
+  - name: Outlet / water-and-sediment exit boundary
+    unit: grid-edge cell
+    category: domain
+    source_kind: user_provided
+    model_input_format: DEM edge cell(s); discharge exits through edge
+    notes: Outlet must touch DEM edge through a continuous non-NODATA path; Q is summed over ALL edge
+      cells.
+  - name: max_run_duration
+    unit: hours
+    category: run-control
+    source_kind: user_provided
+    model_input_format: param-file key:value
+    notes: Must be set to T-1 (loop condition cycle/60 < maxcycle); e.g. 71 for a 72 hr run.
+  - name: courant_number
+    unit: dimensionless
+    category: numerics
+    source_kind: user_provided
+    model_input_format: param-file key:value
+    notes: 0.3 for fine (<2 m) DEMs, up to 0.7 for 20-50 m DEMs; must not be < 0.3.
+  - name: froude_num_limit
+    unit: dimensionless
+    category: numerics
+    source_kind: user_provided
+    model_input_format: param-file key:value
+    notes: Subcritical-flow cap; reduce to 0.7 if checkerboarding appears.
+  - name: min_time_step / max_time_step
+    unit: seconds
+    category: numerics
+    source_kind: user_provided
+    model_input_format: param-file key:value
+    notes: Bound the adaptive CFL timestep; reduce max_time_step (60/30 s) to cure NaN instability.
+  - name: transport_law (Wilcock-Crowe vs Einstein-Brown)
+    unit: categorical
+    category: method-switch
+    source_kind: user_provided
+    model_input_format: param-file key:value
+  - name: hydro_model_only (erosion on/off)
+    unit: boolean
+    category: method-switch
+    source_kind: user_provided
+    model_input_format: param-file key:value
+    notes: yes = hydrology only, no sediment; no = full morphodynamic model.
+  - name: spatial_var_rain + hydroindex raster + num_unique_rain_cells
+    unit: boolean / integer zone IDs
+    category: method-switch
+    source_kind: user_provided
+    model_input_format: param-file flags + .asc hydroindex raster matching rainfall column count
+  - name: output intervals (raster_output_interval, timeseries_save_interval) and write flags
+    unit: minutes / boolean
+    category: run-control
+    source_kind: user_provided
+    model_input_format: param-file key:value (write_path must exist before running)
 outputs:
   primary:
-    - name: "actual_discharge"
-      column: 2
-      unit: "m3/s"
-      valid_range: [0, 100000]
-      description: "Instantaneous water discharge at outlet(s)."
-    - name: "expected_discharge"
-      column: 3
-      unit: "m3/s"
-      valid_range: [0, 100000]
-      description: "TOPMODEL-estimated discharge."
-    - name: "total_sediment_Q"
-      column: 5
-      unit: "m3"
-      valid_range: [0, 1000000]
-      description: "Total sediment discharge for interval (NOT a rate)."
-  rasters:
-    - name: "WaterDepths"
-      unit: "metres"
-      valid_range: [0, 100]
-      format: "ESRI ASCII Grid (.asc)"
-    - name: "Elevations"
-      unit: "metres"
-      format: "ESRI ASCII Grid (.asc)"
-    - name: "Grainz"
-      format: "ESRI ASCII Grid (.asc)"
-    - name: "ElevationDiff"
-      unit: "metres"
-      format: "ESRI ASCII Grid (.asc)"
-
-execution:
-  command: "./bin/HAIL-CAESAR.exe /path/to/input_files/ parameter_file.params"
-  arguments:
-    - position: 1
-      description: "Path to directory containing DEM, rainfall, and other inputs"
-    - position: 2
-      description: "Name of the parameter file (must be in the path above)"
-  environment:
-    OMP_NUM_THREADS: "Number of OpenMP threads (default: 1)"
-
+  - name: Actual discharge (Qw)
+    unit: m3/s
+    description: Instantaneous mean water discharge summed over the grid-edge outlet cell(s)
+    validation_rank: 1
+    emitted_in: catchment.dat timeseries (column 2)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Q is summed over ALL DEM edge cells; mask the DEM to a single outlet before comparing against
+          a gauge.
+        - Reported time index is interval count x save interval, not clock time.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Peak-discharge magnitude only.
+      detrending_options:
+      - none
+  - name: Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)
+    unit: m3 per save interval (interval total, NOT a rate)
+    description: Sediment volume leaving the outlet per save interval, total and per grain fraction
+    validation_rank: 2
+    emitted_in: catchment.dat timeseries (columns 5-14)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Interval totals (m3), not a rate; divide by interval*60 for m3/s before comparing to a sediment-flux
+          gauge.
+        - Choice of sediment transport law can change yields by an order of magnitude (see influence).
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Integrated catchment sediment yield over a period; deeply uncertain absolute magnitude.
+      detrending_options:
+      - none
+  - name: Water depth raster
+    unit: m
+    description: Per-cell flow depth from the shallow-water routing
+    validation_rank: 3
+    emitted_in: WaterDepths_NNNN.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Inundation extent comparison (wet/dry hit-rate) against observed flood maps; check NODATA masking.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Raster cadence set by raster_output_interval.
+      detrending_options:
+      - none
+  - name: Flow velocity raster
+    unit: m/s
+    description: Per-cell depth-averaged flow speed from the shallow-water routing
+    validation_rank: 4
+    emitted_in: flowvel_NNNN.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Compare against surface velocimetry (LSPIV) or point velocity gauges; check NODATA masking and
+          that velocity is depth-averaged, not surface.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Extract a single gauge cell; point velocity obs are rare for floods.
+      detrending_options:
+      - none
+  - name: Surface elevation raster
+    unit: m
+    description: Current evolving surface DEM
+    validation_rank: 5
+    emitted_in: Elevations_NNNN.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare to a measured post-event/post-period DEM.
+      detrending_options:
+      - none
+  - name: Elevation difference raster
+    unit: m
+    description: Net sediment erosion/deposition thickness (elev - initial elev)
+    validation_rank: 6
+    emitted_in: ElevationDiff_NNNN.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Compare against DEM-of-difference / measured erosion-deposition surveys.
+      detrending_options:
+      - none
+  - name: Surface grain size (D50) raster
+    unit: m
+    description: Median surface-layer grain size per cell
+    validation_rank: 7
+    emitted_in: Grainz_NNNN.asc
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Compare to field grain-size surveys; subject to default-distribution bias if no grain data file
+          supplied.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - "max_run_duration must be T-1 (e.g., 71 for 72hr sim) due to loop condition quirk"
-  - "read_fname must NOT include .asc extension"
-  - "Lateral erosion is experimental and not fully implemented"
-  - "Vegetation module is not implemented/tested"
-  - "read_path in params must be relative to binary execution directory or absolute"
-
-unit_traps:
-  - variable: "rainfall_rate"
-    expects: "mm/hr"
-    common_error: "mm/day or m/s"
-    fix: "Divide daily by 24; multiply m/s by 3.6e6"
-  - variable: "DEM_elevation"
-    expects: "metres"
-    common_error: "feet, cm"
-    fix: "Multiply feet by 0.3048; divide cm by 100"
-  - variable: "topmodel_m"
-    expects: "metres"
-    common_error: "mm"
-    fix: "Divide mm by 1000"
-  - variable: "run_duration"
-    expects: "hours (T-1)"
-    common_error: "hours (T)"
-    fix: "Subtract 1 from desired hours"
+- id: T001
+  symptom: 'Compilation error: ''omp.h'' not found'
+  diagnosis: OpenMP headers not installed or compiler does not support OpenMP
+  remedy: 'Install libgomp-dev (Ubuntu: apt install libgomp-dev) or use a compiler with OpenMP support.
+    Alternatively, remove -fopenmp and -DOMP_COMPILE_FOR_PARALLEL from Makefile for serial build.'
+- id: T002
+  symptom: '''No parameter file supplied'' message and model exits'
+  diagnosis: 'Wrong number of command-line arguments. Model requires exactly 2: path and param filename.'
+  remedy: 'Run as: ./HAIL-CAESAR.exe /path/to/data/ param_file.params -- ensure there is a trailing slash
+    on the path.'
+- id: T003
+  symptom: '''No terrain DEM found'' error on startup'
+  diagnosis: DEM file not found at the path constructed from read_path + read_fname + dem_read_extension.
+  remedy: 'Check: (1) read_fname should NOT include the .asc extension, (2) read_path should be relative
+    to where the binary is run or absolute, (3) file actually exists at that location.'
+- id: T004
+  symptom: Entire catchment floods immediately, unrealistic water depths within first few timesteps
+  diagnosis: Rainfall data is in wrong units -- likely mm/day being read as mm/hr (24x overestimate) or
+    m/s being read as mm/hr.
+  remedy: 'Convert rainfall to mm/hr. Common conversions: mm/day / 24 = mm/hr; m/s * 3,600,000 = mm/hr;
+    kg/m2/s * 3600 = mm/hr. Use convert_rainfall_to_caesar.py with --source_units flag.'
+- id: T005
+  symptom: No water in catchment, zero discharge throughout simulation
+  diagnosis: Rainfall values are too small (possibly in m/hr instead of mm/hr) or rain_data_time_step
+    does not match the actual file timestep.
+  remedy: 'Check units: 1 m/hr = 1000 mm/hr. Verify rain_data_time_step in params matches actual temporal
+    resolution of rainfall file.'
+- id: T006
+  symptom: DEM elevation values are very large (>10000) or negative
+  diagnosis: DEM may be in centimetres or feet instead of metres, or NODATA value is being read as elevation.
+  remedy: Convert DEM to metres (feet * 0.3048, cm / 100). Ensure NODATA_value in header matches actual
+    nodata values in the grid.
+- id: T007
+  symptom: TOPMODEL m value giving wrong hydrograph shape -- too flashy or too flat
+  diagnosis: topmodel_m_value is in wrong units (mm instead of m) or not calibrated for the catchment.
+  remedy: 'HAIL-CAESAR expects m in metres. Typical range: 0.002 (very flashy) to 0.02 (slow response).
+    If using values from literature in mm, divide by 1000.'
+- id: T008
+  symptom: Simulation duration is 1 hour shorter than expected
+  diagnosis: max_run_duration must be set to T-1 hours (model quirk). Setting to 72 gives only 72 hours,
+    but the loop condition uses < not <=.
+  remedy: 'For a 72-hour simulation, set max_run_duration: 71. For 48 hours, set to 47. This is a known
+    quirk of the cycle/60 < maxcycle loop condition.'
+- id: T009
+  symptom: Checkerboard pattern in water depths, alternating wet/dry cells
+  diagnosis: Froude number limit too high or courant number too large for the DEM resolution.
+  remedy: Reduce froude_num_limit to 0.7 and courant_number to 0.3. For DEMs < 2m resolution, courant
+    must be 0.3.
+- id: T010
+  symptom: Model runs extremely slowly, barely progressing
+  diagnosis: Timestep is very small, possibly due to low courant_number, fine DEM, or steep slopes.
+  remedy: Increase courant_number (max 0.7 for coarse DEMs), increase hflow_threshold, or use a coarser
+    DEM. Check max_time_step is not set too low.
+- id: T011
+  symptom: Segmentation fault during simulation
+  diagnosis: Memory allocation failure for large DEMs, or array index out of bounds.
+  remedy: 'For large DEMs: increase stack size with ''ulimit -s unlimited''. Consider reducing DEM resolution.
+    Check DEM header (ncols/nrows) matches actual data dimensions.'
+- id: T012
+  symptom: NaN values in output timeseries or rasters
+  diagnosis: Numerical instability, often from too-large timestep or extreme slope gradients.
+  remedy: Reduce max_time_step (try 60 or 30 seconds), reduce courant_number to 0.3, check DEM for unrealistic
+    elevation spikes.
+- id: T013
+  symptom: Timeseries file is empty or has only a few rows
+  diagnosis: Simulation ended early (crash or max_run_duration too small) or timeseries_save_interval
+    is larger than simulation duration.
+  remedy: Check STDERR for errors, increase max_run_duration, or decrease timeseries_save_interval. Expected
+    rows = duration_minutes / save_interval.
+- id: T014
+  symptom: 'No raster output files created despite write_waterdepth_file: yes'
+  diagnosis: Output directory (write_path) does not exist, or raster_output_interval is larger than simulation
+    duration.
+  remedy: Create the output directory with mkdir -p before running. Check raster_output_interval is in
+    model minutes and smaller than total simulation minutes.
+- id: T015
+  symptom: Sediment output columns are all zero despite erosion being enabled
+  diagnosis: hydro_model_only is set to yes, or water_depth_erosion_threshold is too high, or simulation
+    is too short for erosion to occur.
+  remedy: 'Set hydro_model_only: no. Check water_depth_erosion_threshold (default 0.01m). For short simulations,
+    erosion may be genuinely small -- check erode_limit and active_layer_thickness.'
+- id: T016
+  symptom: Discharge values from model are much higher than observed
+  diagnosis: Model reports total discharge from ALL edge cells, not just the intended outlet. Or Manning's
+    n is too low (smoother surface = faster flow).
+  remedy: Be aware that Q is summed over all boundary cells. If your DEM has multiple low points on edges,
+    water exits from multiple locations. Increase mannings_n to slow flow. Consider masking the DEM so
+    only one edge has the outlet.
+- id: T017
+  symptom: Water pools in the interior and never reaches outlet
+  diagnosis: DEM has internal depressions that trap water, or outlet point does not connect to DEM edge
+    through non-NODATA cells.
+  remedy: Fill DEM sinks (pit-fill) or ensure a continuous path of valid elevation from the lowest point
+    to the DEM edge. Check that outlet cell is NOT surrounded by NODATA.
+- id: T018
+  symptom: Model reports only 1 thread despite multi-core system
+  diagnosis: OMP_NUM_THREADS environment variable is not set.
+  remedy: 'Set with: export OMP_NUM_THREADS=4 (or number of cores). On some systems also try: set OMP_NUM_THREADS=4.'
+- id: T019
+  symptom: Rainfall is applied uniformly when spatial variation was expected
+  diagnosis: spatial_var_rain set to no, or hydroindex file not specified, or num_unique_rain_cells =
+    1.
+  remedy: 'Set spatial_var_rain: yes, provide hydroindex_file with integer zone raster, set num_unique_rain_cells
+    to match number of zones, and ensure rainfall file has matching number of columns.'
+- id: T020
+  symptom: Model reads grain data incorrectly or uses default distribution
+  diagnosis: read_in_graindata_from_file is set to no, or grain_data_file path is wrong.
+  remedy: 'Set read_in_graindata_from_file: yes and provide correct grain_data_file path. The grain file
+    format is: index x y [9 surface fractions] [9 subsurface fractions].'

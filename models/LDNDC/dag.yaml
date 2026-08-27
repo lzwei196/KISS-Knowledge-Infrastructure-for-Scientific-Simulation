@@ -124,7 +124,7 @@ outputs:
   - var: "dN_n2o_emis"
     validation_rank: 2
     unit: "kgN/ha"
-    description: "Daily nitrous oxide emission expressed as N mass (multiply by 44/28 for N2O molecular mass)."
+    description: "Daily soil-to-atmosphere nitrous oxide emission expressed as N mass (multiply by 44/28 for N2O molecular mass)."
     emitted_in: "soilchemistry-daily.txt"
     observability:
       comparable_obs_shapes:
@@ -142,7 +142,7 @@ outputs:
   - var: "dN_no_emis"
     validation_rank: 3
     unit: "kgN/ha"
-    description: "Daily nitric oxide (NO) emission expressed as N mass."
+    description: "Daily soil-to-atmosphere nitric oxide (NO) emission expressed as N mass."
     emitted_in: "soilchemistry-daily.txt"
     observability:
       comparable_obs_shapes:
@@ -168,7 +168,7 @@ outputs:
   - var: "dC_ch4_emis"
     validation_rank: 5
     unit: "kgC/ha"
-    description: "Daily methane flux (production minus oxidation) as C mass."
+    description: "Daily soil methane flux to the atmosphere (production minus oxidation) as C mass."
     emitted_in: "soilchemistry-daily.txt"
     observability:
       comparable_obs_shapes:
@@ -181,7 +181,7 @@ outputs:
   - var: "dN_no3_leach"
     validation_rank: 6
     unit: "kgN/ha"
-    description: "Daily nitrate leaching below the profile."
+    description: "Daily soil nitrate leaching below the profile to groundwater."
     emitted_in: "soilchemistry-daily.txt"
     observability:
       comparable_obs_shapes:
@@ -212,7 +212,7 @@ outputs:
   - var: "yield"
     validation_rank: 7
     unit: "kgC/ha"
-    description: "Cumulative harvested yield as carbon mass (convert to dry matter by ~x2.0 ≈ 45% C)."
+    description: "Cumulative crop harvested yield as carbon mass (convert to dry matter by ~x2.0 ≈ 45% C)."
     emitted_in: "physiology-daily.txt"
     observability:
       comparable_obs_shapes:
@@ -230,7 +230,7 @@ outputs:
   - var: "lai"
     validation_rank: 8
     unit: "m2/m2"
-    description: "Leaf area index from the physiology kernel."
+    description: "Canopy leaf area index from the vegetation physiology kernel."
     emitted_in: "physiology-daily.txt"
     observability:
       comparable_obs_shapes:
@@ -434,3 +434,29 @@ safety:
       scope: "soil-profile interpretation"
       source: "Models Description v1.37.0 Section 1.6 (Soilchemistry initialisation) and climate/soil input docs"
       status: "adopted"
+
+medium_evidence:
+  - var: "dN_n2o_emis"
+    source: "CAPABILITY_INVENTORY.md"
+    quote: "Simulates N2O production from both nitrification (aerobic, NH4 -> NO3 with N2O byproduct) and denitrification (anaerobic, NO3 -> N2 with N2O intermediate). Production depends on soil moisture (anaerobic volume fraction -- anvf), temperature, NH4/NO3 availability, and labile C."
+    note: "N2O production is tied to soil moisture and soil N transformations."
+  - var: "dN_no_emis"
+    source: "CAPABILITY_INVENTORY.md"
+    quote: "NO production from chemodenitrification (abiotic, acid soils) and as a byproduct of nitrification. Important for atmospheric chemistry (ozone precursor)."
+    note: "NO is produced in soils and emitted to atmospheric chemistry."
+  - var: "dC_ch4_emis"
+    source: "CAPABILITY_INVENTORY.md"
+    quote: "CH4 production in anaerobic soil zones (methanogenesis) minus CH4 oxidation in aerobic zones (methanotrophy). Net emission depends on water table depth and soil anaerobic volume."
+    note: "CH4 production and oxidation are soil-zone processes with net emission."
+  - var: "dN_no3_leach"
+    source: "SKILL.md"
+    quote: "**Nutrient leaching**: NO3, NH4, dissolved organic N leaching to groundwater"
+    note: "NO3 leaching is a groundwater-directed nutrient leaching output."
+  - var: "yield"
+    source: "SKILL.md"
+    quote: "**Crop/vegetation growth**: GPP, NPP, yield, LAI, biomass allocation via PlaMox or PSIM modules"
+    note: "Yield is a crop/vegetation growth output."
+  - var: "lai"
+    source: "CAPABILITY_INVENTORY.md"
+    quote: "Tracks LAI from emergence through senescence. Drives light interception, transpiration, and canopy microclimate."
+    note: "LAI belongs to the canopy/vegetation medium."

@@ -1,0 +1,326 @@
+schema_version: 1
+model_id: Alpine3D
+domain: cryosphere
+generated_by: "step-b validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  alpine3d2006:
+    doi: 10.1002/hyp.6204
+    title: "ALPINE3D: a detailed model of mountain surface processes and its application to snow hydrology"
+    venue: "Hydrological Processes"
+    year: 2006
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_hyp.6204.txt
+  bavay2016:
+    doi: 10.1016/j.envsoft.2016.02.017
+    title: "Sensitivity of Alpine3D modeled snow cover to modifications in DEM resolution, station coverage and meteorological input quantities"
+    venue: "Environmental Modelling & Software"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2016.02.017.txt
+  esmsnowmip2018:
+    doi: 10.5194/gmd-11-5027-2018
+    title: "ESM-SnowMIP: assessing snow models and quantifying snow-related climate feedback"
+    venue: "Geoscientific Model Development"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-11-5027-2018.txt
+  essery2013:
+    doi: 10.1016/j.advwatres.2012.07.013
+    title: "A comparison of 1701 snow models using observations from an alpine site"
+    venue: "Advances in Water Resources"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.advwatres.2012.07.013.txt
+  magnusson2015:
+    doi: 10.1002/2014wr016498
+    title: "Evaluating snow models with varying process representations for hydrological applications"
+    venue: "Water Resources Research"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2014wr016498.txt
+  streamflow2016:
+    doi: 10.5194/gmd-9-4491-2016
+    title: "StreamFlow 1.0: an extension to the spatially distributed snow model Alpine3D for hydrological modelling and deterministic stream temperature prediction"
+    venue: "Geoscientific Model Development"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-9-4491-2016.txt
+  setegn2011:
+    doi: 10.5194/hess-15-807-2011
+    title: "Sediment management modelling in the Blue Nile Basin using SWAT model"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-15-807-2011.txt
+  grunewald2010:
+    doi: 10.5194/tc-4-215-2010
+    title: "Spatial and temporal variability of snow depth and ablation rates in a small mountain catchment"
+    venue: "The Cryosphere"
+    year: 2010
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-4-215-2010.txt
+
+validation:
+  - dag_variable: SWE
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "ESM-SnowMIP uses RMSE normalized by observed SWE standard deviation; values >1 fit variations no better than the observation mean."
+        cites: [esmsnowmip2018]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining_metric is nse, but fetched snow-model benchmarks emphasize KGE or normalized RMSE for snow mass/SWE."
+        cites: [magnusson2015, esmsnowmip2018]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Point SWE observations themselves have reported seasonal uncertainty of 13-30% in the Swiss Alps."
+        cites: [bavay2016]
+    validated_when: "SWE time-series normalized RMSE <= 1.0; nse is contextual because fetched snow-model benchmarks use KGE/nRMSE rather than an NSE tier."
+    evidence_strength: strong
+    confidence: 0.7
+    notes: "Grounded in ESM-SnowMIP's nRMSE convention and Alpine3D SWE uncertainty analysis; Bavay reports SWE measurement uncertainty of 18%, 13%, and 30% across the season."
+
+  - dag_variable: SWE
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Transferred from ESM-SnowMIP's normalized SWE RMSE criterion because no fetched paper gives a CSI pass band for continuous SWE maps."
+        cites: [esmsnowmip2018]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Alpine3D's model-description paper compares spatial snow-cover extent qualitatively to satellite imagery; no fetched CSI threshold was reported."
+        cites: [alpine3d2006]
+    validated_when: "For continuous SWE maps, nRMSE <= 1.0; CSI remains unresolved unless SWE is thresholded to snow-cover extent."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "Alpine3D reports satellite comparison where 'general patterns' of ablation agree, but the fetched text gives no numeric CSI band."
+
+  - dag_variable: SWE
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "ESM-SnowMIP's site-time normalized SWE RMSE convention is the best fetched numeric benchmark for repeated distributed SWE comparisons."
+        cites: [esmsnowmip2018]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched field benchmarks rank SWE by normalized RMSE/KGE, not an NSE pass tier."
+        cites: [magnusson2015, esmsnowmip2018]
+    validated_when: "Repeated SWE fields have nRMSE <= 1.0 over matched snapshots/times."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "This is a transferred but cited convention; no fetched Alpine3D paper provides a formal repeated-map SWE threshold."
+
+  - dag_variable: HS
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched snow-depth paper gives an NSE validation threshold; snow-depth benchmarks report RMSE/KGE without pass tiers."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Snow-model intercomparisons commonly evaluate snow depth with RMSE or KGE; no numeric acceptance band was fetched."
+        cites: [essery2013, magnusson2015]
+    validated_when: "UNRESOLVED - require a fetched snow-depth NSE/RMSE threshold or a model-family benchmark before auto-validation."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Magnusson computes KGE for snow depth, and Essery ranks snow-depth RMSE, but neither provides a pass/fail band."
+
+  - dag_variable: HS
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a CSI threshold for airborne/laser-scan snow-depth maps."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Spatial snow-depth studies emphasize high-resolution laser-scan or snow-depth map comparison, but the fetched set has no CSI tier."
+        cites: [grunewald2010, alpine3d2006]
+    validated_when: "UNRESOLVED - compare to lidar/photogrammetry snow-depth maps, but do not auto-pass without a fetched CSI or RMSE band."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "The fetched Alpine3D source gives qualitative satellite-pattern agreement; snow-depth spatial validation thresholds remain a gap."
+
+  - dag_variable: TSS
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: null, good: 1.7, satisfactory: 2.4}
+        pass_band: satisfactory
+        band_note: "Benchmark values from Essery's snow-model table: calibrated surface-temperature RMSE 2.4 degC and a better uncalibrated configuration at 1.7 degC."
+        cites: [essery2013]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG uses pbias, but fetched snow surface-temperature studies report RMSE/KGE rather than percent bias on Kelvin temperature."
+        cites: [essery2013, magnusson2015]
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Magnusson uses KGE for snow surface temperature and reports site-specific turbulent heat-transfer limitations."
+        cites: [magnusson2015]
+    validated_when: "Snow/bare surface temperature RMSE <= 2.4 degC against point radiometric or energy-balance station retrievals."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "This is a benchmark band, not a universal formal tier; Magnusson notes surface-temperature skill is less transferable across sites."
+
+  - dag_variable: TSS
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a CSI threshold for thermal-IR snow surface-temperature snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fetched surface-temperature benchmarks are point/time-series RMSE/KGE studies, not spatial CSI conventions."
+        cites: [essery2013, magnusson2015]
+    validated_when: "UNRESOLVED - use thermal-IR spatial comparison only with a fetched spatial RMSE/CSI convention."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "Point surface-temperature RMSE benchmarks should not be silently transferred to spatial CSI validation."
+
+  - dag_variable: MS_SNOWPACK_RUNOFF
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: kge
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.83}
+        pass_band: satisfactory
+        band_note: "Magnusson reports mutual lysimeter agreement of KGE 0.83 and says this is only slightly better than model-observation agreement."
+        cites: [magnusson2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "MS_SNOWPACK_RUNOFF is runoff leaving the snowpack; comparison to gauged streamflow needs the downstream runoff-generation/routing step implemented in Alpine3D/StreamFlow."
+        cites: [alpine3d2006, streamflow2016]
+    validated_when: "Snowpack-runoff aggregate KGE >= 0.83 when compared to lysimeter or snowpack-outflow observations; streamflow NSE alone is a routing-conflated check."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: "Magnusson evaluates snowpack runoff with KGE and categorical skill; the DAG's nse is retained as a structurally limited secondary for streamflow-style comparisons."
+
+  - dag_variable: MS_SOIL_RUNOFF
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.82, good: 0.73, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Satisfactory threshold is a fetched reproduction of Moriasi 2007; good/very_good are Alpine3D and StreamFlow benchmark values."
+        cites: [setegn2011, alpine3d2006, streamflow2016]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Fetched Moriasi reproduction gives flow PBIAS ±25% as satisfactory."
+        cites: [setegn2011]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Alpine3D's 10-year Dischma runoff validation co-reports r2 = 0.77, slope = 0.85, and intercept = 0.03."
+        cites: [alpine3d2006]
+    validated_when: "Regional soil-runoff or routed discharge has NSE >= 0.5 and |PBIAS| <= 25%; Alpine3D-class benchmarks are NSE about 0.73-0.82."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Setegn reproduces the Moriasi rule 'NSE > 0.5' and 'PBIAS = +-25%' for flow; Alpine3D and StreamFlow demonstrate higher Alpine benchmarks."
+
+  - dag_variable: RSNO
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched snow-density paper gives an NSE or RMSE pass threshold for bulk snowpack density."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Snow density is evaluated as an observed snowpack state and as a key conversion from depth to SWE, but no numeric acceptance band was fetched."
+        cites: [grunewald2010, magnusson2015]
+    validated_when: "UNRESOLVED - require a fetched density RMSE/MAE convention before auto-validation."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Grunewald uses density measurements to derive SWE and notes density variability is smaller than snow-depth/SWE variability; this is not a pass band."
+
+  - dag_variable: "POI energy/mass-balance terms (.met)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a single NSE threshold for the mixed POI .met flux, mass, temperature, and stability terms."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Snow-model intercomparisons evaluate components such as snow mass, snow depth, albedo, and surface temperature separately rather than one mixed .met score."
+        cites: [essery2013, magnusson2015]
+    validated_when: "UNRESOLVED - validate each POI term against its own fetched convention; do not auto-pass the mixed .met bundle with a single NSE."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "A fetched SnowMIP-style surface-energy-budget paper is needed for numeric flux thresholds."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 hydrologic model evaluation guidelines"
+    doi: 10.13031/trans.58.10715
+    needed_for: [MS_SOIL_RUNOFF]
+  - ref: "Moriasi et al. 2007 model evaluation guidelines, primary source for NSE/PBIAS/RSR tiers"
+    doi: 10.13031/2013.23153
+    needed_for: [MS_SOIL_RUNOFF]
+  - ref: "Etchevers et al. 2004 SnowMIP validation of alpine snowpack surface energy budget"
+    doi: unknown_not_fetched
+    needed_for: ["POI energy/mass-balance terms (.met)", TSS]
+  - ref: "A fetched spatial snow-depth/SWE map validation paper with CSI/RMSE pass tiers"
+    doi: unknown_not_fetched
+    needed_for: [SWE, HS, TSS]

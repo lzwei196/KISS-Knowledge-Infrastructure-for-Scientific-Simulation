@@ -31,8 +31,8 @@ from datetime import datetime, timedelta
 ROOT   = "KISSPATH_KI_ROOT/Noah_MP"
 KI     = f"{ROOT}/knowledge_infrastructure"
 TOOLS  = f"{KI}/tools"
-BIN    = "KISSPATH_BINARIES/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
-SRCDIR = "KISSPATH_BINARIES/Noah_MP/source/repo"
+BIN    = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
+SRCDIR = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/repo"
 MSWX   = "KISSPATH_FORCING"
 GRDC   = "KISSPATH_DATA/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc"
 SHP    = f"{GRDC}/shapefiles/grdc/grdc_basin_shapes.shp"
@@ -43,6 +43,7 @@ WORK   = f"{ROOT}/detached/verify_1"
 CELLS  = f"{WORK}/cells"
 BOX    = f"{WORK}/mswx_cmfd"            # CMFD-style box forcing derived from MSWX
 RESULT = f"{WORK}/result.json"
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 
 # ----------------------------------------------------------------------------- config
 GAUGE = "GRDC_5868100"

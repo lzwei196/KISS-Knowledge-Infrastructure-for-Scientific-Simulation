@@ -38,6 +38,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance

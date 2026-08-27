@@ -1,145 +1,647 @@
-model:
-  name: "TopoFlow"
-  version: "3.6"
-  domain: "Spatially-distributed hydrology"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  framework: "EMELI (Experimental Modeling Environment for Linking and Interoperability)"
-  routing: "D8 steepest-descent flow grid"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: TopoFlow
+  language: python
+  implementation:
+    id: topoflow36
+    version: '3.6'
+    provenance: Python (Python 3.7+); Scott D. Peckham (INSTAAR / CSDMS, University of Colorado Boulder);
+      plug-and-play BMI components coupled at runtime via the EMELI framework.
+  scientific_reference_version: TopoFlow 3.6 (Peckham et al. 2017, Earth and Space Science, doi:10.1002/2016EA000237;
+    component-based D8 distributed hydrology)
 inputs:
   forcing:
-    - name: "P_rain"
-      unit: "mm/hr"
-      valid_range: [0.0, 500.0]
-      description: "Precipitation rate — MUST be in mm/hr, not m/s or mm/day"
-    - name: "T_air"
-      unit: "deg_C"
-      valid_range: [-50.0, 60.0]
-      description: "Air temperature — MUST be in Celsius, not Kelvin"
-    - name: "RH"
-      unit: "dimensionless"
-      valid_range: [0.0, 1.0]
-      description: "Relative humidity as fraction 0–1"
-    - name: "u_z"
-      unit: "m/s"
-      valid_range: [0.0, 50.0]
-      description: "Wind speed at measurement height z"
-
+  - name: precipitation
+    unit: mm/hr
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: scalar/Time_Series/Grid_Sequence in the Meteorology .cfg (CSDMS name atmosphere_water__precipitation_leq-volume_flux)
+    notes: Provided in mm/hr in the .cfg; the model internally divides by 3.6e6 to m/s. Do NOT pre-convert
+      to m/s. The downstream channel components consume an effective rain rate R [m/s] derived from this
+      after infiltration/snow accounting.
+  - name: air_temperature
+    unit: degC
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: scalar/Time_Series/Grid in the Meteorology .cfg
+    notes: Celsius, not Kelvin. Drives degree-day snowmelt and the ET/energy budget.
+  - name: relative_humidity
+    unit: fraction 0-1
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: scalar/Time_Series in the Meteorology .cfg
+    notes: Fraction, not percent. CSDMS docs declare % at the help-page level; the operational model reads
+      0-1.
+  - name: wind_speed
+    unit: m/s
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: scalar/Time_Series in the Meteorology .cfg; measurement height z must match the
+      .cfg z parameter
+  - name: atmospheric_pressure
+    unit: mbar
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: scalar/Time_Series in the Meteorology .cfg (1 atm ~= 1013.25 mbar)
+  - name: shortwave_radiation
+    unit: W/m^2
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: scalar/Time_Series/Grid in the Meteorology .cfg; net shortwave is set to zero
+      between local sunset and sunrise
   parameters:
-    critical:
-      - name: "Ks"
-        unit: "m/s"
-        valid_range: [1.0e-7, 1.0e-3]
-        description: "Saturated hydraulic conductivity — MUST be in m/s, not mm/hr"
-      - name: "theta_s"
-        unit: "dimensionless"
-        valid_range: [0.30, 0.55]
-        description: "Saturated soil porosity (fraction 0–1, not percentage)"
-      - name: "theta_i"
-        unit: "dimensionless"
-        valid_range: [0.10, 0.40]
-        description: "Initial soil moisture content (fraction 0–1)"
-      - name: "G"
-        unit: "m"
-        valid_range: [0.01, 1.0]
-        description: "Capillary length / wetting front suction — MUST be in meters, not cm"
-      - name: "Manning_n"
-        unit: "s/m^(1/3)"
-        valid_range: [0.01, 0.20]
-        description: "Manning roughness coefficient — ensure not inverted (1/n != n)"
-      - name: "channel_width"
-        unit: "m"
-        valid_range: [0.5, 50.0]
-        description: "Channel width — must be > 0 everywhere"
-      - name: "slope"
-        unit: "m/m"
-        valid_range: [1.0e-6, 1.0]
-        description: "Terrain slope — must have no zero values (floor at 1e-6)"
-      - name: "dt"
-        unit: "s"
-        valid_range: [1.0, 60.0]
-        description: "Computation timestep — must satisfy CFL condition"
-      - name: "alpha_PT"
-        unit: "dimensionless"
-        valid_range: [1.0, 1.74]
-        description: "Priestley-Taylor evapotranspiration coefficient"
-      - name: "c0_snow"
-        unit: "mm/deg_C/day"
-        valid_range: [1.0, 8.0]
-        description: "Degree-day snowmelt factor"
-
-  files:
-    - name: "DEM"
-      format: "RTG binary (float32, little-endian, row-major)"
-      extension: ".rtg"
-      companion: ".rti header with nrows, ncols, cell_size"
-    - name: "D8 flow codes"
-      format: "RTG binary"
-      extension: ".rtg"
-      note: "Must be recomputed if DEM is modified"
-    - name: "slope grid"
-      format: "RTG binary"
-      extension: ".rtg"
-    - name: "contributing area"
-      format: "RTG binary"
-      extension: ".rtg"
-    - name: "precipitation time series"
-      format: "text"
-      extension: ".txt"
-    - name: "provider file"
-      format: "text"
-      extension: "_providers.txt"
-      note: "Component names are case-sensitive"
-    - name: "configuration files"
-      format: "pipe-delimited text"
-      extension: ".cfg"
-      note: "One per component (meteorology, channels, infil, snow, evap, satzone)"
-
+  - name: saturated_hydraulic_conductivity (Ks)
+    unit: m/s
+    category: soil_infiltration
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Infiltration .cfg
+    notes: Range ~1e-7 to 1e-3 m/s. Literature/datasets often supply mm/hr or cm/hr — must be converted
+      to m/s.
+  - name: initial_hydraulic_conductivity (Ki)
+    unit: m/s
+    category: soil_infiltration
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Infiltration .cfg
+  - name: saturated_water_content (theta_s)
+    unit: dimensionless 0-1
+    category: soil_infiltration
+    source_kind: dataset_lookup
+    model_input_format: Scalar or Grid in the Infiltration .cfg
+    notes: Fraction 0-1 (~0.30-0.55), not percent.
+  - name: residual_water_content (theta_r)
+    unit: dimensionless 0-1
+    category: soil_infiltration
+    source_kind: dataset_lookup
+    model_input_format: Scalar or Grid in the Infiltration .cfg (Richards/Brooks-Corey)
+  - name: capillary_length_scale (G)
+    unit: m
+    category: soil_infiltration
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Green-Ampt Infiltration .cfg
+    notes: Wetting-front suction head, ~0.01-0.5 m. Literature often in cm; convert by /100.
+  - name: bubbling_pressure_head (psi_b)
+    unit: m
+    category: soil_infiltration
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Richards Infiltration .cfg
+  - name: pore_size_distribution_index (lambda)
+    unit: dimensionless
+    category: soil_infiltration
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Richards/Brooks-Corey Infiltration .cfg
+  - name: brooks_corey_c
+    unit: dimensionless
+    category: soil_infiltration
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Infiltration .cfg
+  - name: smith_parlange_gamma
+    unit: dimensionless
+    category: soil_infiltration
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Smith-Parlange Infiltration .cfg
+  - name: manning_n
+    unit: s/m^(1/3)
+    category: channel_geometry
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Channels .cfg
+    notes: Channel roughness ~0.01-0.20. Enter n itself, not conveyance 1/n.
+  - name: roughness_height (z0)
+    unit: m
+    category: channel_geometry
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Channels .cfg (Law-of-Wall friction alternative to Manning's
+      n)
+  - name: channel_bed_width (w)
+    unit: m
+    category: channel_geometry
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Channels .cfg; must be > 0 everywhere (~0.5-50 m)
+  - name: bank_angle
+    unit: degrees
+    category: channel_geometry
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Channels .cfg (trapezoidal cross-section; 0=vertical, 0<=angle<90)
+  - name: sinuosity
+    unit: dimensionless
+    category: channel_geometry
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Channels .cfg (>= 1.0)
+  - name: bankfull_depth (d_bankfull)
+    unit: m
+    category: channel_geometry
+    source_kind: default
+    model_input_format: Scalar or Grid in the Channels .cfg (d_bankfull_type/d_bankfull); when unset the
+      model silently defaults to 10.0 m
+    notes: MODEL-internal default 10.0 m (channels_base.py); a unit multiplier d_bankfull_factor defaults
+      to 1.0. Controls overbank/flood onset feeding the flood_water_depth (df) state — a too-large default
+      suppresses flooding silently.
+  - name: degree_day_coefficient (c0)
+    unit: mm/day/degC
+    category: snowmelt
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Snowmelt-Degree-Day .cfg
+    notes: Melt factor in meltrate M=(c0/86400)*(T_air-T0).
+  - name: threshold_temperature (T0)
+    unit: degC
+    category: snowmelt
+    source_kind: calibrated
+    model_input_format: Scalar in the Snowmelt-Degree-Day .cfg
+  - name: priestley_taylor_alpha
+    unit: dimensionless
+    category: evaporation
+    source_kind: default
+    model_input_format: Scalar in the Evaporation-Priestley-Taylor .cfg (default 1.26)
+  - name: albedo
+    unit: 0-1
+    category: meteorology_radiation
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Meteorology .cfg
+  - name: surface_emissivity
+    unit: 0-1
+    category: meteorology_radiation
+    source_kind: calibrated
+    model_input_format: Scalar or Grid in the Meteorology .cfg
+  - name: dust_attenuation
+    unit: 0-0.3
+    category: meteorology_radiation
+    source_kind: calibrated
+    model_input_format: Scalar in the Meteorology .cfg
+  - name: DEM
+    unit: m
+    category: domain_grid
+    source_kind: user_provided
+    model_input_format: RTG binary float32 + .rti header (*_DEM.rtg)
+  - name: D8_flow_codes
+    unit: codes 0-128
+    category: domain_grid
+    source_kind: derived
+    model_input_format: RTG binary (*_flow.rtg); steepest-descent flow direction codes
+  - name: slope_grid
+    unit: m/m
+    category: domain_grid
+    source_kind: derived
+    model_input_format: RTG binary (*_slope.rtg); must be > 0 everywhere, floor 1e-6 m/m
+  - name: contributing_area_grid
+    unit: km^2 (or cell count)
+    category: domain_grid
+    source_kind: derived
+    model_input_format: RTG binary (*_area.rtg)
+  initial_conditions:
+  - name: initial_flow_depth (d0)
+    unit: m
+    category: channel_state
+    source_kind: user_provided
+    model_input_format: Scalar or Grid in the Channels .cfg
+    notes: A spatially-uniform positive scalar can produce a very large initial peak and may crash the
+      run.
+  - name: initial_water_content (theta_i)
+    unit: dimensionless 0-1
+    category: soil_state
+    source_kind: user_provided
+    model_input_format: Scalar or Grid in the Infiltration .cfg; must be < theta_s
+  - name: initial_snow_depth / snow_water_equivalent (h_snow / h_swe)
+    unit: m
+    category: snow_state
+    source_kind: user_provided
+    model_input_format: Scalar or Grid in the Snowmelt .cfg
+  boundary_conditions:
+  - name: outlet_pixels
+    unit: row/col index
+    category: domain_topology
+    source_kind: user_provided
+    model_input_format: Text row/col coordinates (*_outlets.txt); must lie on a flow cell within the D8
+      domain
+  - name: component_provider_map
+    unit: '-'
+    category: component_selection
+    source_kind: user_provided
+    model_input_format: '*_providers.txt mapping each component type to a concrete implementation (case-sensitive)'
+    notes: Selects which process method realizes each component (e.g. infil_green_ampt vs infil_richards_1D,
+      snow_degree_day vs snow_energy_balance).
+  - name: channel_wave_method
+    unit: '-'
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: Selected implicitly from the Channels .cfg extension string (kinematic / diffusive
+      / dynamic)
+    notes: 'Structural switch: changes the momentum closure and the active state-variable set (free-surface
+      slope used by diffusive/dynamic; trapezoid Rh skipped under dynamic).'
+  - name: stopping_criteria
+    unit: '-'
+    category: run_control
+    source_kind: user_provided
+    model_input_format: 'Driver .cfg: Until_model_time (T_stop_model, min), Q_peak_fraction (Qp_fraction),
+      or Until_n_steps (n_steps)'
+  - name: channel_timestep (dt)
+    unit: s
+    category: run_control
+    source_kind: user_provided
+    model_input_format: Scalar in the Channels .cfg; must satisfy CFL (typically 2-6 s for 30 m grids)
+  - name: save_intervals (save_grid_dt, save_pixels_dt)
+    unit: s
+    category: output_control
+    source_kind: user_provided
+    model_input_format: Scalars in component .cfg; must be smaller than the simulation duration or no
+      data is written
 outputs:
   primary:
-    - name: "Q_outlet"
-      unit: "m3/s"
-      valid_range: [0.0, 1.0e6]
-      file: "*_0D-Q.txt"
-      description: "Outlet discharge hydrograph"
-    - name: "depth"
-      unit: "m"
-      valid_range: [0.0, 50.0]
-      file: "*_0D-d.txt"
-      description: "Outlet water depth"
-    - name: "velocity"
-      unit: "m/s"
-      valid_range: [0.0, 20.0]
-      file: "*_0D-u.txt"
-      description: "Outlet flow velocity"
-  gridded:
-    - name: "Q_spatial"
-      unit: "m3/s"
-      file: "*_2D-Q.nc"
-      format: "NetCDF"
-    - name: "depth_spatial"
-      unit: "m"
-      file: "*_2D-d.nc"
-      format: "NetCDF"
-    - name: "infiltration_rate"
-      unit: "m/s"
-      file: "*_2D-v0.nc"
-      format: "NetCDF"
-  reports:
-    - name: "run_summary"
-      file: "*_report.txt"
-      description: "Peak Q, volumes, mass balance"
-
+  - name: outlet_discharge (Q_outlet)
+    unit: m^3/s
+    description: Volume flow rate at the basin outlet pixel (basin_outlet_water_x-section__volume_flow_rate);
+      the simulated hydrograph.
+    validation_rank: 1
+    emitted_in: '*_0D-Q.txt'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Gauged streamflow at the outlet; timing_accuracy especially relevant for snowmelt-driven basins
+          where onset bias (~days) is the dominant error.
+        - Requires the outlet pixel to coincide with the gauge location.
+      detrending_options:
+      - none
+  - name: peak_time_of_flow (T_peak)
+    unit: min
+    description: Time of peak outlet discharge (basin_outlet_water_x-section__peak_time_of_volume_flow_rate).
+    validation_rank: 4
+    emitted_in: '*_report.txt'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - timing_accuracy
+        determining_metric: day_bias
+        caveats:
+        - Compare against the observed time-to-peak for the same event.
+      detrending_options:
+      - none
+  - name: peak_discharge (Q_peak)
+    unit: m^3/s
+    description: Running maximum basin-outlet channel-water discharge over the simulation.
+    validation_rank: 2
+    emitted_in: '*_report.txt'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Peak magnitude is highly sensitive to precipitation-intensity unit errors and Manning's n.
+      detrending_options:
+      - none
+  - name: outlet_depth (d_outlet)
+    unit: m
+    description: Mean flow depth at the basin outlet cross-section.
+    validation_rank: 5
+    emitted_in: '*_0D-d.txt'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Stage records where available; depends on channel geometry assumptions.
+      detrending_options:
+      - none
+  - name: outlet_velocity (u_outlet)
+    unit: m/s
+    description: Mean flow velocity at the basin outlet cross-section.
+    validation_rank: 6
+    emitted_in: '*_0D-u.txt'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Rarely directly observed; usually inferred. Strongly controlled by Manning's n (inversion error
+          gives ~100-1000x bias).
+      detrending_options:
+      - none
+  - name: channel_discharge_grids (Q)
+    unit: m^3/s
+    description: Distributed channel volume flow rate over the D8 grid (channel_water_x-section__volume_flow_rate).
+    validation_rank: 3
+    emitted_in: '*_2D-Q.nc'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Distributed discharge is rarely observed as a field; comparison is typically limited to interior
+          gauges.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - At an interior gauge cell, extract the grid time series at that pixel.
+      detrending_options:
+      - none
+  - name: depth_grids (d)
+    unit: m
+    description: Distributed channel/flood water depth over the grid (includes land_surface_water__depth
+      df under the flood option).
+    validation_rank: 7
+    emitted_in: '*_2D-d.nc'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - event_detection
+        determining_metric: csi
+        caveats:
+        - Can be compared against an observed inundation extent/snapshot (flood map) as a categorical
+          wet/dry field.
+      detrending_options:
+      - none
+  - name: infiltration_rate_grids (v0 / IN)
+    unit: m/s
+    description: Distributed surface infiltration volume flux (soil_surface_water__infiltration_volume_flux).
+    validation_rank: 8
+    emitted_in: '*_2D-v0.nc'
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Infiltration flux is essentially never observed directly as a field; comparison is diagnostic
+          only.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    description: "Precipitation in mm/day instead of mm/hr causes 24x flood overestimate"
-  - id: "dt_002"
-    description: "Precipitation pre-converted to m/s causes near-zero runoff"
-  - id: "dt_003"
-    description: "Zero slope cells cause division-by-zero crash"
-  - id: "dt_004"
-    description: "Capillary length G in cm instead of m causes 100x infiltration error"
-  - id: "dt_005"
-    description: "Temperature in Kelvin instead of Celsius breaks snowmelt/ET"
-  - id: "dt_007"
-    description: "RTG/RTI dimension mismatch causes silent data corruption"
+- id: dt_001
+  symptom: 'Model produces extreme flooding even for moderate rainfall events. Peak Q is 10–100× higher
+    than expected.
+
+    '
+  diagnosis: 'Precipitation provided in mm/day instead of mm/hr; ERA5, MSWX, and many reanalysis products
+    provide daily accumulations. If mm/day values are used directly as mm/hr, rainfall intensity is 24×
+    too high.  TopoFlow then internally converts mm/hr to m/s, compounding the error.
+
+    ; [''tf_meteorology'', ''topo'
+  remedy: 'Divide precipitation by 24 to convert mm/day → mm/hr; convert_forcing; [''Check source data
+    documentation for precipitation units'', ''Apply: P_mmhr = P_mmday / 24.0'', ''Verify max P_mmhr <
+    200 for most storms'']; convert_forcing.py validates max rain rate < 500 mm/hr'
+  severity: silent
+- id: dt_002
+  symptom: 'Model produces near-zero or zero runoff despite significant rainfall in the forcing data.
+
+    '
+  diagnosis: 'Precipitation pre-converted to m/s before writing to .cfg; TopoFlow expects precipitation
+    in mm/hr in the .cfg and internally converts to m/s by dividing by 3.6e6.  If the user already converted
+    to m/s, the double conversion produces values ~1e-6 too small, yielding effectively zero rainfall.
+
+    ; [''tf'
+  remedy: 'Provide precipitation in mm/hr, not m/s; convert_forcing; [''Check cfg file: P_rain values
+    should be order 1–100, not 1e-6'', ''If values are ~1e-6, multiply by 3.6e6 to recover mm/hr'']; convert_forcing.py
+    warns if max rain < 0.001 mm/hr'
+  severity: silent
+- id: dt_003
+  symptom: 'Model crashes with division-by-zero error or produces NaN values in velocity and discharge
+    calculations.
+
+    '
+  diagnosis: 'Slope grid contains zero values; Manning''s equation computes velocity as v = (1/n) × R^(2/3)
+    × S^(1/2). Zero slope produces zero velocity and can cause 0/0 divisions in the kinematic wave update.  Flat
+    DEM regions (lakes, plateaus) commonly have zero slope after standard computation.
+
+    ; [''tf_channels'
+  remedy: Impose minimum slope floor of 1e-6 m/m on the slope grid; ; ["slope = np.fromfile('slope.rtg',
+    dtype=np.float32).reshape(nr, nc)", 'slope = np.maximum(slope, 1e-6)', "slope.tofile('slope.rtg')"];
+    Check slope.min() > 0 before running
+  severity: fatal
+- id: dt_004
+  symptom: 'Infiltration is 100× too high. All rainfall infiltrates and there is no surface runoff even
+    for intense storms.
+
+    '
+  diagnosis: 'Capillary length G provided in cm instead of m; Green-Ampt and Smith-Parlange wetting front
+    suction (G) is commonly reported in cm in soil physics literature (e.g., G = 11 cm for sandy loam).  TopoFlow
+    expects meters.  Using 11.0 instead of 0.11 produces 100× excessive infiltration capacity.
+
+    ; [''tf_'
+  remedy: 'Divide G by 100 to convert cm → m; convert_soil_params; [''Check .cfg: G_val should be 0.01–0.50
+    m for most soils'', ''If G_val > 5, it is likely in cm'', ''Apply: G_val_m = G_val_cm / 100'']; convert_soil_params.py
+    validates G < 5 m'
+  severity: silent
+- id: dt_005
+  symptom: 'No snowmelt occurs despite snow-covered conditions.  Evapotranspiration is unrealistically
+    high (order 100+ mm/hr).
+
+    '
+  diagnosis: 'Air temperature provided in Kelvin instead of Celsius; ERA5 provides temperature in K (e.g.,
+    293 K = 20 °C).  If fed directly, TopoFlow interprets 293 as 293 °C.  The snow component never triggers
+    melt (since T is always >> 0°C threshold), and ET calculations produce extreme evaporation rates.
+
+    ; [''t'
+  remedy: Subtract 273.15 from temperature to convert K → °C; convert_forcing; ['T_air_C = T_air_K - 273.15',
+    'Verify T_air mean is reasonable for location and season']; convert_forcing.py flags mean T > 100°C
+  severity: silent
+- id: dt_006
+  symptom: 'Water routes incorrectly — flows uphill, pools in unexpected locations, or the outlet receives
+    wrong contributing area.
+
+    '
+  diagnosis: 'D8 flow codes computed from a different DEM than the current one; If the DEM was modified
+    (pit-filling, smoothing, resampling) after the D8 codes were computed, the flow directions no longer
+    match the elevation surface.  TopoFlow uses stale flow codes silently with no warning.
+
+    ; [''tf_channels_kin_wa'
+  remedy: Recompute D8 codes, slopes, and areas from the current DEM; ; ['Delete old flow.rtg, slope.rtg,
+    area.rtg', 'Run D8 component on updated DEM', 'Verify area at outlet matches expected basin size'];
+    Compare DEM timestamp vs D8 file timestamps
+  severity: silent
+- id: dt_007
+  symptom: 'Spatial outputs show shifted or scrambled patterns. Values at known locations don''t match
+    expected topography.
+
+    '
+  diagnosis: 'RTG binary file dimensions don''t match the RTI header; RTG files are raw binary float32
+    arrays with no embedded dimensions. If the RTI header specifies different nrows/ncols than the actual
+    data, numpy.reshape reads shifted values.  This is completely silent.
+
+    ; [''all components reading grids'']'
+  remedy: 'Verify RTG file size equals nrows × ncols × 4 bytes; ; [''Read nrows, ncols from .rti header'',
+    "Check: os.path.getsize(''file.rtg'') == nrows * ncols * 4", ''If mismatch, regenerate RTG from source
+    raster'']; run_topoflow.py checks RTG/RTI consistency in preflight'
+  severity: silent
+- id: dt_008
+  symptom: 'Discharge oscillates wildly, alternating between very high and very low (or negative) values
+    at each timestep.
+
+    '
+  diagnosis: 'Channel timestep too large, violating the CFL condition; The Courant-Friedrichs-Lewy condition
+    requires dt ≤ dx/v_max. For a 30 m grid with slope 0.01 and n=0.03, v_max ≈ 3 m/s, so dt should be
+    ≤ 10 seconds.  Too-large dt causes the kinematic wave scheme to overshoot.
+
+    ; [''tf_channels_kin_wave'']'
+  remedy: 'Reduce channel dt to satisfy CFL (typically 2–6 seconds for 30m grids); ; [''Compute v_max
+    = (1/n) * R^(2/3) * S_max^(1/2)'', ''Set dt < dx / v_max'', ''For 30m grid: dt = 6 sec is usually
+    safe'']; Check dt vs. grid spacing before running'
+  severity: degraded
+- id: dt_009
+  symptom: 'EMELI framework crashes during initialization with "component not found" or "KeyError" for
+    a component name.
+
+    '
+  diagnosis: 'Provider file has incorrect or misspelled component name; Component names in the provider
+    file are case-sensitive and must exactly match the registered names (e.g., ''tf_channels_kin_wave''
+    not ''tf_Channels_Kin_Wave'').  A single character error causes failure.
+
+    ; [''emeli framework'']'
+  remedy: 'Correct the component name in the provider file; ; [''Compare provider file entries against
+    valid names in SKILL.md §8'', ''Fix any typos or case mismatches'', ''Valid names: tf_meteorology,
+    tf_channels_kin_wave, tf_infil_green_ampt, etc.'']; Validate provider names before running'
+  severity: fatal
+- id: dt_010
+  symptom: 'Model crashes with error about soil moisture exceeding 1.0, or produces nonsensical water
+    balance with negative storage.
+
+    '
+  diagnosis: 'Soil porosity (θs) provided as percentage (0–100) instead of fraction (0–1); Some soil databases
+    report porosity as a percentage (e.g., 45% for loam). If 45 is entered directly instead of 0.45, all
+    moisture calculations overflow.
+
+    ; [''tf_infil_green_ampt'', ''tf_infil_richards_1d'', ''tf_satzone_darcy_la'
+  remedy: 'Divide porosity by 100 if source is in percentage; convert_soil_params; [''Check .cfg: qs_val
+    should be 0.30–0.55'', ''If qs_val > 1.0, divide by 100'']; convert_soil_params.py validates θs <
+    0.65'
+  severity: silent
+- id: dt_011
+  symptom: 'NetCDF output file exists but has zero time steps or cannot be read. Time dimension is missing
+    or has length 0.
+
+    '
+  diagnosis: 'save_grid_dt or save_pixels_dt is larger than the simulation duration; If the save interval
+    is longer than the total simulation time, no data gets written to the output file.  The file is created
+    during init but remains empty.
+
+    ; [''topoflow_driver'']'
+  remedy: 'Set save_grid_dt and save_pixels_dt smaller than T_stop_model; ; [''Check driver .cfg: save_grid_dt
+    should be << T_stop_model * 60'', ''Typical: save_grid_dt = 60.0 (every minute)'', ''save_pixels_dt
+    = 6.0 (every timestep)'']; Check save interval < simulation duration before running'
+  severity: degraded
+- id: dt_012
+  symptom: 'ET is 24× too high, consuming most or all rainfall before it can generate runoff.  Water balance
+    shows negative net precipitation.
+
+    '
+  diagnosis: 'Evapotranspiration rate provided in mm/day instead of mm/hr; If ET forcing (from read_file
+    method) is in mm/day and the .cfg expects mm/hr, the model applies 24× the correct evaporation rate.  This
+    removes all available water.
+
+    ; [''tf_evap_read_file'']'
+  remedy: 'Divide ET by 24 to convert mm/day → mm/hr; ; [''Check ET source data units'', ''Apply: ET_mmhr
+    = ET_mmday / 24'', ''Typical ET: 0.1–0.5 mm/hr (2–12 mm/day)'']; Validate ET range before running:
+    should be < 2 mm/hr'
+  severity: silent
+- id: dt_013
+  symptom: 'EMELI framework crashes immediately with ImportError for cfunits.
+
+    '
+  diagnosis: 'cfunits package not installed; TopoFlow''s EMELI framework uses cfunits for automatic unit
+    conversion between components.  Without it, the framework cannot initialize the variable coupling
+    system.
+
+    ; [''emeli framework'']'
+  remedy: 'Install cfunits: pip install cfunits; ; [''pip install cfunits'', ''If cfunits install fails,
+    install UDUNITS2 first: apt-get install libudunits2-dev'']; run_topoflow.py checks for cfunits in
+    preflight'
+  severity: fatal
+- id: dt_014
+  symptom: 'Outlet discharge is always zero even though the model runs and interior cells show flow.
+
+    '
+  diagnosis: 'Outlet pixel coordinates are outside the D8 flow domain; The outlets.txt file specifies
+    (col, row) for monitoring pixels. If these coordinates are outside the grid bounds or at a cell that
+    doesn''t receive flow (e.g., a ridge cell), the reported Q is always zero.
+
+    ; [''topoflow_driver'']'
+  remedy: 'Verify outlet pixel is the maximum-area cell at the basin boundary; ; ["Load area grid: area
+    = np.fromfile(''area.rtg'', float32).reshape(nr,nc)", ''Find outlet: idx = np.unravel_index(area.argmax(),
+    area.shape)'', ''Update outlets.txt with correct col, row'']; Check outlet pixel has max contributing
+    area'
+  severity: silent
+- id: dt_015
+  symptom: 'Model crashes with floating point error or produces Inf velocity at certain grid cells.
+
+    '
+  diagnosis: 'Channel width is zero at some grid cells; Discharge per unit width (q = Q/w) causes division
+    by zero when channel width is zero.  This typically occurs at ridgeline cells or when a width grid
+    has nodata values that weren''t filled.
+
+    ; [''tf_channels_kin_wave'', ''tf_channels_diff_wave'']'
+  remedy: Ensure all cells in width grid have w > 0 (minimum 0.1 m); ; ["width = np.fromfile('chan-w.rtg',
+    float32).reshape(nr,nc)", 'width = np.maximum(width, 0.1)', "width.tofile('chan-w.rtg')"]; Validate
+    width.min() > 0 before running
+  severity: fatal
+- id: dt_016
+  symptom: 'Turbulent heat fluxes and ET are significantly over- or under-estimated. Wind-related processes
+    appear wrong.
+
+    '
+  diagnosis: 'Wind speed measurement height doesn''t match .cfg z parameter; ERA5 provides 10m wind (u10,
+    v10).  If the .cfg z value is set to 2m (common for station data), the logarithmic wind profile adjustment
+    is incorrect.  This affects all turbulent transfer calculations.
+
+    ; [''tf_meteorology'', ''tf_evap_priestl'
+  remedy: 'Set z in meteorology .cfg to match actual measurement height; ; [''For ERA5: set z = 10.0 m'',
+    ''For station data: use actual anemometer height'', ''Or convert wind speed: u2 = u10 × (2/10)^0.2
+    (approx.)'']; Document wind height source in forcing metadata'
+  severity: silent
+- id: dt_017
+  symptom: 'Flow velocities are 100-1000× too fast or too slow.  Hydrograph timing is completely wrong
+    but peak magnitude may look reasonable.
+
+    '
+  diagnosis: Manning's n inverted — using 1/n instead of n; Some references tabulate Manning's conveyance
+    (1/n = 33 for n=0.03). If 33 is entered instead of 0.03, velocity v = (1/n)×R^(2/3)×S^(1/2) becomes
+    v = (1/33)×R^(2/3)×S^(1/2) instead of v = 33×..., which is 1000× too slow.  Conversely, entering 33
+    as n ma
+  remedy: 'Verify Manning''s n is in range 0.01–0.30 (not 1/n); ; [''Check .cfg: nval should be 0.01–0.30'',
+    ''If nval > 1, it is likely 1/n — take reciprocal'', ''Common values: 0.03 (clean stream), 0.05 (weedy),
+    0.10 (overland)'']; Validate Manning''s n range in preflight'
+  severity: silent
+- id: dt_018
+  symptom: 'Infiltration rate is orders of magnitude too high or too low. All rainfall infiltrates (Ks
+    too high) or none does (Ks too low).
+
+    '
+  diagnosis: 'Saturated hydraulic conductivity Ks in mm/hr instead of m/s; HWSD and many soil databases
+    report Ks in mm/hr (e.g., sandy loam Ks ≈ 26 mm/hr).  TopoFlow expects m/s (26 mm/hr = 7.2e-6 m/s).
+    If 26 is entered as m/s, infiltration capacity is 3.6 million times too high.
+
+    ; [''tf_infil_green_ampt'', ''tf_in'
+  remedy: 'Convert Ks: m/s = mm/hr ÷ 3,600,000; convert_soil_params; [''Check .cfg: Ks should be 1e-7
+    to 1e-3 m/s'', ''If Ks > 0.001, it is likely in mm/hr'', ''Apply: Ks_ms = Ks_mmhr / 3.6e6'']; convert_soil_params.py
+    always outputs Ks in m/s'
+  severity: silent

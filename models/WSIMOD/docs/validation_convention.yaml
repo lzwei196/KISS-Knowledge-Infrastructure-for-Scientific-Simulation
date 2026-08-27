@@ -1,0 +1,312 @@
+schema_version: 1
+model_id: WSIMOD
+domain: hydrology
+generated_by: "Step-B fleet agent (Codex GPT-5)"
+generated_at: 2026-08-14
+
+# Literature-grounded validation convention for WSIMOD outputs named in dag.yaml.
+# Blocks are keyed by dag_variable, per the 2026-08-14 Step-B prompt. Numeric bands
+# are only used where a fetched full text reports a threshold or a model benchmark.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  arnold2012:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42256.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling & Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+  entekhabi2010:
+    doi: 10.1175/2010JHM1223.1
+    title: "Performance Metrics for Soil Moisture Retrievals and Application Requirements"
+    venue: "Journal of Hydrometeorology"
+    year: 2010
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_2010jhm1223.1.txt
+  dobson2021:
+    doi: 10.3389/frwa.2021.641462
+    title: "Integrated Modelling to Support Analysis of COVID-19 Impacts on London's Water System and In-river Water Quality"
+    venue: "Frontiers in Water"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_frwa.2021.641462.txt
+  muhandes2022:
+    doi: 10.3389/frwa.2021.773974
+    title: "The Value of Aggregated City Scale Models to Rapidly Assess SuDS in Combined Sewer Systems"
+    venue: "Frontiers in Water"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_frwa.2021.773974.txt
+  dobson2024:
+    doi: 10.5194/gmd-17-4495-2024
+    title: "Modelling water quantity and quality for integrated water cycle management with the Water Systems Integrated Modelling framework (WSIMOD) software"
+    venue: "Geoscientific Model Development"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-17-4495-2024.txt
+
+validation:
+  - dag_variable: flows
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred watershed-scale flow convention; Moriasi 2015 recommends satisfactory flow if NSE > 0.50."
+        cites: [moriasi2015, arnold2012]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Applied to the water-volume component of the VQIP flow record after unit reconciliation."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 pairs RMSE with observation standard deviation as RSR and gives a satisfactory monthly threshold of RSR < 0.70."
+        cites: [moriasi2007]
+    validated_when: "For water-volume transfers, NSE >= 0.50 and |PBIAS| <= 15% after m3/ML and timestep reconciliation."
+    evidence_strength: moderate
+    confidence: 0.70
+    notes: >-
+      Moriasi 2015 states flow simulations are satisfactory at watershed scale when "NSE > 0.50" and
+      "PBIAS <= +/-15%"; Arnold 2012 repeats that Moriasi 2007 proposed NSE should exceed 0.5. This
+      block grades the water-volume part of the dag variable flows. Pollutant masses/concentrations
+      in VQIPs should use the separate pollutant concentration / mass block.
+
+  - dag_variable: "river flow / discharge"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final PEC for watershed-scale flow: very good >0.80, good >0.70, satisfactory >0.50."
+        cites: [moriasi2015, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final PEC for watershed-scale flow: PBIAS < +/-15% is satisfactory."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 table 4 rates monthly watershed simulations satisfactory at RSR < 0.70."
+        cites: [moriasi2007]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 recommends R2 with regression slope/intercept, but NSE and PBIAS are the headline gates here."
+        cites: [moriasi2015]
+    validated_when: "Discharge is validated when NSE >= 0.50 and |PBIAS| <= 15% at the comparable node/gauge scale."
+    evidence_strength: moderate
+    confidence: 0.75
+    notes: >-
+      This is the primary WSIMOD hydrologic output. The convention is transferred from watershed-scale
+      hydrologic and water-quality model evaluation: Moriasi 2015 says PEC apply to calibration and
+      validation periods and should be used cautiously for models beyond the meta-analysis set.
+
+  - dag_variable: "pollutant concentration / mass"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.65, good: 0.50, satisfactory: 0.35}
+        pass_band: satisfactory
+        band_note: "Watershed-scale N/P criterion transferred to nutrient pollutant time series; not a universal DO, pH, or temperature threshold."
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 15.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 final PEC for N/P: PBIAS < +/-30% is satisfactory."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: spearman_rank
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Dobson 2021 reports Spearman rank alongside PBIAS and NSE for sparse pollutant samples, but gives no numeric validation tier."
+        cites: [dobson2021]
+    validated_when: "For nutrient-like pollutant time series, NSE >= 0.35 and |PBIAS| <= 30%; for non-nutrient constituents, use only if the comparison is defensibly analogous."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Dobson 2021 evaluates WSIMOD-lineage water quality by "percentage bias, Nash-Sutcliffe efficiency
+      and Spearman rank" against WIMS samples. Moriasi 2015 supplies the numeric watershed-scale N/P
+      thresholds. Dobson 2021 also warns that sparse samples and high intraday variability make urban
+      water-quality validation complex; do not treat this as a pass band for DO, pH, temperature, or
+      pollutant constituents with different observation-error structure.
+
+  - dag_variable: "pollutant concentration / mass"
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 15.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Magnitude-only snapshot convention transferred from Moriasi 2015 N/P PBIAS thresholds."
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2007 notes that when only a few grab samples exist, frequency distributions or percentiles may be more appropriate than recommended quantitative statistics."
+        cites: [moriasi2007, dobson2021]
+    validated_when: "For aggregated nutrient-like grab/sample comparisons, |PBIAS| <= 30%; avoid temporal-efficiency claims from isolated spot samples."
+    evidence_strength: moderate
+    confidence: 0.60
+    notes: >-
+      The dag already selects PBIAS for point_snapshot. Dobson 2021 rounded WIMS sample times to the
+      model timestep and presented percent bias because the scenario analysis concerned mean concentration
+      changes. Moriasi 2007 cautions that sparse grab samples may not support the usual time-series metrics.
+
+  - dag_variable: "storage / tank levels"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE/RMSE/PBIAS threshold for WSIMOD conceptual tank storage volume."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "WSIMOD tank levels include reservoir, groundwater, soil, river and treatment stores; Dobson 2024 reports reservoir levels are not typically available and storage units are configuration dependent."
+        cites: [dobson2024]
+    validated_when: "UNRESOLVED - require case-specific observed level/storage data and a cited storage-volume or level threshold before auto-validating."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      Dobson 2024 documents the Tank abstraction and notes "Reservoir levels Not typically available" in
+      the data table, but the fetched set does not provide a numeric convention for tank volume. DRAINMOD
+      water-table-depth MAE criteria in Moriasi 2015 are not applied because the dag variable is mixed
+      storage volume, not a direct groundwater-head depth.
+
+  - dag_variable: "land surface states (soil moisture, runoff, percolation)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a single numeric NSE threshold for this mixed WSIMOD land-state output."
+        cites: []
+    secondary_metrics:
+      - metric: ub_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Entekhabi 2010 discusses ubRMSE and correlation for soil moisture and states that land models are strongly limited in reproducing observed soil moisture by missing soil hydraulic information and unresolved nonlinear processes."
+        cites: [entekhabi2010]
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Entekhabi 2010 says correlation captures phase information even when mean and variance biases exist; no numeric pass tier is defined for WSIMOD land states."
+        cites: [entekhabi2010]
+    validated_when: "UNRESOLVED - compare runoff/percolation with hydrologic flow metrics only when separated from soil moisture; no automatic gate for the mixed land-state record."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      Entekhabi 2010 explicitly says its purpose is "not to define a numerical value for the measurement
+      requirement" and emphasizes application-specific requirements. Therefore the common 0.04 m3 m-3
+      soil-moisture value is not used as a pass band here. The dag's conceptual IHACRES-style soil store
+      caveat remains a data/interpretation warning, not a numeric validation convention.
+
+  - dag_variable: "CSO spill / flood volume"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: relative_error
+        direction: minimize
+        unit: percent
+        bands: {good: 17.3, satisfactory: 21.3}
+        pass_band: satisfactory
+        band_note: "CityWatStorm benchmark reports RE=17.3% for total flood volume and RE=21.3% for total CSO volume against InfoWorks ICM."
+        cites: [muhandes2022]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Muhandes 2022 reports low time-varying agreement because CityWatStorm is spatially aggregated: flood timing differs because flow is instantaneous, and CSO temporal peaks cannot reflect InfoWorks spatial heterogeneity."
+        cites: [muhandes2022, dobson2024]
+      - metric: r2
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "The benchmark reports low time-series R2 values (0.21 flood, 0.11 CSO, 0.29 river discharge) while accepting total-volume accuracy as useful for planning."
+        cites: [muhandes2022]
+    validated_when: "Total CSO/flood volume relative error <= 21.3%; do not require high temporal NSE/R2 for the aggregated storm-sewer representation."
+    evidence_strength: moderate
+    confidence: 0.70
+    notes: >-
+      The dag's determining_metric is NSE, but the fetched WSIMOD-lineage sewer benchmark validates
+      total volumes with relative error and explicitly describes temporal-pattern limits. The paper
+      concludes total flood volume and CSOs have "accuracy ranging from 78 to 83%" and reports the
+      component RE values; this supersedes NSE as the headline criterion for this output.
+
+  - dag_variable: "CSO spill / flood volume"
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched sources define CSI direction and formula but do not give a numeric CSO-trigger validation tier."
+        cites: []
+    secondary_metrics:
+      - metric: pod
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Bennett 2013 lists probability of detection as a categorical metric with ideal value 1 for rare events."
+        cites: [bennett2013]
+      - metric: far
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bennett 2013 lists false alarm ratio with ideal value 0 and notes it is sensitive to false alarms."
+        cites: [bennett2013]
+    validated_when: "UNRESOLVED - CSI is the right event metric, but no fetched CSO-event pass band was found."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Bennett 2013 defines threat score / critical success index as hits divided by hits + misses + false
+      alarms and says it penalizes both misses and false alarms. That is a metric convention, not a numeric
+      validation threshold, so the band remains null.
+
+deferred_paywalled:
+  - ref: "Sensitivity analysis-based multi-objective calibration using machine learning emulators for integral water system models"
+    doi: 10.1080/02626667.2026.2674165
+    needed_for: ["storage / tank levels", "land surface states (soil moisture, runoff, percolation)"]

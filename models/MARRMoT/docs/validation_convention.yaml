@@ -1,216 +1,234 @@
 schema_version: 1
 model_id: MARRMoT
 domain: hydrology
-generated_by: "self-improve session (Claude Opus 4.8) — Step-B validation-convention builder, general schema"
+generated_by: self-improve session (Claude Opus 4.8) — Step-B validation-convention builder, general schema
 generated_at: 2026-07-09
-
-# Grounding summary (honest coverage note):
-# MARRMoT is a lumped conceptual rainfall-runoff toolbox (46-47 model structures). Its headline
-# gradeable quantity is DISCHARGE, for which the field has a strong, tiered pass-convention:
-# Moriasi et al. 2015 (Trans. ASABE) + Moriasi et al. 2007 (both fetched) give NSE/PBIAS/R2 tiers for
-# watershed-scale streamflow => discharge/point_time_series is STRONG. Knoben et al. 2019 (fetched)
-# supplies the no-skill floor (NSE=0 == mean-flow benchmark; KGE equivalent -0.41). Evapotranspiration
-# and storage are only INDIRECTLY observable for a lumped conceptual model (Ea is Ep-bounded; conceptual
-# stores are numerical constructs, not measured states). There is NO tiered ET/storage pass-convention in
-# the fetched set: the FLUXNET multi-site ET benchmark (Ershadi et al. 2014, fetched) gives an achievable
-# NSE/RMSD envelope for DEDICATED ET models (not a pass line), and Tong et al. 2021 (fetched) documents
-# that satellite soil-moisture/snow constrain internal-state PATTERNS but not runoff efficiency. Hence ET
-# and storage carry NULL numeric bands + confidence<=0.4 (contextualize only, never loosen), with the
-# storage NSE ceiling marked structurally_limited on a fetched-paper basis. Bands are plain numbers read
-# via `direction` (see VALIDATION_CONVENTION_SCHEMA.md). The scalar waterBalance dag row is an internal
-# diagnostic with no obs binding and is intentionally NOT emitted as a block.
-
 references:
   marrmot_v12:
     doi: 10.5194/gmd-12-2463-2019
-    title: "Modular Assessment of Rainfall-Runoff Models Toolbox (MARRMoT) v1.2: an open-source, extendable framework providing implementations of 46 conceptual hydrologic models as continuous state-space formulations"
-    venue: "Geosci. Model Dev."
+    title: 'Modular Assessment of Rainfall-Runoff Models Toolbox (MARRMoT) v1.2: an open-source, extendable
+      framework providing implementations of 46 conceptual hydrologic models as continuous state-space
+      formulations'
+    venue: Geosci. Model Dev.
     year: 2019
     oa: gold
     resolves: https://gmd.copernicus.org/articles/12/2463/2019/
   moriasi2015:
     doi: 10.13031/trans.58.10715
-    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
-    venue: "Transactions of the ASABE"
+    title: 'Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria'
+    venue: Transactions of the ASABE
     year: 2015
     oa: manual
     resolves: https://elibrary.asabe.org/abstract.asp?aid=46769
   moriasi2007:
     doi: 10.13031/2013.23153
-    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
-    venue: "Transactions of the ASABE"
+    title: Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations
+    venue: Transactions of the ASABE
     year: 2007
     oa: manual
     resolves: https://elibrary.asabe.org/abstract.asp?aid=23153
   knoben2019:
     doi: 10.5194/hess-23-4323-2019
-    title: "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: 'Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency
+      scores'
+    venue: Hydrol. Earth Syst. Sci.
     year: 2019
     oa: gold
     resolves: https://hess.copernicus.org/articles/23/4323/2019/
   ershadi2014:
     doi: 10.1016/j.agrformet.2013.11.008
-    title: "Multi-site evaluation of terrestrial evaporation models using FLUXNET data"
-    venue: "Agricultural and Forest Meteorology"
+    title: Multi-site evaluation of terrestrial evaporation models using FLUXNET data
+    venue: Agricultural and Forest Meteorology
     year: 2014
     oa: manual
     resolves: https://doi.org/10.1016/j.agrformet.2013.11.008
   tong2021:
     doi: 10.5194/hess-25-1389-2021
-    title: "The value of ASCAT soil moisture and MODIS snow cover data for calibrating a conceptual hydrologic model"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: The value of ASCAT soil moisture and MODIS snow cover data for calibrating a conceptual hydrologic
+      model
+    venue: Hydrol. Earth Syst. Sci.
     year: 2021
     oa: gold
     resolves: https://hess.copernicus.org/articles/25/1389/2021/
-
 validation:
-
-  # ===================== DISCHARGE / time series (strong, tiered) =====================
-  - canonical_quantity: discharge
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.80, good: 0.60, satisfactory: 0.50}
-        pass_band: satisfactory
-        cites: [moriasi2015, moriasi2007]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 3.0, good: 10.0, satisfactory: 15.0}
-        pass_band: satisfactory
-        cites: [moriasi2015]
-    secondary_metrics:
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "KGE is a common alternative headline for discharge; Knoben 2019 shows the no-skill mean-flow benchmark is KGE = -0.41 (analogous to NSE = 0), so a positive KGE well above -0.41 is the minimum adequacy floor. No tiered KGE pass table in the fetched set, so KGE is retained as supportive, not headline."
-        cites: [knoben2019]
-      - metric: r2
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Moriasi 2015 couples R2 > 0.60 with the NSE/PBIAS satisfactory rating for watershed-scale flow; co-reported here as supportive since the dag determines on NSE."
-        cites: [moriasi2015]
-    validated_when: "NSE >= 0.50 AND |PBIAS| <= 15% (Moriasi 2015 daily/monthly watershed-scale streamflow 'satisfactory'); very good = NSE > 0.80 & |PBIAS| <= 3%."
-    evidence_strength: strong
-    confidence: 0.85
-    notes: >-
-      Moriasi 2015 abstract: "model performance can be judged 'satisfactory' for flow simulations if ...
-      daily, monthly, or annual R2 > 0.60, NSE > 0.50, and PBIAS <= +/-15% for watershed-scale models",
-      and the general PEC (Fig. 3): NSE very good >0.80, good 0.60-0.80, satisfactory 0.50-0.60; monthly-flow
-      |PBIAS| very good <=3, good 3-10, satisfactory 10-15. Moriasi 2007 corroborates the streamflow
-      satisfactory floor (NSE > 0.50, RSR < 0.70, |PBIAS| < +/-25%). Two peer-reviewed benchmarks => strong.
-      Caveats carried from the dag: convert observed m3/s to mm/d with the gauged upstream area, and exclude
-      >=1 yr spin-up before computing metrics. NSE=0 is the mean-flow no-skill benchmark (Knoben 2019).
-
-  # ===================== DISCHARGE / snapshot (transferred band, weak) =====================
-  - canonical_quantity: discharge
-    obs_shape: point_snapshot
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 3.0, good: 10.0, satisfactory: 15.0}
-        pass_band: satisfactory
-        band_note: "band transferred from Moriasi 2015 monthly-flow PBIAS tiers; single-instant streamflow is a weak test for a continuous water-balance model (prefer the time-series form)."
-        cites: [moriasi2015]
-    secondary_metrics: []
-    validated_when: "|PBIAS| <= 15% (magnitude-only, transferred from the continuous-flow convention); temporal-skill metrics are not evaluable on a single snapshot."
-    evidence_strength: moderate
-    confidence: 0.4
-    notes: >-
-      No snapshot-specific streamflow threshold exists in the fetched set; the magnitude band is transferred
-      from Moriasi 2015's continuous-flow PBIAS tiers, hence reduced confidence. The dag itself flags this
-      shape as weak for a continuous model.
-
-  # ===================== EVAPOTRANSPIRATION / time series (benchmark envelope, no tiered pass) =====================
-  - canonical_quantity: evapotranspiration
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no tiered ET NSE pass-convention in the fetched set. FLUXNET benchmark (Ershadi 2014): dedicated ET models reach NSEavg 0.42-0.77 (ensemble mean 0.61); a lumped conceptual Ea, bounded by the externally supplied Ep, will typically be lower. Contextualize only; never loosen."
-        cites: [ershadi2014]
-    secondary_metrics:
-      - metric: rmse
-        direction: minimize
-        status: supportive
-        ceiling_reason: "FLUXNET multi-site latent-heat RMSD envelope (Ershadi 2014): best individual model ~64-66 W/m2, ensemble ~64 W/m2, weakest ~105 W/m2. An achievable-skill envelope for ET flux, not a pass line; units are W/m2 (LE) and do not map cleanly to the dag's mm/d Ea."
-        cites: [ershadi2014]
-    validated_when: "UNRESOLVED numeric threshold — MARRMoT Ea is Ep-bounded and only indirectly comparable to flux-tower/remote-sensing ET; treat as contextualized (FLUXNET envelope NSEavg ~0.4-0.77) until an ET pass-convention is fetched."
-    evidence_strength: moderate
-    confidence: 0.4
-    notes: >-
-      Ershadi 2014 ranks terrestrial-evaporation models against FLUXNET: "the ensemble mean (EM) presents
-      the best overall performance with NSEavg = 0.61 ... and RMSDavg = 64 W/m2", PT-JPL and SEBS
-      NSEavg 0.42-0.5+. This is a benchmark envelope for dedicated ET models, NOT a validated-when line for a
-      conceptual rainfall-runoff Ea, so the headline NSE band is null and the block may only contextualize.
-
-  # ===================== EVAPOTRANSPIRATION / spatial time series (data-gap) =====================
-  - canonical_quantity: evapotranspiration
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no ET-specific PBIAS tier in the fetched set; Moriasi's PBIAS tiers are derived for streamflow, not ET, so they are NOT transferred here. Model is lumped (0-D): gridded ET products must be spatially averaged to the catchment, losing spatial pattern."
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited ET PBIAS threshold; a lumped model cannot reproduce the spatial pattern of a gridded ET product. Data-gap until an ET magnitude-convention is fetched."
-    evidence_strength: weak
-    confidence: 0.35
-    notes: >-
-      The dag compares catchment-averaged Ea against a gridded ET product (e.g. MODIS 8-day). No fetched paper
-      supplies an ET PBIAS pass tier; band null per the no-fabrication rule. Must not loosen the gate.
-
-  # ===================== STORAGE / time series (structural ceiling) =====================
-  - canonical_quantity: storage
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "conceptual stores (soil-moisture / fast / slow / snow reservoirs) are numerical constructs, not directly measured states; there is no tiered storage NSE pass-convention in the fetched set. Comparison to SWE / soil-moisture / TWS obs is pattern-based and needs a store->obs scale/unit mapping."
-        cites: []
-    secondary_metrics:
-      - metric: nse
-        direction: maximize
-        status: structurally_limited
-        ceiling_reason: >-
-          A lumped conceptual store is not a physical observable; Tong et al. 2021 show that assimilating
-          satellite soil-moisture/snow "typically improves the spatial and/or temporal patterns of internal
-          state variables and fluxes but does not necessarily improve the efficiency of simulating runoff",
-          i.e. internal states are only indirectly identifiable and their absolute-value NSE is data/mapping
-          limited, NOT a KI defect. A failing storage NSE therefore routes to acquire_data (better obs / store
-          mapping), never fix_ki.
-        cites: [tong2021]
-      - metric: r
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Pattern correlation (r) is the field's usual skill measure for conceptual internal states against satellite soil-moisture/snow (Tong 2021); the dag uses r for TWS-anomaly and soil-moisture bindings. No numeric r pass tier in the fetched set."
-        cites: [tong2021]
-    validated_when: "UNRESOLVED numeric threshold — conceptual stores validated only qualitatively via pattern agreement (correlation) against soil-moisture/SWE/TWS obs; a failing absolute-NSE is a data/observability ceiling (Tong 2021), routed to acquire_data not fix_ki."
-    evidence_strength: weak
-    confidence: 0.35
-    notes: >-
-      Storage is the weakest-grounded quantity: conceptual stores are not directly measurable (dag caveat)
-      and no fetched paper gives a tiered storage NSE/r threshold. Tong 2021 grounds the structural ceiling
-      (internal states indirectly identifiable). Bands null; block contextualizes (suppress spurious fix_ki on
-      a low store NSE) but never loosens a headline discharge requirement.
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.8
+      good: 0.6
+      satisfactory: 0.5
+    pass_band: satisfactory
+    cites:
+    - moriasi2015
+    - moriasi2007
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 3.0
+      good: 10.0
+      satisfactory: 15.0
+    pass_band: satisfactory
+    cites:
+    - moriasi2015
+  secondary_metrics:
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: KGE is a common alternative headline for discharge; Knoben 2019 shows the no-skill
+      mean-flow benchmark is KGE = -0.41 (analogous to NSE = 0), so a positive KGE well above -0.41 is
+      the minimum adequacy floor. No tiered KGE pass table in the fetched set, so KGE is retained as supportive,
+      not headline.
+    cites:
+    - knoben2019
+  - metric: r2
+    direction: maximize
+    status: supportive
+    ceiling_reason: Moriasi 2015 couples R2 > 0.60 with the NSE/PBIAS satisfactory rating for watershed-scale
+      flow; co-reported here as supportive since the dag determines on NSE.
+    cites:
+    - moriasi2015
+  validated_when: NSE >= 0.50 AND |PBIAS| <= 15% (Moriasi 2015 daily/monthly watershed-scale streamflow
+    'satisfactory'); very good = NSE > 0.80 & |PBIAS| <= 3%.
+  evidence_strength: strong
+  confidence: 0.85
+  notes: 'Moriasi 2015 abstract: "model performance can be judged ''satisfactory'' for flow simulations
+    if ... daily, monthly, or annual R2 > 0.60, NSE > 0.50, and PBIAS <= +/-15% for watershed-scale models",
+    and the general PEC (Fig. 3): NSE very good >0.80, good 0.60-0.80, satisfactory 0.50-0.60; monthly-flow
+    |PBIAS| very good <=3, good 3-10, satisfactory 10-15. Moriasi 2007 corroborates the streamflow satisfactory
+    floor (NSE > 0.50, RSR < 0.70, |PBIAS| < +/-25%). Two peer-reviewed benchmarks => strong. Caveats
+    carried from the dag: convert observed m3/s to mm/d with the gauged upstream area, and exclude >=1
+    yr spin-up before computing metrics. NSE=0 is the mean-flow no-skill benchmark (Knoben 2019).'
+  dag_variable: Q
+- obs_shape: point_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 3.0
+      good: 10.0
+      satisfactory: 15.0
+    pass_band: satisfactory
+    band_note: band transferred from Moriasi 2015 monthly-flow PBIAS tiers; single-instant streamflow
+      is a weak test for a continuous water-balance model (prefer the time-series form).
+    cites:
+    - moriasi2015
+  secondary_metrics: []
+  validated_when: '|PBIAS| <= 15% (magnitude-only, transferred from the continuous-flow convention); temporal-skill
+    metrics are not evaluable on a single snapshot.'
+  evidence_strength: moderate
+  confidence: 0.4
+  notes: No snapshot-specific streamflow threshold exists in the fetched set; the magnitude band is transferred
+    from Moriasi 2015's continuous-flow PBIAS tiers, hence reduced confidence. The dag itself flags this
+    shape as weak for a continuous model.
+  dag_variable: Q
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: 'no tiered ET NSE pass-convention in the fetched set. FLUXNET benchmark (Ershadi 2014):
+      dedicated ET models reach NSEavg 0.42-0.77 (ensemble mean 0.61); a lumped conceptual Ea, bounded
+      by the externally supplied Ep, will typically be lower. Contextualize only; never loosen.'
+    cites:
+    - ershadi2014
+  secondary_metrics:
+  - metric: rmse
+    direction: minimize
+    status: supportive
+    ceiling_reason: 'FLUXNET multi-site latent-heat RMSD envelope (Ershadi 2014): best individual model
+      ~64-66 W/m2, ensemble ~64 W/m2, weakest ~105 W/m2. An achievable-skill envelope for ET flux, not
+      a pass line; units are W/m2 (LE) and do not map cleanly to the dag''s mm/d Ea.'
+    cites:
+    - ershadi2014
+  validated_when: UNRESOLVED numeric threshold — MARRMoT Ea is Ep-bounded and only indirectly comparable
+    to flux-tower/remote-sensing ET; treat as contextualized (FLUXNET envelope NSEavg ~0.4-0.77) until
+    an ET pass-convention is fetched.
+  evidence_strength: moderate
+  confidence: 0.4
+  notes: 'Ershadi 2014 ranks terrestrial-evaporation models against FLUXNET: "the ensemble mean (EM) presents
+    the best overall performance with NSEavg = 0.61 ... and RMSDavg = 64 W/m2", PT-JPL and SEBS NSEavg
+    0.42-0.5+. This is a benchmark envelope for dedicated ET models, NOT a validated-when line for a conceptual
+    rainfall-runoff Ea, so the headline NSE band is null and the block may only contextualize.'
+  dag_variable: Ea
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: 'no ET-specific PBIAS tier in the fetched set; Moriasi''s PBIAS tiers are derived for streamflow,
+      not ET, so they are NOT transferred here. Model is lumped (0-D): gridded ET products must be spatially
+      averaged to the catchment, losing spatial pattern.'
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited ET PBIAS threshold; a lumped model cannot reproduce the spatial
+    pattern of a gridded ET product. Data-gap until an ET magnitude-convention is fetched.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: The dag compares catchment-averaged Ea against a gridded ET product (e.g. MODIS 8-day). No fetched
+    paper supplies an ET PBIAS pass tier; band null per the no-fabrication rule. Must not loosen the gate.
+  dag_variable: Ea
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: conceptual stores (soil-moisture / fast / slow / snow reservoirs) are numerical constructs,
+      not directly measured states; there is no tiered storage NSE pass-convention in the fetched set.
+      Comparison to SWE / soil-moisture / TWS obs is pattern-based and needs a store->obs scale/unit mapping.
+    cites: []
+  secondary_metrics:
+  - metric: nse
+    direction: maximize
+    status: structurally_limited
+    ceiling_reason: A lumped conceptual store is not a physical observable; Tong et al. 2021 show that
+      assimilating satellite soil-moisture/snow "typically improves the spatial and/or temporal patterns
+      of internal state variables and fluxes but does not necessarily improve the efficiency of simulating
+      runoff", i.e. internal states are only indirectly identifiable and their absolute-value NSE is data/mapping
+      limited, NOT a KI defect. A failing storage NSE therefore routes to acquire_data (better obs / store
+      mapping), never fix_ki.
+    cites:
+    - tong2021
+  - metric: r
+    direction: maximize
+    status: supportive
+    ceiling_reason: Pattern correlation (r) is the field's usual skill measure for conceptual internal
+      states against satellite soil-moisture/snow (Tong 2021); the dag uses r for TWS-anomaly and soil-moisture
+      bindings. No numeric r pass tier in the fetched set.
+    cites:
+    - tong2021
+  validated_when: UNRESOLVED numeric threshold — conceptual stores validated only qualitatively via pattern
+    agreement (correlation) against soil-moisture/SWE/TWS obs; a failing absolute-NSE is a data/observability
+    ceiling (Tong 2021), routed to acquire_data not fix_ki.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: 'Storage is the weakest-grounded quantity: conceptual stores are not directly measurable (dag
+    caveat) and no fetched paper gives a tiered storage NSE/r threshold. Tong 2021 grounds the structural
+    ceiling (internal states indirectly identifiable). Bands null; block contextualizes (suppress spurious
+    fix_ki on a low store NSE) but never loosens a headline discharge requirement.'
+  dag_variable: S
 deferred_paywalled:
-  - ref: "Andres et al. 2019 — sensitivity-analysis comparison across three hydrological models (would supply parameter/state identifiability context for storage)"
-    doi: 10.3390/w11051062
-    needed_for: [storage]
-  - ref: "A dedicated tiered pass-convention for conceptual-model ET and internal-storage skill (analogous to Moriasi's streamflow PEC) — not present in the fetched literature"
-    doi: unknown_not_fetched
-    needed_for: [evapotranspiration, storage]
+- ref: Andres et al. 2019 — sensitivity-analysis comparison across three hydrological models (would supply
+    parameter/state identifiability context for storage)
+  doi: 10.3390/w11051062
+  needed_for:
+  - storage
+- ref: A dedicated tiered pass-convention for conceptual-model ET and internal-storage skill (analogous
+    to Moriasi's streamflow PEC) — not present in the fetched literature
+  doi: unknown_not_fetched
+  needed_for:
+  - evapotranspiration
+  - storage

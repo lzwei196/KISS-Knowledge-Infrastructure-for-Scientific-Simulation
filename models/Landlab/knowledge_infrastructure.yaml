@@ -1,465 +1,104 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
   name: Landlab
-  domain: geomorphology
-  version: "2.x"
-  created: '2026-03-25'
-  updated: '2026-03-25'
   language: python
-  build_system: pip
-  validation_status: reference_validated
-  authors:
-    - "Auto-dissect KI generator"
-  license: MIT
-  description: >
-    Open-source Python framework for numerical modeling of Earth surface dynamics.
-    Provides ~60 plug-and-play components (flow routing, stream power erosion,
-    hillslope diffusion, overland flow, groundwater, vegetation, etc.) composed
-    on flexible grids (raster, hex, Voronoi, network).
-
+  implementation:
+    id: landlab
+    version: 2.10.1
+    provenance: Python with Cython kernels; CSDMS / CU Boulder, U. Washington, Tulane (Landlab Development
+      Team); composable process components on a shared model grid.
+  scientific_reference_version: Landlab 2.x component-based Earth-surface-dynamics framework (Hobley et
+    al. 2017 ESurf 5:21-46; Barnhart et al. 2020 Landlab v2.0 ESurf 8:379-397)
+  binary:
+    path: KISSPATH_KI_ROOT/Landlab/source/repo/src/landlab/__init__.py
+    type: Python
 pipeline:
   stages:
-
-  - id: s0_config
-    name: Configuration
-    description: >
-      Define simulation parameters: grid dimensions, resolution, time span,
-      component selection, and output frequency. Produces config.yaml that
-      governs all downstream stages.
-    knowledge_type: procedural
-    depends_on: []
-    tools: []
-    milestones:
-    - id: m_s0_config
-      description: config.yaml exists with valid grid, time, and component sections
-      verification: "python -c \"import yaml; yaml.safe_load(open('config.yaml'))\""
-
-  - id: s1_domain
-    name: Domain Setup
-    description: >
-      Create a RasterModelGrid from a DEM (ESRI ASCII or GeoTIFF) or synthetic
-      topography. Set boundary conditions. Save grid as NetCDF.
-    knowledge_type: procedural
-    depends_on: [s0_config]
-    tools:
-    - id: build_grid_from_dem
-      name: Build Grid from DEM
-      script: tools/s1_domain/build_grid_from_dem.py
-      language: python
-      description: Convert DEM (ESRI ASCII) to Landlab RasterModelGrid, set boundary conditions, save as NetCDF
-      inputs:
-        - name: dem_file
-          type: file
-          format: ESRI ASCII (.asc) or synthetic config
-          description: Digital elevation model or grid config for synthetic generation
-        - name: config_file
-          type: file
-          format: YAML
-          description: Pipeline configuration with grid shape and spacing
-      outputs:
-        - name: grid_file
-          type: file
-          format: NetCDF (.nc)
-          path: grid.nc
-          description: Landlab RasterModelGrid with topographic__elevation field
-      preconditions:
-        - config.yaml must exist with grid section
-        - DEM file must exist (if using real DEM)
-      postconditions:
-        - grid.nc exists with topographic__elevation at nodes
-        - Boundary conditions are set correctly
-    milestones:
-    - id: m_s1_domain
-      description: grid.nc exists with topographic__elevation field at nodes
-      verification: "python -c \"from landlab.io.netcdf import read_netcdf; g=read_netcdf('grid.nc'); assert 'topographic__elevation' in g.at_node\""
-
-  - id: s2_data
-    name: Data Preparation
-    description: >
-      Prepare soil and lithology parameters from HWSD or user-supplied data.
-      Convert hydraulic conductivity, erodibility, and diffusivity to model
-      units. Produces soil_params.yaml.
-    knowledge_type: procedural
-    depends_on: [s0_config]
-    tools:
-    - id: prepare_soil_params
-      name: Prepare Soil Parameters
-      script: tools/s2_data/prepare_soil_params.py
-      language: python
-      description: Convert HWSD soil data to Landlab erodibility and diffusivity parameters
-      inputs:
-        - name: hwsd_file
-          type: file
-          format: CSV or NetCDF
-          description: HWSD soil database extract with texture, Ksat, organic content
-        - name: config_file
-          type: file
-          format: YAML
-          description: Pipeline configuration with component selection
-      outputs:
-        - name: soil_params_file
-          type: file
-          format: YAML
-          path: soil_params.yaml
-          description: Soil-derived parameters (K_sp, linear_diffusivity, hydraulic_conductivity)
-      preconditions:
-        - config.yaml must exist
-        - HWSD file must exist (or use defaults)
-      postconditions:
-        - soil_params.yaml exists with K_sp, linear_diffusivity keys
-        - Hydraulic conductivity converted from cm/day to m/s
-    milestones:
-    - id: m_s2_data
-      description: soil_params.yaml exists with K_sp, linear_diffusivity, and hydraulic_conductivity
-      verification: "python -c \"import yaml; d=yaml.safe_load(open('soil_params.yaml')); assert 'K_sp' in d\""
-
-  - id: s3_forcing
-    name: Forcing Conversion
-    description: >
-      Convert meteorological forcing (CMFD, MSWX, or user data) to Landlab-
-      compatible forcing CSV. Handles unit conversions from kg/m2/s or mm/day
-      to m/s for FlowAccumulator or mm for SoilMoisture.
-    knowledge_type: procedural
-    depends_on: [s0_config]
-    tools:
-    - id: convert_forcing_to_landlab
-      name: Convert Forcing to Landlab
-      script: tools/s3_forcing/convert_forcing_to_landlab.py
-      language: python
-      description: >
-        Convert CMFD/MSWX meteorological data to Landlab forcing CSV.
-        CRITICAL: CMFD precip is kg/m2/s → multiply by 86400 for mm/day,
-        or keep as mm/s and convert to m/s (÷1000).
-        MSWX precip is mm/day → divide by 86400000 for m/s.
-      inputs:
-        - name: forcing_dir
-          type: directory
-          format: NetCDF files (CMFD or MSWX)
-          description: Directory with meteorological forcing data
-        - name: config_file
-          type: file
-          format: YAML
-          description: Configuration with lat/lon, time range, target units
-      outputs:
-        - name: forcing_file
-          type: file
-          format: CSV
-          path: forcing.csv
-          description: Timeseries with timestamp, precip (model units), temperature, radiation
-      preconditions:
-        - Forcing NetCDF files exist in forcing_dir
-        - config.yaml specifies lat, lon, start_date, end_date
-      postconditions:
-        - forcing.csv exists with no NaN values
-        - Precipitation values in correct units for target component
-    milestones:
-    - id: m_s3_forcing
-      description: forcing.csv exists with timestamp and precipitation columns, no NaN
-      verification: "python -c \"import pandas as pd; df=pd.read_csv('forcing.csv'); assert not df.isnull().any().any()\""
-
-  - id: s4_parameters
-    name: Parameter Generation
-    description: >
-      Generate a complete parameter YAML for all selected components. Merges
-      soil parameters from s2, validates unit consistency, writes params.yaml.
-    knowledge_type: procedural
-    depends_on: [s0_config, s2_data]
-    tools:
-    - id: generate_landlab_params
-      name: Generate Landlab Parameters
-      script: tools/s4_parameters/generate_landlab_params.py
-      language: python
-      description: Merge config + soil params into unified component parameter file
-      inputs:
-        - name: config_file
-          type: file
-          format: YAML
-          description: Pipeline config with component selection
-        - name: soil_params_file
-          type: file
-          format: YAML
-          description: Soil-derived parameters from stage s2
-      outputs:
-        - name: params_file
-          type: file
-          format: YAML
-          path: params.yaml
-          description: Unified parameter file for all Landlab components
-      preconditions:
-        - config.yaml and soil_params.yaml must exist
-      postconditions:
-        - params.yaml has sections for each selected component
-        - All units are consistent (same time base)
-    milestones:
-    - id: m_s4_parameters
-      description: params.yaml exists with sections for each selected component
-      verification: "python -c \"import yaml; d=yaml.safe_load(open('params.yaml')); assert 'stream_power' in d or 'linear_diffuser' in d\""
-
-  - id: s5_run
-    name: Execution
-    description: >
-      Execute the Landlab simulation: create grid, instantiate components, run
-      time loop. Saves NetCDF snapshots at configured intervals and a
-      timeseries CSV of summary statistics each timestep.
-    knowledge_type: procedural
-    depends_on: [s1_domain, s3_forcing, s4_parameters]
-    tools:
-    - id: run_landlab
-      name: Run Landlab Simulation
-      script: tools/s5_run/run_landlab.py
-      language: python
-      description: >
-        Execute Landlab landscape evolution model. Creates grid, instantiates
-        FlowDirector → FlowAccumulator → StreamPowerEroder → LinearDiffuser
-        in correct order, runs time loop with dt from config.
-      inputs:
-        - name: grid_file
-          type: file
-          format: NetCDF (.nc)
-          description: Grid with initial topography
-        - name: forcing_file
-          type: file
-          format: CSV
-          description: Forcing timeseries (optional for pure geomorphology)
-        - name: params_file
-          type: file
-          format: YAML
-          description: Component parameters
-        - name: config_file
-          type: file
-          format: YAML
-          description: Time stepping and output configuration
-      outputs:
-        - name: snapshots
-          type: directory
-          format: NetCDF files
-          path: output/snapshot_*.nc
-          description: Grid state at each output interval
-        - name: timeseries
-          type: file
-          format: CSV
-          path: output/timeseries.csv
-          description: Per-timestep summary statistics
-      preconditions:
-        - grid.nc, params.yaml, config.yaml must exist
-        - Landlab installed in Python environment
-      postconditions:
-        - At least one snapshot NetCDF file in output/
-        - timeseries.csv has rows equal to n_steps / output_interval
-    milestones:
-    - id: m_s5_run
-      description: At least one output NetCDF snapshot exists and timeseries.csv has rows
-      verification: "ls output/snapshot_*.nc && wc -l output/timeseries.csv"
-
-  - id: s6_output
-    name: Output Parsing
-    description: >
-      Extract key results from output NetCDF files and timeseries. Compute
-      summary statistics (mean erosion rate, max elevation, drainage density).
-      Produce results.csv and summary.json for validation comparison.
-    knowledge_type: procedural
-    depends_on: [s5_run]
-    tools:
-    - id: parse_landlab_output
-      name: Parse Landlab Output
-      script: tools/s6_output/parse_landlab_output.py
-      language: python
-      description: Parse Landlab output snapshots to summary CSV and JSON
-      inputs:
-        - name: output_dir
-          type: directory
-          format: NetCDF snapshots + timeseries CSV
-          description: Directory with simulation output
-      outputs:
-        - name: results_csv
-          type: file
-          format: CSV
-          path: results.csv
-          description: Per-snapshot summary statistics
-        - name: summary_json
-          type: file
-          format: JSON
-          path: summary.json
-          description: Final simulation summary with key metrics
-      preconditions:
-        - output/ directory contains snapshot NetCDF files
-        - output/timeseries.csv exists
-      postconditions:
-        - results.csv has one row per snapshot
-        - summary.json has mean_erosion_rate, max_elevation, drainage_density
-    milestones:
-    - id: m_s6_output
-      description: results.csv and summary.json exist with valid data
-      verification: "python -c \"import json; d=json.load(open('summary.json')); assert 'mean_erosion_rate' in d\""
-
-skill_documents:
-  - id: sd_s0_config
-    name: Configuration
-    path: docs/s0_config.md
-    stage: s0_config
-    knowledge_type: procedural
-  - id: sd_s1_domain
-    name: Domain Setup
-    path: docs/s1_domain.md
-    stage: s1_domain
-    knowledge_type: procedural
-  - id: sd_s2_data
-    name: Data Preparation
-    path: docs/s2_data.md
-    stage: s2_data
-    knowledge_type: procedural
-  - id: sd_s3_forcing
-    name: Forcing Conversion
-    path: docs/s3_forcing.md
-    stage: s3_forcing
-    knowledge_type: procedural
-  - id: sd_s4_parameters
-    name: Parameter Generation
-    path: docs/s4_parameters.md
-    stage: s4_parameters
-    knowledge_type: procedural
-  - id: sd_s5_run
-    name: Execution
-    path: docs/s5_run.md
-    stage: s5_run
-    knowledge_type: procedural
-  - id: sd_s6_output
-    name: Output Parsing
-    path: docs/s6_output.md
-    stage: s6_output
-    knowledge_type: procedural
-
-validation_cases:
-  - id: vc_whipple_tucker_1999
-    name: Whipple & Tucker (1999) Steady-State Analytical Benchmark
-    type: analytical
-    status: PASS
-    script: tools/run_landlab.py
-    site: Synthetic 50x50 grid, dx=200m
-    variable: slope_area_exponent
-    metric: r
-    value: 0.9994
-    threshold: "r ≥ 0.5"
-    output: outputs/validation_sheets/84_Landlab.md
-
-  - id: vc_atchafalaya_ssc_q
-    name: SPACE Binary Validation — Atchafalaya SSC-Q
-    type: binary_observed
-    status: PASS
-    script: tools/dissect_atchafalaya_ssc_q_surrogate.py
-    site: Atchafalaya @ Morgan City (USGS-07381600)
-    description: >
-      Two binary tests using SpaceLargeScaleEroder.run_one_step():
-      Test 1: Qs-Q scaling on 3×51 quasi-1D channel (single step, no uplift);
-        b_sim=0.897 ∈ [0.35,1.20], r=0.978 — transport-limited regime (H=2m, v_s=5m/yr).
-      Test 2: Steady-state slope-area on 50×50 grid (4000×500yr);
-        θ=0.464 ∈ [0.40,0.55], R²=0.611.
-      Context: USGS observed SSC-Q r=0.8092 (n=357), b_obs=1.077 — data quality check.
-    tests:
-      t1_space_Qs_Q:
-        metric: b_sim
-        value: 0.897
-        threshold: "b_sim ∈ [0.35, 1.20] AND r ≥ 0.90"
-        r_sim: 0.978
-        regime: "transport-limited (H=2m, H*=1m, v_s=5m/yr → b~0.9)"
-      t2_steady_state_concavity:
-        metric: theta
-        value: 0.464
-        threshold: "θ ∈ [0.40, 0.55]"
-        r2: 0.611
-      obs_data_quality:
-        metric: r_obs
-        value: 0.8092
-        threshold: "r ≥ 0.65"
-        n_pairs: 357
-    output: outputs/landlab_atchafalaya_ssc_q/
-    figure: outputs/landlab_atchafalaya_ssc_q/validation_figure.png
-    metrics_json: outputs/landlab_atchafalaya_ssc_q/metrics.json
-    obs_data:
-      ssc: data/obs/sediment/usgs_suspended_sediment/wqp_pcode80154_louisiana.csv
-      flow: data/obs/sediment/usgs_suspended_sediment/07381600_Atchafalaya_daily_flow.rdb
-
-  - id: vc_loess_plateau_slope_area
-    name: Loess Plateau Real-DEM Slope-Area (SRTM 30m)
-    type: real_dem_observed
-    status: PASS
-    script: tools/dissect_loess_plateau_slope_area.py
-    site: "Loess Plateau, Shaanxi, China (~36.64°N 109.33°E, N36E109 SRTM tile)"
-    variable: channel_concavity_theta
-    description: >
-      FlowAccumulator D8 + depression filling on 500×500 SRTM 30m clip (15×15 km).
-      Binned slope-area analysis (25 log-spaced bins, median slope).
-      Reference: θ ≈ 0.10–0.35 for Loess Plateau gully terrain
-      (Yao et al. 2008 Geomorphology; Gao et al. 2013).
-    metric: theta
-    value: 0.1631
-    r2: 0.8659
-    n_channel: 12315
-    n_bins: 25
-    threshold: "θ ∈ [0.10, 0.65] AND R² ≥ 0.30"
-    output: outputs/landlab_loess_slope_area/
-    figure: outputs/landlab_loess_slope_area/validation_figure.png
-    metrics_json: outputs/landlab_loess_slope_area/metrics.json
-    dem_source: "KISSPATH_DATA/SRTMGL1/N36E109.SRTMGL1.hgt.zip"
-
-  - id: vc_loess_plateau_sediment_yield
-    name: Loess Plateau Sediment Yield + Particulate-P Export (Stream Power Law)
-    type: real_dem_observed
-    status: PASS
-    script: tools/dissect_loess_plateau_sediment_yield.py
-    site: "Loess Plateau, Shaanxi, China (~36.64°N 109.33°E, same SRTM 30m clip as Case 2)"
-    description: >
-      Detachment-limited stream power erosion (DL end-member of SPACE, Shobe et al. 2017)
-      on 500×500 SRTM 30m grid with single outlet (137.79 km² watershed).
-      FlowAccumulator D8 + DepressionFinderAndRouter → drainage area + slope.
-      Erosion: E_i = K_sp × A_i^0.5 × S_i [m/yr], K_sp=1.64e-4 calibrated to
-      published Loess Plateau SY range.
-      Sediment yield: Σ(E × cell_area × ρ_bulk) / watershed_area.
-      Particulate-P: SY × P_content × ER (ER=2.0, Tuo 2018).
-      SPACE designed for ka-Ma landscape evolution; for annual SY from real DEMs
-      the DL stream power formulation is the correct tool (see triplet dt_022).
-    tests:
-      sediment_yield:
-        metric: SY_t_km2_yr
-        value: 8390.6
-        threshold: "[500, 50000]"
-        status: PASS
-      particulate_P_export:
-        metric: TP_kg_ha_yr
-        value: 134.25
-        threshold: "[0.5, 200]"
-        status: PASS
-      mean_erosion_rate:
-        metric: mean_E_mm_yr
-        value: 5.993
-    output: outputs/landlab_loess_sediment/
-    figure: outputs/landlab_loess_sediment/validation_figure.png
-    metrics_json: outputs/landlab_loess_sediment/metrics.json
-    dem_source: "KISSPATH_DATA/SRTMGL1/N36E109.SRTMGL1.hgt.zip"
-
-diagnostics:
-  path: diagnostics/triplets.yaml
-  count: 22
-  failure_domains:
-    - unit_conversion
-    - parameter_format
-    - path_resolution
-    - dependency_mismatch
-    - runtime
-    - silent_error
-    - ssc_q_rating_curve
-    - slope_area_analysis
-    - model_scope_mismatch
-
+  - s1_grid_setup
+  - s2_input_preparation
+  - s3_soil_parameters
+  - s4_component_assembly
+  - s5_execution_output
+tools:
+  count: 8
+  files:
+  - tools/convert_dem_to_grid.py
+  - tools/convert_soil_params.py
+  - tools/dissect_atchafalaya_ssc_q_surrogate.py
+  - tools/dissect_loess_plateau_sediment_yield.py
+  - tools/dissect_loess_plateau_slope_area.py
+  - tools/dissect_space_ssc_q_rating.py
+  - tools/parse_landlab_output.py
+  - tools/run_landlab.py
+inputs:
+  forcing:
+  - name: initial topography / DEM (topographic__elevation)
+    unit: m
+  - name: rainfall / runoff (water__unit_flux_in)
+    unit: m/s
+  parameters:
+  - name: K_sp (stream-power erodibility)
+    unit: length^(1-2*m_sp) / time (e.g. 1/yr at m_sp=0.5, n_sp=1.0)
+  - name: m_sp (drainage-area exponent)
+    unit: dimensionless
+  - name: n_sp (slope exponent)
+    unit: dimensionless
+  - name: linear_diffusivity (D)
+    unit: m^2/yr (when dt in yr)
+  - name: v_s (effective settling velocity)
+    unit: m/yr (landscape-evolution timescale)
+  - name: K_sed / K_br (SPACE alluvium / bedrock erodibility)
+    unit: length^(1-2*m) / time
+  - name: H_star (alluvial cover decay depth)
+    unit: m
+  - name: soil_production_maximum_rate (P0)
+    unit: m/yr
+  - name: soil_production_decay_depth (H*)
+    unit: m
+  - name: mannings_n (overland-flow roughness)
+    unit: s/m^(1/3)
+  initial_conditions:
+  - name: soil__depth (initial regolith thickness)
+    unit: m
+  - name: bedrock__elevation
+    unit: m
+  boundary_conditions:
+  - name: grid type and geometry
+    unit: n/a
+  - name: timestep dt
+    unit: yr (landscape evolution) | s (overland flow)
+  - name: boundary-node status (status_at_node)
+    unit: n/a (NodeStatus code)
+  - name: uplift_rate (tectonic forcing)
+    unit: m/yr
+  - name: runoff_rate (steady-state discharge scaling)
+    unit: m/yr (or m/s)
+  - name: flow-routing / depression-handling method
+    unit: n/a
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - topographic__elevation
+  - concavity (theta)
+  - steepness (ks)
+  - relief
+  - sediment_yield
+  - sediment__outflux (SPACE Qs)
+  - soil__depth
+  - surface_water__discharge (steady-state)
+  other: []
+validation:
+  tier: analytic
+  tier_justification: 'measured: NSE=0.542, KGE=0.565, R=0.999, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.542
+    best_kge: 0.565
+    best_r: 0.9994
 summary:
-  total_tools: 7
-  total_lines_python: ~2200
-  total_skill_docs: 7
-  total_triplets: 22
-  total_failure_domains: 9
-  total_stages: 7
-  validation_type: obs_validated
-  test_cases:
-    - "Steady-state fluvial landscape (Whipple & Tucker 1999) — analytical PASS"
-    - "SPACE binary Qs-Q scaling (Atchafalaya) — b_sim=0.897 r=0.978 TL-regime PASS"
-    - "SPACE steady-state concavity — θ=0.464 PASS"
-    - "Loess Plateau SRTM 30m slope-area — θ=0.163 R²=0.866 PASS"
+  total_tools: 8
+  total_stage_docs: 5
+  total_diagnostic_triplets: 22
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

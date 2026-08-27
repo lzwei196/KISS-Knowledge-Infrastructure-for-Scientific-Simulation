@@ -8,10 +8,18 @@ and outputs numpy-compatible arrays in mm/d with unit validation.
 Supports common global datasets (ERA5, GSWP3, station data) and converts
 units automatically. Outputs JSON with arrays or saves .npy files.
 
+Two input formats:
+  --format text     (default) column-oriented CSV / space-separated text
+  --format caravan  a Caravan / GRDC-Caravan per-gauge netCDF file, which already
+                    carries basin-averaged ERA5-Land forcing AND the gauge's
+                    observed streamflow on the same daily axis.
+
 Usage:
     python convert_forcing.py --input forcing.csv --output forcing.json
     python convert_forcing.py --input forcing.csv --output forcing.json --p-col 6 --pet-col 7 --q-col 8
     python convert_forcing.py --input forcing.csv --output forcing.json --p-unit mm/h --pet-unit mm/month --timestep 1.0
+    python convert_forcing.py --format caravan --input GRDC_6503201.nc \
+        --start 1979-01-01 --end 1990-12-31 --area 1517.1 --output forcing.json
 """
 
 import argparse
@@ -55,6 +63,32 @@ Q_CONVERSIONS = {
     "l/s": None,
 }
 
+# ---------------------------------------------------------------------------
+# Caravan / GRDC-Caravan per-gauge netCDF contract.
+#
+# TRAP (verified 2026-08-21 on GRDC-Caravan-extension-nc): the per-gauge netCDF
+# files carry NO `units` attribute on ANY variable. The file-level `Units`
+# global attribute documents the ERA5-Land meteorology but says NOTHING about
+# `streamflow`. Do not guess m3/s: Caravan distributes `streamflow` already
+# converted to BASIN-AVERAGED mm/day, i.e. the same unit as SuperflexPy's
+# Q_sim, so NO area conversion is needed (and applying one is a silent
+# area-squared error). Verified against GRDC_1159100 (Orange R. at Vioolsdrif,
+# 786,038 km2): mean 0.0248 mm/d -> 225 m3/s, matching the published GRDC mean.
+#
+# `potential_evaporation_sum` is ALREADY sign-flipped to positive demand by the
+# Caravan producers (raw ERA5-Land potential_evaporation is negative-downward).
+# Verified: min 1.77, max 14.87 mm/d. If a future Caravan release ships it
+# negative, --pet-sign flip is the lever; the reader hard-fails on all-negative
+# PET rather than silently running a model with zero evaporative demand.
+# ---------------------------------------------------------------------------
+CARAVAN_VARS = {
+    "P": "total_precipitation_sum",     # mm/d, basin mean
+    "PET": "potential_evaporation_sum",  # mm/d, basin mean, positive = demand
+    "Q": "streamflow",                   # mm/d, basin-averaged  <-- NOT m3/s
+    "T": "temperature_2m_mean",          # degC
+}
+CARAVAN_TIME_DIM = "date"
+
 
 def validate_inputs(args):
     """Validate command-line arguments and input file."""
@@ -63,7 +97,13 @@ def validate_inputs(args):
     input_path = Path(args.input)
     if not input_path.exists():
         errors.append(f"Input file not found: {args.input}")
-    if not input_path.suffix in (".csv", ".dat", ".txt", ".tsv"):
+    if args.format == "caravan":
+        if input_path.suffix not in (".nc", ".nc4", ".netcdf"):
+            errors.append(
+                f"--format caravan expects a netCDF file, got {input_path.suffix}. "
+                "Expected .nc, .nc4, or .netcdf"
+            )
+    elif not input_path.suffix in (".csv", ".dat", ".txt", ".tsv"):
         errors.append(
             f"Unsupported file format: {input_path.suffix}. "
             "Expected .csv, .dat, .txt, or .tsv"
@@ -89,8 +129,181 @@ def validate_inputs(args):
         sys.exit(1)
 
 
+def _open_any_netcdf(path):
+    """Open a netCDF file, trying every engine this machine actually has.
+
+    TRAP (verified 2026-08-21): the shared HydroCraft python_env ships
+    netCDF4 1.7.4 / HDF5 1.14.6, which raises
+    `OSError: [Errno -101] NetCDF: HDF error` on every Caravan .nc file.
+    The SuperflexPy work venv's netCDF4 reads them fine. Rather than pin an
+    interpreter, try engines in order and report ALL failures if none works.
+    """
+    import xarray as xr
+
+    errors = []
+    for engine in ("netcdf4", "h5netcdf", None):
+        try:
+            if engine is None:
+                return xr.open_dataset(path)
+            return xr.open_dataset(path, engine=engine)
+        except Exception as exc:  # noqa: BLE001 - we want the full engine report
+            errors.append(f"{engine or 'default'}: {type(exc).__name__}: {exc}")
+    raise RuntimeError(
+        "Could not open netCDF with any engine. Tried -> " + " | ".join(errors)
+    )
+
+
+def process_caravan(args):
+    """Read a Caravan / GRDC-Caravan per-gauge netCDF into the forcing contract.
+
+    Caravan bundles basin-AVERAGED ERA5-Land forcing with the gauge's observed
+    streamflow on one daily axis, which is exactly the lumped-conceptual-model
+    input SuperflexPy needs. All three series are already mm/d (see the
+    CARAVAN_VARS note above), so no unit factor is applied and none must be.
+    """
+    input_path = Path(args.input)
+
+    try:
+        ds = _open_any_netcdf(str(input_path))
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "errors": [str(exc)]}
+
+    missing = [v for v in (CARAVAN_VARS["P"], CARAVAN_VARS["PET"]) if v not in ds.variables]
+    if missing:
+        return {
+            "status": "error",
+            "errors": [
+                f"Caravan file is missing required variable(s): {missing}. "
+                f"Present: {sorted(ds.data_vars)[:10]}..."
+            ],
+        }
+    if CARAVAN_TIME_DIM not in ds.coords:
+        return {
+            "status": "error",
+            "errors": [f"Caravan file has no '{CARAVAN_TIME_DIM}' coordinate"],
+        }
+
+    if args.start or args.end:
+        ds = ds.sel({CARAVAN_TIME_DIM: slice(args.start, args.end)})
+    n_rows = ds.sizes[CARAVAN_TIME_DIM]
+    if n_rows == 0:
+        return {
+            "status": "error",
+            "errors": [
+                f"No timesteps in requested window {args.start}..{args.end}"
+            ],
+        }
+
+    P = np.asarray(ds[CARAVAN_VARS["P"]].values, dtype=float)
+    PET = np.asarray(ds[CARAVAN_VARS["PET"]].values, dtype=float)
+
+    # Caravan ships PET as positive demand. If a release ever ships the raw
+    # negative-downward ERA5-Land sign, running as-is would give the model zero
+    # evaporative demand and a runoff ratio near 1 with NO error. Fail loudly.
+    finite_pet = PET[np.isfinite(PET)]
+    if finite_pet.size and np.nanmax(finite_pet) <= 0:
+        if args.pet_sign == "flip":
+            PET = -PET
+        else:
+            return {
+                "status": "error",
+                "errors": [
+                    "Caravan PET is all <= 0 (raw ERA5-Land downward-positive sign). "
+                    "Re-run with --pet-sign flip, or the model runs with zero "
+                    "evaporative demand and silently over-predicts runoff (dt_002)."
+                ],
+            }
+
+    # Reanalysis daily PET goes slightly NEGATIVE on condensation days (34/4383
+    # days in Ireland, min -0.45 mm/d). Negative PET is not "less demand": in
+    # GR4J's InterceptionFilter, remove = min(PET, P) becomes negative, so
+    # P - remove ADDS water that never fell, and the ProductionStore's
+    # evaporation term reverses sign. Floor it. --pet-min 0 is the correct
+    # setting for every reanalysis PET product; None keeps the raw values.
+    n_neg_pet = int(np.sum(PET < 0))
+    if args.pet_min is not None:
+        PET = np.maximum(PET, float(args.pet_min))
+
+    Q_obs = None
+    if CARAVAN_VARS["Q"] in ds.variables:
+        Q_obs = np.asarray(ds[CARAVAN_VARS["Q"]].values, dtype=float)
+
+    T = None
+    if CARAVAN_VARS["T"] in ds.variables:
+        T = np.asarray(ds[CARAVAN_VARS["T"]].values, dtype=float)
+
+    times = ds[CARAVAN_TIME_DIM].values
+    dates = [str(np.datetime_as_string(t, unit="D")) for t in times]
+    ds.close()
+
+    # A single NaN in P or PET poisons the whole downstream ODE solution: the
+    # implicit solver propagates NaN into the storage state and EVERY later
+    # timestep of Q_sim is NaN, with exit code 0. Refuse to emit such forcing.
+    for name, arr in (("P", P), ("PET", PET)):
+        n_bad = int(np.sum(~np.isfinite(arr)))
+        if n_bad:
+            if args.fill_forcing_gaps:
+                idx = np.arange(len(arr))
+                good = np.isfinite(arr)
+                arr[~good] = np.interp(idx[~good], idx[good], arr[good])
+            else:
+                return {
+                    "status": "error",
+                    "errors": [
+                        f"{name} has {n_bad}/{len(arr)} non-finite values in the "
+                        "requested window. A single NaN makes EVERY subsequent "
+                        "Q_sim NaN with exit code 0. Re-run with "
+                        "--fill-forcing-gaps to linearly interpolate, or narrow "
+                        "the window."
+                    ],
+                }
+
+    result = {
+        "status": "success",
+        "source_format": "caravan",
+        "source_file": str(input_path),
+        "gauge_id": input_path.stem,
+        "n_timesteps": int(n_rows),
+        "timestep_d": args.timestep,
+        "units": {"P": "mm/d", "PET": "mm/d", "Q_obs": "mm/d"},
+        "conversions_applied": {
+            "P": "Caravan total_precipitation_sum is mm/d basin mean -> mm/d (factor=1.0)",
+            "PET": "Caravan potential_evaporation_sum is mm/d basin mean, positive demand -> mm/d (factor=1.0)",
+            "Q_obs": "Caravan streamflow is BASIN-AVERAGED mm/d (NOT m3/s) -> mm/d (factor=1.0, no area conversion)",
+            "PET_floor": (
+                f"floored at {args.pet_min} mm/d ({n_neg_pet} negative days clipped)"
+                if args.pet_min is not None
+                else f"NOT floored ({n_neg_pet} negative days left as-is)"
+            ),
+        },
+        "statistics": {
+            "P_mean": float(np.nanmean(P)),
+            "P_max": float(np.nanmax(P)),
+            "P_total": float(np.nansum(P)),
+            "PET_mean": float(np.nanmean(PET)),
+            "PET_max": float(np.nanmax(PET)),
+        },
+        "P": P.tolist(),
+        "PET": PET.tolist(),
+        "dates": dates,
+    }
+    if args.area is not None:
+        result["area_km2"] = float(args.area)
+    if Q_obs is not None:
+        result["Q_obs"] = Q_obs.tolist()
+        result["statistics"]["Q_obs_mean"] = float(np.nanmean(Q_obs))
+        result["statistics"]["Q_obs_nan_frac"] = float(np.mean(~np.isfinite(Q_obs)))
+    if T is not None:
+        result["T"] = T.tolist()
+        result["units"]["T"] = "degC"
+    return result
+
+
 def process(args):
     """Read forcing file and convert to SuperflexPy format."""
+
+    if args.format == "caravan":
+        return process_caravan(args)
 
     input_path = Path(args.input)
 
@@ -258,6 +471,34 @@ def main():
     )
     parser.add_argument("--input", type=str, required=True, help="Input forcing file path")
     parser.add_argument("--output", type=str, default=None, help="Output JSON path (default: stdout)")
+    parser.add_argument(
+        "--format",
+        type=str,
+        default="text",
+        choices=("text", "caravan"),
+        help="Input layout: 'text' (columnar CSV/DAT, default) or 'caravan' (Caravan per-gauge netCDF)",
+    )
+    parser.add_argument("--start", type=str, default=None, help="First date to keep, YYYY-MM-DD (caravan)")
+    parser.add_argument("--end", type=str, default=None, help="Last date to keep, YYYY-MM-DD (caravan)")
+    parser.add_argument(
+        "--pet-sign",
+        type=str,
+        default="asis",
+        choices=("asis", "flip"),
+        help="'flip' negates PET (use only if the source ships downward-positive ERA5 sign)",
+    )
+    parser.add_argument(
+        "--pet-min",
+        type=float,
+        default=None,
+        help="Floor PET at this value (use 0 for reanalysis PET: negative condensation "
+             "days make GR4J's interception filter ADD water)",
+    )
+    parser.add_argument(
+        "--fill-forcing-gaps",
+        action="store_true",
+        help="Linearly interpolate non-finite P/PET instead of refusing to emit NaN-poisoned forcing",
+    )
     parser.add_argument("--header-lines", type=int, default=7, help="Number of header lines to skip (default: 7)")
     parser.add_argument("--p-col", type=int, default=6, help="Precipitation column index (0-based, default: 6)")
     parser.add_argument("--pet-col", type=int, default=7, help="PET column index (0-based, default: 7)")

@@ -1,8 +1,3 @@
----
-name: bmi
-description: BMI. Use when the task involves running, configuring, calibrating or interpreting BMI.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -25,6 +20,37 @@ description: BMI. Use when the task involves running, configuring, calibrating o
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (17 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, counts). No per-kind projector exists yet for this KI kind — keep it consistent with the KI's contents when editing. |
+
+*Projected 2026-08-17 from the KI's actual contents — 6 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/bmi_runner.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/bmi_runner.py --help` |
+| `tools/compliance_checker.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/compliance_checker.py --help` |
+| `tools/config_generator.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/config_generator.py --help` |
+| `tools/output_extractor.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/output_extractor.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # BMI v2.0 (Basic Model Interface) — Knowledge Infrastructure
 

@@ -213,11 +213,55 @@ def classify_texture(sand, silt, clay):
 
 
 def hydrologic_group(ksat_mm_hr):
-    if ksat_mm_hr >= 36.0:
+    """NRCS hydrologic soil group from the saturated hydraulic conductivity of
+    the LEAST transmissive layer in the profile (the caller passes
+    min(t_ksat, s_ksat), which is the correct argument).
+
+    BRANCH SELECTION.  USDA-NRCS National Engineering Handbook Part 630,
+    Ch. 7, Table 7-1 is indexed by depth-to-water-impermeable-layer and
+    depth-to-high-water-table, and each branch reads Ksat over a DIFFERENT
+    depth range.  This generator writes a FIXED two-layer, 1000 mm (100 cm)
+    profile (build_soil_profile: dp_tot 1000.0, layers at 300/1000 mm) and
+    emits NO water-impermeable-layer and NO high-water-table field anywhere
+    in soils.sol.  The applicable Table 7-1 branch is therefore
+    "> 100 cm to any water impermeable layer AND > 100 cm to any high water
+    table", whose criterion is the Ksat of the least transmissive layer
+    within 0-100 cm:
+
+        A   > 10 um/s              ->  > 36.0  mm/hr
+        B   > 4 to <= 10 um/s      ->  > 14.4  mm/hr
+        C   > 0.40 to <= 4 um/s    ->  >  1.44 mm/hr
+        D   <= 0.40 um/s           ->  <= 1.44 mm/hr
+
+    The comparison is written in um/s against Table 7-1's own numbers so the
+    breakpoints are auditable against the source table without a unit
+    conversion in the reader's head.  The inequalities are STRICT at the top
+    of each class exactly as Table 7-1 states them: 10.0 um/s is B (not A),
+    4.0 um/s is C (not B), 0.40 um/s is D (not C).
+
+    Two earlier ladders were wrong.  The original (36.0 / 3.6 / 0.36 mm/hr)
+    was a full class too permeable.  The first correction (144.0 / 36.0 /
+    3.6 mm/hr) implemented the 40/10/1 um/s ladder, which is the 0-50 cm
+    branch that applies only when a water impermeable layer sits 50-100 cm
+    down -- not the branch this generator's profile selects -- and it also
+    used >= where Table 7-1 uses >.
+
+    LIMITATION.  HWSD carries no surveyed HYDGRP attribute, so this Ksat
+    ladder is a fallback.  Where a soil survey DOES supply hyd_grp (e.g. the
+    shipped run_lrew/swatplus_rev59_demo deck, whose lrew03 is surveyed B at
+    a Ksat_min of 9.72 mm/hr = 2.70 um/s, which this ladder would call C),
+    the surveyed value is authoritative and must win over this function.
+
+    The caller passes min(t_ksat, s_ksat), i.e. the least transmissive of the
+    two layers spanning 0-100 cm, which is the correct argument for this
+    branch.
+    """
+    ksat_um_s = ksat_mm_hr / 3.6
+    if ksat_um_s > 10.0:
         return "A"
-    elif ksat_mm_hr >= 3.6:
+    elif ksat_um_s > 4.0:
         return "B"
-    elif ksat_mm_hr >= 0.36:
+    elif ksat_um_s > 0.40:
         return "C"
     else:
         return "D"
@@ -295,6 +339,11 @@ def parse_args():
                     help="Min HRU area fraction (default: 0.05=5%%)")
     p.add_argument("--start_year", type=int, required=True)
     p.add_argument("--end_year", type=int, required=True)
+    p.add_argument("--subbasin_shp", default=None,
+                    help="Real flow-network subbasins.shp from "
+                         "tools/s1/delineate_watershed.py. Without it, subbasins "
+                         "fall back to a rectangular lat/lon grid clipped to the "
+                         "basin outline (not a hydrologic partition).")
     p.add_argument("--grid_nc", default=None,
                     help="Optional VIC grid NC: each VIC cell = one subbasin")
     p.add_argument("--channel_topology", default="",
@@ -395,9 +444,18 @@ def warn_rectangular_subbasins():
     logger.warning("=" * 78)
 
 
-def load_subbasins_from_shapefile(subbasin_shp):
+def load_subbasins_from_shapefile(subbasin_shp, basin_shp=None):
     """Load REAL flow-network subbasins (e.g. subbasins.shp from
     tools/s1/delineate_watershed.py, produced by wbt.subbasins()).
+
+    subbasins.shp comes from wbt.subbasins() run over the WHOLE clipped-DEM
+    flow network (the delineation bbox), not just the target watershed -- it
+    is NOT pre-clipped to the basin polygon the way create_subbasins_from_basin
+    / create_subbasins_from_grid_nc already are. Without clipping here too,
+    the deck silently covers the DEM's bbox instead of the gauge's drainage
+    area (caught at Bengbu: 385 unclipped subbasins totalled 277,488 km2
+    against a published 121,330 km2 basin). When basin_shp is given, intersect
+    every subbasin with the basin polygon and drop slivers left outside it.
 
     Returns the same schema the rest of this tool expects: sub_id / lat / lon /
     area_ha in EPSG:4326, sorted by sub_id so that channel ids stay positional
@@ -411,6 +469,28 @@ def load_subbasins_from_shapefile(subbasin_shp):
     if gdf.empty:
         raise RuntimeError(f"Subbasin shapefile is empty: {subbasin_shp}")
     gdf = gdf.to_crs("EPSG:4326")
+
+    if basin_shp:
+        basin_gdf = gpd.read_file(basin_shp).to_crs("EPSG:4326")
+        # subbasins.shp / watershed.shp come from raster_to_vector_polygons and
+        # can carry invalid ring winding (already warned about on read above);
+        # buffer(0) is the standard shapely fix-up and is a no-op on valid
+        # geometry, so it is safe to apply unconditionally before intersecting.
+        gdf["geometry"] = gdf.geometry.buffer(0)
+        basin_union = basin_gdf.geometry.buffer(0).unary_union
+        n_before = len(gdf)
+        area_before_km2 = gdf.to_crs(epsg=6933).geometry.area.sum() / 1e6
+        gdf["geometry"] = gdf.geometry.intersection(basin_union)
+        gdf = gdf[~gdf.geometry.is_empty]
+        area_after_km2 = gdf.to_crs(epsg=6933).geometry.area.sum() / 1e6
+        # drop slivers: <0.1 km2 clipped remnants are delineation-boundary
+        # noise, not real hydrologic units, and would otherwise become
+        # near-zero-area HRUs.
+        areas_km2 = gdf.to_crs(epsg=6933).geometry.area / 1e6
+        gdf = gdf[areas_km2 >= 0.1]
+        logger.info(f"  Clipped subbasins to basin_shp: {n_before} -> "
+                    f"{len(gdf)} subbasins, {area_before_km2:.0f} -> "
+                    f"{area_after_km2:.0f} km2")
 
     # whitebox raster_to_vector_polygons names the id column VALUE/FID; accept
     # the common spellings rather than silently renumbering, because the ids
@@ -718,7 +798,7 @@ def _build_default_soil(name):
     return {
         'name': name,
         'nly': 2,
-        'hyd_grp': 'B',
+        'hyd_grp': hydrologic_group(6.5),   # this profile's own soil_k -> NRCS group C
         'dp_tot': 1000.0,
         'anion_excl': 0.50,
         'perc_crk': 0.50,
@@ -2377,7 +2457,7 @@ def process(args):
     # Step 1: Create subbasins.
     # Priority: real flow-network subbasins > VIC grid > rectangular fallback.
     if args.subbasin_shp:
-        subbasins_gdf = load_subbasins_from_shapefile(args.subbasin_shp)
+        subbasins_gdf = load_subbasins_from_shapefile(args.subbasin_shp, args.basin_shp)
     elif args.grid_nc:
         subbasins_gdf = create_subbasins_from_grid_nc(args.grid_nc, args.basin_shp)
     else:

@@ -1,14 +1,3 @@
----
-name: gsflow
-description: >-
-  GSFLOW (USGS TM 6-D1, 2008; PRMS + MODFLOW-2005/MODFLOW-NWT integration), 2.2.x lineage.
-  Covers Coupled surface-water / groundwater flow in one or more watersheds (a few to
-  several thousand km²)…; PRMS land-surface processes: interception, snowpack
-  accumulation/melt, evapotranspiration, surface…; 3-D saturated groundwater flow and
-  storage (MODFLOW), 1-D unsaturated flow (UZF), groundwater…. Use when the task involves
-  running, configuring, calibrating or interpreting GSFLOW.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (17 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_control_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_control_file.py --help` |
+| `tools/convert_forcing_to_gsflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_gsflow.py --help` |
+| `tools/convert_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_params.py --help` |
+| `tools/parse_gsflow_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_gsflow_output.py --help` |
+| `tools/run_gsflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_gsflow.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # GSFLOW — Coupled Groundwater and Surface-Water Flow Model
 
@@ -314,9 +337,34 @@ verified at each interface boundary.
 
 ---
 
-## 8. Key Output Variables
+## 8. Output Description
 
-### 8.1 Basin-level Variables (CSV output)
+**Source:** `dag.yaml`. The dag is the source of truth for observable outputs,
+units, descriptions, and validation rank. If this section disagrees with the
+dag, the dag wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `basin_actet` — Area-weighted actual evapotranspiration (`in`)
+
+### 8.1 Observable outputs from `dag.yaml`
+
+| Output variable (dag `var`) | Rank | Unit | Description / note |
+|-----------------------------|------|------|--------------------|
+| `basin_actet` | 1 | `in` | Area-weighted actual evapotranspiration |
+| `gw_head (MODFLOW .hds)` | 2 | `length (ft/m)` | Simulated groundwater head per layer/cell |
+| `basin_cfs` | 3 | `ft³/s` | Simulated streamflow at the basin outlet; convert to `m³/s` with `×0.028317` before comparing to metric observations |
+| `basin_stflow` | 4 | `in/day` | Basin total streamflow as depth; convert with basin area before discharge comparison |
+| `basin_recharge` | 5 | `in` | Groundwater recharge from soil zone / unsaturated zone |
+| `basin_snow` | 6 | `in` | Basin snowpack water equivalent |
+| `basin_soil_moist` | 7 | `in` | Basin soil-moisture storage |
+| `overall water budget (IN/OUT, percent discrepancy)` | 8 | `length³ and length³/day` | Overall water-budget summaries with budget error and percent discrepancy |
+
+Other dag outputs to keep visible in run reports: `basin_cfs`,
+`basin_stflow`, `basin_recharge`, `gw_head (MODFLOW .hds)`, `basin_snow`,
+`basin_soil_moist`, and `overall water budget (IN/OUT, percent discrepancy)`.
+
+### 8.2 Basin-level Variables (CSV output)
 | Variable | Units | Description |
 |----------|-------|-------------|
 | `basin_cfs` | ft³/s | Streamflow at basin outlet |
@@ -324,7 +372,7 @@ verified at each interface boundary.
 | `basin_tmax` | °F or °C | Area-weighted max temperature |
 | `basin_tmin` | °F or °C | Area-weighted min temperature |
 | `basin_potet` | inches | Potential evapotranspiration |
-| `basin_actet` | inches | Actual evapotranspiration |
+| `basin_actet` | inches | Actual evapotranspiration; dag rank-1 output is `basin_actet` with unit `in` and description `Area-weighted actual evapotranspiration` |
 | `basin_sroff` | inches | Surface runoff |
 | `basin_ssflow` | inches | Subsurface (interflow) |
 | `basin_gwflow` | inches | Groundwater discharge |
@@ -333,7 +381,7 @@ verified at each interface boundary.
 | `basin_recharge` | inches | Groundwater recharge |
 | `basin_snow` | inches | Snowpack water equivalent |
 
-### 8.2 Output Frequencies
+### 8.3 Output Frequencies
 | Code | Frequency |
 |------|-----------|
 | 1 | Daily |
@@ -343,7 +391,7 @@ verified at each interface boundary.
 | 5 | Mean Yearly |
 | 6 | Yearly |
 
-### 8.3 MODFLOW Output
+### 8.4 MODFLOW Output
 - Head files (`.hds`): Groundwater head per layer/cell
 - Budget files (`.cbc`): Cell-by-cell flow budgets
 - Listing file (`.list`): Volumetric water budget summaries
@@ -503,14 +551,43 @@ ls output/modflow/  # MODFLOW output files
 
 ---
 
-## 15. Validation Reference
+## 15. Validated Results
+
+**Source:** `docs/validation_convention.yaml`. This section restates the KI's
+validation bars; it does not invent achieved scores. A run is validated only
+after the actual model output is compared to observations with the units and
+spinup handled correctly.
+
+### 15.1 Performance bars from the convention
+
+| Dag variable | Metric | Direction | very_good band | good band | satisfactory band | Citation key(s) |
+|--------------|--------|-----------|----------------|-----------|-------------------|-----------------|
+| `basin_cfs` | `nse` | maximize | `>= 0.8` (moriasi2007, moriasi2015) | `>= 0.7` (moriasi2007, moriasi2015) | `>= 0.5` (moriasi2007, moriasi2015) | moriasi2007, moriasi2015 |
+| `basin_cfs` | `pbias` | zero_centered | `abs(PBIAS) <= 5.0` (moriasi2015) | `abs(PBIAS) <= 10.0` (moriasi2015) | `abs(PBIAS) <= 15.0` (moriasi2015) | moriasi2015 |
+| `basin_cfs` | `csi` | maximize | no cited threshold | no cited threshold | no cited threshold | none |
+| `basin_stflow` | `nse` | maximize | `>= 0.8` (moriasi2007, moriasi2015) | `>= 0.7` (moriasi2007, moriasi2015) | `>= 0.5` (moriasi2007, moriasi2015) | moriasi2007, moriasi2015 |
+| `basin_stflow` | `pbias` | zero_centered | `abs(PBIAS) <= 5.0` (moriasi2015) | `abs(PBIAS) <= 10.0` (moriasi2015) | `abs(PBIAS) <= 15.0` (moriasi2015) | moriasi2015 |
+
+### 15.2 Run-result handling
+
+No achieved calibration, validation, or full-period metric values are stated in
+the extracted facts above. When a run is scored, report the computed metric
+value beside the convention band and cite the band exactly as shown here. For
+`basin_cfs`, reconcile `ft³/s` versus `m³/s` before scoring. For
+`basin_stflow`, convert the depth output using basin area before comparing to
+discharge observations.
+
+---
+
+## 16. Validation Reference
 
 ### Sagehen Creek (Built-in)
 - Location: Sierra Nevada, California
 - Area: ~27 km² (128 HRUs)
 - Period: 1969–2007 (example: 1980–1996)
 - Observed: USGS streamflow gage
-- Expected NSE: 0.5–0.8 (calibrated)
+- Expected NSE: 0.5–0.8 (calibrated; convention bands cited in Section 15:
+  `0.5` satisfactory and `0.8` very_good per moriasi2007 and moriasi2015)
 
 ### Bengbu Basin (Huai River, China)
 - Station: 51080 (Bengbu)
@@ -522,7 +599,7 @@ ls output/modflow/  # MODFLOW output files
 
 ---
 
-## 16. File Organization Convention
+## 17. File Organization Convention
 
 ```
 project/

@@ -1,0 +1,256 @@
+schema_version: 1
+model_id: GeoClaw
+domain: hazard
+generated_by: "step-b validation convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+references:
+  horrillo2015:
+    doi: 10.1007/s00024-014-0891-y
+    title: "Performance Benchmarking Tsunami Models for NTHMP's Inundation Mapping Activities"
+    venue: "Pure and Applied Geophysics"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s00024-014-0891-y.txt
+  macias2017:
+    doi: 10.1007/s00024-017-1583-1
+    title: "Performance Benchmarking of Tsunami-HySEA Model for NTHMP's Inundation Mapping Activities"
+    venue: "Pure and Applied Geophysics"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s00024-017-1583-1.txt
+  arcos2014:
+    doi: 10.1007/s00024-014-0980-y
+    title: "Validating Velocities in the GeoClaw Tsunami Model Using Observations near Hawaii from the 2011 Tohoku Tsunami"
+    venue: "Pure and Applied Geophysics"
+    year: 2014
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s00024-014-0980-y.txt
+  leveque2011:
+    doi: 10.1016/j.advwatres.2011.02.016
+    title: "The GeoClaw software for depth-averaged flows with adaptive refinement"
+    venue: "Advances in Water Resources"
+    year: 2011
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.advwatres.2011.02.016.txt
+  bernhofen2018:
+    doi: 10.1088/1748-9326/aae014
+    title: "A first collective validation of global fluvial flood models for major floods in Nigeria and Mozambique"
+    venue: "Environmental Research Letters"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1088_1748-9326_aae014.txt
+  vogt2024:
+    doi: 10.1038/s43247-024-01707-x
+    title: "Modeling surge dynamics improves coastal flood estimates in a global set of tropical cyclones"
+    venue: "Communications Earth & Environment"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s43247-024-01707-x.txt
+
+validation:
+  - dag_variable: h
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: 10.0, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "NTHMP/OAR-PMEL convention reproduced by Horrillo: 5, 10, and 20% average relative error or normalized RMS error for analytical, laboratory, and field benchmarks; breaking-wave laboratory cases also allow 20%."
+        cites: [horrillo2015, macias2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining metric is superseded here: tsunami benchmarking convention uses normalized RMS deviation or relative amplitude/runup error, not NSE."
+        cites: [horrillo2015]
+    validated_when: "For gauge-like depth time series, compare the water-level/depth signal with NTHMP-style normalized RMS error <= 20% of the reference signal."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      GeoClaw's raw h is normally less direct than eta at tide/DART gauges because h is zero in dry cells
+      and depends on bathymetry/topography. The NTHMP standard nevertheless covers water-surface
+      time-series or snapshot errors; Horrillo states that maximum allowable error thresholds decide
+      whether a model adequately simulated a benchmark problem. Use eta when observations are sea
+      surface elevation.
+
+  - dag_variable: h
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Bernhofen reports flood-validation CSI scores with >0.7 considered good and <0.5 poor; 0.5 is therefore the minimum non-poor/satisfactory transferred hazard-map band."
+        cites: [bernhofen2018, vogt2024]
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "When spatial depth is judged as a continuous water-surface/depth field rather than a wet/dry map, NTHMP uses normalized RMS or relative error thresholds."
+        cites: [horrillo2015]
+    validated_when: "For mapped wet/dry inundation from h, CSI >= 0.5 is the minimum non-poor extent skill and CSI >= 0.7 is good."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      The CSI band is transferred from flood-inundation validation literature because the cached tsunami
+      benchmark papers primarily use normalized RMS and relative runup/amplitude errors, not CSI.
+      Vogt defines F2 as CSI/threat score/Jaccard for wet-area overlap and uses it for GeoClaw coastal
+      floodplain validation.
+
+  - dag_variable: eta
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: 10.0, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "NTHMP/OAR-PMEL convention reproduced by Horrillo: 5, 10, and 20% average relative error or normalized RMS error for analytical, laboratory, and field benchmarks."
+        cites: [horrillo2015, macias2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For tsunami water-level series, NTHMP benchmarking reports normalized RMS deviation and maximum amplitude/runup error rather than NSE."
+        cites: [horrillo2015, macias2017]
+      - metric: arrival_time_error
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "GeoClaw's depth-averaged non-dispersive shallow-water formulation and source timing can shift tsunami arrivals; Arcos and LeVeque report about a 10 minute early arrival near Hawaii and explain roughly half from missing dispersion."
+        cites: [arcos2014]
+    validated_when: "DART/tide-gauge eta is validated when normalized RMS error is <= 20% of the reference time series under NTHMP-style benchmarking."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      This supersedes the dag determining_metric nse for eta time series. NTHMP's reproduced threshold
+      explicitly covers water-surface snapshots or time series. Arrival-time errors should be diagnosed
+      against source timing, bathymetry, and dispersive physics before treating them as KI defects.
+
+  - dag_variable: eta
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Bernhofen reports CSI validation context with >0.7 good and <0.5 poor; Vogt identifies F2 as CSI/threat score/Jaccard for wet-area overlap."
+        cites: [bernhofen2018, vogt2024]
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "For continuous maximum-water-surface fields, the tsunami benchmark convention is normalized RMS or relative surface-amplitude/runup error rather than CSI."
+        cites: [horrillo2015, macias2017]
+    validated_when: "For spatial eta-derived inundation or exceedance maps, CSI >= 0.5 is the minimum non-poor extent skill and CSI >= 0.7 is good."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      The dag uses csi for spatial snapshots. Apply this band only to categorical wet/dry or exceedance
+      maps derived from eta; for continuous surface-elevation fields, use NTHMP normalized RMS or
+      relative-error diagnostics as supportive context.
+
+  - dag_variable: speed
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE threshold for tsunami current speed time series."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric RMSE threshold for tsunami current speed time series."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Tsunami current velocity is much more spatially variable than wave height; Arcos and LeVeque state that gauge-location uncertainty and extreme spatial sensitivity may limit quantitative validation from current-meter observations."
+        cites: [arcos2014]
+    validated_when: "UNRESOLVED - compare depth-averaged current time series qualitatively and report RMSE/NSE, but do not auto-validate speed without a cited numeric current-skill threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The cached GeoClaw velocity paper provides strong qualitative support for comparing modeled
+      speed/velocity with current-meter records and reports instrument accuracy, but it does not
+      publish a pass/fail threshold. Two capped OpenAlex searches for tsunami-current threshold
+      conventions did not return a usable OA benchmark paper.
+
+  - dag_variable: max_depth_max_speed_arrival_time
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: 0.7, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Bernhofen reports >0.7 considered good and <0.5 poor for CSI in flood-validation literature; 0.5 is used as the minimum non-poor map-overlap band."
+        cites: [bernhofen2018, vogt2024]
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "For maximum depth/runup magnitude fields, NTHMP-style relative error or normalized RMS thresholds are the tsunami-specific magnitude convention."
+        cites: [horrillo2015, macias2017]
+      - metric: speed
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "Maximum speed can be extremely sensitive to local bathymetry, harbor configuration, and gauge/site location, limiting quantitative validation even when the model is otherwise adequate."
+        cites: [arcos2014]
+    validated_when: "For maximum-inundation maps, CSI >= 0.5 is satisfactory extent skill; report depth/runup nRMSE or relative error as supportive magnitude skill."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      This composite fgmax variable mixes maximum depth, maximum speed, momentum flux, and arrival
+      time. The cited CSI convention applies to mapped inundation extent, not to every component of
+      the composite. Treat maximum speed as structurally location-limited unless direct velocity
+      observations are dense and accurately located.
+
+  - dag_variable: max_depth_max_speed_arrival_time
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 10.0, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "NTHMP/OAR-PMEL convention reproduced by Horrillo uses 10% laboratory and 20% field or breaking-wave relative error for amplitude/runup-type parameters."
+        cites: [horrillo2015, macias2017]
+    secondary_metrics:
+      - metric: arrival_time_error
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "Arrival-time error can reflect missing dispersive physics and earthquake/source timing; Arcos and LeVeque report a roughly 10 minute early arrival and explain about 5 minutes from dispersion."
+        cites: [arcos2014]
+      - metric: speed
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "Point maximum speed is highly sensitive to local bathymetry and exact position; Arcos and LeVeque warn that this can limit quantitative validation."
+        cites: [arcos2014]
+    validated_when: "For per-site peak runup, maximum depth, or maximum elevation snapshots, absolute PBIAS/relative error <= 20% is satisfactory under NTHMP-style field/breaking-wave convention."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The dag determining metric pbias is retained and interpreted as signed relative error for point
+      peak/runup-style quantities. Do not apply the 20% band to arrival-time seconds; no fetched paper
+      gave a numeric arrival-time pass band.
+
+deferred_paywalled:
+  - ref: "NOAA OAR-PMEL-135 standards, criteria, and procedures for NOAA evaluation of tsunami numerical models"
+    doi: unknown_not_fetched
+    needed_for: [h, eta, max_depth_max_speed_arrival_time]
+  - ref: "NTHMP 2012 Proceedings and Results of the 2011 NTHMP Model Benchmarking Workshop"
+    doi: unknown_not_fetched
+    needed_for: [h, eta, max_depth_max_speed_arrival_time]
+  - ref: "NTHMP 2015 tsunami currents benchmarking workshop report"
+    doi: unknown_not_fetched
+    needed_for: [speed, max_depth_max_speed_arrival_time]

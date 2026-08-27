@@ -42,7 +42,7 @@ year  yday  Tmax(C)  Tmin(C)  Tday(C)  prcp(cm)  VPD(Pa)  srad(W/m2)  daylen(s)
 | 5 | Tday | deg C | NOT in input | Tmin + 0.45*(Tmax-Tmin) | -- |
 | 6 | Precipitation | **cm/day** | **mm** (VIC/CMFD) | **DIVIDE BY 10** | dt_007: 10x GPP/NPP |
 | 7 | VPD | **Pa** | specific humidity (kg/kg) | see below | dt_008: stomata always open |
-| 8 | Shortwave | W/m2 | W/m2 (VIC/CMFD) | none | -- |
+| 8 | Shortwave | **W/m2 DAYLIGHT average** (`metv.swavgfd`) | W/m2 **24-h mean** (VIC/CMFD/MSWX/FLUXNET) | **MULTIPLY BY 86400/daylen** (tool does it; `--srad_is_daylight_avg` only for MTCLIM input) | dt_027: GPP/LAI/ET 30-60% low, timing intact |
 | 9 | Day length | **seconds** | NOT in input | **MUST COMPUTE** | dt_009: GPP = 0 |
 
 ### VPD Computation

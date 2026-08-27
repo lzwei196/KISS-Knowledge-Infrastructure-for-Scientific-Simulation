@@ -1,13 +1,3 @@
----
-name: pywr
-description: >-
-  Pywr 1.30.0. Covers Generalised directed-network resource allocation, primarily
-  water-resource systems; Supply-demand balance solved each timestep as a linear program
-  over node costs and flow constraints; Reservoir/storage operation: storage continuity,
-  control curves, min/max volume, regulated release…. Use when the task involves running,
-  configuring, calibrating or interpreting Pywr.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,48 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (12 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (8 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (15 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (14 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/s1_installation/verify_pywr_installation.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_installation/verify_pywr_installation.py --help` |
+| `tools/s2_dam_inventory/find_dams_in_basin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_dam_inventory/find_dams_in_basin.py --help` |
+| `tools/s3_reservoir_properties/build_reservoir_properties.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_reservoir_properties/build_reservoir_properties.py --help` |
+| `tools/s4_inflow/convert_obs_to_inflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_inflow/convert_obs_to_inflow.py --help` |
+| `tools/s4_inflow/convert_vic_to_inflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_inflow/convert_vic_to_inflow.py --help` |
+| `tools/s5_operating_rules/create_operating_rules.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_operating_rules/create_operating_rules.py --help` |
+| `tools/s6_demands/create_demand_nodes.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_demands/create_demand_nodes.py --help` |
+| `tools/s7_assembly/assemble_pywr_model.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_assembly/assemble_pywr_model.py --help` |
+| `tools/s8_execution/check_overtopping.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_execution/check_overtopping.py --help` |
+| `tools/s8_execution/inject_releases_to_cama.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_execution/inject_releases_to_cama.py --help` |
+| `tools/s8_execution/plot_reservoir_operations.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_execution/plot_reservoir_operations.py --help` |
+| `tools/s8_execution/run_pywr.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_execution/run_pywr.py --help` |
+
+*12 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -121,6 +153,50 @@ S1 Verify Pywr ──> S2 Find Dams ──> S3 Reservoir Properties
                                               S8 Run + Plot + CaMa Inject
 ```
 
+## Output Description
+
+This section restates `dag.yaml`; if this section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output**: `release_discharge` is the dag's `validation_rank: 1` variable and is the variable this model is judged by.
+
+> `release_discharge` — Total regulated release plus spill leaving a storage node toward downstream. (`m3/s`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `release_discharge` | 1 | `m3/s` | Total regulated release plus spill leaving a storage node toward downstream. |
+| `storage_volume` | dag output | see `dag.yaml` | Other dag output listed in the extracted KI facts. |
+| `spill_discharge` | dag output | see `dag.yaml` | Other dag output listed in the extracted KI facts. |
+| `demand_deficit` | dag output | see `dag.yaml` | Other dag output listed in the extracted KI facts. |
+| `supply_reliability` | dag output | see `dag.yaml` | Other dag output listed in the extracted KI facts. |
+
+## Unit Table / Unit Conversion Table
+
+This unit table is sourced from `dag.yaml` for model outputs and from the existing HydroCraft coupling rules in this skill for pipeline conversions.
+
+| Variable or exchange | Source unit | Target/model unit | Conversion |
+|----------------------|-------------|-------------------|------------|
+| `release_discharge` | Pywr output | `m3/s` | No conversion for the dag headline output. |
+| VIC -> Pywr inflow | `mm/day` runoff+baseflow | `m3/s` inflow | `* cell_area_m2 / (1000 * 86400)` |
+| Pywr -> CaMa regulated release | `m3/s` release | `mm/day` runoff | `* 86400 / cell_area_m2 * 1000` |
+| DSSAT -> Pywr irrigation demand | `mm` irrigation need | `m3/s` demand | `* area_m2 / (1000 * 86400 * efficiency)` |
+| GRanD capacity -> Pywr storage | `MCM` | `m3` | `* 1e6` |
+
+## Validated Results
+
+This section restates `docs/validation_convention.yaml`; if this section and `docs/validation_convention.yaml` disagree, `docs/validation_convention.yaml` wins. The field's convention bars below are thresholds for judging outputs, not achieved run metrics.
+
+**Headline validation variable**: `release_discharge`.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Citation keys |
+|--------------|--------|-----------|-------------------|-----------|----------------|---------------|
+| `storage_volume` | `nse` | maximize | `0.5` (`moriasi2007`, `gonzalez2021`) | `0.65` (`moriasi2007`, `gonzalez2021`) | `0.75` (`moriasi2007`, `gonzalez2021`) | `moriasi2007`, `gonzalez2021` |
+| `release_discharge` | `nse` | maximize | `0.5` (`moriasi2007`, `shrestha2018`, `hamilton2024`) | `0.65` (`moriasi2007`, `shrestha2018`, `hamilton2024`) | `0.75` (`moriasi2007`, `shrestha2018`, `hamilton2024`) | `moriasi2007`, `shrestha2018`, `hamilton2024` |
+| `release_discharge` | `pbias` | zero_centered | `25` (`moriasi2007`, `shrestha2018`) | `15` (`moriasi2007`, `shrestha2018`) | `10` (`moriasi2007`, `shrestha2018`) | `moriasi2007`, `shrestha2018` |
+| `spill_discharge` | `nse` | maximize | `0.5` (`moriasi2007`, `shrestha2018`) | `0.65` (`moriasi2007`, `shrestha2018`) | `0.75` (`moriasi2007`, `shrestha2018`) | `moriasi2007`, `shrestha2018` |
+| `spill_discharge` | `pbias` | zero_centered | `25` (`moriasi2007`, `shrestha2018`) | `15` (`moriasi2007`, `shrestha2018`) | `10` (`moriasi2007`, `shrestha2018`) | `moriasi2007`, `shrestha2018` |
+
+`demand_deficit` and `supply_reliability` are dag outputs, but no convention bar was provided for them in the extracted KI facts above.
+
 ## Tools Reference
 
 | Stage | Tool ID | Script | Purpose |
@@ -136,6 +212,17 @@ S1 Verify Pywr ──> S2 Find Dams ──> S3 Reservoir Properties
 | S8 | `plot_reservoir_operations` | `tools/s8_execution/plot_reservoir_operations.py` | Multi-panel visualization |
 | S8 | `inject_releases_to_cama` | `tools/s8_execution/inject_releases_to_cama.py` | Regulated flow -> CaMa runoff |
 | S8 | `check_overtopping` | `tools/s8_execution/check_overtopping.py` | DLBreach trigger evaluation |
+
+## Stage Skill Documents
+
+- [S1 Installation](docs/s1_installation.md)
+- [S2 Dam Inventory](docs/s2_dam_inventory.md)
+- [S3 Reservoir Properties](docs/s3_reservoir_properties.md)
+- [S4 Inflow](docs/s4_inflow.md)
+- [S5 Operating Rules](docs/s5_operating_rules.md)
+- [S6 Demands](docs/s6_demands.md)
+- [S7 Assembly](docs/s7_assembly.md)
+- [S8 Execution](docs/s8_execution.md)
 
 ## GRanD Dam Database
 

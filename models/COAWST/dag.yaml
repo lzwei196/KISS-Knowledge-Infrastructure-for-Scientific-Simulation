@@ -183,7 +183,7 @@ outputs:
   - var: "salt"
     validation_rank: 4
     unit: "PSU"
-    description: "Salinity."
+    description: "Ocean salinity."
     emitted_in: "*_his_*.nc"
     observability:
       comparable_obs_shapes:
@@ -196,7 +196,7 @@ outputs:
   - var: "u"
     validation_rank: 5
     unit: "m/s"
-    description: "Eastward 3D baroclinic velocity component (on the u-grid)."
+    description: "Eastward 3D baroclinic ocean velocity component (on the u-grid)."
     emitted_in: "*_his_*.nc"
     observability:
       comparable_obs_shapes:
@@ -209,7 +209,7 @@ outputs:
   - var: "v"
     validation_rank: 6
     unit: "m/s"
-    description: "Northward 3D baroclinic velocity component (on the v-grid)."
+    description: "Northward 3D baroclinic ocean velocity component (on the v-grid)."
     emitted_in: "*_his_*.nc"
     observability:
       comparable_obs_shapes:
@@ -484,3 +484,17 @@ safety:
       scope: "coupling configuration"
       source: "USGS COAWST coupling/two-way feedback documentation"
       status: "adopted"
+
+medium_evidence:
+  - var: "salt"
+    source: "dag.yaml"
+    quote: "Two-way coupled coastal-ocean circulation (3D temperature, salinity, velocity, free surface) via ROMS"
+    note: "scope_in declares salinity as part of coastal-ocean circulation via ROMS."
+  - var: "u"
+    source: "dag.yaml"
+    quote: "Two-way coupled coastal-ocean circulation (3D temperature, salinity, velocity, free surface) via ROMS"
+    note: "scope_in declares velocity as part of coastal-ocean circulation via ROMS."
+  - var: "v"
+    source: "dag.yaml"
+    quote: "Two-way coupled coastal-ocean circulation (3D temperature, salinity, velocity, free surface) via ROMS"
+    note: "scope_in declares velocity as part of coastal-ocean circulation via ROMS."

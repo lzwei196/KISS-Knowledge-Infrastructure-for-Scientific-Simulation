@@ -1,0 +1,110 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
+package:
+  name: CaMa_Flood
+  language: fortran
+  implementation:
+    id: cama-flood-v420
+    version: v4.20
+    provenance: Fortran 90 (OpenMP/MPI parallel); stand-alone MAIN_cmf driver of CaMa-Flood v4.20 from
+      Global Hydrodynamics Lab, University of Tokyo.
+  scientific_reference_version: CaMa-Flood v4.20 (local-inertial river hydrodynamics; Yamazaki et al.
+    2011 floodplain parameterization + Yamazaki et al. 2013 local-inertial flow equation)
+  binary:
+    path: KISSPATH_BINARIES/cmf_v420_pkg/src/MAIN_cmf
+    type: ELF
+pipeline:
+  stages:
+  - s0_preflight
+  - s0_preflight_skill
+  - s1_prepare_runoff
+  - s1_prepare_runoff_skill
+  - s2_configure_basin
+  - s2_configure_basin_skill
+  - s3_execute_cama
+  - s3_execute_cama_skill
+  - s4_postprocess
+  - s4_postprocess_skill
+tools:
+  count: 6
+  files:
+  - tools/calib_run.py
+  - tools/configure_simulation.py
+  - tools/gfd_flood_obs.py
+  - tools/parse_cama_output.py
+  - tools/prepare_runoff_input.py
+  - tools/run_cama.py
+inputs:
+  forcing:
+  - name: lateral surface runoff
+    unit: mm/day
+  - name: sub-surface runoff (baseflow)
+    unit: mm/day
+  - name: potential water evaporation
+    unit: mm/day
+  parameters:
+  - name: PMANRIV (river channel Manning's n)
+    unit: s m^-1/3
+  - name: PMANFLD (floodplain Manning's n)
+    unit: s m^-1/3
+  - name: river network topology (next-downstream cell)
+    unit: cell index
+  - name: unit-catchment area
+    unit: m2
+  - name: cell elevation
+    unit: m
+  - name: distance to downstream cell
+    unit: m
+  - name: river channel length
+    unit: m
+  - name: sub-grid floodplain height profile
+    unit: m
+  - name: river channel width
+    unit: m
+  - name: river channel bank height / depth
+    unit: m
+  - name: PCADP (CFL adaptive time-step coefficient)
+    unit: dimensionless
+  - name: PDSTMTH (river-mouth downstream distance)
+    unit: m
+  initial_conditions:
+  - name: river channel storage
+    unit: m3
+  - name: floodplain storage
+    unit: m3
+  boundary_conditions:
+  - name: downstream sea-level / ocean boundary
+    unit: m
+  - name: flow-solver selection (LADPSTP / LKINE / LSLPMIX / LFLDOUT / LPTHOUT)
+    unit: switch
+  - name: optional sub-model activation (LDAMOUT / LLEVEE / LGDWDLY / LROSPLIT / LWEVAP)
+    unit: switch
+  - name: outer time step DT and I/O frequency
+    unit: s
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - outflw
+  - rivout
+  - rivdph
+  - sfcelv
+  - flddph
+  - fldfrc
+  - fldare
+  - rivvel
+  - rivsto
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.897, KGE=0.565, R=0.963, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.897
+    best_kge: 0.5652
+    best_r: 0.963
+summary:
+  total_tools: 6
+  total_stage_docs: 10
+  total_diagnostic_triplets: 37
+  generated: '2026-08-20'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

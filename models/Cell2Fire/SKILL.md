@@ -1,14 +1,3 @@
----
-name: cell2fire
-description: >-
-  Cell2Fire W (C2F-W) — unified Scott&Burgan / Canadian FBP / Kitral cellular fire-spread
-  simulator; FBP lineage per Pais et al. 2021 (Front. For…. Covers Grid-based wildfire
-  spread (propagation) across a gridded landscape from one or more ignition points;
-  Per-cell rate of spread and elliptical fire propagation via a selectable fire-behavior
-  model…. Use when the task involves running, configuring, calibrating or interpreting
-  Cell2Fire.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -32,6 +21,39 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (16 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_fuel_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_fuel_params.py --help` |
+| `tools/convert_weather_to_c2f.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_weather_to_c2f.py --help` |
+| `tools/parse_cell2fire_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_cell2fire_output.py --help` |
+| `tools/run_cell2fire.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_cell2fire.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # Cell2Fire W (C2F-W) — Knowledge Infrastructure
 
 **Package**: `hydrocraft-cell2fire-wildfire` v1.0.0
@@ -42,6 +64,262 @@ description: >-
 **Validation status**: `build_validated` (Vilopriu 2013, Scott&Burgan model)
 
 ---
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | Cell2Fire W (C2F-W) |
+| Package | `hydrocraft-cell2fire-wildfire` v1.0.0 |
+| Language | C++ with OpenMP, wrapped by KI Python tools |
+| Repository | https://github.com/fire2a/C2F-W |
+| Primary domain | Wildfire spread / hazard |
+| Spatial mode | Distributed gridded landscape |
+| Validation status | `build_validated` (Vilopriu 2013, Scott&Burgan model) |
+
+---
+
+## 2. What This Model Does
+
+Cell2Fire W is a large-scale, grid-based wildfire spread simulator. It propagates fire between
+regular grid cells using elliptical spread and a selected fire-behavior model: Scott & Burgan,
+Canadian FBP, Kitral, or Portugal. It can run deterministic fire scars or Monte Carlo ensembles
+for burn probability, and it can emit per-cell fire behavior fields such as ROS, intensity,
+flame length, and crown-fire state.
+
+The headline variable for validation is the dag rank-1 output: `FinalGrid (burned/unburned)`.
+
+---
+
+## 3. Input Requirements
+
+**Exact shapes live in `docs/format_spec.yaml`** (projected from dag + triplets; regenerate it
+after changing either file, never hand-edit it). This section explains intent and common traps.
+
+### 3.1 Meteorological Forcing
+
+| Variable | Unit model expects | Source dataset | Source unit | Conversion |
+|----------|-------------------|----------------|-------------|------------|
+| Wind speed (WS) | km/h | CMFD/MSWX/NASA POWER or station forcing | often m/s | x3.6 |
+| Wind direction (WD) | degrees, meteorological FROM, north=0 | CMFD/MSWX/NASA POWER or station forcing | varies | if math TO convention: `(value + 180) % 360` |
+| Air temperature (TMP) | deg C | FBP weather forcing | often K or deg C | K to deg C: -273.15 |
+| Relative humidity (RH) | percent (0-100) | FBP weather forcing | often fraction or percent | fraction to percent: x100 |
+| Precipitation (APCP) | mm | FBP weather forcing | often m, mm/step, or kg/m2/s | source-specific; verify attributes |
+| FWI System indices | dimensionless | externally computed CFFDRS/FWI pipeline | dimensionless | none; must be supplied for `--sim C` |
+
+### 3.2 Static Inputs
+
+| Input | Unit model expects | Tool that prepares it |
+|-------|--------------------|----------------------|
+| Fuel type grid | integer fuel code | `convert_landscape_to_c2f` |
+| Elevation grid | meters ASL | `convert_landscape_to_c2f` |
+| Slope grid | degrees | `convert_landscape_to_c2f` |
+| Slope aspect (`saz`) | degrees, compass north=0 | `convert_landscape_to_c2f` |
+| Crown base height (`cbh`) | meters | `convert_landscape_to_c2f` |
+| Crown bulk density (`cbd`) | kg/m3 | `convert_landscape_to_c2f` |
+| Crown closure / canopy cover (`ccf`, `fcc`) | percent | `convert_landscape_to_c2f` |
+| Grass curing (`cur`) | percent | `convert_landscape_to_c2f` |
+
+### 3.3 Configuration Files
+
+| File | Format | Notes |
+|------|--------|-------|
+| `Weather.csv` | CSV | Hourly weather rows; S&B/Kitral and FBP use different column sets. |
+| `Ignitions.csv` | CSV | Optional fixed ignition cells; cell ids are 1-based row-major from top-left. |
+| `spain_lookup_table.csv` | CSV | Fuel coefficients lookup for Scott & Burgan / Kitral / Portugal style runs. |
+| `fbp_lookup_table.csv` | CSV | Fuel coefficients lookup for Canadian FBP runs. |
+| `probabilityMap.asc` | ESRI ASCII grid | Optional ignition probability per cell. |
+
+---
+
+## 4. Build Instructions
+
+Run the KI preflight first:
+
+```bash
+python preflight_check.py
+```
+
+Then compile the model binary when the local Cell2Fire source needs rebuilding:
+
+```bash
+cd Cell2Fire/
+make
+sudo make install  # optional
+```
+
+Known build issues are captured in `diagnostics/triplets.yaml`; check it before debugging a
+failed import, compile, or execution.
+
+---
+
+## 5. Execution
+
+Minimal execution pattern:
+
+```bash
+mkdir results
+./Cell2Fire --input-instance-folder ../data/ScottAndBurgan/Hom_Fuel_101_40x40-asc \
+  --output-folder results --nsims 3 --sim S --output-messages --final-grid --seed 123
+```
+
+The KI execution wrapper is `run_cell2fire`; read the tool argparse (`--help`) before composing
+a run.
+
+---
+
+## 6. Output Description
+
+**SOURCE: `dag.yaml`.** The dag is the model identity for outputs. If this section and
+`dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `FinalGrid (burned/unburned)` — Final per-cell burn state grid (fire scar) for one simulation. (`0=unburned, 1=burned`)
+
+| Output variable (dag `var`) | rank | File | Unit |
+|-----------------------------|------|------|------|
+| `FinalGrid (burned/unburned)` | 1 | `Grids/Grids{sim}/FinalGrid.csv` | `0=unburned, 1=burned` |
+| `burn probability` | 2 | `burn_probability.csv / .asc` (post-processing of FinalGrid ensemble) | `0.0-1.0` |
+| `fire propagation messages` | 3 | `Messages/MessagesFile{sim}.csv` | `(sender_cell, receiver_cell, fire_period, ROS)` |
+| `rate of spread (ROS)` | 4 | `RateOfSpread/ROSFile{sim}.csv` | `m/min` |
+| `fireline intensity` | 5 | `Intensity/IntensityFile{sim}.csv` | `kW/m (Byram intensity)` |
+| `flame length` | 6 | `FlameLength/FLFile{sim}.csv` | `m` |
+| `crown fire state / crown fraction burned` | 7 | `CrownFire/CrownFile{sim}.csv ; CrownFractionBurn/CFBFile{sim}.csv` | `0/1 ; fraction` |
+
+The dag's rank-1 variable is what this model is judged by when a single headline output is
+required. Other dag outputs are `burn probability`, `fire propagation messages`,
+`rate of spread (ROS)`, `fireline intensity`, `flame length`, and
+`crown fire state / crown fraction burned`.
+
+---
+
+## 7. Tool Inventory
+
+| Tool | Purpose | Inputs | Outputs |
+|------|---------|--------|---------|
+| `convert_landscape_to_c2f` | Prepare Cell2Fire landscape rasters | Fuel, elevation, slope, aspect rasters | ASC/TIF instance-folder rasters |
+| `convert_weather_to_c2f` | Convert meteorological forcing | Station or gridded forcing | `Weather.csv` |
+| `convert_fuel_params` | Generate fuel lookup table | Fuel type mapping / parameters | `spain_lookup_table.csv` or `fbp_lookup_table.csv` |
+| `run_cell2fire` | Execute the real Cell2Fire binary | Instance folder and CLI args | Cell2Fire output folder |
+| `parse_cell2fire_output` | Parse and aggregate model outputs | Cell2Fire output folder | Burn probability maps and summary CSVs |
+
+Use shared KI utilities where applicable, especially
+`from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+---
+
+## 8. Unit Conversion Table
+
+> **Critical**: This table documents unit conversions that must be verified before running.
+> `docs/format_spec.yaml` is the exact I/O contract.
+> This is the KI unit table for inputs and output-unit conventions.
+
+| Variable | Source unit (verified) | Model unit | Factor / conversion | Type |
+|----------|------------------------|------------|---------------------|------|
+| Wind Speed (WS) | m/s | km/h | x3.6 | multiplicative |
+| Wind Direction (WD) | degrees, mathematical TO | degrees, meteorological FROM | `(value + 180) % 360` | convention |
+| Elevation | feet | meters ASL | x0.3048 | multiplicative |
+| Slope | percent rise | degrees | `atan(pct/100) x 180/pi` | nonlinear |
+| Slope Aspect (`saz`) | degrees, mathematical east=0 | degrees, compass north=0 | `(90 - value) % 360` | convention |
+| Temperature (TMP) | K | deg C | -273.15 | additive |
+| Relative Humidity (RH) | fraction (0-1) | percent (0-100) | x100 | multiplicative |
+| Precipitation (APCP) | m | mm | x1000 | multiplicative |
+| Crown Base Height (`cbh`) | feet | meters | x0.3048 | multiplicative |
+| Crown Bulk Density (`cbd`) | lb/ft3 | kg/m3 | x16.0185 | multiplicative |
+| Fuel Moisture Content (FMC) | fraction (0-1) | percent | x100 | multiplicative |
+| Fire Period Length | hours | minutes | x60 | multiplicative |
+
+### 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|--------------------|-----------------|
+| FinalGrid (burned/unburned) | `0=unburned, 1=burned` | Boolean or inverse mask | CSI/F1 fire-scar scores invert or collapse |
+| Burn probability | `0.0-1.0` probability per cell | Percent 0-100 | Probability metrics are off by 100x |
+| Wind direction | Meteorological FROM, north=0 | Mathematical TO, east=0 | Fire spread direction rotates or reverses |
+| Rate of spread (ROS) | `m/min` | `m/s`, `m/h`, `km/h` | Arrival time and propagation threshold are wrong |
+| Fireline intensity | `kW/m` | `W/m`, `MW/m` | Fire-behavior magnitude comparisons are wrong |
+| Flame length | `m` | feet | Crown/surface fire interpretation is wrong |
+
+---
+
+## 9. Diagnostic Triplets (Top 5)
+
+The full corpus is in `diagnostics/triplets.yaml`; check it first on any error.
+
+| # | Error / symptom | Diagnosis | Remedy |
+|---|-----------------|-----------|--------|
+| 1 | `dt_001`: fire barely spreads; burned area tiny; ROS near zero | Wind speed in m/s instead of km/h | Multiply wind speed by 3.6 in `convert_weather_to_c2f.py` |
+| 2 | `dt_002`: fire spreads in wrong direction | Wind direction in math convention instead of meteorological FROM | Apply `(WD + 180) % 360` |
+| 3 | `dt_003`: FBP produces extreme fire behavior in mild weather | Relative humidity fraction instead of percent | Multiply RH by 100 if values are in 0-1 range |
+| 4 | `dt_004`: FBP temperature calculations nonsensical | Temperature in Kelvin instead of Celsius | Subtract 273.15 from temperature values |
+| 5 | `dt_007`: segmentation fault at simulation start | Raster dimension mismatch | Ensure all ASC files have identical dimensions, cellsize, and corner coordinates |
+
+---
+
+## 10. Coupling Interfaces
+
+| Upstream source/model | Variable exchanged | Unit | Temporal resolution |
+|-----------------------|-------------------|------|---------------------|
+| CMFD/MSWX/NASA POWER or station forcing | Weather drivers (`WS`, `WD`, and FBP columns as needed) | mixed; see Section 8 | hourly model rows |
+| DEM / landscape processing | Elevation, slope, aspect | meters, degrees | static grid |
+| Fuel map / fuel lookup processing | Fuel type and fuel coefficients | integer code / mixed table | static grid |
+| Fire perimeter observations such as MTBS | Observed final burn scar for validation | burned/unburned raster | event final perimeter |
+
+| Downstream consumer | Variable exchanged | Unit | Temporal resolution |
+|---------------------|-------------------|------|---------------------|
+| Burn-scar validation workflow | `FinalGrid (burned/unburned)` | `0=unburned, 1=burned` | event final state |
+| Risk mapping / planning workflow | `burn probability` | `0.0-1.0` | ensemble summary |
+| Arrival-time / spread diagnostics | `fire propagation messages` | `(sender_cell, receiver_cell, fire_period, ROS)` | fire period |
+
+---
+
+## 11. Validated Results
+
+Validated run bodies are pending in this KI. Until a run-specific body campaign is added,
+judge candidate runs against the cited field bars in `docs/validation_convention.yaml`; do not
+invent thresholds.
+
+### Performance Metrics - judged against the field's bar, not intuition
+
+| Dag variable | Metric | Direction | Satisfactory | Good | Very good | Citation |
+|--------------|--------|-----------|--------------|------|-----------|----------|
+| `FinalGrid (burned/unburned)` | `csi` | maximize | >= 0.25 | >= 0.4286 | >= 0.6667 | `giannaros2020` |
+| `burn probability` | `top_quintile_burn_capture_percent` | maximize | >= 56.7 | >= 68.0 | >= 80.0 | `moran2025` |
+| `burn probability` | `logarithmic_skill_score` | maximize | >= 0.0 | no cited threshold | no cited threshold | `moran2025` |
+| `fire propagation messages` | `csi` | maximize | >= 0.25 | >= 0.4286 | >= 0.6667 | `giannaros2020` |
+
+Bar for `FinalGrid (burned/unburned)` (`csi`, per `giannaros2020`): satisfactory >= 0.25,
+good >= 0.4286, very good >= 0.6667. Achieved: pending body campaign -> no run verdict.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Weather forcing | KI pipeline / source forcing | Pending run-specific validation | Use `preflight_check.py` and `docs/format_spec.yaml`. |
+| Landscape rasters | KI pipeline / GIS sources | Pending run-specific validation | All rasters must align exactly. |
+| Fuel lookup tables | KI pipeline / model fuel scheme | Pending run-specific validation | Match lookup table to `--sim`. |
+| Ignitions | User-provided or random / probability map | Pending run-specific validation | Fixed cells use 1-based row-major ids. |
+| Observed fire scar | MTBS or equivalent perimeter source | Pending run-specific validation | Bind to `FinalGrid (burned/unburned)` for headline CSI. |
+
+---
+
+## 12. Parameter Selection by Region
+
+These are not calibration results. Use model defaults as physically informed starting points
+when no site-specific calibration exists, then document any ROS or ellipse tuning in the run
+body.
+
+| Climate / Region | Key parameters | Rationale |
+|---|---|---|
+| Mediterranean / Scott & Burgan | `--sim S`, `--scenario` selected from fire-weather severity, `HFactor/FFactor/BFactor/EFactor=1.0` before tuning | Matches the S&B fuel-model path and keeps ROS/ellipse multipliers neutral before calibration. |
+| Canada / boreal FBP | `--sim C`, externally supplied `FFMC/DMC/DC/ISI/BUI/FWI`, FBP fuel codes | The FBP model requires Canadian FWI System indices and FBP-compatible fuel codes. |
+| Chile / Kitral | `--sim K`, Kitral-compatible fuels and weather rows | Uses the Kitral fire-behavior path for South American vegetation. |
+| Portugal / experimental | `--sim P` only when explicitly intended | The Portugal model is marked experimental in the KI. |
+
+---
+
+## Legacy Detailed Reference
 
 ## Data Preparation
 

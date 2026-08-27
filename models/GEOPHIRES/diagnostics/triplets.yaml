@@ -1,443 +1,466 @@
+# ========================================================================
+# GEOPHIRES Diagnostic Triplets
+# ========================================================================
+# 18 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+
+# Comments preserved from the previous file:
 # GEOPHIRES Diagnostic Triplets
 # Symptom → Diagnosis → Remedy
 # 18 triplets covering common failure modes
-
-triplets:
-
   # ============================
   # Unit Conversion Errors
   # ============================
-
-  - id: dt_001
-    stage: s1
-    failure_domain: unit_conversion
-    severity: silent
-    symptom:
-      description: "Bottom-hole temperature is unrealistically high (>1000°C) or costs are astronomical"
-      error_pattern: "Maximum Temperature exceeded"
-      detection_method: "Check if bottom-hole temperature > 600°C"
-    diagnosis:
-      root_cause: "Reservoir Depth specified in meters instead of kilometers"
-      explanation: >
-        GEOPHIRES expects depth in km. Providing 3000 (meters) instead of 3.0 (km)
-        causes bottom-hole temperature = 3000 × gradient, producing extreme values.
-        The model may still run but all results are meaningless.
-      affected_components: ["Reservoir", "Economics"]
-    remedy:
-      action: "Convert depth from meters to km: depth_km = depth_m / 1000"
-      tool_to_run: "convert_reservoir_params.py"
-      manual_steps:
-        - "Check 'Reservoir Depth' value in input file"
-        - "If value > 15, it is likely in meters"
-        - "Divide by 1000 to convert to km"
-      prevention: "Always use convert_reservoir_params.py which auto-detects source units"
-
-  - id: dt_002
-    stage: s1
-    failure_domain: unit_conversion
-    severity: silent
-    symptom:
-      description: "Bottom-hole temperature is near surface temperature; system produces negligible power"
-      error_pattern: "Net power output near zero"
-      detection_method: "Check if Gradient 1 < 1 degC/km"
-    diagnosis:
-      root_cause: "Temperature gradient specified in degC/m instead of degC/km"
-      explanation: >
-        GEOPHIRES expects gradient in degC/km. Providing 0.05 (degC/m) instead of 50 (degC/km)
-        means 3 km depth yields only 0.15°C temperature, producing near-zero power.
-      affected_components: ["Reservoir"]
-    remedy:
-      action: "Convert gradient: gradient_degC_per_km = gradient_degC_per_m × 1000"
-      tool_to_run: "convert_reservoir_params.py"
-      manual_steps:
-        - "Check 'Gradient 1' value in input file"
-        - "If value < 1, it is likely in degC/m"
-        - "Multiply by 1000 to convert to degC/km"
-      prevention: "Use convert_reservoir_params.py with explicit source units"
-
-  - id: dt_003
-    stage: s1
-    failure_domain: unit_conversion
-    severity: silent
-    symptom:
-      description: "Flow rate produces unrealistic power output; pumping costs dominate"
-      error_pattern: "Pump power exceeds generation"
-      detection_method: "Check if flow rate is < 1 kg/s (too low) or > 500 kg/s (too high)"
-    diagnosis:
-      root_cause: "Flow rate in m3/s or L/s instead of kg/s"
-      explanation: >
-        GEOPHIRES expects 'Production Flow Rate per Well' in kg/s.
-        1 m3/s of water ≈ 958 kg/s, so providing m3/s values directly
-        gives extreme results. Similarly, L/s values are ~1000× too low as kg/s.
-      affected_components: ["WellBores", "SurfacePlant", "Economics"]
-    remedy:
-      action: "Convert: kg/s = m3/s × density (≈958 for hot water); kg/s = L/s × density/1000"
-      tool_to_run: "convert_reservoir_params.py"
-      manual_steps:
-        - "Check 'Production Flow Rate per Well' value"
-        - "Typical range: 20-150 kg/s for a single well"
-        - "Apply density correction for the fluid temperature"
-      prevention: "Specify source units in config and use conversion tool"
-
-  - id: dt_004
-    stage: s1
-    failure_domain: unit_conversion
-    severity: silent
-    symptom:
-      description: "Well diameter produces extreme pressure drop calculations"
-      error_pattern: "Pressure drop unrealistically high or low"
-      detection_method: "Check if well diameter < 1 or > 20 inches"
-    diagnosis:
-      root_cause: "Well diameter in cm or m instead of inches"
-      explanation: >
-        GEOPHIRES expects well diameter in inches. Providing 17.8 (cm) instead of 7 (inches)
-        gives a larger-than-real well, reducing pressure drop. Providing 0.178 (m) gives
-        a tiny well with extreme pressure drop.
-      affected_components: ["WellBores"]
-    remedy:
-      action: "Convert: inches = cm / 2.54; inches = m × 39.37"
-      tool_to_run: "convert_reservoir_params.py"
-      manual_steps:
-        - "Check 'Production Well Diameter' and 'Injection Well Diameter'"
-        - "Standard sizes: 5, 7, 8.5, 9.625 inches"
-        - "Convert from cm or m if needed"
-      prevention: "Verify diameter against common well casing sizes"
-
-  - id: dt_005
-    stage: s2
-    failure_domain: unit_conversion
-    severity: silent
-    symptom:
-      description: "LCOE is 100× higher than expected (e.g., $5/kWh instead of $0.05/kWh)"
-      error_pattern: "LCOE > 100 cents/kWh"
-      detection_method: "Compare LCOE to expected range (3-30 cents/kWh for most geothermal)"
-    diagnosis:
-      root_cause: "Fixed Charge Rate or Discount Rate given as percentage instead of fraction"
-      explanation: >
-        GEOPHIRES expects financial rates as fractions (e.g., 0.05 for 5%).
-        Providing 5 instead of 0.05 makes the model calculate LCOE with a
-        500% charge rate, producing impossibly high costs.
-      affected_components: ["Economics"]
-    remedy:
-      action: "Convert: fraction = percentage / 100"
-      tool_to_run: "convert_site_economics.py"
-      manual_steps:
-        - "Check all rate parameters: Fixed Charge Rate, Discount Rate, etc."
-        - "Values should be 0.01-0.20, not 1-20"
-        - "Divide by 100 if they appear to be percentages"
-      prevention: "Use convert_site_economics.py which auto-detects percentages"
-
-  - id: dt_006
-    stage: s1
-    failure_domain: unit_conversion
-    severity: silent
-    symptom:
-      description: "Thermal drawdown is too fast or too slow for the reservoir"
-      error_pattern: "Temperature drops to injection temperature within a few years"
-      detection_method: "Check heat capacity units"
-    diagnosis:
-      root_cause: "Reservoir Heat Capacity in kJ/kg/K instead of J/kg/K"
-      explanation: >
-        GEOPHIRES expects heat capacity in J/kg/K (e.g., 1000). Providing kJ/kg/K (e.g., 1.0)
-        gives 1000× less thermal inertia, causing unrealistically fast drawdown.
-      affected_components: ["Reservoir"]
-    remedy:
-      action: "Convert: J/kg/K = kJ/kg/K × 1000"
-      tool_to_run: "convert_reservoir_params.py"
-      manual_steps:
-        - "Check 'Reservoir Heat Capacity' value"
-        - "Should be 500-2000 J/kg/K for most rocks"
-        - "If < 10, likely in kJ/kg/K"
-      prevention: "Validate range in conversion tool"
-
   # ============================
   # Parameter Configuration Errors
   # ============================
-
-  - id: dt_007
-    stage: s3
-    failure_domain: parameter_format
-    severity: fatal
-    symptom:
-      description: "GEOPHIRES crashes or produces no output"
-      error_pattern: "FileNotFoundError or ModuleNotFoundError"
-      detection_method: "Check exit code and stderr"
-    diagnosis:
-      root_cause: "Input file path not found or geophires_x not installed"
-      explanation: >
-        GEOPHIRES needs both the input file to be accessible and the geophires_x
-        package to be installed in the Python environment being used.
-      affected_components: ["GEOPHIRESv3"]
-    remedy:
-      action: "Verify file path and installation"
-      tool_to_run: "run_geophires.py (preflight mode)"
-      manual_steps:
-        - "Check input file path exists"
-        - "Run: python -c 'import geophires_x'"
-        - "If missing, install: pip install -e <source>"
-      prevention: "Use run_geophires.py which performs preflight checks"
-
-  - id: dt_008
-    stage: s3
-    failure_domain: parameter_format
-    severity: silent
-    symptom:
-      description: "Results use default values for parameters that were intended to be customized"
-      error_pattern: "Output shows unexpected default parameters"
-      detection_method: "Compare input parameters to output 'Engineering Parameters' section"
-    diagnosis:
-      root_cause: "Parameter name misspelled or has wrong capitalization"
-      explanation: >
-        GEOPHIRES silently ignores unknown parameter names. A typo like
-        'Resevoir Depth' (missing 'r') or 'reservoir depth' (wrong case)
-        causes the parameter to be skipped and the default value used.
-      affected_components: ["All"]
-    remedy:
-      action: "Verify parameter names match GEOPHIRES exactly"
-      manual_steps:
-        - "Compare input parameter names to GEOPHIRES parameter reference"
-        - "Check capitalization (case-sensitive)"
-        - "Review output file to confirm parameters were applied"
-      prevention: "Use generate_input_file.py which uses canonical parameter names"
-
-  - id: dt_009
-    stage: s3
-    failure_domain: parameter_format
-    severity: silent
-    symptom:
-      description: "End-use is Direct Heat but output shows electricity plant calculations"
-      error_pattern: "Mismatch between End-Use Option and Power Plant Type"
-      detection_method: "Check End-Use Option and Power Plant Type in output"
-    diagnosis:
-      root_cause: "Incompatible End-Use Option and Power Plant Type combination"
-      explanation: >
-        Setting End-Use Option=2 (Direct Heat) with Power Plant Type=2 (Supercritical ORC)
-        creates a contradictory configuration. GEOPHIRES may use defaults or produce
-        nonsensical results.
-      affected_components: ["SurfacePlant", "Economics"]
-    remedy:
-      action: "Match plant type to end-use"
-      manual_steps:
-        - "Electricity: Plant Type 1-4"
-        - "Direct-Use Heat: Plant Type 7, 9"
-        - "Cogeneration: Check specific combination"
-      prevention: "Use convert_site_economics.py which validates compatibility"
-
-  - id: dt_010
-    stage: s3
-    failure_domain: parameter_format
-    severity: silent
-    symptom:
-      description: "Reservoir model ignores specified fracture parameters"
-      error_pattern: "Fracture parameters missing from output despite being in input"
-      detection_method: "Check output 'Reservoir Parameters' section for fracture data"
-    diagnosis:
-      root_cause: "Fracture parameters specified but Reservoir Model doesn't use them"
-      explanation: >
-        Only Reservoir Model 1 (Multiple Parallel Fractures) and Model 3 (Single Fracture)
-        use fracture parameters. Setting fracture parameters with Model 4 (Percentage Drawdown)
-        has no effect—they are silently ignored.
-      affected_components: ["Reservoir"]
-    remedy:
-      action: "Use Reservoir Model 1 or 3 if fracture modeling is needed"
-      manual_steps:
-        - "Check 'Reservoir Model' setting"
-        - "Models 1, 3 use fracture parameters"
-        - "Models 0, 2, 4-8 ignore fracture parameters"
-      prevention: "Use generate_input_file.py which warns about unused parameters"
-
   # ============================
   # Runtime Errors
   # ============================
-
-  - id: dt_011
-    stage: s4
-    failure_domain: runtime
-    severity: fatal
-    symptom:
-      description: "Simulation hangs or times out"
-      error_pattern: "Process exceeds timeout"
-      detection_method: "Execution time > expected (typical: < 10 seconds)"
-    diagnosis:
-      root_cause: "SBT or SUTRA model with large parameter space"
-      explanation: >
-        SBT (Model 8) and SUTRA (Model 7) models involve more complex
-        calculations that can take minutes to hours. Extremely fine time
-        stepping or large fracture counts can also cause long runtimes.
-      affected_components: ["Reservoir"]
-    remedy:
-      action: "Increase timeout or simplify model"
-      manual_steps:
-        - "Increase timeout: --timeout 600 or higher"
-        - "Reduce time steps per year"
-        - "Use simpler reservoir model for initial screening"
-      prevention: "Start with Model 4 for quick screening"
-
-  - id: dt_012
-    stage: s4
-    failure_domain: runtime
-    severity: fatal
-    symptom:
-      description: "Error: could not read temperature profile from file"
-      error_pattern: "FileNotFoundError for reservoir temperature data"
-      detection_method: "Check stderr for file path errors"
-    diagnosis:
-      root_cause: "Reservoir Model 5 (User-Provided) but data file not found"
-      explanation: >
-        Model 5 requires an external temperature-vs-time data file.
-        The file path must be correct relative to the input file directory.
-      affected_components: ["Reservoir"]
-    remedy:
-      action: "Provide correct path to temperature data file"
-      manual_steps:
-        - "Check 'Reservoir Temperature Data File' parameter"
-        - "Ensure file exists at specified path"
-        - "Use absolute path or path relative to input file"
-      prevention: "Use run_geophires.py preflight which checks external file existence"
-
   # ============================
   # Silent Errors (Model runs but results wrong)
   # ============================
 
-  - id: dt_013
-    stage: s4
-    failure_domain: silent_error
-    severity: silent
-    symptom:
-      description: "Injection temperature close to production temperature; near-zero power"
-      error_pattern: "Net power < 0.1 MW with seemingly valid inputs"
-      detection_method: "Check temperature difference between production and injection"
-    diagnosis:
-      root_cause: "Injection temperature set too high relative to production temperature"
-      explanation: >
-        If injection temperature (e.g., 140°C) is close to production temperature
-        (e.g., 165°C), the available temperature drop for power generation is minimal.
-        The model produces correct but practically useless results.
-      affected_components: ["SurfacePlant", "Economics"]
-    remedy:
-      action: "Lower injection temperature or use direct-use end-use"
-      manual_steps:
-        - "For electricity: injection temp should be 40-80°C"
-        - "For direct-use: injection temp can be higher but must allow useful ΔT"
-        - "Rule of thumb: ΔT > 50°C for electricity, > 20°C for heat"
-      prevention: "Validate T_inject < T_production - 50°C for electricity"
+- id: dt_001
+  stage: s1
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: Bottom-hole temperature is unrealistically high (>1000°C) or costs are astronomical
+    error_pattern: Maximum Temperature exceeded
+    detection_method: Check if bottom-hole temperature > 600°C
+  diagnosis:
+    root_cause: Reservoir Depth specified in meters instead of kilometers
+    explanation: 'GEOPHIRES expects depth in km. Providing 3000 (meters) instead of 3.0 (km) causes bottom-hole
+      temperature = 3000 × gradient, producing extreme values. The model may still run but all results
+      are meaningless.
 
-  - id: dt_014
-    stage: s4
-    failure_domain: silent_error
-    severity: silent
-    symptom:
-      description: "Maximum temperature capping silently limits power output"
-      error_pattern: "Bottom-hole temperature equals Maximum Temperature exactly"
-      detection_method: "Check if depth × gradient + T_surface > Maximum Temperature"
-    diagnosis:
-      root_cause: "Maximum Temperature parameter capping bottom-hole temperature"
-      explanation: >
-        If Reservoir Depth × Gradient + Surface Temperature exceeds 'Maximum Temperature'
-        (default 400°C), the bottom-hole temperature is capped. This is by design but
-        can be surprising if you don't check. Example: 8 km × 50°C/km = 400°C + 15°C
-        surface = 415°C, capped to 400°C.
-      affected_components: ["Reservoir"]
-    remedy:
-      action: "Increase Maximum Temperature if the geology supports it"
-      manual_steps:
-        - "Calculate expected T: depth × gradient + surface_temp"
-        - "If > 400°C, set Maximum Temperature accordingly"
-        - "Valid range: up to 600°C for superhot rock"
-      prevention: "Always set Maximum Temperature explicitly for deep/hot systems"
+      '
+    affected_components:
+    - Reservoir
+    - Economics
+  remedy:
+    action: 'Convert depth from meters to km: depth_km = depth_m / 1000'
+    tool_to_run: convert_reservoir_params.py
+    manual_steps:
+    - Check 'Reservoir Depth' value in input file
+    - If value > 15, it is likely in meters
+    - Divide by 1000 to convert to km
+    prevention: Always use convert_reservoir_params.py which auto-detects source units
+- id: dt_002
+  stage: s1
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: Bottom-hole temperature is near surface temperature; system produces negligible power
+    error_pattern: Net power output near zero
+    detection_method: Check if Gradient 1 < 1 degC/km
+  diagnosis:
+    root_cause: Temperature gradient specified in degC/m instead of degC/km
+    explanation: 'GEOPHIRES expects gradient in degC/km. Providing 0.05 (degC/m) instead of 50 (degC/km)
+      means 3 km depth yields only 0.15°C temperature, producing near-zero power.
 
-  - id: dt_015
-    stage: s5
-    failure_domain: silent_error
-    severity: silent
-    symptom:
-      description: "Output file exists but parse returns empty production profile"
-      error_pattern: "Empty production_profile list after parsing"
-      detection_method: "Check n_production_years in parse output"
-    diagnosis:
-      root_cause: "GEOPHIRES version change altered output format headers"
-      explanation: >
-        Different GEOPHIRES versions may use slightly different section headers
-        or table formats. The parser looks for specific strings like
-        'HEAT AND/OR ELECTRICITY EXTRACTION AND GENERATION PROFILE' which
-        may vary between versions.
-      affected_components: ["Output parser"]
-    remedy:
-      action: "Update parse_geophires_output.py header patterns"
-      manual_steps:
-        - "Open the .out file and find the production profile section"
-        - "Check the exact section header text"
-        - "Update the parser's header search patterns"
-      prevention: "Also parse the HDR.json file as a more stable format"
+      '
+    affected_components:
+    - Reservoir
+  remedy:
+    action: 'Convert gradient: gradient_degC_per_km = gradient_degC_per_m × 1000'
+    tool_to_run: convert_reservoir_params.py
+    manual_steps:
+    - Check 'Gradient 1' value in input file
+    - If value < 1, it is likely in degC/m
+    - Multiply by 1000 to convert to degC/km
+    prevention: Use convert_reservoir_params.py with explicit source units
+- id: dt_003
+  stage: s1
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: Flow rate produces unrealistic power output; pumping costs dominate
+    error_pattern: Pump power exceeds generation
+    detection_method: Check if flow rate is < 1 kg/s (too low) or > 500 kg/s (too high)
+  diagnosis:
+    root_cause: Flow rate in m3/s or L/s instead of kg/s
+    explanation: 'GEOPHIRES expects ''Production Flow Rate per Well'' in kg/s. 1 m3/s of water ≈ 958 kg/s,
+      so providing m3/s values directly gives extreme results. Similarly, L/s values are ~1000× too low
+      as kg/s.
 
-  - id: dt_016
-    stage: s4
-    failure_domain: silent_error
-    severity: silent
-    symptom:
-      description: "Drawdown Parameter has no effect on results"
-      error_pattern: "Constant production temperature despite non-zero drawdown"
-      detection_method: "Check if temperature varies over time in production profile"
-    diagnosis:
-      root_cause: "Reservoir Model is not 4 (Percentage Thermal Drawdown)"
-      explanation: >
-        The 'Drawdown Parameter' only applies to Reservoir Model 4 (Percentage Thermal Drawdown).
-        Setting it with other models has no effect. Similarly, fracture parameters have no effect
-        with Model 4.
-      affected_components: ["Reservoir"]
-    remedy:
-      action: "Use Reservoir Model 4 if you want percentage drawdown, or remove parameter"
-      manual_steps:
-        - "Verify Reservoir Model matches intended behavior"
-        - "Model 4: uses Drawdown Parameter"
-        - "Models 1-3: use physics-based drawdown"
-        - "Model 5: uses user-provided temperature data"
-      prevention: "Use generate_input_file.py which warns about model/parameter mismatches"
+      '
+    affected_components:
+    - WellBores
+    - SurfacePlant
+    - Economics
+  remedy:
+    action: 'Convert: kg/s = m3/s × density (≈958 for hot water); kg/s = L/s × density/1000'
+    tool_to_run: convert_reservoir_params.py
+    manual_steps:
+    - Check 'Production Flow Rate per Well' value
+    - 'Typical range: 20-150 kg/s for a single well'
+    - Apply density correction for the fluid temperature
+    prevention: Specify source units in config and use conversion tool
+- id: dt_004
+  stage: s1
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: Well diameter produces extreme pressure drop calculations
+    error_pattern: Pressure drop unrealistically high or low
+    detection_method: Check if well diameter < 1 or > 20 inches
+  diagnosis:
+    root_cause: Well diameter in cm or m instead of inches
+    explanation: 'GEOPHIRES expects well diameter in inches. Providing 17.8 (cm) instead of 7 (inches)
+      gives a larger-than-real well, reducing pressure drop. Providing 0.178 (m) gives a tiny well with
+      extreme pressure drop.
 
-  - id: dt_017
-    stage: s3
-    failure_domain: parameter_format
-    severity: degraded
-    symptom:
-      description: "Input file lines without commas are silently ignored"
-      error_pattern: "Parameters not appearing in output despite being in input file"
-      detection_method: "Compare input parameter count to output parameter count"
-    diagnosis:
-      root_cause: "Missing comma separator between parameter name and value"
-      explanation: >
-        GEOPHIRES expects comma-separated values. A line like
-        'Reservoir Depth 3.0' (space instead of comma) is silently skipped.
-        The model uses the default value instead.
-      affected_components: ["Input parser"]
-    remedy:
-      action: "Add comma between parameter name and value"
-      manual_steps:
-        - "Check each line has format: 'Name,Value,'"
-        - "Ensure no tabs or other separators are used instead of commas"
-        - "Review GEOPHIRES output for expected values"
-      prevention: "Use generate_input_file.py which produces correctly formatted lines"
+      '
+    affected_components:
+    - WellBores
+  remedy:
+    action: 'Convert: inches = cm / 2.54; inches = m × 39.37'
+    tool_to_run: convert_reservoir_params.py
+    manual_steps:
+    - Check 'Production Well Diameter' and 'Injection Well Diameter'
+    - 'Standard sizes: 5, 7, 8.5, 9.625 inches'
+    - Convert from cm or m if needed
+    prevention: Verify diameter against common well casing sizes
+- id: dt_005
+  stage: s2
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: LCOE is 100× higher than expected (e.g., $5/kWh instead of $0.05/kWh)
+    error_pattern: LCOE > 100 cents/kWh
+    detection_method: Compare LCOE to expected range (3-30 cents/kWh for most geothermal)
+  diagnosis:
+    root_cause: Fixed Charge Rate or Discount Rate given as percentage instead of fraction
+    explanation: 'GEOPHIRES expects financial rates as fractions (e.g., 0.05 for 5%). Providing 5 instead
+      of 0.05 makes the model calculate LCOE with a 500% charge rate, producing impossibly high costs.
 
-  - id: dt_018
-    stage: s4
-    failure_domain: silent_error
-    severity: silent
-    symptom:
-      description: "Multi-segment gradient produces unexpected temperature profile"
-      error_pattern: "Bottom-hole temperature doesn't match manual calculation"
-      detection_method: "Compare calculated vs manual T = sum(gradient_i × thickness_i)"
-    diagnosis:
-      root_cause: "Segment thicknesses don't sum to total depth, or Number of Segments mismatch"
-      explanation: >
-        When using multiple gradient segments, the sum of segment thicknesses must equal
-        the reservoir depth. GEOPHIRES distributes remaining depth to the last segment
-        if thicknesses don't sum correctly. Also, 'Number of Segments' must match
-        the actual number of gradient/thickness values provided.
-      affected_components: ["Reservoir"]
-    remedy:
-      action: "Verify segment thicknesses sum to total depth"
-      manual_steps:
-        - "Set Number of Segments = N"
-        - "Provide Gradient 1..N and Thickness 1..N"
-        - "Ensure sum(Thickness 1..N) ≈ Reservoir Depth"
-        - "Set Gradient 2..4 = 0 for unused segments"
-      prevention: "Use convert_reservoir_params.py which validates segment consistency"
+      '
+    affected_components:
+    - Economics
+  remedy:
+    action: 'Convert: fraction = percentage / 100'
+    tool_to_run: convert_site_economics.py
+    manual_steps:
+    - 'Check all rate parameters: Fixed Charge Rate, Discount Rate, etc.'
+    - Values should be 0.01-0.20, not 1-20
+    - Divide by 100 if they appear to be percentages
+    prevention: Use convert_site_economics.py which auto-detects percentages
+- id: dt_006
+  stage: s1
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: Thermal drawdown is too fast or too slow for the reservoir
+    error_pattern: Temperature drops to injection temperature within a few years
+    detection_method: Check heat capacity units
+  diagnosis:
+    root_cause: Reservoir Heat Capacity in kJ/kg/K instead of J/kg/K
+    explanation: 'GEOPHIRES expects heat capacity in J/kg/K (e.g., 1000). Providing kJ/kg/K (e.g., 1.0)
+      gives 1000× less thermal inertia, causing unrealistically fast drawdown.
+
+      '
+    affected_components:
+    - Reservoir
+  remedy:
+    action: 'Convert: J/kg/K = kJ/kg/K × 1000'
+    tool_to_run: convert_reservoir_params.py
+    manual_steps:
+    - Check 'Reservoir Heat Capacity' value
+    - Should be 500-2000 J/kg/K for most rocks
+    - If < 10, likely in kJ/kg/K
+    prevention: Validate range in conversion tool
+- id: dt_007
+  stage: s3
+  failure_domain: parameter_format
+  severity: fatal
+  symptom:
+    description: GEOPHIRES crashes or produces no output
+    error_pattern: FileNotFoundError or ModuleNotFoundError
+    detection_method: Check exit code and stderr
+  diagnosis:
+    root_cause: Input file path not found or geophires_x not installed
+    explanation: 'GEOPHIRES needs both the input file to be accessible and the geophires_x package to
+      be installed in the Python environment being used.
+
+      '
+    affected_components:
+    - GEOPHIRESv3
+  remedy:
+    action: Verify file path and installation
+    tool_to_run: run_geophires.py (preflight mode)
+    manual_steps:
+    - Check input file path exists
+    - 'Run: python -c ''import geophires_x'''
+    - 'If missing, install: pip install -e <source>'
+    prevention: Use run_geophires.py which performs preflight checks
+- id: dt_008
+  stage: s3
+  failure_domain: parameter_format
+  severity: silent
+  symptom:
+    description: Results use default values for parameters that were intended to be customized
+    error_pattern: Output shows unexpected default parameters
+    detection_method: Compare input parameters to output 'Engineering Parameters' section
+  diagnosis:
+    root_cause: Parameter name misspelled or has wrong capitalization
+    explanation: 'GEOPHIRES silently ignores unknown parameter names. A typo like ''Resevoir Depth'' (missing
+      ''r'') or ''reservoir depth'' (wrong case) causes the parameter to be skipped and the default value
+      used.
+
+      '
+    affected_components:
+    - All
+  remedy:
+    action: Verify parameter names match GEOPHIRES exactly
+    manual_steps:
+    - Compare input parameter names to GEOPHIRES parameter reference
+    - Check capitalization (case-sensitive)
+    - Review output file to confirm parameters were applied
+    prevention: Use generate_input_file.py which uses canonical parameter names
+- id: dt_009
+  stage: s3
+  failure_domain: parameter_format
+  severity: silent
+  symptom:
+    description: End-use is Direct Heat but output shows electricity plant calculations
+    error_pattern: Mismatch between End-Use Option and Power Plant Type
+    detection_method: Check End-Use Option and Power Plant Type in output
+  diagnosis:
+    root_cause: Incompatible End-Use Option and Power Plant Type combination
+    explanation: 'Setting End-Use Option=2 (Direct Heat) with Power Plant Type=2 (Supercritical ORC) creates
+      a contradictory configuration. GEOPHIRES may use defaults or produce nonsensical results.
+
+      '
+    affected_components:
+    - SurfacePlant
+    - Economics
+  remedy:
+    action: Match plant type to end-use
+    manual_steps:
+    - 'Electricity: Plant Type 1-4'
+    - 'Direct-Use Heat: Plant Type 7, 9'
+    - 'Cogeneration: Check specific combination'
+    prevention: Use convert_site_economics.py which validates compatibility
+- id: dt_010
+  stage: s3
+  failure_domain: parameter_format
+  severity: silent
+  symptom:
+    description: Reservoir model ignores specified fracture parameters
+    error_pattern: Fracture parameters missing from output despite being in input
+    detection_method: Check output 'Reservoir Parameters' section for fracture data
+  diagnosis:
+    root_cause: Fracture parameters specified but Reservoir Model doesn't use them
+    explanation: 'Only Reservoir Model 1 (Multiple Parallel Fractures) and Model 3 (Single Fracture) use
+      fracture parameters. Setting fracture parameters with Model 4 (Percentage Drawdown) has no effect—they
+      are silently ignored.
+
+      '
+    affected_components:
+    - Reservoir
+  remedy:
+    action: Use Reservoir Model 1 or 3 if fracture modeling is needed
+    manual_steps:
+    - Check 'Reservoir Model' setting
+    - Models 1, 3 use fracture parameters
+    - Models 0, 2, 4-8 ignore fracture parameters
+    prevention: Use generate_input_file.py which warns about unused parameters
+- id: dt_011
+  stage: s4
+  failure_domain: runtime
+  severity: fatal
+  symptom:
+    description: Simulation hangs or times out
+    error_pattern: Process exceeds timeout
+    detection_method: 'Execution time > expected (typical: < 10 seconds)'
+  diagnosis:
+    root_cause: SBT or SUTRA model with large parameter space
+    explanation: 'SBT (Model 8) and SUTRA (Model 7) models involve more complex calculations that can
+      take minutes to hours. Extremely fine time stepping or large fracture counts can also cause long
+      runtimes.
+
+      '
+    affected_components:
+    - Reservoir
+  remedy:
+    action: Increase timeout or simplify model
+    manual_steps:
+    - 'Increase timeout: --timeout 600 or higher'
+    - Reduce time steps per year
+    - Use simpler reservoir model for initial screening
+    prevention: Start with Model 4 for quick screening
+- id: dt_012
+  stage: s4
+  failure_domain: runtime
+  severity: fatal
+  symptom:
+    description: 'Error: could not read temperature profile from file'
+    error_pattern: FileNotFoundError for reservoir temperature data
+    detection_method: Check stderr for file path errors
+  diagnosis:
+    root_cause: Reservoir Model 5 (User-Provided) but data file not found
+    explanation: 'Model 5 requires an external temperature-vs-time data file. The file path must be correct
+      relative to the input file directory.
+
+      '
+    affected_components:
+    - Reservoir
+  remedy:
+    action: Provide correct path to temperature data file
+    manual_steps:
+    - Check 'Reservoir Temperature Data File' parameter
+    - Ensure file exists at specified path
+    - Use absolute path or path relative to input file
+    prevention: Use run_geophires.py preflight which checks external file existence
+- id: dt_013
+  stage: s4
+  failure_domain: silent_error
+  severity: silent
+  symptom:
+    description: Injection temperature close to production temperature; near-zero power
+    error_pattern: Net power < 0.1 MW with seemingly valid inputs
+    detection_method: Check temperature difference between production and injection
+  diagnosis:
+    root_cause: Injection temperature set too high relative to production temperature
+    explanation: 'If injection temperature (e.g., 140°C) is close to production temperature (e.g., 165°C),
+      the available temperature drop for power generation is minimal. The model produces correct but practically
+      useless results.
+
+      '
+    affected_components:
+    - SurfacePlant
+    - Economics
+  remedy:
+    action: Lower injection temperature or use direct-use end-use
+    manual_steps:
+    - 'For electricity: injection temp should be 40-80°C'
+    - 'For direct-use: injection temp can be higher but must allow useful ΔT'
+    - 'Rule of thumb: ΔT > 50°C for electricity, > 20°C for heat'
+    prevention: Validate T_inject < T_production - 50°C for electricity
+- id: dt_014
+  stage: s4
+  failure_domain: silent_error
+  severity: silent
+  symptom:
+    description: Maximum temperature capping silently limits power output
+    error_pattern: Bottom-hole temperature equals Maximum Temperature exactly
+    detection_method: Check if depth × gradient + T_surface > Maximum Temperature
+  diagnosis:
+    root_cause: Maximum Temperature parameter capping bottom-hole temperature
+    explanation: 'If Reservoir Depth × Gradient + Surface Temperature exceeds ''Maximum Temperature''
+      (default 400°C), the bottom-hole temperature is capped. This is by design but can be surprising
+      if you don''t check. Example: 8 km × 50°C/km = 400°C + 15°C surface = 415°C, capped to 400°C.
+
+      '
+    affected_components:
+    - Reservoir
+  remedy:
+    action: Increase Maximum Temperature if the geology supports it
+    manual_steps:
+    - 'Calculate expected T: depth × gradient + surface_temp'
+    - If > 400°C, set Maximum Temperature accordingly
+    - 'Valid range: up to 600°C for superhot rock'
+    prevention: Always set Maximum Temperature explicitly for deep/hot systems
+- id: dt_015
+  stage: s5
+  failure_domain: silent_error
+  severity: silent
+  symptom:
+    description: Output file exists but parse returns empty production profile
+    error_pattern: Empty production_profile list after parsing
+    detection_method: Check n_production_years in parse output
+  diagnosis:
+    root_cause: GEOPHIRES version change altered output format headers
+    explanation: 'Different GEOPHIRES versions may use slightly different section headers or table formats.
+      The parser looks for specific strings like ''HEAT AND/OR ELECTRICITY EXTRACTION AND GENERATION PROFILE''
+      which may vary between versions.
+
+      '
+    affected_components:
+    - Output parser
+  remedy:
+    action: Update parse_geophires_output.py header patterns
+    manual_steps:
+    - Open the .out file and find the production profile section
+    - Check the exact section header text
+    - Update the parser's header search patterns
+    prevention: Also parse the HDR.json file as a more stable format
+- id: dt_016
+  stage: s4
+  failure_domain: silent_error
+  severity: silent
+  symptom:
+    description: Drawdown Parameter has no effect on results
+    error_pattern: Constant production temperature despite non-zero drawdown
+    detection_method: Check if temperature varies over time in production profile
+  diagnosis:
+    root_cause: Reservoir Model is not 4 (Percentage Thermal Drawdown)
+    explanation: 'The ''Drawdown Parameter'' only applies to Reservoir Model 4 (Percentage Thermal Drawdown).
+      Setting it with other models has no effect. Similarly, fracture parameters have no effect with Model
+      4.
+
+      '
+    affected_components:
+    - Reservoir
+  remedy:
+    action: Use Reservoir Model 4 if you want percentage drawdown, or remove parameter
+    manual_steps:
+    - Verify Reservoir Model matches intended behavior
+    - 'Model 4: uses Drawdown Parameter'
+    - 'Models 1-3: use physics-based drawdown'
+    - 'Model 5: uses user-provided temperature data'
+    prevention: Use generate_input_file.py which warns about model/parameter mismatches
+- id: dt_017
+  stage: s3
+  failure_domain: parameter_format
+  severity: degraded
+  symptom:
+    description: Input file lines without commas are silently ignored
+    error_pattern: Parameters not appearing in output despite being in input file
+    detection_method: Compare input parameter count to output parameter count
+  diagnosis:
+    root_cause: Missing comma separator between parameter name and value
+    explanation: 'GEOPHIRES expects comma-separated values. A line like ''Reservoir Depth 3.0'' (space
+      instead of comma) is silently skipped. The model uses the default value instead.
+
+      '
+    affected_components:
+    - Input parser
+  remedy:
+    action: Add comma between parameter name and value
+    manual_steps:
+    - 'Check each line has format: ''Name,Value,'''
+    - Ensure no tabs or other separators are used instead of commas
+    - Review GEOPHIRES output for expected values
+    prevention: Use generate_input_file.py which produces correctly formatted lines
+- id: dt_018
+  stage: s4
+  failure_domain: silent_error
+  severity: silent
+  symptom:
+    description: Multi-segment gradient produces unexpected temperature profile
+    error_pattern: Bottom-hole temperature doesn't match manual calculation
+    detection_method: Compare calculated vs manual T = sum(gradient_i × thickness_i)
+  diagnosis:
+    root_cause: Segment thicknesses don't sum to total depth, or Number of Segments mismatch
+    explanation: 'When using multiple gradient segments, the sum of segment thicknesses must equal the
+      reservoir depth. GEOPHIRES distributes remaining depth to the last segment if thicknesses don''t
+      sum correctly. Also, ''Number of Segments'' must match the actual number of gradient/thickness values
+      provided.
+
+      '
+    affected_components:
+    - Reservoir
+  remedy:
+    action: Verify segment thicknesses sum to total depth
+    manual_steps:
+    - Set Number of Segments = N
+    - Provide Gradient 1..N and Thickness 1..N
+    - Ensure sum(Thickness 1..N) ≈ Reservoir Depth
+    - Set Gradient 2..4 = 0 for unused segments
+    prevention: Use convert_reservoir_params.py which validates segment consistency

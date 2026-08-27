@@ -1,13 +1,3 @@
----
-name: hydrotrend
-description: >-
-  HydroTrend v3.0 (Kettner & Syvitski 2008); BQART sediment-flux relation per Syvitski &
-  Milliman 2007. Covers Climate-driven daily water balance at a single river outlet (rain
-  runoff, snow/nival melt, glacial…; Stochastic daily weather generation from monthly
-  climate statistics and multi-epoch climate trends. Use when the task involves running,
-  configuring, calibrating or interpreting HydroTrend.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,39 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (29 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_hypsometry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_hypsometry.py --help` |
+| `tools/convert_climate_to_hydrotrend.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_climate_to_hydrotrend.py --help` |
+| `tools/parse_hydrotrend_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_hydrotrend_output.py --help` |
+| `tools/run_hydrotrend.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_hydrotrend.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # HydroTrend Knowledge Infrastructure
 
@@ -204,6 +227,24 @@ Earthquake events with year, energy, distance, duration for sediment pulse model
 | `{PREFIX}.DIS` | Binary discharge+sediment | — | Binary |
 | `{PREFIX}.LOG` | Execution log | — | Text |
 
+## Output Description
+
+This section restates `dag.yaml`, which is the source of truth for what the
+model predicts. If this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Rank-1 output**: `Q` — Daily water discharge at the river mouth (BMI:
+channel_exit_water__volume_flow_rate) (`m3/s`).
+
+Other dag outputs: `Qs`, `Qb`, `Cs`, `velocity_width_depth`.
+
+| Output variable (dag `var`) | Rank | Unit | Description / role |
+|-----------------------------|------|------|--------------------|
+| `Q` | 1 | `m3/s` | Daily water discharge at the river mouth (BMI: channel_exit_water__volume_flow_rate) |
+| `Qs` | not stated here | see `dag.yaml` | Other dag output |
+| `Qb` | not stated here | see `dag.yaml` | Other dag output |
+| `Cs` | not stated here | see `dag.yaml` | Other dag output |
+| `velocity_width_depth` | not stated here | see `dag.yaml` | Other dag output |
+
 ### BMI Output Variables (standardized names)
 
 | BMI Name | Units |
@@ -327,6 +368,36 @@ The default test case simulates a Greenland fjord (1000 years, starting 1908) wi
 - Basin area ~9440 km², relief 2250 m
 - Mean annual T ~24.9°C, annual P ~1.24 m/yr
 - BQART sediment formula with lithology=0.3, anthropogenic=1.0
+
+## Validated Results
+
+Performance is judged against `docs/validation_convention.yaml`; do not replace
+these cited bars with intuition or remembered thresholds. The headline dag
+variable is `Q`.
+
+### Convention Bars
+
+| Dag variable | Metric | Direction | Satisfactory | Good | Very good | Citation key |
+|--------------|--------|-----------|--------------|------|-----------|--------------|
+| `Q` | `nse` | maximize | `0.5` (`moriasi2007`, `moriasi2015`) | `0.7` (`moriasi2007`, `moriasi2015`) | `0.8` (`moriasi2007`, `moriasi2015`) | `moriasi2007`, `moriasi2015` |
+| `Q` | `pbias` | zero_centered | `15` (`moriasi2015`) | `10` (`moriasi2015`) | `5` (`moriasi2015`) | `moriasi2015` |
+| `Q` | `pbias` | zero_centered | `15` (`moriasi2015`) | `10` (`moriasi2015`) | `5` (`moriasi2015`) | `moriasi2015` |
+| `Qs` | `nse` | maximize | `0.45` (`moriasi2015`) | `0.7` (`moriasi2015`) | `0.8` (`moriasi2015`) | `moriasi2015` |
+| `Qs` | `pbias` | zero_centered | `20` (`moriasi2015`) | `15` (`moriasi2015`) | `10` (`moriasi2015`) | `moriasi2015` |
+
+For zero-centered `pbias`, apply the bands to absolute percent bias around zero.
+The convention currently lists the `Q` `pbias` bar twice with identical bands;
+keep both entries in sync with `docs/validation_convention.yaml`.
+
+### Reported Run Results Already Documented In This Skill
+
+| Case | Variable | Reported result | Convention context |
+|------|----------|-----------------|--------------------|
+| Low-relief snowmelt-prairie / seasonal gauges, e.g. HYDAT 05EC005 Redwater R, AB | Daily `Q` | zero-lag `r=0.287`, `r=0.53` at +6-day lag, `PBIAS +8%`, `simmax~obsmax`, and structural daily `NSE <= r^2 ~ 0.08` | Use `Q` `pbias` bars from `moriasi2015`; no cited `r` threshold is stated here. |
+| Huai @ Wangjiaba, GloFAS dis24, 30,630 km2, 2003/2007/2018/2020 | Daily `Q` | pooled daily `NSE -0.96 -> 0.73`, `r 0.56 -> 0.86`, `KGE -> 0.86`, `PBIAS 0.8%` after routing attenuation (`L=600 km`, `v=0.6 m/s`) | Use `Q` `nse` bars from `moriasi2007`, `moriasi2015` and `Q` `pbias` bars from `moriasi2015`; no cited `KGE` or `r` threshold is stated here. |
+
+Do not invent validation verdicts for metrics without convention bars. Where the
+convention holds a null band, write `no cited threshold`.
 
 ---
 

@@ -1,77 +1,89 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:00:34.444304'
-  domain: ocean
   name: SWAN
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: swan-pyswan-io
+    version: SWAN binary ~41.01AB; PySWaN I/O toolbox pyswan-ocean v1.0.0
+    provenance: Fortran 90 SWAN wave-action-balance kernel (Delft University of Technology, swanmodel.sourceforge.io)
+      driven through a Python (PySWaN, openearth/swan, Gerben de Boer) spectral file-I/O and JONSWAP-generation
+      binding.
+  scientific_reference_version: SWAN Cycle III version 41.51 (Delft University of Technology User Manual;
+    wave action balance with sources/sinks)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SWAN/venv/bin/python
+    type: work_dir
 pipeline:
-  stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  stages: []
+tools:
+  count: 7
+  files:
+  - tools/convert_bathymetry.py
+  - tools/convert_boundary_spectra.py
+  - tools/convert_wind_forcing.py
+  - tools/fetch_gridded_wind.py
+  - tools/parse_swan_output.py
+  - tools/read_ndbc_buoy.py
+  - tools/run_swan.py
+inputs:
+  forcing:
+  - name: Wind velocity field (WX, WY / U10)
+    unit: m/s at 10 m
+  - name: Ambient current field (VX, VY)
+    unit: m/s
+  - name: Water level
+    unit: m
+  parameters:
+  - name: Bathymetry / bottom level
+    unit: m (depth positive down)
+  - name: Bottom-friction coefficient
+    unit: scheme-dependent (cfw or kn)
+  - name: Vegetation density
+    unit: stems/m2
+  - name: Turbulent viscosity
+    unit: m2/s
+  - name: Mud-layer thickness
+    unit: m
+  - name: Sea-ice fraction
+    unit: fraction 0-1
+  - name: Sea-ice thickness
+    unit: m
+  initial_conditions:
+  - name: Initial wave spectra
+    unit: m2/Hz/deg
+  boundary_conditions:
+  - name: Wave boundary spectra
+    unit: m2/Hz/deg (or parametric Hs/Tp/pdir/ms)
+  - name: Nested boundary input
+    unit: spectral
+  - name: Computational grid (CGRID) and spectral discretization
+    unit: m or degrees; Hz; degrees
+  - name: Physics activation / mode switches
+    unit: categorical
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - HSIGN
+  - RTP
+  - TM01
+  - TM02
+  - PDIR
+  - DSPR
+  - E(f,theta)
+  - E(f)
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.706, KGE=0.835, R=0.851, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.7063
+    best_kge: 0.8354
+    best_r: 0.8512
+summary:
+  total_tools: 7
+  total_stage_docs: 0
+  total_diagnostic_triplets: 26
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

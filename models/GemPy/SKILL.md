@@ -1,13 +1,3 @@
----
-name: gempy
-description: >-
-  GemPy v3 implicit potential-field geomodeling (Lajaunie 1997 / Calcagno 2008 universal
-  cokriging), de la Varga et al. 2019 stochastic formulation. Covers Construction of
-  complex 3D structural geological models from interface points + orientation data; Folds,
-  fault networks, unconformities, multiple conformal stratigraphic layers, intrusions….
-  Use when the task involves running, configuring, calibrating or interpreting GemPy.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (17 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (19 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_structural_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_structural_params.py --help` |
+| `tools/convert_geological_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_geological_data.py --help` |
+| `tools/parse_gempy_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_gempy_output.py --help` |
+| `tools/run_gempy_model.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_gempy_model.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # GemPy Knowledge Infrastructure — SKILL.md
 
@@ -299,7 +323,56 @@ refinement = 1..8               # octree refinement level (OCTREE)
 
 ---
 
-## 6. Unit Trap Table
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. If this section ever disagrees with
+`dag.yaml`, the dag wins and this section must be corrected.
+
+**Headline output** (`validation_rank: 1`):
+
+> `lith_block` — Discretized 3D volumetric subsurface lithology block —
+> formation id per grid cell. (`categorical / dimensionless (lithology id)`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `lith_block` | 1 | categorical / dimensionless (lithology id) | Discretized 3D volumetric subsurface lithology block — formation id per grid cell. |
+
+Other dag outputs: `scalar_field`, `surfaces_and_sections`,
+`uncertainty_distribution`, `geophysics_forward`, `topology`.
+
+---
+
+## 7. Tool Inventory
+
+| Tool                       | Script                                  | Purpose                                  |
+|----------------------------|-----------------------------------------|------------------------------------------|
+| Input Converter            | tools/convert_geological_data.py        | CSV/shapefile → GemPy format             |
+| Parameter Builder          | tools/build_structural_params.py        | Build structural frame from config       |
+| Execution Wrapper          | tools/run_gempy_model.py                | End-to-end model computation             |
+| Output Parser              | tools/parse_gempy_output.py             | Extract results to CSV/JSON              |
+
+---
+
+## 8. Unit Table / Unit Conversion Table
+
+This unit table records the unit and convention conversions that are explicit
+in this skill body and the rank-1 dag output. Do not infer additional output
+units here; read `dag.yaml` for the full machine-readable contract.
+
+| Variable or field | Source unit / convention | Model or output unit | Factor | Type |
+|-------------------|--------------------------|----------------------|--------|------|
+| `X` | meters (project CRS) | meters (project CRS) | x1 | identity |
+| `Y` | meters (project CRS) | meters (project CRS) | x1 | identity |
+| `Z` | meters (elevation) | meters (elevation) | x1 | identity |
+| `G_x` | unitless (-1 to 1) | unitless (-1 to 1) | x1 | identity |
+| `G_y` | unitless (-1 to 1) | unitless (-1 to 1) | x1 | identity |
+| `G_z` | unitless (-1 to 1) | unitless (-1 to 1) | x1 | identity |
+| `azimuth` | 0–360 degrees, clockwise from North | radians for trigonometric conversion | pi/180 | angular conversion |
+| `dip` | 0–90 degrees, angle from horizontal | radians for trigonometric conversion | pi/180 | angular conversion |
+| `polarity` | +1 or -1 | +1 or -1 | x1 | identity |
+| `lith_block` | categorical / dimensionless (lithology id) | categorical / dimensionless (lithology id) | x1 | identity |
+
+### Unit Trap Table
 
 These are the most common unit-related errors when working with GemPy:
 
@@ -318,18 +391,7 @@ These are the most common unit-related errors when working with GemPy:
 
 ---
 
-## 7. Tools Reference
-
-| Tool                       | Script                                  | Purpose                                  |
-|----------------------------|-----------------------------------------|------------------------------------------|
-| Input Converter            | tools/convert_geological_data.py        | CSV/shapefile → GemPy format             |
-| Parameter Builder          | tools/build_structural_params.py        | Build structural frame from config       |
-| Execution Wrapper          | tools/run_gempy_model.py                | End-to-end model computation             |
-| Output Parser              | tools/parse_gempy_output.py             | Extract results to CSV/JSON              |
-
----
-
-## 8. Critical Domain Knowledge
+## 8c. Sign Conventions and Critical Domain Knowledge
 
 ### DK-001: Orientation convention
 GemPy uses **gradient vectors** (G_x, G_y, G_z) internally, not azimuth/dip.
@@ -437,7 +499,47 @@ ki/
 
 ---
 
-## 11. Quick-Start Example
+## 11. Validated Results
+
+### DTB Validation Record (2026-05-13)
+
+This KI's recorded validation is a model-to-model consistency check:
+GemPy implicit surface co-kriging (150 train pts) vs. the ML-derived
+`DTB_CHINA_100.tif` depth-to-bedrock raster.
+
+| Property | Value |
+|----------|-------|
+| Reference dataset | `DTB_CHINA_100.tif` — ML-derived product |
+| Validation type | GemPy implicit surface co-kriging (150 train pts) vs. ML DTB raster |
+| Sites | Loess Plateau, Sichuan Basin, Tibetan Plateau |
+| Output directory | `KISSPATH_OUTPUTS/gempy_dtb_multisite/` |
+
+### Performance Metrics
+
+The DTB record reports PBIAS, RMSE, and R. The validation convention bars below
+come from `docs/validation_convention.yaml`; they use `csi`, direction
+`maximize`, and no cited thresholds for the listed dag variables.
+
+| Site | Mean DTB | PBIAS | RMSE | R |
+|------|----------|-------|------|---|
+| Loess Plateau | 36.6 m | +13.7% | 12.5 m | 0.17 |
+| Sichuan Basin | 14.9 m | −2.9% | 5.6 m | 0.31 |
+| Tibetan Plat. | 21.2 m | +3.3% | 10.9 m | 0.25 |
+
+**Existing DTB KPI**: `|PBIAS| < 15%` (all sites pass). This is distinct
+from the `csi` convention bars below.
+
+### Convention Bars
+
+| dag variable | Metric | Direction | Satisfactory band | Good band | Very good band | Citation key(s) |
+|--------------|--------|-----------|-------------------|-----------|----------------|-----------------|
+| `lith_block` | csi | maximize | no cited threshold | no cited threshold | no cited threshold | none in convention |
+| `scalar_field` | csi | maximize | no cited threshold | no cited threshold | no cited threshold | none in convention |
+| `surfaces_and_sections` | csi | maximize | no cited threshold | no cited threshold | no cited threshold | none in convention |
+
+---
+
+## 12. Quick-Start Example
 
 ```python
 import gempy as gp

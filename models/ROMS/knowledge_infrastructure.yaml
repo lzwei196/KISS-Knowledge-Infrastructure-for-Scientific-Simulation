@@ -1,77 +1,158 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:00:25.303820'
-  domain: ocean
   name: ROMS
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: roms-nlm
+    version: 4.x (KI label v4.1; upstream latest tag roms-4.2)
+    provenance: Fortran 90; Rutgers ROMS Group nonlinear forward model (NLM) from github.com/myroms/roms,
+      C-preprocessor (CPP) compile-time physics selection.
+  scientific_reference_version: ROMS free-surface, hydrostatic, Boussinesq primitive-equation kernel (Rutgers
+    ROMS, Nonlinear forward model; develop branch ~roms-4.2 lineage)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ROMS/source/repo/build/romsS
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s0_grid_generation
+  - s1_cpp_configuration
+  - s2_atmospheric_forcing
+  - s3_initial_boundary
+  - s4_execution
+  - s5_postprocessing
+  - s6_validation
+  - s7_calibration
+tools:
+  count: 4
+  files:
+  - tools/build_roms_grid.py
+  - tools/convert_forcing.py
+  - tools/parse_roms_output.py
+  - tools/run_roms.py
+inputs:
+  forcing:
+  - name: Uwind
+    unit: m/s
+  - name: Vwind
+    unit: m/s
+  - name: Tair
+    unit: degC
+  - name: Pair
+    unit: mb (hPa)
+  - name: Qair
+    unit: kg/kg
+  - name: rain
+    unit: kg/m2/s
+  - name: swrad
+    unit: W/m2
+  - name: lwrad
+    unit: W/m2
+  - name: sustr
+    unit: N/m2 (Pa)
+  - name: svstr
+    unit: N/m2 (Pa)
+  - name: shflux
+    unit: W/m2
+  - name: swflux / EminusP
+    unit: m/s (or kg/m2/s)
+  - name: open boundary T/S/u/v/zeta
+    unit: per-variable
+  - name: tidal elevation/velocity constituents
+    unit: m, m/s
+  - name: river_transport / river_temp / river_salt
+    unit: m3/s, degC, PSU
+  parameters:
+  - name: h
+    unit: m (positive down)
+  - name: pm, pn
+    unit: 1/m
+  - name: f
+    unit: 1/s
+  - name: lon_rho/lat_rho, angle, mask_rho
+    unit: deg, rad, 0/1
+  - name: THETA_S
+    unit: dimensionless
+  - name: THETA_B
+    unit: dimensionless
+  - name: TCLINE
+    unit: m
+  - name: VISC2
+    unit: m2/s
+  - name: TNU2
+    unit: m2/s
+  - name: AKV_BAK, AKT_BAK
+    unit: m2/s
+  - name: RDRG2
+    unit: dimensionless
+  - name: Zob
+    unit: m
+  - name: Tnudg
+    unit: days
+  - name: RHO0
+    unit: kg/m3
+  - name: Cp
+    unit: J/kg/degC
+  - name: EOS polynomial coefficients
+    unit: dimensionless
+  - name: variable-name mapping
+    unit: n/a
+  initial_conditions:
+  - name: zeta
+    unit: m
+  - name: ubar, vbar
+    unit: m/s
+  - name: u, v
+    unit: m/s
+  - name: temp
+    unit: degC
+  - name: salt
+    unit: PSU
+  - name: ocean_time
+    unit: seconds since TIME_REF
+  boundary_conditions:
+  - name: Lm, Mm, N
+    unit: count
+  - name: DT
+    unit: s
+  - name: NDTFAST
+    unit: count
+  - name: NTIMES, TIME_REF
+    unit: count, YYYYMMDD.dd
+  - name: Vtransform, Vstretching
+    unit: code (1/2; 1-5)
+  - name: LBC(...) per-variable per-edge
+    unit: code
+  - name: CPP physics flags
+    unit: compile-time
+  - name: ANA_* analytical flags
+    unit: compile-time
+  - name: NtileI, NtileJ
+    unit: count
+  - name: NRST/NHIS/NAVG/NSTA, Hout(...)
+    unit: steps / flags
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - zeta
+  - temp
+  - salt
+  - u
+  - v
+  - ubar, vbar
+  - rho
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.975, KGE=-0.205, R=0.987, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.975
+    best_kge: -0.2055
+    best_r: 0.9874
+summary:
+  total_tools: 4
+  total_stage_docs: 8
+  total_diagnostic_triplets: 20
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

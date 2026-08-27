@@ -1,207 +1,634 @@
-model:
-  name: "MM-PIHM"
-  full_name: "Multi-Modular Penn State Integrated Hydrologic Model"
-  version: "1.0.0.post"
-  domain: "distributed_hydrology"
-  binary_path: "KISSPATH_BINARIES/PIHM/source/repo/pihm"
-  language: "C (gcc)"
-  solver: "SUNDIALS CVODE v7.3.0"
-  license: "MIT"
-  parallelization: "OpenMP"
-  mesh_type: "unstructured triangular (TIN)"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: PIHM
+  language: c
+  implementation:
+    id: mm-pihm
+    version: v1.0.0
+    provenance: C (with OpenMP); Penn State PSUmodeling MM-PIHM core hydrology build, embedding SUNDIALS
+      CVODE for implicit ODE integration.
+  scientific_reference_version: MM-PIHM v1.0.0 — semi-discrete finite-volume coupled surface-subsurface
+    watershed formulation (Qu & Duffy 2007, WRR)
 inputs:
   forcing:
-    - name: "PRCP"
-      unit: "kg/m2/s"
-      valid_range: [0.0, 0.1]
-      description: "Precipitation as mass flux (1 kg/m2/s = 3600 mm/hr)"
-    - name: "SFCTMP"
-      unit: "K"
-      valid_range: [200.0, 330.0]
-      description: "Surface air temperature in Kelvin"
-    - name: "RH"
-      unit: "%"
-      valid_range: [0.0, 100.0]
-      description: "Relative humidity"
-    - name: "SFCSPD"
-      unit: "m/s"
-      valid_range: [0.0, 50.0]
-      description: "Surface wind speed"
-    - name: "SOLAR"
-      unit: "W/m2"
-      valid_range: [0.0, 1400.0]
-      description: "Downward shortwave radiation"
-    - name: "LONGWV"
-      unit: "W/m2"
-      valid_range: [50.0, 600.0]
-      description: "Downward longwave radiation"
-    - name: "PRES"
-      unit: "Pa"
-      valid_range: [50000.0, 110000.0]
-      description: "Surface air pressure in Pascals (NOT hPa)"
-
+  - name: PRCP
+    unit: kg/m2/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: .meteo time series
+    notes: Mass flux. 1 kg/m2/s = 3600 mm/hr; passing mm/hr directly is 3600x too high and crashes CVODE.
+  - name: SFCTMP
+    unit: K
+    category: forcing
+    source_kind: forcing
+    model_input_format: .meteo time series
+    notes: Air temperature at zlvl; also sets snow/rain partition (TSNOW=-3, TRAIN=1 degC) in the non-Noah
+      ET path.
+  - name: RH
+    unit: '% (0-100)'
+    category: forcing
+    source_kind: forcing
+    model_input_format: .meteo time series
+  - name: SFCSPD
+    unit: m/s
+    category: forcing
+    source_kind: forcing
+    model_input_format: .meteo time series
+    notes: Measurement height set by WIND_LVL header.
+  - name: SOLAR
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: .meteo time series
+    notes: Incoming shortwave.
+  - name: LONGWV
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: .meteo time series
+    notes: Incoming longwave.
+  - name: PRES
+    unit: Pa
+    category: forcing
+    source_kind: forcing
+    model_input_format: .meteo time series
+    notes: Surface pressure; drives vapor-pressure / ET demand.
+  - name: LAI
+    unit: m2/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: .lai time series
+    notes: Leaf area index forcing; partitions canopy interception/transpiration.
   parameters:
-    critical:
-      - name: "KSATH"
-        valid_range: [0.01, 100.0]
-        description: "Calibration multiplier for lateral saturated hydraulic conductivity"
-      - name: "KSATV"
-        valid_range: [0.01, 100.0]
-        description: "Calibration multiplier for vertical saturated hydraulic conductivity"
-      - name: "KINF"
-        valid_range: [0.01, 100.0]
-        description: "Calibration multiplier for infiltration rate"
-      - name: "KMACSATH"
-        valid_range: [0.01, 100.0]
-        description: "Calibration multiplier for macropore lateral saturated conductivity"
-      - name: "DMAC"
-        valid_range: [0.1, 10.0]
-        description: "Calibration multiplier for macropore depth"
-      - name: "ROUGH_RIV"
-        valid_range: [0.1, 10.0]
-        description: "Calibration multiplier for river Manning roughness"
-      - name: "PRCP"
-        valid_range: [0.8, 1.2]
-        description: "Precipitation bias correction multiplier"
-      - name: "ALPHA"
-        valid_range: [0.1, 10.0]
-        description: "Calibration multiplier for van Genuchten alpha (base unit: 1/m)"
-      - name: "ABSTOL"
-        valid_range: [1.0e-7, 0.01]
-        description: "CVODE absolute tolerance in meters"
-      - name: "RELTOL"
-        valid_range: [1.0e-6, 0.01]
-        description: "CVODE relative tolerance (dimensionless)"
-
-  soil:
-    - name: "KINF"
-      unit: "m/s"
-      description: "Infiltration hydraulic conductivity"
-    - name: "KSATV"
-      unit: "m/s"
-      description: "Vertical saturated hydraulic conductivity"
-    - name: "KSATH"
-      unit: "m/s"
-      description: "Horizontal saturated hydraulic conductivity"
-    - name: "MAXSMC"
-      unit: "m3/m3"
-      description: "Porosity (maximum soil moisture content)"
-    - name: "MINSMC"
-      unit: "m3/m3"
-      description: "Residual soil moisture content"
-    - name: "ALPHA"
-      unit: "1/m"
-      description: "van Genuchten alpha parameter (NOT 1/cm)"
-    - name: "BETA"
-      unit: "-"
-      description: "van Genuchten n parameter"
-
-  required_files:
-    - extension: ".mesh"
-      description: "Triangular mesh (nodes, elements, neighbors)"
-    - extension: ".att"
-      description: "Element attributes (soil, geol, LC, meteo indices)"
-    - extension: ".soil"
-      description: "Soil hydraulic properties"
-    - extension: ".meteo"
-      description: "Meteorological forcing time series"
-    - extension: ".riv"
-      description: "River network (segments, shapes, materials)"
-    - extension: ".para"
-      description: "Simulation control parameters"
-    - extension: ".calib"
-      description: "Calibration multipliers"
-    - extension: ".lc"
-      description: "Land cover properties"
-
-  optional_files:
-    - extension: ".ic"
-      description: "Initial conditions (from spin-up)"
-    - extension: ".lai"
-      description: "Leaf area index time series"
-    - extension: ".bc"
-      description: "Boundary conditions"
-    - extension: ".geol"
-      description: "Geology/aquifer properties"
-
+  - name: soil hydraulic + macropore properties (SILT, CLAY, OM, BD, KINF, KSATV, KSATH, MAXSMC, MINSMC,
+      ALPHA, BETA, MACHF, MACVF, DMAC, QTZ; globals DINF, KMACV_RO, KMACH_RO)
+    unit: '% / g/cm3 / m/s / m3/m3 / 1/m / - / m'
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: .soil per-soil-type table
+    notes: van Genuchten ALPHA in 1/m, BETA dimensionless; -999 triggers pedotransfer estimation from
+      texture. KSATH >= KSATV expected.
+  - name: geology/bedrock hydraulic properties (KSATV, KSATH, MAXSMC, MINSMC, ALPHA, BETA, MACHF, MACVF,
+      DMAC)
+    unit: m/s / m3/m3 / 1/m / - / m
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: .geol per-geology-type table
+    notes: Deep/saturated-zone conductivity, typically 10-1000x lower than soil.
+  - name: land-cover/vegetation properties (roughness, albedo, rooting depth, veg fraction)
+    unit: various
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: .lc table
+  - name: river topology and hydraulics (FROM/TO/DOWN/LEFT/RIGHT, DPTH, OINT, CWID, ROUGH, CWR, KH)
+    unit: m / s·m^-1/3 / m/s
+    category: parameters
+    source_kind: dataset_lookup
+    model_input_format: .riv table
+    notes: Manning roughness and channel geometry govern channel routing.
+  - name: TIN mesh topology (NUMELE elements NODE1-3/NABR1-3, NUMNODE nodes X/Y/ZMIN/ZMAX)
+    unit: m
+    category: parameters
+    source_kind: user_provided
+    model_input_format: .mesh
+    notes: Built externally by PIHMgis from DEM + watershed boundary; the model binary does not generate
+      it.
+  - name: per-element attribute indices (SOIL, GEOL, LC, METEO, LAI)
+    unit: '-'
+    category: parameters
+    source_kind: user_provided
+    model_input_format: .att
+    notes: SOIL index must match .soil ordering or wrong properties are applied silently.
+  - name: calibration multipliers (KSATH, KSATV, KINFV, POROSITY, ALPHA, BETA, DMAC, AREAFH, AREAFV, KMACV,
+      KMACH, PRCP; SFCTMP offset)
+    unit: '- (multiplier); SFCTMP in K (additive)'
+    category: parameters
+    source_kind: calibrated
+    model_input_format: .calib
+    notes: All entries are MULTIPLIERS on base table values (1.0 = no change), applied in InitSoil as
+      elem.soil.X = calib.X * soiltbl.X. SFCTMP is an additive K offset and PRCP is a multiplier.
+  initial_conditions:
+  - name: per-element initial states (surface water, unsaturated storage, groundwater, snow, canopy storage,
+      soil temperature)
+    unit: m (K for soil temperature)
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: .ic
+    notes: Used when INIT_MODE=1; otherwise set by relaxation/spin-up.
+  - name: per-river initial stage
+    unit: m
+    category: initial_conditions
+    source_kind: user_provided
+    model_input_format: .ic
+  boundary_conditions:
+  - name: domain edge boundary conditions (TYPE 1 Dirichlet prescribed head, TYPE 2 Neumann prescribed
+      flux)
+    unit: m (head) / m3/s (flux)
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: .bc time series referenced by .att BC1/BC2/BC3
+    notes: BC index 0 = no-flow edge; >0 selects a boundary time series.
+  - name: simulation control switches (SIMULATION_MODE spinup/normal, INIT_MODE relaxation/ic, START/END,
+      MODEL_STEPSIZE, LSM_STEP, MAX_SPINUP_YEAR, output interval codes)
+    unit: various (s)
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: .para
+    notes: 'Output interval codes: -1 yearly, -2 monthly, -3 daily, -4 hourly, 0 off, positive N = every
+      N seconds.'
+  - name: CVODE solver controls (ABSTOL, RELTOL, MAX_NONLIN_ITER, step controls)
+    unit: m (ABSTOL) / - (RELTOL)
+    category: boundary_conditions
+    source_kind: user_provided
+    model_input_format: .para
+    notes: ABSTOL default 1e-4 m; loose ABSTOL (>0.01 m) degrades mass balance across all states.
 outputs:
   primary:
-    - name: "SURF"
-      unit: "m"
-      valid_range: [0.0, 10.0]
-      file_suffix: ".surf.dat"
-      description: "Surface water depth per element"
-    - name: "GW"
-      unit: "m"
-      valid_range: [0.0, 500.0]
-      file_suffix: ".gw.dat"
-      description: "Groundwater head per element"
-    - name: "UNSAT"
-      unit: "m"
-      valid_range: [0.0, 10.0]
-      file_suffix: ".unsat.dat"
-      description: "Unsaturated zone storage per element"
-    - name: "RIVFLX1"
-      unit: "m3/s"
-      valid_range: [-1000.0, 10000.0]
-      file_suffix: ".rivflx1.dat"
-      description: "Downstream river flux per segment"
-    - name: "INFIL"
-      unit: "m/s"
-      valid_range: [0.0, 0.01]
-      file_suffix: ".infil.dat"
-      description: "Infiltration rate per element"
-    - name: "RECHARGE"
-      unit: "m/s"
-      valid_range: [-0.001, 0.01]
-      file_suffix: ".recharge.dat"
-      description: "Groundwater recharge rate per element"
-    - name: "ETT"
-      unit: "m/s"
-      valid_range: [0.0, 0.001]
-      file_suffix: ".ett.dat"
-      description: "Transpiration per element"
-    - name: "EC"
-      unit: "m/s"
-      valid_range: [0.0, 0.001]
-      file_suffix: ".ec.dat"
-      description: "Canopy evaporation per element"
-    - name: "EDIR"
-      unit: "m/s"
-      valid_range: [0.0, 0.001]
-      file_suffix: ".edir.dat"
-      description: "Direct soil evaporation per element"
-    - name: "SNOW"
-      unit: "m"
-      valid_range: [0.0, 5.0]
-      file_suffix: ".snow.dat"
-      description: "Snow water equivalent per element"
-    - name: "STAGE"
-      unit: "m"
-      valid_range: [0.0, 20.0]
-      file_suffix: ".stage.dat"
-      description: "River water stage per segment"
-
-  output_format:
-    type: "binary"
-    precision: "double (8 bytes)"
-    record_layout: "[timestamp_int] [val_elem1_double] ... [val_elemN_double]"
-    text_companion: true
-    text_suffix: ".txt"
-
+  - name: GW
+    unit: m
+    description: Groundwater head / saturated-zone water table per element.
+    validation_rank: 2
+    emitted_in: .gw.dat
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Requires spin-up to dynamic equilibrium; uncalibrated water-table depth carries an offset bias.
+        - PIHM .gw.dat is HEAD above the aquifer bottom (m), NOT depth-to-water below land surface; convert
+          via per-element ground elevation before comparing to depth-to-water obs.
+        - Core PIHM has NO groundwater pumping/abstraction; it cannot reproduce pumping-driven aquifer
+          decline (e.g. China GW Level Yearbook NCP/Huai monitoring wells) — see triplet dt_022, classify
+          as domain-validity SKIP not a calibration miss.
+      detrending_options:
+      - none
+  - name: RIVFLX1
+    unit: m3/s
+    description: Downstream channel flux; outlet streamflow taken at the last river segment.
+    validation_rank: 1
+    emitted_in: .rivflx1.dat
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Output rows are stamped at the END of the averaging window (a -1 day shift for daily output);
+          align timestamps before scoring.
+        - Baseflow recession needs spin-up; first 1-5 years without spin-up are unreliable.
+      detrending_options:
+      - none
+  - name: SURF
+    unit: m
+    description: Surface ponding/overland water depth per element.
+    validation_rank: 3
+    emitted_in: .surf.dat
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Per-element values on the TIN mesh; mapping to a regular grid for comparison interpolates across
+          triangles.
+      detrending_options:
+      - none
+  - name: UNSAT
+    unit: m
+    description: Unsaturated (vadose) zone water storage per element.
+    validation_rank: 4
+    emitted_in: .unsat.dat
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Storage in m, not volumetric soil moisture; convert by storage/layer-thickness to compare against
+          m3/m3 soil-moisture probes.
+      detrending_options:
+      - none
+  - name: SOILM
+    unit: m
+    description: Total soil-column moisture per element.
+    validation_rank: 5
+    emitted_in: .soilm.dat
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Available in the Flux-PIHM (Noah) build; convert column storage to volumetric content for probe
+          comparison.
+      detrending_options:
+      - none
+  - name: ETT
+    unit: m/s
+    description: Vegetation (plant) transpiration water flux per element.
+    validation_rank: 6
+    emitted_in: .ett.dat
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Eddy-covariance towers measure total latent-heat/ET; sum EC + ETT + EDIR before comparison.
+      detrending_options:
+      - none
+  - name: SNOW
+    unit: m
+    description: Snow water equivalent per element.
+    validation_rank: 7
+    emitted_in: .snow.dat
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Default build uses a degree-day melt scheme (TSNOW/TRAIN thresholds), not energy-balance snow
+          physics; melt timing bias expected in maritime climates.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    description: "Precipitation must be kg/m2/s, not mm/hr. Off by 3600x if wrong."
-  - id: "dt_002"
-    description: "Temperature must be Kelvin, not Celsius. Causes silent snow errors."
-  - id: "dt_003"
-    description: "Pressure must be Pa, not hPa. Off by 100x if wrong."
-  - id: "dt_008"
-    description: "van Genuchten alpha must be 1/m, not 1/cm. Off by 100x."
-  - id: "dt_011"
-    description: "Calibration file uses multipliers near 1.0, not absolute values."
-  - id: "dt_012"
-    description: "Spin-up essential for groundwater initialization."
-  - id: "dt_013"
-    description: "ABSTOL > 0.01 causes mass balance errors; < 1e-7 causes solver slowdown."
+- id: dt_001
+  symptom: 'Immediate flooding across all elements within first timestep. Surface water depths reach meters
+    within hours. CVODE may crash with convergence failure or produce runoff 1000x observed.
+
+    '
+  diagnosis: 'Precipitation passed in mm/hr instead of kg/m2/s; PIHM expects precipitation as mass flux
+    in kg/m2/s. Since water density is 1000 kg/m3, 1 kg/m2/s = 1 mm/s = 3600 mm/hr. Passing mm/hr values
+    directly means rainfall is 3600x too high. A 5 mm/hr storm becomes 5 kg/m2/s = 18000 mm/hr.
+
+    ; [''forcing'', ''hy'
+  remedy: 'Convert precipitation: P_pihm = P_mmhr / 3600.0 / 1000.0; forcing_converter.py; [''Check input
+    units in source dataset documentation'', ''Divide mm/hr by 3600000 to get kg/m2/s'', ''Divide mm/day
+    by 86400000 to get kg/m2/s'', ''Verify max PRCP ~ 0.01 kg/m2/s (= 36 mm/hr, heavy rain)'']; forcing_converter.py'
+  severity: silent
+- id: dt_002
+  symptom: 'Snow accumulates year-round even in summer. ET is extremely low. Soil temperatures remain
+    near freezing. All water stored as snow/ice.
+
+    '
+  diagnosis: 'Temperature passed in Celsius instead of Kelvin; PIHM uses Kelvin for all temperature fields
+    (SFCTMP). Passing 20°C as 20 K means the model sees -253°C. All precipitation becomes snow, ET shuts
+    down, and the water balance becomes snowpack-dominated. This is a silent error — no crash occurs.
+
+    ; [''forc'
+  remedy: 'Add 273.15 to all Celsius temperature values; forcing_converter.py; [''Convert: T_K = T_C +
+    273.15'', ''Verify SFCTMP values are in range 230-330 K'', ''Check that seasonal cycle is visible
+    in converted data'']; forcing_converter.py adds 273.15 and validates range'
+  severity: silent
+- id: dt_003
+  symptom: 'ET is unrealistically low or high. Vapor pressure deficit calculations produce extreme values.
+    Penman-Monteith ET is wrong by order of magnitude.
+
+    '
+  diagnosis: 'Surface pressure in hPa/mbar instead of Pa; PIHM expects surface pressure in Pascals (e.g.,
+    101325 Pa). Many datasets provide pressure in hPa or mbar (e.g., 1013.25). Passing hPa directly means
+    pressure is 100x too low, which affects vapor pressure, air density, and all energy balance calculations.
+
+    '
+  remedy: 'Multiply hPa/mbar by 100 to get Pa; forcing_converter.py; [''Convert: P_Pa = P_hPa * 100.0'',
+    ''Verify PRES values ~ 80000-105000 Pa'']; forcing_converter.py multiplies by 100 when source is hPa'
+  severity: silent
+- id: dt_004
+  symptom: 'ET is systematically too high or too low. Dew point calculations are incorrect. Canopy interception/evaporation
+    ratios are unrealistic.
+
+    '
+  diagnosis: Humidity variable type mismatch (specific humidity vs RH); PIHM expects relative humidity
+    as a percentage (0-100%). Some datasets provide specific humidity (kg/kg, values ~0.001-0.025) or
+    RH as fraction (0-1). Passing specific humidity directly makes the model see near-zero RH, producing
+    excessive E
+  remedy: 'Convert specific humidity to RH using Clausius-Clapeyron; forcing_converter.py; [''Calculate
+    saturation vapor pressure: es = 611.2 * exp(17.67*(T-273.15)/(T-29.65))'', ''Calculate actual vapor
+    pressure from specific humidity: e = q*P/(0.622+0.378*q)'', ''RH = 100 * e / es'', ''Verify RH in
+    range 5-100%'']; '
+  severity: degraded
+- id: dt_005
+  symptom: 'ET is extremely low. Snow never melts. Energy balance is dominated by longwave. Surface temperature
+    is too cold despite correct air temperature.
+
+    '
+  diagnosis: 'Radiation in MJ/m2/day instead of W/m2; PIHM expects instantaneous radiation flux in W/m2.
+    Some datasets provide daily accumulated radiation in MJ/m2/day. A typical clear-sky solar value is
+    ~25 MJ/m2/day = ~290 W/m2 (average). Passing 25 as W/m2 means solar input is ~12x too low.
+
+    ; [''forcing'', ''noah'
+  remedy: 'Convert: W/m2 = MJ/m2/day / 0.0864; forcing_converter.py; [''For daily totals: divide by 86400
+    to get W/m2 average, then distribute'', ''For instantaneous: should already be in W/m2'', ''Verify
+    peak solar radiation ~ 800-1200 W/m2'', ''Verify longwave radiation ~ 200-450 W/m2'']; forcing_converter.py
+    checks'
+  severity: silent
+- id: dt_006
+  symptom: 'Aerodynamic resistance is too low. ET is moderately too high. Snow redistribution is overestimated.
+    Surface roughness effects amplified.
+
+    '
+  diagnosis: 'Wind speed in km/hr instead of m/s; PIHM expects wind speed in m/s. Wind at 18 km/hr passed
+    as 18 m/s means wind is 3.6x too fast. This reduces aerodynamic resistance, increases ET, and affects
+    snow sublimation calculations.
+
+    ; [''forcing'', ''is_sm_et'', ''noah'']'
+  remedy: 'Divide km/hr by 3.6 to get m/s; forcing_converter.py; [''Convert: wind_ms = wind_kmhr / 3.6'',
+    ''Verify typical wind ~ 0.5-15 m/s'']; forcing_converter.py validates wind speed range'
+  severity: degraded
+- id: dt_007
+  symptom: 'Soil drains instantly. Groundwater response is too fast. Baseflow recession is too steep.
+    Water table drops below soil bottom.
+
+    '
+  diagnosis: 'Hydraulic conductivity in cm/hr instead of m/s; PIHM expects Ksat in m/s. HWSD and many
+    soil databases provide Ksat in cm/hr. A typical Ksat of 5 cm/hr = 1.39e-5 m/s. Passing 5 directly
+    as m/s makes soil 360,000x more permeable.
+
+    ; [''soil'', ''hydrol'', ''lat_flow'', ''vert_flow'']'
+  remedy: 'Convert: Ksat_ms = Ksat_cmhr / 360000; soil_converter.py; [''Ksat (m/s) = Ksat (cm/hr) / 100
+    / 3600'', ''Verify Ksat range: sand ~1e-4, clay ~1e-7 m/s'']; soil_converter.py auto-converts from
+    cm/hr and validates range'
+  severity: silent
+- id: dt_008
+  symptom: 'Soil water retention curve is wrong. Water drains too quickly from unsaturated zone. Wilting
+    point is reached too fast after rain. Soil appears overly sandy regardless of texture class.
+
+    '
+  diagnosis: 'van Genuchten alpha in 1/cm instead of 1/m; PIHM expects alpha in 1/m. Rosetta and most
+    PTF databases report alpha in 1/cm. A clay loam with alpha=0.019 1/cm should be 1.9 1/m. Passing 0.019
+    as 1/m makes the air-entry value 100x too high, meaning the soil drains at much lower suctions than
+    reality.
+
+    '
+  remedy: 'Multiply alpha by 100 to convert from 1/cm to 1/m; soil_converter.py; [''alpha_per_m = alpha_per_cm
+    * 100'', ''Verify: sand alpha ~ 14.5 1/m, clay ~ 0.8 1/m'']; soil_converter.py multiplies by 100 and
+    validates range'
+  severity: silent
+- id: dt_009
+  symptom: 'Soil depths are unrealistically thin or thick. Elements have near-zero or massive storage
+    capacity. Mesh looks vertically compressed.
+
+    '
+  diagnosis: 'Elevation or depth values in cm or feet instead of meters; All elevations (ZMIN, ZMAX) and
+    depths (DMAC, DINF) in PIHM are in meters. Using cm makes everything 100x too thin; using feet makes
+    everything ~3x too thick.
+
+    ; [''mesh'', ''soil'', ''init_topo'']'
+  remedy: Convert cm to m (÷100) or feet to m (÷3.281); soil_converter.py; ['Check ZMAX-ZMIN for each
+    element (should be 1-50 m typically)', 'DMAC should be 0.1-2.0 m']; soil_converter.py validates depth
+    ranges
+  severity: degraded
+- id: dt_010
+  symptom: 'Porosity calculations are wrong. Soil heat capacity is unrealistic. Thermal conductivity estimates
+    are off by orders of magnitude.
+
+    '
+  diagnosis: 'Bulk density in kg/m3 instead of g/cm3; PIHM expects bulk density in g/cm3 (typical range
+    1.0-1.8). Passing kg/m3 values (1000-1800) makes density appear 1000x too high, which corrupts all
+    derived thermal and physical soil properties.
+
+    ; [''soil'', ''noah'']'
+  remedy: 'Divide kg/m3 by 1000 to get g/cm3; soil_converter.py; [''BD_gcm3 = BD_kgm3 / 1000.0'', ''Verify
+    BD range: 0.8-1.9 g/cm3'']; soil_converter.py detects unit and converts'
+  severity: silent
+- id: dt_011
+  symptom: 'Extremely low or high flow. Ksat appears zero or enormous despite reasonable values in .soil
+    file. Calibration has no effect when values are changed.
+
+    '
+  diagnosis: 'Calibration file contains absolute values instead of multipliers; The .calib file uses multipliers
+    (default 1.0). Setting KSATH=1e-5 thinking it''s the actual Ksat value instead means the base Ksat
+    is multiplied by 1e-5, making conductivity essentially zero. Similarly, PRCP is a multiplier (1.0
+    = no '
+  remedy: Set all .calib values as multipliers (1.0 = no change); ; ['Review .calib file — all values
+    should be near 1.0 for initial run', 'KSATH=2.0 means double the base Ksat, not set to 2.0 m/s', 'SFCTMP
+    is an additive offset in K (0.0 = no change)', 'PRCP is multiplicative (1.0 = no change)']; Document
+    cl
+  severity: silent
+- id: dt_012
+  symptom: 'Baseflow is zero or unrealistically low for first 1-5 years. Water table is at soil bottom.
+    Streamflow has no recession curve. Model output improves dramatically after several simulated years.
+
+    '
+  diagnosis: 'Simulation started without spin-up, using default initial conditions; PIHM''s default IC
+    (INIT_MODE=0) uses a relaxation scheme that starts from approximate conditions. Groundwater in particular
+    requires years to reach dynamic equilibrium. Without spin-up, early simulation years are unreliable
+    — the '
+  remedy: 'Run spin-up simulation first, then use output IC for production run; run_pihm.py; [''Set SIMULATION_MODE=1
+    in .para file'', ''Run: ./pihm -o spinup ShaleHills'', ''Copy output IC: cp output/spinup/*.ic input/ShaleHills/'',
+    ''Set SIMULATION_MODE=0, INIT_MODE=1 in .para'', ''Run production: ./pihm -o productio'
+  severity: degraded
+- id: dt_013
+  symptom: 'Mass balance error grows over time. Total water in system drifts. Water balance check shows
+    non-trivial residual. Results look reasonable but conservation is violated.
+
+    '
+  diagnosis: 'CVODE absolute tolerance set too loose; ABSTOL controls how precisely the ODE solver conserves
+    mass. Values above 0.01 m allow each element to have up to 1 cm of unaccounted water per step. Over
+    thousands of steps, this accumulates to significant mass balance errors.
+
+    ; [''ode'', ''cvode'']'
+  remedy: Set ABSTOL to 1e-4 m (default) or tighter; ; ['In .para file, set ABSTOL = 1.0E-04', 'RELTOL
+    = 1.0E-03 is usually adequate', 'If solver is too slow, try ABSTOL = 1.0E-03']; run_pihm.py checks
+    tolerance values before execution
+  severity: degraded
+- id: dt_014
+  symptom: 'Output files are enormous (GB) or missing entirely. Disk fills up during simulation. No output
+    for a desired variable.
+
+    '
+  diagnosis: 'Output interval codes confused (negative codes vs seconds); In the .para file, output intervals
+    use special negative codes: -1=yearly, -2=monthly, -3=daily, -4=hourly, 0=off. Positive values are
+    seconds. Setting GW to 3 (intending daily) actually outputs every 3 seconds, creating massive files.
+    Sett'
+  remedy: 'Use correct codes: -3 for daily, -4 for hourly, 0 for off; ; [''Review .para output section'',
+    ''-1 = yearly, -2 = monthly, -3 = daily, -4 = hourly'', ''3600 = every 3600 seconds (= hourly, same
+    as -4)'', ''0 = off (no output for this variable)'']; Document output codes clearly'
+  severity: degraded
+- id: dt_015
+  symptom: 'Simulation crashes with CVODE error: CV_TOO_MUCH_WORK or CV_CONV_FAILURE. Solver cannot advance
+    past a specific time. Error occurs repeatedly at same simulation time.
+
+    '
+  diagnosis: 'CVODE solver cannot converge due to stiff system or bad input; The implicit ODE solver fails
+    when the system is too stiff (sharp gradients), input data has discontinuities, or numerical values
+    are extreme. Common causes: precipitation spike, bad mesh element (degenerate triangle), extreme hydraulic '
+  remedy: 'Check input data quality and mesh, then adjust solver params; ; [''Enable debug mode: ./pihm
+    -d ShaleHills'', ''Check CVODE log for the failing time step'', ''Look at forcing data at that time
+    for spikes/discontinuities'', ''Check mesh quality for degenerate triangles'', ''Try increasing MAX_NONLIN_ITER
+    to 5'
+  severity: fatal
+- id: dt_016
+  symptom: 'CVODE convergence failures at specific elements. Oscillating water table at certain locations.
+    Unrealistic ponding at isolated elements. Simulation slows dramatically.
+
+    '
+  diagnosis: 'Degenerate or low-quality triangles in TIN mesh; PIHMgis can produce triangles with very
+    small angles (<10°) or very large aspect ratios. These elements have poor numerical properties — small
+    changes in head create large flux imbalances. The solver must take tiny steps to handle them.
+
+    ; [''mesh'', ''od'
+  remedy: Improve mesh quality in PIHMgis with minimum angle constraint; ; ['Check minimum angle of all
+    triangles (should be >15°)', 'Check element area ratios (adjacent elements should be similar size)',
+    'Regenerate mesh with stricter quality constraints', 'Use -c flag to enable elevation correction for
+    sink
+  severity: degraded
+- id: dt_017
+  symptom: 'Model produces flat-line output during specific periods. Forcing values jump between reasonable
+    and extreme. ET or precipitation has periodic dropouts to zero.
+
+    '
+  diagnosis: 'Missing timesteps or gaps in meteorological forcing; PIHM interpolates between forcing timesteps.
+    If a gap spans days/weeks, the model interpolates across the gap, producing incorrect intermediate
+    values. Missing data coded as -999 is interpolated as if it were a real extreme value.
+
+    ; [''forcing'', ''r'
+  remedy: Fill gaps and remove -999 sentinel values before running; forcing_converter.py; ['Check for
+    -999 or NaN in forcing files', 'Fill gaps using interpolation or nearby station data', 'Verify temporal
+    continuity (no missing hours)']; forcing_converter.py checks for gaps and -999 values
+  severity: degraded
+- id: dt_018
+  symptom: 'Some elements have wrong soil properties. Spatial pattern of soil moisture or infiltration
+    doesn''t match expected soil map. Clay-like behavior in sandy areas.
+
+    '
+  diagnosis: 'Soil type index in .att file doesn''t match .soil file indices; The .att file assigns a
+    soil type index to each element. If these indices don''t match the order in the .soil file, elements
+    get the wrong soil properties. This is silent — the model runs fine but with shuffled soil assignments.
+
+    ; [''read_'
+  remedy: Verify soil type indices match between .att and .soil files; ; ['Count soil types in .soil (NUMSOIL)',
+    'Check all SOIL values in .att are between 1 and NUMSOIL', 'Map a few elements and verify soil type
+    matches GIS soil map']; Cross-check indices during preprocessing
+  severity: silent
+- id: dt_019
+  symptom: 'Parsed output values are garbage (very large or very small numbers). Binary file reads produce
+    different results on different machines. Values look like byte-swapped floating point.
+
+    '
+  diagnosis: 'Binary output endianness mismatch between write and read platforms; PIHM writes output as
+    raw binary doubles. If the file is read on a platform with different endianness (rare but possible
+    with network file systems or cross-platform transfers), values will be corrupted.
+
+    ; [''print'', ''output_parser'']'
+  remedy: Use PIHM-utils Python package or output_parser.py with correct settings; output_parser.py; ['Check
+    if values are reasonable after parsing', 'Try reading with opposite endianness', 'Use ASCII output
+    mode (set ASCII_OUTPUT=1 in .para)']; output_parser.py auto-detects endianness
+  severity: degraded
+- id: dt_020
+  symptom: 'Simulation crashes with floating point exception (FPE). Error at specific timestep with negative
+    state variable. SIGFPE signal.
+
+    '
+  diagnosis: 'State variable became negative, causing sqrt or log of negative number; Water depths and
+    storage must be non-negative. Under extreme conditions (very permeable soil + intense rainfall, or
+    bad IC), the ODE solver may produce a negative trial value. Taking log or sqrt of this value causes
+    FPE crash.
+
+    ;'
+  remedy: Check IC and forcing for extreme values; tighten solver tolerance; ; ['Check .ic file for negative
+    values', 'Reduce ABSTOL to 1e-5', 'Reduce MODEL_STEPSIZE to 30 seconds', 'Check for extreme Ksat values
+    in .soil', 'Run with -d flag to identify failing element']; Pre-validate IC and soil parameters b
+  severity: fatal
+- id: dt_021_obs_station_type_and_newbasin_mesh_block
+  symptom: PIHM verifier called with metrics all null (r=null) and ki_usable=false; orchestrator r<0.5
+    retry trigger misfires on a run that never produced discharge. Target is a HYDAT station with DATA_TYPE='H'
+    (water level) / MEASUREMENT_CODE='R' (reservoir), and/or a new basin with no shipped .mesh/.att.
+  diagnosis: 'Two structural blockers: (1) requested discharge obs does not exist — station is a regulated
+    reservoir STAGE gauge with zero DLY_FLOWS records, so NSE/r/KGE are uncomputable; (2) PIHM TIN mesh
+    + .att attribute assignment require PIHMgis (external GUI, not installed, not headless), and no mesh
+    tool s'
+  remedy: Before launching PIHM at a HYDAT site, REQUIRE DATA_TYPE='Q' (natural streamflow) AND a pre-built/validated
+    mesh (only ShaleHills validates). Do not synthesize a mesh or fabricate discharge. If the station
+    is reservoir/level-only, classify requires_data and re-target. New-basin mesh authoring is req
+- id: dt_021
+  symptom: 'Pipeline blocked at S1 for a new basin: no .mesh/.att can be produced; metrics null though
+    preflight passes and ShaleHills dev example reproduces.'
+  diagnosis: No headless TIN+attribute generator in the KI; PIHMgis is an external QGIS GUI, not installed;
+    terrain_ops emits no PIHM .mesh/.att; source repo has only the mesh reader.
+  remedy: Pin PIHM verification to basins with prebuilt validated meshes (ShaleHills/Chimborazo); document
+    the new-basin domain constraint in SKILL.md; a headless mesh generator is a multi-day build (out of
+    scope).
+- id: dt_022_china_gw_yearbook_water_table_domain_skip
+  symptom: PIHM targeted at the China Geological Environment Monitoring Groundwater Level Yearbook (中国地质环境监测地下水位年鉴,
+    2005-2021), obs variable daily_water_table_depth_m at a monitoring well (Huai/North-China-Plain subset).
+    All metrics null, ki_usable=false; r<0.5 retry trigger may misfire on a run that cannot pr
+  diagnosis: 'Three independent structural blockers, none fixable by parameter/forcing retry: (1) MESH
+    BLOCK (same as dt_021) — the yearbook region has no shipped real TIN; only synthetic 2-triangle placeholder
+    meshes exist for Huai sites (Wangjiaba/Bengbu, NUMELE=2), whose lumped GW head is explicitly ''not
+    inter'
+  remedy: Classify as domain-validity SKIP (requires_human_engineering), not a calibration failure — do
+    NOT enter the retry loop. The GW variable's obs_shape here is point_time_series (metric family is
+    valid in principle), so the gate will NOT emit REJECT_WRONG_METRIC; the block is structural, upstream
+    of met
+- id: dt_023_headless_tin_fragmented_river_network_no_routed_outlet
+  symptom: PIHM run on a large NEW basin (e.g. 唐乃亥/Tangnaihai Yellow-source ~132,000 km², or Bengbu/Wangjiaba
+    Huai) with an AD-HOC headless-built TIN (NUMELE in the hundreds–thousands, real geometry, dev example
+    reproduces). Simulated discharge is ~1–2 orders of magnitude BELOW observed (Bengbu real run 2026-0
+  diagnosis: 'Overcoming the dt_021 mesh-generation block with meshpy/ad-hoc triangulation is NECESSARY
+    BUT NOT SUFFICIENT for discharge validation. The ad-hoc river network is FRAGMENTED: many segments
+    (Bengbu 132/174) carry DOWN=-3 and exit the domain independently, so NO single segment carries the
+    basin-integr'
+  remedy: 'Do NOT launch a multi-hour PIHM discharge run on a new large basin expecting a valid NSE —
+    the ad-hoc TIN cannot route to the gauge and NSE>=0.5 is structurally unreachable. Classify requires_human_engineering
+    (same class as dt_021). A valid discharge target needs a CONNECTED river network draining '
+- id: dt_024_pihm_input_header_conventions
+  symptom: 'flux-pihm / pihm exits immediately with ''Expected header: ...'' + ''Error: input file format
+    error in input/<proj>/<proj>.att at Line 1'' (or the same for .meteo / .soil), rc=1, before any timestep.
+    Happens with decks written by the KI tools forcing_converter.py / soil_converter.py, or by following
+    SKI'
+  diagnosis: Three reader conventions that the KI docs got wrong. (1) src/read_att.c CheckHeaders the
+    FIRST line of .att against 'INDEX SOIL GEOL LC METEO LAI BC1 BC2 BC3' and sizes the table from nelem
+    in the .mesh -- there is NO 'NUMATT <n>' record, but SKILL.md section 4.2 showed one. (2) src/read_forc.c
+    pars
+  remedy: Use tools/mesh_builder.py (.att), the patched forcing_converter.py (.meteo) and the patched
+    soil_converter.py (.soil) -- all three now emit the reader-exact headers. When hand-checking a deck,
+    diff it against input/ShaleHills, which is the ONLY authoritative format reference; SKILL.md sections
+    4.2/4
+- id: dt_025_headless_tin_conventions_ccw_nabr_outlet
+  symptom: 'A headlessly generated PIHM TIN loads but the run is wrong or dies: negative/zero element
+    storage, hillslope fluxes going to the wrong neighbour, the river never exchanging with the aquifer,
+    or CVODE failing on the very first step with NaN discharge at the outlet segment.'
+  diagnosis: 'Four geometric contracts MM-PIHM enforces implicitly. (a) InitTopo computes a SIGNED element
+    area 0.5*((x1-x0)(y2-y0)-(y1-y0)(x2-x0)); clockwise node order gives a NEGATIVE area (verified: 0/535
+    ShaleHills elements are clockwise). (b) NABR[j] is the neighbour across the edge OPPOSITE node j --
+    verif'
+  remedy: Generate the mesh with tools/mesh_builder.py, which (a) flips any clockwise triangle, (b) builds
+    NABR from an edge->element map using the opposite-node rule, (c) inserts the river centreline as CONSTRAINED
+    Triangle segments and then recovers the river reaches as actual mesh edges (both endpoints AND
+- id: dt_026_gw_head_to_piezometric_level
+  symptom: PIHM .gw.dat compared against a piezometer gives an absurd bias (tens of metres) or an NSE
+    far below zero even though the seasonal shape looks right. Typical with obs reported as a LEVEL in
+    a national datum (French ADES piezometric level m NGF, US NGWMN depth-to-water, China GW yearbook
+    depth).
+  diagnosis: 'GW is the head ABOVE THE ELEMENT''S AQUIFER BOTTOM: lat_flow.c uses (elem.ws.gw + elem.topo.zmin)
+    as the head elevation, and topo.zmin is the MEAN of the three node ZMIN values. So GW is neither a
+    datum elevation nor a depth below ground. A second, separate error is using the element''s mean ZMAX
+    as t'
+  remedy: 'Convert in DEPTH space, then re-datum with the WELL''s own surveyed elevation: sim_depth_to_water
+    = elem_zmax - (elem_zmin + GW); sim_level_datum = well_ground_elev - sim_depth_to_water. NSE/r/KGE
+    are identical whether scored on depth or on level, but the depth-space route removes the element-averagi'

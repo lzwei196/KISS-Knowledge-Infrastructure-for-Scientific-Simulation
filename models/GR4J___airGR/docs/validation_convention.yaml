@@ -1,197 +1,213 @@
 schema_version: 1
 model_id: GR4J___airGR
 domain: hydrology
-generated_by: "self-improve session (Claude Opus 4.8) — validation-convention Step-B, general schema"
+generated_by: self-improve session (Claude Opus 4.8) — validation-convention Step-B, general schema
 generated_at: 2026-07-09
-
-# Grounded in locally-fetched full texts. DISCHARGE is the headline, well-grounded quantity:
-# Moriasi et al. 2007 (Table 4) + Moriasi et al. 2015 supply the streamflow NSE/PBIAS tier tables,
-# Knoben et al. 2019 supplies the KGE mean-flow benchmark context, and the GR4J/GR5J/GR6J South-Korea
-# multi-basin study (Sci. Rep. 2025) + Perrin et al. 2003 + Coron et al. 2017 (airGR) corroborate that
-# GR4J routinely reaches KGE'~0.72 on daily streamflow. EVAPOTRANSPIRATION and SOIL_MOISTURE have NO
-# cited numeric skill threshold: GR4J's AE is a conceptual store-draw flux (not an energy-balance ET)
-# and Prod is a conceptual store level in mm (not a physical soil-moisture depth), so both are
-# pattern-only comparisons with structurally-limited ceilings (Santanello/Fowler 2017 AET-vs-EC,
-# Pelletier & Andreassian 2022 piezometry, Coron 2017) — null bands, low confidence. RUNOFF/AExch
-# (inter-catchment groundwater exchange, dag var AExch) has has_obs_binding=false: rarely observed,
-# a water-balance closure diagnostic only — NO block is emitted for it (no obs, no gradeable convention).
-# Bands are plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
-
 references:
   moriasi2007:
     doi: 10.13031/2013.23153
-    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
-    venue: "Transactions of the ASABE"
+    title: Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations
+    venue: Transactions of the ASABE
     year: 2007
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
   moriasi2015:
     doi: 10.13031/trans.58.10715
-    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
-    venue: "Transactions of the ASABE"
+    title: 'Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria'
+    venue: Transactions of the ASABE
     year: 2015
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
   knoben2019:
     doi: 10.5194/hess-23-4323-2019
-    title: "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: 'Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency
+      scores'
+    venue: Hydrol. Earth Syst. Sci.
     year: 2019
     oa: gold
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-4323-2019.txt
   gr4jsouth2025:
     doi: 10.1038/s41598-025-16429-z
-    title: "Applicability of the daily hydrological models (GR4J, GR5J, and GR6J) in the South (Korea)"
-    venue: "Scientific Reports"
+    title: Applicability of the daily hydrological models (GR4J, GR5J, and GR6J) in the South (Korea)
+    venue: Scientific Reports
     year: 2025
     oa: gold
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-025-16429-z.txt
   perrin2003:
     doi: 10.1016/s0022-1694(03)00225-7
-    title: "Improvement of a parsimonious model for streamflow simulation"
-    venue: "Journal of Hydrology"
+    title: Improvement of a parsimonious model for streamflow simulation
+    venue: Journal of Hydrology
     year: 2003
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_s0022-1694(03)00225-7.txt
   coron2017:
     doi: 10.1016/j.envsoft.2017.05.002
-    title: "The suite of lumped GR hydrological models in an R package (airGR)"
-    venue: "Environmental Modelling & Software"
+    title: The suite of lumped GR hydrological models in an R package (airGR)
+    venue: Environmental Modelling & Software
     year: 2017
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2017.05.002.txt
   fowler2017et:
     doi: 10.1002/2016wr019627
-    title: "Impact of evapotranspiration process representation on runoff projections from conceptual rainfall-runoff models"
-    venue: "Water Resources Research"
+    title: Impact of evapotranspiration process representation on runoff projections from conceptual rainfall-runoff
+      models
+    venue: Water Resources Research
     year: 2017
     oa: manual
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2016wr019627.txt
   pelletier2022:
     doi: 10.5194/hess-26-2733-2022
-    title: "On constraining a lumped hydrological model with both piezometry and streamflow"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: On constraining a lumped hydrological model with both piezometry and streamflow
+    venue: Hydrol. Earth Syst. Sci.
     year: 2022
     oa: gold
     resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-26-2733-2022.txt
-
 validation:
-
-  # ===================== DISCHARGE / point_time_series (well grounded) =====================
-  - canonical_quantity: discharge
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "Moriasi 2007 Table 4 streamflow tiers; Moriasi 2015 confirms watershed-scale NSE > 0.50 = satisfactory for daily/monthly/annual flow."
-        cites: [moriasi2007, moriasi2015]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, good: 15, satisfactory: 25}
-        pass_band: good
-        band_note: "Moriasi 2007 streamflow PBIAS tiers (<±10 very good, ±10-15 good, ±15-25 satisfactory). Moriasi 2015 tightens the recommended satisfactory streamflow threshold to PBIAS ≤ ±15% at watershed scale, so pass_band is set to the 'good' (15%) tier to honor the current recommendation without loosening."
-        cites: [moriasi2007, moriasi2015]
-    secondary_metrics:
-      - metric: kge
-        direction: maximize
-        status: supportive
-        ceiling_reason: "KGE (and modified KGE') is the GR/airGR community's primary flow metric but has NO inherent benchmark: the mean-flow benchmark that gives NSE=0 corresponds to KGE=1-sqrt(2)≈-0.41, so KGE > -0.41 (not 0) is what beats mean flow (Knoben 2019). NSE tier tables cannot be transferred to KGE. GR4J daily streamflow reaches KGE'≈0.72 across South-Korea basins (gr4jsouth2025, avg 0.725); some studies use KGE'>0 as good and 0<KGE'<0.5 as poor. Retained as supportive context, not a hard tier."
-        cites: [knoben2019, gr4jsouth2025]
-    validated_when: "NSE >= 0.50 (Moriasi streamflow 'satisfactory') AND |PBIAS| <= 15% (Moriasi 2015 recommended streamflow threshold), on the scored window after a >=1 yr warm-up, with gauge discharge converted to mm/day over catchment area."
-    evidence_strength: strong
-    confidence: 0.85
-    notes: >-
-      Headline discharge convention. Moriasi 2007 Table 4 (streamflow, monthly): NSE 0.75-1.00 very good,
-      0.65-0.75 good, 0.50-0.65 satisfactory, <0.50 unsatisfactory; PBIAS <±10 very good, ±10-15 good,
-      ±15-25 satisfactory. Moriasi 2015: watershed-scale flow "satisfactory" if NSE > 0.50 and PBIAS ≤ ±15%.
-      NSE is the dag determining_metric (retained as headline); PBIAS is paired to expose bias, which NSE
-      is insensitive to. KGE kept as supportive because Knoben 2019 shows KGE thresholds are NOT
-      interchangeable with NSE thresholds (mean-flow benchmark KGE=-0.41). GR4J/GR5J/GR6J reach avg KGE'
-      ~0.725-0.732 on daily flow (gr4jsouth2025); Perrin 2003 and Coron 2017 (airGR) established GR4J as a
-      parsimonious daily-streamflow benchmark. CAVEATS from dag: convert gauge m3/s -> mm/day (*86.4/area_km2)
-      or NSE silently collapses; exclude >=1 yr warm-up. Note on AExch (inter-catchment groundwater exchange,
-      dag var AExch, canonical_quantity runoff): has_obs_binding=false — rarely observed, a water-balance
-      closure diagnostic only — so no gradeable block is emitted for it.
-
-  # ===================== EVAPOTRANSPIRATION / point_time_series (conceptual-flux ceiling) =====================
-  - canonical_quantity: evapotranspiration
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "No cited numeric NSE threshold for GR4J actual-ET in the fetched set; AE is a conceptual store-draw flux, not a measured energy-balance ET, so satellite/flux-tower comparison is only pattern-level."
-        cites: []
-    secondary_metrics:
-      - metric: nse
-        direction: maximize
-        status: structurally_limited
-        ceiling_reason: >-
-          GR4J's AE is drawn from the production store as a fixed function of the PET-to-store ratio, not an
-          energy-balance latent-heat flux. Fowler et al. 2017 benchmarked simulated AET from conceptual
-          rainfall-runoff models against eddy-covariance observations and "highlighted some unrealistic
-          behavior in the simulated AET", showing the PET->AET conversion (not emergent physics) governs the
-          series; Coron 2017 documents AE as a conceptual store output. A low AET NSE is therefore a
-          structural/data ceiling of the conceptual formulation, NOT a KI defect. No fetched paper reports a
-          numeric AET NSE tier for these models, so no band is claimed.
-        cites: [fowler2017et, coron2017]
-    validated_when: "UNRESOLVED numerically — conceptual store-draw AE admits only temporal-pattern agreement vs EC/satellite ET; no cited NSE threshold. Treat a low AET NSE as a data/structural ceiling (acquire_data), never fix_ki."
-    evidence_strength: weak
-    confidence: 0.35
-    notes: >-
-      No fetched paper quantifies an AET skill band for GR-family conceptual models. Band null per the
-      no-fabrication rule; confidence 0.35 => the gate may CONTEXTUALIZE (suppress a spurious fix_ki on a
-      failing AET NSE) but may NEVER loosen the discharge requirement. A dedicated conceptual-model AET
-      RMSE/NSE benchmark against flux-tower ET would raise this to moderate.
-
-  # ===================== SOIL_MOISTURE / point_time_series (conceptual-store ceiling) =====================
-  - canonical_quantity: soil_moisture
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: r
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "Prod is a conceptual production-store level in mm, not a physical soil-moisture depth; obs_map determining_metric is r (correlation) and the dag admits only the temporal_pattern_match family. No cited correlation threshold exists for conceptual-store vs soil-moisture-index comparison."
-        cites: []
-    secondary_metrics:
-      - metric: r
-        direction: maximize
-        status: structurally_limited
-        ceiling_reason: >-
-          The GR production store is an abstract water-holding reservoir (mm), not a measurable volumetric
-          soil-moisture depth, so at most anomaly/pattern correlation to a satellite soil-moisture index is
-          meaningful — absolute magnitude is not comparable. Pelletier & Andreassian 2022 constrain a lumped
-          GR model with piezometry/streamflow and note satellite soil-moisture/water-storage products are
-          used only as complementary pattern constraints "at the expense of a small degradation of the
-          streamflow simulation"; Coron 2017 documents Prod as a conceptual store. A low store-vs-index
-          correlation is thus a structural comparability ceiling, NOT a KI defect.
-        cites: [pelletier2022, coron2017]
-    validated_when: "UNRESOLVED numerically — conceptual production-store level supports only pattern/anomaly correlation to a soil-moisture index; no cited r threshold. Treat a low correlation as a structural ceiling (acquire_data), never fix_ki."
-    evidence_strength: weak
-    confidence: 0.30
-    notes: >-
-      dag validation_row lists determining_metric nse for this obs_shape, but the family is
-      temporal_pattern_match only and the obs_map determining_metric is r; r (correlation) is the physically
-      appropriate pattern metric for a conceptual store vs a soil-moisture index, so r is kept as the
-      headline (nse magnitude scoring is inappropriate for a non-measurable store level). Band null per the
-      no-fabrication rule; confidence 0.30 => contextualize only, never loosen the discharge gate. A study
-      reporting a numeric store-vs-satellite-SM correlation target would raise this to moderate.
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: Moriasi 2007 Table 4 streamflow tiers; Moriasi 2015 confirms watershed-scale NSE > 0.50
+      = satisfactory for daily/monthly/annual flow.
+    cites:
+    - moriasi2007
+    - moriasi2015
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      good: 15
+      satisfactory: 25
+    pass_band: good
+    band_note: Moriasi 2007 streamflow PBIAS tiers (<±10 very good, ±10-15 good, ±15-25 satisfactory).
+      Moriasi 2015 tightens the recommended satisfactory streamflow threshold to PBIAS ≤ ±15% at watershed
+      scale, so pass_band is set to the 'good' (15%) tier to honor the current recommendation without
+      loosening.
+    cites:
+    - moriasi2007
+    - moriasi2015
+  secondary_metrics:
+  - metric: kge
+    direction: maximize
+    status: supportive
+    ceiling_reason: 'KGE (and modified KGE'') is the GR/airGR community''s primary flow metric but has
+      NO inherent benchmark: the mean-flow benchmark that gives NSE=0 corresponds to KGE=1-sqrt(2)≈-0.41,
+      so KGE > -0.41 (not 0) is what beats mean flow (Knoben 2019). NSE tier tables cannot be transferred
+      to KGE. GR4J daily streamflow reaches KGE''≈0.72 across South-Korea basins (gr4jsouth2025, avg 0.725);
+      some studies use KGE''>0 as good and 0<KGE''<0.5 as poor. Retained as supportive context, not a
+      hard tier.'
+    cites:
+    - knoben2019
+    - gr4jsouth2025
+  validated_when: NSE >= 0.50 (Moriasi streamflow 'satisfactory') AND |PBIAS| <= 15% (Moriasi 2015 recommended
+    streamflow threshold), on the scored window after a >=1 yr warm-up, with gauge discharge converted
+    to mm/day over catchment area.
+  evidence_strength: strong
+  confidence: 0.85
+  notes: 'Headline discharge convention. Moriasi 2007 Table 4 (streamflow, monthly): NSE 0.75-1.00 very
+    good, 0.65-0.75 good, 0.50-0.65 satisfactory, <0.50 unsatisfactory; PBIAS <±10 very good, ±10-15 good,
+    ±15-25 satisfactory. Moriasi 2015: watershed-scale flow "satisfactory" if NSE > 0.50 and PBIAS ≤ ±15%.
+    NSE is the dag determining_metric (retained as headline); PBIAS is paired to expose bias, which NSE
+    is insensitive to. KGE kept as supportive because Knoben 2019 shows KGE thresholds are NOT interchangeable
+    with NSE thresholds (mean-flow benchmark KGE=-0.41). GR4J/GR5J/GR6J reach avg KGE'' ~0.725-0.732 on
+    daily flow (gr4jsouth2025); Perrin 2003 and Coron 2017 (airGR) established GR4J as a parsimonious
+    daily-streamflow benchmark. CAVEATS from dag: convert gauge m3/s -> mm/day (*86.4/area_km2) or NSE
+    silently collapses; exclude >=1 yr warm-up. Note on AExch (inter-catchment groundwater exchange, dag
+    var AExch, canonical_quantity runoff): has_obs_binding=false — rarely observed, a water-balance closure
+    diagnostic only — so no gradeable block is emitted for it.'
+  dag_variable: Qsim
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: No cited numeric NSE threshold for GR4J actual-ET in the fetched set; AE is a conceptual
+      store-draw flux, not a measured energy-balance ET, so satellite/flux-tower comparison is only pattern-level.
+    cites: []
+  secondary_metrics:
+  - metric: nse
+    direction: maximize
+    status: structurally_limited
+    ceiling_reason: GR4J's AE is drawn from the production store as a fixed function of the PET-to-store
+      ratio, not an energy-balance latent-heat flux. Fowler et al. 2017 benchmarked simulated AET from
+      conceptual rainfall-runoff models against eddy-covariance observations and "highlighted some unrealistic
+      behavior in the simulated AET", showing the PET->AET conversion (not emergent physics) governs the
+      series; Coron 2017 documents AE as a conceptual store output. A low AET NSE is therefore a structural/data
+      ceiling of the conceptual formulation, NOT a KI defect. No fetched paper reports a numeric AET NSE
+      tier for these models, so no band is claimed.
+    cites:
+    - fowler2017et
+    - coron2017
+  validated_when: UNRESOLVED numerically — conceptual store-draw AE admits only temporal-pattern agreement
+    vs EC/satellite ET; no cited NSE threshold. Treat a low AET NSE as a data/structural ceiling (acquire_data),
+    never fix_ki.
+  evidence_strength: weak
+  confidence: 0.35
+  notes: No fetched paper quantifies an AET skill band for GR-family conceptual models. Band null per
+    the no-fabrication rule; confidence 0.35 => the gate may CONTEXTUALIZE (suppress a spurious fix_ki
+    on a failing AET NSE) but may NEVER loosen the discharge requirement. A dedicated conceptual-model
+    AET RMSE/NSE benchmark against flux-tower ET would raise this to moderate.
+  dag_variable: AE
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: r
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: Prod is a conceptual production-store level in mm, not a physical soil-moisture depth;
+      obs_map determining_metric is r (correlation) and the dag admits only the temporal_pattern_match
+      family. No cited correlation threshold exists for conceptual-store vs soil-moisture-index comparison.
+    cites: []
+  secondary_metrics:
+  - metric: r
+    direction: maximize
+    status: structurally_limited
+    ceiling_reason: The GR production store is an abstract water-holding reservoir (mm), not a measurable
+      volumetric soil-moisture depth, so at most anomaly/pattern correlation to a satellite soil-moisture
+      index is meaningful — absolute magnitude is not comparable. Pelletier & Andreassian 2022 constrain
+      a lumped GR model with piezometry/streamflow and note satellite soil-moisture/water-storage products
+      are used only as complementary pattern constraints "at the expense of a small degradation of the
+      streamflow simulation"; Coron 2017 documents Prod as a conceptual store. A low store-vs-index correlation
+      is thus a structural comparability ceiling, NOT a KI defect.
+    cites:
+    - pelletier2022
+    - coron2017
+  validated_when: UNRESOLVED numerically — conceptual production-store level supports only pattern/anomaly
+    correlation to a soil-moisture index; no cited r threshold. Treat a low correlation as a structural
+    ceiling (acquire_data), never fix_ki.
+  evidence_strength: weak
+  confidence: 0.3
+  notes: dag validation_row lists determining_metric nse for this obs_shape, but the family is temporal_pattern_match
+    only and the obs_map determining_metric is r; r (correlation) is the physically appropriate pattern
+    metric for a conceptual store vs a soil-moisture index, so r is kept as the headline (nse magnitude
+    scoring is inappropriate for a non-measurable store level). Band null per the no-fabrication rule;
+    confidence 0.30 => contextualize only, never loosen the discharge gate. A study reporting a numeric
+    store-vs-satellite-SM correlation target would raise this to moderate.
+  dag_variable: Prod
 deferred_paywalled:
-  - ref: "Boumenni, Bachir & Aatab 2016 — Assessment of the suitability of rainfall-runoff models by coupling performance statistics and sensitivity analysis (fetch_failed)"
-    doi: 10.2166/nh.2016.129
-    needed_for: [discharge]
-  - ref: "GR4J meteorological-classification study — Improving Efficiency of Hydrological Prediction Based on Meteorological Classification (fetch_failed)"
-    doi: 10.3390/w13182546
-    needed_for: [discharge]
-  - ref: "Global-sensitivity-analysis calibration-length study for hydrological models (closed)"
-    doi: 10.1016/j.jhydrol.2022.127546
-    needed_for: [discharge]
+- ref: Boumenni, Bachir & Aatab 2016 — Assessment of the suitability of rainfall-runoff models by coupling
+    performance statistics and sensitivity analysis (fetch_failed)
+  doi: 10.2166/nh.2016.129
+  needed_for:
+  - discharge
+- ref: GR4J meteorological-classification study — Improving Efficiency of Hydrological Prediction Based
+    on Meteorological Classification (fetch_failed)
+  doi: 10.3390/w13182546
+  needed_for:
+  - discharge
+- ref: Global-sensitivity-analysis calibration-length study for hydrological models (closed)
+  doi: 10.1016/j.jhydrol.2022.127546
+  needed_for:
+  - discharge

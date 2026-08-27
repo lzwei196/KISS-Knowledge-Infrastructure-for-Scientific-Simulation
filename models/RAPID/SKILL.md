@@ -1,14 +1,3 @@
----
-name: rapid
-description: >-
-  Matrix-based Muskingum river routing (David et al. 2011, JHM); RAPID main-branch F90
-  source. Covers River channel routing of lateral inflow to reach-level discharge; Channel
-  storage volume computation per reach; Muskingum k/x parameter calibration via TAO
-  optimizer; Kalman-filter data assimilation of runoff; Optional non-data-driven
-  reservoir/dam routing. Use when the task involves running, configuring, calibrating or
-  interpreting RAPID.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -32,6 +21,42 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (21 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (12 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_connectivity.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_connectivity.py --help` |
+| `tools/convert_lsm_to_vlat.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_lsm_to_vlat.py --help` |
+| `tools/generate_muskingum_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_muskingum_params.py --help` |
+| `tools/generate_namelist.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_namelist.py --help` |
+| `tools/parse_rapid_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_rapid_output.py --help` |
+| `tools/run_rapid.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_rapid.py --help` |
+
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # RAPID Knowledge Infrastructure
 
 **Package**: hydrocraft-rapid-routing
@@ -51,6 +76,19 @@ description: >-
 
 **Data Validation Reference**: This model takes runoff from upstream hydrological models (VIC, mHM, etc.) as input.
 See `data_ki/ObservedQ/SKILL.md` for observed discharge validation data.
+
+## Output Description
+
+**Source**: `dag.yaml`. The dag is the authoritative source for observable
+outputs; if this section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output**: `Qout` — Discharge at the outlet of each river reach per output time step (primary output). (`m3/s`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| Qout | 1 | m3/s | Discharge at the outlet of each river reach per output time step (primary output). |
+| V | not restated in extracted facts | not restated in extracted facts | other dag output |
+| Qfinal | not restated in extracted facts | not restated in extracted facts | other dag output |
 
 
 ## Overview
@@ -272,6 +310,47 @@ basins this causes a spinup period of days to weeks. Best practice: run a
 | Reach area | m² | km² | × 1e6 | Vlat wrong by 1e6 |
 
 ---
+
+## Unit Conversion Table
+
+This table records the unit conversions and unit traps already stated in this
+KI. Exact I/O shapes and units live in `docs/format_spec.yaml`; observable
+outputs are governed by `dag.yaml`.
+
+| Variable | Source unit (verified) | Model unit | Factor | Type |
+|----------|------------------------|------------|--------|------|
+| Vlat | kg/m²/s (= mm/s for water) over reach area and routing period | m³ accumulated over `ZS_TauR` | area_m2 × TauR_s / 1000 | multiplicative |
+| Vlat | m³/s | m³ accumulated over `ZS_TauR` | × TauR | multiplicative |
+| k | hours | seconds | × 3600 | multiplicative |
+| x | percentage (0–50) | dimensionless (0–0.5) | ÷ 100 | multiplicative |
+| ZS_TauM | days | seconds | × 86400 | multiplicative |
+| ZS_dtR | minutes | seconds | × 60 | multiplicative |
+| Rain (LSM) | mm/day | kg/m²/s = mm/s | ÷ 86400 | multiplicative |
+| Reach area | km² | m² | × 1e6 | multiplicative |
+| Qout | model output | m3/s | no conversion | output unit from dag.yaml |
+
+---
+
+## Validated Results
+
+### Headline Output and Convention Bars
+
+**Source**: `dag.yaml` for the rank-1 output and
+`docs/validation_convention.yaml` for metric directions, bands, and citation
+keys. Bands held as null in the convention are stated as `no cited threshold`.
+
+| dag variable | Metric | Direction | Very good | Good | Satisfactory | Citation key |
+|--------------|--------|-----------|-----------|------|--------------|--------------|
+| Qout | nse | maximize | 0.75 (me2015) | 0.65 (me2015) | 0.5 (me2015) | me2015 |
+| Qout | pbias | zero_centered | 10 (me2015) | 15 (me2015) | 25 (me2015) | me2015 |
+| Qout | pbias | zero_centered | no cited threshold | no cited threshold | no cited threshold | no citation |
+| Qout | nse | maximize | 0.75 (me2015) | 0.65 (me2015) | 0.5 (me2015) | me2015 |
+| Qout | pbias | zero_centered | 10 (me2015) | 15 (me2015) | 25 (me2015) | me2015 |
+
+### Published Reproduction Runs
+
+The older validation summary below is retained as existing KI content. Grade
+new runs against the convention bars above, using `Qout` as the rank-1 output.
 
 ## Validation Results
 

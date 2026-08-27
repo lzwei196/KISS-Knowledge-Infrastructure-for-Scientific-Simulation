@@ -1,0 +1,333 @@
+schema_version: 1
+model_id: ELMFIRE
+domain: hazard
+generated_by: "Step-B validation convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+references:
+  giannaros2020:
+    doi: 10.3390/atmos11111264
+    title: "Performance Evaluation of an Operational Rapid Response Fire Spread Forecasting System"
+    venue: "Atmosphere"
+    year: 2020
+    oa: gold
+    resolves: https://www.mdpi.com/2073-4433/11/11/1264
+  price2022:
+    doi: 10.1186/s42408-022-00147-2
+    title: "Modeling of fire spread in sagebrush steppe using FARSITE: an approach to improving input data and simulation accuracy"
+    venue: "Fire Ecology"
+    year: 2022
+    oa: gold
+    resolves: https://fireecology.springeropen.com/articles/10.1186/s42408-022-00147-2
+  gale2025:
+    doi: 10.1016/j.envsoft.2025.106436
+    title: "Evaluating Australian forest fire rate of spread models using VIIRS satellite observations"
+    venue: "Environmental Modelling & Software"
+    year: 2025
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2025.106436.txt
+  parisien2019:
+    doi: 10.1071/wf19069
+    title: "Applications of simulation-based burn probability modelling: a review"
+    venue: "International Journal of Wildland Fire"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1071_wf19069.txt
+  moran2025:
+    doi: 10.1038/s41598-025-07968-6
+    title: "Benchmarking performance of annual burn probability modeling against subsequent fire occurrence"
+    venue: "Scientific Reports"
+    year: 2025
+    oa: gold
+    resolves: https://www.nature.com/articles/s41598-025-07968-6
+  propagator2020:
+    doi: 10.3390/fire3030026
+    title: "PROPAGATOR: An Operational Cellular-Automata Based Wildfire Simulator"
+    venue: "Fire"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_fire3030026.txt
+  zhang2024:
+    doi: 10.3390/fire7040141
+    title: "Comparing Accuracy of Wildfire Spread Prediction Models under Different Data Deficiency Conditions"
+    venue: "Fire"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_fire7040141.txt
+  rothermel1983:
+    doi: 10.2737/int-gtr-143
+    title: "How to Predict the Spread and Intensity of Forest and Range Fires"
+    venue: "USDA Forest Service General Technical Report INT-GTR-143"
+    year: 1983
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2737_int-gtr-143.txt
+  scott2001:
+    doi: 10.2737/rmrs-rp-29
+    title: "Assessing Crown Fire Potential by Linking Models of Surface and Crown Fire Behavior"
+    venue: "USDA Forest Service Research Paper RMRS-RP-29"
+    year: 2001
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2737_rmrs-rp-29.txt
+  cobian2019:
+    doi: 10.3389/fmech.2019.00050
+    title: "On the Use of Semi-empirical Flame Models for Spreading Chaparral Crown Fire"
+    venue: "Frontiers in Mechanical Engineering"
+    year: 2019
+    oa: gold
+    resolves: https://www.frontiersin.org/articles/10.3389/fmech.2019.00050/pdf
+
+validation:
+  - dag_variable: time_of_arrival
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: sorensen
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.6, satisfactory: 0.4}
+        pass_band: satisfactory
+        band_note: "IRIS used Sorensen and Kappa for final burned-area perimeters; 0.4 marks at least moderate agreement."
+        cites: [giannaros2020]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining metric is CSI, but fetched wildfire-spread evaluations more commonly report Sorensen/Dice, Jaccard, and Kappa for simulated versus observed burned area."
+        cites: [giannaros2020, price2022, propagator2020, zhang2024]
+      - metric: kappa
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Kappa is commonly co-reported with Sorensen for burned-area agreement; the same 0.4 moderate-agreement threshold is used in the IRIS evaluation."
+        cites: [giannaros2020, price2022]
+    validated_when: "Final arrived/burned footprint agrees with observed perimeter at Sorensen >= 0.4; higher confidence when Kappa also exceeds 0.4 and over/underestimation is reported."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Giannaros 2020 states that Kappa and Sorensen values above 0.40 indicate at least
+      moderate agreement between predicted and actual wildfire perimeters. Price 2022
+      reports top-performing FARSITE Soda Fire SC=0.7 and K=0.68, and Cherry Road
+      SC=0.77-0.80 and K=0.73-0.79. This supersedes the dag's CSI headline because the
+      fetched wildfire literature grades perimeter overlap with Sorensen/Kappa/Jaccard.
+
+  - dag_variable: time_of_arrival
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: sorensen
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.6, satisfactory: 0.4}
+        pass_band: satisfactory
+        band_note: "Burned/unburned cells from arrival time are judged as simulated versus observed burned-area agreement."
+        cites: [giannaros2020]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is an admissible event-detection metric, but fetched wildfire papers define the operational convention with Sorensen/Dice, Jaccard, and Kappa."
+        cites: [propagator2020, zhang2024]
+      - metric: false_alarm_rate
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Commission errors are informative for categorical burned-area maps and should be reported with the overlap metric."
+        cites: [propagator2020, gale2025]
+    validated_when: "Binary arrived/burned classification reaches Sorensen >= 0.4 against an observed fire scar or contemporaneous perimeter."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      PROPAGATOR thresholds probabilistic arrival at u > 0.5 for a burned/unburned
+      confusion matrix and defines Sorensen as 0 to 1, where 1 is perfect agreement.
+      Zhang 2024 also evaluates wildfire perimeters with Jaccard, Sorensen, and Kappa.
+
+  - dag_variable: spread_rate
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: absolute_percent_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 35.0}
+        pass_band: satisfactory
+        band_note: "Gale 2025 reports the proportion of ROS predictions within +/-35% of observations as a reasonable model-accuracy standard."
+        cites: [gale2025]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "ROS benchmark papers report MAE, MBE, MAPE, and RMSE, but the fetched set does not provide a universal RMSE pass band across fuels."
+        cites: [gale2025]
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining metric is CSI, but spread-rate validation in the fetched literature is magnitude-error based, not spatial overlap based."
+        cites: [gale2025]
+    validated_when: "Cell or run-level head-fire rate of spread has absolute percent error <= 35% against inferred or observed ROS; also report MAE/RMSE and bias."
+    evidence_strength: moderate
+    confidence: 0.68
+    notes: >-
+      Gale 2025 evaluates head-fire ROS with MAE, MBE, MBPE, RMSE, and the fraction
+      within +/-35% of observations, citing that interval as a reasonable standard for ROS
+      model accuracy. Native ELMFIRE ft/min must be converted before comparison.
+
+  - dag_variable: fireline_intensity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric PBIAS pass band for mapped fireline intensity."
+        cites: []
+    secondary_metrics:
+      - metric: suppression_class
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Rothermel's field guide provides operational fireline-intensity/flame-length interpretation classes, but they are behavior thresholds rather than validation-error bands."
+        cites: [rothermel1983]
+      - metric: calibration_ceiling
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Scott and Reinhardt state that standard fuel models often do not accurately simulate both spread rate and fireline intensity in one run, and custom models are difficult to calibrate over environmental ranges."
+        cites: [scott2001]
+    validated_when: "UNRESOLVED: no cited numeric fireline-intensity validation band; report PBIAS/RMSE if observations exist, but do not auto-validate from this block."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Rothermel 1983 says 500 Btu/ft/s means severe surface fire and 1000 Btu/ft/s
+      makes severe crown fire very probable, but those are interpretation thresholds,
+      not observed-vs-modeled validation bands. Fireline-intensity validation remains
+      a gap after the capped coverage search.
+
+  - dag_variable: flame_length
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: absolute_percent_error
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 70.0}
+        pass_band: satisfactory
+        band_note: "Weak lab/flame-model convention: Cobian-Iniguez 2019 evaluates predicted flame height against observed values using 70% accuracy bounds."
+        cites: [cobian2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The dag determining metric is PBIAS, but the fetched flame-model benchmark reports MAE, MBE, MAPE, RMSE, and NRMSE rather than a PBIAS pass band."
+        cites: [cobian2019]
+      - metric: suppression_class
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Rothermel's field guide interprets flame length as a suppression and crown-fire indicator, not as a direct validation error threshold."
+        cites: [rothermel1983]
+    validated_when: "Weakly resolved: flame-length absolute percent error <= 70% is only a laboratory flame-height benchmark; prefer reporting MAE/RMSE/MBE/MAPE when observations exist."
+    evidence_strength: weak
+    confidence: 0.42
+    notes: >-
+      Cobian-Iniguez 2019 reports that 10% to 17% of maximum-flame-height experiments
+      fell outside 70% accuracy bounds and gives MAE, MBE, MAPE, RMSE, and NRMSE.
+      This is not a strong operational wildfire flame-length validation gate.
+
+  - dag_variable: crown_fire
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: kappa
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.6, satisfactory: 0.4}
+        pass_band: satisfactory
+        band_note: "Use Kappa agreement tiers for mapped none/passive/active crown-fire classes when observed crown-fire or severity classes exist."
+        cites: [giannaros2020]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI can summarize mapped crown/no-crown hits, but fetched wildfire evaluations use Kappa/Sorensen/Jaccard for spatial fire-class agreement."
+        cites: [giannaros2020, zhang2024]
+      - metric: crown_fire_class
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Scott and Reinhardt document that crown-fire initiation models have not been rigorously tested against independent data and that similar methods have not been validated because high-quality validation data are lacking."
+        cites: [scott2001]
+    validated_when: "Mapped crown-fire class reaches Kappa >= 0.4 against observed crown-fire or severity classes; failures may be data-limited where crown-fire observations are absent."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Scott and Reinhardt define crown-fire classification through initiation and active
+      spread criteria, but explicitly caution that high-quality validation data are lacking.
+      Use the spatial classification agreement convention only when observations of crown
+      fire occurrence/class are available.
+
+  - dag_variable: fire_size
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched wildfire paper gives an NSE threshold for burned-area growth curves."
+        cites: []
+    secondary_metrics:
+      - metric: fire_size_distribution
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Burn-probability calibration commonly compares simulated and historical fire-size distributions, but the review states there is no standard recipe."
+        cites: [parisien2019]
+      - metric: sorensen
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Final-size and growth-curve validation should be supplemented with final-perimeter spatial agreement when perimeter observations exist."
+        cites: [price2022, giannaros2020]
+    validated_when: "UNRESOLVED: no cited NSE pass band for burned-area growth time series; use observed final size/perimeter as supporting evidence but do not auto-validate NSE."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Parisien 2019 says simulated fire-size distributions are commonly compared with
+      historical distributions for BP calibration, but there is no standard recipe and
+      validation can be challenging. The capped OpenAlex search did not find a fetched
+      wildfire NSE threshold for fire-size time series.
+
+  - dag_variable: burn_probability
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: logarithmic_skill_score
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Positive LSS means the burn-probability map outperforms the selected reference model."
+        cites: [moran2025]
+      - metric: top_quantile_burn_capture
+        direction: maximize
+        unit: percent
+        bands: {very_good: 80.0, good: null, satisfactory: 57.0}
+        pass_band: satisfactory
+        band_note: "Moran 2025 established a benchmark of 57-80% of observed burned area in the top approximately 20% of mapped BP area."
+        cites: [moran2025]
+    secondary_metrics:
+      - metric: brier_skill_score
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Brier skill is used in prior BP evaluations, but Moran 2025 chose LSS to handle rare wildfire occurrence."
+        cites: [moran2025]
+      - metric: calibration_review
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Parisien et al. state that BP validation can be challenging or impossible in some cases because recent fire occurrence can be sparse, biased, or unrepresentative of modeled conditions."
+        cites: [parisien2019]
+    validated_when: "Burn probability shows LSS > 0 against a naive or spatially randomized reference and captures at least 57% of observed burned area in the top approximately 20% of mapped BP area."
+    evidence_strength: moderate
+    confidence: 0.72
+    notes: >-
+      Moran 2025 reports mean positive LSS and states that 57-80% burned-area capture
+      in the top mapped-BP quantile is a general performance benchmark. Parisien 2019
+      cautions that BP validation has no infallible method and often needs expert review.
+
+deferred_paywalled:
+  - ref: "Lautenberger 2013 - Wildland fire modeling with an Eulerian level set method and automated calibration"
+    doi: 10.1016/j.firesaf.2013.08.014
+    needed_for: [time_of_arrival, fire_size, spread_rate]
+  - ref: "ELMFIRE 2026 Fire Safety Journal article returned closed by skeleton fetch"
+    doi: 10.1016/j.firesaf.2026.000019
+    needed_for: [time_of_arrival, fireline_intensity, flame_length]
+  - ref: "Field-based generic empirical flame length-fireline intensity relationships for wildfires"
+    doi: 10.1071/wf23127
+    needed_for: [fireline_intensity, flame_length]

@@ -1,14 +1,3 @@
----
-name: swmm
-description: >-
-  EPA SWMM 5. Covers Rainfall-runoff generation from urban subcatchments
-  (nonlinear-reservoir overland flow over…; Infiltration losses (Horton, Modified Horton,
-  Green-Ampt, Curve Number); Snow accumulation and melt; evaporation of standing surface
-  water; Groundwater (two-zone aquifer) percolation and lateral interflow to the drainage
-  network. Use when the task involves running, configuring, calibrating or interpreting
-  SWMM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,63 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (35 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (24 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (24 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/run_city_swmm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_city_swmm.py --help` |
+| `tools/s1_subcatchment_delineation/classify_land_use.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_subcatchment_delineation/classify_land_use.py --help` |
+| `tools/s1_subcatchment_delineation/compute_subcatchment_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_subcatchment_delineation/compute_subcatchment_params.py --help` |
+| `tools/s1_subcatchment_delineation/delineate_subcatchments.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_subcatchment_delineation/delineate_subcatchments.py --help` |
+| `tools/s1_subcatchment_delineation/validate_subcatchments.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_subcatchment_delineation/validate_subcatchments.py --help` |
+| `tools/s2_drainage_network/create_drainage_network.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_drainage_network/create_drainage_network.py --help` |
+| `tools/s2_drainage_network/define_cross_sections.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_drainage_network/define_cross_sections.py --help` |
+| `tools/s2_drainage_network/import_network_from_gis.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_drainage_network/import_network_from_gis.py --help` |
+| `tools/s2_drainage_network/validate_network_connectivity.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_drainage_network/validate_network_connectivity.py --help` |
+| `tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py --help` |
+| `tools/s3_rainfall_forcing/create_rain_timeseries.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/create_rain_timeseries.py --help` |
+| `tools/s3_rainfall_forcing/generate_design_storm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/generate_design_storm.py --help` |
+| `tools/s3_rainfall_forcing/scale_cmip6_rainfall_to_swmm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/scale_cmip6_rainfall_to_swmm.py --help` |
+| `tools/s3_rainfall_forcing/validate_rainfall_input.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_rainfall_forcing/validate_rainfall_input.py --help` |
+| `tools/s4_lid_setup/assign_lid_to_subcatchment.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_lid_setup/assign_lid_to_subcatchment.py --help` |
+| `tools/s4_lid_setup/create_lid_control.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_lid_setup/create_lid_control.py --help` |
+| `tools/s4_lid_setup/validate_lid_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_lid_setup/validate_lid_params.py --help` |
+| `tools/s5_model_assembly/assemble_inp_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_model_assembly/assemble_inp_file.py --help` |
+| `tools/s5_model_assembly/configure_simulation_options.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_model_assembly/configure_simulation_options.py --help` |
+| `tools/s5_model_assembly/validate_inp_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_model_assembly/validate_inp_file.py --help` |
+| `tools/s6_execution/check_continuity_errors.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_execution/check_continuity_errors.py --help` |
+| `tools/s6_execution/extract_results.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_execution/extract_results.py --help` |
+| `tools/s6_execution/run_swmm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_execution/run_swmm.py --help` |
+| `tools/s7_model_coupling/convert_cama_stage_to_outfall_bc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_model_coupling/convert_cama_stage_to_outfall_bc.py --help` |
+| `tools/s7_model_coupling/convert_swmm_outflow_to_cama_lateral.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_model_coupling/convert_swmm_outflow_to_cama_lateral.py --help` |
+| `tools/s7_model_coupling/convert_vic_runoff_to_swmm_inflow.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_model_coupling/convert_vic_runoff_to_swmm_inflow.py --help` |
+| `tools/s7_model_coupling/validate_coupling_water_balance.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_model_coupling/validate_coupling_water_balance.py --help` |
+
+*27 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -193,6 +239,201 @@ C2      CIRCULAR  0.8    0      0      0      1
 | S7 | Model Coupling | `convert_vic_runoff_to_swmm_inflow`, `convert_cama_stage_to_outfall_bc`, `convert_swmm_outflow_to_cama_lateral`, `validate_coupling_water_balance` | `docs/s7_model_coupling_skill.md` |
 
 **Dependency graph**: S1, S2, S3 can run in parallel; S4 depends on S1; S5 depends on S1+S2+S3 (and optionally S4); S6 depends on S5; S7 depends on S6.
+
+---
+
+## Template-Aligned KI Sections (2026-08-18)
+
+The sections below align this entry point with the current 12-section KI template while preserving the SWMM-specific operating notes that follow. Exact machine-readable contracts remain in `docs/format_spec.yaml`, `dag.yaml`, `diagnostics/triplets.yaml`, and `docs/validation_convention.yaml`.
+
+## 1. Model Identity
+
+| Property | Value |
+|----------|-------|
+| Full name | EPA SWMM 5.2 (Storm Water Management Model) |
+| Version | SWMM 5.2.x engine via pyswmm / swmm-toolkit |
+| Language | C engine with Python bindings |
+| License | Public-Domain |
+| Repository | https://github.com/USEPA/Stormwater-Management-Model |
+| Primary domain | Urban stormwater hydrology and drainage-network hydraulics |
+| Spatial mode | Distributed-stream urban subcatchments and drainage network |
+
+## 2. What This Model Does
+
+SWMM simulates rainfall-runoff generation from urban subcatchments, infiltration losses, optional groundwater and LID controls, drainage-network hydraulic routing, water quality transport, and node flooding. The active KI runs the real SWMM 5.2 engine through pyswmm or swmm-toolkit; do not replace it with a simplified runoff equation.
+
+## 3. Input Requirements
+
+Exact input shapes live in `docs/format_spec.yaml`, projected from `dag.yaml` and `diagnostics/triplets.yaml`. Use that file as the contract and the stage docs as the procedure.
+
+### 3.1 Meteorological Forcing
+
+| Variable | Unit model expects | Source dataset | Source unit | Conversion |
+|----------|-------------------|----------------|------------|------------|
+| Precipitation / rainfall | `mm/hr` intensity or `mm/interval` volume for CMS; `in/hr` or `in` for CFS | CMFD / MSWX / NASA POWER or user gage data | Dataset-specific | Convert with `tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py`; the `[RAINGAGES]` `FORMAT` must match intensity vs volume. |
+| Air temperature | `deg C/F` | User series or forcing dataset | Dataset-specific | Required for snowmelt / Hargreaves workflows; see `docs/format_spec.yaml`. |
+| Evaporation | `mm/day` SI or `in/day` US | User series or Hargreaves-derived | Dataset-specific | SWMM expects actual evaporation. |
+| Wind speed | `km/hr` SI or `mph` US | User series or forcing dataset | Dataset-specific | Used for snowmelt refinement when configured. |
+
+### 3.2 Static Inputs
+
+| Input | Source | Tool that prepares it |
+|-------|--------|----------------------|
+| Subcatchment geometry and parameters | GIS / DEM / land cover / user drainage design | `tools/s1_subcatchment_delineation/` |
+| Drainage nodes, links, cross sections | GIS network or user drainage design | `tools/s2_drainage_network/` |
+| LID controls and placement | Design specifications / scenario inputs | `tools/s4_lid_setup/` |
+| Model INP assembly | Stage outputs plus simulation options | `tools/s5_model_assembly/` |
+
+### 3.3 Configuration Files
+
+| File | Format | Notes |
+|------|--------|-------|
+| SWMM model input | `.inp` text with bracketed sections | `[OPTIONS]`, `[RAINGAGES]`, `[SUBCATCHMENTS]`, `[JUNCTIONS]`, `[CONDUITS]`, `[XSECTIONS]`, and optional LID / inflow / quality sections. |
+| SWMM binary output | `.out` binary | Read with pyswmm / swmm-toolkit extraction tools. |
+| SWMM report | `.rpt` text | Continuity errors and summaries are parsed by execution diagnostics. |
+
+## 4. Build Instructions
+
+SWMM requires no local compilation in this KI. Install the packaged bindings:
+
+```bash
+pip install pyswmm swmm-toolkit swmm-api
+python preflight_check.py
+```
+
+Known build issue: if the model fails to import or execute, follow the mandatory execution policy and check `diagnostics/triplets.yaml` before debugging.
+
+## 5. Execution
+
+Use the stage tools rather than ad hoc scripts:
+
+```bash
+python preflight_check.py
+python tools/s5_model_assembly/validate_inp_file.py --help
+python tools/s6_execution/run_swmm.py --help
+python tools/s6_execution/extract_results.py --help
+python tools/s6_execution/check_continuity_errors.py --help
+```
+
+Expected runtime depends on network size, routing timestep, and reporting cadence. Dynamic-wave runs with short conduits require smaller routing timesteps and therefore longer runtime.
+
+## 6. Output Description
+
+**Source: `dag.yaml`. If this section ever disagrees with `dag.yaml`, the dag wins.**
+
+Headline output, the dag's `validation_rank: 1` variable:
+
+> `subcatchment_runoff` -- Surface runoff flow rate generated by a subcatchment. (`m3/s (CMS) or cfs (US)`)
+
+| Output variable (dag `var`) | Rank | Emitted in | Unit | Description |
+|-----------------------------|------|------------|------|-------------|
+| `subcatchment_runoff` | 1 | `.out (SubcatchResult RUNOFF) and .rpt` | `m3/s (CMS) or cfs (US)` | Surface runoff flow rate generated by a subcatchment. |
+| `node_depth_head` | 2 | `.out (NodeResult DEPTH/HEAD)` | `m (CMS) or ft (US)` | Water depth above invert and hydraulic head at a node (junction, storage, outfall). |
+| `node_flooding` | 3 | `.out (NodeResult FLOOD) and .rpt node flooding summary` | `flow m3/s; volume m3` | Surface-water overflow rate and total surface floodwater volume at a drainage-network node when capacity is exceeded. |
+| `link_flow` | 4 | `.out (LinkResult FLOW) and .rpt outfall loading summary` | `m3/s (CMS) or cfs (US)` | Stormwater flow rate through a drainage-network conduit/link; outfall discharge equals total inflow at the outfall node. |
+| `link_depth_velocity` | 5 | `.out (LinkResult DEPTH/velocity)` | `depth m; velocity m/s; capacity fraction` | Stormwater flow depth, velocity, and fraction-of-full capacity in a drainage-network conduit. |
+| `subcatchment_infiltration` | 6 | `.out (SubcatchResult INFILTRATION)` | `mm/hr` | Infiltration rate into pervious soil per subcatchment. |
+| `groundwater_outflow` | 7 | `.out (SubcatchResult / SystemAttribute GW_INFLOW)` | `flow m3/s; table elev m` | Groundwater table elevation and lateral groundwater outflow per subcatchment. |
+| `pollutant_concentration_load` | 8 | `.out (pollutant per element) and .rpt` | `mass/volume; mass` | Pollutant concentration and washoff load at subcatchments, nodes, and links. |
+| `continuity_error` | 9 | `.rpt continuity tables` | `percent` | Surface-runoff water and drainage-network water flow-routing continuity errors; primary internal mass-balance/numerical-stability diagnostic. |
+
+## 7. Tool Inventory
+
+| Stage | Tool directory | Purpose |
+|-------|----------------|---------|
+| S1 | `tools/s1_subcatchment_delineation/` | Delineate and validate subcatchments and surface parameters. |
+| S2 | `tools/s2_drainage_network/` | Create or import drainage network geometry and cross sections. |
+| S3 | `tools/s3_rainfall_forcing/` | Build rainfall time series and convert forcing into SWMM format. |
+| S4 | `tools/s4_lid_setup/` | Create and assign LID controls. |
+| S5 | `tools/s5_model_assembly/` | Assemble and validate SWMM INP files. |
+| S6 | `tools/s6_execution/` | Run SWMM, extract outputs, and check continuity errors. |
+| S7 | `tools/s7_model_coupling/` | Convert VIC and CaMa-Flood exchanges for coupled workflows. |
+
+## 8. Unit Conversion Table
+
+| Variable | Source unit (verified) | Model unit | Factor | Type |
+|----------|------------------------|------------|--------|------|
+| VIC runoff to SWMM inflow | `mm/day` per grid cell | `m3/s` for CMS | `cell_area / 86400000` | multiplicative |
+| CMS pipe dimensions | `m` | `m` | `1` | multiplicative |
+| CMS subcatchment area | `ha` | `ha` | `1` | multiplicative |
+| CMS rainfall intensity | `mm/hr` | `mm/hr` | `1` | multiplicative |
+| CMS rainfall volume | `mm/interval` | `mm/interval` | `1` | multiplicative |
+| CFS pipe dimensions | `ft` | `ft` | `1` | multiplicative |
+| CFS subcatchment area | `acre` | `acre` | `1` | multiplicative |
+| CFS rainfall intensity | `in/hr` | `in/hr` | `1` | multiplicative |
+| CFS rainfall volume | `in/interval` | `in/interval` | `1` | multiplicative |
+
+### 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common alternative | Impact if wrong |
+|----------|--------------------------|-------------------|-----------------|
+| `subcatchment_runoff` | Flow rate generated by a subcatchment; `m3/s (CMS) or cfs (US)` | Depth-rate runoff from land-surface models | Magnitude and water-balance errors when comparing or coupling. |
+| `subcatchment_infiltration` | Infiltration rate into pervious soil; `mm/hr` | Accumulated infiltration per reporting interval | Event totals and losses are miscomputed. |
+| `node_depth_head` | Water depth/head above node invert/reference; `m (CMS) or ft (US)` | Absolute water-surface elevation without datum alignment | Stage validation is biased by datum mismatch. |
+| `link_flow` | Conduit/link flow in SWMM flow units; `m3/s (CMS) or cfs (US)` | Grid-cell runoff depth or lateral inflow volume | Outfall discharge and coupling volumes are wrong. |
+| `continuity_error` | Percent mass-balance error from `.rpt` continuity tables | Performance metric against observations | Numerical stability can be mistaken for skill. |
+
+Output unit verification checklist:
+
+- Read the run's `[OPTIONS] FLOW_UNITS` before interpreting any length, area, rainfall, or flow.
+- Check whether rainfall is configured as `INTENSITY`, `VOLUME`, or `CUMULATIVE`.
+- Compare `.rpt` continuity errors before judging observational metrics.
+- For stage/depth observations, verify datum alignment against node invert and sensor reference.
+
+## 9. Diagnostic Triplets (Top 5)
+
+The full corpus stays in `diagnostics/triplets.yaml`; these are the first triplets to check for common SWMM failures.
+
+| # | Error | Diagnosis | Remedy |
+|---|-------|-----------|--------|
+| 1 | `dt_001`: high routing continuity error above 5% | Routing timestep is too large for dynamic wave transitions. | Reduce `ROUTING_STEP` and `WET_STEP`, then re-run and verify continuity. |
+| 2 | `dt_003`: node flooding with water loss | `ALLOW_PONDING=NO` or `Aponded=0` removes flooded-node water from the system. | Set `ALLOW_PONDING=YES` and define ponded area where flooding can occur. |
+| 3 | `dt_004`: flow magnitudes, velocities, or depths wrong by orders of magnitude | `FLOW_UNITS` does not match dimensions, areas, rainfall, or elevations. | Validate every dimensional input against the selected unit system. |
+| 4 | `dt_009`: runoff volume wrong by factor of N | Rain-gage `FORMAT` does not match rainfall encoding. | Correct `INTENSITY` vs `VOLUME` and regenerate rainfall input. |
+| 5 | `dt_010`: VIC-SWMM inflow magnitude wrong | `mm/day` per grid cell was converted incorrectly to SWMM flow units. | Apply `Q = runoff_vic * cell_area / 86400000` for CMS and validate total volumes. |
+
+## 10. Coupling Interfaces
+
+| Upstream model | Variable exchanged | Unit | Temporal resolution |
+|----------------|-------------------|------|---------------------|
+| VIC | Surface runoff / baseflow converted to SWMM inflow | `m3/s` for CMS after conversion from `mm/day` | Source/run dependent |
+| VIC | Meteorological forcing reused as SWMM rainfall | `mm/hr` intensity or `mm/interval` volume | Source/run dependent |
+| CaMa-Flood | River stage at SWMM outfalls | `m (CMS) or ft (US)` | Source/run dependent |
+
+| Downstream model | Variable exchanged | Unit | Temporal resolution |
+|------------------|-------------------|------|---------------------|
+| CaMa-Flood | SWMM outfall discharge as lateral inflow | `m3/s (CMS) or cfs (US)` before downstream conversion | SWMM report/extraction cadence |
+
+## 11. Validated Results
+
+No achieved calibration, validation, or full-period metric values are stated in the sourced KI files summarized here. Treat run skill as pending until an actual SWMM run is compared against observations with the conventions below.
+
+### Performance Metrics - judged against the field's bar, not intuition
+
+**Source: `docs/validation_convention.yaml`. Every stated band below carries its citation key. A null convention band must be written as "no cited threshold"; do not substitute a guess.**
+
+| Dag variable | Metric | Direction | Convention bar, cited | Achieved |
+|--------------|--------|-----------|-----------------------|----------|
+| `subcatchment_runoff` | `nse` | maximize | satisfactory `0.50` (moriasi2015, moriasi2007); good `0.70` (moriasi2015, moriasi2007); very_good `0.80` (moriasi2015, moriasi2007) | pending |
+| `subcatchment_runoff` | `pbias` | zero_centered | satisfactory `15.0` (moriasi2015); good `10.0` (moriasi2015); very_good `5.0` (moriasi2015) | pending |
+| `node_depth_head` | `r` | maximize | satisfactory `0.77` (moriasi2015); good `0.84` (moriasi2015); very_good `0.89` (moriasi2015) | pending |
+| `node_depth_head` | `pbias` | zero_centered | satisfactory `25.0` (moriasi2015); good `15.0` (moriasi2015); very_good `10.0` (moriasi2015) | pending |
+
+For zero-centered `pbias`, judge absolute bias against the cited band magnitude. For `subcatchment_runoff`, validation is against `nse` and `pbias` for directly observed or outlet-inferred runoff/flow; direct per-subcatchment runoff observations are rare.
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline / user forcing | Pending until run-specific validation | Use `docs/format_spec.yaml` and S3 tools. |
+| Subcatchment geometry | Pipeline / GIS inputs | Pending until run-specific validation | Use S1 validation before model assembly. |
+| Drainage network | Pipeline / GIS inputs | Pending until run-specific validation | Use S2 validation and continuity checks. |
+| LID controls | Scenario / design inputs | Pending until run-specific validation | Use S4 validation where LID is active. |
+| Boundary conditions | VIC / CaMa-Flood / user series | Pending until run-specific validation | Verify units and datum before execution. |
+
+## 12. Parameter Selection by Region
+
+Use physically informed starting points from SWMM documentation, local drainage design records, soils, land cover, and the stage docs; treat them as initial values, not calibration results. Region-specific values are not hard-coded in this entry point because the selected basin, drainage network, and observation target determine defensible parameter ranges.
 
 ---
 

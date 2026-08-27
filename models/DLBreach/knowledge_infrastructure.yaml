@@ -1,544 +1,125 @@
-# ============================================================================
-# Knowledge Infrastructure — DLBreach
-# A Simplified Physically-Based Dam/Levee Breach Model
-# ============================================================================
-# Built using the Knowledge Dissection Toolkit v1.0
-# Fills the dam/levee breach modeling gap in HydroCraft.
-#
-# DLBreach is a simplified physically-based model developed by Dr. Weiming Wu
-# at Clarkson University. It simulates the breaching processes of non-cohesive
-# and cohesive, homogeneous and composite embankments due to overtopping and
-# piping. It handles both one-way (inland dam/levee) and two-way (coastal
-# barrier/levee) breaches.
-#
-# Binary: DLBreach.exe (Fortran CLI, Windows; compile from source for Linux)
-# Input:  Single card-based ASCII file (casename.txt)
-# Output: Single ASCII file (casename.out), 13 columns
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: "dlbreach-knowledge-infrastructure"
-  version: "1.0.0"
-  description: "Knowledge infrastructure for autonomous AI operation of DLBreach dam/levee breach model within HydroCraft"
-  target_model: "DLBreach (Version 2016.4, Clarkson University)"
-  domain: "dam safety, levee breach, flood risk, emergency management"
-  authors:
-    - "Jianyun Zhang Research Group"
-    - "Claude (Knowledge Dissection)"
-  license: "CC-BY-4.0"
-  upstream_reference:
-    author: "Weiming Wu, PhD"
-    affiliation: "Department of Civil and Environmental Engineering, Clarkson University"
-    papers:
-      - "Wu, W. (2013). Simplified physically-based model of earthen embankment breaching. J. Hydraulic Engineering, ASCE, 139(8), 837-851."
-      - "Wu, W. (2016). Introduction to DLBreach. Technical Report, Clarkson University."
-
-# --- Pipeline definition ---
+  name: DLBreach
+  language: fortran
+  implementation:
+    id: dlbreach-fortran-2016.4
+    version: '2016.4'
+    provenance: Fortran; Clarkson University (W. Wu) standalone DLBreach binary, the implementation the
+      KI mandates and validates against.
+  scientific_reference_version: DLBreach 2016.4 (Wu 2013 J. Hydraulic Eng. + Wu 2016 Clarkson Technical
+    Report; simplified physically-based dam/levee breach model)
+  binary:
+    path: KISSPATH_BINARIES/dlbreach/bin/DLBreach_Barrier.exe
+    type: PE32_wine
 pipeline:
-  stages:
-    - id: "s1_installation"
-      name: "Installation & Binary Verification"
-      description: "Verify DLBreach binary is available and functional. The original distribution is a Windows .exe; for Linux, either compile Fortran source with gfortran or run via Wine. Check that the binary can read a test input and produce output."
-      order: 1
-      depends_on: []
-      skill_document: "docs/s1_installation_skill.md"
-      tools:
-        - "verify_dlbreach"
-      milestones:
-        - "DLBreach binary located or compiled"
-        - "Test case runs successfully"
-        - "Output file generated with 13 columns"
-
-    - id: "s2_dam_properties"
-      name: "Dam/Embankment Geometry Definition"
-      description: "Define the embankment geometry: height, crest width, upstream/downstream slopes, and embankment length (base width). For composite dams, also specify clay core geometry. All elevations are relative to the embankment base level."
-      order: 2
-      depends_on: ["s1_installation"]
-      skill_document: "docs/s2_dam_properties_skill.md"
-      tools:
-        - "create_dam_geometry"
-      milestones:
-        - "Embankment geometry cards generated"
-        - "Geometry validated (slopes, heights physically consistent)"
-
-    - id: "s3_reservoir_curve"
-      name: "Reservoir Storage Curve"
-      description: "Create the upstream reservoir volume-elevation (V-z) or area-elevation (As-z) curve. Five methods are available: tabulated V-z pairs (method 0), tabulated As-z pairs (method 1), power-law from known V/A/H (method 2), power-law from V+H+exponent (method 3), or power-law from A+H+exponent (method 4). For HydroCraft coupling, data can come from GRanD global dam database."
-      order: 3
-      depends_on: ["s2_dam_properties"]
-      skill_document: "docs/s3_reservoir_curve_skill.md"
-      tools:
-        - "create_reservoir_curve"
-      milestones:
-        - "Upstream_Reservoir card generated"
-        - "V-z or As-z curve validated (monotonically increasing)"
-
-    - id: "s4_inflow"
-      name: "Inflow Hydrograph"
-      description: "Define the upstream reservoir inflow hydrograph as time-discharge pairs (t in hours, Q in m3/s). For HydroCraft coupling, this comes from CaMa-Flood outflw at the dam grid cell. Daily CaMa output is temporally disaggregated to hourly using shape-preserving interpolation."
-      order: 4
-      depends_on: ["s3_reservoir_curve"]
-      skill_document: "docs/s4_inflow_skill.md"
-      tools:
-        - "convert_cama_to_inflow"
-      milestones:
-        - "Upstream_Reservoir_Inflow card generated"
-        - "Inflow time series in hours and m3/s"
-        - "Peak inflow identified and reported"
-
-    - id: "s5_breach_config"
-      name: "Breach Mode & Soil Parameters"
-      description: "Configure breach mode (overtopping vs piping), overtopping sub-mode (surface erosion, headcut, composite), sediment properties (diameter, specific gravity, porosity, clay content, cohesion, internal friction), Manning's n, initial breach dimensions, and breach side slope. For cohesive sediments, also set erosion coefficient kd and critical shear stress tauc."
-      order: 5
-      depends_on: ["s2_dam_properties"]
-      skill_document: "docs/s5_breach_config_skill.md"
-      tools:
-        - "set_breach_parameters"
-        - "assemble_input_file"
-      milestones:
-        - "Breach mode and soil property cards generated"
-        - "All cards assembled into casename.txt"
-        - "Input file validated (required cards present)"
-
-    - id: "s6_execution"
-      name: "Run DLBreach"
-      description: "Execute the DLBreach model. The binary reads casename.txt from its working directory and produces casename.out. Monitor stdout for convergence (time step, breach flow, water levels). Typical runtime: seconds to minutes."
-      order: 6
-      depends_on: ["s5_breach_config"]
-      skill_document: "docs/s6_execution_skill.md"
-      tools:
-        - "run_dlbreach"
-      milestones:
-        - "DLBreach completes without error"
-        - "casename.out generated with data"
-        - "Peak breach discharge identified"
-
-    - id: "s7_output"
-      name: "Output Extraction & CaMa-Flood Coupling"
-      description: "Parse the 13-column output file to extract breach hydrograph, water levels, breach geometry evolution, and cumulative volumes. Optionally inject the breach outflow into CaMa-Flood runoff NetCDF for downstream flood routing."
-      order: 7
-      depends_on: ["s6_execution"]
-      skill_document: "docs/s7_output_skill.md"
-      tools:
-        - "extract_breach_results"
-        - "inject_breach_to_cama"
-      milestones:
-        - "Breach results extracted to CSV/JSON"
-        - "Peak discharge, breach width, failure time quantified"
-        - "Breach hydrograph injected into CaMa-Flood input (if coupling)"
-
-    - id: "s8_visualization"
-      name: "Visualization"
-      description: "Generate plots of breach outflow hydrograph (Q vs time), breach geometry evolution (width and bottom elevation vs time), upstream/downstream water levels, and cumulative outflow volume."
-      order: 8
-      depends_on: ["s7_output"]
-      skill_document: "docs/s8_visualization_skill.md"
-      tools:
-        - "plot_breach_hydrograph"
-        - "plot_breach_evolution"
-      milestones:
-        - "Breach hydrograph plot generated"
-        - "Breach geometry evolution plot generated"
-        - "Plots saved and paths reported to user"
-
-# --- Tool registry ---
+  stages: []
 tools:
-  - id: "verify_dlbreach"
-    name: "Verify DLBreach Installation"
-    script: "tools/s1_installation/verify_dlbreach.py"
-    stage: "s1_installation"
-    description: "Check DLBreach binary existence, test execution with a minimal case"
-    inputs: ["dlbreach_path (optional)"]
-    outputs: ["JSON: binary_path, version, platform, status"]
-    exit_codes:
-      0: "success"
-      1: "input validation failed"
-      2: "binary not found or not executable"
-      3: "test run failed"
-
-  - id: "create_dam_geometry"
-    name: "Create Dam Geometry Cards"
-    script: "tools/s2_dam_properties/create_dam_geometry.py"
-    stage: "s2_dam_properties"
-    description: "Generate embankment dimension cards from user inputs or dam database lookup"
-    inputs: ["height_m", "crest_width_m", "upstream_slope_vh", "downstream_slope_vh", "length_m"]
-    outputs: ["JSON: geometry cards, validation results"]
-    exit_codes:
-      0: "success"
-      1: "invalid geometry parameters"
-      2: "processing error"
-      3: "output validation failed"
-
-  - id: "create_reservoir_curve"
-    name: "Create Reservoir Storage Curve"
-    script: "tools/s3_reservoir_curve/create_reservoir_curve.py"
-    stage: "s3_reservoir_curve"
-    description: "Generate Upstream_Reservoir card from V-z data, GRanD lookup, or power-law parameters"
-    inputs: ["method (0-4)", "data pairs or dam_name for GRanD lookup"]
-    outputs: ["JSON: reservoir card text, method used, curve summary"]
-    exit_codes:
-      0: "success"
-      1: "invalid method or data"
-      2: "GRanD lookup failed"
-      3: "curve validation failed"
-
-  - id: "convert_cama_to_inflow"
-    name: "Convert CaMa-Flood Output to DLBreach Inflow"
-    script: "tools/s4_inflow/convert_cama_to_inflow.py"
-    stage: "s4_inflow"
-    description: "Extract CaMa-Flood outflw at dam cell, convert daily to hourly, format as DLBreach inflow card"
-    inputs: ["cama_outflw_nc", "dam_lat", "dam_lon", "start_date", "end_date"]
-    outputs: ["JSON: inflow card text, peak_q_m3s, peak_time_hr, n_points"]
-    exit_codes:
-      0: "success"
-      1: "CaMa output file not found"
-      2: "dam cell not found in CaMa grid"
-      3: "output validation failed"
-
-  - id: "set_breach_parameters"
-    name: "Set Breach Parameters"
-    script: "tools/s5_breach_config/set_breach_parameters.py"
-    stage: "s5_breach_config"
-    description: "Generate breach mode, soil properties, Manning's n, and initial breach cards"
-    inputs: ["breach_mode (1=overtopping, 2=piping)", "sediment_type (1=noncohesive, 2=cohesive)", "soil properties"]
-    outputs: ["JSON: parameter cards text, parameter summary"]
-    exit_codes:
-      0: "success"
-      1: "invalid parameter values"
-      2: "inconsistent parameter combination"
-      3: "output validation failed"
-
-  - id: "assemble_input_file"
-    name: "Assemble DLBreach Input File"
-    script: "tools/s5_breach_config/assemble_input_file.py"
-    stage: "s5_breach_config"
-    description: "Combine all cards into a complete casename.txt with validation"
-    inputs: ["output_path", "geometry_cards", "reservoir_cards", "inflow_cards", "breach_cards", "simulation_cards"]
-    outputs: ["JSON: input_file_path, card_count, validation_status"]
-    exit_codes:
-      0: "success"
-      1: "missing required cards"
-      2: "card format error"
-      3: "assembled file validation failed"
-
-  - id: "run_dlbreach"
-    name: "Run DLBreach Model"
-    script: "tools/s6_execution/run_dlbreach.py"
-    stage: "s6_execution"
-    description: "Execute DLBreach binary, monitor progress, capture output"
-    inputs: ["casename", "work_dir", "dlbreach_path (optional)"]
-    outputs: ["JSON: output_file, exit_code, peak_breach_q, runtime_sec"]
-    exit_codes:
-      0: "success"
-      1: "input file not found"
-      2: "execution failed"
-      3: "output file missing or empty"
-
-  - id: "extract_breach_results"
-    name: "Extract Breach Results"
-    script: "tools/s7_output/extract_breach_results.py"
-    stage: "s7_output"
-    description: "Parse 13-column output file into structured data (CSV, JSON)"
-    inputs: ["output_file_path", "output_format (csv/json)"]
-    outputs: ["JSON: peak_q, failure_time, max_breach_width, max_breach_depth, cumulative_volume, output_path"]
-    exit_codes:
-      0: "success"
-      1: "output file not found"
-      2: "parse error (unexpected column count)"
-      3: "output validation failed"
-
-  - id: "inject_breach_to_cama"
-    name: "Inject Breach Flow into CaMa-Flood"
-    script: "tools/s7_output/inject_breach_to_cama.py"
-    stage: "s7_output"
-    description: "Add breach outflow to CaMa-Flood runoff NetCDF at downstream cell for flood routing"
-    inputs: ["breach_results_csv", "cama_runoff_nc", "downstream_lat", "downstream_lon"]
-    outputs: ["JSON: modified_nc_path, total_breach_volume_m3, cells_affected"]
-    exit_codes:
-      0: "success"
-      1: "input file not found"
-      2: "downstream cell not in CaMa grid"
-      3: "NetCDF modification failed"
-
-  - id: "plot_breach_hydrograph"
-    name: "Plot Breach Hydrograph"
-    script: "tools/s8_visualization/plot_breach_hydrograph.py"
-    stage: "s8_visualization"
-    description: "Plot breach outflow, spillway flow, and total discharge vs time with water levels"
-    inputs: ["breach_results_csv", "output_png"]
-    outputs: ["JSON: plot_path, peak_q_annotation"]
-    exit_codes:
-      0: "success"
-      1: "results file not found"
-      2: "plotting error"
-      3: "output image not generated"
-
-  - id: "plot_breach_evolution"
-    name: "Plot Breach Geometry Evolution"
-    script: "tools/s8_visualization/plot_breach_evolution.py"
-    stage: "s8_visualization"
-    description: "Plot breach bottom width, bottom elevation, and side slope evolution over time"
-    inputs: ["breach_results_csv", "output_png"]
-    outputs: ["JSON: plot_path"]
-    exit_codes:
-      0: "success"
-      1: "results file not found"
-      2: "plotting error"
-      3: "output image not generated"
-
-# --- Input format specification ---
-input_format:
-  file_type: "Single ASCII card-based text file"
-  file_name: "casename.txt"
-  unit_system: "SI (International System)"
-  comment_char: "!"
-  card_format: "Keyword    value(s)    ! optional comment"
-  multiline_cards:
-    note: "Cards with tabulated data (Upstream_Reservoir, Upstream_Reservoir_Inflow, etc.) span multiple lines. No comments or blank lines allowed between the keyword line and the data lines."
-
-  required_cards:
-    - card: "Time_Step"
-      type: "real"
-      unit: "seconds"
-      range: "0.1 to 5.0"
-      guidance: "0.1-1.0 for lab cases, 1-5 for field cases"
-      example: "Time_Step    0.5    ! in sec"
-
-    - card: "Simulation_Period"
-      type: "real, real"
-      unit: "seconds"
-      guidance: "start_time, end_time. Start usually 0.0"
-      example: "Simulation_Period    0.0, 1000000.0    ! in sec"
-
-    - card: "Embankment_Height"
-      type: "real"
-      unit: "meters"
-      guidance: "Height from base to crest. NOT geo-reference datum elevation."
-      example: "Embankment_Height    10.0    ! in m"
-
-    - card: "Embankment_Crest_Width"
-      type: "real"
-      unit: "meters"
-      example: "Embankment_Crest_Width    10.0    ! in m"
-
-    - card: "Embankment_Upstream_Slope"
-      type: "real"
-      unit: "V/H ratio (unitless)"
-      example: "Embankment_Upstream_Slope    0.4    ! V/H"
-
-    - card: "Embankment_Downstream_Slope"
-      type: "real"
-      unit: "V/H ratio (unitless)"
-      example: "Embankment_Downstream_Slope    0.4    ! V/H"
-
-    - card: "Embankment_Length"
-      type: "real"
-      unit: "meters"
-      guidance: "Base length = maximum breach bottom width the breach can develop to"
-      example: "Embankment_Length    100.0    ! in m"
-
-    - card: "Breach_Mode"
-      type: "integer"
-      values: "1=overtopping, 2=piping"
-      example: "Breach_Mode    1    ! for overtopping"
-
-    - card: "Noncohesive_or_Cohesive_Sediment"
-      type: "integer"
-      values: "1=noncohesive, 2=cohesive"
-
-    - card: "Sediment_Diameter"
-      type: "real"
-      unit: "meters"
-      guidance: "For cohesive sediments, use ~0.00003 m (diameter of flocs)"
-
-    - card: "Sediment_Specific_Gravity"
-      type: "real"
-      unit: "unitless"
-      default: "2.65"
-
-    - card: "Sediment_Porosity"
-      type: "real"
-      unit: "unitless (fraction)"
-      range: "0.0 to 1.0"
-      default: "0.35"
-
-    - card: "Sediment_Clay_Content"
-      type: "real"
-      unit: "fraction (0 to 1)"
-
-    - card: "Sediment_Cohesion"
-      type: "real"
-      unit: "Pa"
-      guidance: "Set 0 for non-cohesive if no apparent cohesion"
-
-    - card: "Sediment_Internal_Friction"
-      type: "real"
-      unit: "tan(phi)"
-
-    - card: "Initial_Up&Downstream_WSL"
-      type: "real, real"
-      unit: "meters (above embankment base)"
-      guidance: "upstream_wsl, downstream_wsl"
-
-  optional_cards:
-    - card: "Water_Density"
-      default: "1000.0 kg/m3"
-    - card: "Water_Kinematic_Viscosity"
-      default: "0.000001 m2/s"
-    - card: "Overtopping_Mode"
-      values: "1=surface erosion (non-cohesive), 2=headcut (cohesive), 3=composite with clay core"
-    - card: "Initial_Overtopping_Breach"
-      type: "real, real"
-      unit: "meters (depth, width)"
-      guidance: "Default ~0.2-0.4m deep, 1.0-5.0m wide"
-    - card: "Initial_Piping_Breach"
-      type: "real, real"
-      unit: "meters (depth_from_top, width)"
-    - card: "Breach_Location"
-      values: "1.0=one-sided, 2.0=two-sided (middle)"
-    - card: "Hard_Bottom_Elevation"
-      type: "real"
-      unit: "meters (negative = below embankment base)"
-    - card: "Breach_Manning_n"
-      type: "real"
-      guidance: "Manning's n for breach channel. ~0.025 noncohesive, ~0.016 cohesive"
-    - card: "Breach_Manning_n_Segments"
-      type: "real, real, real"
-      guidance: "upstream_slope, flat_top, downstream_slope"
-    - card: "Breach_Side_Slope_Constant"
-      type: "real"
-      unit: "V/H"
-    - card: "Noncohesive_Sed_Adaptation_Lamda"
-      type: "real"
-      guidance: "6.0 for field cases, 3.0 for lab cases"
-    - card: "Cohesive_Soil_Erosion_kd"
-      type: "real"
-      unit: "cm3/N-s"
-      guidance: "2.5-30.0 cm3/N-s from literature"
-    - card: "Cohesive_Soil_Erosion_Tauc"
-      type: "real"
-      unit: "Pa"
-      guidance: "~0.15 Pa typical"
-    - card: "Headcut_Model"
-      type: "integer, real"
-      guidance: "Default: 2, 0.0049"
-    - card: "Overtop_Entrance_Head_Loss"
-      default: "1.0"
-    - card: "Pipe_Entrance_Head_Loss_Coef"
-      default: "0.05"
-    - card: "Breach_Phase_Time"
-      values: "1=intensive only (default), 2=auto-detect transition, 3=user-specified"
-
-  reservoir_methods:
-    - method: 0
-      description: "Tabulated V-z pairs"
-      format: "Upstream_Reservoir    0, N,\\n z1, V1\\n z2, V2\\n ...\\n zN, VN"
-    - method: 1
-      description: "Tabulated As-z pairs"
-      format: "Upstream_Reservoir    1, N,\\n z1, As1\\n z2, As2\\n ...\\n zN, AsN"
-    - method: 2
-      description: "Power law from known V_H, A_H, H"
-      format: "Upstream_Reservoir    2, V_H, A_H, H"
-    - method: 3
-      description: "Power law from known V_H, H, m"
-      format: "Upstream_Reservoir    3, V_H, H, m"
-    - method: 4
-      description: "Power law from known A_H, H, m"
-      format: "Upstream_Reservoir    4, A_H, H, m"
-
-# --- Output format specification ---
-output_format:
-  file_name: "casename.out"
-  file_type: "ASCII, whitespace-separated"
-  columns:
-    - col: 1
-      name: "time"
-      unit: "hours"
-      description: "Elapsed time since simulation start"
-    - col: 2
-      name: "breach_flow"
-      unit: "m3/s"
-      description: "Flow discharge through the breach"
-    - col: 3
-      name: "spillway_gate_flow"
-      unit: "m3/s"
-      description: "Flow discharge through spillways/gates on embankment"
-    - col: 4
-      name: "upstream_wsl"
-      unit: "m"
-      description: "Upstream water surface level above embankment base"
-    - col: 5
-      name: "downstream_wsl"
-      unit: "m"
-      description: "Downstream water surface level above embankment base"
-    - col: 6
-      name: "breach_bottom_elevation"
-      unit: "m"
-      description: "Breach bottom elevation above embankment base"
-    - col: 7
-      name: "breach_bottom_width"
-      unit: "m"
-      description: "Breach bottom width"
-    - col: 8
-      name: "breach_top_width"
-      unit: "m"
-      description: "Breach top width"
-    - col: 9
-      name: "breach_flow_area"
-      unit: "m2"
-      description: "Flow area at the breach cross-section"
-    - col: 10
-      name: "breach_side_slope"
-      unit: "V/H"
-      description: "Breach side slope (vertical/horizontal)"
-    - col: 11
-      name: "cumulative_volume"
-      unit: "m3"
-      description: "Cumulative water volume through breach and spillway/gate"
-    - col: 12
-      name: "sediment_upstream"
-      unit: "m3/s"
-      description: "Sediment discharge at upstream"
-    - col: 13
-      name: "sediment_downstream"
-      unit: "m3/s"
-      description: "Sediment discharge at downstream"
-
-  screen_output:
-    description: "During run, DLBreach prints to stdout: time step number, elapsed time (min), breach flow (m3/s), upstream WSL (m), downstream WSL (m)"
-
-# --- Diagnostic triplets ---
-diagnostic_triplets:
-  path: "diagnostics/triplets.yaml"
-  count: 14
-  failure_domains:
-    - "runtime"
-    - "silent_error"
-    - "unit_conversion"
-    - "parameter_format"
-    - "environment"
-    - "path_resolution"
-    - "coupling_mismatch"
-  entries:
-    - { id: dt_dlb_001, stage: s1_installation, failure_domain: environment, severity: fatal }
-    - { id: dt_dlb_002, stage: s2_dam_properties, failure_domain: unit_conversion, severity: silent }
-    - { id: dt_dlb_003, stage: s2_dam_properties, failure_domain: parameter_format, severity: silent }
-    - { id: dt_dlb_004, stage: s5_breach_config, failure_domain: unit_conversion, severity: silent }
-    - { id: dt_dlb_005, stage: s3_reservoir_curve, failure_domain: parameter_format, severity: fatal }
-    - { id: dt_dlb_006, stage: s2_dam_properties, failure_domain: silent_error, severity: degraded }
-    - { id: dt_dlb_007, stage: s6_execution, failure_domain: runtime, severity: fatal }
-    - { id: dt_dlb_008, stage: s5_breach_config, failure_domain: parameter_format, severity: degraded }
-    - { id: dt_dlb_009, stage: s5_breach_config, failure_domain: silent_error, severity: silent }
-    - { id: dt_dlb_010, stage: s5_breach_config, failure_domain: silent_error, severity: degraded }
-    - { id: dt_dlb_011, stage: s4_inflow, failure_domain: coupling_mismatch, severity: degraded }
-    - { id: dt_dlb_012, stage: s6_execution, failure_domain: runtime, severity: fatal }
-    - { id: dt_dlb_013, stage: s7_output, failure_domain: path_resolution, severity: fatal }
-    - { id: dt_dlb_014, stage: s5_breach_config, failure_domain: parameter_format, severity: silent }
-
-# --- Summary ---
+  count: 11
+  files:
+  - tools/s1_installation/verify_dlbreach.py
+  - tools/s2_dam_properties/create_dam_geometry.py
+  - tools/s3_reservoir_curve/create_reservoir_curve.py
+  - tools/s4_inflow/convert_cama_to_inflow.py
+  - tools/s5_breach_config/assemble_input_file.py
+  - tools/s5_breach_config/set_breach_parameters.py
+  - tools/s6_execution/run_dlbreach.py
+  - tools/s7_output/extract_breach_results.py
+  - tools/s7_output/inject_breach_to_cama.py
+  - tools/s8_visualization/plot_breach_evolution.py
+  - tools/s8_visualization/plot_breach_hydrograph.py
+inputs:
+  forcing:
+  - name: inflow_hydrograph
+    unit: m3/s (discharge), time in hours
+  - name: upstream_water_level_time_series
+    unit: m above embankment base, time in hours
+  - name: wave_and_wind_forcing
+    unit: wave height (m), period (s), wind speed (m/s)
+  parameters:
+  - name: Embankment_Height
+    unit: m
+  - name: Embankment_Crest_Width
+    unit: m
+  - name: Embankment_Upstream_Slope
+    unit: V/H ratio
+  - name: Embankment_Downstream_Slope
+    unit: V/H ratio
+  - name: Embankment_Length
+    unit: m
+  - name: Sediment_Diameter_d50
+    unit: m
+  - name: Sediment_Specific_Gravity
+    unit: dimensionless
+  - name: Sediment_Porosity
+    unit: fraction
+  - name: Sediment_Cohesion
+    unit: Pa
+  - name: Sediment_Internal_Friction
+    unit: tan(phi)
+  - name: Cohesive_Soil_Erosion_kd
+    unit: cm3/N-s
+  - name: Cohesive_Soil_Erosion_Tauc
+    unit: Pa
+  - name: Noncohesive_Sed_Adaptation_Lamda
+    unit: dimensionless
+  - name: Headcut_Ct
+    unit: m^(-1/6) s^(-2/3)
+  - name: Breach_Manning_n
+    unit: s/m^(1/3)
+  - name: Breach_Weir_Coefficient
+    unit: dimensionless
+  - name: Piping_Coefficient
+    unit: dimensionless
+  - name: Reservoir_Elevation_Area_Volume
+    unit: m, m2, m3
+  initial_conditions:
+  - name: Initial_Up&Downstream_WSL
+    unit: m above embankment base
+  - name: Initial_Overtopping_Breach
+    unit: m
+  - name: Initial_Piping_Breach
+    unit: m
+  boundary_conditions:
+  - name: Breach_Mode
+    unit: integer flag
+  - name: Overtopping_Mode
+    unit: integer flag
+  - name: Headcut_Formula
+    unit: integer flag
+  - name: Breach_Location
+    unit: integer flag
+  - name: Breach_Side_Slope_Constant
+    unit: V/H ratio
+  - name: Time_Step
+    unit: seconds
+  - name: Simulation_Period
+    unit: seconds
+  - name: Downstream_Channel_Flow_Out
+    unit: width (m), slope, Manning n
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - breach_discharge
+  - breach_bottom_width
+  - breach_top_width
+  - breach_bottom_elevation
+  - reservoir_water_level
+  - cumulative_breach_volume
+  - time_to_peak_discharge
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=-1.166, KGE=0.162, R=0.999, 3 scorecard(s)'
+  metrics:
+    best_nse: -1.1659
+    best_kge: 0.1615
+    best_r: 0.999
 summary:
   total_tools: 11
-  total_skill_documents: 1
-  total_diagnostic_triplets: 14
-  pipeline_stages: 8
-  validation_status: "dissected"
+  total_stage_docs: 0
+  total_diagnostic_triplets: 29
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

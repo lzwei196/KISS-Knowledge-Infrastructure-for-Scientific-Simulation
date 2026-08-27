@@ -1,13 +1,3 @@
----
-name: topmodel
-description: >-
-  TOPMODEL. Covers rainfall-runoff transformation at hillslope / small catchment scale;
-  variable saturated contributing area dynamics driven by topography (TWI similarity);
-  saturation-excess overland flow; exponential subsurface (baseflow) drainage on shallow
-  soils over an impeding layer; root-zone-deficit-limited actual evapotranspiration. Use
-  when the task involves running, configuring, calibrating or interpreting TOPMODEL.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (19 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (22 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calibrate_topmodel.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calibrate_topmodel.py --help` |
+| `tools/convert_forcing_to_topmodel.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_topmodel.py --help` |
+| `tools/generate_twi_subcat.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_twi_subcat.py --help` |
+| `tools/parse_topmodel_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_topmodel_output.py --help` |
+| `tools/run_topmodel.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_topmodel.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # TOPMODEL BMI (NOAA-OWP) — Knowledge Infrastructure
 
@@ -180,6 +205,29 @@ cd source/repo/
 | UT-07 | dt in seconds not hours | All fluxes wrong | Use hours |
 | UT-08 | TWI distribution doesn't sum to 1 | Water balance error | Normalize |
 
+## Unit Table — source/model conversions
+
+Exact I/O shapes live in `docs/format_spec.yaml`; this table is the reader-facing
+unit table for the model workflow. The timestep convention above remains binding:
+the C model labels fluxes as `m/hr`, while the validated daily pipeline uses
+`dt = 1.0` as one step per day and converts reported discharge with the true
+seconds per step during post-processing.
+
+| Variable | Source unit | Model/storage unit | Conversion / convention | Applies in |
+|----------|-------------|--------------------|-------------------------|------------|
+| precipitation / `rain` | CMFD/MSWX mm/day | `m/hr` label; daily per-step depth in validated daily runs | Daily validated runs divide by `1000` to get m per step; literal hourly runs use mm to m and day to hour as needed | `inputs.dat` |
+| potential evapotranspiration / `pe` | computed PE, commonly mm/day | `m/hr` label; daily per-step depth in validated daily runs | Compute PE externally, then convert consistently with the selected step; do not leave PE in mm/day | `inputs.dat` |
+| observed discharge / `Qobs` | m^3/s | `m/hr` label; per-step depth | For the dag convention, `Q_mhr = Q_m3s * 3600 / basin_area_m2`; for validated daily scoring, use the true daily seconds-per-step noted above | `inputs.dat`, scoring |
+| `Q (simulated discharge)` | model routed outlet flow | `m/hr (per-step depth; convert to m^3/s via Q_m3s = Q_mhr * basin_area_m^2 / 3600)` | This is the dag rank-1 output unit string; daily post-processing must still honor `--dt-hours 24` as documented above | `hyd.out`, parsed outputs |
+| `qb (baseflow)` | model state/output | `m/hr` label | Baseflow component contributing to routed discharge | `topmod.out` |
+| `qof (saturation/Hortonian overland flow)` | model state/output | `m/hr` label | Overland-flow component contributing to routed discharge | `topmod.out` |
+| `sbar (mean saturation deficit)` | model state/output | m | Mean catchment saturation deficit | `topmod.out` |
+| `contrib_area (saturated contributing-area fraction)` | model state/output | fraction | Saturated contributing-area fraction | parsed outputs / dag |
+| `ea (actual evapotranspiration)` | model state/output | `m/hr` label | Actual evapotranspiration reported by the model | `topmod.out` |
+| `bal (water-balance residual)` | model diagnostic | model residual convention | Use for water-balance closure checks, not as the headline score | `topmod.out` |
+| DEM channel distance | km or m depending source | m | Multiply km by `1000` before writing `subcat.dat` | `subcat.dat` |
+| TWI distribution area | fraction | fraction | Histogram fractions must sum to approximately `1.0` | `subcat.dat` |
+
 ---
 
 ## Pipeline (7 stages)
@@ -271,6 +319,30 @@ Two columns per timestep: Q_simulated  Q_observed (both in m/hr)
 
 ---
 
+## Output Description
+
+This section restates the dag-facing outputs for agents reading only
+`SKILL.md`. If this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output**: `Q (simulated discharge)` is the dag's
+`validation_rank: 1` variable and the model is judged by it.
+
+> `Q (simulated discharge)` — Per-timestep routed discharge at the catchment
+> outlet (qb + qof routed through the time-delay histogram).
+> Unit: `m/hr (per-step depth; convert to m^3/s via Q_m3s = Q_mhr * basin_area_m^2 / 3600)`.
+
+| Dag output variable | Validation role | Unit / note | Description |
+|---------------------|-----------------|-------------|-------------|
+| `Q (simulated discharge)` | rank 1 headline output | `m/hr (per-step depth; convert to m^3/s via Q_m3s = Q_mhr * basin_area_m^2 / 3600)` | Per-timestep routed discharge at the catchment outlet (qb + qof routed through the time-delay histogram). |
+| `qb (baseflow)` | other dag output | see `dag.yaml` | Baseflow output named by the dag. |
+| `qof (saturation/Hortonian overland flow)` | other dag output | see `dag.yaml` | Saturation/Hortonian overland-flow output named by the dag. |
+| `sbar (mean saturation deficit)` | other dag output | see `dag.yaml` | Mean saturation-deficit output named by the dag. |
+| `contrib_area (saturated contributing-area fraction)` | other dag output | see `dag.yaml` | Saturated contributing-area fraction output named by the dag. |
+| `ea (actual evapotranspiration)` | other dag output | see `dag.yaml` | Actual evapotranspiration output named by the dag. |
+| `bal (water-balance residual)` | other dag output | see `dag.yaml` | Water-balance residual output named by the dag. |
+
+---
+
 ## Key Equations
 
 ### Saturation deficit
@@ -333,6 +405,43 @@ is a ROBUST sweet spot, not the cal-optimum. **If a search does not beat the
 incumbent's *validation* metrics, keep the incumbent.** Note also `t0` is
 **ln(T0)** and must be ≈8 to match the high TL (~10.9) of a coarse-resampled
 large-basin DEM — the pre-DEM seed t0=4.81 over-buffers baseflow (val NSE −0.55).
+
+---
+
+## Validated Results
+
+Validated scoring is tied to the dag headline variable, not to a guessed
+hydrologic preference. The rank-1 output is `Q (simulated discharge)`, with unit
+`m/hr (per-step depth; convert to m^3/s via Q_m3s = Q_mhr * basin_area_m^2 / 3600)`.
+
+### Documented Bengbu / Huai incumbent
+
+The body-documented incumbent uses the Bengbu station with area `121,330 km²`
+(`1.2133e11 m²`) and the 1981-1990 period noted above. The alternate Huai obs
+source is a drop-in cross-check for the same physical Bengbu station; the
+documented incumbent reproduces there with 1981-1990 full NSE `0.435`, validation
+NSE `0.494`, and PBIAS `−18.6`. The calibration section also records the robust
+incumbent as validation NSE `0.494` / KGE `0.66`, while failed cal-heavy searches
+collapsed held-out validation NSE to `0.17` and `−0.97` for cal-KGE selection.
+
+### Convention bars from `docs/validation_convention.yaml`
+
+Every stated threshold below carries the citation key supplied by the convention.
+When the convention stores a null band, this section writes `no cited threshold`
+rather than substituting an uncited value.
+
+| Dag variable | Metric | Direction | Very good | Good | Satisfactory |
+|--------------|--------|-----------|-----------|------|--------------|
+| `Q (simulated discharge)` | NSE | maximize | `>= 0.75` (`kouchi2017`, `das2020`) | `>= 0.65` (`kouchi2017`, `das2020`) | `>= 0.5` (`kouchi2017`, `das2020`) |
+| `Q (simulated discharge)` | PBIAS | zero_centered | `abs(PBIAS) <= 10.0` (`kouchi2017`, `das2020`) | `abs(PBIAS) <= 15.0` (`kouchi2017`, `das2020`) | `abs(PBIAS) <= 25.0` (`kouchi2017`, `das2020`) |
+| `Q (simulated discharge)` | CSI | maximize | no cited threshold (`thiemig2015`) | no cited threshold (`thiemig2015`) | `>= 0.5` (`thiemig2015`) |
+| `qb (baseflow)` | NSE | maximize | no cited threshold | no cited threshold | no cited threshold |
+
+For `Q (simulated discharge)`, the documented validation NSE `0.494` is just
+below the cited satisfactory NSE threshold `0.5` (`kouchi2017`, `das2020`).
+The documented PBIAS `−18.6` is within the cited satisfactory zero-centered
+PBIAS band `25.0` and outside the cited good band `15.0`
+(`kouchi2017`, `das2020`).
 
 ---
 

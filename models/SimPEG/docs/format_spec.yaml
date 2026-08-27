@@ -1,170 +1,389 @@
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
+
 model:
   name: SimPEG
-  full_name: Simulation and Parameter Estimation in Geophysics
-  domain: geophysics
-  binary_path: KISSPATH_PYTHON_ENV/bin/python
-  version: 0.1.dev1
-  language: Python
-  license: MIT
-  repository: https://github.com/simpeg/simpeg
-supported_methods:
-- gravity
-- magnetics
-- dc
-- ip
-- fdem
-- tdem
-- mt
-- seismic
-- flow
+  language: python
+  implementation:
+    id: simpeg
+    version: 0.25.x
+    provenance: Python; open-source SimPEG library (simpeg.xyz / github.com/simpeg/simpeg), built on discretize
+      (finite-volume meshes) and pymatsolver (linear solvers).
+  scientific_reference_version: SimPEG gradient-based geophysical simulation/inversion framework (Cockett
+    et al. 2015; Heagy et al. 2017 EM extension)
 inputs:
   forcing:
-  - name: survey_locations
-    unit: meters (SI)
-    format: "CSV (x, y, z) \u2014 elevation, not depth"
-    description: Receiver (and transmitter) positions
-  - name: observed_data
-    unit: method-dependent (mGal, nT, Ohm-m, V/m, etc.)
-    format: CSV or numpy array
-    description: Field measurements to invert
-  - name: topography
-    unit: meters (elevation above reference datum)
-    format: CSV (x, y, z)
-    description: Surface topography for active cell determination
+  - name: EM source frequencies / time channels / waveform
+    unit: Hz (FDEM) or s (TDEM time gates)
+    category: source_excitation
+    source_kind: user_provided
+    model_input_format: Source/Receiver objects within the Survey
+    notes: EM methods only. FDEM expects ordinary frequency f in Hz, NOT angular frequency omega (rad/s);
+      f = omega/(2*pi). Wrong unit corrupts phase/amplitude silently.
+  - name: inducing geomagnetic field (amplitude, inclination, declination)
+    unit: nT, degrees
+    category: source_excitation
+    source_kind: user_provided
+    model_input_format: magnetics survey source definition
+    notes: Magnetics only; total-field anomalies are typically 1-500 nT.
   parameters:
-    critical:
-    - name: beta0_ratio
-      valid_range:
-      - 0.01
-      - 100.0
-      description: Initial trade-off parameter ratio (data fit vs regularization)
-    - name: coolingFactor
-      valid_range:
-      - 2
-      - 10
-      description: Rate of beta decrease per iteration
-    - name: alpha_s
-      valid_range:
-      - 0.0001
-      - 100.0
-      description: Smallness regularization weight
-    - name: alpha_x
-      valid_range:
-      - 0.0001
-      - 100.0
-      description: X-smoothness regularization weight
-    - name: alpha_y
-      valid_range:
-      - 0.0001
-      - 100.0
-      description: Y-smoothness regularization weight
-    - name: alpha_z
-      valid_range:
-      - 0.0001
-      - 100.0
-      description: Z-smoothness regularization weight
-    - name: maxIter
-      valid_range:
-      - 10
-      - 50
-      description: Maximum inversion iterations
-    - name: maxIterCG
-      valid_range:
-      - 10
-      - 100
-      description: CG iterations per Gauss-Newton step
-    - name: relative_error
-      valid_range:
-      - 0.01
-      - 0.2
-      description: Relative data uncertainty (fraction, not percentage)
-    - name: noise_floor
-      valid_range:
-      - 0.0001
-      - null
-      description: Absolute data uncertainty floor (same units as data)
-    mesh:
-    - name: nx
-      valid_range:
-      - 10
-      - 500
-      description: Core mesh cells in X direction
-    - name: ny
-      valid_range:
-      - 10
-      - 500
-      description: Core mesh cells in Y direction
-    - name: nz
-      valid_range:
-      - 5
-      - 200
-      description: Core mesh cells in Z direction
-    - name: padding
-      valid_range:
-      - 3
-      - 20
-      description: Number of padding cells per side
-    - name: pad_factor
-      valid_range:
-      - 1.2
-      - 2.0
-      description: Geometric growth factor for padding cells
+  - name: subsurface physical-property model (density / susceptibility / conductivity / resistivity /
+      chargeability / velocity)
+    unit: kg/m^3, SI, S/m, Ohm*m, V/V, m/s
+    category: physical_property
+    source_kind: user_provided
+    model_input_format: model vector over active mesh cells, shape (n_active,)
+    notes: 'SI units are mandatory: density kg/m^3 (not g/cm^3; x1000), susceptibility SI (not CGS; x4*pi),
+      conductivity S/m. Values are in MODEL space AFTER the map (e.g. ln(sigma) under ExpMap), not directly
+      in physical-property space.'
+  - name: background physical-property value
+    unit: model space
+    category: background
+    source_kind: user_provided
+    model_input_format: scalar in model space
+    notes: For a log map the background is ln(sigma), not sigma.
+  - name: air / inactive-cell physical-property value
+    unit: S/m or Ohm*m
+    category: numerical
+    source_kind: default
+    model_input_format: InjectActiveCells inactive value
+    notes: Must be a small nonzero value (1e-8 S/m / 1e8 Ohm*m, or ln(1e-8) under a log map); exactly
+      0 yields a singular stiffness matrix.
+  - name: regularization weights alpha_s / alpha_x,y,z, depth weighting, sensitivity weighting
+    unit: dimensionless
+    category: regularization
+    source_kind: calibrated
+    model_input_format: regularization-object weights / UpdateSensitivityWeights
+    notes: alpha_s (smallness, closeness-to-reference) vs alpha_x/y/z (smoothness); depth weighting counters
+      potential-field kernel decay with depth. Default ratios assume ~uniform cells and need scaling on
+      TreeMesh / stretched TensorMesh.
+  initial_conditions:
+  - name: starting model m0
+    unit: model space
+    category: starting_model
+    source_kind: user_provided
+    model_input_format: vector (n_active,)
+    notes: The Gauss-Newton iteration begins here; an over-large beta can leave the recovered model stuck
+      near m0.
+  - name: reference model m_ref
+    unit: model space
+    category: reference_model
+    source_kind: user_provided
+    model_input_format: vector (n_active,)
+    notes: Enters the smallness term; biases the recovery toward known geology where data are uninformative.
+  boundary_conditions:
+  - name: finite-volume mesh discretization (cell counts, padding, mesh type)
+    unit: m / cells
+    category: mesh
+    source_kind: user_provided
+    model_input_format: discretize TensorMesh / TreeMesh / CylindricalMesh
+    notes: Core region must extend >=2-3x target depth beyond the survey footprint with geometric padding
+      (factor 1.3-1.5); TreeMesh recommended for large 3-D problems.
+  - name: survey sources/receivers, locations, and measured component
+    unit: m
+    category: survey_geometry
+    source_kind: user_provided
+    model_input_format: Survey object (Sources + Receivers)
+    notes: z is ELEVATION (positive up), not depth. Receiver component (e.g. bz / tmi / bx) must match
+      the actually measured field, else predicted data are silently wrong.
+  - name: topography / active-cell definition
+    unit: m elevation
+    category: topography
+    source_kind: user_provided
+    model_input_format: active_from_xyz -> active cells
+    notes: Elevation positive up; passing depth (positive down) inverts air vs active cells.
+  - name: observed geophysical data (dobs) with uncertainties
+    unit: method-specific (mGal, nT, Ohm*m, A/m, V/m^2, T/s, ...)
+    category: observed_data
+    source_kind: user_provided
+    model_input_format: Data(survey, dobs, standard_deviation)
+    notes: std = sqrt(noise_floor^2 + (relative_error*|dobs|)^2); noise_floor must be >0 (about 1-5% of
+      |d|) to avoid overfitting noise. Magnetics in nT not T (Tesla inflates misfit ~1e18).
+  - name: geophysical method and model map type
+    unit: categorical
+    category: method_selection
+    source_kind: user_provided
+    model_input_format: method string + Map class
+    notes: method in {gravity, magnetics, dc, ip, fdem, tdem, mt, seismic, flow}; map in {identity, exp/log,
+      reciprocal}. DC defaults to sigmaMap (conductivity); supplying resistivity needs ReciprocalMap.
+  - name: model upper / lower bounds
+    unit: model space
+    category: model_bounds
+    source_kind: user_provided
+    model_input_format: ProjectedGNCG upper / lower
+    notes: Bounds are enforced only by the bounded optimizer (ProjectedGNCG); InexactGaussNewton ignores
+      them.
+  - name: trade-off schedule (beta0_ratio, coolingFactor) and iteration limits (maxIter, maxIterCG)
+    unit: dimensionless
+    category: inversion_schedule
+    source_kind: calibrated
+    model_input_format: directives + optimization configuration
+    notes: BetaEstimate_ByEig sets the initial beta; BetaSchedule cools it each outer iteration; target
+      is Phi_d ~= nD (chi-squared criterion).
 outputs:
   primary:
   - name: recovered_model
-    unit: model-space (may require map transform to physical property)
-    format: numpy array (nC,)
-    description: Inverted model vector
+    unit: model space (e.g. ln(S/m); kg/m^3 under identity map)
+    description: Recovered subsurface model vector, one value per active mesh cell, in model space; returned
+      by the inversion.
+    validation_rank: 1
+    emitted_in: BaseInversion.run(m0) return value
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Deterministic inversions are non-unique and resolution-limited; recovered structure depends
+          on regularization, depth/sensitivity weighting, and reference model.
+        - Compare in physical-property space (after inverse map), not raw model space.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Point comparison (e.g. against a borehole/well-log property) is limited by inversion smoothing
+          and cell resolution near the sample.
+      detrending_options:
+      - none
+  - name: physical_property
+    unit: kg/m^3 (density), S/m (conductivity), SI (susceptibility), Ohm*m (resistivity), V/V (chargeability)
+    description: Recovered subsurface model transformed back to subsurface physical-property space via
+      the forward map (model_map * m_recovered).
+    validation_rank: 2
+    emitted_in: model-map application to recovered_model
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Must apply the inverse map before interpretation (e.g. exp(m) for a log map); raw model values
+          are orders of magnitude off.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Non-unique; constrained best near survey coverage and away from padding cells.
+      detrending_options:
+      - none
   - name: predicted_data
-    unit: same as observed data
-    format: numpy array (nD,)
-    description: Forward-modeled data from recovered model
-  - name: phi_d
-    unit: dimensionless (normalized misfit)
-    description: Data misfit at convergence
-  - name: phi_m
-    unit: dimensionless
-    description: Model regularization term at convergence
-  - name: subsurface_resistivity
-    canonical_id: subsurface_resistivity
-    unit: ohm.m
-  - name: hydraulic_conductivity
-    canonical_id: hydraulic_conductivity
-    unit: m/s
-  - name: porosity
-    canonical_id: porosity
-    unit: fraction
-  gravity:
-  - name: gz
-    unit: mGal (1e-5 m/s^2)
-    valid_range:
-    - -1000
-    - 1000
-    description: Vertical gravity anomaly
-  magnetics:
-  - name: tmi
-    unit: nT (1e-9 T)
-    valid_range:
-    - -5000
-    - 5000
-    description: Total magnetic intensity anomaly
-  dc_resistivity:
-  - name: apparent_resistivity
-    unit: Ohm-m
-    valid_range:
-    - 0.01
-    - 100000
-    description: Apparent resistivity from DC measurements
+    unit: method-specific (mGal, nT, Ohm*m, A/m, V/m^2, T/s)
+    description: Geophysical forward response (dpred) of the recovered (or forward) subsurface model at
+      the survey receivers.
+    validation_rank: 3
+    emitted_in: sim.dpred(model)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Potential-field / DC data are a single-instant spatial anomaly map over the survey footprint.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - For EM the 'series' is across frequencies (FDEM) or time gates (TDEM) at a station, not wall-clock
+          time.
+      detrending_options:
+      - none
+  - name: fields
+    unit: mesh-based field values (potentials, E/H fields, pressure head)
+    description: Full PDE field solution on the Earth/subsurface mesh for DC/EM/flow methods (optional
+      diagnostic).
+    validation_rank: 4
+    emitted_in: sim.fields(m)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Internal field solution; rarely measured directly and method-specific.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
 - id: dt_001
-  description: 'Gravity density units: g/cm^3 vs kg/m^3 causes 1000x error'
+  symptom: Gravity anomaly is ~1000× too large or too small compared to expected values
+  diagnosis: Density model in g/cm^3 (CGS) instead of kg/m^3 (SI), or vice versa; SimPEG gravity simulation
+    expects density in kg/m^3 (SI). If density contrast is entered as 0.5 g/cm^3 instead of 500 kg/m^3,
+    the anomaly will be 1000× too small. The simulation runs without error.; ['gravity.simulation.Simulation3
+  remedy: Convert density to kg/m^3 before creating model vector; initialize_model.py --unit-system cgs;
+    ['Multiply g/cm^3 values by 1000 to get kg/m^3', 'Verify anomaly magnitude is physically reasonable
+    (0.01-100 mGal for near-surface)']; Always specify --unit-system when using initialize_model.py
+  severity: silent
 - id: dt_002
-  description: Magnetic susceptibility CGS vs SI causes 4pi factor error
+  symptom: Magnetic anomaly is off by factor of ~12.57 (4π)
+  diagnosis: Magnetic susceptibility in CGS system instead of SI; CGS susceptibility = SI susceptibility
+    / (4π). Literature values often use CGS. If 0.01 CGS is used directly as SI, the anomaly will be 4π
+    ≈ 12.57× too small.; ['magnetics.simulation.Simulation3DIntegral', 'chiMap']
+  remedy: 'Multiply CGS susceptibility by 4π to convert to SI; initialize_model.py --property susceptibility
+    --unit-system cgs; [''chi_SI = chi_CGS * 4 * np.pi'', ''Typical SI values: paramagnetic 1e-5 to 1e-3,
+    ferromagnetic 1e-2 to 1'']; Check source of susceptibility values — geologic tables often use CGS'
+  severity: silent
 - id: dt_003
-  description: 'DC resistivity vs conductivity: model is reciprocal'
+  symptom: DC inversion recovers model that is the reciprocal of expected conductivity/resistivity
+  diagnosis: Using resistivity (Ω·m) where conductivity (S/m) is expected, or vice versa; SimPEG DC simulation
+    uses sigmaMap (conductivity) by default. If resistivity values are provided without a ReciprocalMap,
+    the recovered model will be inverted.; ['dc.simulation.Simulation3DNodal', 'sigmaMap']
+  remedy: Use ReciprocalMap to convert between resistivity and conductivity; initialize_model.py --property
+    conductivity --map-type reciprocal; ['sigma = 1.0 / rho', 'Or use maps.ReciprocalMap in the map chain'];
+    Always check whether simulation expects sigma or rho
+  severity: silent
+- id: dt_004
+  symptom: FDEM response has wrong phase or amplitude by large factor
+  diagnosis: Frequency specified as angular frequency ω (rad/s) instead of f (Hz); SimPEG FDEM expects
+    frequency in Hz. If ω = 2πf is used, all frequencies are 2π ≈ 6.28× too high, shifting phase and amplitude.;
+    ['frequency_domain.survey', 'frequency_domain.sources']
+  remedy: 'Divide angular frequency by 2π to get Hz; ; [''f_Hz = omega_rad_s / (2 * np.pi)'', ''Verify:
+    1 Hz FDEM source at 100m depth in 100 Ohm-m → skin depth ~159m'']; Always verify frequency units when
+    importing from external codes'
+  severity: silent
+- id: dt_005
+  symptom: Active cells are inverted — model appears in air, air appears underground
+  diagnosis: Topography z-coordinate is depth (positive down) instead of elevation (positive up); active_from_xyz
+    expects elevation. If depth values are passed, cells above the true surface are marked active and
+    cells below are marked as air.; ['discretize.utils.active_from_xyz', 'mesh']
+  remedy: 'Negate depth values to convert to elevation, or add reference datum; build_mesh.py; [''elevation
+    = -depth + surface_elevation'', ''Verify: active_cells.sum() should be < mesh.n_cells'', ''Plot active
+    cells to confirm they are below topography'']; Always verify z-convention before passing topography'
+  severity: silent
+- id: dt_006
+  symptom: Predicted data magnitude or pattern does not match field measurements despite correct model
+  diagnosis: Receiver component specification does not match actual field component measured; If survey
+    measures Bz (vertical magnetic field) but simulation receiver is set to 'tmi' (total magnetic intensity)
+    or 'bx', the predicted data will be for the wrong component. This is a silent mismatch.; ['receivers.Poi
+  remedy: Verify receiver component matches the actual measurement type; ; ['Check survey documentation
+    for measured component', "Set receivers.Point(locations, components='bz') or 'tmi' as appropriate",
+    'Available components vary by method — check module documentation']; Document the measured component
+    in th
+  severity: silent
+- id: dt_007
+  symptom: Data misfit is astronomically large (>10^15) and inversion fails to converge
+  diagnosis: Magnetic data provided in Tesla (T) instead of nanoTesla (nT); 1 nT = 1e-9 T. If data in
+    T is used where nT is expected, the misfit is inflated by factor 10^18 (squared). The inversion cannot
+    reduce this misfit.; ['data.Data', 'data_misfit.L2DataMisfit']
+  remedy: 'Convert data to nanoTesla by multiplying T values by 1e9; ; [''data_nT = data_T * 1e9'', ''Typical
+    total field anomalies: 1-500 nT'']; Verify data unit before loading — check file headers'
+  severity: fatal
+- id: dt_008
+  symptom: Inversion converges but model is unrealistically smooth or blocky in certain regions
+  diagnosis: Default regularization alpha ratios do not account for non-uniform cell sizes; WeightedLeastSquares
+    applies smoothness equally in all directions. On meshes with varying cell sizes (TreeMesh, stretched
+    TensorMesh), default alphas over-smooth in refined regions and under-smooth in coarse regions.; ['r
+  remedy: Adjust alpha ratios based on cell size ratios in each direction; ; ['Scale alpha_x by (dx_min/dx_ref)^2
+    to normalize', 'Use length_scale_x/y/z parameters in regularization', 'Inspect regularization.W matrix
+    for reasonableness']; Always inspect model slices during inversion — don't just check phi_d
+  severity: silent
 - id: dt_009
-  description: Air cell conductivity=0 causes singular matrix
+  symptom: Linear solver crashes with singular matrix error, or NaN in predicted data
+  diagnosis: Air cell conductivity set to exactly 0 in InjectActiveCells; For DC/EM problems, zero conductivity
+    creates a singular stiffness matrix. Even for gravity/magnetics this can cause numerical issues in
+    regularization.; ['maps.InjectActiveCells', 'simulation']
+  remedy: 'Use a very small but nonzero value for air cells; initialize_model.py; [''For conductivity:
+    air_val = 1e-8 S/m (or np.log(1e-8) for log map)'', ''For resistivity: air_val = 1e8 Ohm-m'', ''Verify:
+    model_map * m0 should have no zero entries'']; Never use 0 for air conductivity — use 1e-8 minimum'
+  severity: fatal
 - id: dt_010
-  description: noise_floor=0 causes overfit and artifacts
+  symptom: Inversion converges to noisy, non-physical model with extremely fine-scale structure
+  diagnosis: Data uncertainty (noise_floor) is zero or near-zero, giving infinite weight to noisy data;
+    With noise_floor=0, data points near zero get standard_deviation ≈ 0, creating infinite data weights.
+    The inversion overfits noise, producing artifacts.; ['data.Data', 'standard_deviation']
+  remedy: 'Set noise_floor to at least 1-5% of the data range; run_simpeg.py --noise-floor VALUE; [''noise_floor
+    = 0.01 * np.max(np.abs(dobs))  # 1% of max'', ''Or use absolute instrument precision'', ''Verify:
+    data.standard_deviation has no zero/near-zero entries'']; Always set both relative_error AND noise_floor'
+  severity: degraded
 - id: dt_011
-  description: Large meshes with dense J matrix cause OOM
+  symptom: Python process killed by OS, MemoryError, or system becomes unresponsive
+  diagnosis: 'Mesh cell count too large for dense sensitivity matrix storage; For potential field methods,
+    J matrix is dense: size nD × nM. With 1000 data and 1M cells, J = 8 GB. With store_sensitivities=''ram'',
+    this is stored in memory.; [''simulation'', ''sensitivity_path'']'
+  remedy: Use TreeMesh for adaptive refinement, or Dask for distributed computation; build_mesh.py --mesh-type
+    tree; ["Use store_sensitivities='forward_only' to avoid storing J", 'Reduce core cell count or use
+    coarser cells far from survey', 'Use simpeg.dask for parallel tile-based computation', 'Memory estim
+  severity: fatal
+- id: dt_012
+  symptom: Tiled inversion produces discontinuities or artifacts at tile boundaries
+  diagnosis: TileMap local-to-global index mapping is incorrect; When splitting a large problem into tiles,
+    each tile has a local mesh. The TileMap must correctly map local cell indices to global mesh cells.
+    Misalignment causes sensitivity from wrong cells.; ['maps.TileMap', 'dask']
+  remedy: 'Verify tile index mapping against global mesh; ; [''For each tile: assert np.all(tile_map *
+    local_model == expected_global_model)'', ''Use discretize.utils.mesh_builder_xyz with proper overlap'',
+    ''Check that tile boundaries overlap by at least 2 cell widths'']; Test TileMap on synthetic model
+    before runn'
+  severity: degraded
+- id: dt_013
+  symptom: Data misfit (phi_d) barely decreases over iterations, model stays near starting model
+  diagnosis: Initial trade-off parameter β is too large, over-weighting regularization; When β >> optimal,
+    the objective function is dominated by phi_m. The optimizer keeps the model near the starting/reference
+    model because reducing phi_d would require increasing phi_m too much.; ['directives.BetaEstimate_ByEig
+  remedy: 'Reduce beta0_ratio in BetaEstimate_ByEig, or use more aggressive cooling; ; [''directives.BetaEstimate_ByEig(beta0_ratio=1e-2)  #
+    was 1e0'', ''directives.BetaSchedule(coolingFactor=10, coolingRate=1)'', ''Or set beta manually: inv_prob.beta
+    = estimated_value / 10'']; Monitor phi_d per iteration — it shoul'
+  severity: degraded
+- id: dt_014
+  symptom: Model has extreme oscillations, non-physical spikes, or values at bounds
+  diagnosis: Initial β too small or cooling too aggressive — model overfits from first iteration; When
+    β << optimal, regularization has no effect. The optimizer minimizes phi_d alone, fitting noise and
+    producing an unrealistically complex model.; ['directives.BetaEstimate_ByEig', 'directives.BetaSchedule']
+  remedy: 'Increase beta0_ratio or reduce cooling factor; ; [''directives.BetaEstimate_ByEig(beta0_ratio=1e2)'',
+    ''directives.BetaSchedule(coolingFactor=2, coolingRate=1)'', ''Add model bounds: opt = ProjectedGNCG(upper=ub,
+    lower=lb)'']; Start with conservative β and cool slowly'
+  severity: degraded
+- id: dt_015
+  symptom: Model values exceed physical bounds despite bounds being set in model config
+  diagnosis: Using unbounded optimizer (InexactGaussNewton) instead of bounded (ProjectedGNCG); InexactGaussNewton
+    ignores upper/lower bounds. Only ProjectedGNCG and ProjectedGradient enforce box constraints during
+    optimization.; ['optimization.InexactGaussNewton', 'optimization.ProjectedGNCG']
+  remedy: Switch to ProjectedGNCG optimizer; run_simpeg.py --bounds 'lo,hi'; ['opt = optimization.ProjectedGNCG(maxIter=30,
+    upper=ub, lower=lb)', 'Bounds must be in model space (log for log-parameterization)']; Always use
+    ProjectedGNCG when physical bounds are required
+  severity: degraded
+- id: dt_016
+  symptom: Exported model values are orders of magnitude different from expected physical property
+  diagnosis: Recovered model vector exported without inverse map transform; The recovered m is in model
+    space (e.g., log-conductivity). Exporting m directly gives ln(σ) values, not σ. Must apply exp() for
+    log parameterization.; ['model_map', 'parse_results.py']
+  remedy: 'Apply the forward map to convert model to physical property; parse_results.py --model-config
+    model_config.json; [''For log map: sigma = np.exp(m_recovered)'', ''For reciprocal: rho = 1.0 / m_recovered'',
+    ''Or use: physical = model_map * m_recovered'']; Always record map_type in model_config.json and apply'
+  severity: silent
+- id: dt_017
+  symptom: Each CG iteration takes minutes or hours, inversion appears hung
+  diagnosis: Dense sensitivity computation without optimization (no Dask, no forward_only, no TreeMesh);
+    For potential field methods, each Jvec requires computing the full sensitivity row. Without store_sensitivities='forward_only'
+    or Dask parallelization, this is O(nD × nM) per CG iteration.; ['simulation', 'st
+  remedy: 'Use store_sensitivities=''forward_only'' or switch to Dask; ; ["sim = Simulation3DIntegral(...,
+    store_sensitivities=''forward_only'')", "For repeated inversions: store_sensitivities=''disk'' with
+    sensitivity_path", ''For >500k cells: use simpeg.dask parallel simulation'']; Profile forward call
+    time before s'
+  severity: degraded
+- id: dt_018
+  symptom: ImportError or ModuleNotFoundError when running simulation
+  diagnosis: Missing optional dependency not installed (choclo, dask, pymatsolver backend); SimPEG core
+    installs minimal dependencies. Features like Numba-optimized kernels (choclo), distributed computing
+    (dask), or fast solvers (Pardiso via pymatsolver) require separate installation.; ['choclo', 'dask',
+    'pymats
+  remedy: 'Install the missing package; ; [''pip install choclo  # for gravity/magnetic Numba kernels'',
+    "pip install ''simpeg[dask]''  # for Dask support", ''pip install pymatsolver  # for Pardiso solver''];
+    Install full extras: pip install ''simpeg[dask,choclo,plotting]'''
+  severity: fatal

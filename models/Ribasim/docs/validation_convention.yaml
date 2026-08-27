@@ -1,0 +1,205 @@
+schema_version: 1
+model_id: Ribasim
+domain: hydrology
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+# Literature-grounded validation conventions keyed by Ribasim dag_variable.
+# balance_error / relative_error is deliberately omitted: the dag row itself
+# says it is an internal diagnostic, not a field-observable output.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
+  shrestha2018:
+    doi: 10.2166/nh.2017.189
+    title: "Evaluation of the SWAT model performance for simulating river discharge in the Himalayan and lower plain basins"
+    venue: "Hydrology Research"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_nh.2017.189.txt
+  lauri2012:
+    doi: 10.5194/hess-16-4603-2012
+    title: "Future changes in Mekong River hydrology: impact of climate change and reservoir operation on discharge"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-16-4603-2012.txt
+  watergap2021:
+    doi: 10.5194/gmd-14-1037-2021
+    title: "The global water resources and use model WaterGAP v2.2d: model description and evaluation"
+    venue: "Geoscientific Model Development"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-14-1037-2021.txt
+  gutenson2020:
+    doi: 10.5194/hess-24-2711-2020
+    title: "Comparison of generalized non-data-driven lake and reservoir routing models for global-scale hydrologic forecasting of reservoir outflow at diurnal time steps"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-24-2711-2020.txt
+  ahmadzadeh2022:
+    doi: 10.1016/j.agwat.2021.107377
+    title: "Assessment of water demand reliability using SWAT and RIBASIM models with respect to climate change and operational water projects"
+    venue: "Agricultural Water Management"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agwat.2021.107377.txt
+  omar2013:
+    doi: 10.1016/j.wsj.2013.12.008
+    title: "Evaluation of actions for better water supply and demand management in Fayoum, Egypt using RIBASIM"
+    venue: "Water Science"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.wsj.2013.12.008.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.012
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling & Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.012.txt
+
+validation:
+  - dag_variable: flow_rate
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi watershed-flow convention: satisfactory if NSE > 0.50; Shrestha reproduces the tier table as acceptable 0.5 to 0.65."
+        cites: [moriasi2007, moriasi2015, shrestha2018]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 recommends daily/monthly/annual flow PBIAS <= +/-15%; the 2007 reproduced table gives < +/-10 very good and +/-10 to +/-15 good."
+        cites: [moriasi2015, shrestha2018]
+      - metric: rsr
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.50, good: 0.60, satisfactory: 0.70}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007/Shrestha table: RSR 0 to 0.5 very good, 0.5 to 0.6 good, 0.6 to 0.7 acceptable."
+        cites: [moriasi2007, shrestha2018]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Reservoir-outflow routing studies also use KGE, with Gutenson defining acceptable 0<KGE<0.4, good 0.4<KGE<0.7, and very good above 0.7; retained as supportive because the Ribasim dag headline is NSE."
+        cites: [gutenson2020]
+    validated_when: "For a link that maps to a gauged cross-section, NSE >= 0.50, |PBIAS| <= 15%, and RSR <= 0.70 on a holdout period; KGE may support reservoir-regulated reaches."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      The field validates discharge/streamflow with multiple metrics: Moriasi 2015 says performance is
+      satisfactory for watershed-scale flow when R2 > 0.60, NSE > 0.50, and PBIAS <= +/-15%, and Moriasi
+      2007/Shrestha reproduce the classic NSE/PBIAS/RSR tier table. Lauri 2012 provides a reservoir-operation
+      basin benchmark with daily NSE 0.779-0.941 in validation and ratio of cumulative discharge volumes.
+
+  - dag_variable: level
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE pass band for Ribasim basin water-surface level; gauge datum reconciliation is case-specific."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RMSE in the observation unit is a common residual magnitude metric, but no fetched level-specific numeric threshold was found."
+        cites: [bennett2013]
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Reservoir routing evaluations use KGE/R2/RMSE for outflow and note that stage information must be related to storage volume; this supports multi-metric review but not a level pass band."
+        cites: [gutenson2020]
+    validated_when: "UNRESOLVED - compare only after vertical datum offsets are reconciled; no cited numeric level threshold was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The capped OpenAlex coverage check found no Ribasim- or reservoir-level threshold convention. Gutenson
+      notes that stage information must be related to storage volume and can require remotely sensed information;
+      Bennett recommends selecting criteria such as RMSE or r2 according to model purpose. These are validation
+      practices, not numeric bands, so the headline band remains null.
+
+  - dag_variable: storage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric NSE pass band for basin or reservoir storage time series."
+        cites: []
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "WaterGAP evaluates total water storage anomalies with R2 and amplitude ratio against GRACE, not a universal NSE threshold."
+        cites: [watergap2021]
+      - metric: amplitude_ratio
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "WaterGAP uses annual amplitude ratio as an indicator of variability/trends for storage anomalies; no pass band is stated."
+        cites: [watergap2021]
+    validated_when: "UNRESOLVED - storage should be checked against an independently derived storage series or level-storage curve, but no cited numeric NSE threshold was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Storage in Ribasim is profile-derived. The closest fetched convention is WaterGAP's storage evaluation
+      against GRACE TWSA, where R2 and amplitude ratio are used. That documents practice but does not provide
+      an automatic pass band for point basin storage.
+
+  - dag_variable: allocated / supplied / demand
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: supply_reliability
+        direction: maximize
+        unit: percent
+        bands: {very_good: 95, good: 90, satisfactory: 80}
+        pass_band: satisfactory
+        band_note: "Ahmadzadeh reports acceptable supply percent ranges of 95-100 for drinking, 90-100 for environmental, and 80-100 for agricultural demand."
+        cites: [ahmadzadeh2022]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining metric is superseded for allocation outputs: RIBASIM studies grade demand satisfaction and shortage/reliability, not hydrograph NSE."
+        cites: [ahmadzadeh2022, omar2013]
+      - metric: rmsd
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Omar verified RIBASIM demand at Lahon Dam using RMSD and called RMSD 29.5 statistically low, but did not state a reusable pass threshold."
+        cites: [omar2013]
+    validated_when: "Supply reliability meets the applicable sectoral threshold: >=95% for drinking/industrial, >=90% for environmental, and >=80% for agricultural demand; use >=80% only when sector is unknown or mixed."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Allocation literature clearly supersedes the dag's NSE headline: Ahmadzadeh uses RIBASIM to evaluate
+      reliability between water supply and demand and gives sector-specific acceptable supply ranges. Omar uses
+      RIBASIM to compare simulated demand with measured demand and reports scenario shortages, but the RMSD
+      value is a case result rather than a transferable threshold.
+
+deferred_paywalled: []

@@ -1,326 +1,349 @@
 schema_version: 1
 model_id: wflow
 domain: hydrology
-generated_by: "self-improve session (Claude Opus 4.8, 1M) — Step-B validation-convention campaign, general schema"
+generated_by: self-improve session (Claude Opus 4.8, 1M) — Step-B validation-convention campaign, general
+  schema
 generated_at: 2026-07-09
-
-# Grounded ONLY in locally-fetched OA full texts (cache complete in-package). DISCHARGE is the headline
-# quantity for wflow_sbm and is STRONGLY grounded: (a) wflow's OWN model-description paper (van Verseveld
-# et al. 2024, gmd-17-3199-2024) states the model's native KGE convention "satisfactory (0.4 <= KGE < 0.7)
-# to good (KGE >= 0.7)"; (b) the Moriasi (2007) monthly streamflow tiers (NSE >= 0.50 satisfactory / 0.65
-# good / 0.75 very good; PBIAS +/-25 / +/-15 / +/-10; RSR <= 0.70) are reproduced verbatim in three fetched
-# OA papers (Singh 2019 Gomti SWAT, Golmohammadi 2014 MIKE-SHE/APEX/SWAT, Belete 2018 Blue Nile). SEDIMENT
-# is moderately grounded: Moriasi's PBIAS +/-55% streamflow-sediment convention is reproduced in Singh 2019.
-# ET / soil_moisture / SWE / runoff have NO cited numeric skill tier in the fetched set (spatial-pattern
-# evaluation via SPAEF is qualitative; no pass-band) -> null bands + confidence <= 0.4, per no-fabrication
-# rule. Bands are plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
-# NOTE: dag rows `groundwater recharge` and `reservoir storage` carry canonical_quantity: null (not gradeable,
-# rarely observed directly) -> intentionally NO block; noted under discharge/runoff blocks.
-
 references:
   vanverseveld2024:
     doi: 10.5194/gmd-17-3199-2024
-    title: "Wflow_sbm v0.7.3, a spatially distributed hydrological model: from global data to local applications"
-    venue: "Geosci. Model Dev."
+    title: 'Wflow_sbm v0.7.3, a spatially distributed hydrological model: from global data to local applications'
+    venue: Geosci. Model Dev.
     year: 2024
     oa: gold
     resolves: https://gmd.copernicus.org/articles/17/3199/2024/gmd-17-3199-2024.pdf
   singh2019:
     doi: 10.1007/s13201-019-1013-x
-    title: "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India"
-    venue: "Applied Water Science"
+    title: Evaluation of multisite performance of SWAT model in the Gomti River Basin, India
+    venue: Applied Water Science
     year: 2019
     oa: gold
     resolves: https://doi.org/10.1007/s13201-019-1013-x
   golmohammadi2014:
     doi: 10.3390/hydrology1010020
-    title: "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT"
-    venue: "Hydrology"
+    title: 'Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT'
+    venue: Hydrology
     year: 2014
     oa: gold
     resolves: https://doi.org/10.3390/hydrology1010020
   belete2018:
     doi: 10.3390/w9100782
-    title: "Streamflow and Sediment Yield Prediction for Watershed Prioritization in the Upper Blue Nile"
-    venue: "Water"
+    title: Streamflow and Sediment Yield Prediction for Watershed Prioritization in the Upper Blue Nile
+    venue: Water
     year: 2017
     oa: gold
     resolves: https://doi.org/10.3390/w9100782
   shrestha2013:
     doi: 10.5194/hess-17-1-2013
-    title: "Impact of climate change on sediment yield in the Mekong River basin: a case study of the Lower Mekong Basin"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: 'Impact of climate change on sediment yield in the Mekong River basin: a case study of the
+      Lower Mekong Basin'
+    venue: Hydrol. Earth Syst. Sci.
     year: 2013
     oa: gold
     resolves: https://hess.copernicus.org/articles/17/1/2013/hess-17-1-2013.pdf
   koch2018:
     doi: 10.5194/hess-22-1299-2018
-    title: "Combining satellite data and appropriate objective functions for improved spatial pattern performance of a distributed hydrologic model"
-    venue: "Hydrol. Earth Syst. Sci."
+    title: Combining satellite data and appropriate objective functions for improved spatial pattern performance
+      of a distributed hydrologic model
+    venue: Hydrol. Earth Syst. Sci.
     year: 2018
     oa: gold
     resolves: https://hess.copernicus.org/articles/22/1299/2018/hess-22-1299-2018.pdf
-
 validation:
-
-  # ===================== DISCHARGE / point time series (STRONG — wflow-native KGE + Moriasi) =====================
-  - canonical_quantity: discharge
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: kge
-        direction: maximize
-        unit: dimensionless
-        bands: {good: 0.7, satisfactory: 0.4}
-        pass_band: satisfactory
-        band_note: "wflow-native convention from the model's own description paper"
-        cites: [vanverseveld2024]
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "Moriasi et al. 2007 monthly streamflow tiers, reproduced by the citing OA papers"
-        cites: [singh2019, golmohammadi2014]
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {very_good: 10, good: 15, satisfactory: 25}
-        pass_band: satisfactory
-        band_note: "Moriasi 2007 streamflow PBIAS tiers reproduced in Belete 2018 (<+/-10 / +/-10-15 / +/-15-25); Singh 2019 gives +/-25% satisfactory for streamflow"
-        cites: [belete2018, singh2019]
-    secondary_metrics:
-      - metric: rsr
-        direction: minimize
-        status: supportive
-        ceiling_reason: "RMSE-standard-deviation ratio; Moriasi satisfactory RSR <= 0.70 (good <= 0.60), co-reported with NSE (Golmohammadi 2014: 'calibrated for flow if monthly NSE >= 0.65, PBIAS <= +/-10% and RSR <= 0.60')."
-        cites: [golmohammadi2014]
-      - metric: r2
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Belete 2018 reproduces R2 tiers (0.7<R2<1 very good, 0.6-0.7 good, 0.5-0.6 satisfactory); co-reported, not the wflow headline."
-        cites: [belete2018]
-    validated_when: "KGE >= 0.4 (wflow-native satisfactory; van Verseveld 2024) AND NSE >= 0.50 AND |PBIAS| <= 25% (Moriasi 2007 monthly streamflow, satisfactory)"
-    evidence_strength: strong
-    confidence: 0.85
-    notes: >-
-      Headline for wflow_sbm. van Verseveld 2024 (the wflow_sbm model-description paper) reports uncalibrated
-      global-data-map KGE values of 0.63-0.87 at GRDC stations and defines "satisfactory (0.4 <= KGE < 0.7)
-      to good (KGE >= 0.7)" as the operative wflow convention -> KGE kept as primary headline. NSE/PBIAS
-      Moriasi tiers added as the domain streamflow convention (primary source Moriasi et al. 2007,
-      10.13031/2013.23153, is closed -> tiers taken from the three OA papers that reproduce them verbatim;
-      see deferred_paywalled). dag determining_metric (nse) retained as headline. CAVEAT from dag: uncalibrated
-      wflow vs another model can differ 3-5x in magnitude and placeholder (non-DEM) river geometry gives
-      correct timing but 2-3x magnitude bias -> when magnitude is structurally biased, KGE/NSE timing and
-      correlation should be weighed separately from PBIAS (do not fix_ki on a pure magnitude offset from
-      known geometry-placeholder setup). Reservoir-storage and groundwater-recharge dag rows carry no
-      canonical_quantity and are not gradeable here.
-
-  # ===================== DISCHARGE / spatial time series (transferred band) =====================
-  - canonical_quantity: discharge
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: kge
-        direction: maximize
-        unit: dimensionless
-        bands: {good: 0.7, satisfactory: 0.4}
-        pass_band: satisfactory
-        band_note: "transferred from the wflow-native point KGE convention; evaluate on the river mask only"
-        cites: [vanverseveld2024]
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
-        pass_band: satisfactory
-        band_note: "Moriasi streamflow tiers transferred to gridded river discharge (river-mask comparison)"
-        cites: [singh2019, golmohammadi2014]
-    secondary_metrics: []
-    validated_when: "On the river mask: KGE >= 0.4 AND NSE >= 0.50 (bands transferred from the point-gauge convention)"
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      Gridded discharge fields are routing-network dependent; the dag caveat requires comparison on the river
-      mask only. No spatial-field-specific discharge threshold in the fetched set; bands transferred from the
-      point-gauge KGE/NSE convention, hence reduced confidence.
-
-  # ===================== RUNOFF / spatial time series (data-gap — no cited CSI threshold) =====================
-  - canonical_quantity: runoff
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no cited CSI threshold for unrouted cell runoff in the fetched set"
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited categorical/skill threshold for unrouted runoff; treat as data-gap"
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      Unrouted runoff is the correct variable for external routing coupling (do NOT compare routed q_river
-      against runoff), but it is essentially never observed directly at cell scale, so the field has no
-      validation convention for it. Band null per no-fabrication rule; MUST NOT loosen the discharge gate.
-      Skill is normally judged downstream via routed discharge (see the discharge block).
-
-  # ===================== EVAPOTRANSPIRATION / spatial time series (spatial-pattern; no cited tier) =====================
-  - canonical_quantity: evapotranspiration
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no cited NSE tier for actual-ET spatial fields; ET spatial skill is judged by pattern metrics, not a hard NSE band"
-        cites: []
-    secondary_metrics:
-      - metric: spaef
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Koch 2018 introduces SPAEF (Spatial Efficiency; optimum = 1) as the bias-insensitive spatial-pattern metric for simulated AET, combining Pearson correlation, coefficient of variation and histogram overlap. It is a pattern-quality metric with no published pass/satisfactory tier, so it contextualises but cannot decide 'validated'."
-        cites: [koch2018]
-    validated_when: "UNRESOLVED numerically — actual-ET spatial patterns are assessed with SPAEF/correlation (Koch 2018), but no cited pass-band exists; annual ~200-1500 mm is a plausibility envelope only (dag caveat)"
-    evidence_strength: weak
-    confidence: 0.35
-    notes: >-
-      Remote-sensing ET products carry their own retrieval uncertainty (dag caveat). Koch 2018 grounds the
-      METHOD (SPAEF spatial-pattern evaluation) but reports no numeric skill threshold; van Verseveld 2024
-      discusses ET as a water-balance component without a validation tier. Band null; gate may contextualise
-      but never loosen.
-
-  # ===================== SOIL MOISTURE / spatial time series (anomaly/pattern; no cited tier) =====================
-  - canonical_quantity: soil_moisture
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: r
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "obs_map determining_metric is correlation (r); no cited pass-band for satellite-vs-model soil-moisture correlation in the fetched set"
-        cites: []
-    secondary_metrics:
-      - metric: nse
-        direction: maximize
-        status: supportive
-        ceiling_reason: "Model storage is a saturated-zone water DEPTH in mm; satellite soil moisture is a surface volumetric fraction. Absolute NSE is not meaningful across incommensurate units (dag caveat) -> compare anomalies/patterns, so temporal correlation (r), not NSE, is the informative metric. No fetched paper sets a numeric r threshold for wflow soil moisture."
-        cites: []
-    validated_when: "UNRESOLVED — compare anomalies/patterns (correlation), not absolute values; no cited numeric threshold"
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      Depth-vs-volumetric-fraction mismatch (dag caveat) means only anomaly/pattern agreement is defensible.
-      The fetched soil-moisture papers (Wanders 2014 flood-forecasting DA; Koch 2018 spatial pattern) treat
-      soil moisture as an assimilation/pattern input and report no model-validation correlation tier. Band
-      null; note: `nse` ceiling is documented only via the dag caveat (no fetched paper) so it is marked
-      `supportive`, not `structurally_limited`.
-
-  # ===================== SWE / spatial time series (degree-day snow; no cited tier) =====================
-  - canonical_quantity: swe
-    obs_shape: spatial_time_series
-    headline_metrics:
-      - metric: csi
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no cited CSI/snow-cover-extent threshold for wflow SWE fields in the fetched set"
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — no cited spatial snow skill threshold; degree-day (temperature-index) SWE, correct only if temperature is in Celsius (dag caveat)"
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      wflow uses a degree-day (temperature-index) snow scheme; the fetched snow papers (NewAge-JGrass SWE
-      components, snow-model intercomparison, snow DA for streamflow) report per-site RMSE/KGE for their own
-      models but no transferable pass-band for wflow SWE fields. Band null.
-
-  # ===================== SWE / point time series (degree-day snow; no cited tier) =====================
-  - canonical_quantity: swe
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: nse
-        direction: maximize
-        unit: dimensionless
-        bands: {satisfactory: null}
-        pass_band: satisfactory
-        band_note: "no cited point SWE NSE threshold in the fetched set"
-        cites: []
-    secondary_metrics: []
-    validated_when: "UNRESOLVED — point SNOTEL-style SWE comparison is sensitive to sub-grid elevation (dag caveat); no cited numeric threshold"
-    evidence_strength: weak
-    confidence: 0.3
-    notes: >-
-      Point SWE vs SNOTEL is highly sensitive to sub-grid elevation. Fetched snow papers do not supply a
-      transferable NSE band for temperature-index SWE. Band null; gate may contextualise but never loosen.
-
-  # ===================== SEDIMENT / point time series — in-stream yield (MODERATE — Moriasi PBIAS) =====================
-  - canonical_quantity: sediment
-    obs_shape: point_time_series
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {satisfactory: 55}
-        pass_band: satisfactory
-        band_note: "Moriasi 2007 sediment convention 'PBIAS +/-55% for sediment' reproduced verbatim in Singh 2019"
-        cites: [singh2019]
-    secondary_metrics:
-      - metric: nse
-        direction: maximize
-        status: supportive
-        ceiling_reason: "For sediment, PBIAS (magnitude) is the field's headline; NSE is co-reported but sediment temporal NSE is typically weaker than for discharge and no numeric sediment-NSE tier is quoted in the fetched OA texts."
-        cites: []
-    validated_when: "|PBIAS| <= 55% (Moriasi 2007 monthly sediment convention, satisfactory; Singh 2019)"
-    evidence_strength: moderate
-    confidence: 0.55
-    notes: >-
-      wflow_sediment in-stream yield. Singh 2019 reproduces Moriasi's satisfactory sediment magnitude band
-      ("PBIAS +/-55% for sediment"). Specific yield is typically 10-1000 t/km2/yr (dag caveat); grain
-      fractions must sum to 1.0 for a closed budget. Sensitive to USLE K SI-vs-US units (~7.6x) and C-factor
-      land-cover lookup -> a magnitude bias may be a units/parameterisation error, not a temporal-skill
-      failure. Belete 2018 and Shrestha 2013 supply basin-scale specific-yield context (4-4935 t/km2/yr Blue
-      Nile) but no additional numeric tier. Only the satisfactory band is quoted from a fetched paper; good/
-      very_good sediment sub-tiers left null (not in the fetched texts).
-
-  # ===================== SEDIMENT / regional aggregate snapshot — long-term specific yield =====================
-  - canonical_quantity: sediment
-    obs_shape: regional_aggregate_snapshot
-    headline_metrics:
-      - metric: pbias
-        direction: zero_centered
-        unit: percent
-        bands: {satisfactory: 55}
-        pass_band: satisfactory
-        band_note: "same Moriasi sediment magnitude convention (Singh 2019) applied to long-term mean specific yield vs basin surveys"
-        cites: [singh2019]
-    secondary_metrics: []
-    validated_when: "|PBIAS| <= 55% of long-term mean specific yield against basin-aggregate sediment surveys (Moriasi 2007; Singh 2019)"
-    evidence_strength: moderate
-    confidence: 0.5
-    notes: >-
-      Long-term mean specific yield (t/km2/yr) vs basin sediment surveys. Blue Nile (Belete 2018) reports
-      observed specific-yield ranges of 4-4935 t/km2/yr and Shrestha 2013 (Mekong Nam Ou) provides annual
-      sediment-yield magnitudes for plausibility, but the only quoted numeric skill band is Moriasi's PBIAS
-      +/-55%.
-
-  # ===================== SEDIMENT / soil-loss spatial field — noted, no gradeable obs =====================
-  # Gross soil-erosion rate (soilloss, t/ha/yr, typical 0.5-50) is rarely observed as a spatial field; it is
-  # judged downstream via in-stream yield PBIAS (blocks above). No standalone block: no cited spatial soil-loss
-  # skill threshold and no direct gridded obs binding. USLE K SI-vs-US unit error (~7.6x) is the dominant
-  # magnitude risk (dag caveat).
-
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: kge
+    direction: maximize
+    unit: dimensionless
+    bands:
+      good: 0.7
+      satisfactory: 0.4
+    pass_band: satisfactory
+    band_note: wflow-native convention from the model's own description paper
+    cites:
+    - vanverseveld2024
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: Moriasi et al. 2007 monthly streamflow tiers, reproduced by the citing OA papers
+    cites:
+    - singh2019
+    - golmohammadi2014
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      very_good: 10
+      good: 15
+      satisfactory: 25
+    pass_band: satisfactory
+    band_note: Moriasi 2007 streamflow PBIAS tiers reproduced in Belete 2018 (<+/-10 / +/-10-15 / +/-15-25);
+      Singh 2019 gives +/-25% satisfactory for streamflow
+    cites:
+    - belete2018
+    - singh2019
+  secondary_metrics:
+  - metric: rsr
+    direction: minimize
+    status: supportive
+    ceiling_reason: 'RMSE-standard-deviation ratio; Moriasi satisfactory RSR <= 0.70 (good <= 0.60), co-reported
+      with NSE (Golmohammadi 2014: ''calibrated for flow if monthly NSE >= 0.65, PBIAS <= +/-10% and RSR
+      <= 0.60'').'
+    cites:
+    - golmohammadi2014
+  - metric: r2
+    direction: maximize
+    status: supportive
+    ceiling_reason: Belete 2018 reproduces R2 tiers (0.7<R2<1 very good, 0.6-0.7 good, 0.5-0.6 satisfactory);
+      co-reported, not the wflow headline.
+    cites:
+    - belete2018
+  validated_when: KGE >= 0.4 (wflow-native satisfactory; van Verseveld 2024) AND NSE >= 0.50 AND |PBIAS|
+    <= 25% (Moriasi 2007 monthly streamflow, satisfactory)
+  evidence_strength: strong
+  confidence: 0.85
+  notes: 'Headline for wflow_sbm. van Verseveld 2024 (the wflow_sbm model-description paper) reports uncalibrated
+    global-data-map KGE values of 0.63-0.87 at GRDC stations and defines "satisfactory (0.4 <= KGE < 0.7)
+    to good (KGE >= 0.7)" as the operative wflow convention -> KGE kept as primary headline. NSE/PBIAS
+    Moriasi tiers added as the domain streamflow convention (primary source Moriasi et al. 2007, 10.13031/2013.23153,
+    is closed -> tiers taken from the three OA papers that reproduce them verbatim; see deferred_paywalled).
+    dag determining_metric (nse) retained as headline. CAVEAT from dag: uncalibrated wflow vs another
+    model can differ 3-5x in magnitude and placeholder (non-DEM) river geometry gives correct timing but
+    2-3x magnitude bias -> when magnitude is structurally biased, KGE/NSE timing and correlation should
+    be weighed separately from PBIAS (do not fix_ki on a pure magnitude offset from known geometry-placeholder
+    setup). Reservoir-storage and groundwater-recharge dag rows carry no canonical_quantity and are not
+    gradeable here.'
+  dag_variable: river discharge (q_river / river_water__volume_flow_rate)
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: kge
+    direction: maximize
+    unit: dimensionless
+    bands:
+      good: 0.7
+      satisfactory: 0.4
+    pass_band: satisfactory
+    band_note: transferred from the wflow-native point KGE convention; evaluate on the river mask only
+    cites:
+    - vanverseveld2024
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      very_good: 0.75
+      good: 0.65
+      satisfactory: 0.5
+    pass_band: satisfactory
+    band_note: Moriasi streamflow tiers transferred to gridded river discharge (river-mask comparison)
+    cites:
+    - singh2019
+    - golmohammadi2014
+  secondary_metrics: []
+  validated_when: 'On the river mask: KGE >= 0.4 AND NSE >= 0.50 (bands transferred from the point-gauge
+    convention)'
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: Gridded discharge fields are routing-network dependent; the dag caveat requires comparison on
+    the river mask only. No spatial-field-specific discharge threshold in the fetched set; bands transferred
+    from the point-gauge KGE/NSE convention, hence reduced confidence.
+  dag_variable: river discharge (q_river / river_water__volume_flow_rate)
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no cited CSI threshold for unrouted cell runoff in the fetched set
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited categorical/skill threshold for unrouted runoff; treat as data-gap
+  evidence_strength: weak
+  confidence: 0.3
+  notes: Unrouted runoff is the correct variable for external routing coupling (do NOT compare routed
+    q_river against runoff), but it is essentially never observed directly at cell scale, so the field
+    has no validation convention for it. Band null per no-fabrication rule; MUST NOT loosen the discharge
+    gate. Skill is normally judged downstream via routed discharge (see the discharge block).
+  dag_variable: unrouted runoff (runoff)
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no cited NSE tier for actual-ET spatial fields; ET spatial skill is judged by pattern metrics,
+      not a hard NSE band
+    cites: []
+  secondary_metrics:
+  - metric: spaef
+    direction: maximize
+    status: supportive
+    ceiling_reason: Koch 2018 introduces SPAEF (Spatial Efficiency; optimum = 1) as the bias-insensitive
+      spatial-pattern metric for simulated AET, combining Pearson correlation, coefficient of variation
+      and histogram overlap. It is a pattern-quality metric with no published pass/satisfactory tier,
+      so it contextualises but cannot decide 'validated'.
+    cites:
+    - koch2018
+  validated_when: UNRESOLVED numerically — actual-ET spatial patterns are assessed with SPAEF/correlation
+    (Koch 2018), but no cited pass-band exists; annual ~200-1500 mm is a plausibility envelope only (dag
+    caveat)
+  evidence_strength: weak
+  confidence: 0.35
+  notes: Remote-sensing ET products carry their own retrieval uncertainty (dag caveat). Koch 2018 grounds
+    the METHOD (SPAEF spatial-pattern evaluation) but reports no numeric skill threshold; van Verseveld
+    2024 discusses ET as a water-balance component without a validation tier. Band null; gate may contextualise
+    but never loosen.
+  dag_variable: actual evapotranspiration (actevap)
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: r
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: obs_map determining_metric is correlation (r); no cited pass-band for satellite-vs-model
+      soil-moisture correlation in the fetched set
+    cites: []
+  secondary_metrics:
+  - metric: nse
+    direction: maximize
+    status: supportive
+    ceiling_reason: Model storage is a saturated-zone water DEPTH in mm; satellite soil moisture is a
+      surface volumetric fraction. Absolute NSE is not meaningful across incommensurate units (dag caveat)
+      -> compare anomalies/patterns, so temporal correlation (r), not NSE, is the informative metric.
+      No fetched paper sets a numeric r threshold for wflow soil moisture.
+    cites: []
+  validated_when: UNRESOLVED — compare anomalies/patterns (correlation), not absolute values; no cited
+    numeric threshold
+  evidence_strength: weak
+  confidence: 0.3
+  notes: 'Depth-vs-volumetric-fraction mismatch (dag caveat) means only anomaly/pattern agreement is defensible.
+    The fetched soil-moisture papers (Wanders 2014 flood-forecasting DA; Koch 2018 spatial pattern) treat
+    soil moisture as an assimilation/pattern input and report no model-validation correlation tier. Band
+    null; note: `nse` ceiling is documented only via the dag caveat (no fetched paper) so it is marked
+    `supportive`, not `structurally_limited`.'
+  dag_variable: soil moisture / saturated water depth (satwaterdepth)
+- obs_shape: spatial_time_series
+  headline_metrics:
+  - metric: csi
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no cited CSI/snow-cover-extent threshold for wflow SWE fields in the fetched set
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — no cited spatial snow skill threshold; degree-day (temperature-index) SWE,
+    correct only if temperature is in Celsius (dag caveat)
+  evidence_strength: weak
+  confidence: 0.3
+  notes: wflow uses a degree-day (temperature-index) snow scheme; the fetched snow papers (NewAge-JGrass
+    SWE components, snow-model intercomparison, snow DA for streamflow) report per-site RMSE/KGE for their
+    own models but no transferable pass-band for wflow SWE fields. Band null.
+  dag_variable: snow water equivalent (SWE)
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: nse
+    direction: maximize
+    unit: dimensionless
+    bands:
+      satisfactory: null
+    pass_band: satisfactory
+    band_note: no cited point SWE NSE threshold in the fetched set
+    cites: []
+  secondary_metrics: []
+  validated_when: UNRESOLVED — point SNOTEL-style SWE comparison is sensitive to sub-grid elevation (dag
+    caveat); no cited numeric threshold
+  evidence_strength: weak
+  confidence: 0.3
+  notes: Point SWE vs SNOTEL is highly sensitive to sub-grid elevation. Fetched snow papers do not supply
+    a transferable NSE band for temperature-index SWE. Band null; gate may contextualise but never loosen.
+  dag_variable: snow water equivalent (SWE)
+- obs_shape: point_time_series
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: 55
+    pass_band: satisfactory
+    band_note: Moriasi 2007 sediment convention 'PBIAS +/-55% for sediment' reproduced verbatim in Singh
+      2019
+    cites:
+    - singh2019
+  secondary_metrics:
+  - metric: nse
+    direction: maximize
+    status: supportive
+    ceiling_reason: For sediment, PBIAS (magnitude) is the field's headline; NSE is co-reported but sediment
+      temporal NSE is typically weaker than for discharge and no numeric sediment-NSE tier is quoted in
+      the fetched OA texts.
+    cites: []
+  validated_when: '|PBIAS| <= 55% (Moriasi 2007 monthly sediment convention, satisfactory; Singh 2019)'
+  evidence_strength: moderate
+  confidence: 0.55
+  notes: wflow_sediment in-stream yield. Singh 2019 reproduces Moriasi's satisfactory sediment magnitude
+    band ("PBIAS +/-55% for sediment"). Specific yield is typically 10-1000 t/km2/yr (dag caveat); grain
+    fractions must sum to 1.0 for a closed budget. Sensitive to USLE K SI-vs-US units (~7.6x) and C-factor
+    land-cover lookup -> a magnitude bias may be a units/parameterisation error, not a temporal-skill
+    failure. Belete 2018 and Shrestha 2013 supply basin-scale specific-yield context (4-4935 t/km2/yr
+    Blue Nile) but no additional numeric tier. Only the satisfactory band is quoted from a fetched paper;
+    good/ very_good sediment sub-tiers left null (not in the fetched texts).
+  dag_variable: sediment yield / specific yield at outlet
+- obs_shape: regional_aggregate_snapshot
+  headline_metrics:
+  - metric: pbias
+    direction: zero_centered
+    unit: percent
+    bands:
+      satisfactory: 55
+    pass_band: satisfactory
+    band_note: same Moriasi sediment magnitude convention (Singh 2019) applied to long-term mean specific
+      yield vs basin surveys
+    cites:
+    - singh2019
+  secondary_metrics: []
+  validated_when: '|PBIAS| <= 55% of long-term mean specific yield against basin-aggregate sediment surveys
+    (Moriasi 2007; Singh 2019)'
+  evidence_strength: moderate
+  confidence: 0.5
+  notes: Long-term mean specific yield (t/km2/yr) vs basin sediment surveys. Blue Nile (Belete 2018) reports
+    observed specific-yield ranges of 4-4935 t/km2/yr and Shrestha 2013 (Mekong Nam Ou) provides annual
+    sediment-yield magnitudes for plausibility, but the only quoted numeric skill band is Moriasi's PBIAS
+    +/-55%.
+  dag_variable: sediment yield / specific yield at outlet
 deferred_paywalled:
-  - ref: "Moriasi et al. 2007 — Model evaluation guidelines for systematic quantification of accuracy in watershed simulations (PRIMARY source of the NSE/PBIAS/RSR streamflow + PBIAS +/-55% sediment tiers; reproduced here via the OA papers that quote it)"
-    doi: 10.13031/2013.23153
-    needed_for: [discharge, sediment]
-  - ref: "Moriasi et al. 2015 — Hydrologic and water quality models: performance measures and evaluation criteria (updated discharge/sediment/N-P tier tables)"
-    doi: 10.13031/trans.58.10715
-    needed_for: [discharge, sediment]
-  - ref: "A dedicated wflow_sbm SWE / snow-cover evaluation reporting point or spatial SWE NSE/RMSE/CSI tiers (fetched snow papers cover other models only)"
-    doi: unknown_not_fetched
-    needed_for: [swe]
-  - ref: "A wflow_sbm actual-ET / soil-moisture spatial-pattern benchmark reporting a SPAEF or correlation pass-band"
-    doi: unknown_not_fetched
-    needed_for: [evapotranspiration, soil_moisture]
+- ref: Moriasi et al. 2007 — Model evaluation guidelines for systematic quantification of accuracy in
+    watershed simulations (PRIMARY source of the NSE/PBIAS/RSR streamflow + PBIAS +/-55% sediment tiers;
+    reproduced here via the OA papers that quote it)
+  doi: 10.13031/2013.23153
+  needed_for:
+  - discharge
+  - sediment
+- ref: 'Moriasi et al. 2015 — Hydrologic and water quality models: performance measures and evaluation
+    criteria (updated discharge/sediment/N-P tier tables)'
+  doi: 10.13031/trans.58.10715
+  needed_for:
+  - discharge
+  - sediment
+- ref: A dedicated wflow_sbm SWE / snow-cover evaluation reporting point or spatial SWE NSE/RMSE/CSI tiers
+    (fetched snow papers cover other models only)
+  doi: unknown_not_fetched
+  needed_for:
+  - swe
+- ref: A wflow_sbm actual-ET / soil-moisture spatial-pattern benchmark reporting a SPAEF or correlation
+    pass-band
+  doi: unknown_not_fetched
+  needed_for:
+  - evapotranspiration
+  - soil_moisture

@@ -1,38 +1,44 @@
-triplets:
+# ========================================================================
+# AquaCrop Diagnostic Triplets
+# ========================================================================
+# 21 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+
 - id: dt_001
   stage: s3_weather_prep
   failure_domain: column_mismatch
   symptom:
-    description: 'ValueError raised when constructing AquaCropModel: ''Check if all
-      the following columns exist (Date MinTemp MaxTemp Precipitation ReferenceET)'''
+    description: 'ValueError raised when constructing AquaCropModel: ''Check if all the following columns
+      exist (Date MinTemp MaxTemp Precipitation ReferenceET)'''
     error_pattern: Check if all the following columns exist.*ReferenceET
     detection_method: log_match
   diagnosis:
     root_cause: Weather DataFrame is missing the ReferenceET column
-    explanation: 'Unlike DSSAT which computes evapotranspiration internally from radiation,
-      wind, and humidity variables, AquaCrop requires pre-computed reference ET0 as
-      an input. Most raw weather data sources (VIC forcing, CMFD, MSWX, station data)
-      do not include ET0. The user must compute it externally using FAO-56 Penman-Monteith
-      or Hargreaves-Samani before constructing the weather DataFrame.
+    explanation: 'Unlike DSSAT which computes evapotranspiration internally from radiation, wind, and
+      humidity variables, AquaCrop requires pre-computed reference ET0 as an input. Most raw weather data
+      sources (VIC forcing, CMFD, MSWX, station data) do not include ET0. The user must compute it externally
+      using FAO-56 Penman-Monteith or Hargreaves-Samani before constructing the weather DataFrame.
 
       '
     affected_components:
     - weather_df
     - AquaCropModel constructor
   remedy:
-    action: Compute ReferenceET using FAO Penman-Monteith from available met variables
-      (Tmin, Tmax, solar radiation, wind, humidity, elevation, latitude)
+    action: Compute ReferenceET using FAO Penman-Monteith from available met variables (Tmin, Tmax, solar
+      radiation, wind, humidity, elevation, latitude)
     tool_to_run: compute_eto_penman_monteith
     manual_steps:
-    - Check source data for available variables (at minimum need Tmin, Tmax, solar
-      radiation)
-    - 'If only Tmin/Tmax available, use Hargreaves-Samani: ET0 = 0.0023 * (Tmax-Tmin)^0.5
-      * ((Tmax+Tmin)/2 + 17.8) * Ra'
+    - Check source data for available variables (at minimum need Tmin, Tmax, solar radiation)
+    - 'If only Tmin/Tmax available, use Hargreaves-Samani: ET0 = 0.0023 * (Tmax-Tmin)^0.5 * ((Tmax+Tmin)/2
+      + 17.8) * Ra'
     - If full met data available, use FAO-56 Penman-Monteith via tool compute_eto_penman_monteith
     - Add computed ET0 as 'ReferenceET' column to DataFrame
     - Verify ET0 > 0 for all days (AquaCrop clips to 0.1 internally)
-    prevention: Always check for ReferenceET column before constructing AquaCropModel.
-      Add ET0 computation as standard step in weather preparation pipeline.
+    prevention: Always check for ReferenceET column before constructing AquaCropModel. Add ET0 computation
+      as standard step in weather preparation pipeline.
   severity: fatal
   cross_references:
   - dt_007
@@ -40,20 +46,18 @@ triplets:
   stage: s1_crop_selection
   failure_domain: silent_error
   symptom:
-    description: Model runs successfully but phenological timing is wrong -- crop
-      matures too early or too late compared to observations. Yield may be reasonable
-      but growth stage durations do not match field data.
+    description: Model runs successfully but phenological timing is wrong -- crop matures too early or
+      too late compared to observations. Yield may be reasonable but growth stage durations do not match
+      field data.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: GDD base temperature (Tbase) does not match the crop's actual thermal
-      requirements
-    explanation: 'Each crop has a specific base temperature below which development
-      does not progress. Using the wrong Tbase causes GDD accumulation to be too fast
-      or too slow, shifting all phenological events. For example, Wheat has Tbase=0C
-      but Maize has Tbase=8C. Using Maize defaults for a wheat simulation would dramatically
-      slow GDD accumulation in cool weather. The model produces no error -- it simply
-      runs with wrong timing.
+    root_cause: GDD base temperature (Tbase) does not match the crop's actual thermal requirements
+    explanation: 'Each crop has a specific base temperature below which development does not progress.
+      Using the wrong Tbase causes GDD accumulation to be too fast or too slow, shifting all phenological
+      events. For example, Wheat has Tbase=0C but Maize has Tbase=8C. Using Maize defaults for a wheat
+      simulation would dramatically slow GDD accumulation in cool weather. The model produces no error
+      -- it simply runs with wrong timing.
 
       '
     affected_components:
@@ -65,12 +69,12 @@ triplets:
     action: Check and correct Tbase for the target crop species
     tool_to_run: validate_crop_params
     manual_steps:
-    - 'Look up Tbase for the crop: Maize=8, Wheat=0, Rice=8, Soybean=5, Barley=0,
-      Cotton=12, Sunflower=6, Potato=2'
+    - 'Look up Tbase for the crop: Maize=8, Wheat=0, Rice=8, Soybean=5, Barley=0, Cotton=12, Sunflower=6,
+      Potato=2'
     - 'Override if needed: Crop(''MaizeGDD'', planting_date=''05/01'', Tbase=8)'
     - Compare simulated phenology dates with field observations
-    prevention: Always verify Tbase matches published values for the crop species.
-      Use GDD crop variants (e.g., MaizeGDD) which have validated Tbase.
+    prevention: Always verify Tbase matches published values for the crop species. Use GDD crop variants
+      (e.g., MaizeGDD) which have validated Tbase.
   severity: silent
   cross_references:
   - dt_005
@@ -78,19 +82,18 @@ triplets:
   stage: s2_soil_profile
   failure_domain: parameter_format
   symptom:
-    description: 'AssertionError when creating custom soil: assertion fails with ''assert
-      1 == 2'' and message ''wrong soil type'''
+    description: 'AssertionError when creating custom soil: assertion fails with ''assert 1 == 2'' and
+      message ''wrong soil type'''
     error_pattern: wrong soil type|assert 1 == 2|AssertionError
     detection_method: log_match
   diagnosis:
-    root_cause: Soil hydraulic parameters violate thWP < thFC < thS ordering, or an
-      invalid soil_type name was used
-    explanation: 'AquaCrop requires that wilting point (thWP) < field capacity (thFC)
-      < saturation (thS) for all soil layers. This is a physical constraint: WP is
-      the driest point roots can extract water, FC is the water held against gravity,
-      and SAT is total porosity. If values are swapped (e.g., thWP=0.4, thFC=0.2),
-      the soil water balance equations produce nonsensical results. The same assertion
-      error occurs if the soil_type string does not match any built-in name (case-sensitive).
+    root_cause: Soil hydraulic parameters violate thWP < thFC < thS ordering, or an invalid soil_type
+      name was used
+    explanation: 'AquaCrop requires that wilting point (thWP) < field capacity (thFC) < saturation (thS)
+      for all soil layers. This is a physical constraint: WP is the driest point roots can extract water,
+      FC is the water held against gravity, and SAT is total porosity. If values are swapped (e.g., thWP=0.4,
+      thFC=0.2), the soil water balance equations produce nonsensical results. The same assertion error
+      occurs if the soil_type string does not match any built-in name (case-sensitive).
 
       '
     affected_components:
@@ -104,11 +107,9 @@ triplets:
     - 'Print soil profile: print(soil.profile[[''Layer'',''th_wp'',''th_fc'',''th_s'']])'
     - 'For each layer verify: th_wp < th_fc < th_s'
     - If using custom soil, reorder values correctly
-    - 'If using built-in type, check exact spelling (case-sensitive): ''SandyLoam''
-      not ''sandyloam'''
-    prevention: Run validate_soil_hydraulics tool after creating any custom soil.
-      Use add_layer_from_texture() which computes hydraulic properties from texture
-      automatically.
+    - 'If using built-in type, check exact spelling (case-sensitive): ''SandyLoam'' not ''sandyloam'''
+    prevention: Run validate_soil_hydraulics tool after creating any custom soil. Use add_layer_from_texture()
+      which computes hydraulic properties from texture automatically.
   severity: fatal
   cross_references:
   - dt_011
@@ -116,17 +117,16 @@ triplets:
   stage: s4_initial_conditions
   failure_domain: silent_error
   symptom:
-    description: Model runs but yield is zero. Canopy cover never develops beyond
-      zero. Crop fails to germinate.
+    description: Model runs but yield is zero. Canopy cover never develops beyond zero. Crop fails to
+      germinate.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
     root_cause: Initial soil water content is below the germination threshold
-    explanation: 'AquaCrop requires a minimum amount of water in the top soil for
-      germination (controlled by crop.GermThr, default 0.2 = 20% of TAW). If initial
-      water content is set below wilting point or at a very low percentage of TAW,
-      the seed never germinates, canopy cover remains zero, and yield is zero. The
-      model reports no error -- it faithfully simulates a failed crop.
+    explanation: 'AquaCrop requires a minimum amount of water in the top soil for germination (controlled
+      by crop.GermThr, default 0.2 = 20% of TAW). If initial water content is set below wilting point
+      or at a very low percentage of TAW, the seed never germinates, canopy cover remains zero, and yield
+      is zero. The model reports no error -- it faithfully simulates a failed crop.
 
       '
     affected_components:
@@ -142,8 +142,8 @@ triplets:
     - 'Set IWC to FC: InitialWaterContent(wc_type=''Prop'', value=[''FC''])'
     - 'Or use minimum 50% TAW: InitialWaterContent(wc_type=''Pct'', value=[50])'
     - Re-run simulation
-    prevention: Always use 'FC' as default initial water content unless site-specific
-      data indicates otherwise. Verify canopy_cover > 0 within 20 DAP.
+    prevention: Always use 'FC' as default initial water content unless site-specific data indicates otherwise.
+      Verify canopy_cover > 0 within 20 DAP.
   severity: silent
   cross_references:
   - dt_014
@@ -151,18 +151,17 @@ triplets:
   stage: s1_crop_selection
   failure_domain: silent_error
   symptom:
-    description: Model runs but yield is very low or zero. GDD accumulation is extremely
-      slow because temperatures are below Tbase during the planting period.
+    description: Model runs but yield is very low or zero. GDD accumulation is extremely slow because
+      temperatures are below Tbase during the planting period.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
     root_cause: Planting date is set to the wrong season for the target crop and hemisphere
-    explanation: 'Planting date is specified as MM/DD. For Northern Hemisphere summer
-      crops (maize, soybean), planting should be April-June. For Southern Hemisphere,
-      planting should be October-December. Winter crops (wheat) are planted in autumn.
-      Using a Northern Hemisphere planting date in a Southern Hemisphere location
-      (or vice versa) means the crop grows during the wrong season when temperatures
-      may be below Tbase, severely limiting GDD accumulation.
+    explanation: 'Planting date is specified as MM/DD. For Northern Hemisphere summer crops (maize, soybean),
+      planting should be April-June. For Southern Hemisphere, planting should be October-December. Winter
+      crops (wheat) are planted in autumn. Using a Northern Hemisphere planting date in a Southern Hemisphere
+      location (or vice versa) means the crop grows during the wrong season when temperatures may be below
+      Tbase, severely limiting GDD accumulation.
 
       '
     affected_components:
@@ -170,19 +169,18 @@ triplets:
     - GDD accumulation
     - All phenological events
   remedy:
-    action: Adjust planting date to the correct growing season for the target location
-      and crop
+    action: Adjust planting date to the correct growing season for the target location and crop
     tool_to_run: ''
     manual_steps:
     - 'Verify hemisphere: Northern (lat > 0) or Southern (lat < 0)'
-    - 'Check crop season: summer crops (maize/soybean) need warm months, winter crops
-      (wheat) planted in autumn'
+    - 'Check crop season: summer crops (maize/soybean) need warm months, winter crops (wheat) planted
+      in autumn'
     - 'Northern summer: plant 04/01 to 06/15'
     - 'Southern summer: plant 10/01 to 12/15'
     - 'Northern winter wheat: plant 09/15 to 11/15'
     - Re-run with corrected planting date
-    prevention: Always verify planting date against local agricultural calendar. Check
-      that GDD accumulation starts immediately after planting.
+    prevention: Always verify planting date against local agricultural calendar. Check that GDD accumulation
+      starts immediately after planting.
   severity: silent
   cross_references:
   - dt_002
@@ -190,16 +188,15 @@ triplets:
   stage: s9_output_analysis
   failure_domain: environment
   symptom:
-    description: KeyError when accessing output DataFrame columns that worked in a
-      previous version. Column names differ between aquacrop versions.
+    description: KeyError when accessing output DataFrame columns that worked in a previous version. Column
+      names differ between aquacrop versions.
     error_pattern: KeyError.*|column not found
     detection_method: log_match
   diagnosis:
     root_cause: AquaCrop-OSPy output column names changed between package versions
-    explanation: 'Between major versions of aquacrop (e.g., v2.x to v3.x), output
-      DataFrame column names may change. For example, column naming conventions, capitalization,
-      or the set of output variables may differ. Code that hardcodes column names
-      from one version will break on another.
+    explanation: 'Between major versions of aquacrop (e.g., v2.x to v3.x), output DataFrame column names
+      may change. For example, column naming conventions, capitalization, or the set of output variables
+      may differ. Code that hardcodes column names from one version will break on another.
 
       '
     affected_components:
@@ -214,25 +211,24 @@ triplets:
     - 'Print column names: print(model.get_simulation_results().columns.tolist())'
     - Update code to use current column names
     - Pin aquacrop version in requirements.txt to avoid unexpected changes
-    prevention: 'Pin package version: pip install aquacrop==3.0.12. Use column names
-      from official documentation for the installed version.'
+    prevention: 'Pin package version: pip install aquacrop==3.0.12. Use column names from official documentation
+      for the installed version.'
   severity: fatal
   cross_references: []
 - id: dt_007
   stage: s3_weather_prep
   failure_domain: column_mismatch
   symptom:
-    description: 'ValueError: ''Error in weather_df format. Check if all the following
-      columns exist (Date MinTemp MaxTemp Precipitation ReferenceET).'''
+    description: 'ValueError: ''Error in weather_df format. Check if all the following columns exist (Date
+      MinTemp MaxTemp Precipitation ReferenceET).'''
     error_pattern: Error in weather_df format.*columns exist
     detection_method: log_match
   diagnosis:
-    root_cause: Weather DataFrame column names do not exactly match the expected names
-      (case-sensitive)
-    explanation: 'AquaCrop checks for exact column name matches: ''Date'', ''MinTemp'',
-      ''MaxTemp'', ''Precipitation'', ''ReferenceET''. Common mismatches include ''min_temp''
-      instead of ''MinTemp'', ''ET0'' instead of ''ReferenceET'', ''Precip'' instead
-      of ''Precipitation'', ''date'' instead of ''Date''. The check is case-sensitive.
+    root_cause: Weather DataFrame column names do not exactly match the expected names (case-sensitive)
+    explanation: 'AquaCrop checks for exact column name matches: ''Date'', ''MinTemp'', ''MaxTemp'', ''Precipitation'',
+      ''ReferenceET''. Common mismatches include ''min_temp'' instead of ''MinTemp'', ''ET0'' instead
+      of ''ReferenceET'', ''Precip'' instead of ''Precipitation'', ''date'' instead of ''Date''. The check
+      is case-sensitive.
 
       '
     affected_components:
@@ -243,12 +239,11 @@ triplets:
     tool_to_run: validate_weather_df
     manual_steps:
     - 'Print current columns: print(weather_df.columns.tolist())'
-    - 'Rename to match: weather_df.rename(columns={''tmin'': ''MinTemp'', ''tmax'':
-      ''MaxTemp'', ''precip'': ''Precipitation'', ''et0'': ''ReferenceET'', ''date'':
-      ''Date''}, inplace=True)'
+    - 'Rename to match: weather_df.rename(columns={''tmin'': ''MinTemp'', ''tmax'': ''MaxTemp'', ''precip'':
+      ''Precipitation'', ''et0'': ''ReferenceET'', ''date'': ''Date''}, inplace=True)'
     - 'Verify: assert set([''MinTemp'',''MaxTemp'',''Precipitation'',''ReferenceET'',''Date'']).issubset(weather_df.columns)'
-    prevention: Always use validate_weather_df tool before model construction. Establish
-      a standard column renaming function for each data source.
+    prevention: Always use validate_weather_df tool before model construction. Establish a standard column
+      renaming function for each data source.
   severity: fatal
   cross_references:
   - dt_001
@@ -256,20 +251,17 @@ triplets:
   stage: s8_execution
   failure_domain: silent_error
   symptom:
-    description: Model completes but yield is unexpectedly low or zero despite adequate
-      irrigation. Canopy cover declines prematurely. Soil water storage shows persistent
-      saturation.
+    description: Model completes but yield is unexpectedly low or zero despite adequate irrigation. Canopy
+      cover declines prematurely. Soil water storage shows persistent saturation.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: Prolonged soil saturation causes aeration stress, killing roots and
-      reducing transpiration
-    explanation: 'AquaCrop simulates aeration stress when soil water content exceeds
-      SAT - Aer (where Aer is typically 5% by volume). If soil drainage is poor (low
-      Ksat, clay soils) and irrigation or rainfall is excessive, the root zone stays
-      saturated. After crop.LagAer days (default 3), aeration stress reduces transpiration.
-      Prolonged waterlogging kills the crop. This is especially common with paddy
-      soils used for non-rice crops, or when bunds trap excess water.
+    root_cause: Prolonged soil saturation causes aeration stress, killing roots and reducing transpiration
+    explanation: 'AquaCrop simulates aeration stress when soil water content exceeds SAT - Aer (where
+      Aer is typically 5% by volume). If soil drainage is poor (low Ksat, clay soils) and irrigation or
+      rainfall is excessive, the root zone stays saturated. After crop.LagAer days (default 3), aeration
+      stress reduces transpiration. Prolonged waterlogging kills the crop. This is especially common with
+      paddy soils used for non-rice crops, or when bunds trap excess water.
 
       '
     affected_components:
@@ -282,14 +274,13 @@ triplets:
     action: Reduce irrigation, improve drainage (increase Ksat), or remove bunds
     tool_to_run: ''
     manual_steps:
-    - 'Check water_storage output: look for soil compartments consistently at or above
-      th_s'
+    - 'Check water_storage output: look for soil compartments consistently at or above th_s'
     - 'Check water_flux: look for high surface_storage values'
     - 'If using bunds for non-paddy crop: remove bunds (FieldMngt(bunds=False))'
     - 'If soil has very low Ksat: consider a sandier soil type or increase Ksat'
     - Reduce irrigation amount or frequency
-    prevention: Only use bunds for paddy rice. Check soil Ksat is appropriate for
-      the irrigation method. Monitor water_storage output for saturation.
+    prevention: Only use bunds for paddy rice. Check soil Ksat is appropriate for the irrigation method.
+      Monitor water_storage output for saturation.
   severity: silent
   cross_references:
   - dt_004
@@ -298,17 +289,14 @@ triplets:
   stage: s7_model_assembly
   failure_domain: date_format
   symptom:
-    description: 'ValueError: ''sim_start_time format must be YYYY/MM/DD'' when constructing
-      AquaCropModel'
-    error_pattern: sim_start_time format must be.*YYYY/MM/DD|sim_end_time format must
-      be
+    description: 'ValueError: ''sim_start_time format must be YYYY/MM/DD'' when constructing AquaCropModel'
+    error_pattern: sim_start_time format must be.*YYYY/MM/DD|sim_end_time format must be
     detection_method: log_match
   diagnosis:
     root_cause: Simulation start or end date uses dashes instead of slashes
-    explanation: 'AquaCrop-OSPy requires date strings in ''YYYY/MM/DD'' format with
-      forward slashes. The ISO-8601 format ''YYYY-MM-DD'' with dashes, which is the
-      default for pandas and most Python datetime operations, is NOT accepted. The
-      validation regex specifically checks for the slash format.
+    explanation: 'AquaCrop-OSPy requires date strings in ''YYYY/MM/DD'' format with forward slashes. The
+      ISO-8601 format ''YYYY-MM-DD'' with dashes, which is the default for pandas and most Python datetime
+      operations, is NOT accepted. The validation regex specifically checks for the slash format.
 
       '
     affected_components:
@@ -321,26 +309,25 @@ triplets:
     - Change '2000-01-01' to '2000/01/01'
     - 'If using datetime objects: dt.strftime(''%Y/%m/%d'')'
     - 'If using pandas Timestamp: ts.strftime(''%Y/%m/%d'')'
-    prevention: Always use format 'YYYY/MM/DD' for AquaCrop dates. Create a helper
-      function that converts any date to this format.
+    prevention: Always use format 'YYYY/MM/DD' for AquaCrop dates. Create a helper function that converts
+      any date to this format.
   severity: fatal
   cross_references: []
 - id: dt_010
   stage: s7_model_assembly
   failure_domain: dependency_mismatch
   symptom:
-    description: Multi-year simulation only produces results for one season. Soil
-      moisture resets between seasons instead of carrying over.
+    description: Multi-year simulation only produces results for one season. Soil moisture resets between
+      seasons instead of carrying over.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: off_season parameter is set to False (default), skipping fallow periods
-      between growing seasons
-    explanation: 'With off_season=False (the default), AquaCrop jumps from harvest
-      directly to the next planting date. Soil moisture is not tracked during the
-      fallow period. For multi-year simulations where inter-season soil water dynamics
-      matter (e.g., dryland cropping, water table recharge), this produces unrealistic
-      results because each season starts with the same initial conditions.
+    root_cause: off_season parameter is set to False (default), skipping fallow periods between growing
+      seasons
+    explanation: 'With off_season=False (the default), AquaCrop jumps from harvest directly to the next
+      planting date. Soil moisture is not tracked during the fallow period. For multi-year simulations
+      where inter-season soil water dynamics matter (e.g., dryland cropping, water table recharge), this
+      produces unrealistic results because each season starts with the same initial conditions.
 
       '
     affected_components:
@@ -354,25 +341,24 @@ triplets:
     - Add off_season=True to AquaCropModel constructor
     - Ensure weather data covers the full period including fallow seasons
     - Re-run simulation
-    prevention: For multi-year simulations, always set off_season=True unless deliberately
-      testing single-season response.
+    prevention: For multi-year simulations, always set off_season=True unless deliberately testing single-season
+      response.
   severity: degraded
   cross_references: []
 - id: dt_011
   stage: s2_soil_profile
   failure_domain: parameter_format
   symptom:
-    description: Error during model initialization when using Soil('custom') without
-      calling add_layer(). Profile DataFrame has NaN values in hydraulic columns.
+    description: Error during model initialization when using Soil('custom') without calling add_layer().
+      Profile DataFrame has NaN values in hydraulic columns.
     error_pattern: NaN|KeyError|IndexError
     detection_method: log_match
   diagnosis:
     root_cause: Soil('custom') creates an empty profile; add_layer() was never called
-    explanation: 'The Soil(''custom'') constructor creates the compartment DataFrame
-      structure but does not populate hydraulic properties (th_wp, th_fc, th_s, Ksat).
-      The user must call add_layer() or add_layer_from_texture() at least once to
-      define soil properties. Without this, the profile contains NaN values that cause
-      errors or nonsensical results during simulation.
+    explanation: 'The Soil(''custom'') constructor creates the compartment DataFrame structure but does
+      not populate hydraulic properties (th_wp, th_fc, th_s, Ksat). The user must call add_layer() or
+      add_layer_from_texture() at least once to define soil properties. Without this, the profile contains
+      NaN values that cause errors or nonsensical results during simulation.
 
       '
     affected_components:
@@ -383,12 +369,11 @@ triplets:
     action: Call add_layer() or add_layer_from_texture() after creating Soil('custom')
     tool_to_run: create_soil_profile
     manual_steps:
-    - After Soil('custom'), call soil.add_layer(thickness, thWP, thFC, thS, Ksat,
-      penetrability)
+    - After Soil('custom'), call soil.add_layer(thickness, thWP, thFC, thS, Ksat, penetrability)
     - 'Verify: soil.profile.dropna() should have rows'
     - Check soil.nLayer >= 1
-    prevention: Never use Soil('custom') without immediately calling add_layer().
-      Use built-in soil types when possible.
+    prevention: Never use Soil('custom') without immediately calling add_layer(). Use built-in soil types
+      when possible.
   severity: fatal
   cross_references:
   - dt_003
@@ -396,18 +381,16 @@ triplets:
   stage: s4_initial_conditions
   failure_domain: silent_error
   symptom:
-    description: No error raised, but initial water content defaults to field capacity
-      for all soil layers regardless of specified values. Multi-layer soil has uniform
-      initial moisture.
+    description: No error raised, but initial water content defaults to field capacity for all soil layers
+      regardless of specified values. Multi-layer soil has uniform initial moisture.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
     root_cause: InitialWaterContent specifies fewer layers than the soil profile has
-    explanation: 'When a multi-layer custom soil is used but InitialWaterContent only
-      specifies values for one layer (the default), AquaCrop silently sets all layers
-      to field capacity. No warning or error is raised. The user''s specified IWC
-      values may be ignored entirely. This is a common silent error when transitioning
-      from a built-in soil (single layer) to a custom multi-layer soil.
+    explanation: 'When a multi-layer custom soil is used but InitialWaterContent only specifies values
+      for one layer (the default), AquaCrop silently sets all layers to field capacity. No warning or
+      error is raised. The user''s specified IWC values may be ignored entirely. This is a common silent
+      error when transitioning from a built-in soil (single layer) to a custom multi-layer soil.
 
       '
     affected_components:
@@ -419,13 +402,12 @@ triplets:
     tool_to_run: create_initial_water_content
     manual_steps:
     - 'Check soil layer count: soil.nLayer'
-    - 'Create IWC with matching layers: InitialWaterContent(wc_type=''Num'', method=''Layer'',
-      depth_layer=[1,2], value=[0.25, 0.30])'
-    - 'Or use ''Prop'' type which applies to all layers: InitialWaterContent(wc_type=''Prop'',
-      value=[''FC'']) (this applies FC to all layers, which is fine)'
-    prevention: When using custom multi-layer soils, always specify IWC per layer.
-      For single-value initialization, use wc_type='Prop' with value=['FC'] which
-      applies uniformly.
+    - 'Create IWC with matching layers: InitialWaterContent(wc_type=''Num'', method=''Layer'', depth_layer=[1,2],
+      value=[0.25, 0.30])'
+    - 'Or use ''Prop'' type which applies to all layers: InitialWaterContent(wc_type=''Prop'', value=[''FC''])
+      (this applies FC to all layers, which is fine)'
+    prevention: When using custom multi-layer soils, always specify IWC per layer. For single-value initialization,
+      use wc_type='Prop' with value=['FC'] which applies uniformly.
   severity: silent
   cross_references:
   - dt_004
@@ -433,18 +415,17 @@ triplets:
   stage: s5_irrigation
   failure_domain: parameter_format
   symptom:
-    description: Error during model initialization or execution when using irrigation_method=3
-      (predefined schedule). TypeError or KeyError related to Schedule DataFrame.
+    description: Error during model initialization or execution when using irrigation_method=3 (predefined
+      schedule). TypeError or KeyError related to Schedule DataFrame.
     error_pattern: KeyError.*Date|KeyError.*Depth|TypeError.*Schedule
     detection_method: log_match
   diagnosis:
-    root_cause: Schedule DataFrame does not have correct column names ('Date', 'Depth')
-      or correct data types
-    explanation: 'For irrigation_method=3, the Schedule must be a pandas DataFrame
-      with exactly two columns: ''Date'' (pd.Timestamp type) and ''Depth'' (float,
-      mm). Common errors: using ''date'' instead of ''Date'', using string dates instead
-      of pd.Timestamp, using ''Amount'' instead of ''Depth'', or passing a list/array
-      instead of a DataFrame.
+    root_cause: Schedule DataFrame does not have correct column names ('Date', 'Depth') or correct data
+      types
+    explanation: 'For irrigation_method=3, the Schedule must be a pandas DataFrame with exactly two columns:
+      ''Date'' (pd.Timestamp type) and ''Depth'' (float, mm). Common errors: using ''date'' instead of
+      ''Date'', using string dates instead of pd.Timestamp, using ''Amount'' instead of ''Depth'', or
+      passing a list/array instead of a DataFrame.
 
       '
     affected_components:
@@ -454,32 +435,31 @@ triplets:
     action: Create Schedule DataFrame with correct column names and types
     tool_to_run: create_irrigation_management
     manual_steps:
-    - 'Create DataFrame: schedule = pd.DataFrame({''Date'': pd.to_datetime([''2000/06/15'',
-      ''2000/07/01'']), ''Depth'': [25.0, 30.0]})'
+    - 'Create DataFrame: schedule = pd.DataFrame({''Date'': pd.to_datetime([''2000/06/15'', ''2000/07/01'']),
+      ''Depth'': [25.0, 30.0]})'
     - 'Verify columns: assert list(schedule.columns) == [''Date'', ''Depth'']'
     - 'Verify Date type: assert pd.api.types.is_datetime64_any_dtype(schedule.Date)'
     - 'Pass to IrrigationManagement: IrrigationManagement(irrigation_method=3, Schedule=schedule)'
-    prevention: Always create Schedule DataFrame using pd.to_datetime() for dates
-      and float values for depths. Use exact column names 'Date' and 'Depth'.
+    prevention: Always create Schedule DataFrame using pd.to_datetime() for dates and float values for
+      depths. Use exact column names 'Date' and 'Depth'.
   severity: fatal
   cross_references: []
 - id: dt_014
   stage: s9_output_analysis
   failure_domain: silent_error
   symptom:
-    description: Model completes (run_model returns True), but Dry yield is 0.0 in
-      final_stats. No error messages.
+    description: Model completes (run_model returns True), but Dry yield is 0.0 in final_stats. No error
+      messages.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
     root_cause: Crop did not complete its growth cycle -- multiple possible causes
-    explanation: 'Zero yield with successful model completion can result from: (1)
-      crop failed to germinate (initial water too low, dt_004), (2) crop died from
-      water stress (drought, no irrigation on very dry soil), (3) crop died from waterlogging
-      (dt_008), (4) simulation ended before maturity (sim_end_time too early), (5)
-      HI0 = 0 (harvest index not set), (6) planting date in wrong season (dt_005),
-      (7) temperature always below Tbase (no GDD accumulation). This is the most dangerous
-      silent error because the model reports success.
+    explanation: 'Zero yield with successful model completion can result from: (1) crop failed to germinate
+      (initial water too low, dt_004), (2) crop died from water stress (drought, no irrigation on very
+      dry soil), (3) crop died from waterlogging (dt_008), (4) simulation ended before maturity (sim_end_time
+      too early), (5) HI0 = 0 (harvest index not set), (6) planting date in wrong season (dt_005), (7)
+      temperature always below Tbase (no GDD accumulation). This is the most dangerous silent error because
+      the model reports success.
 
       '
     affected_components:
@@ -493,14 +473,13 @@ triplets:
     tool_to_run: extract_results
     manual_steps:
     - 'Check canopy_cover in crop_growth: if always 0, germination failed (see dt_004)'
-    - 'Check gdd_cum: if barely increases, temperature is below Tbase (see dt_002,
-      dt_005)'
+    - 'Check gdd_cum: if barely increases, temperature is below Tbase (see dt_002, dt_005)'
     - 'Check water_storage: if saturated, waterlogging killed crop (see dt_008)'
     - 'Check Tr in water_flux: if zero, no transpiration occurred'
     - 'Check harvest_index: if HI0=0, yield will always be zero'
     - 'Check sim_end_time: must be after expected maturity date'
-    prevention: After every simulation, check that Dry yield > 0. If zero, run diagnostic
-      checks on crop_growth and water_flux before proceeding.
+    prevention: After every simulation, check that Dry yield > 0. If zero, run diagnostic checks on crop_growth
+      and water_flux before proceeding.
   severity: silent
   cross_references:
   - dt_002
@@ -511,18 +490,17 @@ triplets:
   stage: s6_field_management
   failure_domain: unit_conversion
   symptom:
-    description: Paddy simulation shows unrealistic water ponding or immediate overflow.
-      Bund height appears to be extremely large or negligibly small.
+    description: Paddy simulation shows unrealistic water ponding or immediate overflow. Bund height appears
+      to be extremely large or negligibly small.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
     root_cause: z_bund was specified in mm instead of meters (or vice versa)
-    explanation: 'The FieldMngt constructor accepts z_bund in METERS but immediately
-      multiplies by 1000 to store internally in mm. If the user passes z_bund=150
-      (thinking mm), the model stores 150,000 mm = 150 meters of bund height, creating
-      an impossibly tall bund that traps all water. If the user passes z_bund=0.00015
-      (thinking meters but off by 1000x), the bund is only 0.15 mm and all water overflows
-      immediately.
+    explanation: 'The FieldMngt constructor accepts z_bund in METERS but immediately multiplies by 1000
+      to store internally in mm. If the user passes z_bund=150 (thinking mm), the model stores 150,000
+      mm = 150 meters of bund height, creating an impossibly tall bund that traps all water. If the user
+      passes z_bund=0.00015 (thinking meters but off by 1000x), the bund is only 0.15 mm and all water
+      overflows immediately.
 
       '
     affected_components:
@@ -536,26 +514,23 @@ triplets:
     - 'Convert bund height to meters: 150 mm = 0.15 m'
     - 'Set: FieldMngt(bunds=True, z_bund=0.15)'
     - 'Verify: field.z_bund should equal 150 (stored in mm internally)'
-    prevention: Always specify z_bund in METERS. Typical paddy bund heights are 0.05-0.30
-      m. If the stored value (field.z_bund) is > 500 or < 10, the input was likely
-      in wrong units.
+    prevention: Always specify z_bund in METERS. Typical paddy bund heights are 0.05-0.30 m. If the stored
+      value (field.z_bund) is > 500 or < 10, the input was likely in wrong units.
   severity: silent
   cross_references: []
 - id: dt_v001
   stage: s3_weather_prep
   failure_domain: parameter_format
   symptom:
-    description: 'TypeError: ''<'' not supported between instances of ''float'' and
-      ''Timestamp'' in growing_degree_day.py'
+    description: 'TypeError: ''<'' not supported between instances of ''float'' and ''Timestamp'' in growing_degree_day.py'
     error_pattern: '''<'' not supported between instances of ''float'' and ''Timestamp'''
     detection_method: log_match
   diagnosis:
     root_cause: Weather DataFrame Date column is datetime64[s] instead of datetime64[us]
-    explanation: 'AquaCrop-OSPy internally uses pd.Timestamp comparisons in its GDD
-      calculation. When the Date column is datetime64[s] (from pd.Timestamp(datetime.date(...))),
-      some internal operations confuse Timestamp objects with float temperature values.
-      The built-in prepare_weather() returns datetime64[us]. VIC conversion produces
-      [s].
+    explanation: 'AquaCrop-OSPy internally uses pd.Timestamp comparisons in its GDD calculation. When
+      the Date column is datetime64[s] (from pd.Timestamp(datetime.date(...))), some internal operations
+      confuse Timestamp objects with float temperature values. The built-in prepare_weather() returns
+      datetime64[us]. VIC conversion produces [s].
 
       '
     affected_components:
@@ -566,7 +541,7 @@ triplets:
     tool_to_run: prepare_weather_df
     manual_steps:
     - 'After building weather DataFrame, add: wdf[''Date''] = pd.to_datetime(wdf[''Date'']).astype(''datetime64[us]'')'
-    - "Verify with: wdf.dtypes \u2014 Date should be datetime64[us]"
+    - 'Verify with: wdf.dtypes — Date should be datetime64[us]'
     prevention: prepare_weather_df tool always forces datetime64[us] on Date column
   severity: fatal
   cross_references:
@@ -576,19 +551,19 @@ triplets:
   stage: c4_cama_flood_coupling
   failure_domain: silent_error
   symptom:
-    description: CaMa-Flood river channel cell shows 100% flood days across the entire
-      simulation period. Crop yield drops to near zero due to permanent waterlogging.
+    description: CaMa-Flood river channel cell shows 100% flood days across the entire simulation period.
+      Crop yield drops to near zero due to permanent waterlogging.
     error_pattern: ''
     detection_method: value_comparison
   diagnosis:
-    root_cause: The selected grid cell is on the main river channel, not on agricultural
-      floodplain
-    explanation: "CaMa-Flood river channel cells have permanent water depth from channel\
-      \ flow, not agricultural flooding. When these cells are used for the AquaCrop\
-      \ GroundWater coupling, the water table is at the surface every day, causing\
-      \ 100% aeration stress and complete crop failure. This is physically correct\
-      \ for the channel but meaningless for crop simulation \u2014 crops are grown\
-      \ on floodplain or terrace cells adjacent to the river, not in the channel itself.\n"
+    root_cause: The selected grid cell is on the main river channel, not on agricultural floodplain
+    explanation: 'CaMa-Flood river channel cells have permanent water depth from channel flow, not agricultural
+      flooding. When these cells are used for the AquaCrop GroundWater coupling, the water table is at
+      the surface every day, causing 100% aeration stress and complete crop failure. This is physically
+      correct for the channel but meaningless for crop simulation — crops are grown on floodplain or terrace
+      cells adjacent to the river, not in the channel itself.
+
+      '
     affected_components:
     - apply_cama_flood.py grid cell selection
     - GroundWater object
@@ -599,11 +574,11 @@ triplets:
     tool_to_run: apply_cama_flood
     manual_steps:
     - 'Check flood day fraction: if >95%, the cell is likely a channel cell'
-    - "Move lat/lon to an adjacent cell (0.25\xB0 offset from river centerline)"
+    - Move lat/lon to an adjacent cell (0.25° offset from river centerline)
     - Verify new cell has seasonal flood pattern (flood days < 50% of year)
     - Re-run apply_cama_flood with adjusted coordinates
-    prevention: Before running CaMa-AquaCrop coupling, check that fldfrc is not permanently
-      >0.5. Agricultural cells should show seasonal flooding, not permanent inundation.
+    prevention: Before running CaMa-AquaCrop coupling, check that fldfrc is not permanently >0.5. Agricultural
+      cells should show seasonal flooding, not permanent inundation.
   severity: degraded
   cross_references:
   - dt_008
@@ -611,17 +586,18 @@ triplets:
   stage: s3_weather_prep
   failure_domain: unit_conversion
   symptom:
-    description: VIC vapor pressure column misidentified as specific humidity, causing
-      ET0 calculation errors
+    description: VIC vapor pressure column misidentified as specific humidity, causing ET0 calculation
+      errors
     error_pattern: ET0 values unrealistic|ReferenceET < 0.1 or > 20
     detection_method: value_comparison
   diagnosis:
-    root_cause: VIC forcing column 6 is vapor pressure (kPa), not specific humidity
-      (kg/kg)
-    explanation: "HydroCraft VIC forcing stores vapor pressure directly in kPa (range\
-      \ 0.1-4.2). If treated as specific humidity and used in Penman-Monteith ET0\
-      \ calculation, the result is wrong. AquaCrop needs ET0 in mm/day \u2014 compute\
-      \ from Hargreaves using TMIN, TMAX, and radiation, bypassing the VP column.\n"
+    root_cause: VIC forcing column 6 is vapor pressure (kPa), not specific humidity (kg/kg)
+    explanation: 'HydroCraft VIC forcing stores vapor pressure directly in kPa (range 0.1-4.2). If treated
+      as specific humidity and used in Penman-Monteith ET0 calculation, the result is wrong. AquaCrop
+      needs ET0 in mm/day — compute from Hargreaves using TMIN, TMAX, and radiation, bypassing the VP
+      column.
+
+      '
     affected_components:
     - s3_weather_prep
   remedy:
@@ -636,62 +612,53 @@ triplets:
   verified: '2026-03-19'
 - id: dt_016_multiyear_faostat_validation
   symptom:
-    description: 'Real-case validation against an annual national-yield series (FAOSTAT/GDHY)
-      produces no result/metrics: the run hangs on a ''CPU-bound forcing load'' for
-      a multi-decade window and never emits output, or only a single season''s yield
-      is reported so r/NSE/KGE are undefined.'
+    description: 'Real-case validation against an annual national-yield series (FAOSTAT/GDHY) produces
+      no result/metrics: the run hangs on a ''CPU-bound forcing load'' for a multi-decade window and never
+      emits output, or only a single season''s yield is reported so r/NSE/KGE are undefined.'
   diagnosis:
-    root_cause: The KI documents only a single-season workflow; there is no recipe
-      for a multi-year annual-yield series comparison. Agents improvise a per-year
-      or gridded/hourly decade-scale forcing build that hangs, and run_aquacrop reports
-      only the first season (stats[...].iloc[0]).
+    root_cause: The KI documents only a single-season workflow; there is no recipe for a multi-year annual-yield
+      series comparison. Agents improvise a per-year or gridded/hourly decade-scale forcing build that
+      hangs, and run_aquacrop reports only the first season (stats[...].iloc[0]).
   remedy:
     action: 'Follow SKILL.md ''Multi-Year National-Yield Validation'' recipe: load_daily_forcing(source,
-      lat, lon, y0, y1) ONCE as a daily point series (cmfd for China, nasa_power single
-      request otherwise), run ONE multi-year AquaCropModel (off_season=False -> one
-      season/year), read the FULL final_stats series (NOT run_aquacrop iloc[0]), then
-      align by harvest year with get_faostat_yield_series and call compute_metrics.'
-  format_spec_violated: "none \u2014 protocol/recipe gap, not a format-rule violation"
+      lat, lon, y0, y1) ONCE as a daily point series (cmfd for China, nasa_power single request otherwise),
+      run ONE multi-year AquaCropModel (off_season=False -> one season/year), read the FULL final_stats
+      series (NOT run_aquacrop iloc[0]), then align by harvest year with get_faostat_yield_series and
+      call compute_metrics.'
+  format_spec_violated: none — protocol/recipe gap, not a format-rule violation
   added_by_run: AquaCrop_retry1
 - id: dt_faostat_multiyear_forcing_hang
   symptom:
-    description: Multi-year national-yield (FAOSTAT) validation run emits no result
-      JSON / hangs; final captured message is about 'still loading ~25 years of forcing'.
-      test_results=null, no r computed.
+    description: Multi-year national-yield (FAOSTAT) validation run emits no result JSON / hangs; final
+      captured message is about 'still loading ~25 years of forcing'. test_results=null, no r computed.
   diagnosis:
-    root_cause: 'load_daily_forcing(''cmfd'', lat, lon, y0, y1) over a multi-decade
-      window is NOT a fast single call: _load_cmfd loops year x 12 months x 6 variables
-      = ~6*12*N_years xr.open_dataset point reads (~1,870 for 26 yr), an IO-bound
-      hang in the same class as load_cmfd_daily_all.'
+    root_cause: 'load_daily_forcing(''cmfd'', lat, lon, y0, y1) over a multi-decade window is NOT a fast
+      single call: _load_cmfd loops year x 12 months x 6 variables = ~6*12*N_years xr.open_dataset point
+      reads (~1,870 for 26 yr), an IO-bound hang in the same class as load_cmfd_daily_all.'
   remedy:
-    action: For the multi-year FAOSTAT recipe load forcing with source='nasa_power'
-      (one bounded HTTP request per year, 1981+, valid for China) and keep the window
-      bounded (~15-20 yr). Read the FULL final_stats.csv series (run_aquacrop reports
-      only season-0 yield) and align by harvest year before compute_metrics.
-  format_spec_violated: "none \u2014 recipe/protocol guidance, no Tier-2 rule"
+    action: For the multi-year FAOSTAT recipe load forcing with source='nasa_power' (one bounded HTTP
+      request per year, 1981+, valid for China) and keep the window bounded (~15-20 yr). Read the FULL
+      final_stats.csv series (run_aquacrop reports only season-0 yield) and align by harvest year before
+      compute_metrics.
+  format_spec_violated: none — recipe/protocol guidance, no Tier-2 rule
   added_by_run: AquaCrop_retry2
 - id: dt_017_aggregate_detrended_r_expected_zero
   symptom:
-    description: "Single-point AquaCrop run vs a national/sub-national yield aggregate\
-      \ (FAOSTAT/GDHY, obs_shape=regional_aggregate_time_series): magnitude_accuracy\
-      \ PBIAS is small/good but detrended_r\u22480 (and raw r looks deceptively high\
-      \ from shared trend), tripping a r<0.5 retry."
+    description: 'Single-point AquaCrop run vs a national/sub-national yield aggregate (FAOSTAT/GDHY,
+      obs_shape=regional_aggregate_time_series): magnitude_accuracy PBIAS is small/good but detrended_r≈0
+      (and raw r looks deceptively high from shared trend), tripping a r<0.5 retry.'
   diagnosis:
-    root_cause: "Not a model or tooling defect. A 0-D single-point weather-only run\
-      \ cannot reproduce a national aggregate's detrended inter-annual residuals (driven\
-      \ by area shifts, irrigation expansion, sub-national heterogeneity, policy)\
-      \ and AquaCrop has no N/technology module, so detrended_r\u22480 is the expected,\
-      \ physically-correct outcome. This is a domain/scale mismatch surfaced by applying\
-      \ an interannual-co-movement metric to an aggregate the dag declares invalid\
-      \ for it."
+    root_cause: Not a model or tooling defect. A 0-D single-point weather-only run cannot reproduce a
+      national aggregate's detrended inter-annual residuals (driven by area shifts, irrigation expansion,
+      sub-national heterogeneity, policy) and AquaCrop has no N/technology module, so detrended_r≈0 is
+      the expected, physically-correct outcome. This is a domain/scale mismatch surfaced by applying an
+      interannual-co-movement metric to an aggregate the dag declares invalid for it.
   remedy:
-    action: For regional_aggregate_time_series, gate ONLY on magnitude_accuracy (decadal
-      PBIAS) + trend_match (sign, slope_ratio) via compute_aggregate_metrics; do NOT
-      retry on detrended_r. Validate interannual weather response against a point_time_series
-      (co-located field trial) instead, where low detrended_r IS a real phenology/GDD/planting
-      issue (dt_002/dt_005).
+    action: For regional_aggregate_time_series, gate ONLY on magnitude_accuracy (decadal PBIAS) + trend_match
+      (sign, slope_ratio) via compute_aggregate_metrics; do NOT retry on detrended_r. Validate interannual
+      weather response against a point_time_series (co-located field trial) instead, where low detrended_r
+      IS a real phenology/GDD/planting issue (dt_002/dt_005).
   format_spec_violated: dag.yaml outputs.DryYield.observability.regional_aggregate_time_series.metric_families
-    = [trend_match, magnitude_accuracy] (raw/detrended interannual NSE/r not a valid
-    acceptance gate)
+    = [trend_match, magnitude_accuracy] (raw/detrended interannual NSE/r not a valid acceptance gate)
   canonical_intent: ki_local_if_pass
   added_by_run: AquaCrop_retry1

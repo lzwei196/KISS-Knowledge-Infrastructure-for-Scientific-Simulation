@@ -1,0 +1,105 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
+package:
+  name: APEX
+  language: fortran
+  implementation:
+    id: apex-0806
+    version: v0806
+    provenance: Fortran 90 binary (APEX0806) shipped by Texas A&M AgriLife / Blackland Research and Extension
+      Center, realizing the APEX v0604 science lineage.
+  scientific_reference_version: 'APEX (Agricultural Policy/Environmental eXtender); Theoretical Documentation
+    v0604 (BREC #2008-17, 2008) science lineage, run as the v0806 user-guide binding'
+  binary:
+    path: KISSPATH_KI_ROOT/APEX/knowledge_infrastructure/reference/APEX0806.exe
+    type: PE32_wine
+pipeline:
+  stages: []
+tools:
+  count: 10
+  files:
+  - tools/quickstart.py
+  - tools/s1_setup_workspace.py
+  - tools/s2_convert_forcing.py
+  - tools/s3_build_soil.py
+  - tools/s4_update_site.py
+  - tools/s5_update_control.py
+  - tools/s6_run_apex.py
+  - tools/s7_parse_output.py
+  - tools/s8_update_operations.py
+  - tools/s9_generate_crop_opc.py
+inputs:
+  forcing:
+  - name: Daily precipitation (PRCP)
+    unit: mm/day
+  - name: Maximum air temperature (TMAX)
+    unit: degC
+  - name: Minimum air temperature (TMIN)
+    unit: degC
+  - name: Solar radiation (SRAD)
+    unit: MJ/m2/day
+  - name: Wind speed
+    unit: m/s
+  - name: Relative humidity (RHM)
+    unit: fraction (0-1)
+  - name: Atmospheric CO2 concentration
+    unit: ppm by volume
+  parameters:
+  - name: Crop growth coefficients
+    unit: mixed
+  - name: Soil profile hydraulic and chemical properties
+    unit: mixed
+  - name: Site geometry
+    unit: mixed
+  - name: Subarea routing geometry
+    unit: mixed
+  - name: Monthly weather-generator statistics
+    unit: mixed
+  - name: APEX general/internal parameters (PARM)
+    unit: dimensionless
+  initial_conditions:
+  - name: Initial soil water content by layer
+    unit: mm or fraction
+  - name: Initial soil N (NO3) and P pool states
+    unit: kg/ha
+  - name: Initial surface residue mass
+    unit: t/ha
+  boundary_conditions:
+  - name: Operation schedule (planting, tillage, fertilization, irrigation, harvest, kill, grazing)
+    unit: date + rate
+  - name: Run control settings
+    unit: codes
+  - name: PET equation selector (IET)
+    unit: code
+  - name: Water-erosion equation selector
+    unit: code
+  - name: Weather input/generate code (NGN)
+    unit: code
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - YLDG
+  - BIOM
+  - LAI
+  - WYLD
+  - ET
+  - DPRK
+  - Y
+  - N losses (leaching / runoff / sediment)
+  - P losses (soluble runoff / sediment / tile)
+  - outlet hydrograph (HYC)
+  other: []
+validation:
+  tier: binary_exists
+  tier_justification: 'measured: NSE=-0.172, KGE=0.255, R=0.442, 4 scorecard(s)'
+  metrics:
+    best_nse: -0.1721
+    best_kge: 0.2546
+    best_r: 0.4419
+summary:
+  total_tools: 10
+  total_stage_docs: 0
+  total_diagnostic_triplets: 24
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

@@ -320,7 +320,7 @@ outputs:
   - var: "RTP"
     validation_rank: 2
     unit: "s"
-    description: "Peak period of the variance density spectrum (relative frequency), Tp = 1/fp"
+    description: "Peak period of the ocean surface-wave variance density spectrum (relative frequency), Tp = 1/fp"
     emitted_in: "TABLE (.crv) / BLOCK; PySWaN Spec0.Tp"
     observability:
       comparable_obs_shapes:
@@ -348,7 +348,7 @@ outputs:
   - var: "TM02"
     validation_rank: 4
     unit: "s"
-    description: "Mean absolute zero-crossing period, Tm02 = sqrt(m0/m2)"
+    description: "Mean absolute zero-crossing ocean surface-wave period, Tm02 = sqrt(m0/m2)"
     emitted_in: "TABLE (.crv) / BLOCK; PySWaN Spec0.Tm02"
     observability:
       comparable_obs_shapes:
@@ -389,7 +389,7 @@ outputs:
   - var: "E(f,theta)"
     validation_rank: 7
     unit: "m2/Hz/deg"
-    description: "2-D variance/energy density spectrum (frequency-direction)"
+    description: "2-D ocean surface-wave variance/energy density spectrum (frequency-direction)"
     emitted_in: "SPEC2D output (.s2d/.spc); PySWaN Spec2"
     observability:
       comparable_obs_shapes:
@@ -403,7 +403,7 @@ outputs:
   - var: "E(f)"
     validation_rank: 8
     unit: "m2/Hz"
-    description: "1-D variance/energy density spectrum (frequency)"
+    description: "1-D ocean surface-wave variance/energy density spectrum (frequency)"
     emitted_in: "SPEC1D output (.s1d); PySWaN Spec1"
     observability:
       comparable_obs_shapes:

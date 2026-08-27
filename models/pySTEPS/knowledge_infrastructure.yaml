@@ -1,0 +1,75 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
+package:
+  name: pySTEPS
+  language: python
+  implementation:
+    id: pysteps
+    version: 1.20.0
+    provenance: Python; community-driven pySTEPS library (pySTEPS developers) implementing the STEPS ensemble
+      nowcasting scheme; version via importlib.metadata.
+  scientific_reference_version: STEPS cascade-based stochastic nowcasting scheme (Bowler et al. 2006 /
+    Seed 2003 S-PROG lineage) as realized in pysteps 1.20.0
+  binary:
+    path: KISSPATH_KI_ROOT/pySTEPS/knowledge_infrastructure/tools/s3_nowcast/run_nowcast.py
+    type: Python
+pipeline:
+  stages: []
+tools:
+  count: 5
+  files:
+  - tools/s1_data_import/import_radar_data.py
+  - tools/s2_motion_estimation/estimate_motion.py
+  - tools/s3_nowcast/run_nowcast.py
+  - tools/s4_verification/verify_nowcast.py
+  - tools/s5_postprocess/export_nowcast.py
+inputs:
+  forcing:
+  - name: precipitation intensity field sequence
+    unit: mm/h
+  - name: external NWP precipitation nowcast
+    unit: mm/h
+  parameters:
+  - name: n_ens_members
+    unit: count
+  - name: n_cascade_levels
+    unit: count
+  - name: ar_order
+    unit: count
+  - name: zr_a, zr_b (Marshall-Palmer Z-R coefficients)
+    unit: dimensionless
+  - name: velocity_perturbation BPS coefficients (p_par/p_perp)
+    unit: dimensionless
+  initial_conditions:
+  - name: antecedent radar frame sequence
+    unit: mm/h
+  boundary_conditions:
+  - name: timesteps / n_leadtimes
+    unit: count or list
+  - name: nowcast method (extrapolation / sprog / steps / sseps / anvil / linda)
+    unit: categorical
+  - name: noise_method / velocity_perturbation_method
+    unit: categorical
+  - name: mask_method / probmatching_method
+    unit: categorical
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - precipitation_intensity
+  - exceedance_probability
+  - motion_field
+  other: []
+validation:
+  tier: runs
+  tier_justification: 'measured: NSE=1.000, KGE=0.999, R=1.000'
+  metrics:
+    best_nse: 0.99999
+    best_kge: 0.9992
+    best_r: 0.9999932928993132
+summary:
+  total_tools: 5
+  total_stage_docs: 5
+  total_diagnostic_triplets: 20
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

@@ -1,179 +1,582 @@
-model:
-  name: "PorePy"
-  version: "1.12.0"
-  domain: "Fractured porous media simulation (subsurface flow, poromechanics)"
-  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
-  language: "Python 3.10+"
-  license: "GPL v3"
-  developers: "Porous Media Group, University of Bergen, Norway"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: PorePy
+  language: python
+  implementation:
+    id: porepy
+    version: 1.12.0
+    provenance: Python; Porous Media Group (University of Bergen) PorePy library; Python-API model mixins
+      solved via run_stationary_model / run_time_dependent_model.
+  scientific_reference_version: PorePy multiphysics fractured-porous-media framework (Keilegavlen et al.
+    2021 formulation; mixed-dimensional FV/FE with contact mechanics)
 inputs:
   forcing:
-    - name: "pressure_bc"
-      unit: "Pa"
-      valid_range: [0, 1.0e+10]
-      description: "Pressure boundary condition (Dirichlet)"
-    - name: "flux_bc"
-      unit: "m^3/s"
-      valid_range: [-1.0e+3, 1.0e+3]
-      description: "Flux boundary condition (Neumann)"
-    - name: "displacement_bc"
-      unit: "m"
-      valid_range: [-100, 100]
-      description: "Displacement boundary condition for mechanics"
-    - name: "temperature_bc"
-      unit: "K"
-      valid_range: [200, 1000]
-      description: "Temperature boundary condition for thermal models"
-
+  - name: Transient boundary pressure / flux schedule
+    unit: Pa or m^3/s over s
+    category: boundary_driver
+    source_kind: user_provided
+    model_input_format: Time-indexed Dirichlet/Neumann boundary values applied via pp.TimeManager schedule
+    notes: Time-varying boundary forcing (e.g., recharge, prescribed pressure) consumed each timestep
+      in time-dependent runs; all times in seconds.
+  - name: Recharge rate
+    unit: m/s
+    category: boundary_driver
+    source_kind: user_provided
+    model_input_format: Neumann flux boundary on the relevant boundary faces
+    notes: Volumetric recharge intensity; designated uncertain forcing in density-driven-flow UQ.
   parameters:
-    critical:
-      - name: "permeability"
-        unit: "m^2"
-        valid_range: [1.0e-20, 1.0e-12]
-        description: "Rock matrix permeability — MUST be in m^2 (not Darcy)"
-      - name: "porosity"
-        unit: "dimensionless"
-        valid_range: [0.001, 0.40]
-        description: "Porosity as fraction (not percentage)"
-      - name: "fracture_aperture"
-        unit: "m"
-        valid_range: [1.0e-5, 1.0e-2]
-        description: "Fracture aperture — MUST be in meters (not mm)"
-      - name: "biot_coefficient"
-        unit: "dimensionless"
-        valid_range: [0.1, 1.0]
-        description: "Biot poroelastic coupling coefficient"
-      - name: "viscosity"
-        unit: "Pa.s"
-        valid_range: [1.0e-4, 1.0e-2]
-        description: "Fluid dynamic viscosity — MUST be in Pa.s (not cP)"
-      - name: "density_solid"
-        unit: "kg/m^3"
-        valid_range: [1000, 5000]
-        description: "Solid grain density"
-      - name: "density_fluid"
-        unit: "kg/m^3"
-        valid_range: [500, 1500]
-        description: "Fluid density"
-      - name: "shear_modulus"
-        unit: "Pa"
-        valid_range: [1.0e+8, 1.0e+11]
-        description: "Shear modulus of solid"
-      - name: "lame_lambda"
-        unit: "Pa"
-        valid_range: [1.0e+8, 1.0e+11]
-        description: "First Lame parameter"
-      - name: "specific_heat_capacity_solid"
-        unit: "J/(kg.K)"
-        valid_range: [500, 2000]
-        description: "Solid specific heat capacity"
-      - name: "thermal_conductivity_solid"
-        unit: "W/(m.K)"
-        valid_range: [0.5, 10.0]
-        description: "Solid thermal conductivity"
-      - name: "friction_coefficient"
-        unit: "dimensionless"
-        valid_range: [0.1, 0.9]
-        description: "Fracture friction coefficient for contact mechanics"
-
-    solver:
-      - name: "nl_max_iterations"
-        valid_range: [1, 100]
-        default: 10
-        description: "Maximum Newton iterations"
-      - name: "nl_convergence_res_atol"
-        valid_range: [1.0e-12, 1.0e-2]
-        default: 1.0e-6
-        description: "Absolute residual tolerance"
-      - name: "nl_convergence_inc_atol"
-        valid_range: [1.0e-12, 1.0e-2]
-        default: 1.0e-6
-        description: "Absolute increment tolerance"
-
-    time_stepping:
-      - name: "end_time"
-        unit: "s"
-        description: "Simulation end time — MUST be in seconds"
-      - name: "dt_init"
-        unit: "s"
-        description: "Initial time step — MUST be in seconds"
-      - name: "cell_size"
-        unit: "m"
-        description: "Mesh cell size in meters"
-
+  - name: permeability
+    unit: m^2
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 5e-18 m^2)
+    notes: Highest calibration sensitivity for the flow field; natural rock 1e-22 to 1e-10 m^2.
+  - name: normal_permeability
+    unit: m^2
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants
+    notes: Interface/normal permeability governing inter-dimensional (mortar) flux.
+  - name: porosity
+    unit: dimensionless (0-1)
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 0.013)
+    notes: Fraction, not percentage; couples to permeability via Kozeny-Carman in some setups.
+  - name: biot_coefficient
+    unit: dimensionless (0<alpha<=1)
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 0.47)
+  - name: shear_modulus
+    unit: Pa
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 1.485472e10 Pa)
+  - name: lame_lambda
+    unit: Pa
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 7.020826e9 Pa)
+  - name: specific_storage
+    unit: 1/Pa
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 4.74e-10 1/Pa)
+  - name: friction_coefficient
+    unit: dimensionless
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 0.6)
+  - name: dilation_angle
+    unit: radians
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants
+  - name: density (solid)
+    unit: kg/m^3
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 2683 kg/m^3)
+  - name: specific_heat_capacity (solid)
+    unit: J/(kg*K)
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 720.7 J/(kg*K))
+  - name: thermal_conductivity (solid)
+    unit: W/(m*K)
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 3.1 W/(m*K))
+  - name: thermal_expansion (solid)
+    unit: 1/K
+    category: solid_material
+    source_kind: calibrated
+    model_input_format: pp.SolidConstants (granite default 9.66e-6 1/K)
+  - name: viscosity
+    unit: Pa*s
+    category: fluid_material
+    source_kind: calibrated
+    model_input_format: pp.FluidComponent (water default 1.002e-3 Pa*s)
+  - name: density (fluid)
+    unit: kg/m^3
+    category: fluid_material
+    source_kind: calibrated
+    model_input_format: pp.FluidComponent (water default 998.2 kg/m^3)
+  - name: compressibility
+    unit: 1/Pa
+    category: fluid_material
+    source_kind: calibrated
+    model_input_format: pp.FluidComponent (water default 4.559e-10 1/Pa)
+  - name: specific_heat_capacity (fluid)
+    unit: J/(kg*K)
+    category: fluid_material
+    source_kind: calibrated
+    model_input_format: pp.FluidComponent (water default 4182 J/(kg*K))
+  - name: thermal_conductivity (fluid)
+    unit: W/(m*K)
+    category: fluid_material
+    source_kind: calibrated
+    model_input_format: pp.FluidComponent (water default 0.5975 W/(m*K))
+  - name: thermal_expansion (fluid)
+    unit: 1/K
+    category: fluid_material
+    source_kind: calibrated
+    model_input_format: pp.FluidComponent (water default 2.068e-4 1/K)
+  - name: fracture_gap
+    unit: m
+    category: geometry
+    source_kind: user_provided
+    model_input_format: pp.SolidConstants fracture_gap; reference aperture for contact
+  - name: Newton convergence tolerances (inc/res atol)
+    unit: dimensionless
+    category: numerical
+    source_kind: default
+    model_input_format: NewtonSolver params; model default 1e-10 absolute, relative tolerances default
+      np.inf (disabled)
+    notes: Convergence is absolute-only by default; relative criteria off unless overridden.
+  - name: nl_max_iterations
+    unit: count
+    category: numerical
+    source_kind: default
+    model_input_format: NewtonSolver param; model default 10
+  - name: characteristic_displacement
+    unit: m
+    category: numerical
+    source_kind: default
+    model_input_format: numerical constant; model default 0.2 m; sets contact-mechanics penalty c_num
+      = 1/characteristic_displacement
+    notes: Drives conditioning of the fracture contact-mechanics complementarity formulation; only relevant
+      in ContactMechanics/poromechanical runs with fractures.
+  - name: mesh cell_size / cell_size_fracture / cell_size_boundary / cell_size_min
+    unit: m
+    category: numerical
+    source_kind: user_provided
+    model_input_format: meshing_arguments dict passed to the Gmsh interface
+    notes: Should scale to domain (~domain_length/20 to /100); fracture cells ~1/10 fracture length.
+  - name: reference_pressure / reference_temperature
+    unit: Pa / K
+    category: reference_state
+    source_kind: default
+    model_input_format: pp.reference_values (defaults 101325 Pa, 293.15 K)
+    notes: Used by linearized constitutive laws (density, enthalpy).
+  initial_conditions:
+  - name: Initial pressure field
+    unit: Pa
+    category: state_init
+    source_kind: user_provided
+    model_input_format: initial_condition() sets pressure state on subdomains
+  - name: Initial displacement field
+    unit: m
+    category: state_init
+    source_kind: user_provided
+    model_input_format: initial_condition() sets u state (mechanics models)
+  - name: Initial temperature field
+    unit: K
+    category: state_init
+    source_kind: user_provided
+    model_input_format: initial_condition() sets temperature state (energy/THM models)
+  boundary_conditions:
+  - name: Pressure boundary condition (Dirichlet)
+    unit: Pa
+    category: bc_type
+    source_kind: user_provided
+    model_input_format: BoundaryCondition is_dir faces carry prescribed pressure; >=1 Dirichlet required
+      to avoid singular system
+  - name: Flux boundary condition (Neumann)
+    unit: m^3/s
+    category: bc_type
+    source_kind: user_provided
+    model_input_format: BoundaryCondition is_neu faces carry prescribed flux
+  - name: Robin boundary condition
+    unit: mixed
+    category: bc_type
+    source_kind: user_provided
+    model_input_format: BoundaryCondition / BoundaryConditionVectorial; vectorial form sigma*n + alpha*u
+      = G
+  - name: Displacement / traction boundary condition
+    unit: m / Pa
+    category: bc_type
+    source_kind: user_provided
+    model_input_format: BoundaryConditionVectorial Dirichlet (displacement) or Neumann (traction) for
+      mechanics
+  - name: Temperature boundary condition
+    unit: K
+    category: bc_type
+    source_kind: user_provided
+    model_input_format: BoundaryCondition for energy balance (Dirichlet/Neumann)
+  - name: Domain bounding box
+    unit: m
+    category: geometry
+    source_kind: user_provided
+    model_input_format: pp.Domain dict (xmin/xmax, ymin/ymax, zmin/zmax)
+  - name: Fracture network (line / plane / elliptic fractures, wells)
+    unit: m
+    category: geometry
+    source_kind: user_provided
+    model_input_format: pp.LineFracture (2D), pp.PlaneFracture / pp.EllipticFracture (3D coplanar polygons),
+      pp.WellNetwork3d
+    notes: Fracture points must lie within the domain; 3D fractures must be planar and non-degenerate.
+  - name: Grid type selection
+    unit: categorical
+    category: structural
+    source_kind: user_provided
+    model_input_format: 'grid_type: cartesian (built-in) | simplex (Gmsh) | tensor_grid (built-in)'
+  - name: Discretization method selection
+    unit: categorical
+    category: structural
+    source_kind: user_provided
+    model_input_format: MPFA / MPSA / TPFA / VEM(MVEM) / RT0 chosen via model mixins
+  - name: Time schedule and dt
+    unit: s
+    category: control
+    source_kind: user_provided
+    model_input_format: pp.TimeManager(schedule, dt_init, constant_dt); monotonic schedule in seconds
+  - name: Linear solver selection
+    unit: categorical
+    category: control
+    source_kind: user_provided
+    model_input_format: 'linear_solver: pypardiso (if installed) or scipy_sparse direct'
 outputs:
   primary:
-    - name: "pressure"
-      unit: "Pa"
-      valid_range: [0, 1.0e+10]
-      description: "Fluid pressure at cell centers"
-    - name: "displacement"
-      unit: "m"
-      valid_range: [-100, 100]
-      description: "Solid displacement vector at cell centers"
-    - name: "temperature"
-      unit: "K"
-      valid_range: [200, 1000]
-      description: "Temperature at cell centers"
-    - name: "darcy_flux"
-      unit: "m^3/s"
-      valid_range: [-1.0e+3, 1.0e+3]
-      description: "Darcy flux at cell faces"
-    - name: "stress"
-      unit: "Pa"
-      valid_range: [-1.0e+10, 1.0e+10]
-      description: "Stress tensor at cell centers"
-    - name: "fracture_aperture"
-      unit: "m"
-      valid_range: [0, 1.0]
-      description: "Fracture aperture (deformed)"
-    - name: "contact_traction"
-      unit: "Pa"
-      valid_range: [-1.0e+10, 1.0e+10]
-      description: "Contact traction on fracture interfaces"
-
-  format: "VTU/VTK (ParaView compatible)"
-  collection_file: ".pvd (time series)"
-  solver_stats: "solver_statistics.json"
-
-model_types:
-  - name: "SinglePhaseFlow"
-    physics: "Darcy flow in porous media"
-    variables: ["pressure"]
-  - name: "MomentumBalance"
-    physics: "Linear elasticity"
-    variables: ["displacement"]
-  - name: "Poromechanics"
-    physics: "Coupled flow + mechanics (Biot)"
-    variables: ["pressure", "displacement"]
-  - name: "ContactMechanics"
-    physics: "Fracture contact + elasticity"
-    variables: ["displacement", "contact_traction"]
-  - name: "Thermoporomechanics"
-    physics: "THM coupling"
-    variables: ["pressure", "displacement", "temperature"]
-  - name: "CompositionalFlow"
-    physics: "Multiphase multicomponent"
-    variables: ["pressure", "fractions"]
-
-unit_system:
-  base_units: ["m", "s", "kg", "K", "mol", "rad"]
-  critical_constraint: "Time scaling in pp.Units MUST remain 1 s (NotImplementedError otherwise)"
-
+  - name: pressure
+    unit: Pa
+    description: Subsurface fractured-porous-medium fluid pressure field at cell centers across matrix,
+      fracture, and intersection subdomains.
+    validation_rank: 2
+    emitted_in: <file_name>_<subdomain>.vtu (collected in <file_name>.pvd)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Observation well head must be converted to pressure with a consistent reference datum and fluid
+          density.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Mixed-dimensional cell-center values must be sampled to the observation grid; fracture vs matrix
+          cells differ in dimension.
+      detrending_options:
+      - none
+  - name: displacement
+    unit: m
+    description: Subsurface fractured-porous-medium mechanical displacement vector field at cell centers
+      (matrix subdomains).
+    validation_rank: 3
+    emitted_in: <file_name>_<subdomain>.vtu
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Compare against surface/borehole deformation (e.g., tiltmeter/InSAR-derived) at matching support.
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Sign/reference-frame conventions must match the observation.
+      detrending_options:
+      - none
+  - name: temperature
+    unit: K
+    description: Subsurface fractured-porous-medium temperature field at cell centers (energy / THM models).
+    validation_rank: 1
+    emitted_in: <file_name>_<subdomain>.vtu
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Valid only in coupled THM runs; energy balance is not stand-alone.
+      detrending_options:
+      - none
+  - name: darcy_flux
+    unit: m^3/s
+    description: Subsurface fractured-porous-medium Darcy / interface flux on faces and codimension-one
+      mortar interfaces.
+    validation_rank: 4
+    emitted_in: <file_name>_<interface>.vtu (interface_darcy_flux mortar data)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Secondary/flux variables require explicit registration in data_to_export() or columns are missing.
+      detrending_options:
+      - none
+  - name: stress
+    unit: Pa
+    description: Subsurface fractured-porous-medium mechanical stress field derived from the displacement
+      solution (cell centers).
+    validation_rank: 5
+    emitted_in: <file_name>_<subdomain>.vtu (when registered)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Effective vs total stress convention must match the observation.
+      detrending_options:
+      - none
+  - name: fracture_aperture
+    unit: m
+    description: Subsurface fractured-porous-medium derived fracture aperture (DisplacementJumpAperture
+      / dimension-reduction state) on fracture cells.
+    validation_rank: 6
+    emitted_in: <file_name>_<subdomain>.vtu (secondary/derived, via data_to_export)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Aperture is a derived state; direct field observation is rare and usually inferred from transmissivity.
+      detrending_options:
+      - none
+  - name: contact_traction
+    unit: Pa
+    description: Subsurface fractured-porous-medium contact traction on fracture interfaces (normal +
+      tangential Coulomb-friction components).
+    validation_rank: 7
+    emitted_in: <file_name>_<interface>.vtu
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Rarely directly observed; typically validated against manufactured-solution / benchmark cases
+          rather than field data.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_011"
-    severity: "fatal"
-    description: "Time unit scaling != 1 s causes NotImplementedError"
-  - id: "dt_001"
-    severity: "silent"
-    description: "Permeability in Darcy instead of m^2 causes flow rates off by orders of magnitude"
-  - id: "dt_006"
-    severity: "silent"
-    description: "Porosity as percentage (0-100) instead of fraction (0-1) causes 100x mass balance error"
-  - id: "dt_014"
-    severity: "fatal"
-    description: "Gmsh fails on degenerate fracture geometry"
-  - id: "dt_018"
-    severity: "fatal"
-    description: "Fracture extends outside domain causes mesh generation failure"
+- id: dt_001
+  symptom: Flow rates are orders of magnitude too high; domain floods instantly.
+  diagnosis: 'Permeability specified in Darcy instead of m². 1 Darcy = 9.869e-13 m².; PorePy expects permeability
+    in m² (SI). Literature often reports values in Darcy or millidarcy. Using 1.0 (Darcy) instead of 9.869e-13
+    (m²) causes permeability to be ~1e12 times too high.
+
+    ; [''SolidConstants'', ''DarcysLaw'']'
+  remedy: 'Multiply Darcy values by 9.869e-13 to convert to m².; convert_material_params; [''Check permeability
+    value: should be 1e-20 to 1e-10 m² for natural rock'', ''If value > 1e-8, likely in Darcy — multiply
+    by 9.869e-13'']; Use convert_material_params.py with --input specifying unit=''darcy'''
+  severity: silent
+- id: dt_002
+  symptom: Pressure field values are ~1e6 times too small. Displacement unrealistically large.
+  diagnosis: 'Pressure boundary conditions specified in MPa instead of Pa.; PorePy uses Pa internally.
+    Specifying 10 (meaning 10 MPa) as a BC value results in 10 Pa — six orders of magnitude too small.
+    All stress-dependent behavior will be wrong.
+
+    ; [''BoundaryConditionMixin'', ''bc_values_pressure'']'
+  remedy: 'Multiply MPa values by 1e6 to convert to Pa.; convert_forcing_data; [''Check BC pressure values:
+    typical subsurface is 1e5 to 1e8 Pa'', ''If max pressure < 1e3, likely in MPa or bar — convert to
+    Pa'']; Always use units.convert_units(val, ''Pa'') for boundary values'
+  severity: silent
+- id: dt_003
+  symptom: Darcy velocity is 1000× too fast or too slow.
+  diagnosis: 'Viscosity in centipoise (cP) instead of Pa·s. 1 cP = 1e-3 Pa·s.; Water viscosity is ~1 cP
+    = 1e-3 Pa·s. Using 1.0 (cP value) as Pa·s makes viscosity 1000× too high, reducing Darcy velocity
+    by 1000×. Conversely, using 1e-3 when it should be 1.0 increases velocity 1000×.
+
+    ; [''FluidComponent'', ''FluidMobi'
+  remedy: 'Ensure viscosity is in Pa·s. For water at 20°C: 1.002e-3 Pa·s.; convert_material_params; [''Check
+    viscosity: water ≈ 1e-3 Pa·s, oil ≈ 1e-2 to 1 Pa·s'', "If value is ~1.0 for water, it''s in cP — divide
+    by 1000"]; Use validate_outputs() in convert_material_params.py'
+  severity: silent
+- id: dt_004
+  symptom: Gravity-driven flow absent or reversed. Buoyancy effects wrong.
+  diagnosis: 'Density in g/cm³ instead of kg/m³. 1 g/cm³ = 1000 kg/m³.; Water density is 998.2 kg/m³ =
+    0.998 g/cm³. Using 0.998 as kg/m³ makes the fluid 1000× lighter, essentially eliminating gravity effects.
+
+    ; [''FluidComponent'', ''FluidDensityFromPressure'']'
+  remedy: Multiply g/cm³ values by 1000 to get kg/m³.; convert_material_params; ['Rock density should
+    be 1000-3500 kg/m³', 'Fluid density should be 800-1200 kg/m³', "If values are 0.8-3.5, they're in
+    g/cm³"]; Check density range in validate_outputs()
+  severity: silent
+- id: dt_005
+  symptom: Displacement is ~1e9 times too large. Structure appears to collapse.
+  diagnosis: 'Young''s modulus or Lame parameters in GPa instead of Pa.; Granite shear modulus is ~15
+    GPa = 1.5e10 Pa. Using 15 (GPa value) as Pa makes the rock 1e9× softer, causing enormous displacements.
+
+    ; [''SolidConstants'', ''LinearElasticMechanicalStress'']'
+  remedy: 'Multiply GPa values by 1e9 to convert to Pa.; convert_material_params; [''Shear modulus for
+    rock: 1e9 to 1e11 Pa'', ''If modulus < 1e6, likely in GPa — multiply by 1e9'']; Always specify elastic
+    moduli in Pa'
+  severity: silent
+- id: dt_006
+  symptom: Mass balance error of ~100×. Pore volume wildly wrong.
+  diagnosis: 'Porosity given as percentage (e.g., 13) instead of fraction (0.13).; PorePy expects porosity
+    as a dimensionless fraction (0 to 1). Using 13 (meaning 13%) creates a porosity of 13, which is physically
+    meaningless and causes 100× error in pore volume.
+
+    ; [''SolidConstants'', ''FluidMassBalanceEquations'']'
+  remedy: 'Divide percentage values by 100 to get fraction.; convert_material_params; [''Porosity must
+    be between 0 and 1'', ''If porosity > 1, divide by 100'', ''Typical range: 0.001 (granite) to 0.40
+    (sand)'']; validate_outputs() checks for porosity > 1.0'
+  severity: silent
+- id: dt_007
+  symptom: Simulation completes but results represent wrong time period.
+  diagnosis: 'Time step or schedule in hours/days instead of seconds.; PorePy TimeManager expects all
+    times in seconds. Using 24 (hours) instead of 86400 (seconds) for a 1-day step means the simulation
+    covers 24 seconds instead of 1 day.
+
+    ; [''TimeManager'', ''run_time_dependent_model'']'
+  remedy: 'Convert all time values to seconds: hours×3600, days×86400, years×3.156e7.; convert_forcing_data;
+    [''Check TimeManager schedule values are in seconds'', ''1 hour = 3600 s, 1 day = 86400 s, 1 year
+    = 3.156e7 s'']; Use convert_forcing_data.py with --time-unit flag'
+  severity: silent
+- id: dt_008
+  symptom: Mesh has too few or too many cells. Flow field under/over-resolved.
+  diagnosis: 'Cell size does not match domain scale (e.g., 0.1 m cells in a 100 km domain).; cell_size
+    is in meters. For a domain of 1000 m, cell_size=0.1 creates ~10 million cells (1000/0.1)^2 in 2D.
+    Conversely, cell_size=100 for a 1 m domain creates only 1 cell.
+
+    ; [''meshing_arguments'', ''create_mdg'']'
+  remedy: 'Set cell_size to approximately domain_length/20 to domain_length/100.; None; [''Check domain
+    extent in meters'', ''Set cell_size to ~1/50 of smallest domain dimension'', ''For fractures: cell_size_fracture
+    should be ~1/10 of fracture length'']; Validate cell count after mdg creation'
+  severity: degraded
+- id: dt_009
+  symptom: Newton solver diverges immediately. Negative effective stress.
+  diagnosis: 'Biot coefficient > 1.0 or < 0. Must be in (0, 1].; The Biot coefficient α couples fluid
+    pressure to solid stress. Values > 1 cause negative effective stress under positive pore pressure,
+    leading to immediate Newton divergence.
+
+    ; [''SolidConstants'', ''Poromechanics'']'
+  remedy: 'Set Biot coefficient to a value in (0, 1]. Typical: 0.4-0.9.; convert_material_params; [''Check
+    biot_coefficient is between 0 and 1'', ''Granite: ~0.47, Sandstone: ~0.79, Soft clay: ~1.0'']; validate_outputs()
+    in convert_material_params.py'
+  severity: fatal
+- id: dt_010
+  symptom: Heat transfer rate wrong by orders of magnitude.
+  diagnosis: 'Thermal conductivity in cal/(cm·s·°C) instead of W/(m·K).; PorePy expects W/(m·K). The CGS
+    unit cal/(cm·s·°C) is 418.68× larger. Granite thermal conductivity is ~2.5 W/(m·K).
+
+    ; [''SolidConstants'', ''FluidComponent'', ''TotalEnergyBalanceEquations'']'
+  remedy: 'Use W/(m·K) values directly. Granite: ~2.5, Water: ~0.6.; convert_material_params; [''Thermal
+    conductivity for rock: 1-5 W/(m·K)'', ''Thermal conductivity for water: ~0.6 W/(m·K)'']; Check values
+    are in expected range'
+  severity: silent
+- id: dt_011
+  symptom: NotImplementedError raised during model initialization.
+  diagnosis: 'pp.Units(s=...) set to value other than 1.; PorePy''s Units class does not support non-unitary
+    time scaling. Setting pp.Units(s=3600) to work in hours raises NotImplementedError at initialization.
+    This is explicitly checked in Units.__init__().
+
+    ; [''Units'', ''SolutionStrategy.prepare_simulation'']'
+  remedy: Always use pp.Units(s=1) or omit the s parameter. Convert time externally.; None; ['Remove s=
+    parameter from pp.Units() call', 'Convert all time values to seconds before passing to PorePy']; Never
+    set s= in pp.Units()
+  severity: fatal
+- id: dt_012
+  symptom: Fracture transmissivity ~1e9× too high. Flow short-circuits through fractures.
+  diagnosis: 'Fracture aperture in mm instead of m. Transmissivity ∝ aperture³.; Fracture transmissivity
+    T = a³/(12μ). If aperture a is given as 1 (mm) instead of 1e-3 (m), T is 1e9× too large because of
+    the cubic dependence.
+
+    ; [''SolidConstants'', ''fracture_permeability'']'
+  remedy: 'Ensure aperture is in meters. 1 mm = 1e-3 m.; convert_material_params; [''Typical fracture
+    aperture: 1e-5 to 1e-2 m (0.01 mm to 10 mm)'', ''If aperture > 0.1, likely in mm — divide by 1000''];
+    Validate aperture range'
+  severity: silent
+- id: dt_013
+  symptom: Simulation crashes with NaN in solution vector.
+  diagnosis: 'Newton solver diverges due to ill-conditioned system or extreme parameters.; Common causes:
+    (1) time step too large for nonlinear coupling, (2) extreme material property contrast, (3) poor initial
+    conditions, (4) boundary conditions creating singular matrix.
+
+    ; [''NewtonSolver'', ''EquationSystem'']'
+  remedy: Reduce time step by 10×. Check material properties and BCs.; None; ['Reduce dt_init by factor
+    of 10', 'Increase nl_max_iterations to 25', 'Check all material properties are in SI units', 'Verify
+    at least one Dirichlet BC for each primary variable']; Start with small time steps and increase gradually
+  severity: fatal
+- id: dt_014
+  symptom: Gmsh crashes or hangs during mesh generation.
+  diagnosis: 'Degenerate fracture geometry (zero-area polygon, self-intersecting edges).; Gmsh requires
+    valid fracture geometries. Zero-area fractures (all points collinear), self-intersecting polygons,
+    or fractures extending outside the domain cause Gmsh to fail.
+
+    ; [''create_mdg'', ''FractureNetwork'', ''gmsh'']'
+  remedy: Validate fracture geometry before meshing.; None; ['Check all fracture points are not collinear',
+    'Verify fractures lie within domain bounds', 'Check for very small angles between fracture edges (<
+    1°)', 'Try increasing cell_size_min to relax Gmsh constraints']; Validate fracture network before
+    call
+  severity: fatal
+- id: dt_015
+  symptom: Linear solver fails with 'singular matrix' error.
+  diagnosis: 'System has no unique solution — typically pure Neumann BCs for pressure.; Pressure is defined
+    up to a constant with pure Neumann (flux) BCs. The resulting matrix is singular. At least one Dirichlet
+    (pressure) BC is required to anchor the solution.
+
+    ; [''LinearSolver'', ''BoundaryConditionMixin'']'
+  remedy: Add at least one Dirichlet BC for each primary variable.; None; ['Check bc_type_darcy_flux returns
+    at least one is_dir=True face', 'For mechanics, check displacement BCs prevent rigid body motion',
+    'Try switching to iterative solver with regularization']; Always include at least one Dirichlet BC
+    per
+  severity: fatal
+- id: dt_016
+  symptom: VTU output file exists but is missing expected variable columns.
+  diagnosis: 'Variable not registered for export or wrong export timing.; PorePy only exports variables
+    that are registered with the Exporter. Secondary variables (flux, stress) may require explicit registration.
+    Also, some variables only exist on specific subdomain dimensions.
+
+    ; [''Exporter'', ''DataSavingMixin'']'
+  remedy: Register variables for export in the model class.; parse_porepy_output; ['Check model.data_to_export()
+    includes desired variables', 'Verify variable exists on the target subdomain dimension', 'For fluxes,
+    check interface vs. subdomain export']; List expected variables before running and verify after
+  severity: degraded
+- id: dt_017
+  symptom: Flow is in the wrong direction or has wrong magnitude, but no errors.
+  diagnosis: 'Dirichlet and Neumann boundary condition types swapped.; Specifying a pressure value on
+    a face marked as Neumann means the value is interpreted as a flux — and vice versa. The model runs
+    without error but the flow field is completely wrong.
+
+    ; [''BoundaryCondition'', ''bc_type_darcy_flux'', ''bc_values_pr'
+  remedy: Verify bc_type and bc_values are consistent.; None; ['Check that faces with is_dir=True have
+    pressure values', 'Check that faces with is_neu=True have flux values', 'Print BC types and values
+    for all boundary faces']; Cross-check BC type and value assignments
+  severity: silent
+- id: dt_018
+  symptom: Gmsh error or unexpected mesh topology. Missing fracture subdomains.
+  diagnosis: 'One or more fractures extend outside the simulation domain.; PorePy clips fractures to the
+    domain, but extreme cases (fracture entirely outside, or barely touching boundary) can cause Gmsh
+    failures or produce meshes with unexpected topology.
+
+    ; [''FractureNetwork'', ''create_mdg'', ''gmsh'']'
+  remedy: 'Ensure all fracture points lie within domain bounds.; None; [''For each fracture, check all
+    corner points are inside domain'', ''Add small buffer: fracture extent < 0.95 × domain extent'', ''Visualize
+    fracture network before meshing'']; Validate fracture bounds against domain before create_mdg()'
+  severity: fatal

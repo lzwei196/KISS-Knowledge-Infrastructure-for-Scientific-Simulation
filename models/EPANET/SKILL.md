@@ -1,14 +1,3 @@
----
-name: epanet
-description: >-
-  EPANET 2.2. Covers Pressurized pipe-network hydraulics: flow, velocity, head, pressure
-  at every node and link; Single-period (snapshot) and extended-period simulation (EPS)
-  with time-varying demands and…; Demand-driven (DDA) and pressure-driven (PDA) demand
-  satisfaction; Water-quality fate/transport: single chemical constituent decay, water
-  age, and source tracing. Use when the task involves running, configuring, calibrating or
-  interpreting EPANET.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,39 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (16 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 8 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_demands_to_inp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_demands_to_inp.py --help` |
+| `tools/convert_network_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_network_params.py --help` |
+| `tools/parse_epanet_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_epanet_output.py --help` |
+| `tools/run_epanet.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_epanet.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # EPANET 2.2 — Knowledge Infrastructure
 
@@ -67,6 +89,30 @@ EPANET performs extended-period simulation of hydraulic and water quality behavi
 - **Energy consumption** and cost for each pump
 
 **Key difference from other HydroCraft models**: EPANET operates on a pressurized pipe network (graph topology of nodes and links), not a gridded basin or 1D water body. It does not model open-channel flow, rainfall-runoff, or groundwater — it starts where water enters the distribution system from reservoirs.
+
+---
+
+## 6. Output Description
+
+**Source**: `dag.yaml`. If this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `Pressure` — Gage pressure of water at each node in the pressurized distribution pipe network (head minus elevation, expressed as pressure). (`psi (US) / m (SI)`)
+
+Other dag outputs: `Head`, `Flow`, `Velocity`, `Tank water level`, `Node quality (chemical concentration)`, `Water age`, `Source trace percentage`, `Pump energy and cost`.
+
+| Output variable (dag `var`) | Rank | Emitted in | Unit | Description |
+|-----------------------------|------|------------|------|-------------|
+| Pressure | 1 | Binary .out per-period node arrays; text .rpt node table | psi (US) / m (SI) | Gage pressure of water at each node in the pressurized distribution pipe network (head minus elevation, expressed as pressure). |
+| Tank water level | 2 | Binary .out per-period node arrays (tank); text .rpt node table | ft (US) / m (SI) | Water-surface elevation in each storage tank, integrated over the extended-period simulation. |
+| Velocity | 3 | Binary .out per-period link arrays; text .rpt link table | ft/s (US) / m/s (SI) | Mean water flow velocity in each link of the pressurized distribution pipe network. |
+| Head | 4 | Binary .out per-period node arrays; text .rpt node table | ft (US) / m (SI) | Hydraulic head of water at each node in the pressurized distribution pipe network (elevation + pressure head). |
+| Flow | 5 | Binary .out per-period link arrays; text .rpt link table | flow units (GPM/CFS/LPS/...) | Water flow rate in each link of the pressurized distribution pipe network; negative indicates reverse flow (Node2 to Node1). |
+| Node quality (chemical concentration) | 6 | Binary .out per-period node arrays; text .rpt node table | mg/L or ug/L | Concentration of the simulated constituent (e.g., chlorine) in distribution-network water at each node. |
+| Water age | 7 | Binary .out per-period node arrays; text .rpt node table | hours | Cumulative residence time since water entered from a source, at each node. |
+| Source trace percentage | 8 | Binary .out per-period node arrays; text .rpt node table | percent | Percentage of water at a node originating from a designated source node. |
+| Pump energy and cost | 9 | Binary .out energy section; text .rpt energy usage summary | kWh, kW, cost/day, % efficiency | Per-pump utilization, efficiency, energy use, peak power, and operating cost for pumping water through the pressurized distribution pipe network; plus system peak energy demand. |
 
 ---
 
@@ -190,7 +236,21 @@ The EPANET input file is a text file organized into bracketed sections. Sections
 
 ---
 
-## Unit Trap Table
+## 8. Unit Table (EPANET Unit Trap Table)
+
+Exact output units are sourced from `dag.yaml`; the broader EPANET parameter unit traps follow the output-unit table.
+
+| Dag output | Unit |
+|------------|------|
+| Pressure | psi (US) / m (SI) |
+| Head | ft (US) / m (SI) |
+| Flow | flow units (GPM/CFS/LPS/...) |
+| Velocity | ft/s (US) / m/s (SI) |
+| Tank water level | ft (US) / m (SI) |
+| Node quality (chemical concentration) | mg/L or ug/L |
+| Water age | hours |
+| Source trace percentage | percent |
+| Pump energy and cost | kWh, kW, cost/day, % efficiency |
 
 **Critical**: Flow unit choice determines ALL other units. US Customary units apply when flow is CFS/GPM/MGD/IMGD/AFD. SI Metric units apply when flow is LPS/LPM/MLD/CMH/CMD.
 
@@ -241,6 +301,29 @@ Text file containing:
 2. **Energy Use**: Pump efficiency, power, cost per pump
 3. **Extended Period**: Per-timestep arrays of node demands, heads, pressures, quality; link flows, velocities, headloss, quality, status, settings, reaction rates, friction factors
 4. **Epilog**: Reaction rates, period count, warning flag, magic number (516114521)
+
+---
+
+## 11. Validated Results
+
+**Source**: `docs/validation_convention.yaml`. This section states the field bar, not achieved run scores. For a new run, compute the listed metrics from observed and modeled series, then grade against these cited bands.
+
+### Performance Metrics — judged against the field's bar
+
+| Dag variable | Observation shape | Metric | Direction | Satisfactory band | Good band | Very good band |
+|--------------|-------------------|--------|-----------|-------------------|-----------|----------------|
+| Pressure | point_time_series | mean_absolute_percentage_error | minimize | <= 20.0 (shiu2024) | <= 10.0 (shiu2024) | no cited threshold (shiu2024) |
+| Pressure | point_time_series | r | maximize | >= 0.9 (shiu2024) | no cited threshold (shiu2024) | no cited threshold (shiu2024) |
+| Pressure | point_snapshot | absolute_pressure_difference | minimize | <= 0.2 (shiu2024) | <= 0.1 (shiu2024) | no cited threshold (shiu2024) |
+| Head | point_time_series | absolute_head_residual | minimize | <= 2.0 (zhang2018) | <= 1.0 (zhang2018) | no cited threshold (zhang2018) |
+| Head | point_time_series | r | maximize | >= 0.9 (shiu2024) | no cited threshold (shiu2024) | no cited threshold (shiu2024) |
+
+### Validation Use
+
+- Pressure time series are validated when mean absolute percentage error is <= 20.0 and r is >= 0.9, using the cited `shiu2024` bands.
+- Single-period pressure is validated when absolute_pressure_difference is <= 0.2, using the cited `shiu2024` band.
+- Head time series are validated when absolute_head_residual is <= 2.0 and r is >= 0.9, using the cited `zhang2018` and `shiu2024` bands.
+- Bands held as null in the convention are stated above as `no cited threshold`.
 
 ---
 

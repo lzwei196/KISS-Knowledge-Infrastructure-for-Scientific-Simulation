@@ -1,0 +1,363 @@
+schema_version: 1
+model_id: PFLOTRAN
+domain: groundwater
+generated_by: "Step-B fleet agent"
+generated_at: 2026-08-14
+
+references:
+  das2019:
+    doi: 10.1007/s13201-019-1013-x
+    title: "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India"
+    venue: "Applied Water Science"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13201-019-1013-x.txt
+  bisht2017:
+    doi: 10.5194/gmd-10-4539-2017
+    title: "Coupling a three-dimensional subsurface flow and transport model with a land surface model to simulate stream-aquifer-land interactions (CP v1.0)"
+    venue: "Geoscientific Model Development"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-10-4539-2017.txt
+  bisht2018:
+    doi: 10.5194/gmd-11-4085-2018
+    title: "Development and evaluation of a variably saturated flow model in the global E3SM Land Model (ELM) version 1.0"
+    venue: "Geoscientific Model Development"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-11-4085-2018.txt
+  hokr2016:
+    doi: 10.1007/s12665-016-6061-z
+    title: "Real-case benchmark for flow and tracer transport in the fractured rock"
+    venue: "Environmental Earth Sciences"
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s12665-016-6061-z.txt
+  poonoosamy2018:
+    doi: 10.1007/s10596-018-9793-x
+    title: "Benchmarking of reactive transport codes for 2D simulations with mineral dissolution-precipitation reactions and feedback on transport parameters"
+    venue: "Computational Geosciences"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10596-018-9793-x.txt
+  steefel2015:
+    doi: 10.1007/s10596-015-9499-2
+    title: "Reactive transport benchmarks for subsurface environmental simulation"
+    venue: "Computational Geosciences"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10596-015-9499-2.txt
+  hyman2015:
+    doi: 10.1016/j.cageo.2015.08.001
+    title: "DFNWORKS: A discrete fracture network framework for modeling subsurface flow and transport"
+    venue: "Computers & Geosciences"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.cageo.2015.08.001.txt
+  hammond2010:
+    doi: 10.1029/2009WR008819
+    title: "Field-scale model for the natural attenuation of uranium at the Hanford 300 Area using high-performance computing"
+    venue: "Water Resources Research"
+    year: 2010
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2009wr008819.txt
+  dai2017:
+    doi: 10.1002/2016WR019756
+    title: "A geostatistics-informed hierarchical sensitivity analysis method for complex groundwater flow and transport modeling"
+    venue: "Water Resources Research"
+    year: 2017
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2016wr019756.txt
+
+validation:
+  - dag_variable: Liquid_Pressure
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.995}
+        pass_band: satisfactory
+        band_note: "PFLOTRAN-CLM water-table benchmark envelope: Table 3 reports N-S from 0.995 to 1.000 across wells/resolutions after converting pressure to head."
+        cites: [bisht2017]
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {satisfactory: 0.045}
+        pass_band: satisfactory
+        band_note: "Pressure must be converted to hydraulic head; Table 3 reports maximum well RMSE of 0.045 m."
+        cites: [bisht2017]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Hydrologic monthly-flow convention uses PBIAS +/-25% for streamflow; it is not a direct pressure/head target."
+        cites: [das2019]
+    validated_when: "After subtracting atmospheric pressure and converting to head, NSE >= 0.995 and RMSE <= 0.045 m against well time series."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      The DAG caveat is essential: compare Liquid_Pressure as hydraulic head, not raw absolute pressure.
+      Bisht et al. state that simulated water-table levels were compared with observations and report
+      mean RMSE 0.028, 0.028, and 0.023 m and mean N-S 0.998, 0.998, and 0.999 for 2, 10, and 20 m grids.
+
+  - dag_variable: Liquid_Pressure
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {satisfactory: 0.045}
+        pass_band: satisfactory
+        band_note: "Transferred from the fetched PFLOTRAN-CLM well head benchmark; snapshot-specific PBIAS bands were not found."
+        cites: [bisht2017]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG determining_metric is PBIAS for snapshots, but the fetched PFLOTRAN head literature reports RMSE/N-S rather than head PBIAS."
+        cites: [bisht2017]
+    validated_when: "Converted head snapshot RMSE <= 0.045 m; do not grade raw absolute pressure."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Snapshot rule is a reduced-confidence transfer from the field time-series well benchmark because no
+      fetched paper supplied a snapshot-only Liquid_Pressure PBIAS tier.
+
+  - dag_variable: Liquid_Saturation
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {good: 0.75, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred hydrologic time-series convention: the fetched OA paper reproduces Moriasi's NSE > 0.50 satisfactory rule for monthly calibration."
+        cites: [das2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Das et al. reproduce PBIAS +/-25% for streamflow; saturation/SWC-specific PBIAS bands were not found in the fetched PFLOTRAN/VSFM set."
+        cites: [das2019]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bisht et al. use ILAMB bias/RMSE scoring for water-cycle variables, but their fetched paper does not give a saturation-specific pass threshold."
+        cites: [bisht2018]
+    validated_when: "NSE >= 0.5 for SWC time series after converting saturation to volumetric water content with porosity; saturation-specific numeric bands remain a transferred convention."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: >-
+      The DAG caveat says to compare SWC = Liquid_Saturation * porosity. The numeric NSE band is not a
+      PFLOTRAN saturation tier; it is the standard hydrologic time-series rule reproduced as
+      "NSE > 0.50" satisfactory in the fetched OA SWAT evaluation paper.
+
+  - dag_variable: Liquid_Saturation
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper supplied a numeric CSI/IoU threshold for gridded saturation or water-table snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "ELM-VSFM evaluates water-cycle variables with ILAMB bias/RMSE scores and WTD RMSE, but not a gridded saturation CSI pass band."
+        cites: [bisht2018]
+    validated_when: "UNRESOLVED - spatial saturation CSI needs a fetched categorical/spatial validation convention."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The fetched VSFM paper states that ILAMB evaluates bias, RMSE, and phasing, and reports WTD RMSE/R2,
+      but it does not define a CSI threshold for saturation maps. Null band is intentional.
+
+  - dag_variable: Hydraulic_Head
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.995}
+        pass_band: satisfactory
+        band_note: "PFLOTRAN-CLM Table 3 reports N-S values no lower than 0.995 for observed well water-table levels."
+        cites: [bisht2017]
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {satisfactory: 0.045}
+        pass_band: satisfactory
+        band_note: "PFLOTRAN-CLM Table 3 reports observed well RMSE values up to 0.045 m."
+        cites: [bisht2017]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining_metric is r, but the fetched PFLOTRAN head benchmark reports N-S and RMSE; N-S/RMSE supersede r for this block."
+        cites: [bisht2017]
+    validated_when: "NSE >= 0.995 and RMSE <= 0.045 m against observed well head/water-table time series."
+    evidence_strength: moderate
+    confidence: 0.75
+    notes: >-
+      Bisht et al. describe a 400 m by 400 m site with groundwater monitoring wells and report
+      water-table RMSE/N-S by well and grid resolution; this is the most direct fetched PFLOTRAN field
+      validation for head.
+
+  - dag_variable: Hydraulic_Head
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {satisfactory: 0.67}
+        pass_band: satisfactory
+        band_note: "Spatial WTD benchmark: for the 79% of grid cells with optimal fdrain, Bisht et al. report RMSE 0.67 m."
+        cites: [bisht2018]
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.99}
+        pass_band: satisfactory
+        band_note: "Spatial WTD benchmark: the same 79% grid-cell subset has R2 = 0.99."
+        cites: [bisht2018]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG asks for CSI for spatial snapshots, but the fetched WTD benchmark uses bias, RMSE, and R2, not categorical CSI."
+        cites: [bisht2018]
+    validated_when: "Spatial WTD/head snapshot RMSE <= 0.67 m and R2 >= 0.99 when compared with an observationally constrained WTD product."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Bisht et al. state that WTD bias, RMSE, and R2 improved and that the 79% of grid cells with an
+      optimal drainage parameter had bias -0.04 m, RMSE 0.67 m, and R2 0.99. This supersedes CSI for
+      continuous head fields.
+
+  - dag_variable: Darcy_Velocity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper supplied a numeric CSI threshold for Darcy-velocity fields; velocities are generally inferred through flow/tracer behavior."
+        cites: []
+    secondary_metrics:
+      - metric: mass_conservation
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DFNWORKS emphasizes locally mass-conserving flow solutions for particle tracking, but this is a numerical property rather than an observational velocity-field pass band."
+        cites: [hyman2015]
+      - metric: tracer_transit_time
+        direction: minimize
+        status: supportive
+        ceiling_reason: "The fractured-rock benchmark uses tunnel inflow and tracer transit-time behavior for flow relevance; it does not provide a Darcy-velocity CSI tier."
+        cites: [hokr2016]
+    validated_when: "UNRESOLVED - no fetched numeric convention for direct Darcy-velocity spatial CSI."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Hokr et al. compare flow and tracer transport codes against tunnel inflow and natural tracer data and
+      call PFLOTRAN differences acceptable relative to hydrogeologic uncertainty, but no numeric CSI band
+      for Darcy velocity was reported.
+
+  - dag_variable: Solute_Concentration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched reactive-transport paper supplied an NSE threshold for solute breakthrough or concentration time series."
+        cites: []
+      - metric: peak_timing_error
+        direction: minimize
+        unit: hour
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Breakthrough-curve timing is reported in fetched benchmarks, but no pass/fail timing threshold was given."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Fetched Hanford PFLOTRAN paper says observed U(VI) concentration time histories could not be compared for the modeled period, and the sensitivity paper reports permeability field contributed more than 94% and 99% of tracer-concentration uncertainty at two wells."
+        cites: [hammond2010, dai2017]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Reactive-transport benchmarks report qualitative agreement and breakthrough peak ranges, not RMSE pass bands."
+        cites: [poonoosamy2018, steefel2015]
+    validated_when: "UNRESOLVED - require a fetched solute breakthrough threshold or case-specific observational error model."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Poonoosamy et al. report that all five codes consistently described breakthrough curves with maximum
+      peaks between 18.5 and 19.4 h at one port and 14.4 and 14.6 h at another, but no numeric validation
+      tier is stated. Null bands prevent automatic validation.
+
+  - dag_variable: Solute_Concentration
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper supplied a numeric CSI/IoU threshold for reactive plume extent or concentration fields."
+        cites: []
+    secondary_metrics:
+      - metric: concentration_field_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Reactive-transport code benchmarks compare concentration profiles and report good qualitative agreement, but not a categorical spatial pass threshold."
+        cites: [poonoosamy2018, steefel2015]
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Spatial plume skill is strongly controlled by the permeability field; Dai et al. report permeability contributed more than 94% and 99% of tracer-concentration uncertainty at two wells."
+        cites: [dai2017]
+    validated_when: "UNRESOLVED - plume/field CSI needs a fetched categorical threshold and a concentration cutoff definition."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Poonoosamy et al. note matched species concentrations and roughly 10% permeability differences for a
+      porosity decrease benchmark, but that is code-intercomparison evidence rather than a CSI convention.
+
+  - dag_variable: Cumulative_Mass_Balance
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: mass_balance_error
+        direction: minimize
+        unit: kg/m2
+        bands: {satisfactory: 0.00001}
+        pass_band: satisfactory
+        band_note: "VSFM/PFLOTRAN benchmark solver check: if mass balance error exceeds 10^-5 kg m^-2, tolerances are tightened."
+        cites: [bisht2018]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG determining_metric is PBIAS, but fetched PFLOTRAN/VSFM literature treats this variable as internal global mass conservation, not an observational PBIAS target."
+        cites: [bisht2018]
+    validated_when: "Mass-balance error <= 1e-5 kg/m2 for the integration time step; observational PBIAS is superseded by internal conservation tolerance."
+    evidence_strength: moderate
+    confidence: 0.75
+    notes: >-
+      Bisht et al. define mass balance error as the difference between input and output fluxes and change in
+      mass over a time step; they report tightening tolerances when the error exceeds 10^-5 kg m^-2.
+
+deferred_paywalled:
+  - ref: "Bennett et al. 2013 - Characterising performance of environmental models"
+    doi: 10.1016/j.envsoft.2012.09.011
+    needed_for: [Liquid_Saturation, Hydraulic_Head, Darcy_Velocity, Solute_Concentration]
+  - ref: "Hydrological evaluation of radar and satellite gauge-merged precipitation datasets: implications for streamflow simulation"
+    doi: 10.1016/j.ejrh.2022.101134
+    needed_for: [Liquid_Saturation, Darcy_Velocity, Solute_Concentration]

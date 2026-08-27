@@ -1,13 +1,3 @@
----
-name: dfnworks
-description: >-
-  dfnWorks discrete fracture network framework (Hyman et al. 2015, Computers & Geosciences
-  84:10-19), graph-mode flow/transport branch (dfnGraph, v2.2+). Covers Stochastic and
-  deterministic generation of 3D discrete fracture networks in fractured rock; Conforming
-  Delaunay meshing of the fracture network via FRAM + LaGriT (full-physics path). Use when
-  the task involves running, configuring, calibrating or interpreting dfnWorks.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (17 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (24 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_fracture_input.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_fracture_input.py --help` |
+| `tools/convert_hydraulic_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_hydraulic_params.py --help` |
+| `tools/parse_dfnworks_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_dfnworks_output.py --help` |
+| `tools/run_dfnworks.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_dfnworks.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # dfnWorks v2.10.0 — Knowledge Infrastructure
 
@@ -256,7 +280,31 @@ Graph-based flow/transport is 100-1000x faster but assumes: (a) flow is 1D along
 
 ---
 
-## Validation
+## Unit Table
+
+This KI follows `dag.yaml` for judged output units and the unit traps above for model-input conversions. If this table and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+| Variable / quantity | Unit expected by model or dag | Source / common unit | Conversion / note |
+|---------------------|-------------------------------|----------------------|-------------------|
+| `particle_travel_time` | s | seconds | Rank-1 dag output; per-particle advective solute travel time |
+| Domain size | m | km, ft | ×1000, ×0.3048 |
+| Fracture radius | m | cm, ft | ÷100, ×0.3048 |
+| Aperture | m | μm, mm | ×1e-6, ×1e-3 |
+| Mesh resolution (`h`) | m | cm | ÷100 |
+| Permeability | m² | mD, cm² | ×9.869e-16, ×1e-4 |
+| Hydraulic conductivity | convert to m² before use as permeability | m/s, cm/s, ft/day | `k = K × μ / (ρ × g)` |
+| Transmissivity | m²/s | m²/day | ÷86400 |
+| Pressure | Pa | MPa, psi, m H₂O | ×1e6, ×6894.76, ×9810 |
+| Viscosity | Pa·s | cP | ×1e-3 |
+| Density | kg/m³ | g/cm³ | ×1000 |
+| p32 intensity | 1/m | 1/ft | ×3.281 |
+| Orientation angles | degrees (default) | radians | ×180/π |
+| Diffusivity | m²/s | cm²/s | ×1e-4 |
+| Time | seconds | minutes, hours, days, years | ×60, ×3600, ×86400, ×3.156e7 |
+
+---
+
+## Validated Results
 
 ### Test Case: 3-Family TPL Network (Graph Mode)
 
@@ -276,6 +324,16 @@ Graph-based flow/transport is 100-1000x faster but assumes: (a) flow is 1D along
 4. Median travel time ~10⁴ s for 400 m transport distance
 5. Flow channeling observed: top 10% of fractures carry >50% of flux
 6. Runtime: <30 seconds for generation + graph flow + 10⁴ particles
+
+### Performance Metrics and Convention Bars
+
+The body campaign is pending. Judge model skill against `docs/validation_convention.yaml`, not against remembered hydrology thresholds. A null convention band is written as "no cited threshold".
+
+| Dag variable | Metric | Direction | Convention band | Citation key(s) | Achieved value | Status |
+|--------------|--------|-----------|-----------------|-----------------|----------------|--------|
+| `particle_travel_time` | NSE | maximize | satisfactory: no cited threshold | cites=[] | pending | body campaign pending |
+| `breakthrough_curve` | NSE | maximize | satisfactory: no cited threshold | cites=[] | pending | body campaign pending |
+| `breakthrough_curve` | CSI | maximize | satisfactory: no cited threshold | cites=[] | pending | body campaign pending |
 
 ---
 
@@ -360,6 +418,22 @@ DFN.dfn_trans()           # Requires DFNTrans
 ---
 
 ## Output Description
+
+Source this section from `dag.yaml`. The dag is the model identity for observable outputs; if the prose below and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `particle_travel_time` — Per-particle advective solute travel time from inlet to outlet through the resolved subsurface fractured-rock DFN flow field (s)
+
+| Dag output variable | Rank / role | Unit | Description |
+|---------------------|-------------|------|-------------|
+| `particle_travel_time` | 1 | s | Per-particle advective solute travel time from inlet to outlet through the resolved subsurface fractured-rock DFN flow field |
+| `breakthrough_curve` | other dag output | see `dag.yaml` | see `dag.yaml` |
+| `travel_time_statistics` | other dag output | see `dag.yaml` | see `dag.yaml` |
+| `effective_permeability` | other dag output | see `dag.yaml` | see `dag.yaml` |
+| `flow_channeling_metric` | other dag output | see `dag.yaml` | see `dag.yaml` |
+| `fracture_network_geometry` | other dag output | see `dag.yaml` | see `dag.yaml` |
+| `upscaled_continuum_properties` | other dag output | see `dag.yaml` | see `dag.yaml` |
 
 dfnWorks produces outputs across its pipeline stages: (1) network generation writes fracture coordinates and properties to `radii.dat`, `normal_vectors.dat`, `translations.dat`, and `connectivity.dat` in the working directory; (2) the flow solver (PFLOTRAN or graph-based) writes pressure and velocity fields -- graph flow stores results in a NetworkX graph object with edge-level flow rates (m^3/s) and node-level pressures (Pa); (3) transport produces particle arrival times in `partime_file.dat` (one travel time per particle, in seconds) and fracture sequence files. Use `parse_dfnworks_output.py` to extract breakthrough curves (cumulative particle arrivals vs time), total flow rate through the network, and travel time statistics (median, mean, variance) to CSV.
 

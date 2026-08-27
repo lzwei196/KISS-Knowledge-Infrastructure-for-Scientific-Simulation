@@ -1,378 +1,113 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
   name: GIFMod
-  version: 0.1.0
-  description: >
-    Knowledge infrastructure for GIFMod (Green Infrastructure Flexible Model),
-    a physically-based block-structured water quality and hydrodynamic modeling
-    system for green infrastructure components including bioretention cells,
-    constructed wetlands, porous pavements, and urban drainage networks.
-  target_model: GIFMod 0.1.26
-  domain: urban
-  authors:
-    - US EPA
-  license: GPL-3.0
-  created: '2026-03-28'
-
+  language: c++
+  implementation:
+    id: gifmod-usepa
+    version: 0.1.26
+    provenance: C++ (Qt5 GUI); US EPA / Catholic University of America GIFMod, driven by .GIFMod project
+      files and an embedded JavaScript scripting engine.
+  scientific_reference_version: GIFMod (Massoudieh et al. 2017 framework; block-connector variably-saturated
+    flow + ADR reactive transport)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GIFMod/source/repo/bindata/GIFMod
+    type: ELF
 pipeline:
   stages:
-    - id: s0_config
-      name: Configuration
-      description: Set simulation period, solver settings, output paths
-      order: 0
-      depends_on: []
-      skill_document: docs/s0_configuration.md
-      tools: [configure_gifmod]
-      milestones:
-        - id: m0_config_defined
-          description: Project configuration defined with valid solver parameters
-          verification: dt_initial < dt_max and simulation_duration > 0
-
-    - id: s1_domain
-      name: Domain Setup
-      description: Define block layout, types, and connectivity in GUI or via script
-      order: 1
-      depends_on: [s0_config]
-      skill_document: null
-      tools: []
-      milestones:
-        - id: m1_blocks_defined
-          description: All blocks and connectors placed with valid topology
-          verification: Each block has at least one connection
-
-    - id: s2_soil
-      name: Soil Parameters
-      description: Convert HWSD/SoilGrids soil data to GIFMod Soil block properties
-      order: 2
-      depends_on: [s1_domain]
-      skill_document: docs/s2_soil_parameters.md
-      tools: [convert_soil_params]
-      milestones:
-        - id: m2_soil_assigned
-          description: All Soil blocks have valid hydraulic properties in m/day units
-          verification: Ks > 0 and porosity in [0.2, 0.65] for all layers
-
-    - id: s3_vegetation
-      name: Vegetation / Land Cover
-      description: Assign vegetation properties (LAI, root depth) to Plant blocks
-      order: 3
-      depends_on: [s1_domain]
-      skill_document: null
-      tools: []
-      milestones:
-        - id: m3_veg_assigned
-          description: Plant blocks have valid LAI and root depth values
-          verification: LAI >= 0 and root_depth > 0
-
-    - id: s4_forcing
-      name: Meteorological Forcing
-      description: Convert met data to GIFMod CSV time series with correct units
-      order: 4
-      depends_on: [s1_domain]
-      skill_document: docs/s4_forcing.md
-      tools: [convert_forcing]
-      milestones:
-        - id: m4_forcing_ready
-          description: Forcing CSV with precip in m/day, temp in C, humidity as fraction
-          verification: Precip < 0.5 m/day for routine events, humidity in [0,1]
-
-    - id: s5_parameters
-      name: Model Parameters
-      description: Set reaction rates, partition coefficients, and remaining properties
-      order: 5
-      depends_on: [s2_soil, s3_vegetation]
-      skill_document: null
-      tools: []
-      milestones:
-        - id: m5_params_set
-          description: All block and connector properties set with consistent units
-          verification: No missing required properties
-
-    - id: s6_run
-      name: Model Execution
-      description: Build and run GIFMod binary
-      order: 6
-      depends_on: [s4_forcing, s5_parameters]
-      skill_document: docs/s6_execution.md
-      tools: [run_gifmod]
-      milestones:
-        - id: m6_run_complete
-          description: Simulation completed without solver divergence
-          verification: Output files exist and mass balance error < 1e-4
-
-    - id: s7_postprocess
-      name: Output Parsing
-      description: Extract time series from GIFMod output to CSV
-      order: 7
-      depends_on: [s6_run]
-      skill_document: docs/s7_output_parsing.md
-      tools: [parse_gifmod_output]
-      milestones:
-        - id: m7_csv_ready
-          description: Clean CSV with head, flow, concentration columns
-          verification: CSV has header row and monotonically increasing time
-
-    - id: s8_routing
-      name: River Routing (optional)
-      description: Route outflow through downstream network if needed
-      order: 8
-      depends_on: [s7_postprocess]
-      skill_document: null
-      tools: []
-      milestones:
-        - id: m8_routing_done
-          description: Downstream routing completed or skipped
-          verification: Outflow time series available
-
+  - s0_configuration
+  - s2_soil_parameters
+  - s4_forcing
+  - s6_execution
+  - s7_output_parsing
 tools:
-  - id: convert_forcing
-    name: convert_forcing.py
-    description: Convert meteorological forcing to GIFMod CSV format with unit conversions
-    stage: s4_forcing
-    script_path: tools/convert_forcing.py
-    language: python
-    inputs:
-      - name: input
-        type: file
-        description: Input meteorological CSV with datetime and met variables
-        required: true
-        example: weather_station.csv
-      - name: precip_unit
-        type: string
-        description: Precipitation unit in input data
-        required: false
-        example: mm/hr
-      - name: temp_unit
-        type: string
-        description: Temperature unit in input data
-        required: false
-        example: celsius
-      - name: start_date
-        type: string
-        description: Simulation start date (YYYY-MM-DD)
-        required: true
-        example: "2020-01-01"
-    outputs:
-      - name: output
-        type: file
-        description: GIFMod-format CSV with Time, Precipitation, Temperature, Humidity, WindSpeed
-        path_pattern: "gifmod_forcing.csv"
-    preconditions:
-      - Input CSV has datetime column
-      - Valid unit specifications
-    postconditions:
-      - Precipitation in m/day
-      - Temperature in Celsius
-      - Humidity as fraction [0,1]
-
-  - id: convert_soil_params
-    name: convert_soil_params.py
-    description: Convert HWSD/SoilGrids soil data to GIFMod block properties
-    stage: s2_soil
-    script_path: tools/convert_soil_params.py
-    language: python
-    inputs:
-      - name: input
-        type: file
-        description: Soil data CSV with sand/clay/bulk_density columns
-        required: true
-        example: hwsd_extract.csv
-      - name: format
-        type: string
-        description: Input format (hwsd, soilgrids, usda, generic)
-        required: false
-        example: hwsd
-    outputs:
-      - name: output
-        type: file
-        description: JSON with Ks (m/day), porosity (fraction), bulk_density (kg/m^3)
-        path_pattern: "soil_params.json"
-    preconditions:
-      - Input has sand and clay percentage columns
-    postconditions:
-      - Ks > 0 in m/day
-      - Porosity in [0.2, 0.65]
-      - Bulk density in [800, 2000] kg/m^3
-
-  - id: run_gifmod
-    name: run_gifmod.py
-    description: Build and execute GIFMod from source
-    stage: s6_run
-    script_path: tools/run_gifmod.py
-    language: python
-    inputs:
-      - name: source_dir
-        type: directory
-        description: Path to GIFMod source repository
-        required: true
-        example: /path/to/GIFMod/source/repo
-      - name: mode
-        type: string
-        description: Operation mode (build, run, build-and-run)
-        required: false
-        example: build
-    outputs:
-      - name: binary_path
-        type: file
-        description: Path to compiled GIFMod executable
-        path_pattern: "build/GIFMod"
-    preconditions:
-      - Qt5 development libraries installed
-      - LAPACK/BLAS installed
-      - GCC with C++14 support
-    postconditions:
-      - Binary exists and is executable
-
-  - id: parse_gifmod_output
-    name: parse_gifmod_output.py
-    description: Parse GIFMod columnar output to CSV
-    stage: s7_postprocess
-    script_path: tools/parse_gifmod_output.py
-    language: python
-    inputs:
-      - name: input
-        type: file
-        description: GIFMod raw output file
-        required: true
-        example: model_output.txt
-      - name: variables
-        type: string
-        description: Comma-separated variable filter
-        required: false
-        example: Head,Flow,Concentration
-    outputs:
-      - name: output
-        type: file
-        description: Clean CSV with selected variables
-        path_pattern: "results.csv"
-    preconditions:
-      - GIFMod output file exists and is non-empty
-    postconditions:
-      - CSV has header row
-      - Time column is monotonically increasing
-
-skill_documents:
-  - id: sk_config
-    name: Configuration
-    stage: s0_config
-    path: docs/s0_configuration.md
-    knowledge_type: procedural
-    sections: [Purpose, Inputs, Outputs, Procedure, Verification, Traps, Example]
-    word_count: 350
-
-  - id: sk_soil
-    name: Soil Parameters
-    stage: s2_soil
-    path: docs/s2_soil_parameters.md
-    knowledge_type: procedural
-    sections: [Purpose, Inputs, Outputs, Procedure, Verification, Traps, Example]
-    word_count: 500
-
-  - id: sk_forcing
-    name: Meteorological Forcing
-    stage: s4_forcing
-    path: docs/s4_forcing.md
-    knowledge_type: procedural
-    sections: [Purpose, Inputs, Outputs, Procedure, Verification, Traps, Example]
-    word_count: 500
-
-  - id: sk_execution
-    name: Model Execution
-    stage: s6_run
-    path: docs/s6_execution.md
-    knowledge_type: procedural
-    sections: [Purpose, Inputs, Outputs, Procedure, Verification, Traps, Example]
-    word_count: 450
-
-  - id: sk_output
-    name: Output Parsing
-    stage: s7_postprocess
-    path: docs/s7_output_parsing.md
-    knowledge_type: procedural
-    sections: [Purpose, Inputs, Outputs, Procedure, Verification, Traps, Example]
-    word_count: 500
-
-diagnostic_triplets:
-  - id: dt_001
-    stage: s2_soil
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_002
-    stage: s4_forcing
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_003
-    stage: s2_soil
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_004
-    stage: s2_soil
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_005
-    stage: s2_soil
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_006
-    stage: s2_soil
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_007
-    stage: s5_parameters
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_008
-    stage: s4_forcing
-    failure_domain: unit_conversion
-    severity: degraded
-  - id: dt_009
-    stage: s5_parameters
-    failure_domain: parameter_format
-    severity: silent
-  - id: dt_010
-    stage: s5_parameters
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_011
-    stage: s5_parameters
-    failure_domain: unit_conversion
-    severity: silent
-  - id: dt_012
-    stage: s2_soil
-    failure_domain: unit_conversion
-    severity: fatal
-  - id: dt_013
-    stage: s6_run
-    failure_domain: runtime
-    severity: fatal
-  - id: dt_014
-    stage: s6_run
-    failure_domain: dependency_mismatch
-    severity: degraded
-  - id: dt_015
-    stage: s6_run
-    failure_domain: path_resolution
-    severity: fatal
-
+  count: 4
+  files:
+  - tools/convert_forcing.py
+  - tools/convert_soil_params.py
+  - tools/parse_gifmod_output.py
+  - tools/run_gifmod.py
+inputs:
+  forcing:
+  - name: Precipitation
+    unit: m/day
+  - name: Temperature
+    unit: Celsius
+  - name: Humidity
+    unit: fraction (0-1)
+  - name: Wind speed
+    unit: m/s
+  - name: Solar radiation
+    unit: W/m^2
+  - name: External inflow
+    unit: m^3/day
+  parameters:
+  - name: Saturated hydraulic conductivity (Ks)
+    unit: m/day
+  - name: Porosity
+    unit: fraction (0-1)
+  - name: Residual moisture content (theta_r)
+    unit: fraction
+  - name: Saturated moisture content (theta_s)
+    unit: fraction
+  - name: van Genuchten-Mualem retention parameters (alpha, n)
+    unit: 1/m, dimensionless
+  - name: Bulk density
+    unit: kg/m^3
+  - name: Dispersivity
+    unit: m
+  - name: Manning roughness (n)
+    unit: s/m^(1/3)
+  - name: Partition coefficient (Kd)
+    unit: L/kg
+  - name: Reaction rate constants
+    unit: 1/day
+  - name: Particle settling velocity
+    unit: m/day
+  - name: Particle attachment/release coefficients
+    unit: 1/day
+  - name: Block geometry (Area, Depth, Bottom elevation)
+    unit: m^2, m, m
+  - name: Evaporation/transpiration coefficients
+    unit: dimensionless
+  initial_conditions:
+  - name: Initial head / water storage
+    unit: m / m^3
+  - name: Initial soil moisture
+    unit: fraction
+  - name: Initial constituent concentration
+    unit: user-defined
+  boundary_conditions:
+  - name: Block-connector network topology
+    unit: n/a
+  - name: ET method selection
+    unit: n/a
+  - name: Rating-curve / prescribed-flow boundaries
+    unit: stage-discharge or Q(t)
+  - name: Bottom groundwater-head boundary
+    unit: m
+  - name: Process-inclusion switches
+    unit: n/a
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - head
+  - flow
+  - moisture
+  - storage
+  - concentration
+  - velocity
+  other:
+  - mass_balance_error
 validation:
-  tier: synthetic
-  tier_justification: >
-    GIFMod is a GUI-only Qt5 application with no CLI mode. The model cannot be
-    built on this server due to missing Qt5 development libraries. Validation
-    is limited to pipeline tool testing with synthetic data.
-  benchmark: pipeline_test
-  metrics: {}
-
+  tier: tested
+  tier_justification: 'measured: R=0.772'
+  metrics:
+    best_r: 0.772
 summary:
   total_tools: 4
-  total_tool_lines: 720
-  total_skill_documents: 5
-  total_skill_words: 2300
+  total_stage_docs: 5
   total_diagnostic_triplets: 15
-  failure_domains:
-    - unit_conversion
-    - parameter_format
-    - path_resolution
-    - runtime
-    - dependency_mismatch
-  pipeline_stages: 9
-  pipeline_milestones: 9
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

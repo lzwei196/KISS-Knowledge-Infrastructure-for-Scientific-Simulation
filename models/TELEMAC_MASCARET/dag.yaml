@@ -313,7 +313,7 @@ outputs:
   - var: "U"
     validation_rank: 4
     unit: "m/s"
-    description: "Depth-averaged velocity component along X."
+    description: "Depth-averaged water velocity component along X."
     emitted_in: "Results file (.slf SELAFIN)"
     observability:
       comparable_obs_shapes:
@@ -326,7 +326,7 @@ outputs:
   - var: "V"
     validation_rank: 5
     unit: "m/s"
-    description: "Depth-averaged velocity component along Y."
+    description: "Depth-averaged water velocity component along Y."
     emitted_in: "Results file (.slf SELAFIN)"
     observability:
       comparable_obs_shapes:
@@ -339,7 +339,7 @@ outputs:
   - var: "M"
     validation_rank: 2
     unit: "m/s"
-    description: "Depth-averaged velocity magnitude (scalar current speed)."
+    description: "Depth-averaged water velocity magnitude (scalar current speed)."
     emitted_in: "Results file (.slf SELAFIN)"
     observability:
       comparable_obs_shapes:
@@ -352,7 +352,7 @@ outputs:
   - var: "T"
     validation_rank: 6
     unit: "g/l or degC"
-    description: "Passive tracer concentration (e.g. salinity, temperature) advected/diffused by the flow."
+    description: "Passive tracer concentration in the water (e.g. salinity, temperature) advected/diffused by the flow."
     emitted_in: "Results file (.slf SELAFIN)"
     observability:
       comparable_obs_shapes:
@@ -365,7 +365,7 @@ outputs:
   - var: "section_discharge"
     validation_rank: 7
     unit: "m^3/s"
-    description: "Flowrate integrated across user-defined control sections."
+    description: "Water flowrate integrated across user-defined control sections."
     emitted_in: "Sections output file"
     observability:
       comparable_obs_shapes:
@@ -569,3 +569,25 @@ safety:
       scope: "inputs / processes / states stream weighting"
       source: "TELEMAC-2D User Manual (opentelemac.org); KI source path contained only wrapper tooling"
       status: "adopted"
+
+medium_evidence:
+  - var: "U"
+    source: "dag.yaml"
+    quote: "Depth-averaged (2D) free-surface flow via the Saint-Venant / shallow-water equations"
+    note: "scope_in declares this DAG's hydrodynamic outputs as depth-averaged shallow-water free-surface flow."
+  - var: "V"
+    source: "dag.yaml"
+    quote: "Depth-averaged (2D) free-surface flow via the Saint-Venant / shallow-water equations"
+    note: "scope_in declares this DAG's hydrodynamic outputs as depth-averaged shallow-water free-surface flow."
+  - var: "M"
+    source: "dag.yaml"
+    quote: "Depth-averaged (2D) free-surface flow via the Saint-Venant / shallow-water equations"
+    note: "scope_in declares this DAG's hydrodynamic outputs as depth-averaged shallow-water free-surface flow."
+  - var: "T"
+    source: "dag.yaml"
+    quote: "Depth-averaged (2D) free-surface flow via the Saint-Venant / shallow-water equations"
+    note: "scope_in plus tracer scope places passive tracer concentration in the shallow-water flow medium."
+  - var: "section_discharge"
+    source: "dag.yaml"
+    quote: "Depth-averaged (2D) free-surface flow via the Saint-Venant / shallow-water equations"
+    note: "scope_in declares integrated section flowrate as part of the shallow-water free-surface flow medium."

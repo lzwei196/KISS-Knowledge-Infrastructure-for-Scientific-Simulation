@@ -250,7 +250,7 @@ outputs:
   - var: "H"
     validation_rank: 8
     unit: "W/m2"
-    description: "Sensible heat flux."
+    description: "Land-surface sensible heat flux exchanged with the atmosphere."
     emitted_in: "output-tabs/point*.txt, basin*.txt; spatial flux maps"
     observability:
       comparable_obs_shapes:
@@ -487,3 +487,9 @@ safety:
       scope: "numerical method"
       source: "GEOtop source constants.h (KNe=0) and energy.balance module"
       status: "adopted"
+
+medium_evidence:
+  - var: "H"
+    source: "dag.yaml"
+    quote: "Coupled surface energy balance (net radiation partitioned into H, LE, ground heat flux)"
+    note: "scope_in declares H as a component of the surface energy balance."

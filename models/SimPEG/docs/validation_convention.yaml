@@ -1,0 +1,253 @@
+schema_version: 1
+model_id: SimPEG
+domain: geophysics
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+# Grounded in fetched OA/manual texts only. SimPEG/geophysical inversion validation is
+# primarily noise-weighted data fit plus geologic/model-resolution judgment, not a
+# universal NSE/CSI convention. Null bands mark places where the fetched field
+# literature does not provide a numeric pass gate.
+
+references:
+  heagy2017:
+    doi: 10.1016/j.cageo.2017.06.018
+    title: "A framework for simulation and inversion in electromagnetics"
+    venue: "Computers & Geosciences"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.cageo.2017.06.018.txt
+  heagy2019_aem:
+    doi: 10.1080/08123985.2019.1583538
+    title: "Open-source software for simulations and inversions of airborne electromagnetic data"
+    venue: "Exploration Geophysics"
+    year: 2019
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1080_08123985.2019.1583538.txt
+  caterina2022_tlert:
+    doi: 10.1007/s10712-022-09731-2
+    title: "A Review on Applications of Time-Lapse Electrical Resistivity Tomography Over the Last 30 Years"
+    venue: "Surveys in Geophysics"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10712-022-09731-2.txt
+  doyoro2022_freeware:
+    doi: 10.1186/s40562-022-00214-1
+    title: "A review of open software resources in python for electrical resistivity modelling"
+    venue: "Geoscience Letters"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1186_s40562-022-00214-1.txt
+
+validation:
+  - dag_variable: recovered_model
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched SimPEG/geophysical inversion paper gives a CSI pass threshold for recovered subsurface model maps."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          Recovered model geometry is sensitivity-, depth-, and regularization-limited: the fetched ERT benchmark
+          reports that "larger anomaly targets are correctly resolved" but targets below 0.5 m radius at 3 m depth
+          show no signatures, and that pyGIMLi/BERT/SimPEG recover target diameter larger than one-fourth of depth.
+        cites: [doyoro2022_freeware]
+      - metric: model_resolution
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          Deterministic inversions are non-unique; the TL-ERT review states the inverse problem "has an infinite
+          number of solutions" and recovered resistivity can be controlled by model constraints and regularization.
+        cites: [caterina2022_tlert]
+    validated_when: "UNRESOLVED - no fetched numeric CSI convention for recovered_model spatial snapshots; judge as data/resolution-limited unless a local synthetic truth benchmark defines its own CSI gate."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The dag determining_metric is csi and is retained, but the band is null because OpenAlex coverage checks did
+      not find an OA CSI threshold for geophysical inversion model recovery. Doyoro 2022 provides scenario-specific
+      recovery limits, not a universal CSI pass band.
+
+  - dag_variable: recovered_model
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Raw recovered_model values may be in log/model space; no fetched paper gives a pbias gate for raw model-space cells."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: >-
+          SimPEG separates the inversion model from physical properties; Heagy 2017 notes that if the inversion
+          model is log-conductivity, an exponential mapping is required to obtain electrical conductivity.
+        cites: [heagy2017]
+    validated_when: "UNRESOLVED for raw model-space point comparison; compare physical_property instead whenever the forward map/inverse map is known."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      This block intentionally does not transfer Doyoro's resistivity percent errors to raw recovered_model because
+      the dag unit is model space, and SimPEG mappings can make model-space bias physically meaningless.
+
+  - dag_variable: physical_property
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched geophysical inversion benchmark gives a CSI pass threshold for transformed physical-property maps."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          Spatial agreement is limited by survey sensitivity, target size, target depth, and smoothing. Doyoro 2022
+          reports decreasing model resolution and "considerable anomaly size overestimations" as buried target depth
+          increases, plus smoothing that limits accurate anomaly geometry.
+        cites: [doyoro2022_freeware]
+      - metric: normalized_data_misfit
+        direction: minimize
+        status: supportive
+        ceiling_reason: >-
+          Field practice first requires matching observed data to estimated noise; Caterina 2022 states the
+          resistivity image is representative once data misfit reaches measured-data noise.
+        cites: [caterina2022_tlert]
+    validated_when: "UNRESOLVED for CSI; require a study-specific synthetic/ground-truth map threshold, and verify that predicted_data reaches the noise-weighted misfit convention."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Physical-property maps are gradeable only after applying SimPEG's map from model space. The fetched benchmark
+      gives qualitative geometry-resolution results but no CSI tier.
+
+  - dag_variable: physical_property
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 10.0, satisfactory: 18.0}
+        pass_band: satisfactory
+        band_note: >-
+          Benchmark envelope from Doyoro 2022 synthetic ERT physical-property recovery: scenario one recovered
+          resistivity values were about 7-10% high for conductive targets and 3-5% low for resistive targets; the
+          larger scenario-four target was about 11-18% high and 4-9% low. This is not a universal field-data tier.
+        cites: [doyoro2022_freeware]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: >-
+          Point physical-property bias worsens with target depth and small target size; Doyoro 2022 attributes
+          over/under-estimation to declining surface-array sensitivity, lower data density at depth, and smoothing.
+        cites: [doyoro2022_freeware]
+    validated_when: "|PBIAS| <= 18% only for comparable synthetic/near-surface ERT target recovery after converting recovered_model into physical_property space; otherwise treat as study-specific."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The dag determining_metric pbias is retained. The numeric band is a fetched benchmark envelope from a
+      same-task open-source inversion comparison including SimPEG, not a universal borehole-log acceptance rule.
+
+  - dag_variable: predicted_data
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: chi_factor
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: >-
+          Noise-weighted geophysical inversion convention: Caterina 2022 says many studies use chi = 1 as the
+          inversion stopping criterion; Heagy 2017 uses discrepancy-principle stopping with chi = 1.
+        cites: [caterina2022_tlert, heagy2017]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          The dag lists csi for a spatial anomaly map, but fetched SimPEG/ERT papers validate predicted_data by
+          observed-vs-predicted data misfit under the assigned uncertainty model rather than categorical overlap.
+        cites: [heagy2017, heagy2019_aem]
+    validated_when: "Noise-weighted predicted-data misfit reaches chi_factor <= 1.0 for the survey map under documented data uncertainties; CSI may be reported only as supplemental anomaly-map overlap."
+    evidence_strength: moderate
+    confidence: 0.75
+    notes: >-
+      This supersedes the dag determining_metric csi for predicted_data because fetched SimPEG examples use
+      observed/predicted data fit and target misfit. Heagy 2017 reports FDEM/TDEM inversions reaching target misfit;
+      the Bookpurnong stitched inversion reached global chi factor 0.74.
+
+  - dag_variable: predicted_data
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: chi_factor
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: >-
+          Applies to EM frequency series or time-gate series at a station: validate by noise-weighted data misfit,
+          not NSE. Heagy 2017 defines weighted L2 data misfit and stops when chi = 1.
+        cites: [heagy2017, caterina2022_tlert]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          NSE is not the fetched field convention for EM station frequency/time-gate responses; Heagy 2017 treats
+          observed and predicted real-valued data through weighted L2 misfit with assigned uncertainties.
+        cites: [heagy2017]
+    validated_when: "For EM frequency/time-gate response series, chi_factor <= 1.0 under the stated uncertainty/noise floor; NSE is not required unless a local benchmark explicitly defines it."
+    evidence_strength: moderate
+    confidence: 0.75
+    notes: >-
+      This supersedes the dag determining_metric nse. The text states SimPEG receivers sample fields to create
+      predicted data, and inversions are stopped by discrepancy-principle target misfit.
+
+  - dag_variable: fields
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric validation threshold for internal PDE fields/fluxes as spatial observations."
+        cites: []
+    secondary_metrics:
+      - metric: visual_physics_consistency
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          SimPEG field/flux outputs are diagnostic state variables: Heagy 2017 says fields are computed on demand,
+          and receivers sample fields/fluxes to create measured data; Heagy 2019 uses field visualization to build
+          understanding of physical processes governing observed data.
+        cites: [heagy2017, heagy2019_aem]
+    validated_when: "UNRESOLVED - internal fields are diagnostic unless directly instrumented; validate the receiver-sampled predicted_data instead."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      The dag determining_metric csi is retained with a null band. Fetched SimPEG papers support fields as
+      interpretable diagnostics and sources of predicted data, not a separately thresholded validation product.
+
+deferred_paywalled:
+  - ref: "Cockett et al. 2015 - SimPEG: An open source framework for simulation and gradient based parameter estimation in geophysical applications"
+    doi: 10.1016/j.cageo.2015.09.015
+    needed_for: [recovered_model, physical_property, predicted_data]
+  - ref: "Li and Oldenburg 1996 - 3-D inversion of magnetic data"
+    doi: 10.1190/1.1443968
+    needed_for: [recovered_model, physical_property]
+  - ref: "Li and Oldenburg 1998 - 3-D inversion of gravity data"
+    doi: 10.1190/1.1444302
+    needed_for: [recovered_model, physical_property]

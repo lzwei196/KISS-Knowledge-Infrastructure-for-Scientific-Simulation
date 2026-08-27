@@ -1,278 +1,1594 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["crop"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
 model:
-  name: "DSSAT-CSM v4.8.5 Build 41"
-  domain: "crop"
-  secondary_domains: ["soil_nitrogen", "soil_water"]
-  binary: "dscsm048"
-  binary_path: "KISSPATH_HOME/DSSAT/build/bin/dscsm048"
-  language: "Fortran 90"
-  working_directory: "created by dssat_workdir_setup.py (short paths required, <72 chars)"
-  execution: "cd <workdir> && dscsm048 B DSSBatch.v48"
-  setup_tool: "tools/dssat_workdir_setup.py"
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: DSSAT
+  language: fortran
+  implementation:
+    id: dssat-csm-485
+    version: 4.8.5 Build 41
+    provenance: DSSAT-CSM Fortran source build 41 from github.com/DSSAT/dssat-csm-os; CMake + gfortran/Intel
+      IFort; binary dscsm048.
+  scientific_reference_version: DSSAT 4.8.5 cropping-system shell (Jones et al. 2003 modular CSM architecture;
+    Hoogenboom et al. 2019)
 inputs:
-
   forcing:
-    - name: "precipitation"
-      file: "*.WTH"
-      unit: "mm/day"
-      valid_range: [0.0, 500.0]
-      format: "fixed-width columns in DSSAT .WTH format (station header + daily rows)"
-      missing_value: -99.0
-      conversion_from_cmfd: "kg/m2/s -> mm/day: multiply by 86400; or mm/3hr -> mm/day: sum 8 timesteps"
-
-    - name: "solar_radiation"
-      file: "*.WTH"
-      column: "SRAD"
-      unit: "MJ/m2/day"
-      valid_range: [0.0, 35.0]
-      format: "fixed-width column in .WTH"
-      missing_value: -99.0
-      conversion_from_cmfd: "W/m2 -> MJ/m2/day: multiply by 0.0864"
-      silent_error: "If W/m2 is used directly (values 50-400), crop gets zero or excessive radiation. Zero yield or abnormal growth."
-
-    - name: "temperature_max"
-      file: "*.WTH"
-      column: "TMAX"
-      unit: "degC"
-      valid_range: [-50.0, 60.0]
-      format: "fixed-width column in .WTH"
-      missing_value: -99.0
-      conversion_from_cmfd: "K -> degC: subtract 273.15"
-      silent_error: "Temperature in Kelvin causes crop never to mature (phenology requires degC)"
-
-    - name: "temperature_min"
-      file: "*.WTH"
-      column: "TMIN"
-      unit: "degC"
-      valid_range: [-60.0, 50.0]
-      format: "fixed-width column in .WTH"
-      missing_value: -99.0
-      conversion_from_cmfd: "K -> degC: subtract 273.15"
-
-    - name: "wind_speed"
-      file: "*.WTH"
-      column: "WIND"
-      unit: "km/day"
-      valid_range: [0.0, 900.0]
-      conversion_from_cmfd: "m/s -> km/day: multiply by 86.4"
-
+  - name: SRAD (solar radiation)
+    unit: MJ/m2/day
+    category: weather
+    source_kind: forcing
+    model_input_format: .WTH FileW (DSSAT fixed-width)
+    notes: Range-checked 0-100; <0.1 silently clamped to 0.1 with WARNING; W/m2 must be converted (x0.0864).
+  - name: TMAX (max air temperature)
+    unit: deg C
+    category: weather
+    source_kind: forcing
+    model_input_format: .WTH FileW
+    notes: Must satisfy TMAX >= TMIN every day.
+  - name: TMIN (min air temperature)
+    unit: deg C
+    category: weather
+    source_kind: forcing
+    model_input_format: .WTH FileW
+  - name: RAIN (precipitation)
+    unit: mm/day
+    category: weather
+    source_kind: forcing
+    model_input_format: .WTH FileW
+  - name: WIND
+    unit: km/day
+    category: weather
+    source_kind: forcing
+    model_input_format: .WTH FileW
+    notes: Required if MEEVP=F (FAO-56 PM) or Z (ASCE); DSSAT expects km/day not m/s (x86.4).
+  - name: TDEW / DEWP (dew-point temperature)
+    unit: deg C
+    category: weather
+    source_kind: forcing
+    model_input_format: .WTH FileW
+    notes: Required for FAO-56 PM and ASCE ET options.
+  - name: RHUM (relative humidity)
+    unit: '%'
+    category: weather
+    source_kind: forcing
+    model_input_format: .WTH FileW
+  - name: PAR (photosynthetically active radiation)
+    unit: moles/m2/day
+    category: weather
+    source_kind: forcing
+    model_input_format: .WTH FileW
+  - name: CO2 (atmospheric CO2 concentration)
+    unit: ppm
+    category: atmospheric
+    source_kind: forcing
+    model_input_format: ICO2 switch selects M=measured CO2xxx.WDA per year, D=static default ~380 ppm,
+      W=from .WTH file
+    notes: Time-varying atmospheric driver; affects photosynthesis via CO2 fertilization.
   parameters:
-    critical:
-      - name: "cultivar_selection"
-        file: "FileX experiment file (*.<crop>X)"
-        description: "Cultivar code and genotype coefficients"
-        notes: >
-          Must match an entry in the corresponding .CUL file. Chinese cultivar library
-          at KISSPATH_HOME/DSSAT/Data/Genotype/China/ has 42 calibrated varieties
-          (17 wheat, 12 maize, 11 rice, 7 soybean). Wrong cultivar silently produces
-          wrong phenology and yield.
-
-      - name: "soil_profile"
-        file: "SOIL.SOL"
-        description: "Multi-layer soil profile with texture, water holding capacity, organic C"
-        format: "fixed-width multi-line records"
-        notes: "Use hwsd_to_dssat.py for automated conversion from HWSD global soil database"
-
-      - name: "planting_date"
-        file: "FileX experiment file"
-        description: "Planting date in YYDDD format or YYYY-MM-DD"
-        notes: >
-          Wrong planting date can cause crop failure with no error message.
-          Use crop calendar reference (China: NE >40N maize May, Yangtze rice Apr-May,
-          Huang-Huai wheat Oct).
-
-      - name: "weather_station_code"
-        file: "FileX + .WTH filename"
-        description: "4-character station code linking FileX to weather file"
-        notes: >
-          Mismatch between FileX WSTA field and .WTH filename causes simulation to
-          use wrong weather data with no error. dssat_workdir_setup.py handles this automatically.
-
-    experiment_file:
-      - name: "FileX"
-        file: "*.<crop>X (e.g., UFGA8201.MZX for maize)"
-        description: "Master experiment file containing all treatment definitions"
-        format: "fixed-width column format — whitespace errors cause silent failures"
-        notes: >
-          NEVER hand-edit FileX. Use dssat_workdir_setup.py which handles exact column
-          positions for all 9 sections (general, treatments, cultivars, fields, initial
-          conditions, planting, irrigation, fertilizer, simulation controls).
-
-  files:
-    required:
-      - name: "DSSBatch.v48"
-        description: "Batch control file specifying which experiments to run"
-
-      - name: "DSSATPRO.L48"
-        description: "Path configuration file for DSSAT directories"
-        notes: "Must point to correct workdir paths. dssat_workdir_setup.py regenerates this."
-
-      - name: "*.CDE files"
-        description: "Code definition files required by Fortran runtime"
-        notes: "Missing CDE files cause MODEL.ERR crash. dssat_workdir_setup.py symlinks from DSSAT/Data/"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+  - name: SALB (bare/dry surface albedo)
+    unit: fraction
+    category: soil_surface
+    source_kind: calibrated
+    model_input_format: .SOL profile header
+  - name: SLU1 (stage-1 soil evaporation upper limit U)
+    unit: mm
+    category: soil_surface
+    source_kind: calibrated
+    model_input_format: .SOL profile header
+  - name: SLDR (drainage rate SWCON)
+    unit: fraction/day
+    category: soil_surface
+    source_kind: calibrated
+    model_input_format: .SOL profile header
+  - name: SLRO (SCS runoff curve number CN)
+    unit: dimensionless
+    category: soil_surface
+    source_kind: calibrated
+    model_input_format: .SOL profile header
+  - name: SLNF (N mineralization factor)
+    unit: fraction
+    category: soil_surface
+    source_kind: calibrated
+    model_input_format: .SOL profile header
+    notes: Silently clamped to 1.0 if outside [0,1].
+  - name: SLPF (photosynthesis/growth factor)
+    unit: fraction
+    category: soil_surface
+    source_kind: calibrated
+    model_input_format: .SOL profile header
+  - name: SLB (layer bottom depth)
+    unit: cm
+    category: soil_layer
+    source_kind: dataset_lookup
+    model_input_format: .SOL per-layer
+    notes: Strictly monotonic; max NL=20 layers; layer 1 top fixed at 0 cm.
+  - name: SLLL (lower limit / wilting point LL)
+    unit: cm3/cm3
+    category: soil_layer
+    source_kind: calibrated
+    model_input_format: .SOL per-layer
+  - name: SDUL (drained upper limit / field capacity DUL)
+    unit: cm3/cm3
+    category: soil_layer
+    source_kind: calibrated
+    model_input_format: .SOL per-layer
+  - name: SSAT (saturated water content SAT)
+    unit: cm3/cm3
+    category: soil_layer
+    source_kind: calibrated
+    model_input_format: .SOL per-layer
+    notes: Must satisfy SLLL < SDUL < SSAT in every layer.
+  - name: SRGF (relative root growth factor)
+    unit: fraction
+    category: soil_layer
+    source_kind: calibrated
+    model_input_format: .SOL per-layer
+  - name: SSKS (saturated hydraulic conductivity)
+    unit: cm/hr
+    category: soil_layer
+    source_kind: calibrated
+    model_input_format: .SOL per-layer
+  - name: SBDM (bulk density)
+    unit: g/cm3
+    category: soil_layer
+    source_kind: dataset_lookup
+    model_input_format: .SOL per-layer
+  - name: SLOC (organic carbon)
+    unit: '%'
+    category: soil_layer
+    source_kind: dataset_lookup
+    model_input_format: .SOL per-layer
+  - name: SLCL/SLSI/SLCF (clay/silt/coarse-fragment fractions)
+    unit: '%'
+    category: soil_layer
+    source_kind: dataset_lookup
+    model_input_format: .SOL per-layer
+  - name: SLNI (total N)
+    unit: '%'
+    category: soil_layer
+    source_kind: dataset_lookup
+    model_input_format: .SOL per-layer
+  - name: SLHW/SLHB (pH in water / buffer)
+    unit: pH units
+    category: soil_layer
+    source_kind: dataset_lookup
+    model_input_format: .SOL per-layer
+  - name: SCEC (cation exchange capacity)
+    unit: cmol/kg
+    category: soil_layer
+    source_kind: dataset_lookup
+    model_input_format: .SOL per-layer
+  - name: TAV (annual mean air temperature)
+    unit: deg C
+    category: weather_climatology
+    source_kind: calibrated
+    model_input_format: .WTH station header
+    notes: Defaults silently to 20 deg C if missing/<=0; controls soil temperature seasonality.
+  - name: AMP / TAMP (annual amplitude of monthly mean T)
+    unit: deg C
+    category: weather_climatology
+    source_kind: calibrated
+    model_input_format: .WTH station header
+    notes: Defaults silently to 5 deg C if missing/<=0.
+  - name: LAT, LONG, ELEV, REFHT, WNDHT (station geometry)
+    unit: degrees / m
+    category: weather_station
+    source_kind: dataset_lookup
+    model_input_format: .WTH station header
+  - name: CERES grain coefficients (e.g., P1, P2/P2O, P2R, P5, G1, G2, G3, PHINT, P1D, P1V, VEFF, THOT)
+    unit: mixed (GDD, hours, GDD/h, count, g, dimensionless)
+    category: cultivar
+    source_kind: calibrated
+    model_input_format: .CUL (e.g., MZCER048.CUL, WHCER048.CUL, RICER048.CUL)
+    notes: Range bounds in .SPE MINIMA/MAXIMA are documentation only; out-of-range values run silently.
+  - name: CROPGRO photothermal coefficients (CSDL, PPSEN, EM-FL, FL-SD, SD-PM, LFMAX, SLAVR, WTPSD, etc.)
+    unit: mixed (h, 1/h, photothermal days, mg CO2/m2/s, cm2/g, g)
+    category: cultivar
+    source_kind: calibrated
+    model_input_format: .CUL (e.g., SBGRO048.CUL)
+  - name: Ecotype coefficients
+    unit: mixed
+    category: ecotype
+    source_kind: calibrated
+    model_input_format: .ECO (e.g., SBGRO048.ECO; not used for some CERES crops like rice)
+  - name: Species coefficients (cardinal temperatures, RUE, partitioning rules, MINIMA/MAXIMA bounds)
+    unit: mixed
+    category: species
+    source_kind: calibrated
+    model_input_format: .SPE (e.g., MZCER048.SPE)
+  initial_conditions:
+  - name: SH2O (initial volumetric soil water by layer)
+    unit: cm3/cm3
+    category: soil_state
+    source_kind: user_provided
+    model_input_format: FileX *INITIAL CONDITIONS layer fields (ICBL must match .SOL SLB)
+    notes: Silently clamped to [LL, SAT] at initialization.
+  - name: SNO3 (initial soil nitrate by layer)
+    unit: ppm
+    category: soil_state
+    source_kind: user_provided
+    model_input_format: FileX *INITIAL CONDITIONS layer fields
+    notes: Defaults to 0.1 ppm when ISWNIT=N; no upper bound enforced; unit confusion (kg/ha vs ppm) silently
+      inflates yield.
+  - name: SNH4 (initial soil ammonium by layer)
+    unit: ppm
+    category: soil_state
+    source_kind: user_provided
+    model_input_format: FileX *INITIAL CONDITIONS layer fields
+  - name: ICRES (initial surface residue mass)
+    unit: kg/ha
+    category: residue_state
+    source_kind: user_provided
+    model_input_format: FileX *INITIAL CONDITIONS header
+  - name: ICREN, ICREP, ICRIP, ICRID (residue %N, %P, % incorporated, incorporation depth)
+    unit: '% / cm'
+    category: residue_state
+    source_kind: user_provided
+    model_input_format: FileX *INITIAL CONDITIONS header
+  - name: PCR (previous crop code)
+    unit: 2-char code
+    category: legacy_crop
+    source_kind: user_provided
+    model_input_format: FileX *INITIAL CONDITIONS header
+  - name: ICRT, ICND, ICRN, ICRE (initial root weight, nodules, root N, root growth params)
+    unit: kg/ha / mixed
+    category: soil_state
+    source_kind: user_provided
+    model_input_format: FileX *INITIAL CONDITIONS header
+  - name: ICWD (water-table depth)
+    unit: cm (-99 if none)
+    category: soil_state
+    source_kind: user_provided
+    model_input_format: FileX *INITIAL CONDITIONS header
+  - name: ICDAT (initial-conditions date)
+    unit: YYDDD Julian
+    category: soil_state
+    source_kind: user_provided
+    model_input_format: FileX *INITIAL CONDITIONS header
+    notes: Must be <= SDATE.
+  boundary_conditions:
+  - name: SDATE (simulation start date)
+    unit: YYDDD Julian
+    category: control
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS GENERAL
+    notes: Must satisfy SDATE <= PDATE (earliest management event).
+  - name: NYERS (number of simulated years)
+    unit: count
+    category: control
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS GENERAL
+  - name: SMODEL (8-char crop model identifier)
+    unit: code
+    category: control
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS GENERAL
+    notes: Blank defaults to DSSATPRO mapping; wrong code silently misinterprets cultivar coefficients.
+  - name: WATER, NITRO, SYMBI, PHOSP, POTAS, DISES, CHEM, TILL (process toggles ISWWAT/ISWNIT/ISWSYM/ISWPHO/ISWPOT/ISWDIS/ISWCHE/ISWTIL)
+    unit: Y/N
+    category: control_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS OPTIONS
+    notes: WATER=N forces NITRO and PHOSP to N; SYMBI valid only for legumes.
+  - name: MEEVP / EVAPO (ET method)
+    unit: code (R/P/F/Z/D/M/H/T)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+    notes: R=Ritchie (default), P=Priestley-Taylor, F=FAO-56 Penman-Monteith, Z=ASCE.
+  - name: MESEV (soil evaporation method)
+    unit: code (S/R)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+    notes: S=Suleiman-Ritchie (recommended); R=old Ritchie two-stage (code default when section absent).
+  - name: MEINF / INFIL (infiltration method)
+    unit: code (S/N/R)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+  - name: MEPHO / PHOTO (photosynthesis method)
+    unit: code (L/C/R)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+    notes: L=leaf-level daily (required for CROPGRO crops), C=hourly canopy (ETPHOT), R=RUE radiation-use-efficiency
+      (CERES default).
+  - name: MEHYD / HYDRO (hydrology method)
+    unit: code (R)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+  - name: MESOM (SOM engine)
+    unit: code (G/P)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+    notes: G=Godwin/CERES single-pool; P=Parton/Century multi-pool (requires mesic spin-up).
+  - name: MESOL (soil-layer redistribution)
+    unit: code (1/2/3)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+  - name: METMP (soil temperature method)
+    unit: code (D/E)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+    notes: D=DSSAT-Kimball improved (v4.8+); E=EPIC.
+  - name: MEGHG (greenhouse-gas method)
+    unit: code (0/1)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+    notes: 0=DSSAT original denitrification; 1=DayCent N2O.
+  - name: MEWTH / WTHER (weather source)
+    unit: code (M/G/S)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+  - name: ICO2 (CO2 source switch)
+    unit: code (M/D/W)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+  - name: INCON (initial-conditions source)
+    unit: code (M/S)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+  - name: NSWIT (N routine selector)
+    unit: code (1)
+    category: method_switch
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS METHODS
+  - name: 'IPLTI, IIRRI, IFERI, IHARI (planting/irrigation/fertilizer/harvest mode: R reported, A automatic,
+      N none, F/D variants)'
+    unit: code
+    category: management_mode
+    source_kind: user_provided
+    model_input_format: FileX *SIMULATION CONTROLS MANAGEMENT
+  - name: PDATE (planting date)
+    unit: YYDDD Julian
+    category: management_planting
+    source_kind: user_provided
+    model_input_format: FileX *PLANTING DETAILS
+  - name: PPOP (plant population)
+    unit: plants/m2
+    category: management_planting
+    source_kind: user_provided
+    model_input_format: FileX *PLANTING DETAILS
+  - name: PLRS (row spacing)
+    unit: cm
+    category: management_planting
+    source_kind: user_provided
+    model_input_format: FileX *PLANTING DETAILS
+  - name: PLDP (planting depth)
+    unit: cm
+    category: management_planting
+    source_kind: user_provided
+    model_input_format: FileX *PLANTING DETAILS
+  - name: INGENO (cultivar code)
+    unit: 6-char code
+    category: management_planting
+    source_kind: user_provided
+    model_input_format: FileX *CULTIVARS (must match VAR# in .CUL for selected crop model)
+  - name: Irrigation events {IDATE, IRVAL amount, IROP method, EFIR efficiency}
+    unit: YYDDD / mm / code / fraction
+    category: management_irrigation
+    source_kind: user_provided
+    model_input_format: FileX *IRRIGATION AND WATER MANAGEMENT
+  - name: Fertilizer events {FDATE, FAMN N rate, FAMP P rate, FAMK K rate, FMCD method code, FDEP depth}
+    unit: YYDDD / kg/ha / code / cm
+    category: management_fertilizer
+    source_kind: user_provided
+    model_input_format: FileX *FERTILIZERS (INORGANIC)
+    notes: Invalid FMCD silently reset to '001' broadcast.
+  - name: Organic-residue events
+    unit: mixed
+    category: management_residue
+    source_kind: user_provided
+    model_input_format: FileX *RESIDUES
+  - name: Tillage events
+    unit: mixed
+    category: management_tillage
+    source_kind: user_provided
+    model_input_format: FileX *TILLAGE
+  - name: Chemical/pesticide events
+    unit: mixed
+    category: management_chemical
+    source_kind: user_provided
+    model_input_format: FileX *CHEMICAL
+  - name: Harvest events {HDATE, HPC harvest %, HBPC by-product %, HSTG harvest stage}
+    unit: YYDDD / %
+    category: management_harvest
+    source_kind: user_provided
+    model_input_format: FileX *HARVEST
+  - name: Automatic-management thresholds (PWDINF/PWDINL window, soil-moisture/temperature criteria, irrigation/fertilizer
+      triggers)
+    unit: mixed
+    category: management_auto
+    source_kind: user_provided
+    model_input_format: FileX @AUTOMATIC MANAGEMENT
+  - name: WSTA (4-char weather-station code linking to .WTH)
+    unit: code
+    category: linkage
+    source_kind: user_provided
+    model_input_format: FileX *FIELDS
+  - name: ID_SOIL (10-char soil-profile code linking to .SOL pedon)
+    unit: code
+    category: linkage
+    source_kind: user_provided
+    model_input_format: FileX *FIELDS
+    notes: SLNO='-99' or blank silently substitutes a 1-layer generic default soil.
 outputs:
-
   primary:
-    - name: "grain_yield"
-      file: "Summary.OUT"
-      column: "HWAM"
-      unit: "kg/ha"
-      valid_range: [0, 20000]
-      notes: "Harvested weight at maturity. Main output for yield assessment."
-
-    - name: "total_biomass"
-      file: "Summary.OUT"
-      column: "CWAM"
-      unit: "kg/ha"
-      valid_range: [0, 40000]
-
-    - name: "harvest_index"
-      file: "Summary.OUT"
-      column: "HIAM"
-      unit: "fraction"
-      valid_range: [0.0, 0.7]
-      notes: "Ratio of grain to total biomass. Typical: wheat 0.35-0.50, maize 0.40-0.55, rice 0.40-0.55."
-
-    - name: "anthesis_date"
-      file: "Summary.OUT"
-      column: "APTS"
-      unit: "YYDDD"
-      notes: "Date of flowering. If missing or very late, check temperature units or cultivar params."
-
-    - name: "maturity_date"
-      file: "Summary.OUT"
-      column: "MPTS"
-      unit: "YYDDD"
-      notes: "If crop never matures, Summary.OUT shows -99. Check temperature units and cultivar."
-
-  daily:
-    - name: "daily_crop_growth"
-      file: "PlantGro.OUT"
-      key_columns: ["LAID", "CWAD", "HWAD", "RSTD"]
-      unit: "various (m2/m2 for LAI, kg/ha for biomass)"
-      notes: "Detailed daily growth trajectory. Use for diagnosing growth problems."
-
-    - name: "daily_soil_water"
-      file: "SoilWat.OUT"
-      key_columns: ["SWC1", "SWC2", "SWC3"]
-      unit: "cm3/cm3"
-
-    - name: "daily_et"
-      file: "ET.OUT"
-      key_columns: ["ETAC"]
-      unit: "mm/day"
-
-  ghg:
-    - name: "n2o_emission"
-      file: "N2O.OUT"
-      unit: "kgN/ha/day"
-      notes: "Available with CERES-N2O module enabled"
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: HWAM (harvested grain yield at maturity, dry)
+    unit: kg/ha
+    description: Dry grain/seed yield at physiological maturity per treatment - the canonical end-of-season
+      yield variable.
+    validation_rank: 1
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - 'Single-year/single-site comparison: only a magnitude check is meaningful; r/NSE/KGE are structurally
+          undefined for a single (sim, obs) pair.'
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - ranking_quality
+        determining_metric: pbias
+        caveats:
+        - Multi-year same-site requires NYERS >= 2 and consistent cultivar/management; inter-annual signal
+          is weather-driven.
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/sub-national yield aggregates carry a technology/cultivar-improvement trend that a
+          weather-only point process model cannot reproduce; detrend before comparing temporal patterns.
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Single-year aggregate yield (e.g., FAOSTAT one year, national); scalar check only.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - DSSAT has no built-in spatial mode; a 'field' is constructed by running many point simulations
+          on a grid; per-pixel comparison only makes sense if cultivar/management/soil are spatially varied
+          consistently with the obs.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Requires a gridded ensemble of DSSAT point runs over multiple seasons; per-pixel comparison
+          only valid where cultivar/management/soil vary consistently with the obs.
+      detrending_options:
+      - none
+      - first_difference
+      - linear_residual
+      - decadal_mean
+  - name: HWAH (harvested yield, dry, at harvest date)
+    unit: kg/ha
+    description: Yield actually harvested = HWAM * HPC/100; zero when crop never matured or HPC=0.
+    validation_rank: 2
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/sub-national harvested yield aggregates carry a technology/cultivar-improvement trend
+          that a weather-only point process model cannot reproduce; detrend before comparing temporal
+          patterns; HPC must be set or HWAH=0.
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Single-year aggregate; one point comparison only.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - DSSAT has no built-in spatial mode; construct a gridded ensemble.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Gridded ensemble of point runs; align cultivar/management/soil spatially.
+      detrending_options:
+      - none
+      - first_difference
+      - linear_residual
+      - decadal_mean
+  - name: CWAM (aboveground biomass at maturity)
+    unit: kg/ha
+    description: Tops dry weight at physiological maturity.
+    validation_rank: 3
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      - obs_shape: regional_aggregate_time_series
+        comparison_mode: aggregate_trend_comparison
+        metric_families:
+        - trend_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - National/sub-national biomass aggregates carry a technology/cultivar-improvement trend that
+          a weather-only point process model cannot reproduce; detrend before comparing temporal patterns.
+      - obs_shape: regional_aggregate_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Single-year aggregate biomass; scalar check only.
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - DSSAT has no built-in spatial mode; construct a gridded ensemble for biomass fields.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Gridded ensemble of point runs over multiple seasons; align cultivar/management/soil spatially.
+      detrending_options:
+      - none
+      - first_difference
+      - linear_residual
+      - decadal_mean
+  - name: HIAM (harvest index at maturity)
+    unit: fraction
+    description: Grain / aboveground biomass ratio at maturity.
+    validation_rank: 10
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: ADAT (anthesis date)
+    unit: YRDOY
+    description: Day of year of anthesis/flowering for the simulated season.
+    validation_rank: 11
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - timing_accuracy
+        determining_metric: day_bias
+        caveats:
+        - Compare as DOY (after stripping YYYY); year-boundary issues if YRDOY is treated as raw integer.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - timing_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: MDAT (physiological maturity date)
+    unit: YRDOY
+    description: Day of year when the simulated crop reaches physiological maturity.
+    validation_rank: 12
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - timing_accuracy
+        determining_metric: day_bias
+        caveats:
+        - ADAT > MDAT is biologically impossible and indicates a YRDOY parsing bug, not a model error.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - timing_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: EDAT (emergence date)
+    unit: YRDOY
+    description: Day of year of crop emergence.
+    validation_rank: 13
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - timing_accuracy
+        determining_metric: day_bias
+        caveats: []
+      detrending_options:
+      - none
+  - name: LAIX (maximum LAI during season)
+    unit: m2/m2
+    description: Peak leaf area index attained during the simulated season.
+    validation_rank: 6
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: LAID / XLAI (daily leaf area index)
+    unit: m2/m2
+    description: Daily crop canopy leaf area index trajectory.
+    validation_rank: 14
+    emitted_in: PlantGro.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: nse
+        caveats:
+        - Remote-sensing LAI products carry their own retrieval bias and view-angle/cloud gaps; align
+          on simulation calendar before comparing.
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Requires gridded ensemble of DSSAT point runs (see HWAM caveats).
+      detrending_options:
+      - none
+  - name: CWAD (daily aboveground dry weight)
+    unit: kg/ha
+    description: Daily aboveground crop-plant tops dry-matter accumulation.
+    validation_rank: 15
+    emitted_in: PlantGro.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats: []
+      detrending_options:
+      - none
+  - name: GWAD (daily grain dry weight)
+    unit: kg/ha
+    description: Daily crop grain dry-matter accumulation during grain filling.
+    validation_rank: 4
+    emitted_in: PlantGro.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - timing_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: ETCM (cumulative evapotranspiration)
+    unit: mm
+    description: Seasonal cumulative actual ET (EP + ES + EM + EF).
+    validation_rank: 7
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Lysimeter or eddy-covariance ETa benchmarks differ in footprint; choose comparable spatial scale.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - Daily ET available in ET.OUT; ETCM is the seasonal total.
+      detrending_options:
+      - none
+  - name: ET (daily actual evapotranspiration)
+    unit: mm/d
+    description: Daily soil-plant-atmosphere evapotranspiration components (EO, EOP, EOS, EP, ES, EF,
+      EM).
+    validation_rank: 8
+    emitted_in: ET.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: nse
+        caveats:
+        - MEEVP choice (R/P/F/Z) materially changes EO; compare against the obs reference ET formulation.
+      detrending_options:
+      - none
+  - name: SW (daily volumetric soil water by layer)
+    unit: cm3/cm3
+    description: Per-layer volumetric soil water content.
+    validation_rank: 9
+    emitted_in: SoilWat.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        determining_metric: r
+        caveats:
+        - Sensor depth must be matched to DSSAT layer; root-zone-integrated comparison preferred when
+          sensors are at non-DSSAT depths.
+      detrending_options:
+      - none
+  - name: ROCM (cumulative runoff)
+    unit: mm
+    description: Seasonal cumulative surface runoff via SCS curve number.
+    validation_rank: 16
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Plot-scale runoff only; no lateral routing.
+      detrending_options:
+      - none
+  - name: DRCM (cumulative deep drainage)
+    unit: mm
+    description: Seasonal cumulative drainage below the soil profile.
+    validation_rank: 17
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: NLCM (cumulative N leached)
+    unit: kg N/ha
+    description: Seasonal cumulative nitrate leached below the soil profile.
+    validation_rank: 18
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Lysimeter / suction-cup observations only; basin-scale loadings are out of scope.
+      detrending_options:
+      - none
+  - name: NUCM (cumulative crop N uptake)
+    unit: kg N/ha
+    description: Seasonal cumulative N uptake by the crop.
+    validation_rank: 19
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: NFXM (cumulative N fixed)
+    unit: kg N/ha
+    description: Seasonal cumulative symbiotic N fixation (legumes only).
+    validation_rank: 20
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Defined only for legumes with ISWSYM=Y.
+      detrending_options:
+      - none
+  - name: GNAM (grain N content at maturity)
+    unit: kg N/ha
+    description: Total N in the crop grain pool at maturity.
+    validation_rank: 5
+    emitted_in: Summary.OUT
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats: []
+      detrending_options:
+      - none
+  - name: N2OEM (cumulative N2O-N emissions)
+    unit: kg N/ha
+    description: Seasonal cumulative N2O-N flux from denitrification (MEGHG=0) or DayCent (MEGHG=1).
+    validation_rank: 21
+    emitted_in: Summary.OUT (and GHG.OUT daily)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Chamber-flux observations are episodic; integrate over event windows.
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - temporal_pattern_match
+        - magnitude_accuracy
+        - event_detection
+        determining_metric: nse
+        caveats:
+        - N2O is highly episodic; consider event-based metrics.
+      detrending_options:
+      - none
+  - name: CH4EM (cumulative CH4-C emissions, paddy)
+    unit: kg C/ha
+    description: Seasonal cumulative methane emissions from paddy rice.
+    validation_rank: 22
+    emitted_in: Summary.OUT (and GHG.OUT daily)
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_snapshot
+        comparison_mode: scalar_comparison
+        metric_families:
+        - magnitude_accuracy
+        determining_metric: pbias
+        caveats:
+        - Paddy rice only.
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "solar_unit_wrong"
-    description: "Solar radiation in W/m2 instead of MJ/m2/day causes zero yield"
-    affected_output: "Summary.OUT HWAM = 0 or near-zero"
-    detection: "SRAD values > 35 in .WTH file"
-    fix: "Multiply by 0.0864"
-    triplet: "dt_002"
-
-  - id: "temp_in_kelvin"
-    description: "Temperature in Kelvin instead of degC causes crop never to mature"
-    affected_output: "Summary.OUT MPTS = -99 (crop did not mature)"
-    detection: "TMAX or TMIN values > 200 in .WTH file"
-    fix: "Subtract 273.15"
-    triplet: "dt_003"
-
-  - id: "fortran_path_truncation"
-    description: "Paths longer than 72 characters cause FOTEFX runtime error"
-    affected_output: "Binary crashes with FOTEFX or file-not-found"
-    detection: "FOTEFX in stdout/stderr"
-    fix: "Use dssat_workdir_setup.py which creates short /tmp/ paths"
-    triplet: "dt_004"
-
-  - id: "missing_cde_files"
-    description: "Missing .CDE code definition files cause MODEL.ERR crash"
-    affected_output: "Binary fails to start"
-    detection: "MODEL.ERR file created or immediate crash"
-    fix: "Symlink all CDE+SDA files from KISSPATH_HOME/DSSAT/Data/"
-    triplet: "dt_001"
-
-  - id: "filex_too_many_treatments"
-    description: "FileX with >500 treatments causes NL exceeded error"
-    affected_output: "Binary crashes"
-    detection: "'NL exceeded' in stdout"
-    fix: "Split into multiple experiment files"
-    triplet: "dt_005"
-
-  - id: "rice_cultivar_china_only"
-    description: >
-      setup_rice_experiment.py originally selected China-only cultivars (CN02xx)
-      for non-China locations (e.g., Bangladesh). Now fixed: auto-selects IR 72
-      or region-appropriate cultivars for non-China locations.
-    affected_output: "Low yield for tropical/subtropical rice outside China"
-    detection: "Rice yield <2000 kg/ha for irrigated tropical location"
-    fix: "Use IB0118 (IR 72) or other IRRI cultivar for South/SE Asia"
-    scorecard: "test_dssat_rice_bangladesh.json (PASS with IR 72, yield 4781 kg/ha)"
-
-  - id: "boro_aman_detection"
-    description: >
-      Bangladesh rice cropping (boro Dec-Apr, aman Jun-Nov) requires season-specific
-      cultivar and planting date. Default single-season logic may pick wrong season.
-    affected_output: "Incorrect yield due to wrong planting window"
-    detection: "Yield outside 3000-6000 kg/ha for Bangladesh"
-    fix: "Explicitly set planting DOY for target season (boro ~335, aman ~180)"
-
-# =========================================================================
-# EXPECTED RANGES (from validated results)
-# =========================================================================
-expected_ranges:
-  bengbu_maize:
-    yield_kgha: [4500, 6500]
-    reference: "SPAM 2020 (-2.3%)"
-  bengbu_wheat:
-    yield_kgha: [4000, 5500]
-    reference: "SPAM 2020 (+1.8%)"
-  bangladesh_rice_boro:
-    yield_kgha: [3000, 6000]
-    reference: "National average ~4800 kg/ha"
-    scorecard: "test_dssat_rice_bangladesh.json"
-
-# =========================================================================
-# CALIBRATION REFERENCE
-# =========================================================================
-calibration_reference:
-  approach: "Cultivar coefficient calibration (P1, P2, P5, G2, G3 for CERES models)"
-  chinese_cultivar_library:
-    location: "KISSPATH_HOME/DSSAT/Data/Genotype/China/"
-    crops: ["wheat (17)", "maize (12)", "rice (11)", "soybean (7)"]
-    notes: >
-      Pre-calibrated cultivar coefficients for major Chinese production regions.
-      Use these before attempting manual calibration.
-  key_parameters:
-    - name: "P1"
-      description: "Thermal time from emergence to end of juvenile phase"
-    - name: "P5"
-      description: "Thermal time from silking to maturity (maize) or grain filling duration"
-    - name: "G2"
-      description: "Maximum kernel number (maize) or grain weight potential"
-    - name: "G3"
-      description: "Kernel filling rate or tiller factor"
+- id: dt_001
+  symptom: Simulation terminates immediately with Error 29 — the FileX (.XXX experiment file) cannot be
+    located at the constructed path.
+  diagnosis: The path constructed by combining PATHEX + FILEX does not resolve to an existing file. This
+    occurs when the DSSATPRO.v48 paths are wrong, the FileX is in a different directory, or the 12-character
+    filename is truncated or misspelled.; DSSAT constructs experiment file paths by concatenating the
+    exper
+  remedy: 'Verify the batch file path and FileX name resolve to an existing file.; ls -la <PATHEX>/<FILEX>;
+    [''Open the batch file (e.g., DSSBatch.v48) and check the FILEX and PATHEX entries.'', ''Confirm the
+    experiment file exists at the exact path: ls -la <PATHEX>/<FILEX>'', ''Ensure the FileX name is exactly
+    12 '
+  severity: fatal
+- id: dt_002
+  symptom: Simulation terminates with Error 1 — the *TREATMENTS section header cannot be found in the
+    experiment file.
+  diagnosis: 'The experiment file (.XXX) is missing the *TREATMENTS section header, or the section is
+    commented out or malformed. The CSREADS.for FIND subroutine searches for GROUP=''*TREATMENTS'' and
+    returns FOUND=0.; When the FIND subroutine (called from IPEXP and other modules like IPPEST, OPVIEW)
+    scans for the '
+  remedy: Verify the *TREATMENTS section exists in the FileX with correct formatting.; grep -n '\*TREATMENTS'
+    <FILEX>; ["Open the experiment file and search for '*TREATMENTS' (case-sensitive, asterisk required).",
+    "Ensure the header is on its own line starting with '*TREATMENTS' in columns 1-11.", 'Check that
+  severity: fatal
+- id: dt_003
+  symptom: Simulation runs without error but uses generic default soil properties. Yields are implausible.
+    The .SOL file was never read. SLNO field in FileX contains '-99' or blanks.
+  diagnosis: 'When SLNO(1:3)==''-99'' or SLNO(1:3)==''   '', IPSOIL_Inp.for skips the entire soil file
+    read and silently sets SLPF=1.0 and NLAYR=1. No warning is issued.; In IPSOIL_Inp.for (line ~78),
+    the condition IF (SLNO(1:3).EQ.''   ''.OR.SLNO(1:3).EQ.''-99''.OR.SLNO(8:10).EQ.''-99''.OR.SLNO(8:10).EQ.''   '')
+    causes the '
+  remedy: Set a valid 10-character soil profile ID in the *FIELDS section of the FileX.; grep -n 'SLNO\|ID_SOIL'
+    <FILEX>; ['Open the FileX and locate the *FIELDS section.', "Find the ID_SOIL column and replace '-99'
+    or blanks with a valid soil profile code (e.g., 'IBBN910030').", "Verify the soil profile exis
+  severity: silent
+- id: dt_004
+  symptom: 'Error 29 or 30 during weather file open — the WSTA code in the FileX does not match any available
+    weather file. Message: ''Weather file not found'' or ''Error opening weather file''.'
+  diagnosis: The 4-character station code (WSTA) in the FileX *FIELDS section constructs a weather filename
+    (e.g., UFGA8401.WTH) that does not exist at PATHWTW. The code in IPWTH_alt.for constructs FileWW =
+    WPath + WFile and calls INQUIRE(FILE=FILEWW,EXIST=FEXIST).; IPWTH_alt.for reads FILEW (12-char weather
+    fil
+  remedy: 'Verify the WSTA code in the FileX matches an existing weather file.; ls <WEATHER_DIR>/<WSTA>*.WTH;
+    [''Open the FileX and find the WSTA (weather station) code in the *FIELDS section.'', ''List available
+    weather files in the weather directory: ls <WEATHER_DIR>/*.WTH'', ''Confirm the 4-character code matche'
+  severity: fatal
+- id: dt_005
+  symptom: Simulation terminates with ErrCode 2 — solar radiation (SRAD) is negative or exceeds 100 MJ/m2/day.
+    WARNING.OUT shows 'Solar radiation data error on YR DOY'.
+  diagnosis: DailyWeatherCheck in IPWTH_alt.for (line ~1283) checks IF(SRAD<0.0) ErrCode=2 and IF(SRAD>100.)
+    ErrCode=2. The value read from the weather file is outside the valid physical range.; The DailyWeatherCheck
+    subroutine validates each day's weather data. SRAD is checked for both negative values and value
+  remedy: 'Fix the SRAD values in the weather file to be within 0-100 MJ/m2/day.; ; [''Open the weather
+    file and find the line number reported in the error.'', ''Check the SRAD column — values should be
+    0-45 MJ/m2/day for most locations.'', ''If values are in W/m2, convert: SRAD_MJ = SRAD_Wm2 * 0.0864
+    (W/m2 * 86400'
+  severity: fatal
+- id: dt_006
+  symptom: Simulation terminates with ErrCode 6 — maximum temperature is less than minimum temperature.
+    WARNING.OUT shows 'Tmax is less than Tmin on YR DOY'.
+  diagnosis: 'DailyWeatherCheck (IPWTH_alt.for, line ~1289) checks IF(TMAX.LT.TMIN) ErrCode=6. The TMAX
+    and TMIN columns are swapped or one value is corrupted.; This check in DailyWeatherCheck enforces
+    the physical constraint that daily maximum temperature must be >= minimum temperature. Common causes:
+    (1) TMAX a'
+  remedy: Fix TMAX/TMIN values so that TMAX >= TMIN on every day.; ; ['Open the weather file and locate
+    the day reported in the error message.', 'Check if TMAX and TMIN columns are swapped — compare with
+    surrounding days.', 'If systematically swapped, swap the two columns throughout the file.', 'If isolated
+    e
+  severity: fatal
+- id: dt_007
+  symptom: Simulation terminates with ErrCode 8 — weather file dates are non-sequential (missing or duplicated
+    days). WARNING.OUT shows 'Non-sequential data in file' or 'Duplicate record found in weather file'.
+  diagnosis: In IpWRec (IPWTH_alt.for, line ~1122), if YRDOY_A(NRecords) < YRDOY_A(NRecords-1), ErrCode=8
+    is set. Dates must be strictly increasing. Duplicate dates trigger a warning and the record is skipped,
+    but a date going backwards triggers a fatal error.; DSSAT reads weather records into arrays and validat
+  remedy: Sort the weather file by date and fill any gaps in the daily sequence.; ; ['Extract the date
+    column from the weather file and check for non-sequential entries.', 'Sort all data records by YRDOY
+    (year*1000 + day-of-year).', 'Remove exact duplicate dates (keep the first occurrence).', 'Fill missing
+    da
+  severity: fatal
+- id: dt_008
+  symptom: No error shown. Weather variables silently read as -99 when the source data contained NaN.
+    Simulation may crash later with a SIGFPE or produce nonsensical results.
+  diagnosis: 'In IpWRec (IPWTH_alt.for, lines ~1027-1069), each weather variable is read with ''IF(ERR.NE.0.OR.ISNAN(var))
+    var=-99.'' This silently converts NaN values to -99 with no warning.; The 11/19/2024 code update (FO)
+    added ISNAN() protection for all weather variables. When a READ encounters NaN text (e.g., '
+  remedy: Scan weather files for NaN values and replace with valid data or explicit -99 missing codes.;
+    grep -in 'nan' <WEATHER_FILE>; ["Search the weather file for any occurrence of 'NaN', 'nan', 'NAN',
+    or 'Inf'.", 'Replace NaN values with -99 (DSSAT missing code) or actual measured/estimated data.',
+    'If NaN
+  severity: silent
+- id: dt_009
+  symptom: 'WARNING.OUT contains ''Warning: SRAD < 0.1 MJ.m-2.d-1'' and ''SRAD will be set equal to 0.1
+    MJ.m-2.d-1''. Simulation continues with clamped SRAD value.'
+  diagnosis: DailyWeatherCheck (IPWTH_alt.for, line ~1337) checks IF(SRAD.LT.0.1) and silently resets
+    SRAD to 0.1. A warning is issued but the simulation continues. This masks data quality issues.; After
+    the fatal checks (SRAD < 0 or SRAD > 100), the code performs a soft check for very low but positive
+    SRAD valu
+  remedy: Investigate and fix the source of very low SRAD values in the weather file.; ; ['Check WARNING.OUT
+    for the specific dates with low SRAD.', 'Open the weather file and examine those dates — are the values
+    near zero?', 'Determine if this is a data gap (should be -99), a unit error (W/m2 vs MJ/m2/d), or
+  severity: warning
+- id: dt_010
+  symptom: WARNING.OUT contains 'Value of TAV, average annual soil temperature, is missing' and 'A default
+    value of 20.0C is being used'. Soil temperature calculations may be inaccurate.
+  diagnosis: In IPWTH_alt.for (line ~460), IF(TAV.LE.0.0) sets TAV=20.0. The check uses LE (less-than-or-equal)
+    not LT, so TAV=0 also triggers the default. A warning is issued but is easily missed.; TAV (average
+    annual soil temperature) is read from the weather file header. If the value is missing (-99), zero,
+    o
+  remedy: Calculate and provide the correct TAV value in the weather file header.; ; ['Calculate TAV as
+    the mean of all daily (TMAX+TMIN)/2 values across the entire weather record.', 'Open the weather file
+    header and find the TAV field (typically on the line after @ INSI LAT LONG ELEV TAV AMP).', 'Replace
+    -99
+  severity: silent
+- id: dt_011
+  symptom: WARNING.OUT contains 'Value of TAMP, amplitude of soil temperature function, is missing' and
+    'A default value of 5.0C is being used'. Soil temperature seasonality is wrong.
+  diagnosis: 'In IPWTH_alt.for (line ~473), IF(TAMP.LE.0.0) sets TAMP=5.0. Same logic as TAV — uses LE
+    check, issues warning but continues.; TAMP (amplitude of the annual soil temperature curve) controls
+    the seasonal swing of soil temperature around TAV. A default of 5C is too low for continental climates
+    (where '
+  remedy: Calculate and provide the correct TAMP value in the weather file header.; ; ['Calculate monthly
+    average temperatures for each month.', 'TAMP = (highest monthly average) - (lowest monthly average).',
+    'Open the weather file header and find the AMP field.', 'Replace -99 or 0 with the calculated TAMP
+    va
+  severity: silent
+- id: dt_012
+  symptom: No error raised. Wind speed values are implausibly high (>500 km/day) or implausibly low (<1
+    km/day). ET calculations, canopy resistance, and disease models produce incorrect results.
+  diagnosis: DSSAT expects wind speed (WIND column) in km/day. External data sources commonly provide
+    wind in m/s. The conversion factor is 86.4 (m/s * 86400 s/day / 1000 m/km). If m/s values are used
+    directly, winds are ~86x too low.; The weather file header 'WIND' column is documented as 'Daily wind
+    run (km/d)
+  remedy: 'Convert wind speed from m/s to km/day by multiplying by 86.4.; ; [''Identify the source units
+    of wind speed data (most APIs provide m/s).'', ''Multiply all WIND values by 86.4 to convert from
+    m/s to km/day.'', ''Verify converted values are reasonable: 50-500 km/day for most locations.'', ''If
+    wind data is '
+  severity: silent
+- id: dt_013
+  symptom: SRAD values in weather file are 100-400+ (W/m2 instead of MJ/m2/day). Either triggers ErrCode
+    2 (SRAD > 100) or, if marginal, produces overpredicted biomass.
+  diagnosis: DSSAT expects SRAD in MJ/m2/day. Many data sources (NASA POWER, weather APIs) provide instantaneous
+    or daily-average irradiance in W/m2. The conversion is SRAD_MJ = SRAD_Wm2 * 0.0864.; A typical clear-sky
+    irradiance of 250 W/m2 (daily average) corresponds to about 21.6 MJ/m2/day. If the raw W/m2 val
+  remedy: Convert SRAD from W/m2 to MJ/m2/day by multiplying by 0.0864.; ; ['Identify the source units
+    of solar radiation data.', 'If in W/m2 (daily average shortwave down), multiply by 0.0864 to get MJ/m2/day.',
+    'If in kJ/m2/day, divide by 1000.', 'If in cal/cm2/day (langleys), multiply by 0.04184.', 'Verify
+  severity: fatal
+- id: dt_014
+  symptom: Simulation terminates with Error 7 from IPSOIL — saturated water content (SAT) is less than
+    drained upper limit (DUL) in one or more soil layers.
+  diagnosis: 'IPSOIL_Inp.for (line ~499) checks IF((DUL(J)-SAT(J)).GT.0.0) CALL ERROR(ERRKEY,7,FILES,LINSOL).
+    This enforces the physical constraint SAT >= DUL.; Soil water content follows the physical ordering:
+    SAT >= DUL >= LL (saturation >= field capacity >= wilting point). When SAT < DUL in any layer, it
+    indic'
+  remedy: 'Correct the soil water parameters so that SAT >= DUL >= LL in every layer.; ; [''Open the .SOL
+    file and find the soil profile identified by the error.'', ''For each layer, verify: SSAT >= SDUL
+    >= SLLL.'', ''If values are swapped, reorder them correctly.'', ''If values came from pedotransfer
+    functions, re-r'
+  severity: fatal
+- id: dt_015
+  symptom: Simulation terminates with Error 8 from IPSOIL — lower limit (LL) exceeds drained upper limit
+    (DUL) in one or more soil layers.
+  diagnosis: IPSOIL_Inp.for (line ~502) checks IF((LL(J)-DUL(J)).GT.0.0) CALL ERROR(ERRKEY,8,FILES,LINSOL).
+    This enforces DUL >= LL.; The lower limit of plant-extractable water (LL, a.k.a. wilting point) must
+    be less than or equal to the drained upper limit (DUL, a.k.a. field capacity). When LL > DUL, the
+    availa
+  remedy: Correct soil water parameters so that DUL >= LL in every layer.; ; ['Open the .SOL file and
+    locate the layer reported in the error.', 'Swap SLLL and SDUL if they are reversed, or recalculate
+    using pedotransfer functions.', 'Ensure a minimum AWC of 0.02 cm3/cm3 per layer for numerical stability.',
+    'C
+  severity: fatal
+- id: dt_016
+  symptom: Simulation terminates with Error 2 from IPSOIL — soil profile has more than 20 layers, exceeding
+    the NL parameter limit.
+  diagnosis: 'IPSOIL_Inp.for (line ~383) checks IF(L.GT.NL) CALL ERROR(ERRKEY,2,FILES,LINSOL). NL is defined
+    as 20 in ModuleDefs.for (line ~49): INTEGER, PARAMETER :: NL = 20.; DSSAT allocates fixed-size arrays
+    for soil layer data with dimension NL=20. If the .SOL file contains more than 20 layers for a profile, '
+  remedy: 'Reduce the soil profile to 20 or fewer layers by combining thin layers.; ; [''Count the number
+    of layer lines under the soil profile header in the .SOL file.'', ''If > 20, combine adjacent thin
+    layers by weighted averaging of properties.'', ''Prioritize keeping distinct layers in the root zone
+    (0-60 cm) '
+  severity: fatal
+- id: dt_017
+  symptom: Simulation terminates with Error 4 from IPSOIL — the soil profile ID specified in the FileX
+    was not found in any searched .SOL file. WARNING.OUT shows 'Soil profile missing from file'.
+  diagnosis: IPSOIL_Inp.for (line ~271) issues CALL ERROR(ERRKEY,4,FILES,LINSOL) after searching the entire
+    .SOL file (and the two-letter country code .SOL file) without finding PEDON == SLNO.; The soil reading
+    code first searches SOIL.SOL, then if not found, constructs a country-specific file (e.g., IB.SOL
+    from
+  remedy: 'Ensure the soil profile ID in the FileX exactly matches a profile in the .SOL file.; grep ''\*''
+    <SOL_FILE> | head -20; ["Note the soil ID from the error message (''Soil ID: XXXX'').", "Search the
+    .SOL file for that ID: grep ''<SOIL_ID>'' <SOL_FILE>", ''If not found, check for typos — compare character
+    by '
+  severity: fatal
+- id: dt_018
+  symptom: 'Prior to the March 2026 fix: simulation crashes with SIGFPE (division by zero) during CENTURY
+    organic matter output. SOC_40CM_P = SOC_40CM / SOIL_40CM when SOIL_40CM is zero for soils shallower
+    than 20 cm. After the fix: values are set to 0.0.'
+  diagnosis: OPSOMLIT_C.for computes SOC_40CM_P = SOC_40CM / SOIL_40CM. For soils with total depth < 20
+    cm, the 20-40cm soil mass (SOIL_40CM) is zero, causing division by zero. A fix was committed (GH 03/11/2026)
+    that checks IF(SOIL_40CM.GT.0.0) before division.; The CENTURY organic matter output routine calcula
+  remedy: 'Update to latest DSSAT develop branch that includes the shallow-soil fix, or avoid CENTURY
+    SOM model with soils < 20 cm.; git log --oneline -5 Soil/CENTURY_OrganicMatter/OPSOMLIT_C.for; [''Check
+    if your DSSAT version includes commit d3a65881.'', ''If not, pull the latest develop branch: git pull
+    origin'
+  severity: silent
+- id: dt_019
+  symptom: WARNING.OUT contains 'Soil layer 1 thicker than 5 cm' and 'Soil water algorithms may become
+    unstable'. Simulation runs but soil water dynamics may oscillate.
+  diagnosis: IPSOIL_Inp.for (line ~548) checks IF(DLAYR(1)>5) and issues a warning. The Ritchie soil water
+    balance uses explicit numerical integration that becomes unstable with thick surface layers.; After
+    the LYRSET layer redistribution, if the top computational layer exceeds 5 cm, the warning is issued.
+    The s
+  remedy: Ensure the first soil layer in the .SOL file is 5 cm or thinner, or use MESOL=2.; ; ['Check
+    the first SLB (layer bottom depth) value in the .SOL file — it should be <= 5.', 'If > 5, add an additional
+    layer boundary at 5 cm with interpolated properties.', "Alternatively, change MESOL to '2' (default)
+  severity: warning
+- id: dt_020
+  symptom: WARNING.OUT contains 'Invalid value for SLNF in soil file' and 'Value changed to 1.0'. The
+    nitrogen mineralization factor was out of range but silently corrected.
+  diagnosis: IPSOIL_Inp.for (line ~487) checks IF(SLNF>1.0.OR.SLNF<0.0) and resets SLNF to 1.0. The warning
+    is only issued if ISWNIT is not 'N'.; SLNF is the soil nitrogen mineralization factor (0-1 scale).
+    Values > 1.0 or < 0.0 are invalid. The code clamps to 1.0 (maximum mineralization) and issues a warning.
+    T
+  remedy: 'Set SLNF to a valid value between 0.0 and 1.0 in the .SOL file.; ; [''Open the .SOL file and
+    find the SLNF value for the soil profile.'', ''Set SLNF to a valid value (0.0-1.0). Default is 1.0
+    (no reduction in mineralization).'', ''Common values: 1.0 for fertile soils, 0.5-0.8 for soils with
+    reduced miner'
+  severity: silent
+- id: dt_021
+  symptom: Simulation terminates with Error 12 from IPSOIL — soil albedo (SALB) is zero or negative.
+  diagnosis: IPSOIL_Inp.for (line ~479-484) checks IF(SALB.LE.0.0) CALL ERROR(ERRKEY,12,FILES,LINSOL).
+    Soil albedo must be positive for surface energy balance calculations.; SALB (soil albedo) controls
+    the fraction of incoming solar radiation reflected by bare soil. It is used in the energy balance
+    and soil temp
+  remedy: 'Set SALB to a valid positive value in the .SOL file.; ; [''Open the .SOL file and find the
+    SALB field for the soil profile.'', ''Set SALB to a value between 0.05 and 0.30. Typical values: 0.09-0.13
+    for dark soils, 0.20-0.25 for sandy soils.'', ''If unknown, use 0.13 as a reasonable default for most
+    agric'
+  severity: fatal
+- id: dt_022
+  symptom: Simulation terminates with Error 2 from IPVAR — the cultivar code specified in the FileX was
+    not found in the .CUL file. All lines were read without matching VARNO.
+  diagnosis: IPVAR.for (line ~148) issues CALL ERROR(ERRKEY,2,FILEG,LINVAR) when ISECT==0 (end of file)
+    is reached without finding VARTY==VARNO. The cultivar code from the FileX does not match any entry
+    in the .CUL file.; IPVAR reads the cultivar (.CUL) file line by line, comparing the 6-character VARTY
+    field ag
+  remedy: Ensure the cultivar code in the FileX matches an entry in the correct .CUL file.; grep '<CULTIVAR_CODE>'
+    <CUL_FILE>; ['Check the cultivar code (CR field) in the FileX *CULTIVARS section.', 'Identify the
+    correct .CUL file for the crop model (e.g., MZCER048.CUL for CERES-Maize).', "Search for the cult
+  severity: fatal
+- id: dt_023
+  symptom: Simulation completes without error but produces implausible phenology or yield. The wrong crop
+    model was selected (e.g., CSCRP instead of CRGRO for a legume), reading wrong coefficients from the
+    .CUL file.
+  diagnosis: IPVAR.for uses a SELECT CASE(MODEL(1:5)) to determine the READ format for cultivar parameters.
+    If the wrong model is specified, the READ still succeeds (same VARNO match) but the parsed coefficients
+    have wrong meanings.; DSSAT supports multiple crop models, each with different cultivar coefficient
+    f
+  remedy: 'Verify the MODEL field matches the intended crop model for the species.; ; [''Check the MODEL
+    field in the FileX *SIMULATION CONTROLS section.'', ''Verify it matches the crop: MZCER=CERES-Maize,
+    CRGRO=CROPGRO, CSCRP=CropSim-Wheat, etc.'', ''Cross-reference the .CUL file: the filename prefix should
+    match '
+  severity: silent
+- id: dt_024
+  symptom: No error raised. Cultivar coefficients are outside the MINIMA/MAXIMA ranges defined in the
+    species (.SPE) file. Phenology is incorrect — anthesis and maturity dates do not match observations.
+  diagnosis: DSSAT does not enforce range limits on cultivar parameters during input. The MINIMA/MAXIMA
+    values in .SPE files are documentation only. Out-of-range coefficients produce wrong phenology without
+    any error.; Each .SPE (species) file contains MINIMA and MAXIMA sections that define the valid range
+    for c
+  remedy: Compare all cultivar coefficients against the MINIMA/MAXIMA ranges in the .SPE file.; ; ['Open
+    the relevant .SPE file (e.g., MZCER048.SPE for CERES-Maize).', 'Find the MINIMA and MAXIMA sections
+    listing valid ranges for each coefficient.', 'Compare each coefficient in the .CUL file against these
+    ran
+  severity: silent
+- id: dt_025
+  symptom: Simulation terminates with Error 4 — simulation start date (SDATE) is after the planting date
+    (YRPLT). The model cannot simulate pre-planting soil dynamics.
+  diagnosis: The simulation start date (SDATE) must precede or equal the planting date (YRPLT) to allow
+    initialization of soil water and nitrogen dynamics before planting. When SDATE > YRPLT, the model
+    cannot process events that should have already occurred.; DSSAT processes events chronologically from
+    SDATE for
+  remedy: 'Set SDATE to a date before the planting date.; ; [''Open the FileX and check SDATE in *SIMULATION
+    CONTROLS and YRPLT in *PLANTING DETAILS.'', ''Ensure SDATE < YRPLT (both in YRDOY format: year*1000
+    + day_of_year).'', ''Set SDATE to at least 1 day before planting, preferably 30+ days to allow soil
+    initial'
+  severity: fatal
+- id: dt_026
+  symptom: Simulation runs but nitrogen outputs are all -99 or zero despite fertilizer applications. ISWNIT=Y
+    but ISWWAT=N — nitrogen simulation requires water simulation but water is disabled.
+  diagnosis: When ISWWAT='N', soil water is not simulated. Nitrogen transport depends on soil water movement
+    (leaching, diffusion). Running ISWNIT='Y' with ISWWAT='N' produces degraded N dynamics — many N routines
+    return early when ISWWAT='N'.; Multiple source files check both switches together. For example, OPS
+  remedy: Set ISWWAT=Y when ISWNIT=Y to enable consistent water-nitrogen simulation.; ; ['Open the FileX
+    *SIMULATION CONTROLS section.', 'Check the WATER and NITRO switch columns.', 'If NITRO=Y, ensure WATER=Y
+    as well.', 'Re-run and verify nitrogen outputs appear in SoilNi.OUT and Summary.OUT.']; Add a consis
+  severity: silent
+- id: dt_027
+  symptom: No error raised. A method switch (e.g., MESOM, MEWTH, MEEVP) has an invalid value and is silently
+    replaced by the default. The simulation runs with a different method than intended.
+  diagnosis: IPSIM.for initializes method switches with defaults (e.g., MEWTH='M', MESOM='G', MEEVP='R')
+    before reading from the file. If the read fails or contains an unrecognized value, the default persists.
+    No warning is issued for unrecognized method codes.; In IPSIM.for (lines ~134-145), method switches
+    are
+  remedy: 'Verify all method switch codes in the FileX are valid recognized values.; ; [''Open the FileX
+    *SIMULATION CONTROLS and check each method field.'', ''Valid MEWTH: M (measured), G (generated), S
+    (simulated), W (weather).'', ''Valid MESOM: G (Godwin/CERES), P (CENTURY-Parton), O (organic).'',
+    ''Valid MEEVP: R'
+  severity: silent
+- id: dt_028
+  symptom: Initial condition (IC) layer depths in the FileX do not match the soil profile layer depths
+    from the .SOL file. Interpolation of IC values to computational layers may produce unexpected initial
+    soil water or nitrogen distributions.
+  diagnosis: DSSAT uses LMATCH to interpolate initial condition values (SH2O, SNO3, SNH4) from IC layers
+    to computational soil layers. If IC layers are coarser, finer, or misaligned relative to .SOL layers,
+    the interpolation may produce unexpected distributions, especially near layer boundaries.; The INSOIL
+    subr
+  remedy: Align IC layer depths with soil profile layer depths or use MESIC=M to auto-initialize.; ; ['Compare
+    the SLB (layer bottom depth) values in the FileX *INITIAL CONDITIONS with the .SOL file layers.',
+    'Ideally, IC layer depths should match .SOL layer depths exactly.', 'If that is impractical, ensure
+    I
+  severity: silent
+- id: dt_029
+  symptom: No error raised. Initial soil water content (SH2O) exceeds saturation (SAT) for one or more
+    layers. DSSAT silently clamps SH2O to SAT. The simulation starts with less water than specified.
+  diagnosis: The soil water balance initialization clamps SH2O to the range [LL, SAT]. If the user specifies
+    SH2O > SAT (e.g., SH2O=0.55 when SAT=0.50), it is silently reset to SAT with no warning.; The soil
+    water balance routines (WATBAL, WBSUBS) enforce that water content cannot exceed saturation. During
+    initi
+  remedy: 'Ensure IC SH2O values are within the range [LL, SAT] for each corresponding soil layer.; ;
+    [''For each IC layer, verify: LL <= SH2O <= SAT using the matching .SOL profile values.'', ''If SH2O
+    should represent saturated conditions, set SH2O = SAT for each layer.'', ''If SH2O should represent
+    field capacit'
+  severity: silent
+- id: dt_030
+  symptom: No error raised. Excessive initial NO3 concentrations (e.g., > 100 ppm per layer) cause unrealistically
+    high early-season nitrogen uptake and biomass. Yields are inflated.
+  diagnosis: DSSAT does not impose upper bounds on initial NO3 or NH4 concentrations. Very high initial
+    N (e.g., from incorrectly entering kg/ha instead of ppm, or copying from a different context) produces
+    excess mineral nitrogen that drives unrealistic early growth.; Initial NO3 and NH4 are specified in
+    the Fi
+  remedy: 'Set realistic initial NO3 and NH4 values based on soil test data or typical values for the
+    region.; ; [''Review the SNO3 and SNH4 values in the FileX *INITIAL CONDITIONS section.'', ''Typical
+    ranges: NO3 = 2-20 ppm per layer (higher in top layers), NH4 = 1-5 ppm.'', ''Total profile inorganic
+    N should typ'
+  severity: silent
+- id: dt_031
+  symptom: Simulation terminates with Error 3 from IPFERT — a fertilizer application date is before the
+    simulation start date (YRSIM).
+  diagnosis: IPMAN.for (line ~559) checks IF(IFERI.EQ.'R'.AND.FDAY(NFERT).LT.YRSIM) CALL ERROR(ERRKEY,3,FILEX,LINEXP).
+    The fertilizer date is before the simulation start.; When fertilizer timing is set to reported dates
+    (IFERI='R'), each FDAY is compared against YRSIM. If any fertilizer date precedes the simulat
+  remedy: Ensure all fertilizer dates are on or after the simulation start date.; ; ['Check the SDATE
+    in *SIMULATION CONTROLS and all FDATE values in *FERTILIZERS.', 'Ensure every FDATE >= SDATE (both
+    in YRDOY format).', 'If SDATE was moved forward, update all fertilizer dates accordingly.', "For automatic
+    fe
+  severity: fatal
+- id: dt_032
+  symptom: Harvest date is before simulation start date. For IHARI='R' (reported), dates before YRSIM
+    are skipped silently. For some modes, Error 6 is raised via Y4K_DOY.
+  diagnosis: IPMAN.for (line ~718-724) checks IF(IHARI.EQ.'R'.AND.HDATE(NHAR).LT.YRSIM) GO TO 50 — it
+    skips harvest dates before YRSIM rather than raising an error. But Y4K_DOY (called at line ~718) can
+    raise Error 6 for invalid date formats.; Unlike IPFERT which raises a fatal Error 3 for dates before
+    YRSIM, IP
+  remedy: Ensure harvest dates are after the simulation start date and in valid YRDOY format.; ; ['Check
+    HDATE values in the FileX *HARVEST section.', 'Ensure at least one HDATE >= SDATE.', 'Verify date
+    format is YYDDD (2-digit year) or YYYYDDD (4-digit year) depending on version.', "If using automatic
+    harves
+  severity: fatal
+- id: dt_033
+  symptom: Management operations (fertilizer, irrigation, residue, etc.) silently stop being read after
+    9000 entries. No error is raised but later operations are lost.
+  diagnosis: 'ModuleDefs.for (line ~51) defines NAPPL=9000 as the maximum number of applications. When
+    NFERT > NAPPL in IPFERT (line ~597), the loop exits (GO TO 120) without error.; DSSAT allocates fixed-size
+    arrays of dimension NAPPL=9000 for all management operations (fertilizer, irrigation, residue, harvest, '
+  remedy: Ensure total management operations do not exceed 9000. For long simulations, split into sequential
+    runs.; ; ['Count the total number of management operation lines across all sections in the FileX.',
+    'If approaching 9000, reduce by combining operations or splitting the simulation.', 'Check if DSSAT
+    r
+  severity: silent
+- id: dt_034
+  symptom: No error raised. Wrong FMCD (fertilizer method code) silently applies fertilizer by a different
+    method than intended. For example, AP001 (broadcast) vs AP002 (banded) changes placement but simulation
+    runs normally.
+  diagnosis: In IPFERT (IPMAN.for, line ~575-580), invalid FMCD codes (IFFCOD < 1 or > 20) are silently
+    reset to '001' (broadcast, not incorporated). Valid but unintended codes are accepted without verification.;
+    DSSAT uses a 5-character fertilizer method code (e.g., AP001=broadcast not incorporated, AP002=broad
+  remedy: 'Verify all FMCD codes in the FileX match the intended application methods.; ; [''Open the FileX
+    *FERTILIZERS section and check the FMCD column.'', ''Verify each code against the method table: AP001=broadcast/surface,
+    AP002=broadcast/incorporated, AP003=banded, AP004=banded beneath surface, AP005=applie'
+  severity: silent
+- id: dt_035
+  symptom: Simulation crashes with SIGFPE (signal 8, floating-point exception) during the RATE phase.
+    No DSSAT error message — the Fortran runtime terminates the process. Core dump may be generated.
+  diagnosis: 'Division by zero in a RATE calculation subroutine. Common culprits: (1) zero plant available
+    water (DUL-LL=0), (2) zero LAI used as denominator, (3) zero soil mass in shallow soils (dt_018),
+    (4) zero thermal time accumulation at high altitude.; SIGFPE occurs when the Fortran runtime traps
+    a division'
+  remedy: 'Identify the zero divisor by running with enhanced FPE trapping and examining the stack trace.;
+    ulimit -c unlimited && ./dscsm048 B DSSBatch.v48; [''Recompile DSSAT with -g -fcheck=all -ffpe-trap=zero,overflow,invalid
+    flags.'', ''Run the failing simulation under a debugger: gdb ./dscsm048'', "When SIGFP'
+  severity: fatal
+- id: dt_036
+  symptom: Simulation crashes (SIGFPE or hangs) at high-altitude locations (>3000m). Thermal time accumulation
+    collapses to zero because daily temperatures are consistently below the base temperature, causing
+    division by zero in phenology routines.
+  diagnosis: At high altitudes, daily temperatures may be consistently below the crop base temperature
+    (e.g., Tb=8C for maize). Thermal time (TT) accumulates zero for days or weeks, causing phenology routines
+    to divide by zero or enter infinite loops waiting for growth stage thresholds.; DSSAT calculates thermal
+  remedy: 'Verify that daily temperatures at the simulation location exceed the crop base temperature
+    for at least part of the growing season.; ; [''Check the weather file: calculate mean daily temperature
+    = (TMAX+TMIN)/2 for the growing season.'', ''Compare with the crop base temperature (e.g., Maize Tbase=8C,
+    W'
+  severity: fatal
+- id: dt_037
+  symptom: DSSAT executable cannot be built. CMake or make fails with errors about missing Fortran compiler
+    (gfortran/ifort not found) or missing CMake version.
+  diagnosis: DSSAT-CSM is a Fortran project requiring a Fortran compiler (gfortran 7+ or Intel ifort)
+    and CMake 3.x+. The build fails if these are not installed or not in PATH.; DSSAT-CSM uses CMake as
+    its build system. The CMakeLists.txt requires a Fortran compiler. On macOS, gfortran is not included
+    with Xcode
+  remedy: 'Install the required Fortran compiler and CMake.; ; [''macOS: brew install gcc cmake (provides
+    gfortran)'', ''Ubuntu/Debian: sudo apt-get install gfortran cmake build-essential'', ''CentOS/RHEL:
+    sudo yum install gcc-gfortran cmake make'', ''Verify: gfortran --version && cmake --version'', ''Build:
+    mkdir buil'
+  severity: fatal
+- id: dt_038
+  symptom: Simulation fails with a file-not-found error despite the file existing. The batch file path
+    or experiment file path exceeds the Fortran CHARACTER variable length limit (~80-120 characters),
+    causing silent truncation.
+  diagnosis: Fortran CHARACTER variables have fixed lengths. PATHEX is typically CHARACTER*80, FILEWW
+    is CHARACTER*92, PATHX is CHARACTER*120. Paths exceeding these limits are silently truncated, producing
+    invalid file paths.; DSSAT Fortran source declares fixed-length character variables for file paths.
+    For exa
+  remedy: 'Shorten file paths to stay within Fortran string limits.; ; [''Check the total length of PATHEX
+    + FILEX. It must be < 92 characters.'', ''Check weather file paths: PATHWTW + FILEW must be < 92 characters.'',
+    ''Move DSSAT installation to a shorter path (e.g., /opt/DSSAT/ or ~/DSSAT/).'', ''Use symbolic link'
+  severity: fatal
+- id: dt_039
+  symptom: Simulation appears to hang indefinitely. CPU usage is 100% but no output is produced. The auto-planting
+    routine (AUTPLT) cannot find a day within the planting window that meets soil moisture and temperature
+    criteria.
+  diagnosis: AUTPLT.for evaluates planting conditions daily within the window [PWDINF, PWDINL]. If conditions
+    are never met, YRPLT stays at 9999999 until YRDOY > PWDINL, at which point CropStatus=11 (failure
+    to plant). However, if weather data extends far beyond the window, the simulation continues daily
+    without
+  remedy: 'Review and relax the auto-planting criteria, or narrow the planting window.; ; [''Check the
+    auto-planting parameters in the FileX: PWDINF, PWDINL, PTTN, PTX, SWPLTL, SWPLTH, SWPLTD.'', ''Verify
+    temperature criteria are achievable: check weather file for soil temp at 10cm.'', ''Verify moisture
+    criteria ar'
+  severity: fatal
+- id: dt_040
+  symptom: WARNING.OUT or console shows 'OUTPUT.CDE file not found'. Output files may be saved with temporary
+    names instead of standard names. File renaming fails.
+  diagnosis: UTILS.for (lines ~1039-1040 and ~1374) reports when OUTPUT.CDE is missing. This file maps
+    output variable codes to descriptions and is used for output file management.; OUTPUT.CDE is a reference
+    file that lists all DSSAT output files and their descriptions. It is used by the output management
+    routin
+  remedy: Restore the OUTPUT.CDE file to the DSSAT installation directory.; find /Users/leo/Desktop/DSSAT
+    -name 'OUTPUT.CDE' -type f; ['Check if OUTPUT.CDE exists in the DSSAT data directory.', 'If missing,
+    copy it from the DSSAT distribution or dssat-csm-data repository.', 'Verify the file path in DSSATPRO.v
+  severity: warning
+- id: dt_041
+  symptom: Summary.OUT contains all -99 values for yield and biomass columns. The simulation produced
+    no meaningful results despite completing.
+  diagnosis: 'All output summary variables are initialized to -99 (OPSUM.for, line ~368: SUMDAT%HWAH=-99.0).
+    If the simulation terminates before harvest or the crop model never writes summary data, these defaults
+    persist in Summary.OUT.; Summary.OUT values default to -99 in OPSUM.for during SEASINIT. Each crop
+    mo'
+  remedy: Diagnose why the simulation did not produce results by checking ERROR.OUT and WARNING.OUT.;
+    ; ['Check ERROR.OUT for any runtime errors that terminated the simulation early.', 'Check WARNING.OUT
+    for warnings that may explain the failure.', 'Check the PESSION column in Summary.OUT for CropStatus
+    codes
+  severity: fatal
+- id: dt_042
+  symptom: Summary.OUT shows HWAH=0 and the simulation completed (no error). The crop grew but never reached
+    physiological maturity or the harvested fraction was zero.
+  diagnosis: 'HWAH (harvested weight at harvest) can be zero if: (1) the crop never reached maturity (MDAT
+    not set), (2) HPC (harvest percentage) was 0, (3) the grain-filling phase was terminated by frost
+    or drought before any grain was produced.; HWAH = HWAM * HPC / 100 (harvested weight = harvest weight
+    at matu'
+  remedy: 'Investigate why the crop did not produce grain by examining PlantGro.OUT and WARNING.OUT.;
+    ; [''Check Summary.OUT: is MDAT (maturity date) present or -99?'', ''If MDAT is -99, the crop never
+    matured — check if the growing season was long enough.'', ''Open PlantGro.OUT and check LAI, biomass,
+    and grain we'
+  severity: silent
+- id: dt_043
+  symptom: In Summary.OUT, ADAT (anthesis date) appears to be after MDAT (maturity date), which is biologically
+    impossible. This indicates a date parsing or format confusion.
+  diagnosis: DSSAT outputs dates in YRDOY format (YYDDD or YYYYDDD). If the parsing code misinterprets
+    the format (e.g., treating YYYYDDD as YYDDD), date comparisons produce nonsensical results. Alternatively,
+    if ADAT or MDAT wraps across a year boundary, naive comparisons fail.; DSSAT internally uses YRDOY
+    (yea
+  remedy: 'Parse YRDOY dates correctly by extracting year and DOY components before comparison.; ; [''Parse
+    ADAT and MDAT from Summary.OUT as integers.'', ''Extract year: YEAR = YRDOY // 1000 (integer division).'',
+    ''Extract DOY: DOY = YRDOY % 1000 (modulo).'', ''Convert to actual dates: datetime(YEAR, 1, 1) + timede'
+  severity: silent
+- id: dt_044
+  symptom: Output files (PlantGro.OUT, SoilWat.OUT, etc.) are truncated or incomplete. The last line may
+    be corrupted. No Summary.OUT entry for the run. Caused by a crash during RATE calculations before
+    file buffers were flushed.
+  diagnosis: When DSSAT crashes (SIGFPE, segfault, or STOP 99), Fortran output buffers may not be flushed.
+    Files opened with sequential access are not properly closed, resulting in truncated output. Summary.OUT
+    is only written at season end — if the crash occurs during the season, no summary entry is created.;
+    D
+  remedy: Identify and fix the crash that caused premature termination, then re-run.; ; ['Check ERROR.OUT
+    for the last error message before the crash.', 'Check WARNING.OUT for accumulated warnings.', 'Examine
+    the last complete line in the truncated output file to determine the crash date.', 'Look for SIGFPE
+    o
+  severity: fatal
+- id: dt_045
+  symptom: DSSAT compiled from source cannot find MODEL.ERR or other support files. Error appears immediately
+    on startup, before any simulation logic runs.
+  diagnosis: DSSAT resolves support files (MODEL.ERR, DSCSM048.CTR, StandardData/) relative to the executable's
+    directory, not the current working directory.; When the compiled binary is at build/bin/dscsm048 but
+    the working data is at run_test/, DSSAT looks for MODEL.ERR at build/bin/MODEL.ERR. On Linux the exe
+  remedy: Copy the dscsm048 executable into the working directory and run from there.; ; ['cp /path/to/build/bin/dscsm048
+    /path/to/working/directory/', 'cd /path/to/working/directory/', './dscsm048 B DSSBatch.v48']; Always
+    run DSSAT from the directory containing the data files. The run_dssat_grid.py tool hand
+  severity: fatal
+- id: dt_046
+  symptom: Weather, soil, or genotype files not found despite existing at the expected paths. DSSATPRO
+    path lookup fails silently.
+  diagnosis: 'Three compounding issues on Linux: (1) DSSATPRO.v48 contains Windows backslashes that are
+    invalid on Linux, (2) directory names are case-sensitive (Soil vs SOIL), (3) sed-based path replacement
+    introduces trailing spaces that break Fortran string parsing.; DSSAT was developed primarily for Windows
+    w'
+  remedy: 'Copy all needed files into the working directory. Do not rely on DSSATPRO path resolution for
+    cross-platform runs.; ; [''Copy weather file: cp Weather/*.WTH <workdir>/'', ''Copy soil file: cp
+    Soil/SOIL.SOL <workdir>/'', ''Copy genotype files: cp Genotype/MZCER048.{CUL,ECO,SPE} <workdir>/'',
+    ''Copy standard'
+  severity: fatal
+- id: dt_047
+  symptom: 'DSSAT on Linux reports ''Configuration file not found: /DSSAT48/DSSATPRO.L48'' even when DSSATPRO.v48
+    exists in the working directory.'
+  diagnosis: 'On Linux, DSSAT looks for DSSATPRO.L48 (not .v48). The .L48 format uses ''// '' prefix before
+    each path instead of drive letters. If only .v48 exists, DSSAT falls back to a hardcoded default path
+    (/DSSAT48/).; DSSAT''s PATH.for module selects the configuration filename based on the operating system
+    at '
+  remedy: 'Create DSSATPRO.L48 (not .v48) in the working directory with ''// '' path prefix.; ; [''Copy
+    the reference DSSATPRO.L48 from Data/DSSATPRO.L48'', ''Replace all paths with the working directory
+    using sed or regex'', "Ensure all paths start with ''// '' (two slashes, space)", ''Example: DDB //
+    /tmp/dssat_runs/'
+  severity: fatal
+- id: dt_048
+  symptom: DSSAT reports 'Error in planting depth input' or 'Unknown ERROR 5010' when reading a programmatically
+    generated FileX. The file looks correct to visual inspection.
+  diagnosis: FileX sections use Fortran fixed-width FORMAT parsing. Every field must be exactly the right
+    width (counted in characters). Off by even one character shifts all subsequent fields, causing parse
+    errors or silent misreads.; DSSAT reads FileX using FORMAT statements like (I3, A8, F6.0, ...). The
+    *PLANT
+  remedy: 'Compare generated FileX against a reference character-by-character. Count dots in the @ header
+    line to determine field widths.; validate_filex_structure; [''Open a known-working FileX (e.g., UFGA8201.MZX)
+    as reference'', ''For each section, count characters between header column markers'', ''Verify your '
+  severity: fatal
+- id: dt_049
+  symptom: DSSAT reports 'Invalid model specified' with a truncated model name (e.g., 'MZCE048' instead
+    of 'MZCER048') when the model is passed as a command-line argument.
+  diagnosis: The command-line argument parser truncates the 8-character model name. Since the model is
+    already mapped in DSSATPRO.L48 via the crop code, the CLI argument is redundant.; DSSAT's command-line
+    interface accepts an optional model argument (e.g., MZCER048). However, the argument parsing has a
+    characte
+  remedy: 'Do not pass the model name on the command line. Use: ./dscsm048 B DSSBatch.v48; ; [''Remove
+    the model argument from the command'', ''Before: ./dscsm048 MZCER048 B DSSBatch.v48'', ''After:  ./dscsm048
+    B DSSBatch.v48'']; Never pass the model name as a CLI argument. Let DSSATPRO.L48 handle model selection.'
+  severity: fatal
+- id: dt_050
+  symptom: Parsed yield values from Summary.OUT are implausibly large (e.g., 1,980,237 kg/ha). The values
+    look like dates (YYYYDDD format) rather than yields.
+  diagnosis: 'Summary.OUT uses Fortran fixed-width FORMAT, but the TNAME field (25 chars) can contain
+    spaces. Using Python str.split() (whitespace delimiter) breaks column alignment for all fields after
+    TNAME.; Summary.OUT has a treatment name field (TNAME) that is 25 characters wide and commonly contains
+    spaces '
+  remedy: Parse Summary.OUT by column positions from the @ header, not by split(). Or use the knowledge
+    infrastructure's parse_summary_out.py tool.; parse_summary_out; ['Find the @ header line in Summary.OUT',
+    "Locate the target variable name (e.g., 'HWAM') by string position", 'Extract value from data line
+    a
+  severity: silent
+- id: dt_051
+  symptom: CROPGRO-based crops (soybean, peanut, dry bean, cotton, chickpea, etc.) produce zero yield
+    despite normal phenology. PlantGro.OUT shows LAI stuck near zero while leaf number advances normally.
+    OVERVIEW.OUT reports 'Plant died due to extreme stress' with AGEFAC=0.00.
+  diagnosis: The photosynthesis method (PHOTO) in the FileX simulation controls is set to 'R' (radiation-use
+    efficiency) instead of 'L' (leaf-level). CROPGRO requires PHOTO=L; using PHOTO=R causes the leaf-level
+    photosynthesis routine to produce near-zero assimilates, resulting in no biomass accumulation.; DSSAT
+  remedy: 'Set PHOTO=L for CROPGRO-based crops in the FileX simulation controls.; dssat_workdir_setup.py
+    (fixed in v4.0); [''In the FileX, find the line: @N METHODS  WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO...'',
+    ''Change the PHOTO column from R to L for CROPGRO crops'', ''CROPGRO crops: soybean, peanut, dry bean,'
+  severity: critical
+- id: dt_spam_single_point_undefined_r
+  symptom: DSSAT yield validation against SPAM 2020 returns NaN/uncomputable Pearson r (or trips the r<0.5
+    retry gate) even when simulated yield is within a few % of the SPAM pixel; only one (sim,obs) pair
+    exists.
+  diagnosis: SPAM 2020 is a single-year gridded product and crop_obs.get_observed_yield returns one scalar,
+    so a single-point run gives one paired value. ki_tools_common.metrics.nse()/pearson_r() return NaN
+    for <2 valid pairs (metrics.py:86-90), and obs variance is 0 for one point, so r/NSE/KGE are mathematicall
+  remedy: 'Build a paired sample: run DSSAT at >=2 sites/pixels with tools/s9_output_parsing/validate_against_spam.py
+    and correlate simulated HWAM vs SPAM yield across the sample; exclude FAOSTAT-fallback obs. For genuinely
+    single-site runs, score by % bias / nRMSE (within 15%) instead of r.'
+- id: dt_crop_yield_single_pair_nan_r
+  symptom: Crop-yield validation returns null/NaN for metrics.r (and nse/kge); orchestrator's r<0.5 gate
+    retries forever even when the simulated yield is close to observed.
+  diagnosis: Only one (sim,obs) pair was built — single DSSAT yield vs single-year SPAM-2020 point (ki_tools_common.crop_obs.get_observed_yield
+    returns one scalar). ki_tools_common/metrics.py returns NaN for <2 valid pairs, so r is structurally
+    undefined regardless of accuracy.
+  remedy: 'Build a temporal sample: run DSSAT across >=2 simulation years and pair each year''s HWAM against
+    a MULTI-YEAR gridded yield product (GDHY v1.2/1.3 1981-2016 or GlobalCropYield5min) via crop_obs.get_observed_yield_series,
+    then compute metrics.all_metrics. Use tools/s9_output_parsing/validate_yield_ti'
+- id: dt_point_vs_national_faostat_low_r
+  symptom: Crop-yield validation has >=2 paired years (r IS computable) and good mean bias (PBIAS within
+    ~10%), but r/NSE/KGE are very poor or negative (e.g. r=-0.083, NSE=-12.47) and the r<0.5 gate retries.
+    Obs source is FAOSTAT national aggregate (--obs faostat) while the simulation is a single point.
+  diagnosis: Obs scale/location mismatch, not model physics. A single non-representative point (Bengbu
+    32.9N/117.4E, humid S. Anhui) has ~4-5x the national interannual variance and can anti-correlate with
+    the national series, which is dominated by a technology trend and the production-weighted centroid
+    (NE China
+  remedy: 'Remap obs to the model''s native point scale: re-run validate_yield_timeseries.py with the
+    default --obs gdhy (co-located 0.5deg pixel, GDHY maize 2005-2016 on disk) for the interannual r/NSE/KGE
+    gate. Use --obs faostat national only for %bias/nRMSE. FAOSTAT has no sub-national Area, so to compare
+    ag'
+- id: dt_obs_scale_faostat_national_vs_point
+  symptom: DSSAT single-point yield validation reports good mean bias (PBIAS ~+9%) but strongly negative/near-zero
+    interannual r and large-negative NSE (e.g. r -0.083, NSE -12.47) against FAOSTAT national yield; r-gate
+    (r<0.5) fails or r is nulled, sending the retry loop into an unwinnable retry.
+  diagnosis: 'Obs location/scale mismatch: a single non-representative point (humid-monsoon Bengbu 32.9N/117.4E)
+    is compared to a national aggregate dominated by a smooth technology/fertilizer trend and the NE-China/Henan
+    production centroid. Point interannual variance is ~4-5x national and can anti-correlate. ob'
+  remedy: 'Re-run validate_yield_timeseries.py with --obs gdhy (the tool default): GDHY 0.5deg gridded
+    maize (1981-2016, on disk at KISSPATH_DATA/Crop_model_dataset/GDHY_v1.2_v1.3/) is co-located and scale-matched
+    to the simulated pixel, making r/NSE/KGE defined and meaningful. Use FAOSTAT national as a %bias-'
+- id: dt_faostat_regional_aggregate_null_r_is_pass
+  symptom: DSSAT multi-year (>=2 yr) yield validation with --obs faostat reports metrics.r/nse/kge = null
+    while PBIAS is small (e.g. +8.94%) and trend_sign_agree=true; the orchestrator's r<0.5 gate fires
+    and routes the run to diagnosis even though it is a PASS.
+  diagnosis: FAOSTAT national series is obs_shape=regional_aggregate_time_series (dag.yaml outputs.HWAM.observability),
+    whose ONLY valid metric families are [magnitude_accuracy, trend_match]. validate_yield_timeseries.py
+    intentionally nulls nse/kge/r (kept under _raw_invalid_*) because raw interannual correlatio
+  remedy: Score the run on PBIAS (magnitude_accuracy) + sim/obs slope sign (trend_match); if PBIAS within
+    tolerance and trend_sign_agree=true, it is a PASS — do NOT retry, do NOT switch to GDHY to chase r.
+    Only re-run with --obs gdhy at the simulated pixel (GDHY maize 2005-2016 on disk) if the TASK explicitly

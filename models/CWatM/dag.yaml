@@ -438,7 +438,7 @@ outputs:
   - var: totalET
     validation_rank: 3
     unit: "m"
-    description: "Total actual evapotranspiration."
+    description: "Total actual evapotranspiration — water flux from land surface and vegetation to the atmosphere."
     emitted_in: "NetCDF map at requested aggregation"
     observability:
       comparable_obs_shapes:

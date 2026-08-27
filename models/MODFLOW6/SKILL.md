@@ -1,13 +1,3 @@
----
-name: modflow6
-description: >-
-  MODFLOW 6 Groundwater Flow (GWF) Model — USGS TM 6-A55 (Langevin et al. 2017) on the TM
-  6-A57 framework (Hughes et al. 2017); GWT transport per TM…. Covers 3-D saturated
-  groundwater flow (hydraulic head) over confined and unconfined/water-table aquifers;
-  Newton-Raphson formulation for drying/rewetting of water-table cells. Use when the task
-  involves running, configuring, calibrating or interpreting MODFLOW6.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,65 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (30 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (9 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (22 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (21 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/s1/verify_mf6_installation.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1/verify_mf6_installation.py --help` |
+| `tools/s10_transport/configure_gwt.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_transport/configure_gwt.py --help` |
+| `tools/s10_transport/parse_gwt_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_transport/parse_gwt_output.py --help` |
+| `tools/s11_sfr/configure_sfr.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s11_sfr/configure_sfr.py --help` |
+| `tools/s11_sfr/parse_sfr_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s11_sfr/parse_sfr_output.py --help` |
+| `tools/s2/build_dis_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2/build_dis_package.py --help` |
+| `tools/s2/build_layers_from_global.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2/build_layers_from_global.py --help` |
+| `tools/s2/create_grid_from_basin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2/create_grid_from_basin.py --help` |
+| `tools/s3/assign_k_from_glhymps.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/assign_k_from_glhymps.py --help` |
+| `tools/s3/build_npf_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/build_npf_package.py --help` |
+| `tools/s3/build_sto_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3/build_sto_package.py --help` |
+| `tools/s4/build_chd_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/build_chd_package.py --help` |
+| `tools/s4/build_drn_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/build_drn_package.py --help` |
+| `tools/s4/build_rch_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/build_rch_package.py --help` |
+| `tools/s4/build_riv_from_cama.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/build_riv_from_cama.py --help` |
+| `tools/s4/build_riv_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/build_riv_package.py --help` |
+| `tools/s4/build_wel_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4/build_wel_package.py --help` |
+| `tools/s5/assign_transient_stress.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5/assign_transient_stress.py --help` |
+| `tools/s5/build_ic_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5/build_ic_package.py --help` |
+| `tools/s5/build_tdis_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5/build_tdis_package.py --help` |
+| `tools/s6/build_ims_package.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6/build_ims_package.py --help` |
+| `tools/s7/write_and_run_simulation.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7/write_and_run_simulation.py --help` |
+| `tools/s8/extract_budget.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8/extract_budget.py --help` |
+| `tools/s8/extract_heads.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8/extract_heads.py --help` |
+| `tools/s9/export_to_netcdf.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/export_to_netcdf.py --help` |
+| `tools/s9/plot_head_map.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/plot_head_map.py --help` |
+| `tools/s9/plot_water_budget.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9/plot_water_budget.py --help` |
+
+*28 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -82,6 +131,69 @@ An AI agent can autonomously:
 | **Input format** | Block/keyword text files (`BEGIN ... END`) | One file per package |
 | **Binary output** | `.hds` (heads), `.cbc` (cell budget) | Read with `flopy.utils.HeadFile`, `CellBudgetFile` |
 | **Listing file** | `.lst` | Convergence info, budget summary, warnings |
+
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag is the model identity for observable outputs; if this section and `dag.yaml` ever differ, `dag.yaml` wins.
+
+**Headline output** (the dag's `validation_rank: 1` variable -- the one this model is judged by):
+
+> `hydraulic_head` -- Hydraulic head per active cell; water table is the head in the topmost active non-dry cell per column. (`m`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `hydraulic_head` | 1 | `m` | Hydraulic head per active cell; water table is the head in the topmost active non-dry cell per column. |
+
+Other dag outputs currently declared by this KI:
+
+| Output variable (dag `var`) |
+|-----------------------------|
+| `water_table_elevation` |
+| `cell_budget_flux_terms` |
+| `solute_concentration` |
+| `stream_stage` |
+| `stream_aquifer_exchange` |
+| `volumetric_budget_discrepancy` |
+
+## 8. Unit Conversion Table
+
+**Source of truth**: model package expectations, the KI's stage tools, and the existing coupling notes in this skill document. MODFLOW 6 does not convert units internally; every row below must be enforced before writing package files or post-processing outputs.
+
+| Variable or exchange | Source unit | MODFLOW/KI unit | Conversion | Notes |
+|----------------------|-------------|-----------------|------------|-------|
+| `hydraulic_head` | `m` | `m` | `x1` | Dag rank-1 output unit. |
+| Recharge from VIC deep percolation / `OUT_BASEFLOW` | `mm/day` | `m/day` | `/1000` | Used by RCH; recharge is a rate, not a volume. |
+| Hydraulic conductivity `K` | `m/day` | `m/day` | `x1` | Required when MODFLOW `LENGTH_UNITS` is meters and `TIME_UNITS` is days. |
+| Well, drain, and budget flows | `m3/day` | `m3/day` | `x1` | Package rates and cell budget terms use volume per model time. |
+| CaMa-Flood river stage `sfcelv` | `m` | `m` | `x1` | Used by RIV stage coupling. |
+| MODFLOW DRN flux to routing baseflow | `m3/day` | `m3/day` | `x1` | Downstream routing input in the existing coupling note. |
+| CaMa-Flood `outflw` to SFR `INFLOW` | `m3/s` | `m3/day` | `x86400` | SFR period inflow conversion. |
+| VIC runoff to SFR `RUNOFF` | `mm/day` | `m3/day` | `runoff * cell_area / 1000` | SFR runoff conversion. |
+| GWT molecular diffusion | `m2/s` | `m2/day` | `x86400` | Transport parameter conversion. |
+
+### 8c. Sign Conventions and Output Units
+
+| Variable | Convention in this KI | Impact if wrong |
+|----------|-----------------------|-----------------|
+| `hydraulic_head` | Elevation head in `m`; dry cells use the HDRY sentinel and must be filtered. | Statistics and maps are corrupted if HDRY is treated as a real head. |
+| `water_table_elevation` | Derived from the topmost active non-dry cell per column. | Water table validation binds to the wrong layer if dry cells are not handled first. |
+| Recharge | Positive downward input to RCH in `m/day`. | Passing `mm/day` as `m/day` creates a `1000` magnitude error. |
+| Cell budget flux terms | Volume rates in `m3/day`; budget percent discrepancy is diagnostic. | Coupling and closure checks fail if rates are interpreted as depths. |
+| SFR stream-aquifer exchange | Parsed from SFR budget output in model volume/time units. | Gaining and losing reaches can be classified incorrectly if signs are flipped. |
+
+## 11. Validated Results -- Convention Bars
+
+**Source of truth**: `docs/validation_convention.yaml`. A metric without its convention band is not a verdict. Null convention bands are written as `no cited threshold`.
+
+The dag's rank-1 output is `hydraulic_head`. The currently extracted convention bars provided for this KI are keyed to `water_table_elevation`:
+
+| Dag variable | Metric | Direction | Convention bar (cited) |
+|--------------|--------|-----------|-------------------------|
+| `water_table_elevation` | `nrmse` | minimize | good: `52.0` (`guillaumot2022`); satisfactory: no cited threshold (`guillaumot2022`) |
+| `water_table_elevation` | `pbias` | zero_centered | satisfactory: no cited threshold |
+| `water_table_elevation` | `csi` | maximize | satisfactory: no cited threshold |
+
+No cited threshold is stated here for `hydraulic_head` because the extracted convention facts supplied for this update do not include a `hydraulic_head` convention band.
 
 ## Pipeline Overview (10 Stages)
 

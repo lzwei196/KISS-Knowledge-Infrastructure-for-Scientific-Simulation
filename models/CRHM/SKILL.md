@@ -1,14 +1,3 @@
----
-name: crhm
-description: >-
-  Cold Regions Hydrological Modelling platform — Pomeroy et al. Covers Snow accumulation,
-  blowing-snow redistribution and sublimation in HRUs; Canopy interception and sublimation
-  of rain and snow; Energy-balance and temperature-index snowmelt with slope/aspect
-  radiation correction; Frozen and unfrozen soil infiltration; Two-layer soil water
-  balance with depression storage and groundwater store. Use when the task involves
-  running, configuring, calibrating or interpreting CRHM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,52 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (15 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (34 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (17 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/s1_basin_setup/create_hru_config.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_basin_setup/create_hru_config.py --help` |
+| `tools/s2_observation_data/convert_vic_to_obs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_observation_data/convert_vic_to_obs.py --help` |
+| `tools/s2_observation_data/netcdf_safe.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_observation_data/netcdf_safe.py --help` |
+| `tools/s2_observation_data/screen_swe_obs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_observation_data/screen_swe_obs.py --help` |
+| `tools/s2_observation_data/validate_obs_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_observation_data/validate_obs_file.py --help` |
+| `tools/s3_module_selection/select_modules.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_module_selection/select_modules.py --help` |
+| `tools/s4_parameter_config/create_prj_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_parameter_config/create_prj_file.py --help` |
+| `tools/s4_parameter_config/derive_parameters.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_parameter_config/derive_parameters.py --help` |
+| `tools/s4_parameter_config/validate_prj.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_parameter_config/validate_prj.py --help` |
+| `tools/s5_execution/check_water_balance.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_execution/check_water_balance.py --help` |
+| `tools/s5_execution/parse_crhm_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_execution/parse_crhm_output.py --help` |
+| `tools/s5_execution/plot_crhm_results.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_execution/plot_crhm_results.py --help` |
+| `tools/s5_execution/run_crhm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_execution/run_crhm.py --help` |
+| `tools/s6_vic_coupling/merge_crhm_vic.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_vic_coupling/merge_crhm_vic.py --help` |
+
+*15 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -66,6 +101,28 @@ CRHM is a modular, physically-based hydrological model designed for cold regions
 - **Slope_Qsi**: Solar radiation correction for slope and aspect (critical in mountains)
 
 Modules form a **chain**: output of one feeds input to the next via `declvar()`/`declgetvar()`. The chain order determines the physics.
+
+## Output Description
+
+**Source of truth:** `dag.yaml`. The dag is the model identity for observable
+outputs; if this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `basinflow_s` -- Watershed outlet discharge at simulation timestep (m^3/s); aggregates surface, sub-surface and groundwater contributions through Netroute. (`m^3/s`)
+
+Other dag outputs: `['SWE', 'basinflow', 'hru_actet', 'Subl', 'soil_moist', 'snowmeltD', 'infil_act']`.
+
+| Output variable (dag `var`) | Rank | Emitted in | Unit | Description |
+|-----------------------------|------|------------|------|-------------|
+| `basinflow_s` | 1 | Display_Variable output file from Netroute module | `m^3/s` | Watershed outlet discharge at simulation timestep (m^3/s); aggregates surface, sub-surface and groundwater contributions through Netroute. |
+| `basinflow` | 2 | Display_Variable output file from Netroute module | `m^3/int` | Watershed outlet discharge per simulation interval; divide by 86400 for daily-timestep m^3/s; includes basingw. |
+| `hru_actet` | 3 | Display_Variable output file from evap module | `mm/int` | Actual evapotranspiration from the HRU soil-column and land/water surface water balance per timestep (Granger / Priestley-Taylor / Penman-Monteith / Shuttleworth-Wallace depending on evap_type). |
+| `SWE` | 4 | Display_Variable output file (Output.txt / .csv) when listed in .prj Display_Variable section | `mm` | Snow water equivalent per HRU; primary cold-region state variable, should peak late winter/early spring and reach zero in summer for non-glaciated basins. |
+| `Subl` | 5 | Display_Variable output file from PBSM / CRHMCanopy modules | `mm/int` | Blowing-snow and canopy sublimation per timestep; PBSM contributes 15-40% of snowfall in prairie, CRHMCanopy 30-50% in boreal forest. |
+| `soil_moist` | 6 | Display_Variable output file from Soil module | `mm` | Total soil moisture storage state per HRU (declstatvar). |
+| `snowmeltD` | 7 | Display_Variable output file from ebsm / SnobalCRHM | `mm/d` | Daily snowmelt depth from ebsm or SnobalCRHM energy-balance solver. |
+| `infil_act` | 8 | Display_Variable output file from Soil / infiltration module | `mm/int` | Actual infiltration into soil (GreenAmpt, PrairieInfil, or crack); partitioned from melt and net rain. |
 
 ## Installation
 
@@ -323,6 +380,56 @@ python tools/s5_execution/run_crhm.py --crhm_exe model/crhmcode/crhmcode/build/c
 python tools/s5_execution/parse_crhm_output.py --output_path out/output.txt --output_format both --output_dir out/parsed
 python tools/s5_execution/plot_crhm_results.py --csv_path out/parsed/crhm_results.csv --output_dir out/plots --title "My Basin"
 ```
+
+## Validated Results
+
+**Source of truth:** `docs/validation_convention.yaml` for bars and citations,
+and the validated basin/domain notes below for achieved values. A metric value is
+not a verdict unless it is judged against the cited convention for the matching
+dag variable and observation shape.
+
+### Rank-1 Discharge Bar
+
+For `basinflow_s` against a point time series, `docs/validation_convention.yaml`
+retains NSE as the determining metric.
+
+| Dag variable | Obs shape | Metric | Direction | Bar (convention, cited) |
+|--------------|-----------|--------|-----------|--------------------------|
+| `basinflow_s` | `point_time_series` | `nse` | maximize | satisfactory >= 0.5, good >= 0.65, very_good >= 0.75 (`me2015`) |
+| `basinflow_s` | `point_time_series` | `pbias` | zero_centered | satisfactory <= 25.0%, good <= 15.0%, very_good <= 10.0% absolute bias (`me2015`) |
+
+The detailed discharge validations below use HYDAT point time series and report
+`basinflow_s`-compatible NSE/KGE/r/PBIAS after converting interval output where
+needed. Examples already recorded in this file include St. Mary, Bow, Ghost,
+Coldwater, Similkameen, Kaslo, Gold, Blue, Blaeberry, Kootenay, Canoe,
+Crowsnest, and Dore.
+
+### SWE Convention Bars
+
+For `SWE`, the cited pass-bands in `docs/validation_convention.yaml` are:
+
+| Dag variable | Obs shape / use | Metric | Direction | Bar (convention, cited) |
+|--------------|------------------|--------|-----------|--------------------------|
+| `SWE` | point or regional/spatial time series | `nse` | maximize | satisfactory >= 0.5, good >= 0.65, very_good >= 0.75 (`me2015`) |
+| `SWE` | time series | `nrmse` | minimize | satisfactory <= 1.0 (`krinner2018`) |
+| `SWE` | point snapshot | `pbias` | zero_centered | satisfactory <= 30.0% absolute bias (`fang2013`) |
+| `SWE` | spatial snapshot / binary snow-cover comparison | `csi` | maximize | satisfactory >= 0.7 (`hanzer2016`) |
+
+The Hulunbuir SWE case below is the current regional SWE worked case. Its
+locked-knob held-out monthly result is NSE -0.488 / KGE 0.065 / r 0.828 /
+PBIAS +59.9 over 47 months, so it does not clear the cited NSE or PBIAS SWE
+bars; the section below explains the satellite SWE screening and mass-bias
+attribution constraints that make daily magnitude scoring inadmissible there.
+
+### Other Output Convention Notes
+
+| Dag variable | Convention status |
+|--------------|-------------------|
+| `Subl` | direct sublimation PBIAS has no cited threshold in the convention; use SWE mass redistribution and streamflow effects as context. |
+| `hru_actet` spatial CSI | no cited threshold in the convention; cited ET NSE/PBIAS are context only. |
+| `soil_moist` spatial NSE | no cited threshold in the convention for CRHM column-integrated storage against satellite top-layer products. |
+| `snowmeltD` PBIAS | no cited threshold in the convention; use SWE ablation timing and runoff consistency as context. |
+| `infil_act` PBIAS | no cited threshold in the convention for modelled actual infiltration into soil. |
 
 ---
 

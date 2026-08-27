@@ -1,3 +1,12 @@
+# ========================================================================
+# HEC-RAS Diagnostic Triplets
+# ========================================================================
+# 20 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+# Comments preserved from the previous file:
 # HEC-RAS Diagnostic Triplets  (rebuilt 2026-06-03 for the REAL binary)
 # Each entry: symptom -> diagnosis -> remedy
 # Failure domains: ENV, IO_FORMAT, EXECUTION, UNIT, CONFIGURATION,
@@ -5,185 +14,216 @@
 # Grounded in HEC-RAS 6.7 Beta 5 Intel-Fortran solvers under WINE 9.0.
 # (The previous GR4J-surrogate triplets were removed — HEC-RAS is a hydraulics
 #  model, not rainfall-runoff; precip/PET traps do not apply.)
+# Field names normalised to the controlled vocabulary 2026-08-12
+# (see ki_vocabulary.py). Values unchanged; only keys were renamed.
 
-triplets:
-  - id: new_river_steady_not_blocked
-    domain: CAPABILITY
-    symptom:
-      description: "Need to run a steady profile on a NEW river/reach (no shipped .gNN.hdf + .rNN). Prior runs declared this 'structurally impossible without Wine Mono / ras_commander'."
-    diagnosis:
-      root_cause: "FALSE NEGATIVE. The steady Fortran solver reads cross-section station/elevation DIRECTLY from the .rNN run file; the .gNN.hdf is only the results-skeleton seed. Proven 2026-06-04: bumping every bed elevation in MIXED.r01 by +5 ft and re-running RasSteady.exe under plain wine raised the computed water surface by exactly +5 ft (66.00..72.93 -> 71.00..77.93). New geometry therefore does NOT require Ras.exe/Wine Mono — only an edited .rNN."
-    remedy:
-      action: "Author new-river steady geometry with tools/author_steady_geometry.py (DEM + centerline -> ki_tools_common.terrain_ops.cut_cross_sections -> trapezoidal XS injected into the template .rNN, keeping 19 XS / 4 pts so the 'Section - Arrays Sizes' header stays valid). Then run_hecras.py under plain wine. Demonstrated end-to-end on Bengbu DEM (china_dem_90m, 19 XS, Q=3810/6812 m3/s -> WS 69.33..81.22 ft, rc=0). NOTE: steady PRODUCES stage, CONSUMES discharge — a discharge_m3s target is the forcing input, not an output; for Q-vs-Q routing fidelity use unsteady (still needs the plan-HDF skeleton; investigate whether the unsteady solver is likewise .uNN/.rNN-authoritative)."
-
-  - id: missing_plan_hdf_skeleton
-    domain: EXECUTION
-    symptom:
-      description: "RasSteady aborts: 'HDF_ERROR trying to open HDF output file: <prj>.pNN.tmp.hdf ... No such file or directory'"
-    diagnosis:
-      root_cause: "The plan results skeleton is normally written by Ras.exe (Wine Mono). Without it the Fortran solver cannot open a results file to write into."
-    remedy:
-      action: "Seed it from the geometry HDF before running: cp <prj>.gNN.hdf <prj>.pNN.tmp.hdf. run_hecras.py / _hecras_env.seed_plan_hdf() does this automatically."
-
-  - id: wine_ld_preload
-    domain: ENV
-    symptom:
-      description: "wine fails to start; 'ld.so: object .../libstdc++.so.6 from LD_PRELOAD cannot be preloaded (wrong ELF class: ELFCLASS64)'"
-    diagnosis:
-      root_cause: "A system-wide LD_PRELOAD points at a 64-bit lib that wine's 32-bit loader rejects."
-    remedy:
-      action: "Run wine with the variable stripped: env -u LD_PRELOAD wine ... . The tools use _hecras_env.wine_env() which pops LD_PRELOAD."
-
-  - id: hdf5_diag_after_finished
-    domain: OUTPUT
-    symptom:
-      description: "After 'Finished Steady Flow Simulation' the log prints HDF5-DIAG errors (H5Gopen2 'not a location'). Did the run fail?"
-    diagnosis:
-      root_cause: "Non-fatal: the solver probes an optional results group that the seeded skeleton lacks. Results are already written."
-    remedy:
-      action: "Ignore. Key success on the 'Finished' banner AND a results HDF > 60 kB. validate_outputs() confirms WS is finite."
-
-  - id: wine_mono_missing
-    domain: ENV
-    symptom:
-      description: "Ras.exe (the .NET GUI/launcher) hangs or times out (rc=124) headless."
-    diagnosis:
-      root_cause: "Ras.exe is .NET and needs Wine Mono (~/.wine/drive_c/windows/mono), which is not installed; dl.winehq.org is unreachable in the sandbox."
-      scope_correction_2026_06_04: "Earlier this triplet ALSO claimed `ras-commander RasCmdr.compute_plan fails before launch` was caused by missing Mono. That conflation was wrong: RasCmdr drives the Fortran solvers (HEC-RAS.exe, RasUnsteady.exe), which are NOT .NET and do NOT need Mono. If RasCmdr fails, look for LD_PRELOAD/GDAL/TLS issues, working-directory misconfig, or missing example data — NOT Mono. Counterfactual: `wine /path/HEC-RAS.exe <project>.p01` running the Fortran solver bare confirms Mono is not on RasCmdr's critical path."
-    remedy:
-      action: "Do NOT invoke Ras.exe (the .NET GUI) headless. Use RasCmdr.compute_plan (drives Fortran solvers via WINE, no Mono required) or run_hecras.py for direct solver invocation. Both steady and unsteady are drivable headless via ras-commander 0.93.0's HDF-direct path. Wine Mono is only required for RAS Mapper GIS exports or interactive GUI."
-
-  - id: missing_run_file
-    domain: EXECUTION
-    symptom:
-      description: "run_hecras.py: 'No steady run file <prj>.rNN'."
-    diagnosis:
-      root_cause: "Brand-new project with no flattened run file. The .rNN is produced by Ras.exe/the GUI/ras-commander, not by the Fortran solver."
-    remedy:
-      action: "Start from a project that ships a .rNN (all examples do), or generate one in the HEC-RAS GUI / ras-commander, then re-parameterise with convert_flow_to_hecras.py."
-
-  - id: missing_geometry_hdf
-    domain: EXECUTION
-    symptom:
-      description: "seed_plan_hdf raises 'No geometry HDF (<prj>.gNN.hdf) found'."
-    diagnosis:
-      root_cause: "The project's geometry was never preprocessed to HDF; the seed step needs it as the results skeleton."
-    remedy:
-      action: "Use a project that ships a .gNN.hdf, or run preprocess_geometry.py. Older example projects (pre-5.0) may lack a geometry HDF entirely."
-
-  - id: discharge_unit_cfs_cms
-    domain: UNIT
-    symptom:
-      description: "Water-surface elevations far too low / flow ~35x smaller than expected in an English (cfs) project."
-    diagnosis:
-      root_cause: "Discharge supplied in m3/s but the project is English (cfs). 1 m3/s = 35.3147 cfs."
-    remedy:
-      action: "Pass --in-units m3/s to convert_flow_to_hecras.py (uses ki_tools_common.units.convert), or convert manually: Q_cfs = Q_cms * 35.3147."
-
-  - id: elevation_unit_ft_m
-    domain: UNIT
-    symptom:
-      description: "Validation NSE strongly negative; computed and observed WS differ by a ~3.28 factor or constant offset."
-    diagnosis:
-      root_cause: "Geometry/observed WS in metres while the project is English (ft), or vice versa. 1 m = 3.28084 ft."
-    remedy:
-      action: "Ensure geometry, observed WS, and the project unit system (.prj 'English Units'/'SI Units') all agree. Do not mix."
-
-  - id: manning_n_converted
-    domain: UNIT
-    symptom:
-      description: "Roughness sensitivity gives nonsensical depths after switching unit systems."
-    diagnosis:
-      root_cause: "Manning's n was 'converted' between English and SI. n is DIMENSIONLESS and identical in both; the 1.486 vs 1.0 conveyance factor is internal to the solver."
-    remedy:
-      action: "Never convert n. Keep channel n ~0.025-0.05, overbank ~0.04-0.15. edit_geometry.py rejects n outside 0.005-0.5."
-
-  - id: slope_scaled_wrongly
-    domain: UNIT
-    symptom:
-      description: "Normal-depth boundary gives unstable or wrong stage after a unit change."
-    diagnosis:
-      root_cause: "Energy/friction slope (ft/ft = m/m) was scaled during a unit conversion. Slope is dimensionless."
-    remedy:
-      action: "Leave slopes unchanged across unit systems. edit_boundaries.py sets the raw slope value."
-
-  - id: profile_mismatch_validation
-    domain: OUTPUT
-    symptom:
-      description: "validate_hecras.py RMSE much larger than expected (~feet) on a known-good run."
-    diagnosis:
-      root_cause: "Observed WS were measured at a different profile than --profile-index selects (e.g. comparing PF2 against PF1 observations)."
-    remedy:
-      action: "Set --profile-index to the profile the observed WS belong to (Mixed Flow: PF1 = index 0, Q=500 cfs)."
-
-  - id: river_station_bytes
-    domain: IO_FORMAT
-    symptom:
-      description: "Parsed records show river_station like b'0.5682' instead of 0.5682."
-    diagnosis:
-      root_cause: "HDF string datasets are byte strings; str() of bytes keeps the b'...' wrapper."
-    remedy:
-      action: "Decode with .decode() (parse_output_hecras.py does this via _dec)."
-
-  - id: reading_ONN_binary
-    domain: OUTPUT
-    symptom:
-      description: "Garbled text / control characters when reading <prj>.ONN."
-    diagnosis:
-      root_cause: ".ONN is a legacy BINARY detailed-output file, not text."
-    remedy:
-      action: "Read results from the HDF (<prj>.pNN.tmp.hdf) with parse_output_hecras.py, not the .ONN."
-
-  - id: nonmonotonic_rating
-    domain: NUMERICAL
-    symptom:
-      description: "rating_curve.py validation fails: 'non-monotonic rating curve (N reversals)'."
-    diagnosis:
-      root_cause: "Stage should rise with discharge at a fixed section. Reversals indicate a geometry/boundary problem, ineffective-flow toggling, or a regime change at the section."
-    remedy:
-      action: "Check the cross-section geometry and boundary slopes; pick a section away from controls; inspect the regime column (sub vs super) across the sweep."
-
-  - id: no_flow_data_section
-    domain: IO_FORMAT
-    symptom:
-      description: "convert_flow_to_hecras.py: 'no Section - Flow Data block in run file'."
-    diagnosis:
-      root_cause: "The file passed is not a steady run file (.rNN), or it is an unsteady plan."
-    remedy:
-      action: "Pass the steady run file <prj>.rNN. Unsteady flow lives in .uNN and is not editable by this tool."
-
-  - id: no_boundary_section
-    domain: IO_FORMAT
-    symptom:
-      description: "edit_boundaries.py: 'no Section - Reach Boundaries block'."
-    diagnosis:
-      root_cause: "Wrong file (not a steady .rNN) or a junction-only reach with boundaries elsewhere."
-    remedy:
-      action: "Pass the steady run file. For known-WS/critical/rating boundaries (not normal-depth slope) edit the .fNN flow file in the GUI and re-derive the run file."
-
-  - id: unsteady_needs_mono
-    domain: CAPABILITY
-    symptom:
-      description: "RasUnsteady prints its banner then fails on io.tmp.hdf / a missing plan HDF."
-    diagnosis:
-      root_cause: "Unsteady runs need the plan-HDF skeleton with boundary time series baked in, written by Ras.exe (Wine Mono)."
-    remedy:
-      action: "Unsteady/sediment/WQ are not end-to-end runnable headless here. Install Wine Mono and use Ras.exe -c, or run on Windows. Steady flow IS fully drivable."
-
-  - id: geom_preprocess_incomplete
-    domain: CAPABILITY
-    symptom:
-      description: "preprocess_geometry.py produces no .gNN.hdf."
-    diagnosis:
-      root_cause: "Standalone RasGeomPreprocess expects run-control files Ras.exe normally supplies."
-    remedy:
-      action: "Use a project that already ships a .gNN.hdf (steady examples do). Full geometry preprocessing needs Ras.exe orchestration."
-
-  - id: stale_results_reported
-    domain: EXECUTION
-    symptom:
-      description: "Results look identical after changing discharge/boundaries."
-    diagnosis:
-      root_cause: "A previous run's <prj>.pNN.tmp.hdf was reused, so the parser read old values."
-    remedy:
-      action: "run_hecras.py deletes stale .pNN.tmp.hdf / .ONN before each run. If running by hand, remove them first."
+- id: new_river_steady_not_blocked
+  failure_domain: CAPABILITY
+  symptom:
+    description: Need to run a steady profile on a NEW river/reach (no shipped .gNN.hdf + .rNN). Prior
+      runs declared this 'structurally impossible without Wine Mono / ras_commander'.
+  diagnosis:
+    root_cause: 'FALSE NEGATIVE. The steady Fortran solver reads cross-section station/elevation DIRECTLY
+      from the .rNN run file; the .gNN.hdf is only the results-skeleton seed. Proven 2026-06-04: bumping
+      every bed elevation in MIXED.r01 by +5 ft and re-running RasSteady.exe under plain wine raised the
+      computed water surface by exactly +5 ft (66.00..72.93 -> 71.00..77.93). New geometry therefore does
+      NOT require Ras.exe/Wine Mono — only an edited .rNN.'
+  remedy:
+    action: 'Author new-river steady geometry with tools/author_steady_geometry.py (DEM + centerline ->
+      ki_tools_common.terrain_ops.cut_cross_sections -> trapezoidal XS injected into the template .rNN,
+      keeping 19 XS / 4 pts so the ''Section - Arrays Sizes'' header stays valid). Then run_hecras.py
+      under plain wine. Demonstrated end-to-end on Bengbu DEM (china_dem_90m, 19 XS, Q=3810/6812 m3/s
+      -> WS 69.33..81.22 ft, rc=0). NOTE: steady PRODUCES stage, CONSUMES discharge — a discharge_m3s
+      target is the forcing input, not an output; for Q-vs-Q routing fidelity use unsteady (still needs
+      the plan-HDF skeleton; investigate whether the unsteady solver is likewise .uNN/.rNN-authoritative).'
+- id: missing_plan_hdf_skeleton
+  failure_domain: EXECUTION
+  symptom:
+    description: 'RasSteady aborts: ''HDF_ERROR trying to open HDF output file: <prj>.pNN.tmp.hdf ...
+      No such file or directory'''
+  diagnosis:
+    root_cause: The plan results skeleton is normally written by Ras.exe (Wine Mono). Without it the Fortran
+      solver cannot open a results file to write into.
+  remedy:
+    action: 'Seed it from the geometry HDF before running: cp <prj>.gNN.hdf <prj>.pNN.tmp.hdf. run_hecras.py
+      / _hecras_env.seed_plan_hdf() does this automatically.'
+- id: wine_ld_preload
+  failure_domain: ENV
+  symptom:
+    description: 'wine fails to start; ''ld.so: object .../libstdc++.so.6 from LD_PRELOAD cannot be preloaded
+      (wrong ELF class: ELFCLASS64)'''
+  diagnosis:
+    root_cause: A system-wide LD_PRELOAD points at a 64-bit lib that wine's 32-bit loader rejects.
+  remedy:
+    action: 'Run wine with the variable stripped: env -u LD_PRELOAD wine ... . The tools use _hecras_env.wine_env()
+      which pops LD_PRELOAD.'
+- id: hdf5_diag_after_finished
+  failure_domain: OUTPUT
+  symptom:
+    description: After 'Finished Steady Flow Simulation' the log prints HDF5-DIAG errors (H5Gopen2 'not
+      a location'). Did the run fail?
+  diagnosis:
+    root_cause: 'Non-fatal: the solver probes an optional results group that the seeded skeleton lacks.
+      Results are already written.'
+  remedy:
+    action: Ignore. Key success on the 'Finished' banner AND a results HDF > 60 kB. validate_outputs()
+      confirms WS is finite.
+- id: wine_mono_missing
+  failure_domain: ENV
+  symptom:
+    description: Ras.exe (the .NET GUI/launcher) hangs or times out (rc=124) headless.
+  diagnosis:
+    root_cause: Ras.exe is .NET and needs Wine Mono (~/.wine/drive_c/windows/mono), which is not installed;
+      dl.winehq.org is unreachable in the sandbox.
+    scope_correction_2026_06_04: 'Earlier this triplet ALSO claimed `ras-commander RasCmdr.compute_plan
+      fails before launch` was caused by missing Mono. That conflation was wrong: RasCmdr drives the Fortran
+      solvers (HEC-RAS.exe, RasUnsteady.exe), which are NOT .NET and do NOT need Mono. If RasCmdr fails,
+      look for LD_PRELOAD/GDAL/TLS issues, working-directory misconfig, or missing example data — NOT
+      Mono. Counterfactual: `wine /path/HEC-RAS.exe <project>.p01` running the Fortran solver bare confirms
+      Mono is not on RasCmdr''s critical path.'
+  remedy:
+    action: Do NOT invoke Ras.exe (the .NET GUI) headless. Use RasCmdr.compute_plan (drives Fortran solvers
+      via WINE, no Mono required) or run_hecras.py for direct solver invocation. Both steady and unsteady
+      are drivable headless via ras-commander 0.93.0's HDF-direct path. Wine Mono is only required for
+      RAS Mapper GIS exports or interactive GUI.
+- id: missing_run_file
+  failure_domain: EXECUTION
+  symptom:
+    description: 'run_hecras.py: ''No steady run file <prj>.rNN''.'
+  diagnosis:
+    root_cause: Brand-new project with no flattened run file. The .rNN is produced by Ras.exe/the GUI/ras-commander,
+      not by the Fortran solver.
+  remedy:
+    action: Start from a project that ships a .rNN (all examples do), or generate one in the HEC-RAS GUI
+      / ras-commander, then re-parameterise with convert_flow_to_hecras.py.
+- id: missing_geometry_hdf
+  failure_domain: EXECUTION
+  symptom:
+    description: seed_plan_hdf raises 'No geometry HDF (<prj>.gNN.hdf) found'.
+  diagnosis:
+    root_cause: The project's geometry was never preprocessed to HDF; the seed step needs it as the results
+      skeleton.
+  remedy:
+    action: Use a project that ships a .gNN.hdf, or run preprocess_geometry.py. Older example projects
+      (pre-5.0) may lack a geometry HDF entirely.
+- id: discharge_unit_cfs_cms
+  failure_domain: UNIT
+  symptom:
+    description: Water-surface elevations far too low / flow ~35x smaller than expected in an English
+      (cfs) project.
+  diagnosis:
+    root_cause: Discharge supplied in m3/s but the project is English (cfs). 1 m3/s = 35.3147 cfs.
+  remedy:
+    action: 'Pass --in-units m3/s to convert_flow_to_hecras.py (uses ki_tools_common.units.convert), or
+      convert manually: Q_cfs = Q_cms * 35.3147.'
+- id: elevation_unit_ft_m
+  failure_domain: UNIT
+  symptom:
+    description: Validation NSE strongly negative; computed and observed WS differ by a ~3.28 factor or
+      constant offset.
+  diagnosis:
+    root_cause: Geometry/observed WS in metres while the project is English (ft), or vice versa. 1 m =
+      3.28084 ft.
+  remedy:
+    action: Ensure geometry, observed WS, and the project unit system (.prj 'English Units'/'SI Units')
+      all agree. Do not mix.
+- id: manning_n_converted
+  failure_domain: UNIT
+  symptom:
+    description: Roughness sensitivity gives nonsensical depths after switching unit systems.
+  diagnosis:
+    root_cause: Manning's n was 'converted' between English and SI. n is DIMENSIONLESS and identical in
+      both; the 1.486 vs 1.0 conveyance factor is internal to the solver.
+  remedy:
+    action: Never convert n. Keep channel n ~0.025-0.05, overbank ~0.04-0.15. edit_geometry.py rejects
+      n outside 0.005-0.5.
+- id: slope_scaled_wrongly
+  failure_domain: UNIT
+  symptom:
+    description: Normal-depth boundary gives unstable or wrong stage after a unit change.
+  diagnosis:
+    root_cause: Energy/friction slope (ft/ft = m/m) was scaled during a unit conversion. Slope is dimensionless.
+  remedy:
+    action: Leave slopes unchanged across unit systems. edit_boundaries.py sets the raw slope value.
+- id: profile_mismatch_validation
+  failure_domain: OUTPUT
+  symptom:
+    description: validate_hecras.py RMSE much larger than expected (~feet) on a known-good run.
+  diagnosis:
+    root_cause: Observed WS were measured at a different profile than --profile-index selects (e.g. comparing
+      PF2 against PF1 observations).
+  remedy:
+    action: 'Set --profile-index to the profile the observed WS belong to (Mixed Flow: PF1 = index 0,
+      Q=500 cfs).'
+- id: river_station_bytes
+  failure_domain: IO_FORMAT
+  symptom:
+    description: Parsed records show river_station like b'0.5682' instead of 0.5682.
+  diagnosis:
+    root_cause: HDF string datasets are byte strings; str() of bytes keeps the b'...' wrapper.
+  remedy:
+    action: Decode with .decode() (parse_output_hecras.py does this via _dec).
+- id: reading_ONN_binary
+  failure_domain: OUTPUT
+  symptom:
+    description: Garbled text / control characters when reading <prj>.ONN.
+  diagnosis:
+    root_cause: .ONN is a legacy BINARY detailed-output file, not text.
+  remedy:
+    action: Read results from the HDF (<prj>.pNN.tmp.hdf) with parse_output_hecras.py, not the .ONN.
+- id: nonmonotonic_rating
+  failure_domain: NUMERICAL
+  symptom:
+    description: 'rating_curve.py validation fails: ''non-monotonic rating curve (N reversals)''.'
+  diagnosis:
+    root_cause: Stage should rise with discharge at a fixed section. Reversals indicate a geometry/boundary
+      problem, ineffective-flow toggling, or a regime change at the section.
+  remedy:
+    action: Check the cross-section geometry and boundary slopes; pick a section away from controls; inspect
+      the regime column (sub vs super) across the sweep.
+- id: no_flow_data_section
+  failure_domain: IO_FORMAT
+  symptom:
+    description: 'convert_flow_to_hecras.py: ''no Section - Flow Data block in run file''.'
+  diagnosis:
+    root_cause: The file passed is not a steady run file (.rNN), or it is an unsteady plan.
+  remedy:
+    action: Pass the steady run file <prj>.rNN. Unsteady flow lives in .uNN and is not editable by this
+      tool.
+- id: no_boundary_section
+  failure_domain: IO_FORMAT
+  symptom:
+    description: 'edit_boundaries.py: ''no Section - Reach Boundaries block''.'
+  diagnosis:
+    root_cause: Wrong file (not a steady .rNN) or a junction-only reach with boundaries elsewhere.
+  remedy:
+    action: Pass the steady run file. For known-WS/critical/rating boundaries (not normal-depth slope)
+      edit the .fNN flow file in the GUI and re-derive the run file.
+- id: unsteady_needs_mono
+  failure_domain: CAPABILITY
+  symptom:
+    description: RasUnsteady prints its banner then fails on io.tmp.hdf / a missing plan HDF.
+  diagnosis:
+    root_cause: Unsteady runs need the plan-HDF skeleton with boundary time series baked in, written by
+      Ras.exe (Wine Mono).
+  remedy:
+    action: Unsteady/sediment/WQ are not end-to-end runnable headless here. Install Wine Mono and use
+      Ras.exe -c, or run on Windows. Steady flow IS fully drivable.
+- id: geom_preprocess_incomplete
+  failure_domain: CAPABILITY
+  symptom:
+    description: preprocess_geometry.py produces no .gNN.hdf.
+  diagnosis:
+    root_cause: Standalone RasGeomPreprocess expects run-control files Ras.exe normally supplies.
+  remedy:
+    action: Use a project that already ships a .gNN.hdf (steady examples do). Full geometry preprocessing
+      needs Ras.exe orchestration.
+- id: stale_results_reported
+  failure_domain: EXECUTION
+  symptom:
+    description: Results look identical after changing discharge/boundaries.
+  diagnosis:
+    root_cause: A previous run's <prj>.pNN.tmp.hdf was reused, so the parser read old values.
+  remedy:
+    action: run_hecras.py deletes stale .pNN.tmp.hdf / .ONN before each run. If running by hand, remove
+      them first.

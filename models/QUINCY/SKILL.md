@@ -1,14 +1,3 @@
----
-name: quincy
-description: >-
-  QUINCY v1.0 (Thum et al. 2019, GMD; revision 1996 lineage) — analytic single-site C-N
-  reimplementation of the coupled C-N(-P)…. Covers Single-site terrestrial ecosystem
-  carbon exchange (GPP, NEE, Reco, autotrophic and heterotrophic…; Temperature-driven LAI
-  phenology; Coupled carbon-nitrogen control of photosynthesis (leaf N modulates effective
-  Vcmax). Use when the task involves running, configuring, calibrating or interpreting
-  QUINCY.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (25 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (15 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_quincy.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_quincy.py --help` |
+| `tools/convert_parameters_to_quincy.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters_to_quincy.py --help` |
+| `tools/parse_output_quincy.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output_quincy.py --help` |
+| `tools/run_quincy.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_quincy.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # QUINCY (QUantifying Interactions between terrestrial Nutrient CYcles) -- Knowledge Infrastructure
 
@@ -99,6 +122,14 @@ timeseries for GPP, NEE, Reco, LE, and H.
 | S2 | Parameter setup | `convert_parameters_to_quincy.py` | PFT params (Vcmax, Jmax, leaf_N, SLA, C:N, P) -> JSON |
 | S3 | Model execution | `run_quincy.py` | Run QUINCY analytic model with forcing + params |
 | S4 | Output parsing | `parse_output_quincy.py` | Model output -> timeseries CSV (GPP, NEE, Reco, LE, H) |
+
+### Stage Skill Documents
+
+- [S0 Configuration](docs/s0_configuration.md)
+- [S1 Forcing conversion](docs/s1_forcing_conversion.md)
+- [S2 Parameter setup](docs/s2_parameter_setup.md)
+- [S3 Model execution](docs/s3_model_execution.md)
+- [S4 Output parsing](docs/s4_output_parsing.md)
 
 ---
 
@@ -233,6 +264,29 @@ QUINCY expects the following meteorological forcing variables:
 
 ---
 
+## 6. Output Description
+
+Source of truth: `dag.yaml`. If this section and the dag disagree, the dag wins.
+
+**Headline output** (`validation_rank: 1`):
+
+> `GPP` -- Gross primary production (Farquhar co-limitation with N-limited Vcmax and Beer's-law canopy scaling), scaled by day fraction (daylength/24) to a 24-h mean. (`umol CO2/m2/s`)
+
+| Output variable (dag `var`) | Rank | Emitted in | Unit | Description |
+|-----------------------------|------|------------|------|-------------|
+| GPP | 1 | results CSV | umol CO2/m2/s | Gross primary production (Farquhar co-limitation with N-limited Vcmax and Beer's-law canopy scaling), scaled by day fraction (daylength/24) to a 24-h mean. |
+| LE | 2 | results CSV | W/m2 | Latent heat flux (water-use-efficiency approximation from GPP; simplified Penman-Monteith). |
+| NEE | 3 | results CSV | umol CO2/m2/s | Net ecosystem exchange = Reco - GPP (micrometeorological convention, positive = net source to atmosphere). |
+| Reco | 4 | results CSV | umol CO2/m2/s | Ecosystem respiration (Ra + Rh). |
+| Ra | 5 | results CSV | umol CO2/m2/s | Terrestrial ecosystem autotrophic respiration (maintenance + growth), coupled to instantaneous GPP. |
+| Rh | 6 | results CSV | umol CO2/m2/s | Soil heterotrophic respiration in the terrestrial ecosystem (CENTURY-like Q10 temperature response with a bell-shaped precipitation moisture response). |
+| LAI | 7 | results CSV | m2/m2 | Vegetation leaf area index from temperature-driven (Gaussian) phenology. |
+| H | 8 | results CSV | W/m2 | Terrestrial ecosystem sensible heat flux as the Rn-LE residual (no independent energy-balance closure). |
+
+Other observable dag outputs: `NEE`, `Reco`, `Ra`, `Rh`, `LAI`, `LE`, `H`.
+
+---
+
 ## Unit Trap Table
 
 | Variable | External Source | QUINCY Expected | Conversion | Trap |
@@ -247,6 +301,59 @@ QUINCY expects the following meteorological forcing variables:
 | Leaf N | literature: gN/m2 | gN/m2 | none | Not kgN or mgN |
 | Vcmax25 | literature: umol/m2/s | umol/m2/s | none | Not nmol |
 | SLA | literature: m2/kgC | m2/kgC | none | Not m2/gC (1000x) |
+
+---
+
+## 8. Unit Table / Unit Conversion Table
+
+Source of truth: `docs/format_spec.yaml`, `dag.yaml`, and the existing input/unit-trap tables above. Verify source-data attributes before running a new dataset.
+
+| Variable | Source unit (verified in this KI) | Model/output unit | Conversion | Type |
+|----------|-----------------------------------|-------------------|------------|------|
+| SW_IN | W/m2 | W/m2 | none | identity |
+| TA | K for CMFD/MSWX; deg C for FLUXNET2015 `TA_F` after conversion | deg C | subtract 273.15 when source is K | additive |
+| VPD | hPa for FLUXNET2015 `VPD_F` | hPa | none | identity |
+| PRECIP | kg/m2/s for CMFD; mm/3hr for MSWX; FLUXNET2015 `P_F` to mm/day monthly mean | mm/day | multiply CMFD by 86400; sum 8 MSWX steps | multiplicative / aggregation |
+| CO2 | ppm for FLUXNET2015 `CO2_F_MDS` | ppm | none | identity |
+| DAYLENGTH | derived hours | hours | derived from latitude and day-of-year | derived |
+| GPP | model result | umol CO2/m2/s | none after model execution | output |
+| NEE | model result | umol CO2/m2/s | none after model execution | output |
+| Reco | model result | umol CO2/m2/s | none after model execution | output |
+| Ra | model result | umol CO2/m2/s | none after model execution | output |
+| Rh | model result | umol CO2/m2/s | none after model execution | output |
+| LAI | model result | m2/m2 | none after model execution | output |
+| LE | model result | W/m2 | none after model execution | output |
+| H | model result | W/m2 | none after model execution | output |
+
+**Output sign convention**: `NEE = Reco - GPP`; positive NEE is net source to atmosphere.
+
+---
+
+## 11. Validated Results
+
+Source of truth: `knowledge_infrastructure.yaml` for recorded KI validation status and `docs/validation_convention.yaml` for cited performance bars. Do not replace null convention bands with remembered thresholds.
+
+### Recorded KI Validation Status
+
+| Property | Value |
+|----------|-------|
+| Validation tier | not_runnable |
+| Tier justification | measured: NSE=0.952, R=0.980 |
+| Recorded metric | best_nse = 0.9516 |
+| Recorded metric | best_r = 0.9804 |
+
+`bengbu_summary.json` contains summary statistics for 132 valid rows for each model output and an empty `metrics` object; the manifest metrics above are the only scored metrics currently recorded in the KI manifest.
+
+### Performance Bars From Convention
+
+| Dag variable | Metric | Direction | Very good band | Good band | Satisfactory band | Convention cites |
+|--------------|--------|-----------|----------------|-----------|-------------------|------------------|
+| GPP | r2 | maximize | no cited threshold (tramontana2016, thum2025, thum2019) | no cited threshold (tramontana2016, thum2025, thum2019) | 0.7 (tramontana2016, thum2025, thum2019) | tramontana2016, thum2025, thum2019 |
+| GPP | pbias | zero_centered | no cited threshold (thum2025, miinalainen2025, yang2023) | no cited threshold (thum2025, miinalainen2025, yang2023) | 20.0 (thum2025, miinalainen2025, yang2023) | thum2025, miinalainen2025, yang2023 |
+| NEE | nse | maximize | no cited threshold (no cites in convention) | no cited threshold (no cites in convention) | no cited threshold (no cites in convention) | none |
+| NEE | r2 | maximize | no cited threshold (no cites in convention) | no cited threshold (no cites in convention) | no cited threshold (no cites in convention) | none |
+
+For GPP `pbias`, apply the `zero_centered` convention as absolute percent bias around zero; the cited satisfactory band is `20.0` (thum2025, miinalainen2025, yang2023). For NEE, the convention explicitly withholds numeric NSE and r2 pass bands.
 
 ---
 

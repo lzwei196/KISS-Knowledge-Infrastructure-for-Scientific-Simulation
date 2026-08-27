@@ -411,7 +411,7 @@ outputs:
   - var: "cell_budget_flux_terms"
     validation_rank: 3
     unit: "m3/day"
-    description: "Cell-by-cell flow terms (STO-SS, STO-SY, FLOW-JA-FACE, CHD, RCH, DRN, RIV, WEL) with sign convention positive=inflow, negative=outflow."
+    description: "Groundwater cell-by-cell flow terms (STO-SS, STO-SY, FLOW-JA-FACE, CHD, RCH, DRN, RIV, WEL) with sign convention positive=inflow, negative=outflow."
     emitted_in: ".cbc (binary cell-by-cell budget file)"
     observability:
       comparable_obs_shapes:
@@ -431,7 +431,7 @@ outputs:
   - var: "solute_concentration"
     validation_rank: 4
     unit: "mg/L"
-    description: "GWT solute concentration per cell from advection-dispersion-reaction."
+    description: "Groundwater (GWT) solute concentration per cell from advection-dispersion-reaction."
     emitted_in: ".ucn (binary concentration file)"
     observability:
       comparable_obs_shapes:
@@ -479,7 +479,7 @@ outputs:
   - var: "volumetric_budget_discrepancy"
     validation_rank: 7
     unit: "percent"
-    description: "Listing-file volumetric budget summary; PERCENT DISCREPANCY is the primary convergence/balance diagnostic."
+    description: "Listing-file volumetric groundwater-budget summary (numerical solver diagnostic, not a field observable); PERCENT DISCREPANCY is the primary convergence/balance diagnostic."
     emitted_in: ".lst (gwf.lst / mfsim.lst)"
     observability:
       comparable_obs_shapes:

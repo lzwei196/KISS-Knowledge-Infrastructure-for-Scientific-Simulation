@@ -1,0 +1,450 @@
+schema_version: 1
+model_id: HEC-RAS
+domain: hydrology
+generated_by: "step-b validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  arnold2012:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42256.txt
+  papaioannou2017:
+    doi: 10.5194/adgeo-44-23-2017
+    title: "Probabilistic flood inundation mapping at ungauged streams due to roughness coefficient uncertainty in hydraulic modelling"
+    venue: "Advances in Geosciences"
+    year: 2017
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_adgeo-44-23-2017.txt
+  wing2021:
+    doi: 10.5194/nhess-21-559-2021
+    title: "Simulating historical flood events at the continental scale: observational validation of a large-scale hydrodynamic model"
+    venue: "Natural Hazards and Earth System Sciences"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_nhess-21-559-2021.txt
+  bates2021:
+    doi: 10.1146/annurev-fluid-030121-113138
+    title: "Flood Inundation Prediction"
+    venue: "Annual Review of Fluid Mechanics"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1146_annurev-fluid-030121-113138.txt
+  shustikova2019:
+    doi: 10.1080/02626667.2019.1671982
+    title: "Comparing 2D capabilities of HEC-RAS and LISFLOOD-FP on complex topography"
+    venue: "Hydrological Sciences Journal"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1080_02626667.2019.1671982.txt
+  masafu2022:
+    doi: 10.1016/j.jhydrol.2022.128217
+    title: "Unpiloted Aerial Vehicle (UAV) image velocimetry for validation of two-dimensional hydraulic model simulations"
+    venue: "Journal of Hydrology"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.jhydrol.2022.128217.txt
+  barker2018:
+    doi: 10.1002/rra.3238
+    title: "Kayak drifter surface velocity observation for 2D hydraulic model validation"
+    venue: "River Research and Applications"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_rra.3238.txt
+
+validation:
+  - dag_variable: water_surface_elevation
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.5, good: 0.8, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Stage/WSE practice uses absolute vertical error; HWM errors of about 0.3-0.5 m mean sub-0.5 m gates can reward noise, while large flood-model benchmarks report roughly 1 m mean WSE error."
+        cites: [wing2021, bates2021, shustikova2019]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The dag metric is retained as context, but fetched HEC/flood-inundation validation papers judge water levels by vertical error/RMSE rather than percent bias."
+        cites: [wing2021, bates2021, shustikova2019]
+    validated_when: "RMSE of observed versus simulated water-surface elevation is <= 1.0 m, with tighter interpretation near the 0.3-0.5 m HWM observation-error range."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Wing 2021 reports event water-level errors roughly 1 m on average; Bates 2021 lists post-event water marks as about +/-0.3-0.5 m; Shustikova 2019 reports HEC-RAS WSE RMSE about 0.61-0.84 m and says those RMSEs are within input/validation-data uncertainties. This supersedes dag pbias for stage snapshots."
+
+  - dag_variable: water_surface_elevation
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Transferred from hydrologic time-series validation convention; Arnold 2012 reproduces Moriasi 2007 monthly hydrologic/pollutant-loss NSE guidance."
+        cites: [arnold2012]
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.5, good: 0.8, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Absolute WSE error remains the discriminatory flood-model check even when a stage hydrograph is compared through time."
+        cites: [wing2021, bates2021]
+    secondary_metrics: []
+    validated_when: "NSE >= 0.5 for the stage hydrograph AND RMSE <= 1.0 m against reliable gauge/HWM stage observations."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Arnold 2012 states NSE should exceed 0.5 for satisfactory hydrologic evaluations and very good meant NSE >0.75; WSE RMSE band is transferred from flood-model WSE benchmarks, so confidence is lower than the snapshot block."
+
+  - dag_variable: water_surface_elevation
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.5, good: 0.8, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Spatial WSE/depth grids are judged by vertical RMSE at water marks or gridded WSE surfaces, not by wet/dry CSI unless converted to flood extent."
+        cites: [wing2021, bates2021, shustikova2019]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is appropriate after thresholding the stage/depth field to wet/dry flood extent; it supplements rather than replaces WSE RMSE."
+        cites: [wing2021]
+    validated_when: "Spatial WSE/depth RMSE <= 1.0 m at independent marks or gridded water-level observations."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Shustikova 2019 reports water-depth/WSE RMSE values of 0.61-0.84 m for HEC-RAS configurations; Wing 2021 notes WSE analysis is more rigorous and discriminatory than extent-only CSI."
+
+  - dag_variable: water_surface_elevation
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.5, good: 0.8, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a distinct space-time WSE threshold; band transferred from spatial WSE/flood-event benchmarks."
+        cites: [wing2021, bates2021, shustikova2019]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "NSE can summarize temporal pattern at cells or gauges, but fetched HEC/flood papers emphasize WSE RMSE and extent metrics."
+        cites: [arnold2012, wing2021]
+    validated_when: "Space-time WSE validation should meet RMSE <= 1.0 m at observed cells/marks/gauges; NSE is supportive where hydrograph observations exist."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: "Transferred band because the fetched corpus does not provide a separate spatial-time-series WSE convention."
+
+  - dag_variable: energy_grade
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper validates HEC-RAS energy-grade-line elevation against observations with a numeric percent-bias threshold."
+        cites: []
+    secondary_metrics:
+      - metric: monotonic_check
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Use EG >= WS as an internal hydraulic consistency check; this is not a fetched field-validation band."
+        cites: []
+    validated_when: "UNRESOLVED - no cited numeric E-grade observation convention; treat as an internal consistency diagnostic unless a project has measured energy slope/head-loss data."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "The dag caveat says EG should satisfy EG >= WS, but no fetched paper makes this a gradeable observation threshold."
+
+  - dag_variable: discharge_out
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Hydrologic time-series convention reproduced in Arnold 2012 from Moriasi 2007."
+        cites: [arnold2012]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Percent bias is widely reported for streamflow calibration/validation, but no fetched open text in this pass reproduced the numeric PBIAS tiers."
+        cites: [arnold2012]
+    validated_when: "For unsteady prognostic discharge hydrographs, NSE >= 0.5 is satisfactory and NSE > 0.75 is very good; steady-flow discharge comparisons are circular and should be avoided."
+    evidence_strength: moderate
+    confidence: 0.72
+    notes: "Arnold 2012: model results judged satisfactory when NSE exceeds 0.5 for hydrologic evaluations, and very good meant NSE >0.75. The steady-flow caveat comes from the dag, not a fetched structural-limitation claim."
+
+  - dag_variable: velocity_channel
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.79, good: 0.70, satisfactory: 0.57}
+        pass_band: good
+        band_note: "HEC-RAS/SRH-style velocity validation commonly reports regression skill; Barker 2018 gives fixed-point r2=0.57 and kayak r2=0.79, while Masafu 2022 reports HEC-RAS 2D validation r2=0.70."
+        cites: [barker2018, masafu2022]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Velocity studies report PBIAS, but the fetched papers do not define a general percent-bias pass threshold for point velocity."
+        cites: [barker2018, masafu2022]
+    validated_when: "Point/snapshot channel velocity is validated when regression skill reaches the HEC-RAS/2D hydraulic benchmark level, r2 >= 0.70; percent bias is contextual."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: "Barker 2018 says there are no standards for 2D validation, but reports satisfactory validation using hydrological metrics; Masafu 2022 reports final R2 of 0.70 and acceptable NSE=0.67."
+
+  - dag_variable: velocity_channel
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.67}
+        pass_band: satisfactory
+        band_note: "Transferred from HEC-RAS 2D velocity spatial validation; no fetched velocity-hydrograph-specific threshold was found."
+        cites: [masafu2022]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "PBIAS is reported for velocity validation, but no fetched numeric time-series PBIAS threshold was found."
+        cites: [masafu2022]
+    validated_when: "Velocity time series should at least reach the fetched HEC-RAS velocity benchmark NSE of 0.67; this is a transferred, low-confidence convention."
+    evidence_strength: weak
+    confidence: 0.42
+    notes: "Masafu 2022 calls NSE=0.67 acceptable for HEC-RAS 2D velocity validation; transfer to fixed-section time series is uncertain."
+
+  - dag_variable: velocity_total
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: null, satisfactory: 0.67}
+        pass_band: satisfactory
+        band_note: "HEC-RAS 2D velocity benchmark; Barker 2018 reports kayak NSE=0.75 and Masafu 2022 calls NSE=0.67 acceptable."
+        cites: [barker2018, masafu2022]
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.79, good: 0.70, satisfactory: 0.57}
+        pass_band: good
+        band_note: "Spatial velocity fields should meet direct velocity-magnitude regression benchmarks from dense observations."
+        cites: [barker2018, masafu2022]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag's csi is more natural for categorical wet/dry or velocity-bin maps; fetched velocity papers use NSE/R2/PBIAS/RSR/error statistics."
+        cites: [barker2018, masafu2022]
+    validated_when: "Spatial velocity validation requires NSE >= 0.67 and R2 >= 0.70 against independent velocity observations."
+    evidence_strength: strong
+    confidence: 0.76
+    notes: "Masafu 2022 uses spatially dense aDcp/LSPIV observations for HEC-RAS 2D and calls NSE=0.67 acceptable; Barker 2018 reports velocity magnitude NSE=0.75 and r2=0.79 for kayak observations."
+
+  - dag_variable: flood_inundation_extent
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.8, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "Wing 2021 reports typical reach-scale calibrated 2D inundation CSI of 0.7-0.8 and high-quality observations up to 0.9."
+        cites: [wing2021]
+      - metric: mdape
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Papaioannou 2017 selects acceptable HEC-RAS behavioral flood-extent realizations when MdAPE is lower than 20%."
+        cites: [papaioannou2017]
+    secondary_metrics:
+      - metric: hit_rate
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hit rate is useful but ignores some overprediction penalties; CSI/MdAPE are the headline wet/dry fit measures here."
+        cites: [wing2021]
+    validated_when: "Flood extent is validated when CSI >= 0.7 and areal MdAPE <= 20% against independent observed flood extent."
+    evidence_strength: strong
+    confidence: 0.84
+    notes: "Wing 2021 defines CSI as correctly wet pixels divided by union wet pixels and reports typical reach-scale CSI=0.7-0.8; Papaioannou 2017 uses HEC-RAS Monte Carlo and accepts behavioral models at MdAPE <20%."
+
+  - dag_variable: flood_inundation_extent
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.8, satisfactory: 0.7}
+        pass_band: satisfactory
+        band_note: "Transferred from maximum/snapshot flood-extent benchmarks; apply per observed time slice, with timing metrics reported separately."
+        cites: [wing2021]
+      - metric: mdape
+        direction: minimize
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Transferred from HEC-RAS flood-extent behavioral-model threshold."
+        cites: [papaioannou2017]
+    secondary_metrics:
+      - metric: peak_timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Timing of arrival/recession should be reported for time-resolved extents, but no fetched paper gives a universal numeric timing band."
+        cites: []
+    validated_when: "Each independently observed flood-extent time slice should meet CSI >= 0.7 and MdAPE <= 20%; timing errors are supportive unless a project-specific threshold is cited."
+    evidence_strength: moderate
+    confidence: 0.58
+    notes: "No fetched paper gives a separate time-series extent threshold; this block transfers the snapshot convention and therefore has lower confidence."
+
+  - dag_variable: froude_number
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric CSI threshold for observed subcritical/critical/supercritical regime or hydraulic-jump classification."
+        cites: []
+    secondary_metrics:
+      - metric: regime_accuracy
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Froude-number regime checks are hydraulic diagnostics; fetched roughness papers use Fr in formulas but do not validate Fr categories against a numeric field threshold."
+        cites: [papaioannou2017]
+    validated_when: "UNRESOLVED - report observed versus simulated regime/jump agreement, but do not auto-validate without a cited categorical threshold."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "Papaioannou 2017 includes Fr in roughness-estimation relationships, not as a validation convention for regime classification."
+
+  - dag_variable: shear_stress_channel
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric HEC-RAS channel-bed shear-stress observation threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Finer velocity/bathymetry observations can support shear inference, but no fetched shear-stress validation band was available."
+        cites: [barker2018]
+    validated_when: "UNRESOLVED - bed shear is method-dependent and usually inferred; require project-specific observed shear or mobility evidence."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "Barker 2018 cites shear-stress prediction uncertainty literature, but the fetched text does not reproduce a numeric shear-stress pass band."
+
+  - dag_variable: sediment_transport_rate
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched HEC-RAS sediment-transport paper provided a numeric PBIAS pass band; the Moriasi 2015 primary threshold paper was closed in this pass."
+        cites: []
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Contextual transferred hydrologic/pollutant-loss NSE convention; not sufficient alone to validate HEC-RAS sediment transport rate because the dag determining metric is PBIAS and its band is unresolved."
+        cites: [arnold2012]
+    secondary_metrics: []
+    validated_when: "PARTIAL - temporal sediment skill can be contextualized with NSE >= 0.5, but validation is unresolved until a fetched sediment-load PBIAS convention is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Arnold 2012 includes sediment yields in calibration/validation discussion and reproduces NSE >0.5 as satisfactory for hydrologic and pollutant-loss evaluations; no fetched text gave sediment-specific PBIAS tiers."
+
+  - dag_variable: bed_elevation_change
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides a numeric PBIAS threshold for time series of scour/deposition or bed-elevation change."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bed-change validation should use repeat bathymetry/topographic change error where available, but no fetched HEC-RAS bed-change threshold was found."
+        cites: []
+    validated_when: "UNRESOLVED - require project-specific repeat-survey uncertainty and sediment/morphodynamic validation metrics."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "OpenAlex discovery found possible sediment/morphodynamic papers, but fetch attempts did not return an OA full text within the cap."
+
+  - dag_variable: bed_elevation_change
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric spatial bed-elevation-change PBIAS threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Spatial scour/deposition maps should be interpreted against survey error, but no fetched numeric threshold was available."
+        cites: []
+    validated_when: "UNRESOLVED - compare to repeat bathymetry/DEM differencing with survey-error propagation; no universal fetched band."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: "No citation-backed numeric gate is available in the fetched corpus."
+
+  - dag_variable: water_quality_constituent
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched HEC-RAS water-quality constituent benchmark or constituent-specific NSE threshold was available."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Pollutant-loss PBIAS conventions exist in the broader hydrology literature, but the fetched texts in this pass did not reproduce constituent-concentration numeric tiers."
+        cites: [arnold2012]
+    validated_when: "UNRESOLVED - temperature, DO, nutrients, and algae need constituent-specific observed concentration/load thresholds from a fetched WQ benchmark."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The cached Arnold 2012 paper discusses nutrient balances and pollutant-loss validation, but does not supply a fetched numeric HEC-RAS water-quality concentration band."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 - Hydrologic and water quality models: Performance measures and evaluation criteria"
+    doi: 10.13031/trans.58.10715
+    needed_for: [discharge_out, sediment_transport_rate, water_quality_constituent]
+  - ref: "Sediment Transport Modeling in the Pasig River, Philippines Post Taal Volcano Eruption"
+    doi: 10.3390/geosciences14020045
+    needed_for: [sediment_transport_rate, bed_elevation_change, water_quality_constituent]
+  - ref: "The demonstration and validation of a linked watershed-riverine modeling system"
+    doi: 10.21079/11681/40425
+    needed_for: [sediment_transport_rate, water_quality_constituent]

@@ -30,10 +30,33 @@ Nutrient columns parsed (SWAT+ Rev 60.5 channel_sd/channel output):
     solp_out  - Dissolved (soluble) phosphorus (kg/day)
     sedp_out  - Sediment-bound phosphorus (kg/day)
 
-basin_ls_day columns (HRU-level, RELIABLE):
-    sedorgn   - Sediment-bound organic N (kg/ha/day)
-    surqno3   - Surface runoff NO3 (kg/ha/day)
-    sedmin    - Sediment-bound mineral N (kg/ha/day)
+basin_ls_day columns (HRU-level, RELIABLE) — species and units taken from the SWAT+
+source (`src/output_landscape_module.f90`, type output_nutcarb_gain_loss), NOT from the
+column header, whose unit row prints "----" for several columns:
+    sedyld    - Sediment yield                          (metric tons/ha/day)
+    sedorgn   - Organic N transported in sediment       (kg N/ha/day)
+    sedorgp   - Organic P transported in sediment       (kg P/ha/day)
+    surqno3   - NO3-N in surface runoff                 (kg N/ha/day)
+    lat3no3   - NO3-N in lateral runoff                 (kg N/ha/day)
+    surqsolp  - Soluble P in surface runoff             (kg P/ha/day)
+    usle      - USLE-predicted erosion                  (metric tons/ha/day)
+    sedminp   - Mineral PHOSPHORUS in sediment          (kg P/ha/day)  <-- P, NOT N
+                (printed as `sedmin` by Rev 2019.59.3 — see COLUMN ALIASES below)
+    tileno3   - NO3-N in tile flow                      (kg N/ha/day)
+
+  TRAP (fixed 2026-08-20): sedminp is mineral PHOSPHORUS (kg P/ha), not nitrogen. Older
+  versions of this tool and of SKILL.md summed it into TN, which inflates the nitrogen
+  load with a phosphorus flux, and simultaneously DROPPED the two genuine N terms
+  lat3no3 and tileno3. Verified against swatplus/src/src/output_landscape_module.f90.
+
+  COLUMN ALIASES (fixed 2026-08-20, round 2): the mineral-P header token is NOT stable
+  across SWAT+ revisions. The source declares it `sedminp`
+  (output_landscape_module.f90, `type output_losses_header` -> `sedminp`), which is what
+  current revisions print; Rev 2019.59.3 — the binary shipped in bin/swatplus_rev59 —
+  prints the truncated `sedmin`. Keying on ONE spelling silently drops mineral P from
+  TP on the other revision (the column is simply "not in col_map", no error, TP just
+  comes out low). This tool therefore resolves the canonical name through LS_COL_ALIASES
+  and accepts either spelling; the CSVs it writes always use the canonical `sedminp`.
 
 Computed metrics:
     TN = orgn + no3 + nh4 + no2 (kg/day)
@@ -67,6 +90,29 @@ NUTRIENT_COLS = {
     "solp_out": {"unit": "kg",   "description": "Dissolved P"},
     "sedp_out": {"unit": "kg",   "description": "Sediment-bound P"},
 }
+
+# basin_ls_day.txt header tokens that changed spelling between SWAT+ revisions.
+# canonical name -> candidate header tokens, most canonical FIRST.
+#   sedminp : declared as `sedminp` in output_landscape_module.f90
+#             (`type output_losses_header`) and printed that way by current
+#             revisions; Rev 2019.59.3 prints `sedmin`.
+# Anything not listed here resolves to itself.
+LS_COL_ALIASES = {
+    "sedminp": ("sedminp", "sedmin"),
+}
+
+
+def resolve_ls_col(canonical, col_map):
+    """Return the header token actually present for `canonical`, or None.
+
+    Lets one parser read both the `sedminp` (current source) and `sedmin`
+    (Rev 2019.59.3) spellings of the mineral-P loss column instead of silently
+    dropping mineral P from TP on whichever revision it was not keyed on.
+    """
+    for candidate in LS_COL_ALIASES.get(canonical, (canonical,)):
+        if candidate in col_map:
+            return candidate
+    return None
 
 
 def parse_args():
@@ -147,12 +193,34 @@ def process_basin_ls(args):
     daily_records = []
     annual_loads = defaultdict(lambda: defaultdict(float))
 
+    # Species -> unit, straight from output_landscape_module.f90 (see module docstring).
+    # sedminp is kg P/ha (mineral phosphorus) — it is NOT a nitrogen term.
     ls_cols = {
-        "sedorgn": "Sediment-bound organic N (kg/ha)",
-        "surqno3": "Surface runoff NO3 (kg/ha)",
-        "sedmin": "Sediment-bound mineral N (kg/ha)",
         "sedyld": "Sediment yield (t/ha)",
+        "sedorgn": "Organic N in sediment (kg N/ha)",
+        "sedorgp": "Organic P in sediment (kg P/ha)",
+        "surqno3": "NO3-N in surface runoff (kg N/ha)",
+        "lat3no3": "NO3-N in lateral runoff (kg N/ha)",
+        "surqsolp": "Soluble P in surface runoff (kg P/ha)",
+        "usle": "USLE erosion (t/ha)",
+        "sedminp": "Mineral P in sediment (kg P/ha)",
+        "tileno3": "NO3-N in tile flow (kg N/ha)",
     }
+    N_COLS = ["sedorgn", "surqno3", "lat3no3", "tileno3"]
+    P_COLS = ["sedorgp", "surqsolp", "sedminp"]
+
+    # canonical name -> header token actually present in THIS file. `sedminp` is
+    # spelled `sedmin` by Rev 2019.59.3; resolving here keeps the rest of the
+    # function (and every CSV column it writes) on the canonical names.
+    present_cols = {}
+    for canonical in ls_cols:
+        token = resolve_ls_col(canonical, col_map)
+        if token is not None:
+            present_cols[canonical] = token
+    for canonical in P_COLS + N_COLS:
+        if canonical not in present_cols:
+            logger.warning(f"Column '{canonical}' not found in basin_ls_day.txt "
+                           f"(header: {header}) — it contributes 0 to TN/TP")
 
     for line in lines[header_idx + 1:]:
         parts = line.split()
@@ -166,16 +234,25 @@ def process_basin_ls(args):
             day = int(parts[col_map["day"]])
 
             record = {"date": f"{yr}-{mon:02d}-{day:02d}", "year": yr, "month": mon}
-            for col in ls_cols:
-                if col in col_map:
-                    val = float(parts[col_map[col]])
-                    record[col] = val
-                    annual_loads[yr][col] += val
+            for canonical, token in present_cols.items():
+                val = float(parts[col_map[token]])
+                record[canonical] = val
+                annual_loads[yr][canonical] += val
 
-            # TN = sedorgn + surqno3 + sedmin (all in kg/ha/day)
-            tn = sum(record.get(c, 0) for c in ["sedorgn", "surqno3", "sedmin"])
+            # TN = sedorgn + surqno3 + lat3no3 + tileno3   (all kg N/ha/day)
+            # TP = sedorgp + surqsolp + sedminp            (all kg P/ha/day)
+            tn = sum(record.get(c, 0.0) for c in N_COLS)
+            tp = sum(record.get(c, 0.0) for c in P_COLS)
             record["TN_kgha"] = tn
+            record["TP_kgha"] = tp
+            # Absolute basin loads. validate_water_quality.py reads TN_kg / TP_kg /
+            # sed_out from the sim CSV — emitting only the per-hectare columns silently
+            # produced an all-zero comparison (the S10 step5 -> step6 chain in SKILL.md).
+            record["TN_kg"] = tn * basin_area_ha
+            record["TP_kg"] = tp * basin_area_ha
+            record["sed_out"] = record.get("sedyld", 0.0) * basin_area_ha
             annual_loads[yr]["TN_kgha"] += tn
+            annual_loads[yr]["TP_kgha"] += tp
             daily_records.append(record)
         except (ValueError, IndexError, KeyError):
             continue
@@ -187,7 +264,9 @@ def process_basin_ls(args):
 
     # Write daily CSV
     output_csv.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["date", "year", "month"] + [c for c in ls_cols if c in col_map] + ["TN_kgha"]
+    fieldnames = (["date", "year", "month"]
+                  + [c for c in ls_cols if c in present_cols]
+                  + ["TN_kgha", "TP_kgha", "TN_kg", "TP_kg", "sed_out"])
     with open(output_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
@@ -201,9 +280,13 @@ def process_basin_ls(args):
             "year": yr,
             "TN_kg_ha_yr": round(loads.get("TN_kgha", 0), 3),
             "TN_kg_yr": round(loads.get("TN_kgha", 0) * basin_area_ha, 1),
+            "TP_kg_ha_yr": round(loads.get("TP_kgha", 0), 3),
+            "TP_kg_yr": round(loads.get("TP_kgha", 0) * basin_area_ha, 1),
             "sedorgn_kgha_yr": round(loads.get("sedorgn", 0), 3),
             "surqno3_kgha_yr": round(loads.get("surqno3", 0), 3),
-            "sedmin_kgha_yr": round(loads.get("sedmin", 0), 3),
+            "lat3no3_kgha_yr": round(loads.get("lat3no3", 0), 3),
+            "tileno3_kgha_yr": round(loads.get("tileno3", 0), 3),
+            "sedminp_kgPha_yr": round(loads.get("sedminp", 0), 3),
         }
         if "sedyld" in loads:
             summary["sediment_t_ha_yr"] = round(loads["sedyld"], 3)

@@ -1,14 +1,3 @@
----
-name: wrf-hydro
-description: >-
-  WRF-Hydro v5.2.0 standalone/offline (Noah-MP LSM + gridded overland/subsurface/channel
-  routing + conceptual groundwater bucket; NCAR NDHMS…. Covers Noah-MP 1-D column
-  land-surface energy/water balance (ET, 4-layer soil moisture and temperature…; surface
-  and subsurface runoff generation (RUNOFF_OPTION 1-5); overland flow routing (D8
-  diffusive-wave on high-resolution routing sub-grid). Use when the task involves running,
-  configuring, calibrating or interpreting WRF_Hydro.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -32,6 +21,53 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (17 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (4 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (48 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (21 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/run_wrfhydro_full_pipeline.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wrfhydro_full_pipeline.py --help` |
+| `tools/s10_execution/calibrate_wrfhydro.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_execution/calibrate_wrfhydro.py --help` |
+| `tools/s10_execution/run_wrfhydro.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_execution/run_wrfhydro.py --help` |
+| `tools/s11_output/extract_discharge.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s11_output/extract_discharge.py --help` |
+| `tools/s1_domain/define_lambert_domain.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_domain/define_lambert_domain.py --help` |
+| `tools/s2_geo_em/build_geo_em.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_geo_em/build_geo_em.py --help` |
+| `tools/s3_wrfinput/build_wrfinput.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_wrfinput/build_wrfinput.py --help` |
+| `tools/s4_fulldom/build_fulldom_hires.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_fulldom/build_fulldom_hires.py --help` |
+| `tools/s4_fulldom/build_route_link.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_fulldom/build_route_link.py --help` |
+| `tools/s4_fulldom/build_spatial_weights.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_fulldom/build_spatial_weights.py --help` |
+| `tools/s5_soil_properties/build_soil_properties.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_soil_properties/build_soil_properties.py --help` |
+| `tools/s6_groundwater/build_groundwater.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_groundwater/build_groundwater.py --help` |
+| `tools/s8_forcing/cmfd_to_ldasin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_forcing/cmfd_to_ldasin.py --help` |
+| `tools/s8_forcing/convert_forcing_to_ldasin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_forcing/convert_forcing_to_ldasin.py --help` |
+| `tools/s8_forcing/nasa_power_to_ldasin.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_forcing/nasa_power_to_ldasin.py --help` |
+| `tools/s9_namelists/generate_namelists.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_namelists/generate_namelists.py --help` |
+
+*17 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -84,6 +120,81 @@ This knowledge infrastructure enables fully autonomous construction and executio
 - Groundwater bucket recharge/discharge
 
 **Key difference from VIC**: WRF-Hydro uses a Lambert Conformal Conic projected grid (not lat/lon), operates at hourly timestep, and includes integrated routing — no separate routing model needed.
+
+---
+
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag is the model identity for observable outputs; if this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `streamflow` — Routed channel discharge at each channel cell/reach; the correct and only source for basin outlet discharge (outlet = highest cumulative streamflow / Strahler order). (`m^3/s`)
+
+### Dag Output Inventory
+
+| Output variable (dag `var`) | Rank | Unit | Description / status |
+|---|---:|---|---|
+| `streamflow` | 1 | `m^3/s` | Routed channel discharge at each channel cell/reach; the correct and only source for basin outlet discharge (outlet = highest cumulative streamflow / Strahler order). |
+| `SOIL_M` | dag output | see `dag.yaml` | Additional dag output. |
+| `SNEQV` | dag output | see `dag.yaml` | Additional dag output. |
+| `ACCET` | dag output | see `dag.yaml` | Additional dag output. |
+| `z_gwsubbas` | dag output | see `dag.yaml` | Additional dag output. |
+
+### Output Interpretation Rule
+
+For basin outlet discharge, use `streamflow` from CHRTOUT. Do not substitute LDASOUT runoff fields for outlet discharge; this KI's output guidance and dag identify CHRTOUT `streamflow` as the routed discharge source.
+
+---
+
+## 8. Unit Table / Unit Conversion Table
+
+**Source of truth**: `dag.yaml` for output units and `docs/format_spec.yaml` for exact I/O shapes. This table records units that are explicitly represented in the KI facts and existing skill body; unspecified units remain delegated to the source files rather than guessed.
+
+### Output Units
+
+| Variable | Unit | Source | Notes |
+|---|---|---|---|
+| `streamflow` | `m^3/s` | `dag.yaml` | Routed channel discharge at each channel cell/reach; use for basin outlet discharge. |
+| `SOIL_M` | see `dag.yaml` | `dag.yaml` | Dag output; unit not restated here because no sourced unit was provided in the extracted facts. |
+| `SNEQV` | see `dag.yaml` | `dag.yaml` | Dag output; unit not restated here because no sourced unit was provided in the extracted facts. |
+| `ACCET` | see `dag.yaml` | `dag.yaml` | Dag output; unit not restated here because no sourced unit was provided in the extracted facts. |
+| `z_gwsubbas` | see `dag.yaml` | `dag.yaml` | Dag output; unit not restated here because no sourced unit was provided in the extracted facts. |
+
+### Pipeline Unit Conversions and Checks
+
+| Quantity | Source unit / input convention | Model or output unit | Conversion / handling | KI reference |
+|---|---|---|---|---|
+| CMFD/MSWX/NASA POWER daily forcing | Loader-normalized daily fields | WRF-Hydro LDASIN fields | Use `ki_tools_common.load_forcing.load_daily_forcing`; converter tools write model-ready LDASIN. | `docs/format_spec.yaml`; `tools/s8_forcing/` |
+| VIC precipitation forcing | `mm/3hr` | `mm/s` (`kg/m^2/s`) RAINRATE | Divide by `10800`. | dt_011 |
+| CMFD precipitation | `kg/m^2/s` rate | `mm/s` (`kg/m^2/s`) RAINRATE | Treat as rate; do not treat as `mm/3hr`. | dt_v011 |
+| Vapor pressure | `kPa` | `kg/kg` specific humidity | `q = 0.622 * e_Pa / (p_Pa - 0.378 * e_Pa)` where `e_Pa = VP_kPa * 1000`. | dt_012 |
+| 2 m temperature over elevation changes | source forcing temperature | `K`/model forcing temperature adjusted to terrain | `T2D -= 0.0065 * dz`. | dt_v008 |
+| Surface pressure over elevation changes | source forcing pressure | `Pa` adjusted to terrain | `PSFC *= exp(-g * dz / (R * Tv))`. | dt_v008 |
+| Shortwave radiation | interpolated `W/m^2` | `W/m^2` | Cap SWDOWN at `1361 W/m^2`. | dt_v022 |
+
+### Sign Conventions and Output Units
+
+| Variable | Convention in this model | Common error | Impact if wrong |
+|---|---|---|---|
+| `streamflow` | Absolute routed channel discharge in `m^3/s` at channel cell/reach | Treating LDASOUT runoff as outlet discharge | Basin discharge is double-counted or otherwise mis-scaled. |
+| `SFCRNOFF` / `UGDRNOFF` | LDASOUT runoff fields, not outlet discharge | Basin-averaging them as discharge | Routed upstream contributions are counted multiple times. |
+| `RAINRATE` | `mm/s` equivalent to `kg/m^2/s` water flux | Passing accumulated `mm/3hr` | Precipitation magnitude is too large by a factor of `10800`. |
+
+---
+
+## 11. Validation Convention Bars
+
+**Source of truth**: `docs/validation_convention.yaml`. These are the cited field bars for judging model skill; the convention wins over remembered thresholds.
+
+| Dag variable | Metric | Direction | Satisfactory | Good | Very good | Citation key(s) |
+|---|---|---|---:|---:|---:|---|
+| `streamflow` | `nse` | maximize | `0.5` | `0.65` | `0.75` | `moriasi2007`, `moriasi2015` |
+| `streamflow` | `pbias` | zero_centered | `25` | `15` | `10` | `moriasi2007`, `moriasi2015` |
+| `streamflow` | `pbias` | zero_centered | `25` | `15` | no cited threshold | `moriasi2007` |
+| `SOIL_M` | `nse` | maximize | no cited threshold | no cited threshold | no cited threshold | no citation key in convention |
+
+When reporting a `streamflow` metric, carry the citation key with the band being used. For null convention bands, write "no cited threshold" rather than supplying an assumed value.
 
 ---
 

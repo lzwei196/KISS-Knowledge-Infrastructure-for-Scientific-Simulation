@@ -431,3 +431,43 @@
     prevention: "Forcing converter stamps target timestep in filenames"
   severity: degraded
   cross_references: [dt_016]
+
+# ---------------------------------------------------------------------------
+# Triplets added by self-improve runs after the original corpus was published.
+# Recovered 2026-08-12 and merged back; the block above is the published base,
+# byte-for-byte. See REPORT.md.
+# ---------------------------------------------------------------------------
+- id: dt_019_new_basin_terrain_stream_toolchain_missing
+  symptom:
+    description: ki_usable=false for a brand-new basin; all metrics null; pipeline halts before Stage
+      2 forcing preflight even though the DHSVM binary runs and the Chiwawa developer example reproduces.
+      SKILL.md §3 shows '—' (no tool) for Stage 1 Terrain, Stage 4 Veg, Stage 5 Stream Network.
+  diagnosis:
+    root_cause: DHSVM has no Linux-native tool to build flat-binary terrain maps (DEM/mask/slope/aspect),
+      the veg type map, or the stream.map/network/class triple. The only shipped stream-network builder
+      (createstreamnetwork.py) hard-imports arcpy (ArcGIS, Windows-only, line 18); legacy path is ESRI
+      ArcInfo .aml. ki_tools_common emits none of these DHSVM formats. Without a basin grid + channel
+      network, forcing cannot be interpolated and no streamflow reaches the gauge.
+  remedy:
+    action: 'OUT OF SCOPE for self-improve loop (requires_human_engineering, >1 day): port arcpy/AML channel-delineation
+      + segment hydraulic-class logic to a Linux geospatial stack (GDAL + pysheds/whitebox/richdem) to
+      emit stream.map.dat/network/class, plus numpy writers for the flat-binary terrain/veg maps. Until
+      built, DHSVM is ki_usable ONLY for basins shipping a precomputed input set (e.g. Chiwawa). Do NOT
+      classify as a quick tool_build — terrain-map authoring alone does not unblock the gauge comparison.'
+  format_spec_violated: dhsvm.SKILL.md.pipeline_stages.s1_s4_s5 (no implementing tool); dhsvm.format_spec.flat_binary
+    / stream_network_files
+  canonical_intent: ki_local_if_pass
+  added_by_run: DHSVM_retry1
+- id: dt_019
+  symptom:
+    description: Null metrics / no valid DHSVM run on a large, low-relief, regulated lowland basin (Huai
+      ~121,000 km2, DEM 34-238 m)
+  diagnosis:
+    root_cause: DHSVM (high-res mountainous distributed model) run outside its valid domain on a flat
+      regulated lowland plain; cell count infeasible at native resolution and relief-driven physics invalid
+  remedy:
+    action: 'Apply SKILL.md 6.9 basin-suitability gate: remap obs to a steep headwater sub-basin in the
+      native domain, or record a wrong-domain SKIP'
+  format_spec_violated: none (domain-of-validity scope, not a format rule)
+  canonical_intent: ki_local_if_pass
+  added_by_run: DHSVM_retry1

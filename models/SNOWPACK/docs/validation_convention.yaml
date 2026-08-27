@@ -1,0 +1,357 @@
+schema_version: 1
+model_id: SNOWPACK
+domain: cryosphere
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  wever2015:
+    doi: 10.5194/tc-9-2271-2015
+    title: "Verification of the multi-layer SNOWPACK model with different water transport schemes"
+    venue: "The Cryosphere"
+    year: 2015
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/9/2271/2015/tc-9-2271-2015.pdf
+  schmucki2014:
+    doi: 10.1016/j.coldregions.2013.12.004
+    title: "Evaluation of modelled snow depth and snow water equivalent at three contrasting sites in Switzerland using SNOWPACK simulations driven by different meteorological data input"
+    venue: "Cold Regions Science and Technology"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.coldregions.2013.12.004.txt
+  magnusson2015:
+    doi: 10.1002/2014WR016498
+    title: "Evaluating snow models with varying process representations for hydrological applications"
+    venue: "Water Resources Research"
+    year: 2015
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2014wr016498.txt
+  etchevers2004:
+    doi: 10.3189/172756404781814825
+    title: "Validation of the energy budget of an alpine snowpack simulated by several snow models"
+    venue: "Annals of Glaciology"
+    year: 2004
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3189_172756404781814825.txt
+  proksch2016:
+    doi: 10.5194/tc-10-371-2016
+    title: "Intercomparison of snow density measurements: bias, precision, and vertical resolution"
+    venue: "The Cryosphere"
+    year: 2016
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/10/371/2016/tc-10-371-2016.pdf
+  keenan2021:
+    doi: 10.5194/tc-15-1065-2021
+    title: "Physics-based SNOWPACK model improves representation of near-surface Antarctic snow and firn density"
+    venue: "The Cryosphere"
+    year: 2021
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/15/1065/2021/tc-15-1065-2021.pdf
+  viallon2020:
+    doi: 10.1016/j.coldregions.2020.103163
+    title: "Forcing and evaluating detailed snow cover models with stratigraphy observations"
+    venue: "Cold Regions Science and Technology"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.coldregions.2020.103163.txt
+  schweizer2006:
+    doi: 10.1016/j.coldregions.2006.05.007
+    title: "Evaluating and improving the stability predictions of the snow cover model SNOWPACK"
+    venue: "Cold Regions Science and Technology"
+    year: 2006
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.coldregions.2006.05.007.txt
+  monti2016:
+    doi: 10.5194/nhess-16-775-2016
+    title: "Snow instability evaluation: calculating the skier-induced stress in a multi-layered snowpack"
+    venue: "Natural Hazards and Earth System Sciences"
+    year: 2016
+    oa: gold
+    resolves: https://nhess.copernicus.org/articles/16/775/2016/nhess-16-775-2016.pdf
+  richter2020:
+    doi: 10.5194/nhess-20-2873-2020
+    title: "Sensitivity of modeled snow stability data to meteorological input uncertainty"
+    venue: "Natural Hazards and Earth System Sciences"
+    year: 2020
+    oa: gold
+    resolves: https://nhess.copernicus.org/articles/20/2873/2020/nhess-20-2873-2020.pdf
+
+validation:
+  - dag_variable: HS
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: cm
+        bands: {very_good: 4.2, good: null, satisfactory: 23.1}
+        pass_band: satisfactory
+        band_note: "Field SNOWPACK evaluations report snow-height RMSE/MAE rather than NSE; the satisfactory band is the precipitation-driven multiseason RMSE envelope, while the very-good band is the snow-height-driven benchmark."
+        cites: [wever2015, schmucki2014]
+      - metric: mean_bias
+        direction: zero_centered
+        unit: cm
+        bands: {very_good: 1.4, good: 4.7, satisfactory: 8.0}
+        pass_band: satisfactory
+        band_note: "Schmucki et al. report daily snow depth mean-bias errors not exceeding about 8 cm when precipitation is corrected."
+        cites: [schmucki2014]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG determining metric is retained only as context; the fetched SNOWPACK snow-depth papers validate HS with RMSE, MAE, MAPE, and MBE rather than NSE."
+        cites: [wever2015, schmucki2014]
+    validated_when: "HS is validated when snow-depth RMSE is <= 23.1 cm and absolute mean bias is <= 8 cm; RMSE around 4 cm is expected only for snow-height-driven simulations."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Wever et al. report "snow height (RMSE: < 4.2 cm)" in HS-driven simulations and Table 1 gives
+      precipitation-driven RMSE up to 23.12 cm. Schmucki et al. report that daily snow depth could be
+      modeled with mean-bias error within about 8 cm after precipitation correction.
+
+  - dag_variable: SWE
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: kg/m^2
+        bands: {very_good: 40.0, good: null, satisfactory: 99.0}
+        pass_band: satisfactory
+        band_note: "1 kg/m^2 equals 1 mm water equivalent. Bands span the SNOWPACK multiseason HS-driven RMSE and precipitation-driven RMSE benchmarks."
+        cites: [wever2015, schmucki2014]
+      - metric: mean_bias
+        direction: zero_centered
+        unit: kg/m^2
+        bands: {very_good: 9.3, good: 36.0, satisfactory: 55.0}
+        pass_band: satisfactory
+        band_note: "Bias band follows corrected/calibrated precipitation evaluations; spring melt-season deficits can be much larger and should be diagnosed separately."
+        cites: [wever2015, schmucki2014]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched SWE benchmarks judge magnitude with RMSE, MAE, MAPE, and bias; NSE is not the reported headline validation metric for SWE."
+        cites: [wever2015, schmucki2014]
+      - metric: melt_season_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Wever et al. document a typical late-season SWE underestimation near 200 mm water equivalent; this is a known melt-season diagnostic rather than a relaxed pass band."
+        cites: [wever2015]
+    validated_when: "SWE is validated when RMSE is <= 99 kg/m^2 and absolute mean bias is <= 55 kg/m^2, with RMSE <= 40 kg/m^2 representing the multiseason HS-driven benchmark."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Wever et al. report "SWE, RMSE: < 40 mm w.e." during the main winter season and Table 1 gives
+      precipitation-driven RMSE up to 99.03 mm w.e. Schmucki et al. report corrected/calibrated SWE
+      MAE around 61.9 to 43.8 mm and MBE improving to -27.6 mm.
+
+  - dag_variable: MS_SNOWPACK_RUNOFF
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.73, good: 0.66, satisfactory: 0.57}
+        pass_band: satisfactory
+        band_note: "Wever et al. report daily NSE near 0.66-0.73 and hourly Richards-equation NSE near 0.57-0.59; the lower band reflects sub-daily runoff timing."
+        cites: [wever2015]
+      - metric: r2
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.87, good: 0.78, satisfactory: 0.68}
+        pass_band: satisfactory
+        band_note: "SNOWPACK runoff validation co-reports r2 for daily and hourly runoff sums."
+        cites: [wever2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Magnusson et al. judge daily runoff and snow mass with modified Kling-Gupta efficiency and report SNOWPACK KGE of 0.81 for runoff and 0.89 for snow mass."
+        cites: [magnusson2015]
+      - metric: hourly_timing
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "Sub-daily lysimeter runoff timing is limited by lateral and preferential flow and by representativeness of point lysimeter observations; two lysimeters agreed only slightly better than simulations."
+        cites: [magnusson2015, wever2015]
+    validated_when: "Runoff is validated when NSE >= 0.57 and r2 >= 0.68 for the output interval; daily simulations should approach NSE >= 0.66."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Wever et al. report NSE 24 h values of 0.66-0.73 and hourly RE values of 0.57-0.59. Magnusson
+      et al. report SNOWPACK KGE = 0.81 for daily runoff and note lysimeter agreement RMSE 5.6 mm/24 h,
+      r = 0.87, KGE = 0.83.
+
+  - dag_variable: TSS
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 1.5, good: null, satisfactory: 3.0}
+        pass_band: satisfactory
+        band_note: "Snow surface temperature is commonly validated through emitted/net longwave radiation; Etchevers et al. translate longwave RMS ranges to snow-surface-temperature RMS ranges."
+        cites: [etchevers2004]
+      - metric: mean_bias
+        direction: zero_centered
+        unit: degC
+        bands: {very_good: 0.7, good: 0.7, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "Percent bias is not meaningful for Celsius surface temperature; bias in degC supersedes the DAG pbias metric."
+        cites: [etchevers2004, wever2015]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG determining metric is pbias, but fetched snow-temperature literature reports absolute temperature error or longwave-equivalent temperature bias."
+        cites: [etchevers2004, wever2015]
+    validated_when: "TSS is validated when snow-surface-temperature RMSE is <= 3 degC and absolute mean bias is <= 1 degC."
+    evidence_strength: moderate
+    confidence: 0.68
+    notes: >-
+      Etchevers et al. state that net longwave RMS errors of 3-6 W/m^2 correspond to 0.7-1.5 K surface
+      temperature RMS for the best models and 6-12 W/m^2 to 1.5-3 K for most other models. Wever et al.
+      report snow-temperature typical deviations below 1 degC and surface-temperature discrepancies up to
+      several degrees under forcing uncertainty.
+
+  - dag_variable: energy_balance_fluxes (qs, ql, qg, OLWR, lw_net, qw)
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: net_longwave_rmse
+        direction: minimize
+        unit: W/m^2
+        bands: {very_good: 6.0, good: 10.0, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "SnowMIP energy-budget validation uses daily RMS error in net longwave radiation as a directly observable energy-budget component."
+        cites: [etchevers2004]
+      - metric: net_shortwave_rmse
+        direction: minimize
+        unit: W/m^2
+        bands: {very_good: 12.0, good: 18.5, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "SnowMIP reports net shortwave radiation RMS error of roughly 10-20 W/m^2, with WFJ averaging 18.5 W/m^2."
+        cites: [etchevers2004]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG metric is NSE, but fetched energy-budget validation reports RMS error and bias of flux components, not NSE."
+        cites: [etchevers2004]
+      - metric: turbulent_flux_error
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "Sensible and latent turbulent fluxes cannot be independently validated at the same standard because reliable measurements were lacking and estimated turbulent-flux uncertainty is 10-20 W/m^2."
+        cites: [etchevers2004]
+    validated_when: "Energy-balance fluxes are validated when net longwave RMSE <= 10 W/m^2 and net shortwave RMSE <= 20 W/m^2; direct turbulent-flux NSE is a data-limited diagnostic."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Etchevers et al. say albedo and surface-temperature observations validate net shortwave and net
+      longwave radiation. The same paper explicitly states that turbulent-flux calculation could not be
+      validated because reliable measurements were unavailable.
+
+  - dag_variable: RHO_mean
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: kg/m^3
+        bands: {very_good: 45.3, good: 48.3, satisfactory: 50.0}
+        pass_band: satisfactory
+        band_note: "Bands use SNOWPACK density RMSE/deviation benchmarks and are close to the observation-method uncertainty scale."
+        cites: [wever2015, keenan2021, proksch2016]
+      - metric: mean_bias
+        direction: zero_centered
+        unit: kg/m^3
+        bands: {very_good: 10.0, good: 25.0, satisfactory: 25.0}
+        pass_band: satisfactory
+        band_note: "Wever et al. report average snow-density bias around 25 kg/m^3; Keenan et al. report smaller Antarctic surface and near-surface biases."
+        cites: [wever2015, keenan2021]
+    secondary_metrics:
+      - metric: measurement_method_uncertainty
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Independent snow-density measurement methods agree within 5-9%, so model errors near this scale should be interpreted with observation uncertainty in mind."
+        cites: [proksch2016]
+    validated_when: "Bulk mean density is validated when RMSE <= 50 kg/m^3 and absolute mean bias <= 25 kg/m^3."
+    evidence_strength: strong
+    confidence: 0.83
+    notes: >-
+      Wever et al. report snow density "typical deviation with observations: < 50 kg m-3" and average bias
+      around 25 kg/m^3. Keenan et al. report SNOWPACK surface-density RMSE 45.3 kg/m^3 and near-surface
+      profile RMSE 48.3 kg/m^3. Proksch et al. report density methods generally agree within 9%.
+
+  - dag_variable: layer_profile (T, Rho, rg, grain type, stability indices)
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: layer_density_error
+        direction: minimize
+        unit: kg/m^3
+        bands: {very_good: 39.0, good: 50.0, satisfactory: 50.0}
+        pass_band: satisfactory
+        band_note: "Layer-profile studies report density error rather than percent bias; this supersedes the DAG pbias metric for profile density."
+        cites: [viallon2020, wever2015]
+      - metric: grain_shape_distance
+        direction: minimize
+        unit: dimensionless
+        bands: {very_good: 0.25, good: 0.31, satisfactory: 0.31}
+        pass_band: satisfactory
+        band_note: "The band follows a published layer-matching grain-shape distance where 0 means perfect agreement."
+        cites: [viallon2020]
+      - metric: temperature_deviation
+        direction: minimize
+        unit: degC
+        bands: {very_good: 0.5, good: 1.0, satisfactory: 1.0}
+        pass_band: satisfactory
+        band_note: "SNOWPACK verification reports typical snow-temperature deviations below 1 degC."
+        cites: [wever2015]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG determining metric is pbias, but mixed layer profiles are judged with depth-aligned density, temperature, and categorical grain-shape errors."
+        cites: [viallon2020, wever2015]
+    validated_when: "A snow-pit profile is validated when layer-density error <= 50 kg/m^3, grain-shape distance <= 0.31, and temperature deviation <= 1 degC."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: >-
+      Viallon-Galinier et al. report median errors of 12 cm for snow depth, 50 kg/m^3 for layer density,
+      and 0.31 for grain shape when comparing detailed snow-cover simulations to manual profiles. Wever et al.
+      report SNOWPACK snow-temperature deviations below 1 degC and density deviations below 50 kg/m^3.
+
+  - dag_variable: avalanche_hazard_indices
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched SNOWPACK avalanche paper provided a CSI/POD/FAR threshold for categorical event validation; keep the DAG csi metric but do not auto-validate from it."
+        cites: []
+    secondary_metrics:
+      - metric: classification_accuracy
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Schweizer et al. report about 76% 11-fold cross-validated accuracy for three snow-stability classes, but this is not a CSI threshold."
+        cites: [schweizer2006]
+      - metric: refined_skier_stability_index
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Monti et al. show the refined skier stability index discriminated between poor, fair, and good stability classes and was implemented in SNOWPACK; further verification was still needed."
+        cites: [monti2016]
+      - metric: precipitation_forcing_sensitivity
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Richter et al. show modeled stability metrics are mostly sensitive to precipitation, so event skill depends strongly on forcing representativeness."
+        cites: [richter2020]
+    validated_when: "UNRESOLVED for CSI: use fetched stability-class accuracy only as context until an OA avalanche-event CSI/POD/FAR convention is fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Schweizer et al. state that simulated stratigraphy could be classified into three stability classes and
+      report about 76% cross-validated accuracy, but they do not provide CSI. An OpenAlex check found a
+      potentially relevant decision-support paper, but fetching the DOI failed; it is listed below.
+
+deferred_paywalled:
+  - ref: "A decision support tool for dry persistent deep slab avalanches for the transition to low-probability/high-consequence events"
+    doi: 10.1016/j.coldregions.2017.06.013
+    needed_for: [avalanche_hazard_indices]

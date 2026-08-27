@@ -1,14 +1,3 @@
----
-name: noah-mp
-description: >-
-  Noah-MP multi-physics community LSM. Covers Column (1-D) land-surface biogeophysics:
-  surface energy balance; Surface and subsurface water balance; soil moisture (liquid +
-  ice); Soil and snow-layer temperature; skin temperature; Physical snowpack (up to 3
-  layers): accumulation, compaction, melt, albedo aging; Canopy water interception and
-  canopy energy/water exchange. Use when the task involves running, configuring,
-  calibrating or interpreting Noah_MP.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,43 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (6 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (29 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (29 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 10 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_hrldas_setup.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_hrldas_setup.py --help` |
+| `tools/calib_run.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/calib_run.py --help` |
+| `tools/convert_forcing_to_noahmp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_noahmp.py --help` |
+| `tools/convert_soil_to_noahmp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_noahmp.py --help` |
+| `tools/parse_noahmp_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_noahmp_output.py --help` |
+| `tools/run_noahmp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_noahmp.py --help` |
+
+*6 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # Noah-MP v5.2 (Noah Multi-Parameterization Land Surface Model) — Knowledge Infrastructure
 
@@ -366,6 +392,22 @@ divisible, forcing data alignment drifts silently.
 
 ---
 
+## Diagnostic Triplets (Top 5; Template section 9)
+
+The full corpus is `diagnostics/triplets.yaml`; check it before debugging any
+failure. These are the first five operational unit traps already summarized in
+the domain notes above.
+
+| # | Triplet id | Error / symptom | Diagnosis | Remedy |
+|---|---|---|---|---|
+| 1 | `dt_001` | NaN/crash in vapor pressure or wildly wrong fluxes | `T2D` supplied in Celsius instead of Kelvin | Convert with `T_K = T_C + 273.15`; verify `T2D > 200 K` |
+| 2 | `dt_002` | Extreme runoff and soil saturation | `RAINRATE` supplied as `mm/hr` or `mm/day` instead of `mm/s` | Convert rates to `mm/s` before writing LDASIN |
+| 3 | `dt_003` | Extreme latent heat flux | Relative humidity supplied where specific humidity is required | Supply `Q2D` as specific humidity in `kg/kg` |
+| 4 | `dt_004` | Negative albedo or energy-balance errors | Interpolated shortwave radiation became negative | Clip `SWDOWN` to `>= 0 W/m2` |
+| 5 | `dt_005` | Wrong air density and turbulent fluxes | Surface pressure supplied in `hPa`, `mbar`, or `kPa` instead of Pa | Convert to Pa before writing `PSFC` |
+
+---
+
 ## Namelist Reference (`namelist.hrldas`)
 
 The HRLDAS driver reads a single Fortran namelist file with block `&NOAHLSM_OFFLINE`.
@@ -485,6 +527,37 @@ Located at `parameters/NoahmpTable.TBL`. Must be in the run directory.
 
 ---
 
+## Output Description (Template section 6; sourced from `dag.yaml`)
+
+The dag is the authority for what this model predicts and how outputs are judged.
+If this section and `dag.yaml` ever disagree, `dag.yaml` wins and this section
+must be corrected.
+
+**Headline output** (the dag's `validation_rank: 1` variable):
+
+> `SFCRUNOFF + UDRUNOFF (total runoff)` - Surface plus subsurface/baseflow runoff.
+> Written as values ACCUMULATED since simulation start; incremental runoff =
+> difference between consecutive output timesteps. (`m (accumulated; mm/s
+> instantaneous in some drivers)`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|---|---:|---|---|
+| `SFCRUNOFF + UDRUNOFF (total runoff)` | 1 | `m (accumulated; mm/s instantaneous in some drivers)` | Surface plus subsurface/baseflow runoff. Written as values ACCUMULATED since simulation start; incremental runoff = difference between consecutive output timesteps. |
+| `LH` | - | See `dag.yaml` | Other dag output |
+| `HFX` | - | See `dag.yaml` | Other dag output |
+| `SMOIS` | - | See `dag.yaml` | Other dag output |
+| `TSK` | - | See `dag.yaml` | Other dag output |
+| `SNEQV` | - | See `dag.yaml` | Other dag output |
+| `GPP / NEE` | - | See `dag.yaml` | Other dag output |
+| `LAI` | - | See `dag.yaml` | Other dag output |
+
+For the headline variable, score increments between consecutive accumulated
+output timesteps unless the driver is explicitly producing instantaneous `mm/s`.
+The file-level HRLDAS v5.2 runoff spellings are documented below under LDASOUT
+formats; do not rename or reinterpret the dag variable in this body.
+
+---
+
 ## Output File Formats
 
 ### LDASOUT NetCDF Files
@@ -524,6 +597,45 @@ Key output variables:
 | ACSNOM | (y,x) | mm | Accumulated snowmelt |
 | ACSNOW | (y,x) | mm | Accumulated snowfall |
 | LAI | (y,x) | m²/m² | Leaf area index |
+
+---
+
+## Unit Table / Unit Conversion Table (Template section 8)
+
+Exact input and output shapes live in `docs/format_spec.yaml`, projected from
+`dag.yaml` and `diagnostics/triplets.yaml`. This table restates the operational
+unit conversions and output-unit traps already encoded in this KI body.
+
+| Variable | Source unit / storage | Model or scoring unit | Conversion / handling | Type |
+|---|---|---|---|---|
+| `T2D` | Celsius from CMFD/MSWX | K | `T_K = T_C + 273.15`; verify `T2D > 200 K` | additive |
+| `RAINRATE` | `mm/hr` from CMFD | `mm/s` | divide by `3600` | multiplicative |
+| `RAINRATE` | `m/hr` from ERA5 | `mm/s` | multiply by `1000`, then divide by `3600` | multiplicative |
+| `Q2D` | specific humidity from CMFD | `kg/kg` | pass through; do not use relative humidity | identity |
+| `Q2D` | `g/kg` if supplied by another source | `kg/kg` | divide by `1000` | multiplicative |
+| `PSFC` | `hPa` / `mbar` if supplied by another source | Pa | multiply by `100` | multiplicative |
+| `SWDOWN` | `W/m2` | `W/m2` | clip interpolation artifacts to `>= 0` | range enforcement |
+| `LWDOWN` | `W/m2` | `W/m2` | pass through when attributes confirm `W/m2` | identity |
+| `VEGFRA` | percent in WRF/HRLDAS input files | percent stored; fraction internally | keep 0-100 in setup unless source is documented otherwise | convention |
+| `ZSOIL` | positive layer depths are a common input mistake | m, negative downward | negate positive depths; e.g. `[-0.1, -0.4, -1.0, -2.0]` | sign convention |
+| `DZS` | layer thickness | m, positive | keep positive | sign convention |
+| `SFCRUNOFF + UDRUNOFF (total runoff)` | accumulated output | `m (accumulated; mm/s instantaneous in some drivers)` | incremental runoff = difference between consecutive output timesteps | accumulation |
+| `LH` | LDASOUT | `W/m2` | flux metric variable; do not back-derive prognostic ET for water-balance closure | output convention |
+| `HFX` | LDASOUT | `W/m2` | pass through for sensible heat scoring | output convention |
+| `SMOIS` | LDASOUT layered field | `m3/m3` | index by dimension name because layer axis is between horizontal axes | output convention |
+| `TSK` | LDASOUT | K | pass through for skin temperature scoring | output convention |
+| `SNEQV` | snow water equivalent output | see `dag.yaml` | score against the dag variable and convention bars below | output convention |
+| `LAI` | LDASOUT / setup | `m2/m2` | pass through; with `dynamic_veg_option=4`, LAI comes from NoahmpTable monthly climatology | output convention |
+
+### Sign Conventions and Output Units
+
+| Variable | Convention in this KI | Common alternative | Impact if wrong |
+|---|---|---|---|
+| Runoff | Accumulated total runoff for `SFCRUNOFF + UDRUNOFF (total runoff)`; compare increments between output timesteps | Treating accumulated values as per-step values | Runoff volume and skill metrics are inflated over time |
+| Precipitation forcing | `RAINRATE` in `mm/s` | `mm/hr` or `mm/day` | Water input is off by `3600` or `86400` |
+| Soil layer depth | `ZSOIL` negative downward, `DZS` positive thickness | Positive `ZSOIL` | Soil heat/water diffusion is ordered incorrectly |
+| Fluxes | `LH` and `HFX` in `W/m2` | Water depth per timestep | Energy-flux metrics and water-balance closure are mixed |
+| Water-balance ET | Use accumulated `ECAN + EDIR + ETRAN` from LDASOUT | Back-derive ET from `LH/Lv` | Realized water-flux ET is overstated |
 
 ---
 
@@ -652,6 +764,39 @@ python ki/tools/parse_noahmp_output.py \
   --variables SMOIS,TSK,HFX,LH,SFCRUNOFF \
   --output results.csv
 ```
+
+---
+
+## Validated Results (Template section 11; sourced from `docs/validation_convention.yaml`)
+
+This SKILL body records the field's cited pass-bands, not a fabricated run score.
+The current validation status above is `initial`; achieved calibration,
+validation, and full-period metric values are not recorded here. When a real run
+is scored, judge it against these convention bars and cite the listed keys with
+each stated band.
+
+### Performance Metrics - judged against the field's bar, not intuition
+
+**Headline dag variable:** `SFCRUNOFF + UDRUNOFF (total runoff)`.
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band |
+|---|---|---|---|---|---|
+| `SFCRUNOFF + UDRUNOFF (total runoff)` | `nse` | maximize | `>= 0.5` (`moriasi_via_me2015`, `moriasi_via_nile2012`, `mrb2013`) | `>= 0.65` (`moriasi_via_me2015`, `moriasi_via_nile2012`, `mrb2013`) | `>= 0.75` (`moriasi_via_me2015`, `moriasi_via_nile2012`, `mrb2013`) |
+| `SFCRUNOFF + UDRUNOFF (total runoff)` | `pbias` | zero_centered | `abs(pbias) <= 25` (`moriasi_via_me2015`, `moriasi_via_nile2012`) | `abs(pbias) <= 15` (`moriasi_via_me2015`, `moriasi_via_nile2012`) | `abs(pbias) <= 10` (`moriasi_via_me2015`, `moriasi_via_nile2012`) |
+| `LH` | `rmse` | minimize | `<= 40` (`ingwersen2015`, `gao2015_tibet`) | `<= 25` (`ingwersen2015`, `gao2015_tibet`) | `<= 15` (`ingwersen2015`, `gao2015_tibet`) |
+| `LH` | `nse` | maximize | `>= 0.4` (`niu2020_planthydraulics`, `ma2017_conus`) | `>= 0.6` (`niu2020_planthydraulics`, `ma2017_conus`) | `>= 0.8` (`niu2020_planthydraulics`, `ma2017_conus`) |
+| `SNEQV` | `rmse` | minimize | `<= 100` (`sierra2023_swe`, `mortimer2020_nhswe`) | `<= 80` (`sierra2023_swe`, `mortimer2020_nhswe`) | `<= 40` (`sierra2023_swe`, `mortimer2020_nhswe`) |
+| `SNEQV` | `pbias` | zero_centered | `abs(pbias) <= 15` (`kraft2023_burned`, `centralasia2020_swe`, `sierra2023_swe`, `mortimer2020_nhswe`) | `abs(pbias) <= 12` (`kraft2023_burned`, `centralasia2020_swe`, `sierra2023_swe`, `mortimer2020_nhswe`) | `abs(pbias) <= 8` (`kraft2023_burned`, `centralasia2020_swe`, `sierra2023_swe`, `mortimer2020_nhswe`) |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|---|---|---|---|
+| Forcing | KI pipeline | Initial | Prepared by `convert_forcing_to_noahmp`; run `python preflight_check.py` before execution |
+| Soil | KI pipeline | Initial | Prepared by `convert_soil_to_noahmp` / setup tools |
+| Land cover | KI pipeline / setup | Initial | Must keep `MMINLU` and NoahmpTable vegetation classes consistent |
+| Initial conditions | KI pipeline / setup | Initial | HRLDAS setup file must preserve rank and unit conventions |
+| Output scoring | `dag.yaml` + `docs/validation_convention.yaml` | Initial | Rank-1 judgement is `SFCRUNOFF + UDRUNOFF (total runoff)` |
 
 ---
 

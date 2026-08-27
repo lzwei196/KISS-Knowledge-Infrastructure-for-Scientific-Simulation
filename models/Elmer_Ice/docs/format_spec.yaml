@@ -1,128 +1,464 @@
-model:
-  name: "Elmer_Ice"
-  full_name: "Elmer/Ice (Elmer FEM 26.1)"
-  domain: "cryosphere — ice sheet and glacier dynamics"
-  binary_path: "KISSPATH_BINARIES/Elmer_Ice/install/bin/ElmerSolver"
-  auxiliary_binaries:
-    - path: "KISSPATH_BINARIES/Elmer_Ice/install/bin/ElmerGrid"
-      purpose: "Mesh generation and format conversion"
-    - path: "KISSPATH_BINARIES/Elmer_Ice/install/bin/Mesh2D"
-      purpose: "2D mesh generation"
-  config_format: "SIF (Solver Input File) — plain text with hierarchical blocks"
-  mesh_format: "ElmerGrid native (mesh.header, mesh.nodes, mesh.elements, mesh.boundary)"
-  output_format: "VTU (VTK Unstructured Grid XML)"
+# format_spec.yaml — projected from dag.yaml + diagnostics/triplets.yaml
+# (format_spec generator, dag-driven + codex-reviewed 2026-08-15)
 
+model:
+  name: Elmer-Ice
+  language: fortran
+  implementation:
+    id: elmer-ice
+    version: Elmer/Ice 9.0 (Elmer FEM)
+    provenance: Fortran 90 (with C/C++ components); CSC-IT Center for Science Elmer/Ice glaciological
+      add-on to the Elmer FEM suite; ElmerSolver binary driven by SIF input files.
+  scientific_reference_version: Elmer/Ice 9.0 (Gagliardini et al. 2013 full-Stokes baseline; ReleaseNotes
+    9.0); SSA marine-ice-sheet configuration
 inputs:
   forcing:
-    - name: "surface_mass_balance"
-      unit: "m/a ice equivalent"
-      valid_range: [-10.0, 5.0]
-      description: "Surface mass balance (positive=accumulation, negative=ablation)"
-    - name: "surface_temperature"
-      unit: "deg C"
-      valid_range: [-60.0, 20.0]
-      description: "Surface temperature boundary condition"
-    - name: "geothermal_heat_flux"
-      unit: "mW/m2"
-      valid_range: [20.0, 200.0]
-      description: "Basal geothermal heat flux"
-    - name: "ocean_thermal_forcing"
-      unit: "deg C"
-      valid_range: [-2.0, 10.0]
-      description: "Ocean thermal forcing for marine-terminating glaciers"
-  geometry:
-    - name: "bed_elevation"
-      unit: "m"
-      valid_range: [-5000.0, 5000.0]
-      source: "BedMachine v5"
-    - name: "ice_thickness"
-      unit: "m"
-      valid_range: [0.0, 5000.0]
-      source: "BedMachine v5"
-    - name: "surface_elevation"
-      unit: "m"
-      valid_range: [0.0, 5000.0]
-      source: "ArcticDEM / REMA"
+  - name: Surface Mass Balance (SMB)
+    unit: m/a ice equivalent (positive = accumulation, negative = ablation)
+    category: forcing
+    source_kind: forcing
+    model_input_format: Top Surface Accumulation keyword / acabf element variable consumed by ThicknessSolver
+    notes: Sign convention is positive=accumulation; ablation must be negative or the ice grows everywhere
+      with no ablation zone.
+  - name: Surface Temperature
+    unit: deg C (SIF boundary condition); Kelvin internally for Arrhenius rate factor
+    category: forcing
+    source_kind: forcing
+    model_input_format: Temperature boundary-condition value on the upper surface
+    notes: SIF boundary conditions are specified in Celsius while the Arrhenius viscosity law uses Kelvin;
+      consistent reference temperature required.
+  - name: Basal / sub-shelf Melt Rate
+    unit: m/a ice equivalent (positive = melting)
+    category: forcing
+    source_kind: forcing
+    model_input_format: Bottom Surface Accumulation keyword / libmassbf element variable consumed by ThicknessSolver
+  - name: Geothermal Heat Flux (GHF)
+    unit: W/m2
+    category: forcing
+    source_kind: forcing
+    model_input_format: Heat Flux boundary condition on the basal surface (feeds Temperature/Enthalpy
+      solver)
   parameters:
-    critical:
-      - name: "SSA Friction Parameter (beta)"
-        valid_range: [1.0e-5, 1.0e-1]
-        description: "Basal friction coefficient — units depend on friction law"
-      - name: "Viscosity Exponent"
-        valid_range: [0.25, 0.5]
-        description: "1/n for Glen's flow law (n=3 → 0.333). MUST be 1/n, NOT n"
-      - name: "Rate Factor A"
-        unit: "Pa^-3 s^-1"
-        valid_range: [1.0e-25, 1.0e-16]
-        description: "Arrhenius rate factor for ice viscosity"
-      - name: "Critical Shear Rate"
-        unit: "s^-1"
-        valid_range: [1.0e-12, 1.0e-6]
-        description: "Floor for strain rate invariant to prevent division by zero"
-      - name: "Ice Density"
-        unit: "kg/m3"
-        valid_range: [850.0, 920.0]
-        description: "Density of ice — MUST be in kg/m3, NOT g/cm3"
-      - name: "Water Density"
-        unit: "kg/m3"
-        valid_range: [1020.0, 1030.0]
-        description: "Density of seawater — MUST be in kg/m3"
-      - name: "Timestep Sizes"
-        unit: "s"
-        valid_range: [86400.0, 315569260.0]
-        description: "SIF timestep in seconds. 1 year = 31556926.0 s. NOT years"
-
+  - name: Basal friction coefficient (beta / Slip Coefficient)
+    unit: depends on friction law (Linear Pa·s/m; Weertman Pa·(m/a)^(-1/n); regularized-Coulomb dimensionless
+      ~0.1-0.5)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: SSA Friction Parameter; friction law selected by 'SSA Friction Law' (linear/weertman/budd/coulomb/regularized
+      coulomb)
+    notes: Friction-law string maps to internal codes (LINEAR=1, WEERTMAN=2, REG_COULOMB_GAG=3, REG_COULOMB_JOU=4,
+      BUDD=5); Weertman with exponent m=1 silently collapses to linear.
+  - name: Glen's flow-law exponent n
+    unit: dimensionless (typically n=3)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: SIF 'Viscosity Exponent' expects 1/n (=0.333 for n=3), NOT n
+  - name: Glen's flow-law rate factor A
+    unit: Pa^-3 s^-1 (range ~1e-25 to 1e-16)
+    category: parameter
+    source_kind: calibrated
+    model_input_format: Material rate factor; may be temperature-dependent via Arrhenius A(T)=A0·exp(-Q/(R·T))
+  - name: Ice density
+    unit: kg/m3 (≈910; internal MPa-m-a value differs)
+    category: parameter
+    source_kind: default
+    model_input_format: Material Density
+  - name: Seawater density
+    unit: kg/m3 (≈1025; internal MPa-m-a fallback 1.03225e-18)
+    category: parameter
+    source_kind: default
+    model_input_format: Constant 'Water Density'; silently defaulted in MPa-m-a units if absent
+  - name: Clausius-Clapeyron slope (beta_clapeyron)
+    unit: K/Pa (9.8e-8 air-free; 7.42e-8 air-saturated)
+    category: parameter
+    source_kind: default
+    model_input_format: Constants block; controls pressure-melting-point depth and temperate-ice extent
+  - name: Critical Shear Rate
+    unit: s^-1 (typical 1e-10 to 1e-8)
+    category: parameter
+    source_kind: default
+    model_input_format: Regularization of Glen's-law viscosity to avoid 0^(-1) singularity at zero strain
+      rate
+  - name: GlaDS hydrology parameters (sheet conductivity, bedrock bump height)
+    unit: sheet conductivity ~0.001-0.05; bump height 0.01-1.0 m
+    category: parameter
+    source_kind: calibrated
+    model_input_format: GlaDS solver material/constants (controls subglacial drainage and effective pressure)
+  initial_conditions:
+  - name: Bed topography / bedrock elevation (Zb, bedrock)
+    unit: m (meters above sea level)
+    category: initial_condition
+    source_kind: dataset_lookup
+    model_input_format: Nodal bedrock variable; coordinates in meters (km causes 1000x-too-weak driving
+      stress)
+  - name: Surface elevation (Zs)
+    unit: m
+    category: initial_condition
+    source_kind: dataset_lookup
+    model_input_format: Upper-surface nodal field
+  - name: Ice thickness (H)
+    unit: m
+    category: initial_condition
+    source_kind: dataset_lookup
+    model_input_format: Initial thickness nodal field; H = Zs - Zb
+  - name: Englacial temperature / enthalpy field
+    unit: deg C / J kg^-1
+    category: initial_condition
+    source_kind: dataset_lookup
+    model_input_format: Initial Temp/Enthalpy field (spin-up dependent; affects inferred friction)
+  - name: Ice mask / grounded mask
+    unit: binary / (-1,0,+1)
+    category: initial_condition
+    source_kind: dataset_lookup
+    model_input_format: Initial GroundedMask and ice extent
+  boundary_conditions:
+  - name: Coordinate system selection
+    unit: —
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: SIF 'Coordinate System' (Cartesian 2D = x-z flowline, Cartesian 3D = plan-view+depth);
+      must match mesh dimension
+  - name: Friction law selection
+    unit: —
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: '''SSA Friction Law'' = linear | weertman | budd | coulomb | regularized coulomb
+      (structural switch)'
+  - name: Flow approximation selection (Full-Stokes / SSA / SIA)
+    unit: —
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Active solver set in SIF Solver/Equation blocks selects the stress-balance approximation
+  - name: Timestep size and intervals
+    unit: s (1 year = 31556926 s)
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: SIF 'Timestep Sizes' in seconds; 'Output Intervals' <= 'Timestep Intervals'
+  - name: Lateral / fjord-wall and ocean-pressure boundary conditions
+    unit: Pa / geometry
+    category: boundary_condition
+    source_kind: user_provided
+    model_input_format: Calving-front / lateral constraints and ocean back-pressure on the marine boundary
 outputs:
   primary:
-    - name: "SSAVelocity"
-      unit: "m/s (convert to m/a by multiplying by 31556926)"
-      valid_range: [0.0, 4.0e-4]
-      description: "Depth-averaged horizontal velocity (1 DOF flowline, 2 DOF plan-view)"
-    - name: "Velocity"
-      unit: "m/s"
-      valid_range: [0.0, 4.0e-4]
-      description: "3D velocity field (u,v,w)"
-    - name: "Temperature"
-      unit: "deg C (relative to pressure melting point)"
-      valid_range: [-60.0, 0.0]
-      description: "Ice temperature"
-    - name: "H"
-      unit: "m"
-      valid_range: [0.0, 5000.0]
-      description: "Ice thickness"
-    - name: "Pressure"
-      unit: "Pa"
-      valid_range: [0.0, 5.0e7]
-      description: "Ice pressure"
-    - name: "GroundedMask"
-      unit: "dimensionless"
-      valid_range: [-1, 1]
-      description: "-1=floating, 0=grounding line, 1=grounded"
-  secondary:
-    - name: "Stress"
-      unit: "MPa"
-      description: "Deviatoric stress tensor (6 components)"
-    - name: "StrainRate"
-      unit: "a^-1"
-      description: "Strain rate tensor (6 components)"
-    - name: "Hydraulic Potential"
-      unit: "m"
-      description: "Subglacial water potential (GlaDS solver)"
-    - name: "Effective Pressure"
-      unit: "Pa"
-      description: "Ice overburden minus water pressure"
-    - name: "Water Content"
-      unit: "%"
-      description: "Temperate ice water fraction"
-
+  - name: SSAVelocity
+    unit: m/a
+    description: Depth-averaged horizontal ice velocity (raw VTU stores m/s)
+    validation_rank: 1
+    emitted_in: results*.vtu
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Convert VTU m/s to m/a (×31556926) before comparison
+        - Inverted basal friction is what makes modelled velocity match observed surface velocity
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Transient velocity sensitive to mesh resolution and time-step magnitude
+      detrending_options:
+      - none
+  - name: H
+    unit: m
+    description: Ice thickness
+    validation_rank: 2
+    emitted_in: results*.vtu
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - H must be positive everywhere; H = Zs - Zb
+      detrending_options:
+      - none
+  - name: DHDT
+    unit: m/a
+    description: Rate of change of ice thickness (elevation-change proxy)
+    validation_rank: 3
+    emitted_in: results*.vtu
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_time_series
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - trend_match
+        determining_metric: csi
+        caveats:
+        - Comparable to altimetry-derived surface elevation change rates
+      detrending_options:
+      - none
+      - linear_residual
+  - name: Zs
+    unit: m
+    description: Upper-surface elevation
+    validation_rank: 5
+    emitted_in: results*.vtu
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: spatial_field_comparison
+        metric_families:
+        - spatial_pattern_match
+        - magnitude_accuracy
+        determining_metric: csi
+        caveats:
+        - Surface elevation integrates basal-topography perturbations over time
+      detrending_options:
+      - none
+  - name: GroundedMask
+    unit: (-1,0,+1)
+    description: Grounded ice (+1) / ice grounding line (0) / floating ice (-1) mask; ice grounding-line
+      position
+    validation_rank: 6
+    emitted_in: results*.vtu
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: spatial_snapshot
+        comparison_mode: categorical_event_comparison
+        metric_families:
+        - event_detection
+        - spatial_pattern_match
+        determining_metric: csi
+        caveats:
+        - Grounding-line position compared as a categorical boundary; needs <1 km mesh at the GL to resolve
+      detrending_options:
+      - none
+  - name: Temperature
+    unit: deg C
+    description: Ice temperature relative to pressure-melting point (polythermal field)
+    validation_rank: 4
+    emitted_in: results*.vtu
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Borehole temperature profiles; temperate-ice extent depends on Clausius-Clapeyron slope
+      detrending_options:
+      - none
+  - name: Effective Pressure
+    unit: Pa
+    description: Basal effective pressure (ice overburden minus water pressure) from subglacial hydrology
+    validation_rank: 7
+    emitted_in: results*.vtu
+    observability:
+      comparable_obs_shapes:
+      - obs_shape: point_time_series
+        comparison_mode: time_series_comparison
+        metric_families:
+        - magnitude_accuracy
+        - temporal_pattern_match
+        determining_metric: nse
+        caveats:
+        - Comparable to borehole water-pressure records where available; GlaDS-only output
+      detrending_options:
+      - none
+  secondary: []
 known_issues:
-  - id: "dt_001"
-    description: "Velocity m/s vs m/a confusion — factor of 3.17e7"
-  - id: "dt_002"
-    description: "Viscosity Exponent: must use 1/n not n — 27x error if wrong"
-  - id: "dt_003"
-    description: "Density must be kg/m3 not g/cm3 — flotation 1000x wrong"
-  - id: "dt_009"
-    description: "Timestep in seconds not years — 3.17e7x too slow if years assumed"
-  - id: "dt_013"
-    description: "Critical Shear Rate must be > 0 or NaN propagates"
+- id: dt_001
+  symptom: Velocity output looks 10^7x too small when compared to published values (e.g., 3e-8 m/s instead
+    of ~1 m/a)
+  diagnosis: 'Velocity comparison without m/s to m/a conversion; Elmer/Ice outputs velocity in m/s (SI
+    units). Glaciology literature uses m/a. 1 m/a = 3.1688e-8 m/s. When comparing VTU output to published
+    data, values appear ~31.6 million times too small if the conversion is forgotten.
+
+    ; [''parse_vtu_output'', ''val'
+  remedy: 'Convert velocity: multiply m/s by 31556926 to get m/a; parse_vtu_output --convert_velocity_to_ma;
+    [''Check velocity units in VTU — always m/s'', ''Multiply by 3.1557e7 for m/a'']; Use --convert_velocity_to_ma
+    flag in parse_vtu_output.py'
+  severity: silent
+- id: dt_002
+  symptom: Ice viscosity is 27x wrong — ice flows far too fast or too slow
+  diagnosis: 'Viscosity Exponent set to n instead of 1/n in SIF; Glen''s flow law uses n=3 as the power
+    law exponent, but the SIF keyword ''Viscosity Exponent'' expects 1/n = 0.333. If n=3 is passed directly,
+    the effective exponent is 3 instead of 1/3, making viscosity 3^3 = 27x wrong.
+
+    ; [''generate_sif'', ''Material_b'
+  remedy: 'Set Viscosity Exponent = Real $(1.0/3.0) for Glen''s n=3; generate_sif --glen_n 3.0; [''Open
+    SIF → Material block'', ''Check: Viscosity Exponent should be 0.333, NOT 3.0'']; generate_sif.py auto-computes
+    1/n from --glen_n'
+  severity: silent
+- id: dt_003
+  symptom: Flotation criterion is wrong — ice floats where it should be grounded, or vice versa
+  diagnosis: 'Density in g/cm3 instead of kg/m3; Elmer uses SI units throughout. Ice density should be
+    910 kg/m3, not 0.91 g/cm3. Seawater density should be 1025 kg/m3, not 1.025 g/cm3. Using g/cm3 makes
+    the flotation criterion (rho_i * H = rho_w * D) off by factor 1000.
+
+    ; [''generate_sif'', ''Material_block'', ''Cons'
+  remedy: 'Use kg/m3: ice=910, seawater=1025; generate_sif --ice_density 910 --water_density 1025; [''Check
+    Material: Density = 910.0 (not 0.91)'', ''Check Constants: Water Density = 1025.0 (not 1.025)''];
+    generate_sif.py validates density range 100-2000'
+  severity: silent
+- id: dt_004
+  symptom: Temperature-dependent viscosity is wildly wrong — ice too stiff at warm temperatures or too
+    soft at cold
+  diagnosis: 'Temperature in Kelvin used where Celsius expected, or vice versa; Elmer uses Kelvin internally
+    for Arrhenius rate factor computation (A(T) = A0 * exp(-Q/(R*T))). However, SIF boundary conditions
+    for surface temperature typically use Celsius. Using Kelvin values (e.g., 253) where Celsius is expected '
+  remedy: 'Check all temperature sources: SIF BC uses Celsius, Arrhenius uses Kelvin; convert_forcing
+    --temp_units K; [''Verify temperature range in forcing: should be -60 to +20°C for ice sheets'', ''convert_forcing.py
+    auto-converts K to C'']; validate_outputs checks for T > 50°C (likely still in K)'
+  severity: silent
+- id: dt_005
+  symptom: Temperate ice extent is wrong — pressure melting point computed at wrong depth
+  diagnosis: 'Wrong Clausius-Clapeyron slope (beta_clapeyron); The Clausius-Clapeyron relation dT/dP =
+    9.8e-8 K/Pa (for air-free ice) or 7.42e-8 K/Pa (for air-saturated ice). Using the wrong value shifts
+    the pressure melting point by up to 1°C at depth, changing where temperate ice forms. Most Elmer/Ice
+    examples '
+  remedy: 'Set beta_clapeyron = 9.8e-8 K/Pa in Constants block; [''Check Constants: beta_clapeyron = 9.8e-8'',
+    ''Use 7.42e-8 only for air-saturated ice (rare)'']; Document choice in SIF comments'
+  severity: silent
+- id: dt_006
+  symptom: Basal drag is orders of magnitude too high or low — velocity completely wrong
+  diagnosis: 'Friction parameter units don''t match friction law; The friction parameter beta has different
+    dimensions for each friction law: - Linear: beta in Pa s/m (or Pa a/m) - Weertman: beta in Pa (m/a)^(-1/n)
+    — depends on exponent - Coulomb: dimensionless coefficient 0-1 Using linear-law beta values with Wee'
+  remedy: 'Match beta units to friction law — see SSA.md documentation; [''Check which friction law is
+    set in Material block'', "Verify beta parameter range matches that law''s expected values", ''Linear:
+    1e-5 to 1e-1 Pa s/m; Weertman: 1e-5 to 1e-1; Coulomb: 0.1-0.5'']; generate_sif.py documents expected
+    ranges per'
+  severity: silent
+- id: dt_007
+  symptom: Solver crashes at startup with dimension mismatch or wrong element type errors
+  diagnosis: Coordinate system mismatch between SIF and mesh; In Elmer, 'Cartesian 2D' means x-z vertical
+    plane (flowline), while 'Cartesian 3D' means x-y-z plan-view with depth. A 2D mesh with 3D coordinate
+    system, or vice versa, causes element dimension errors. For plan-view SSA on a 2D mesh, use 'Cartesian
+    2D
+  remedy: 'Match Coordinate System in SIF to mesh dimensionality; [''2D mesh → Cartesian 2D'', ''3D extruded
+    mesh → Cartesian 3D'', ''Check SSA DOFs: 1 for flowline, 2 for plan-view'']; generate_sif.py validates
+    coordinate system vs. mesh'
+  severity: fatal
+- id: dt_008
+  symptom: Gravity-driven flow is 1000x too weak — ice barely moves even with correct viscosity
+  diagnosis: 'Mesh node coordinates in km instead of meters; Elmer computes gravity-driven stress as rho*g*H
+    where g=9.81 m/s2. If mesh coordinates (and thus H) are in km, the driving stress is 1000x too small.
+    The ice will barely flow even with correct rheology.
+
+    ; [''convert_geometry'', ''ElmerGrid'']'
+  remedy: Ensure all mesh coordinates and DEM data are in meters; convert_geometry; ['Check mesh.nodes
+    — coordinates should be in meters', 'For BedMachine data, verify coordinate projection is in meters'];
+    convert_geometry.py warns if max(|zb|) < 10
+  severity: silent
+- id: dt_009
+  symptom: Simulation takes 10^7x too many timesteps to show any change
+  diagnosis: 'Timestep Sizes in SIF set to 1.0 (meaning 1 second) instead of 31556926 (1 year); SIF Timestep
+    Sizes is in seconds. Setting it to 1.0 thinking it means ''1 year'' makes each step only 1 second
+    long. Ice dynamics operates on annual timescales, so 31.6 million steps would be needed for 1 year.
+
+    ; [''gener'
+  remedy: 'Use Timestep Sizes = 31556926.0 for 1-year steps; generate_sif --dt_years 1.0; [''Check Simulation
+    block: Timestep Sizes should be ~3.16e7 for annual'', ''Or use MATC: Timestep Sizes = Real $365.25*24*3600''];
+    generate_sif.py auto-converts --dt_years to seconds'
+  severity: silent
+- id: dt_010
+  symptom: Nonlinear iteration does not converge — residual oscillates or diverges near grounding line
+  diagnosis: Mesh too coarse at grounding line where stress gradient is steep; The grounding line (transition
+    from grounded to floating ice) has a sharp stress gradient. If mesh elements are larger than ~1 km
+    at the GL, the FEM discretization cannot resolve the transition, causing nonlinear convergence failure
+    o
+  remedy: Refine mesh to <1 km at grounding line; ['Use Gmsh or ElmerGrid with graded refinement near
+    GL', 'Or use adaptive mesh refinement (MMG)', 'Increase Nonlinear System Max Iterations to 100', 'Reduce
+    Relaxation Factor to 0.5-0.8']; Check GroundedMask output — GL should span multiple elements
+  severity: degraded
+- id: dt_011
+  symptom: MPI run crashes immediately with 'Mesh partitioning not found' or similar error
+  diagnosis: 'Mesh not partitioned before parallel (MPI) run; For parallel runs with mpirun -np N, the
+    mesh must first be partitioned into N subdomains using ElmerGrid. Without partitioning, each MPI rank
+    cannot find its portion of the mesh and crashes.
+
+    ; [''run_elmerice'', ''ElmerGrid'']'
+  remedy: 'Partition mesh: ElmerGrid 2 2 mesh_dir -partdual -metis N; [''Run: ElmerGrid 2 2 rectangle
+    -partdual -metis 4'', ''This creates partitioning.4/ directory inside mesh_dir'', ''Then run: mpirun
+    -np 4 ElmerSolver simulation.sif'']; run_elmerice.py checks for partitioning.N directory'
+  severity: fatal
+- id: dt_012
+  symptom: Velocity is exactly zero everywhere despite correct mesh and material
+  diagnosis: Missing Body Force block or missing surface/thickness gradient; SSA requires surface slope
+    (FreeSurfGrad) or thickness + bed geometry to compute driving stress. If the Body Force block is missing,
+    or if Zs/Zb are not set in Initial Condition, there is no driving stress and velocity remains at its
+    in
+  remedy: Add Body Force block with surface accumulation; set Zs, Zb, H in Initial Condition; ['Check
+    SIF has Body Force block', 'Check Initial Condition sets Zs, Zb, H', 'Verify surface has non-zero
+    slope (flat slab = zero driving stress)']; generate_sif.py always includes Body Force with SMB
+  severity: silent
+- id: dt_013
+  symptom: NaN values propagate through solution — output contains NaN in velocity and other fields
+  diagnosis: 'Critical Shear Rate set to 0.0 causing division by zero in viscosity computation; Glen''s
+    flow law viscosity: eta = 0.5 * A^(-1/n) * (eps_II)^((1-n)/(2n)) When eps_II (second invariant of
+    strain rate) is exactly 0, this is 0^(-1) which is infinity. Critical Shear Rate provides a floor
+    value to preven'
+  remedy: 'Set Critical Shear Rate = Real 1.0e-10 in Material block; generate_sif --critical_shear_rate
+    1e-10; [''Check Material block: Critical Shear Rate must be > 0'', ''Typical value: 1e-10 to 1e-8
+    s^-1'']; generate_sif.py validates critical_shear_rate > 0'
+  severity: fatal
+- id: dt_014
+  symptom: Ice sheet grows everywhere — no ablation zone despite warm temperatures at margins
+  diagnosis: 'SMB sign convention wrong — ablation entered as positive; In Elmer/Ice, Top Surface Accumulation
+    is positive for accumulation (mass gain) and negative for ablation (mass loss). Some climate models
+    and datasets use the opposite convention. If ablation is entered as positive, the ice sheet gains
+    mass '
+  remedy: 'Check SMB sign: positive = accumulation, negative = ablation; convert_forcing; [''Verify: in
+    the ablation zone (low elevation), SMB should be negative'', ''RACMO SMB uses positive=accumulation
+    (correct for Elmer)'', ''Some models use positive=melt — negate these before use'']; convert_forcing.py
+    warns if '
+  severity: silent
+- id: dt_015
+  symptom: VTU output files are empty or only contain initial state
+  diagnosis: 'Output Intervals in SIF is larger than Timestep Intervals; If Output Intervals = 1000 but
+    Timestep Intervals = 100, only the initial state is written because no time step is a multiple of
+    the output interval within the simulation period.
+
+    ; [''generate_sif'', ''Simulation_block'']'
+  remedy: 'Set Output Intervals <= Timestep Intervals (e.g., 10); [''Check SIF: Output Intervals should
+    divide Timestep Intervals'', ''Typical: Output Intervals = 10 for 100 timesteps'']; generate_sif.py
+    defaults to Output Intervals = 10'
+  severity: degraded
+- id: dt_016
+  symptom: Ice thickness becomes negative in some elements — non-physical solution
+  diagnosis: 'Missing thickness limiter in ThicknessSolver; Without an explicit lower limit on ice thickness,
+    the advection scheme can produce negative values, especially at ice margins where thickness approaches
+    zero. This is a Gibbs phenomenon in the FEM discretization.
+
+    ; [''ThicknessSolver'', ''Solver_block'']'
+  remedy: 'Add thickness limiter keywords to ThicknessSolver; [''Add to Solver block: Apply Dirichlet
+    = Logical True'', ''Add to Solver block: Stabilization Method = Stabilized'', ''Add to Body Force:
+    H Lower Limit = Real 0.0'']; generate_sif.py includes these keywords by default'
+  severity: silent
+- id: dt_017
+  symptom: MUMPS solver crashes with out-of-memory error on fine mesh
+  diagnosis: Direct solver (MUMPS/UMFPACK) requires O(N^2) memory for sparse factorization on fine meshes;
+    Direct solvers like MUMPS store the factored matrix, which can require 10-100x the memory of the original
+    sparse matrix. For meshes with >100k nodes, this often exceeds available RAM. Iterative solvers (BiC
+  remedy: 'Switch to iterative solver for large meshes; [''Change SIF: Linear System Solver = Iterative'',
+    ''Set: Linear System Iterative Method = BiCGStab'', ''Set: Linear System Preconditioning = ILU1'',
+    ''Or coarsen mesh to reduce system size'']; run_elmerice.py warns about MUMPS memory errors'
+  severity: fatal
+- id: dt_018
+  symptom: Fabric solver crashes with 'wrong number of DOFs' error
+  diagnosis: 'Fabric variable declared with wrong number of DOFs (must be 5 in 3D); The fabric orientation
+    tensor a(2) has 5 independent components in 3D (symmetric 3x3 tensor with trace=1: a11, a22, a12,
+    a23, a13). Declaring Fabric with DOFs=3 or DOFs=6 causes a dimension mismatch in the FabricSolve subroutine.
+
+    '
+  remedy: 'Set Variable = -dofs 5 ''Fabric'' in FabricSolver block; [''Check Solver block for FabricSolve'',
+    "Must have: Variable = -dofs 5 ''Fabric''", "In 2D: use -dofs 3 ''Fabric''"]; Match fabric DOFs to
+    mesh dimension: 3D→5, 2D→3'
+  severity: fatal

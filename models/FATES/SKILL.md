@@ -1,14 +1,3 @@
----
-name: fates
-description: >-
-  FATES (Functionally Assembled Terrestrial Ecosystem Simulator), NGEE-Tropics/DOE; size-
-  and age-structured cohort demographic DGVM of the ED/PPA…. Covers vegetation
-  demographics (recruitment, growth, mortality of size-structured cohorts); plant carbon
-  allocation among organs (PARTEH); leaf photosynthesis and autotrophic respiration;
-  canopy radiative transfer / light competition (PPA). Use when the task involves running,
-  configuring, calibrating or interpreting FATES.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (5 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (15 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_fates_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_fates_params.py --help` |
+| `tools/convert_forcing_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_data.py --help` |
+| `tools/convert_surface_data.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_surface_data.py --help` |
+| `tools/parse_fates_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_fates_output.py --help` |
+| `tools/run_fates_case.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_fates_case.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # FATES (Functionally Assembled Terrestrial Ecosystem Simulator) — Knowledge Infrastructure
 
@@ -182,6 +206,36 @@ Stage 7 (diagnostics) can run at any failure point
 
 ---
 
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. This section restates the KI's dag facts for the
+reader. If this body ever disagrees with `dag.yaml`, the dag wins and this section is
+the item to fix.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `FATES_GPP` — Vegetation gross primary production. (`kgC/m2/s`)
+
+| Output variable (dag `var`) | Dag role | Unit | Description |
+|-----------------------------|----------|------|-------------|
+| `FATES_GPP` | rank-1 output | `kgC/m2/s` | Vegetation gross primary production. |
+
+Other dag outputs listed by this KI:
+
+| Output variable (dag `var`) |
+|-----------------------------|
+| `FATES_VEGC` |
+| `FATES_NPP` |
+| `FATES_LAI` |
+| `FATES_NPLANT` |
+| `FATES_MORTALITY` |
+| `FATES_DISTURBANCE_RATE_FIRE` |
+
+The host-model history stream may expose many additional FATES diagnostics, but the
+observable-output contract for scoring and output binding is the dag list above.
+
+---
+
 ## Critical Domain Knowledge
 
 ### Unit System (CRITICAL — causes silent failures)
@@ -200,6 +254,45 @@ Stage 7 (diagnostics) can run at any failure point
 | Crown area | m² | ha | × 10000 | dt_010 |
 | Soil water | m³ / m³ (volumetric) | % | ÷ 100 | dt_011 |
 | CO₂ concentration | ppmv | mol/mol | × 1e6 | dt_012 |
+
+## 8. Unit Conversion Table
+
+**Source of truth**: output units come from `dag.yaml`; conversion traps come from the
+KI's diagnostics and existing unit-system notes. Do not infer units from variable names.
+
+### Unit Table Scope
+
+This unit table records sourced dag output units and the pipeline conversions already
+documented by the KI's diagnostic triplets.
+
+### Dag Output Units
+
+| Variable | Unit from dag | Notes |
+|----------|---------------|-------|
+| `FATES_GPP` | `kgC/m2/s` | Rank-1 output; description in dag: Vegetation gross primary production. |
+| `FATES_VEGC` | see `dag.yaml` | Dag-listed output; unit not restated here without a sourced dag value. |
+| `FATES_NPP` | see `dag.yaml` | Dag-listed output; unit not restated here without a sourced dag value. |
+| `FATES_LAI` | see `dag.yaml` | Dag-listed output; unit not restated here without a sourced dag value. |
+| `FATES_NPLANT` | see `dag.yaml` | Dag-listed output; unit not restated here without a sourced dag value. |
+| `FATES_MORTALITY` | see `dag.yaml` | Dag-listed output; unit not restated here without a sourced dag value. |
+| `FATES_DISTURBANCE_RATE_FIRE` | see `dag.yaml` | Dag-listed output; unit not restated here without a sourced dag value. |
+
+### Pipeline Unit Conversions
+
+| Variable | Source unit | Model or internal unit | Conversion | Trap ID |
+|----------|-------------|------------------------|------------|---------|
+| Biomass (all organs) | tC/ha, gC/m² | kgC / individual | ÷1000, ×area | dt_001 |
+| Stem density | stems / ha | stems / m² | ÷ 10000 | dt_002 |
+| Patch area | ha | m² | × 10000 | dt_003 |
+| GPP flux | gC / m² / day | kgC / indiv / timestep | ÷1000, ×n, ÷dt | dt_004 |
+| Temperature | °C | K (Kelvin) | + 273.15 | dt_005 |
+| Precipitation | mm / day | mm / s (HLM) | ÷ 86400 | dt_006 |
+| Radiation | MJ / m² / day | W / m² | ÷ 86400 × 1e6 | dt_007 |
+| DBH | mm, m | cm | ÷10 or ×100 | dt_008 |
+| Height | cm, ft | m | ÷100 or ×0.3048 | dt_009 |
+| Crown area | ha | m² | × 10000 | dt_010 |
+| Soil water | % | m³ / m³ (volumetric) | ÷ 100 | dt_011 |
+| CO₂ concentration | mol/mol | ppmv | × 1e6 | dt_012 |
 
 ### 9 Non-Obvious Facts That Cause Silent Failures
 
@@ -379,6 +472,37 @@ python ki/tools/run_fates_case.py \
 | dt_018 | fatal | runtime | Restart file version incompatibility |
 
 **Silent error count**: 13/18 (72%)
+
+---
+
+## 11. Validated Results
+
+**Source of truth**: `docs/validation_convention.yaml`. The convention file defines
+which metrics judge each dag variable, which direction is better, and the cited
+pass-bands. A null band in the convention is reported here exactly as
+`no cited threshold`; no remembered thresholds are substituted.
+
+### Convention Bars
+
+| Dag variable | Metric | Direction | Satisfactory band | Citation key |
+|--------------|--------|-----------|-------------------|--------------|
+| `FATES_VEGC` | `pbias` | zero_centered | no cited threshold | `[]` |
+| `FATES_VEGC` | `csi` | maximize | no cited threshold | `[]` |
+| `FATES_VEGC` | `ilamb_overall_score` | maximize | no cited threshold | `[]` |
+| `FATES_GPP` | `nse` | maximize | no cited threshold | `[]` |
+| `FATES_GPP` | `rmse` | minimize | no cited threshold | `[]` |
+
+### Rank-1 Output Bar
+
+`FATES_GPP` is the dag rank-1 output. The validation convention lists `nse`
+with direction `maximize` and `rmse` with direction `minimize`; both have
+`no cited threshold`.
+
+### Achieved Results
+
+No achieved calibration, validation, or full-period metric values are restated in this
+body section. When results exist, report them beside the convention bar above and keep
+the threshold wording sourced from `docs/validation_convention.yaml`.
 
 ---
 

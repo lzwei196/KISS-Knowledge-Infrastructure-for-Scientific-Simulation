@@ -1,14 +1,3 @@
----
-name: pism
-description: >-
-  PISM 2.3.x (Parallel Ice Sheet Model; User's Manual v2.3.1). Covers Ice sheet, glacier,
-  and ice-shelf dynamics (grounded and floating ice); Stress balance via a hierarchy of
-  approximations (SIA, SSA, SIA+SSA hybrid, Blatter first-order); Mass continuity / ice
-  geometry (thickness) evolution; Polythermal enthalpy-based conservation of energy in
-  ice, subglacial layer, and thermal bedrock. Use when the task involves running,
-  configuring, calibrating or interpreting PISM.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (7 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (24 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (28 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_climate_forcing.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_climate_forcing.py --help` |
+| `tools/convert_geometry.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_geometry.py --help` |
+| `tools/parse_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output.py --help` |
+| `tools/run_pism.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_pism.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # PISM — Parallel Ice Sheet Model: Knowledge Infrastructure
 
@@ -214,6 +237,32 @@ S9: Post-Processing        → Visualization, comparison, validation
 
 ---
 
+## 6. Output Description
+
+This section restates `dag.yaml`. If this section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `velsurf_mag` -- Surface ice speed magnitude (`m year-1`)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `velsurf_mag` | 1 | `m year-1` | Surface ice speed magnitude |
+| `thk` | not stated in extracted facts | not stated in extracted facts | not stated in extracted facts |
+| `usurf` | not stated in extracted facts | not stated in extracted facts | not stated in extracted facts |
+| `velbase_mag` | not stated in extracted facts | not stated in extracted facts | not stated in extracted facts |
+| `mask` | not stated in extracted facts | not stated in extracted facts | not stated in extracted facts |
+| `ice_volume_glacierized` | not stated in extracted facts | not stated in extracted facts | not stated in extracted facts |
+| `tendency_of_ice_mass` | not stated in extracted facts | not stated in extracted facts | not stated in extracted facts |
+| `tendency_of_ice_mass_due_to_discharge` | not stated in extracted facts | not stated in extracted facts | not stated in extracted facts |
+| `tillwat` | not stated in extracted facts | not stated in extracted facts | not stated in extracted facts |
+| `temppabase` | not stated in extracted facts | not stated in extracted facts | not stated in extracted facts |
+
+Other dag outputs: `thk`, `usurf`, `velbase_mag`, `mask`, `ice_volume_glacierized`,
+`tendency_of_ice_mass`, `tendency_of_ice_mass_due_to_discharge`, `tillwat`, `temppabase`.
+
+---
+
 ## Execution Model
 
 PISM is run from the command line with MPI:
@@ -288,6 +337,28 @@ Or create a NetCDF override file:
 ncgen -o my_config.nc my_config.cdl
 pism -config_override my_config.nc ...
 ```
+
+---
+
+## 8. Unit Conversion Table
+
+This table records the unit conversions already called out by this KI for PISM input and forcing
+preparation. Verify source data attributes before each run; do not rely on filename or dataset
+memory when deciding whether a conversion applies.
+
+| Variable | Source unit / common source unit | Model unit | Conversion | Type |
+|----------|----------------------------------|------------|------------|------|
+| `precipitation` | `m w.e. year^-1` | `kg m^-2 year^-1` | x 1000 (water density) | multiplicative |
+| `climatic_mass_balance` | `m w.e. year^-1` | `kg m^-2 year^-1` | x 1000 | multiplicative |
+| `ice_surface_temp` | degC | kelvin | + 273.15 | additive |
+| `bheatflx` | `mW m^-2` | `W m^-2` | x 0.001 | multiplicative |
+| `topg` | cm or mm | m above sea level | / 100 or / 1000 | multiplicative |
+| `thk` | km | m | x 1000 | multiplicative |
+| `air_temp` | degC | kelvin | + 273.15 | additive |
+| `delta_T` | degC anomaly | kelvin anomaly | no conversion needed; both are relative | identity |
+| ocean melt rate | `m day^-1` | `m year^-1` | x 365.25 | multiplicative |
+| time coordinate | various calendars / time units | UDUNITS-compatible time string | use a UDUNITS-compatible string | format |
+| projection coordinates | km | m | x 1000 | multiplicative |
 
 ---
 
@@ -428,3 +499,31 @@ cd examples/std-greenland
 | dt_015 | unit_conversion | Coordinate units km not m | fatal |
 | dt_016 | silent_error | Ice-free SMB not set | silent |
 | dt_017 | dependency | NetCDF version incompatible | fatal |
+
+---
+
+## 11. Validated Results
+
+No achieved calibration, validation, or full-period metric values are stated in the extracted
+sourced facts for this update. Use the convention bars below to judge runs only after real PISM
+outputs have been produced and compared to observations.
+
+### Performance Metrics -- Convention Bars
+
+`docs/validation_convention.yaml` is the source of the field bars. The convention wins over
+remembered thresholds.
+
+| Dag variable | Metric | Direction | Convention bar, cited |
+|--------------|--------|-----------|-----------------------|
+| `thk` | `rmse` | minimize | very_good <= 59 (`bedmap2_2013`); good <= 149 (`bedmap2_2013`); satisfactory <= 300 (`bedmap2_2013`) |
+| `thk` | `nse` | maximize | satisfactory: no cited threshold |
+| `usurf` | `rmse` | minimize | very_good <= 30 (`bedmap2_2013`); good <= 30 (`bedmap2_2013`); satisfactory <= 130 (`bedmap2_2013`) |
+
+### Data Replacement Tracking
+
+| Component | Source | Status | Notes |
+|-----------|--------|--------|-------|
+| Forcing | Pipeline | Pending | Validate with actual PISM runs and observations before reporting achieved metrics. |
+| Geometry / thickness (`thk`) | Pipeline | Pending | Judge `rmse` against the cited `thk` convention bars above. |
+| Surface elevation (`usurf`) | Pipeline | Pending | Judge `rmse` against the cited `usurf` convention bars above. |
+| Surface speed (`velsurf_mag`) | Pipeline | Pending | Rank-1 dag output; no convention bar was included in the extracted facts for this update. |

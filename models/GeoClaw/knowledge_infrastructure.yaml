@@ -1,77 +1,93 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:01:10.341684'
-  domain: ocean
   name: GeoClaw
-  version: auto-generated
+  language: fortran
+  implementation:
+    id: geoclaw-clawpack
+    version: Clawpack/GeoClaw 5.14.x (KI tracks geoclaw-ki v1.0, Clawpack 5.7.1+)
+    provenance: Fortran 90/77 numerical core (xgeoclaw) with Python configuration/I-O; Clawpack (clawutil,
+      amrclaw, geoclaw, riemann, pyclaw, visclaw).
+  scientific_reference_version: GeoClaw 2D depth-averaged shallow-water solver (Clawpack ecosystem; Berger-George-LeVeque-Mandli
+    2011 formulation)
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GeoClaw/source/repo/examples/tsunami/chile2010/xgeoclaw
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  - s1_bathymetry_preparation
+  - s2_earthquake_source
+  - s3_configuration
+  - s5_execution
+  - s6_output_analysis
+tools:
+  count: 4
+  files:
+  - tools/convert_bathymetry.py
+  - tools/generate_setrun.py
+  - tools/parse_geoclaw_output.py
+  - tools/run_geoclaw.py
+inputs:
+  forcing:
+  - name: Topography / bathymetry B(x,y)
+    unit: m relative to datum (ocean depth negative, land positive)
+  - name: Dynamic topography (dtopo)
+    unit: displacement m; time s
+  - name: Storm wind velocity (surge mode)
+    unit: m/s
+  - name: Atmospheric pressure (surge mode)
+    unit: Pa
+  parameters:
+  - name: Manning coefficient (manning_coefficient / manning_break)
+    unit: dimensionless (n); break depths in m
+  - name: Gravity
+    unit: m/s^2
+  - name: Earth radius
+    unit: m
+  - name: dry_tolerance
+    unit: m
+  - name: speed_limit
+    unit: m/s
+  - name: friction_depth
+    unit: m
+  initial_conditions:
+  - name: sea_level
+    unit: m relative to datum
+  - name: Initial surface/momentum perturbation (qinit)
+    unit: m (eta) or m^2/s (momentum)
+  boundary_conditions:
+  - name: Coordinate system
+    unit: enum
+  - name: Computational domain bounds and resolution
+    unit: m or deg; cell counts
+  - name: Per-edge boundary conditions
+    unit: enum
+  - name: AMR levels and refinement ratios
+    unit: integer
+  - name: AMR flagging tolerances
+    unit: 'wave: m; speed: m/s'
+  - name: CFL targets
+    unit: dimensionless
+  - name: friction_forcing switch
+    unit: boolean
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - h
+  - eta
+  - speed
+  - max_depth_max_speed_arrival_time
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.999, R=1.000, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.9988
+    best_r: 0.9996
+summary:
+  total_tools: 4
+  total_stage_docs: 5
+  total_diagnostic_triplets: 18
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

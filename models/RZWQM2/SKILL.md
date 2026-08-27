@@ -1,13 +1,3 @@
----
-name: rzwqm2
-description: >-
-  RZWQM2 (Root Zone Water Quality Model 2; model science core v2.x, e.g. 2.70) with
-  embedded DSSAT 4.0 CERES/CROPGRO crop modules and RZ-SHAW heat/snow…. Covers 1-D soil
-  water balance: infiltration (Green-Ampt), profile redistribution (Richards equation);
-  Surface runoff and macropore / preferential flow with solute transport. Use when the
-  task involves running, configuring, calibrating or interpreting RZWQM2.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,72 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (38 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (10 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (29 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (18 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/s0_global_data/crop_selector.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_global_data/crop_selector.py --help` |
+| `tools/s0_global_data/elevation_source_adapter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_global_data/elevation_source_adapter.py --help` |
+| `tools/s0_global_data/forcing_source_adapter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_global_data/forcing_source_adapter.py --help` |
+| `tools/s0_global_data/hwsd_soil_adapter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_global_data/hwsd_soil_adapter.py --help` |
+| `tools/s0_global_data/site_csv_validator.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_global_data/site_csv_validator.py --help` |
+| `tools/s0_global_data/soil_source_adapter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_global_data/soil_source_adapter.py --help` |
+| `tools/s0_management_data/crop_area_lookup.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_management_data/crop_area_lookup.py --help` |
+| `tools/s0_management_data/crop_calendar_lookup.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_management_data/crop_calendar_lookup.py --help` |
+| `tools/s0_management_data/crop_name_harmonizer.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_management_data/crop_name_harmonizer.py --help` |
+| `tools/s0_management_data/fertilizer_rate_lookup.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_management_data/fertilizer_rate_lookup.py --help` |
+| `tools/s0_management_data/irrigation_type_lookup.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_management_data/irrigation_type_lookup.py --help` |
+| `tools/s0_vic_coupling/vic_forcing_converter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_vic_coupling/vic_forcing_converter.py --help` |
+| `tools/s0_vic_coupling/vic_soil_converter.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s0_vic_coupling/vic_soil_converter.py --help` |
+| `tools/s10_calibration/modify_soil_params.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_calibration/modify_soil_params.py --help` |
+| `tools/s10_calibration/parse_rzwqm2_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_calibration/parse_rzwqm2_output.py --help` |
+| `tools/s10_calibration/rzwqm2_calibrate.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_calibration/rzwqm2_calibrate.py --help` |
+| `tools/s10_mass_generation/mass_project_generator.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s10_mass_generation/mass_project_generator.py --help` |
+| `tools/s1_site_config/write_site_properties.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s1_site_config/write_site_properties.py --help` |
+| `tools/s2_met_prep/generate_met_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_met_prep/generate_met_file.py --help` |
+| `tools/s2_met_prep/met_quality_check.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_met_prep/met_quality_check.py --help` |
+| `tools/s2_met_prep/power_cache_to_rzwqm2.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s2_met_prep/power_cache_to_rzwqm2.py --help` |
+| `tools/s3_brk_generation/create_breakpoint_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s3_brk_generation/create_breakpoint_file.py --help` |
+| `tools/s4_soil_setup/pedotransfer_hydraulic.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_soil_setup/pedotransfer_hydraulic.py --help` |
+| `tools/s4_soil_setup/soil_texture_classification.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_soil_setup/soil_texture_classification.py --help` |
+| `tools/s4_soil_setup/write_soil_properties.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s4_soil_setup/write_soil_properties.py --help` |
+| `tools/s5_node_discretization/generate_nodes.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s5_node_discretization/generate_nodes.py --help` |
+| `tools/s6_initial_conditions/write_initial_conditions.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_initial_conditions/write_initial_conditions.py --help` |
+| `tools/s6_management_write/write_management_events.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s6_management_write/write_management_events.py --help` |
+| `tools/s7_scenario_assembly/initialize_scenario.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_scenario_assembly/initialize_scenario.py --help` |
+| `tools/s7_scenario_assembly/update_crop_selection.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_scenario_assembly/update_crop_selection.py --help` |
+| `tools/s7_scenario_assembly/update_cultivar.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_scenario_assembly/update_cultivar.py --help` |
+| `tools/s7_scenario_assembly/update_ipnames_paths.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_scenario_assembly/update_ipnames_paths.py --help` |
+| `tools/s7_scenario_assembly/update_rzx_paths.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s7_scenario_assembly/update_rzx_paths.py --help` |
+| `tools/s8_execution/run_rzwqm2.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s8_execution/run_rzwqm2.py --help` |
+| `tools/s9_result_parsing/parse_ana_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_result_parsing/parse_ana_output.py --help` |
+| `tools/s9_result_parsing/parse_layer_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/s9_result_parsing/parse_layer_output.py --help` |
+
+*36 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -130,6 +186,67 @@ The infrastructure has three layers plus a workflow document:
 | **Error log** | `diagnostics/error_log.yaml` | **Append** new errors found during runs |
 
 The pipeline definition and tool registry are in `knowledge_infrastructure.yaml`.
+
+---
+
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag is the model identity for outputs; if this section ever disagrees with `dag.yaml`, the dag wins and this section is the bug.
+
+**Headline output**: `crop_yield` — Crop grain yield from the embedded DSSAT crop module. (`kg/ha`)
+
+| Output variable (dag `var`) | Unit | Description / status |
+|-----------------------------|------|----------------------|
+| `crop_yield` | `kg/ha` | Crop grain yield from the embedded DSSAT crop module. This is the dag's rank-1 variable and the headline variable this model is judged by. |
+| `soil_water_storage` | See `dag.yaml` | Other dag output. |
+| `tile_drainage` | See `dag.yaml` | Other dag output. |
+| `evapotranspiration` | See `dag.yaml` | Other dag output. |
+| `no3_leaching` | See `dag.yaml` | Other dag output. |
+| `soil_nitrate` | See `dag.yaml` | Other dag output. |
+| `soil_temperature` | See `dag.yaml` | Other dag output. |
+| `snow_depth` | See `dag.yaml` | Other dag output. |
+| `pesticide_loss` | See `dag.yaml` | Other dag output. |
+
+## 8. Unit Conversion Table
+
+**Source of truth**: the stage tools, `docs/format_spec.yaml`, and the unit traps recorded in this KI. Verify units before execution; these conversions prevent silent but scientifically invalid runs.
+
+| Variable / file | Source unit | Model or analysis unit | Conversion |
+|-----------------|-------------|------------------------|------------|
+| `crop_yield` output | RZWQM2/DSSAT output | `kg/ha` | No conversion stated in extracted dag facts. |
+| Latitude / longitude in `rzwqm.dat` | degrees | radians | `rad = deg * pi / 180` |
+| Breakpoint rainfall `.brk` | `.met` precipitation in `mm` | inches | divide by `25.4` |
+| Tile drainage in `.ana` | `cm` | `mm` for post-processing | multiply by `10` |
+| VIC `ksat` columns 12-14 | `mm/day` | `cm/hr` | divide by `240` |
+| VIC `expt` columns 9-11 | dimensionless | pore-size distribution | `2 / expt` |
+| VIC `bulk_density` columns 33-35 | `kg/m3` | porosity `cm3/cm3` | `1 - bd/2650` |
+| VIC `Wcr_FRACT` columns 40-42 | fraction | `fc33` volumetric | `Wcr * ws` |
+| VIC `Wpwp_FRACT` columns 43-45 | fraction | `fc15` volumetric | `Wpwp * ws` |
+| VIC layer depth columns 22-24 | `m` | `cm` | multiply by `100` |
+| VIC forcing temperature | `K` | `C` | subtract `273.15` |
+| VIC forcing radiation | `W/m2` | `MJ/m2/day` | multiply by `0.0864` |
+| VIC forcing wind | `m/s` | `km/day` | multiply by `86.4` |
+| VIC forcing E-pan | estimated ET0 | E-pan estimate | `0.7 * Hargreaves ET0` |
+| VIC forcing PAR | shortwave radiation | PAR estimate | `0.48 * shortwave radiation` |
+
+## 11. Validated Results
+
+**Source of truth**: `docs/validation_convention.yaml`. A metric value without the field's pass-band is not a verdict. The convention wins over remembered thresholds.
+
+The dag's rank-1 output is `crop_yield`. No convention bar for `crop_yield` is stated in the extracted convention facts supplied for this upgrade, so do not substitute crop-yield thresholds from memory.
+
+### Performance Metrics -- judged against the field's bar
+
+| Dag variable | Metric | Direction | Convention bar, cited |
+|--------------|--------|-----------|------------------------|
+| `soil_water_storage` | `r2` | maximize | very_good `0.8` (`ma2012`, `cheng2022`, `craft2018`); good `0.7` (`ma2012`, `cheng2022`, `craft2018`); satisfactory `0.5` (`ma2012`, `cheng2022`, `craft2018`) |
+| `soil_water_storage` | `pbias` | zero_centered | very_good `6.0` (`ma2012`, `cheng2022`); good `15.0` (`ma2012`, `cheng2022`); satisfactory `15.0` (`ma2012`, `cheng2022`) |
+| `tile_drainage` | `nse` | maximize | very_good `0.75` (`craft2018`); good `0.65` (`craft2018`); satisfactory `0.5` (`craft2018`) |
+| `tile_drainage` | `pbias` | zero_centered | very_good `10.0` (`craft2018`); good `15.0` (`craft2018`); satisfactory `25.0` (`craft2018`) |
+| `evapotranspiration` | `nrmse` | minimize | very_good `10.0` (`umair2017`); good `20.0` (`umair2017`); satisfactory `30.0` (`umair2017`) |
+| `evapotranspiration` | `ioa` | maximize | very_good no cited threshold (`cheng2022`); good `0.7` (`cheng2022`); satisfactory `0.7` (`cheng2022`) |
+
+No achieved calibration, validation, or full-period metric values are stated in these extracted KI facts. When a run is evaluated, compute metrics with the validated parsing/calibration tools and compare them to the cited convention bars above.
 
 ---
 

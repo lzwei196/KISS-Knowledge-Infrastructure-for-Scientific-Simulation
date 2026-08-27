@@ -1,77 +1,124 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T04:02:08.347597'
-  domain: geomorphology
   name: HydroTrend
-  version: auto-generated
+  language: c
+  implementation:
+    id: hydrotrend-3.0
+    version: 3.0.5
+    provenance: C (ANSI-standard) with built-in CSDMS BMI; csdms-contrib/hydrotrend release; epoch/year
+      driver in hydrotrend.c.
+  scientific_reference_version: HydroTrend v3.0 (Kettner & Syvitski 2008); BQART sediment-flux relation
+    per Syvitski & Milliman 2007
+  binary:
+    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/HydroTrend/source/repo/_build/hydrotrend
+    type: work_dir
 pipeline:
-  stages:
-  - depends_on: []
-    description: ''
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain Setup
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s2_data
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Data Preparation completed successfully
-      id: m_s2_data
-      verification: Output files exist and pass validation
-    name: Data Preparation
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s3_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Forcing/Input completed successfully
-      id: m_s3_forcing
-      verification: Output files exist and pass validation
-    name: Forcing/Input
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s4_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Parameters completed successfully
-      id: m_s4_parameters
-      verification: Output files exist and pass validation
-    name: Parameters
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s5_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Execution completed successfully
-      id: m_s5_run
-      verification: Output files exist and pass validation
-    name: Execution
-    tools: []
-  - depends_on: []
-    description: ''
-    id: s6_output
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s6_output
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
+  stages: []
+tools:
+  count: 4
+  files:
+  - tools/build_hypsometry.py
+  - tools/convert_climate_to_hydrotrend.py
+  - tools/parse_hydrotrend_output.py
+  - tools/run_hydrotrend.py
+inputs:
+  forcing:
+  - name: Monthly mean temperature (12 months)
+    unit: degC
+  - name: Monthly temperature std dev (12 months)
+    unit: degC
+  - name: Monthly total precipitation (12 months)
+    unit: mm
+  - name: Monthly precipitation std dev (12 months)
+    unit: mm
+  - name: Annual temperature trend (T_start, T_change, T_std)
+    unit: degC, degC/yr, degC
+  - name: Annual precipitation trend (P_start, P_change, P_std)
+    unit: m/yr, m/yr^2, m/yr
+  - name: Optional daily climate override (T, P time series)
+    unit: degC, m/day
+  parameters:
+  - name: Hypsometry (elevation vs cumulative area)
+    unit: m, km2
+  - name: Basin (river) length
+    unit: km
+  - name: Delta plain gradient
+    unit: m/m
+  - name: Lithology factor B (L)
+    unit: '-'
+  - name: Anthropogenic factor Eh
+    unit: '-'
+  - name: Number of grain sizes
+    unit: '-'
+  - name: Grain-size proportions
+    unit: fraction
+  - name: Bedload rating term
+    unit: '-'
+  - name: Sediment filter
+    unit: '-'
+  - name: Lapse rate
+    unit: degC/km
+  - name: Glacier ELA change
+    unit: m/yr
+  - name: Dry-precipitation evaporation fraction
+    unit: '-'
+  - name: Canopy interception alpha/beta
+    unit: mm/d, -
+  - name: Evapotranspiration alpha/beta
+    unit: mm/d, -
+  - name: Groundwater storage max/min
+    unit: m3
+  - name: Subsurface storm flow coefficient/exponent
+    unit: '-'
+  - name: Saturated hydraulic conductivity Ko
+    unit: mm/day
+  - name: Constant annual baseflow
+    unit: m3/s
+  - name: Velocity coefficient k and exponent m
+    unit: m/s, -
+  - name: Width coefficient a and exponent b
+    unit: m, -
+  - name: Reservoir volume and parameter-type flag
+    unit: km3, flag
+  initial_conditions:
+  - name: Initial groundwater storage
+    unit: m3
+  - name: Starting glacier ELA
+    unit: m
+  boundary_conditions:
+  - name: Sediment-formula selection (0=QRT / 1=ART / 2=BQART)
+    unit: '-'
+  - name: ASCII output flag (ON/OFF)
+    unit: '-'
+  - name: Number of outlets and outlet fractions
+    unit: '-'
+  - name: Event specification (events/yr or Qpeak threshold)
+    unit: '-'
+  - name: Optional earthquake events (year, energy, distance, duration)
+    unit: '-'
+  - name: River mouth longitude/latitude
+    unit: decimal degrees
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - Q
+  - Qs
+  - Qb
+  - Cs
+  - velocity_width_depth
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.731, KGE=0.862, R=0.864, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.731
+    best_kge: 0.862
+    best_r: 0.864
+summary:
+  total_tools: 4
+  total_stage_docs: 0
+  total_diagnostic_triplets: 29
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

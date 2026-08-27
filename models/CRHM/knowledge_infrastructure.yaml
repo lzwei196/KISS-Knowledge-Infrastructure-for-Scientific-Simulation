@@ -1,705 +1,128 @@
-# ============================================================================
-# Knowledge Infrastructure — CRHM (Cold Regions Hydrological Model)
-# ============================================================================
-# Dissected by the Knowledge Dissection Toolkit (Zhang et al.)
-# Model: CRHM v1.3 (crhmcode — University of Saskatchewan)
-# Domain: Cold regions hydrology — blowing snow, sublimation, frozen soil,
-#         snowmelt infiltration, prairie/mountain snow processes
-# Coupling target: VIC 5.1.0 (frozen soil + snow process enhancement)
-# ============================================================================
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
 
 package:
-  name: "hydrocraft-crhm"
-  version: "1.0.0"
-  description: "Knowledge infrastructure for CRHM cold regions hydrological modelling and VIC coupling"
-  target_model: "CRHM 1.3 (crhmcode)"
-  domain: "cold regions hydrology"
-  authors:
-    - "Jianyun Zhang Research Group"
-    - "Hohai University"
-  license: "CC-BY-4.0"
-
-# --- Pipeline definition ---
+  name: CRHM
+  language: cpp
+  implementation:
+    id: crhmcode
+    version: 1.3.5 (released 2024-05-30)
+    provenance: C++; Centre for Hydrology / University of Saskatchewan CRHMcode CLI build, GPL-3.0, source
+      at github.com/CentreForHydrology/CRHM.
+  scientific_reference_version: Cold Regions Hydrological Modelling platform — Pomeroy et al. (2007, Hydrol.
+    Process. 21:2650-2667, doi:10.1002/hyp.6787)
+  binary:
+    path: KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm
+    type: ELF
 pipeline:
   stages:
-    - id: "s1_basin_setup"
-      name: "HRU Basin Setup"
-      description: >
-        Delineate basin into Hydrological Response Units (HRUs) based on
-        elevation bands, slope/aspect, land cover, and soil type. Define
-        HRU areas, elevations, and connectivity. Unlike VIC grid cells,
-        CRHM HRUs are irregular landscape units grouped by hydrological similarity.
-      order: 1
-      depends_on: []
-      skill_document: "docs/s1_basin_setup_skill.md"
-      tools:
-        - "create_hru_config"
-      milestones:
-        - id: "m1_hru_defined"
-          description: "HRU count, areas, and elevations defined"
-          verification: "Check nhru > 0 in .prj Dimensions section"
-        - id: "m1_connectivity"
-          description: "HRU routing connectivity established"
-          verification: "Netroute or REWroute order parameter set for all HRUs"
-
-    - id: "s2_observation_data"
-      name: "Observation Data Preparation"
-      description: >
-        Prepare meteorological observation files (.obs format) with the
-        variables CRHM requires: temperature, relative humidity, wind speed,
-        precipitation, and optionally radiation and vapour pressure. Handle
-        gap filling, unit conversions, and computed variables ($-prefix).
-      order: 2
-      depends_on: []
-      skill_document: "docs/s2_observation_data_skill.md"
-      tools:
-        - "convert_vic_to_obs"
-        - "validate_obs_file"
-      milestones:
-        - id: "m2_obs_created"
-          description: ".obs file created with correct header and data columns"
-          verification: "Header has variable names with units; data rows match datetime format"
-        - id: "m2_no_gaps"
-          description: "No missing timesteps in observation file"
-          verification: "Continuous datetime sequence from start to end"
-
-    - id: "s3_module_selection"
-      name: "Module Chain Selection"
-      description: >
-        Select and order CRHM modules for the target basin. Module output
-        feeds into subsequent module input — the chain order matters.
-        Cold regions processes include: blowing snow transport (PBSM),
-        sublimation, canopy interception, snowmelt (energy balance or
-        temperature index), frozen soil infiltration (GreenAmpt or
-        PrairieInfil), and routing (Netroute or REWroute).
-      order: 3
-      depends_on: ["s1_basin_setup"]
-      skill_document: "docs/s3_module_selection_skill.md"
-      tools:
-        - "select_modules"
-      milestones:
-        - id: "m3_chain_valid"
-          description: "Module chain is physically consistent and ordered correctly"
-          verification: "All declgetvar references resolved by earlier modules in chain"
-
-    - id: "s4_parameter_config"
-      name: "Parameter Configuration"
-      description: >
-        Set module parameters in the .prj file for each HRU. Parameters
-        include vegetation height (fetch for blowing snow), soil properties
-        (frozen soil infiltration), albedo, routing coefficients, and
-        land cover fractions. Each parameter has a valid range defined
-        by the module source code.
-      order: 4
-      depends_on: ["s1_basin_setup", "s3_module_selection"]
-      skill_document: "docs/s4_parameter_config_skill.md"
-      tools:
-        - "create_prj_file"
-        - "validate_prj"
-      milestones:
-        - id: "m4_params_set"
-          description: "All required parameters set within valid ranges"
-          verification: "validate_prj.py passes with no errors"
-        - id: "m4_ranges_valid"
-          description: "No parameter values outside declared min/max"
-          verification: "All values within <min to max> bounds"
-
-    - id: "s5_execution"
-      name: "CRHM Execution"
-      description: >
-        Run the CRHM CLI executable with the configured .prj file.
-        Monitor progress, capture output, and verify the simulation
-        completed successfully. Parse the tab-delimited output file
-        into structured formats (CSV, NetCDF) for analysis.
-      order: 5
-      depends_on: ["s2_observation_data", "s4_parameter_config"]
-      skill_document: "docs/s5_execution_skill.md"
-      tools:
-        - "run_crhm"
-        - "parse_crhm_output"
-        - "plot_crhm_results"
-      milestones:
-        - id: "m5_run_complete"
-          description: "CRHM exited with code 0 and output file is non-empty"
-          verification: "Exit code 0; output file > 0 bytes; no ERROR lines in stderr"
-        - id: "m5_output_parsed"
-          description: "Output parsed to CSV with correct column headers"
-          verification: "CSV has datetime index and named variable columns"
-
-    - id: "s6_vic_coupling"
-      name: "VIC-CRHM Coupling"
-      description: >
-        Couple CRHM cold-regions processes with VIC distributed hydrology.
-        Two coupling modes: (A) Use VIC forcing as CRHM obs input, run
-        CRHM for snow/frozen-soil processes, feed results back to VIC.
-        (B) Run CRHM standalone for cold-regions diagnostics (SWE, sublimation,
-        blowing snow transport) alongside a VIC simulation for comparison.
-        Critical: avoid double-counting snow processes between the two models.
-      order: 6
-      depends_on: ["s5_execution"]
-      skill_document: "docs/s6_vic_coupling_skill.md"
-      tools:
-        - "convert_vic_to_obs"
-        - "merge_crhm_vic"
-      milestones:
-        - id: "m6_forcing_converted"
-          description: "VIC forcing converted to CRHM .obs format"
-          verification: "Obs file has t, rh, u, ppt columns matching VIC grid cell"
-        - id: "m6_no_double_count"
-          description: "Snow/frozen soil processes assigned to exactly one model"
-          verification: "Process ownership table reviewed — no overlapping processes"
-
-# --- Layer 1: Validated Tools ---
+  - s1_basin_setup_skill
+  - s2_observation_data_skill
+  - s3_module_selection_skill
+  - s4_parameter_config_skill
+  - s5_execution_skill
+  - s6_vic_coupling_skill
 tools:
-  - id: "create_hru_config"
-    name: "Create HRU Configuration"
-    description: "Generate HRU definitions from DEM, land cover, and soil data"
-    stage: "s1_basin_setup"
-    script_path: "tools/s1_basin_setup/create_hru_config.py"
-    language: "python"
-    inputs:
-      - name: "dem_path"
-        type: "file"
-        description: "Digital elevation model raster (GeoTIFF)"
-        required: true
-        example: "data/dem/basin_dem.tif"
-      - name: "landcover_path"
-        type: "file"
-        description: "Land cover classification raster"
-        required: true
-        example: "data/landcover/basin_lc.tif"
-      - name: "shapefile_path"
-        type: "file"
-        description: "Basin boundary shapefile"
-        required: true
-        example: "data/shp/basin.shp"
-      - name: "n_elevation_bands"
-        type: "number"
-        description: "Number of elevation bands for HRU stratification"
-        required: false
-        example: "5"
-      - name: "output_dir"
-        type: "directory"
-        description: "Output directory for HRU configuration files"
-        required: true
-        example: "outputs/crhm_run/hru"
-    outputs:
-      - name: "hru_config"
-        type: "file"
-        description: "HRU configuration JSON with areas, elevations, land cover"
-        path_pattern: "outputs/{run}/hru/hru_config.json"
-    preconditions:
-      - "DEM covers the basin extent"
-      - "Land cover raster is in same CRS as DEM"
-    postconditions:
-      - "Sum of HRU areas equals basin area (within 1%)"
-      - "All HRU elevations within DEM range"
-
-  - id: "convert_vic_to_obs"
-    name: "Convert VIC Forcing to CRHM Obs"
-    description: "Convert VIC forcing files to CRHM .obs format with correct units"
-    stage: "s2_observation_data"
-    script_path: "tools/s2_observation_data/convert_vic_to_obs.py"
-    language: "python"
-    inputs:
-      - name: "forcing_dir"
-        type: "directory"
-        description: "Directory containing VIC forcing files (ASCII)"
-        required: true
-        example: "outputs/vic_run/vic_temp/forcing/forcing_final"
-      - name: "grid_nc"
-        type: "file"
-        description: "VIC basin grid NetCDF for coordinate lookup"
-        required: true
-        example: "outputs/vic_run/vic_temp/grid/basin_grid.nc"
-      - name: "hru_mapping"
-        type: "file"
-        description: "JSON mapping VIC grid cells to CRHM HRUs"
-        required: false
-        example: "outputs/crhm_run/hru/hru_config.json"
-      - name: "output_path"
-        type: "file"
-        description: "Output .obs file path"
-        required: true
-        example: "outputs/crhm_run/obs/basin.obs"
-      - name: "start_year"
-        type: "number"
-        description: "Start year of simulation"
-        required: true
-        example: "2000"
-      - name: "end_year"
-        type: "number"
-        description: "End year of simulation"
-        required: true
-        example: "2010"
-    outputs:
-      - name: "obs_file"
-        type: "file"
-        description: "CRHM observation file with header and data"
-        path_pattern: "outputs/{run}/obs/{basin}.obs"
-    preconditions:
-      - "VIC forcing files exist for all years in range"
-      - "Grid NC file has lat/lon coordinates"
-    postconditions:
-      - "Obs file header has variable names with units"
-      - "Data rows are continuous with no gaps"
-      - "Temperature in degrees C, wind in m/s, precip in mm"
-
-  - id: "validate_obs_file"
-    name: "Validate CRHM Observation File"
-    description: "Check .obs file format, units, gaps, and computed variable syntax"
-    stage: "s2_observation_data"
-    script_path: "tools/s2_observation_data/validate_obs_file.py"
-    language: "python"
-    inputs:
-      - name: "obs_path"
-        type: "file"
-        description: "Path to .obs file to validate"
-        required: true
-        example: "outputs/crhm_run/obs/basin.obs"
-    outputs:
-      - name: "validation_report"
-        type: "value"
-        description: "JSON report of validation results"
-        path_pattern: "stdout"
-    preconditions:
-      - "Obs file exists"
-    postconditions:
-      - "All checks pass or issues reported"
-
-  - id: "select_modules"
-    name: "Select CRHM Module Chain"
-    description: "Configure CRHM module chain based on basin characteristics"
-    stage: "s3_module_selection"
-    script_path: "tools/s3_module_selection/select_modules.py"
-    language: "python"
-    inputs:
-      - name: "basin_type"
-        type: "string"
-        description: "Basin landscape type: prairie, mountain, forest, arctic, mixed"
-        required: true
-        example: "prairie"
-      - name: "processes"
-        type: "string"
-        description: "Comma-separated processes: blowing_snow,sublimation,frozen_soil,canopy,routing"
-        required: false
-        example: "blowing_snow,frozen_soil,routing"
-      - name: "output_path"
-        type: "file"
-        description: "Output module chain configuration file"
-        required: true
-        example: "outputs/crhm_run/modules.json"
-    outputs:
-      - name: "module_chain"
-        type: "file"
-        description: "Ordered module chain with dependency graph"
-        path_pattern: "outputs/{run}/modules.json"
-    preconditions:
-      - "Basin type is one of: prairie, mountain, forest, arctic, mixed"
-    postconditions:
-      - "Module chain has basin + global as first two modules"
-      - "All module dependencies satisfied by earlier modules"
-
-  - id: "create_prj_file"
-    name: "Create CRHM Project File"
-    description: "Generate .prj file from HRU config, module chain, and parameters"
-    stage: "s4_parameter_config"
-    script_path: "tools/s4_parameter_config/create_prj_file.py"
-    language: "python"
-    inputs:
-      - name: "hru_config"
-        type: "file"
-        description: "HRU configuration JSON"
-        required: true
-        example: "outputs/crhm_run/hru/hru_config.json"
-      - name: "module_chain"
-        type: "file"
-        description: "Module chain configuration JSON"
-        required: true
-        example: "outputs/crhm_run/modules.json"
-      - name: "obs_path"
-        type: "file"
-        description: "Path to observation .obs file"
-        required: true
-        example: "outputs/crhm_run/obs/basin.obs"
-      - name: "start_date"
-        type: "string"
-        description: "Simulation start date YYYY M D"
-        required: true
-        example: "2000 1 1"
-      - name: "end_date"
-        type: "string"
-        description: "Simulation end date YYYY M D"
-        required: true
-        example: "2010 12 31"
-      - name: "output_path"
-        type: "file"
-        description: "Output .prj file path"
-        required: true
-        example: "outputs/crhm_run/basin.prj"
-    outputs:
-      - name: "prj_file"
-        type: "file"
-        description: "Complete CRHM project file"
-        path_pattern: "outputs/{run}/{basin}.prj"
-    preconditions:
-      - "HRU config has valid nhru, areas, elevations"
-      - "Module chain is validated"
-      - "Obs file exists and is validated"
-    postconditions:
-      - "PRJ file has all required sections (Dimensions, Observations, Dates, Modules, Parameters)"
-      - "All parameters within declared min/max ranges"
-
-  - id: "validate_prj"
-    name: "Validate CRHM Project File"
-    description: "Check .prj file structure, parameter ranges, module dependencies"
-    stage: "s4_parameter_config"
-    script_path: "tools/s4_parameter_config/validate_prj.py"
-    language: "python"
-    inputs:
-      - name: "prj_path"
-        type: "file"
-        description: "Path to .prj file to validate"
-        required: true
-        example: "outputs/crhm_run/basin.prj"
-    outputs:
-      - name: "validation_report"
-        type: "value"
-        description: "JSON validation report"
-        path_pattern: "stdout"
-    preconditions:
-      - "PRJ file exists"
-    postconditions:
-      - "All sections present and well-formed"
-
-  - id: "run_crhm"
-    name: "Run CRHM Simulation"
-    description: "Execute CRHM CLI with progress reporting and error capture"
-    stage: "s5_execution"
-    script_path: "tools/s5_execution/run_crhm.py"
-    language: "python"
-    inputs:
-      - name: "crhm_exe"
-        type: "file"
-        description: "Path to CRHM executable"
-        required: true
-        example: "KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm"
-      - name: "prj_path"
-        type: "file"
-        description: "Path to .prj project file"
-        required: true
-        example: "outputs/crhm_run/basin.prj"
-      - name: "output_path"
-        type: "file"
-        description: "Output file path"
-        required: true
-        example: "outputs/crhm_run/crhm_output.txt"
-      - name: "obs_dir"
-        type: "directory"
-        description: "Directory containing .obs files (--obs_file_directory)"
-        required: false
-        example: "outputs/crhm_run/obs"
-      - name: "progress_interval"
-        type: "number"
-        description: "Print progress every N simulation days (-p flag)"
-        required: false
-        example: "100"
-    outputs:
-      - name: "output_file"
-        type: "file"
-        description: "Tab-delimited CRHM output with variable columns"
-        path_pattern: "outputs/{run}/crhm_output.txt"
-    preconditions:
-      - "CRHM executable exists and is executable"
-      - "PRJ file validated"
-      - "Obs files accessible from obs_dir or abs path in PRJ"
-    postconditions:
-      - "Exit code 0"
-      - "Output file non-empty"
-      - "No ERROR lines in stderr"
-
-  - id: "parse_crhm_output"
-    name: "Parse CRHM Output"
-    description: "Convert CRHM tab-delimited output to CSV and optionally NetCDF"
-    stage: "s5_execution"
-    script_path: "tools/s5_execution/parse_crhm_output.py"
-    language: "python"
-    inputs:
-      - name: "output_path"
-        type: "file"
-        description: "CRHM output file (tab-delimited)"
-        required: true
-        example: "outputs/crhm_run/crhm_output.txt"
-      - name: "output_format"
-        type: "string"
-        description: "Output format: csv, netcdf, both"
-        required: false
-        example: "both"
-      - name: "output_dir"
-        type: "directory"
-        description: "Directory for parsed output files"
-        required: true
-        example: "outputs/crhm_run/parsed"
-    outputs:
-      - name: "csv_file"
-        type: "file"
-        description: "Parsed CSV with datetime index"
-        path_pattern: "outputs/{run}/parsed/crhm_results.csv"
-      - name: "nc_file"
-        type: "file"
-        description: "NetCDF with variable metadata"
-        path_pattern: "outputs/{run}/parsed/crhm_results.nc"
-    preconditions:
-      - "CRHM output file exists and is non-empty"
-    postconditions:
-      - "CSV has datetime column and named variable columns"
-      - "No NaN values in output (unless model produced them)"
-
-  - id: "plot_crhm_results"
-    name: "Plot CRHM Results"
-    description: "Generate diagnostic plots: SWE, soil moisture, discharge, sublimation"
-    stage: "s5_execution"
-    script_path: "tools/s5_execution/plot_crhm_results.py"
-    language: "python"
-    inputs:
-      - name: "csv_path"
-        type: "file"
-        description: "Parsed CRHM results CSV"
-        required: true
-        example: "outputs/crhm_run/parsed/crhm_results.csv"
-      - name: "output_dir"
-        type: "directory"
-        description: "Directory for output plots"
-        required: true
-        example: "outputs/crhm_run/plots"
-      - name: "title"
-        type: "string"
-        description: "Plot title prefix"
-        required: false
-        example: "Bad Lake Basin"
-    outputs:
-      - name: "swe_plot"
-        type: "file"
-        description: "Snow water equivalent time series"
-        path_pattern: "outputs/{run}/plots/swe_timeseries.png"
-      - name: "discharge_plot"
-        type: "file"
-        description: "Discharge time series"
-        path_pattern: "outputs/{run}/plots/discharge_timeseries.png"
-      - name: "water_balance_plot"
-        type: "file"
-        description: "Water balance components"
-        path_pattern: "outputs/{run}/plots/water_balance.png"
-    preconditions:
-      - "Parsed CSV exists with datetime and variable columns"
-    postconditions:
-      - "Plot files are valid PNGs with > 0 bytes"
-
-  - id: "merge_crhm_vic"
-    name: "Merge CRHM and VIC Results"
-    description: "Combine CRHM cold-regions diagnostics with VIC simulation output"
-    stage: "s6_vic_coupling"
-    script_path: "tools/s6_vic_coupling/merge_crhm_vic.py"
-    language: "python"
-    inputs:
-      - name: "crhm_csv"
-        type: "file"
-        description: "Parsed CRHM output CSV"
-        required: true
-        example: "outputs/crhm_run/parsed/crhm_results.csv"
-      - name: "vic_result_dir"
-        type: "directory"
-        description: "VIC result directory with flux files"
-        required: true
-        example: "outputs/vic_run/vic_result"
-      - name: "grid_nc"
-        type: "file"
-        description: "VIC basin grid NetCDF"
-        required: true
-        example: "outputs/vic_run/vic_temp/grid/basin_grid.nc"
-      - name: "output_dir"
-        type: "directory"
-        description: "Output directory for merged results"
-        required: true
-        example: "outputs/coupled_run/merged"
-    outputs:
-      - name: "merged_csv"
-        type: "file"
-        description: "Combined CRHM+VIC time series"
-        path_pattern: "outputs/{run}/merged/crhm_vic_comparison.csv"
-      - name: "comparison_plot"
-        type: "file"
-        description: "Side-by-side comparison plot"
-        path_pattern: "outputs/{run}/merged/crhm_vic_comparison.png"
-    preconditions:
-      - "CRHM and VIC simulations cover overlapping time period"
-      - "Spatial mapping between CRHM HRUs and VIC grid cells defined"
-    postconditions:
-      - "Merged CSV has both CRHM and VIC variables on common timeline"
-
-# --- Layer 2: Skill Documents ---
-skill_documents:
-  - id: "sd_s1"
-    name: "HRU Basin Setup"
-    stage: "s1_basin_setup"
-    path: "docs/s1_basin_setup_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections:
-      - purpose
-      - prerequisites
-      - inputs
-      - procedure
-      - expected_outputs
-      - validation_checks
-      - common_pitfalls
-    word_count: 1800
-
-  - id: "sd_s2"
-    name: "Observation Data Preparation"
-    stage: "s2_observation_data"
-    path: "docs/s2_observation_data_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections:
-      - purpose
-      - prerequisites
-      - inputs
-      - procedure
-      - expected_outputs
-      - validation_checks
-      - common_pitfalls
-    word_count: 2200
-
-  - id: "sd_s3"
-    name: "Module Chain Selection"
-    stage: "s3_module_selection"
-    path: "docs/s3_module_selection_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections:
-      - purpose
-      - prerequisites
-      - inputs
-      - procedure
-      - expected_outputs
-      - validation_checks
-      - common_pitfalls
-    word_count: 2500
-
-  - id: "sd_s4"
-    name: "Parameter Configuration"
-    stage: "s4_parameter_config"
-    path: "docs/s4_parameter_config_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections:
-      - purpose
-      - prerequisites
-      - inputs
-      - procedure
-      - expected_outputs
-      - validation_checks
-      - common_pitfalls
-    word_count: 2000
-
-  - id: "sd_s5"
-    name: "CRHM Execution"
-    stage: "s5_execution"
-    path: "docs/s5_execution_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections:
-      - purpose
-      - prerequisites
-      - inputs
-      - procedure
-      - expected_outputs
-      - validation_checks
-      - common_pitfalls
-    word_count: 1500
-
-  - id: "sd_s6"
-    name: "VIC-CRHM Coupling"
-    stage: "s6_vic_coupling"
-    path: "docs/s6_vic_coupling_skill.md"
-    knowledge_type: "evaluative_and_sequencing"
-    sections:
-      - purpose
-      - prerequisites
-      - inputs
-      - procedure
-      - expected_outputs
-      - validation_checks
-      - common_pitfalls
-    word_count: 2000
-
-# --- Layer 3: Diagnostic Triplets ---
-diagnostic_triplets:
-  - id: "dt_001"
-    stage: "s2_observation_data"
-    failure_domain: "unit_conversion"
-  - id: "dt_002"
-    stage: "s2_observation_data"
-    failure_domain: "silent_error"
-  - id: "dt_003"
-    stage: "s2_observation_data"
-    failure_domain: "parameter_format"
-  - id: "dt_004"
-    stage: "s3_module_selection"
-    failure_domain: "dependency_mismatch"
-  - id: "dt_005"
-    stage: "s4_parameter_config"
-    failure_domain: "parameter_format"
-  - id: "dt_006"
-    stage: "s4_parameter_config"
-    failure_domain: "silent_error"
-  - id: "dt_007"
-    stage: "s5_execution"
-    failure_domain: "path_resolution"
-  - id: "dt_008"
-    stage: "s5_execution"
-    failure_domain: "runtime"
-  - id: "dt_009"
-    stage: "s6_vic_coupling"
-    failure_domain: "unit_conversion"
-  - id: "dt_010"
-    stage: "s6_vic_coupling"
-    failure_domain: "silent_error"
-  - id: "dt_011"
-    stage: "s2_observation_data"
-    failure_domain: "silent_error"
-  - id: "dt_012"
-    stage: "s1_basin_setup"
-    failure_domain: "silent_error"
-  - id: "dt_013"
-    stage: "s4_parameter_config"
-    failure_domain: "parameter_format"
-  - id: "dt_014"
-    stage: "s5_execution"
-    failure_domain: "runtime"
-  - id: "dt_015"
-    stage: "s6_vic_coupling"
-    failure_domain: "dependency_mismatch"
-  - id: "dt_016"
-    stage: "s3_module_selection"
-    failure_domain: "silent_error"
-  - id: "dt_017"
-    stage: "s5_execution"
-    failure_domain: "compilation"
-  - id: "dt_018"
-    stage: "s2_observation_data"
-    failure_domain: "parameter_format"
-
-# --- Summary statistics ---
+  count: 15
+  files:
+  - tools/calib_run.py
+  - tools/s1_basin_setup/create_hru_config.py
+  - tools/s2_observation_data/convert_vic_to_obs.py
+  - tools/s2_observation_data/netcdf_safe.py
+  - tools/s2_observation_data/screen_swe_obs.py
+  - tools/s2_observation_data/validate_obs_file.py
+  - tools/s3_module_selection/select_modules.py
+  - tools/s4_parameter_config/create_prj_file.py
+  - tools/s4_parameter_config/derive_parameters.py
+  - tools/s4_parameter_config/validate_prj.py
+  - tools/s5_execution/check_water_balance.py
+  - tools/s5_execution/parse_crhm_output.py
+  - tools/s5_execution/plot_crhm_results.py
+  - tools/s5_execution/run_crhm.py
+  - tools/s6_vic_coupling/merge_crhm_vic.py
+inputs:
+  forcing:
+  - name: air_temperature (t)
+    unit: degC
+  - name: relative_humidity (rh)
+    unit: '%'
+  - name: wind_speed (u)
+    unit: m/s
+  - name: precipitation (p)
+    unit: mm per timestep
+  - name: incoming_shortwave (Qsi)
+    unit: W/m^2
+  - name: incoming_longwave (Qli)
+    unit: W/m^2
+  - name: atmospheric_pressure (press)
+    unit: kPa
+  parameters:
+  - name: hru_area, hru_elev, hru_GSL (slope), hru_ASL (aspect), hru_lat
+    unit: km^2 / m / deg / deg / deg
+  - name: soil_moist_max, soil_rechr_max, gw_max, Sdmax, soil_gw_K, gw_K
+    unit: mm / mm/d
+  - name: soil_type (USDA texture class 0-12)
+    unit: categorical
+  - name: Ht (canopy height), LAI, fetch distance, canopy flag, evap_type
+    unit: m / m^2/m^2 / m / categorical
+  - name: Albedo_bare, Albedo_snow, max_z_s_0, T_g, z_u
+    unit: fraction / m / degC / m
+  - name: fetch, distrib, N_S, Walmsley_Ht (A, B, L)
+    unit: m / fraction / dimensionless / m
+  - name: Kstorage, Lag, gwKstorage, gwLag, order, whereto, gwwhereto, runK, ssrK
+    unit: d / d / dimensionless
+  - name: Cs, Cp, Rgas, Tm, Ls, Lv, Lf, kappa, sbc, emiss, emiss_c, em
+    unit: various (J/m^3/K, J/kg/K, K, J/kg, W/m^2/K^4, dimensionless)
+  initial_conditions:
+  - name: SWE_init
+    unit: mm
+  - name: soil_moist, soil_rechr, gw, Sd at t=0
+    unit: mm
+  - name: fallstat (autumn soil moisture for frozen-soil infiltration)
+    unit: '% saturation'
+  - name: SI_Lo (initial canopy interception load)
+    unit: mm SWE-equivalent
+  - name: gw_init
+    unit: mm
+  boundary_conditions:
+  - name: Modules section selecting the process chain (e.g., Prairie chain basin>global>obs>PBSM>PrairieInfil>Soil>Netroute)
+    unit: ordered list
+  - name: snowmelt method (SnobalCRHM | ebsm | qmelt | Essery)
+    unit: categorical
+  - name: infiltration method (GreenAmpt | PrairieInfil | crack | Greencrack)
+    unit: categorical
+  - name: ET method via evap_type (Granger=0 land | Priestley-Taylor=1 water | Penman-Monteith | Shuttleworth-Wallace)
+    unit: categorical
+  - name: routing method (Netroute | Netroute_D | Netroute_M | REWroute)
+    unit: categorical
+  - name: lapse_rate, precip_elev_adj, catchadjust, ClimChng_t, ClimChng_precip
+    unit: degC/m / fraction / fraction / degC / fraction
+  - name: Dates (start, end), Summary_period
+    unit: date
+  - name: Display_Variable (which declvar variables to write)
+    unit: list
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - SWE
+  - basinflow_s
+  - basinflow
+  - hru_actet
+  - Subl
+  - soil_moist
+  - snowmeltD
+  - infil_act
+  other: []
+validation:
+  tier: validated
+  tier_justification: 'measured: NSE=0.731, KGE=0.827, R=0.856, 4 scorecard(s)'
+  metrics:
+    best_nse: 0.731
+    best_kge: 0.827
+    best_r: 0.856
 summary:
-  total_tools: 10
-  total_tool_lines: 2925
-  total_skill_documents: 6
-  total_skill_words: 8200
-  total_diagnostic_triplets: 22
-  failure_domains:
-    - "unit_conversion"
-    - "silent_error"
-    - "parameter_format"
-    - "dependency_mismatch"
-    - "path_resolution"
-    - "runtime"
-    - "compilation"
-  pipeline_stages: 6
-  pipeline_milestones: 12
+  total_tools: 15
+  total_stage_docs: 6
+  total_diagnostic_triplets: 34
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

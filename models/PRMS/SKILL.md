@@ -1,14 +1,3 @@
----
-name: prms
-description: >-
-  PRMS-IV (Markstrom et al. 2015, USGS TM 6-B7), as implemented in USGS Fortran PRMS
-  5.1.0. Covers Precipitation distribution and rain/snow partitioning by HRU; Temperature
-  distribution across HRUs (station-based or pre-gridded); Solar radiation estimation
-  (degree-day or cloud-cover); Potential evapotranspiration (Jensen-Haise default; Hamon,
-  Hargreaves-Samani, Penman-Monteith…. Use when the task involves running, configuring,
-  calibrating or interpreting PRMS.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -31,6 +20,41 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (5 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (8 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (21 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_prms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_prms.py --help` |
+| `tools/convert_params_to_prms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_params_to_prms.py --help` |
+| `tools/generate_control_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/generate_control_file.py --help` |
+| `tools/parse_prms_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_prms_output.py --help` |
+| `tools/run_prms.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_prms.py --help` |
+
+*5 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # PRMS v5.1.0 (Precipitation-Runoff Modeling System) — Knowledge Infrastructure
 
@@ -350,6 +374,27 @@ This is the most critical section. PRMS uses US customary units internally. All 
 | Soil moisture max | inches | mm | in = mm / 25.4 | Soil dries instantly |
 | Slope | decimal fraction | degrees or % | — | Use tan(degrees) |
 
+## Unit Conversion Table
+
+This table restates the model-facing unit conversions used by the PRMS pipeline. PRMS internally works in US customary units; source datasets and observed records are commonly metric.
+
+| Variable | Source unit | Model unit | Conversion | Type |
+|----------|-------------|------------|------------|------|
+| Temperature (`tmax`, `tmin`) | degrees Celsius | degrees Fahrenheit | F = C * 9/5 + 32 | additive + multiplicative |
+| Precipitation | mm/day | inches/day | in = mm / 25.4 | multiplicative |
+| Elevation | meters | feet when `elev_units=0` | ft = m / 0.3048 | multiplicative |
+| HRU area (`hru_area`) | km2 | acres | acres = km2 * 247.105 | multiplicative |
+| Streamflow (`runoff`) | m3/s (cms) | cfs when `runoff_units=0` | cfs = cms / 0.028317 | multiplicative |
+| Solar radiation | W/m2 | Langleys/day | Ly = W/m2 * 0.0864 | multiplicative |
+| Wind speed | m/s | m/s | no conversion | none |
+| Humidity | fraction (0-1) | percentage (0-100) | percent = fraction * 100 | multiplicative |
+| Latitude | decimal degrees | decimal degrees | no conversion | none |
+| Longitude | degrees East | degrees East | no conversion | none |
+| Snow depth | mm | inches | in = mm / 25.4 | multiplicative |
+| Pan evaporation | mm/day | inches/day | in = mm / 25.4 | multiplicative |
+| Soil moisture max | mm | inches | in = mm / 25.4 | multiplicative |
+| Slope | degrees or percent | decimal fraction | use decimal fraction directly; convert degrees with tangent before use | convention |
+
 ### Internal Conversion Constants (from basin.f90)
 
 ```fortran
@@ -498,6 +543,24 @@ Climate-by-HRU files must have exactly one header line (`variable_name nhru_coun
 
 ---
 
+## Output Description
+
+This section restates `dag.yaml`. If this section and `dag.yaml` ever disagree, `dag.yaml` wins.
+
+**Headline output**: `basin_actet` — Basin-average actual evapotranspiration (inches)
+
+| Output variable (dag `var`) | Validation rank | Unit | Description |
+|-----------------------------|----------------:|------|-------------|
+| `basin_actet` | 1 | inches | Basin-average actual evapotranspiration |
+| `basin_cfs` | dag output | see `dag.yaml` | other dag output |
+| `basin_stflow_out` | dag output | see `dag.yaml` | other dag output |
+| `seg_outflow` | dag output | see `dag.yaml` | other dag output |
+| `basin_pweqv` | dag output | see `dag.yaml` | other dag output |
+| `basin_soil_moist` | dag output | see `dag.yaml` | other dag output |
+| `basin_ppt` | dag output | see `dag.yaml` | other dag output |
+
+---
+
 ## Output Files
 
 ### Model Output File (model_output_file)
@@ -524,6 +587,27 @@ When `nhruOutON_OFF = 1`, writes per-HRU values for selected variables.
 ### Statvar File
 
 When `statsON_OFF = 1`, writes selected variables at each timestep.
+
+---
+
+## Validated Results
+
+Use `docs/validation_convention.yaml` to judge run quality. The convention bars below restate the KI's cited pass-bands for streamflow outputs; do not replace them with remembered thresholds. No cited threshold means the convention has no threshold for that band.
+
+### Performance Bars
+
+| Dag variable | Metric | Direction | Satisfactory | Good | Very good | Citation keys |
+|--------------|--------|-----------|--------------|------|-----------|---------------|
+| `basin_cfs` | NSE | maximize | >= 0.5 (`moriasi2015`, `hay2022_redriver`, `arnold2012`, `zhang2022_streamflow`) | >= 0.7 (`moriasi2015`, `hay2022_redriver`, `arnold2012`, `zhang2022_streamflow`) | >= 0.8 (`moriasi2015`, `hay2022_redriver`, `arnold2012`, `zhang2022_streamflow`) | `moriasi2015`, `hay2022_redriver`, `arnold2012`, `zhang2022_streamflow` |
+| `basin_cfs` | RSR | minimize | <= 0.7 (`moriasi2007`, `hay2022_redriver`) | <= 0.6 (`moriasi2007`, `hay2022_redriver`) | <= 0.5 (`moriasi2007`, `hay2022_redriver`) | `moriasi2007`, `hay2022_redriver` |
+| `basin_stflow_out` | NSE | maximize | >= 0.5 (`moriasi2015`, `hay2022_redriver`) | >= 0.7 (`moriasi2015`, `hay2022_redriver`) | >= 0.8 (`moriasi2015`, `hay2022_redriver`) | `moriasi2015`, `hay2022_redriver` |
+| `basin_stflow_out` | RSR | minimize | <= 0.7 (`moriasi2007`, `hay2022_redriver`) | <= 0.6 (`moriasi2007`, `hay2022_redriver`) | <= 0.5 (`moriasi2007`, `hay2022_redriver`) | `moriasi2007`, `hay2022_redriver` |
+| `seg_outflow` | NSE | maximize | >= 0.5 (`hay2022_redriver`, `moriasi2015`) | >= 0.7 (`hay2022_redriver`, `moriasi2015`) | >= 0.8 (`hay2022_redriver`, `moriasi2015`) | `hay2022_redriver`, `moriasi2015` |
+| `seg_outflow` | RSR | minimize | <= 0.7 (`hay2022_redriver`, `moriasi2007`) | <= 0.6 (`hay2022_redriver`, `moriasi2007`) | <= 0.5 (`hay2022_redriver`, `moriasi2007`) | `hay2022_redriver`, `moriasi2007` |
+
+### Result Recording
+
+Record achieved calibration, validation, and full-period metrics only after running the real PRMS binary through this KI's pipeline. A metric value without the convention bar above is not a validation verdict.
 
 ---
 

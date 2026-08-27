@@ -1,0 +1,392 @@
+schema_version: 1
+model_id: ADCIRC
+domain: ocean
+generated_by: "Step-B validation-convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+# Grounding policy:
+# - Blocks are keyed by dag_variable, not canonical_quantity, per the 2026-08-14 campaign instruction.
+# - Water-level and current numeric gates come from the fetched hydrodynamic guidance table:
+#   "statistical guidelines to establish calibration standards" for coastal/estuarine models.
+# - Spatial inundation CSI gates come from fetched flood-model evaluation literature; Bennett 2013
+#   defines CSI as hits/(hits+misses+false alarms), and Grimley 2025 reports that well-validated
+#   flood-extent models achieve CSI values of 0.7-0.8.
+# - Atmospheric pressure and wind outputs are ADCIRC forcing echoes in the DAG. Fetched ADCIRC
+#   papers validate those forcings qualitatively or against external buoy/station products, but no
+#   fetched paper gives a numeric spatial-CSI pass band; those blocks are intentionally low-confidence.
+
+references:
+  pye2017:
+    doi: 10.1155/2017/5251902
+    title: "Guidance on Setup, Calibration, and Validation of Hydrodynamic, Wave, and Sediment Models for Shelf Seas and Estuaries"
+    venue: "Advances in Civil Engineering"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1155_2017_5251902.txt
+  bennett2013:
+    doi: 10.1016/j.envsoft.2012.09.011
+    title: "Characterising performance of environmental models"
+    venue: "Environmental Modelling & Software"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2012.09.011.txt
+  hope2013:
+    doi: 10.1002/jgrc.20314
+    title: "Hindcast and validation of Hurricane Ike (2008) waves, forerunner, and storm surge"
+    venue: "Journal of Geophysical Research: Oceans"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_jgrc.20314.txt
+  moghimi2020:
+    doi: 10.3390/jmse8050308
+    title: "Development of an ESMF Based Flexible Coupling Application of ADCIRC and WAVEWATCH III"
+    venue: "Journal of Marine Science and Engineering"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_jmse8050308.txt
+  grimley2025:
+    doi: 10.1029/2023wr036727
+    title: "Determining the Relative Contributions of Runoff, Coastal, and Compound Processes to Flooding"
+    venue: "Water Resources Research"
+    year: 2025
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2023wr036727.txt
+  vogt2024:
+    doi: 10.1038/s43247-024-01707-x
+    title: "Modeling surge dynamics improves coastal flood estimates in a global set of tropical cyclones"
+    venue: "Communications Earth & Environment"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s43247-024-01707-x.txt
+
+validation:
+  - dag_variable: water_surface_elevation_stations
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: scatter_index
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 20.0}
+        pass_band: good
+        band_note: "Hydrodynamic guidance gives water-level SI <10% for coast and <15% for estuary; 20% is the phase-estuary fallback."
+        cites: [pye2017]
+      - metric: bias
+        direction: zero_centered
+        unit: m
+        bands: {very_good: 0.10, good: 0.20, satisfactory: 0.25}
+        pass_band: good
+        band_note: "Hydrodynamic guidance gives water-level bias <0.10 m for coast and <0.20 m for estuary."
+        cites: [pye2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG metric is retained as context, but fetched coastal hydrodynamic guidance grades water-level time series with RMSE, bias, R, and scatter index, not NSE."
+        cites: [pye2017]
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hydrodynamic guidance lists R >0.95 for water-level magnitude and R >0.90 for water-level phase."
+        cites: [pye2017]
+    validated_when: "Station water-level time series meet SI <= 15% and absolute bias <= 0.20 m after masking ADCIRC dry sentinels."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      The guidance table is explicitly for "coastal and estuarine hydrodynamic" calibration standards.
+      Hope 2013 uses the same SI/bias family for ADCIRC water-level time series and reports SI 0.1463
+      as "generally good agreement"; this supersedes the DAG's generic nse headline for water levels.
+
+  - dag_variable: water_surface_elevation_stations
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: peak_error
+        direction: zero_centered
+        unit: m
+        bands: {very_good: 0.15, good: 0.25, satisfactory: 0.35}
+        pass_band: satisfactory
+        band_note: "Flood-study guidance grades predicted peak water level as +/-150, +/-250, and +/-350 mm for design, appraisal, and strategy applications."
+        cites: [pye2017]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG uses pbias for a station peak, but fetched coastal guidance expresses peak-water-level validation as absolute elevation error in millimeters."
+        cites: [pye2017]
+    validated_when: "Station peak water level is within 0.35 m of the observed peak."
+    evidence_strength: moderate
+    confidence: 0.72
+    notes: >-
+      This block intentionally uses peak_error rather than percentage bias: the fetched table's phrase
+      is "Predicted peak water level (mm)", with 350 mm as the strategy-level bound.
+
+  - dag_variable: water_surface_elevation_all_nodes
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.67}
+        pass_band: satisfactory
+        band_note: "For thresholded wet/dry node-time comparisons; Grimley 2025 says well-validated flood extent models achieve CSI 0.7-0.8 and reports CSI 0.67 with 83% correct exposure."
+        cites: [grimley2025, bennett2013]
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Use wet/dry frequency bias alongside CSI to distinguish systematic overprediction from underprediction."
+        cites: [bennett2013, vogt2024]
+    validated_when: "Thresholded wet/dry node-time flood classification reaches CSI >= 0.67, with dry-node sentinels masked before scoring."
+    evidence_strength: moderate
+    confidence: 0.68
+    notes: >-
+      Bennett 2013 defines threat score/CSI as hits divided by hits + misses + false alarms and says it
+      penalizes both misses and false alarms. This is a transferred spatial flood convention; continuous
+      water-level fields should also inspect RMSE/bias maps when available.
+
+  - dag_variable: depth_averaged_velocity_stations
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.10, good: 0.20, satisfactory: 0.30}
+        pass_band: good
+        band_note: "Flood-study guidance gives RMSE for U of <=0.1, <=0.2, and <=0.3 m/s; hydrodynamic guidance gives average-current-speed RMSE <0.10 m/s."
+        cites: [pye2017]
+      - metric: scatter_index
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 15.0, satisfactory: 20.0}
+        pass_band: satisfactory
+        band_note: "Hydrodynamic guidance gives current-speed SI <10% for average speed and <15% for peak speed."
+        cites: [pye2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG metric is retained as context; fetched coastal current guidance grades RMSE, bias, R, and scatter index."
+        cites: [pye2017]
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Hydrodynamic guidance lists R >0.95 for average current speed and R >0.90 for peak current speed."
+        cites: [pye2017]
+    validated_when: "Station current-speed time series meet RMSE <= 0.20 m/s and SI <= 20%."
+    evidence_strength: strong
+    confidence: 0.80
+    notes: >-
+      The 2017 guidance states average current speed should be within +/-0.1 m/s or 10%-20% of measured
+      speed and gives statistical standards. Hope 2013 validates ADCIRC currents against CSI/TABS station
+      time series and says currents generated by the shelf wave are well represented.
+
+  - dag_variable: depth_averaged_velocity_all_nodes
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass band for spatial current-velocity fields."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "When reduced to station or transect current-speed comparisons, fetched hydrodynamic guidance uses RMSE <=0.1-0.3 m/s tiers."
+        cites: [pye2017]
+    validated_when: "UNRESOLVED for spatial CSI; use station/transect current RMSE/SI standards when observations support them."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The DAG asks for spatial_time_series CSI, but the fetched field convention is station current-speed
+      RMSE/SI. This null band must not loosen validation.
+
+  - dag_variable: max_water_surface_elevation
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.67}
+        pass_band: satisfactory
+        band_note: "For maximum inundation-envelope wet/dry comparison; well-validated flood extent models are reported at CSI 0.7-0.8, with 0.67 used as a demonstrated skilled case."
+        cites: [grimley2025, bennett2013]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "For HWM peak elevation magnitudes, fetched flood-study guidance gives hmax RMSE bands of <0.20, 0.20-0.25, and <0.30 m."
+        cites: [pye2017]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "ADCIRC HWM validation practice reports absolute average difference, bias, and R2 in addition to spatial agreement."
+        cites: [hope2013, moghimi2020]
+    validated_when: "Maximum inundation envelope reaches CSI >= 0.67 against observed wet/dry extent, with HWM RMSE/bias inspected as secondary magnitude evidence."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: >-
+      Grimley 2025 explicitly connects CSI to modeled flood extent and says well-validated models achieve
+      0.7-0.8. Hope 2013 reports ADCIRC HWM indicators including R2 0.91, average absolute difference
+      0.17 m, and 94% of HWMs within 50 cm.
+
+  - dag_variable: max_water_surface_elevation
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: peak_error
+        direction: zero_centered
+        unit: m
+        bands: {very_good: 0.15, good: 0.25, satisfactory: 0.35}
+        pass_band: satisfactory
+        band_note: "Flood-study guidance grades predicted peak water level as +/-150, +/-250, and +/-350 mm."
+        cites: [pye2017]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG uses pbias for peak surge, but fetched field guidance uses absolute peak-water-level error in meters."
+        cites: [pye2017]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "HWM peak elevation comparisons in ADCIRC papers commonly report RMSE and average absolute difference."
+        cites: [hope2013, moghimi2020]
+    validated_when: "Peak surge at a station or HWM is within 0.35 m of the observed peak elevation."
+    evidence_strength: strong
+    confidence: 0.80
+    notes: >-
+      The water-level peak convention follows the fetched flood-study table. Moghimi 2020 validates ADCIRC
+      total water level against NOAA CO-OPS gauges and USGS HWMs and reports HWM RMSE reduction from
+      0.899 m to 0.832 m when wave forcing is included, which is benchmark context rather than the pass band.
+
+  - dag_variable: max_velocity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: peak_error
+        direction: zero_centered
+        unit: m/s
+        bands: {very_good: 0.05, good: 0.10, satisfactory: 0.20}
+        pass_band: satisfactory
+        band_note: "Hydrodynamic guidance grades peak current speed error as <0.05 m/s very good, <0.1 m/s good, <0.2 m/s moderate, and <0.3 m/s poor."
+        cites: [pye2017]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG uses CSI for spatial max-velocity fields, but fetched hydrodynamic guidance grades peak current-speed magnitude error."
+        cites: [pye2017]
+    validated_when: "Maximum current-speed magnitude is within 0.20 m/s of observed peak current speed where comparable observations exist."
+    evidence_strength: moderate
+    confidence: 0.64
+    notes: >-
+      This is a transferred peak-current convention from the coastal/estuarine hydrodynamic table; no
+      fetched paper provided a direct spatial CSI threshold for max-velocity rasters.
+
+  - dag_variable: atmospheric_pressure_all_nodes
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI validation band for ADCIRC's echoed atmospheric-pressure forcing field."
+        cites: []
+    secondary_metrics:
+      - metric: station_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "ADCIRC papers discuss atmospheric forcing validation against station or buoy observations, but do not provide a general numeric pressure-field gate."
+        cites: [moghimi2020, hope2013]
+    validated_when: "UNRESOLVED - validate pressure forcing against its source product and stations when available; do not auto-pass on spatial CSI."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      Moghimi 2020 says the atmospheric forcing was validated against NDBC and satellite data, and Hope
+      2013 treats OWI/H*Wind/IOKA winds as forcing. Neither fetched text provides a numeric atmospheric
+      pressure CSI threshold for ADCIRC output.
+
+  - dag_variable: wind_velocity_all_nodes
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI validation band for ADCIRC's echoed wind field."
+        cites: []
+    secondary_metrics:
+      - metric: wind_speed_bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Fitted storm-surge studies inspect wind speed and direction against NDBC/station data, but no fetched field-wide numeric pass band was found."
+        cites: [moghimi2020, hope2013]
+    validated_when: "UNRESOLVED - validate the wind forcing product against wind observations when available; do not auto-pass on spatial CSI."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      Moghimi 2020 reports validation plots for HWRF wind speed and direction at NDBC buoys and notes
+      overestimated storm-peak winds at some buoys. Hope 2013 says IOKA blended winds were the best
+      available representation but may lack small-scale localized variations.
+
+  - dag_variable: min_atmospheric_pressure
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI validation band for minimum atmospheric pressure snapshots echoed by ADCIRC."
+        cites: []
+    secondary_metrics:
+      - metric: min_pressure_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Pressure is part of the meteorological forcing inspected in ADCIRC storm studies, not a hydrodynamic state with an established ADCIRC validation tier."
+        cites: [moghimi2020, hope2013]
+    validated_when: "UNRESOLVED - compare minimum pressure against meteorological analysis/best track where available; no cited numeric pass band."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      This is an echoed forcing diagnostic. Numeric bands are null because the fetched literature did
+      not establish a pressure-snapshot CSI threshold.
+
+  - dag_variable: max_wind_velocity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI validation band for maximum wind-speed snapshots echoed by ADCIRC."
+        cites: []
+    secondary_metrics:
+      - metric: peak_wind_error
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Storm-surge validation papers inspect wind speed/direction forcing because it drives surge, but they do not supply a general ADCIRC wind-snapshot pass band."
+        cites: [moghimi2020, hope2013]
+    validated_when: "UNRESOLVED - compare maximum wind forcing against NDBC/station/analysis data when available; no cited numeric pass band."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      The fetched ADCIRC literature treats winds as meteorological forcing. Because no numeric CSI or
+      peak-wind gate was fetched, this block cannot validate automatically.
+
+deferred_paywalled:
+  - ref: "Uncertainty in hurricane surge simulation due to land cover specification"
+    doi: 10.1002/2013jc009604
+    needed_for: [water_surface_elevation_stations, water_surface_elevation_all_nodes, max_water_surface_elevation]
+  - ref: "Sensitivity of an ADCIRC Tide and Storm Surge Model to Manning's n"
+    doi: 10.1061/9780784412411.00027
+    needed_for: [water_surface_elevation_stations, max_water_surface_elevation]
+  - ref: "Storm Surge Modeling in Large Estuaries: Sensitivity Analyses to Parameters and Physical Processes in the Chesapeake Bay"
+    doi: 10.3390/jmse4030045
+    needed_for: [water_surface_elevation_stations, max_water_surface_elevation]
+  - ref: "Effect of Bottom Friction, Wind Drag Coefficient, and Meteorological Forcing in Hindcast of Hurricane Rita Storm Surge Using SWAN + ADCIRC Model"
+    doi: 10.3390/jmse5030038
+    needed_for: [water_surface_elevation_stations, max_water_surface_elevation, wind_velocity_all_nodes, max_wind_velocity]

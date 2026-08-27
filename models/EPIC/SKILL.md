@@ -1,14 +1,3 @@
----
-name: epic
-description: >-
-  EPIC 1102. Covers Crop/plant growth and yield (~80-150 crop types, one growth model with
-  per-crop parameters); Field hydrology (NRCS curve-number runoff, percolation, lateral
-  flow, ET); Water erosion (MUSLE/USLE/MUSS/MUST/RUSLE family) and wind erosion; Nutrient
-  cycling (N, P, K) with leaching, volatilization, denitrification; Soil organic carbon
-  dynamics (CENTURY sub-model). Use when the task involves running, configuring,
-  calibrating or interpreting EPIC.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual EPIC1102 binary** (`epic1102-official_release.exe`)
@@ -40,6 +29,51 @@ description: >-
 >
 > Resist the urge to write diagnostic/debug Python scripts. The answers are almost
 > always in the official examples, not in reverse-engineering the binary.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (17 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (32 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (20 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+| what past runs learned | `.kdt_evolution.jsonl` | append-only memory of previous runs and fixes on this KI. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/build_control_files.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_control_files.py --help` |
+| `tools/build_opc_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_opc_file.py --help` |
+| `tools/build_site_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_site_file.py --help` |
+| `tools/build_soil_file.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/build_soil_file.py --help` |
+| `tools/configure_control.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/configure_control.py --help` |
+| `tools/configure_irrigation.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/configure_irrigation.py --help` |
+| `tools/convert_forcing_to_epic.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_epic.py --help` |
+| `tools/edit_opc.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/edit_opc.py --help` |
+| `tools/parse_outputs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_outputs.py --help` |
+| `tools/quickstart.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/quickstart.py --help` |
+| `tools/resolve_obs_shape.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/resolve_obs_shape.py --help` |
+| `tools/run_epic.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_epic.py --help` |
+| `tools/select_crop.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/select_crop.py --help` |
+| `tools/set_output_types.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/set_output_types.py --help` |
+| `tools/tune_parm.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/tune_parm.py --help` |
+
+*15 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 ---
 
@@ -73,7 +107,7 @@ adapter, and output parsers for the model's annual/daily text files.
 | Binary                 | `epic1102-official_release.exe`                   |
 
 Working workspace used for this KI:
-`KISSPATH_BINARIES/EPIC/epic_workspace`
+`KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace`
 
 ## Installation / environment
 
@@ -82,7 +116,7 @@ HydroCraft server it is launched under Wine.
 
 ```bash
 which wine                                                      # must resolve
-ls KISSPATH_BINARIES/EPIC/epic_workspace/epic1102-official_release.exe
+ls KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace/epic1102-official_release.exe
 wine /path/to/epic1102-official_release.exe                     # runs in CWD
 ```
 
@@ -157,6 +191,28 @@ load-bearing. A single misaligned digit causes silent wrong-result failures.
 | `*.ASL`      | Annual soil layer                                            |
 | `*.MFS`      | Monthly flood sediment                                       |
 
+## Output Description
+
+This section restates `dag.yaml`; if it ever disagrees with the dag, the dag
+wins. The dag's rank-1 output is:
+
+> var='YLDG' unit='t/ha' description='Annual grain / economic crop yield (reported kg/ha internally, t/ha in .ACY)'
+
+| Output variable (dag `var`) | Rank | File | Unit | Description |
+|---|---:|---|---|---|
+| `YLDG` | 1 | `.ACY` | `t/ha` | Annual grain / economic crop yield (reported kg/ha internally, t/ha in .ACY) |
+| `ET` | 2 | `.ANN` | `mm/yr` | Actual evapotranspiration: water flux from the modeled field to the atmosphere |
+| `BIOM` | 3 | `.ACY` | `t/ha` | Total above-ground biomass |
+| `Q` | 4 | `.ANN` | `mm/yr` | Surface runoff only; excludes deep percolation and lateral subsurface flow |
+| `MUSS/MUST/USLE (water erosion sediment yield)` | 5 | `.ANN` | `Mg/ha` | Soil loss by water erosion via the selected MUSLE/USLE/MUSS/MUST/RUSLE equation |
+| `DN2O / VN2O` | 6 | `.ANN` | `kg/ha` | Nitrous-oxide gas emission to the atmosphere from soil denitrification / nitrification |
+| `QNO3 / SNO3 (nitrate loss / soil nitrate)` | 7 | `.ANN` | `kg/ha` | Mineral N lost with runoff/leaching and residual soil nitrate |
+| `YOC / TOC (soil organic carbon)` | 8 | `.ANN / .ACN` | `kg/ha` | Organic carbon in sediment / total soil-profile organic carbon (CENTURY) |
+| `NPPC` | 9 | `.ANN` | `kg/ha` | Crop/vegetation net primary productivity (carbon); VAR(99) = dry matter x 420.0 |
+
+Other dag outputs, in dag order, are:
+`['BIOM', 'ET', 'Q', 'MUSS/MUST/USLE (water erosion sediment yield)', 'DN2O / VN2O', 'QNO3 / SNO3 (nitrate loss / soil nitrate)', 'YOC / TOC (soil organic carbon)', 'NPPC']`.
+
 ## Unit trap table (verified empirically)
 
 | Variable      | Model unit     | CMFD/NASA unit    | Conversion       |
@@ -176,6 +232,32 @@ load-bearing. A single misaligned digit causes silent wrong-result failures.
 **no column labels**. Column order is: YEAR MON DAY SRAD TMX TMN PRCP RH WSPD.
 Radiation is MJ m-2 day-1 (NOT W m-2). Temps in degC (NOT Kelvin).
 Precipitation in mm (NOT kg m-2 s-1).
+
+## Unit Table
+
+This unit table restates the active model/output units used by the KI. Exact
+I/O shapes live in `docs/format_spec.yaml`; output identity lives in `dag.yaml`.
+
+| Variable | Source or internal unit | Model/output unit | Conversion or rule |
+|---|---|---|---|
+| Precipitation | `kg m-2 s-1` in CMFD | `mm/day` in `.DLY` | multiply by `86400` |
+| Tmax / Tmin | `K` in CMFD; `degC` in NASA POWER | `degC` in `.DLY` | subtract `273.15` for CMFD only; NASA POWER is identity |
+| Radiation | `W m-2` in CMFD `srad` | `MJ m-2 day-1` in `.DLY` | multiply by `0.0864` |
+| Relative humidity | `%` in MERRA2 | fraction `0-1` in `.DLY` | multiply by `0.01` |
+| Wind speed | `m/s` in forcing | `m/s` in `.DLY` | identity |
+| Elevation | `m` in DEM | `m` in `.SIT` | identity |
+| Slope | `m/m` in terrain source | `m/m` in `.SIT` | identity |
+| Soil bulk density | `g/cm3` in HWSD | `t/m3` in `.SOL` | identity because `1 g/cm3 = 1 t/m3` |
+| Sand / clay / silt | fraction in source | `%` in `.SOL` | multiply by `100` |
+| Yield `YLDG` | `kg/ha` internally | `t/ha` in `.ACY` and dag | divide by `1000` |
+| Biomass `BIOM` | EPIC annual crop output | `t/ha` in `.ACY` and dag | read as reported |
+| Actual ET `ET` | EPIC annual water-balance output | `mm/yr` in `.ANN` and dag | read as reported |
+| Surface runoff `Q` | EPIC annual water-balance output | `mm/yr` in `.ANN` and dag | read as surface runoff only |
+| Water erosion sediment yield `MUSS/MUST/USLE` | EPIC annual erosion output | `Mg/ha` in `.ANN` and dag | read selected erosion equation output |
+| `DN2O / VN2O` | EPIC annual N gas output | `kg/ha` in `.ANN` and dag | read as reported |
+| `QNO3 / SNO3` | EPIC annual nitrate output | `kg/ha` in `.ANN` and dag | read as reported |
+| `YOC / TOC` | EPIC annual carbon output | `kg/ha` in `.ANN / .ACN` and dag | read as reported |
+| `NPPC` | EPIC annual productivity output | `kg/ha` in `.ANN` and dag | dry matter x `420.0` |
 
 ## Binding an observed yield product to a dag obs_shape (MANDATORY before scoring)
 
@@ -543,6 +625,34 @@ are negative or zero.
 
   Forcing/soil/terrain LOADERS live in `ki_tools_common`
   (`load_forcing`, `soil_utils`, `terrain`), not under `data_ki/*/tools/`.
+
+## Validated Results
+
+This section restates `docs/validation_convention.yaml` for the dag rank-1
+variable. The convention wins over remembered thresholds: all YLDG bands below
+are null in the convention and therefore must be written as `no cited threshold`.
+
+### Rank-1 Convention Bar
+
+| dag variable | obs shape | Metric | Direction | Very good | Good | Satisfactory | Citation key from convention |
+|---|---|---|---|---|---|---|---|
+| `YLDG` | `point_time_series` | `pbias` | `zero_centered` | no cited threshold | no cited threshold | no cited threshold | none recorded |
+| `YLDG` | `point_time_series` | `nse` | `maximize` | no cited threshold | no cited threshold | no cited threshold | none recorded |
+| `YLDG` | `regional_aggregate_time_series` | `pbias` | `zero_centered` | no cited threshold | no cited threshold | no cited threshold | none recorded |
+| `YLDG` | `point_snapshot` | `pbias` | `zero_centered` | no cited threshold | no cited threshold | no cited threshold | none recorded |
+
+For `YLDG`, a metric value without an obs-shape-specific convention band is not
+a pass/fail verdict. Do not transfer hydrology or sediment thresholds onto crop
+yield; the convention records no cited threshold for these YLDG bands.
+
+### KI Validation Result
+
+| Check | Result recorded in this KI | Notes |
+|---|---|---|
+| Binary execution path | Analytic validation available through `quick_validate.py` | Runs the shipped `umstead` example with the actual `epic1102-official_release.exe` binary |
+| Test case | `umstead` corn, NC, `1930-1944`, `15 years` | Existing example workspace/output parser path |
+| Parsed outputs | `.ANN` and `.ACY` | Water-balance and yield-range checks are applied |
+| Independent observed yield scoring | Pending | The YLDG convention has no cited pass-band thresholds, so the KI must not auto-validate yield against guessed bands |
 
 ## Validation tier
 

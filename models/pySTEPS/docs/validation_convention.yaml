@@ -1,0 +1,155 @@
+schema_version: 1
+model_id: pySTEPS
+domain: atmosphere
+generated_by: "Codex Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  pulkkinen2019:
+    doi: 10.5194/gmd-12-4185-2019
+    title: "Pysteps: an open-source Python library for probabilistic precipitation nowcasting (v1.0)"
+    venue: "Geosci. Model Dev."
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-12-4185-2019.txt
+  ayzel2019:
+    doi: 10.5194/gmd-12-1387-2019
+    title: "Optical flow models as an open benchmark for radar-based precipitation nowcasting (rainymotion v0.1)"
+    venue: "Geosci. Model Dev."
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-12-1387-2019.txt
+  roberts2008:
+    doi: 10.1175/2007mwr2123.1
+    title: "Scale-Selective Verification of Rainfall Accumulations from High-Resolution Forecasts of Convective Events"
+    venue: "Mon. Weather Rev."
+    year: 2008
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_2007mwr2123.1.txt
+  ebert2008:
+    doi: 10.1002/met.25
+    title: "Fuzzy verification of high-resolution gridded forecasts: a review and proposed framework"
+    venue: "Meteorological Applications"
+    year: 2008
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_met.25.txt
+  flowerdew2014:
+    doi: 10.3402/tellusa.v66.22662
+    title: "Calibrating ensemble reliability whilst preserving spatial structure"
+    venue: "Tellus A"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3402_tellusa.v66.22662.txt
+  foresti2016:
+    doi: 10.5194/hess-20-505-2016
+    title: "Development and verification of a real-time stochastic precipitation nowcasting system (STEPS)"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2016
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-505-2016.txt
+  sideris2020:
+    doi: 10.1002/qj.3766
+    title: "NowPrecip: localized precipitation nowcasting in the complex terrain of Switzerland"
+    venue: "Quarterly Journal of the Royal Meteorological Society"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_qj.3766.txt
+  imhoff2023:
+    doi: 10.1002/qj.4461
+    title: "Scale-dependent blending of ensemble rainfall nowcasts and numerical weather prediction in the open-source pysteps library"
+    venue: "Quarterly Journal of the Royal Meteorological Society"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_qj.4461.txt
+
+validation:
+  - dag_variable: exceedance_probability
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: roc_auc
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.9, good: 0.85, satisfactory: 0.8}
+        pass_band: satisfactory
+        band_note: "Pulkkinen 2019 reports ROC area over 0.85 for 0.1 mm h-1 and over 0.8 as potentially useful skill for 5 mm h-1; Foresti 2016 states random ROC AUC is 0.5."
+        cites: [pulkkinen2019, foresti2016]
+      - metric: brier_skill_score
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: null, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "BSS > 0 means better than the reference climatological frequency; the plain numeric band is 0.0 because the schema has no strict-greater-than operator."
+        cites: [foresti2016, flowerdew2014]
+      - metric: reliability_diagram_max_deviation
+        direction: minimize
+        unit: probability_fraction
+        bands: {very_good: 0.0, good: null, satisfactory: 0.25}
+        pass_band: satisfactory
+        band_note: "Pulkkinen 2019 uses reliability diagrams for pysteps and reports deviation from the diagonal below 0.25 for reliable 0.1 mm h-1 nowcasts up to 2 h."
+        cites: [pulkkinen2019]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag determining_metric is CSI, but the fetched pySTEPS/STEPS probabilistic literature verifies exceedance probabilities primarily with ROC, reliability diagrams, rank histograms, and BSS. CSI remains useful after thresholding probabilities to deterministic event maps."
+        cites: [pulkkinen2019, ebert2008, sideris2020]
+      - metric: fss
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Spatial neighborhood verification is a standard complement for high-resolution precipitation fields; Roberts 2008 defines FSSuniform as a target skill scale and Pulkkinen 2019 includes FSS for spatial-scale dependence."
+        cites: [roberts2008, pulkkinen2019]
+    validated_when: "For the same precipitation threshold/unit and lead-time class, probabilistic exceedance maps are validated when ROC AUC >= 0.8, BSS >= 0 versus the chosen climatological/reference forecast, and reliability-diagram maximum deviation <= 0.25; CSI/FSS are supportive deterministic/spatial diagnostics after thresholding."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Pulkkinen 2019 says probabilistic pysteps forecasts are checked for being unbiased, reliable and sharp; for
+      0.1 mm h-1 the ROC area remains over 0.85 and reliability deviation is below 0.25, while for 5 mm h-1
+      ROC area above 0.8 indicates potentially useful skill. Foresti 2016 gives the domain convention for
+      positive BSS and random ROC AUC. Ebert 2008 notes CSI is for deterministic forecasts and BSS/ROC/RPS
+      for probabilistic forecasts, so the dag CSI is superseded as the headline metric for probability fields.
+
+  - dag_variable: motion_field
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI pass band for direct validation of the returned velocity field against independent motion observations."
+        cites: []
+      - metric: endpoint_error
+        direction: minimize
+        unit: pixels/timestep
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Direct velocity endpoint-error thresholds for radar precipitation motion fields were not found in the cached texts or the capped OpenAlex coverage check."
+        cites: []
+    secondary_metrics:
+      - metric: downstream_nowcast_csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Pulkkinen 2019 evaluates optical-flow choices through downstream precipitation nowcast CSI/MAE; Ayzel 2019 benchmarks optical-flow nowcasts with MAE and CSI rather than validating the velocity field itself."
+        cites: [pulkkinen2019, ayzel2019]
+      - metric: downstream_nowcast_mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Ayzel 2019 reports MAE for optical-flow-based nowcasts and states that predictive uncertainty arises from both field-motion errors and missing precipitation growth/decay."
+        cites: [ayzel2019]
+    validated_when: "UNRESOLVED for the returned motion field itself: direct validation requires an independent motion estimate or tracked-feature displacement in pixels/timestep on the same grid. Downstream nowcast CSI/MAE can support but cannot replace direct velocity validation."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Pulkkinen 2019 states that the advection field is a key component, but its experiments compare optical-flow
+      methods through downstream CSI and MAE; the paper also reports less than 2% differences among optical-flow
+      methods and concludes that dynamic precipitation scaling has a larger impact. Ayzel 2019 likewise defines
+      MAE and CSI for nowcast fields and reports Dense-group CSI benchmarks, but those are precipitation-field
+      skill values, not independent velocity-field thresholds. Bands remain null per the no-fabrication rule.
+
+deferred_paywalled:
+  - ref: "Bowler, Pierce, and Seed 2006 - STEPS probabilistic precipitation forecasting scheme"
+    doi: 10.1256/qj.04.100
+    needed_for: [exceedance_probability]
+  - ref: "Germann and Zawadzki 2003 - dynamic and spatial scaling approach to advection forecasting"
+    doi: 10.1175/1520-0450(2003)042<0381:adassa>2.0.co;2
+    needed_for: [motion_field]

@@ -1,0 +1,375 @@
+schema_version: 1
+model_id: PyAEZ
+domain: crop
+generated_by: "Step-B validation-convention agent (Codex)"
+generated_at: 2026-08-14
+
+references:
+  conversa2015:
+    doi: 10.3389/fpls.2015.00495
+    title: "A decision support system (GesCoN) for managing fertigation in vegetable crops. Part II - model calibration and validation"
+    venue: "Frontiers in Plant Science"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_fpls.2015.00495.txt
+  rotter2011:
+    doi: 10.1016/j.eja.2011.05.001
+    title: "Simulation of winter wheat yield and its variability in different climates of Europe"
+    venue: "European Journal of Agronomy"
+    year: 2011
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.eja.2011.05.001.txt
+  alvar2023_nepal:
+    doi: 10.1016/j.envdev.2023.100882
+    title: "An FAO model comparison: Python Agroecological Zoning (PyAEZ) and AquaCrop to assess climate change impacts on crop yields in Nepal"
+    venue: "Environmental Development"
+    year: 2023
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envdev.2023.100882.txt
+  alvar2023_bhutan:
+    doi: 10.36253/ijam-2782
+    title: "Future climate impacts on crop production in Bhutan"
+    venue: "Italian Journal of Agrometeorology"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.36253_ijam-2782.txt
+  gaez2021:
+    doi: 10.4060/cb4744en
+    title: "Global Agro-Ecological Zones (GAEZ v4): Model documentation"
+    venue: "FAO"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.4060_cb4744en.txt
+  agera_maize2025:
+    doi: 10.3390/agronomy15040878
+    title: "Maize Yield Suitability Mapping in Two Major Asian Mega-Deltas Using AgERA and CMIP6 Climate Projections in Crop Modeling"
+    venue: "Agronomy"
+    year: 2025
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_agronomy15040878.txt
+  vrieling2013:
+    doi: 10.3390/rs5020982
+    title: "Length of Growing Period over Africa: Variability and Trends from 30 Years of NDVI Time Series"
+    venue: "Remote Sensing"
+    year: 2013
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_rs5020982.txt
+  buytaert2012:
+    doi: 10.1659/mrd-journal-d-14-0024.1
+    title: "Evaluation of the Penman-Monteith (FAO 56 PM) Method for Calculating Reference Evapotranspiration"
+    venue: "Mountain Research and Development"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1659_mrd-journal-d-14-0024.1.txt
+  holzworth2022:
+    doi: 10.1007/s11119-022-09885-4
+    title: "A review of methods to evaluate crop model performance at multiple and changing spatial scales"
+    venue: "Precision Agriculture"
+    year: 2022
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s11119-022-09885-4.txt
+  chen2020:
+    doi: 10.1007/s10653-019-00437-w
+    title: "Agro-ecological suitability assessment of Chinese Medicinal Yam under future climate change"
+    venue: "Environmental Geochemistry and Health"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10653-019-00437-w.txt
+  maleki2020:
+    doi: 10.3390/agronomy10040573
+    title: "Land Suitability Assessment and Agricultural Production Sustainability Using Machine Learning Models"
+    venue: "Agronomy"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_agronomy10040573.txt
+  cropsuite2025:
+    doi: 10.5194/gmd-18-1067-2025
+    title: "CropSuite v1.0 - a comprehensive open-source crop suitability model considering climate variability for climate impact assessment"
+    venue: "Geoscientific Model Development"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-18-1067-2025.txt
+
+validation:
+  - dag_variable: lgp
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI threshold for AEZ length-of-growing-period maps."
+        cites: []
+    secondary_metrics:
+      - metric: mae_days
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Use only as a descriptive error measure where an independent LGP product exists; no numeric pass band was found."
+        cites: [gaez2021, vrieling2013]
+    validated_when: "UNRESOLVED - compare spatial LGP classes or days against an independent long-term LGP product, but do not auto-pass without a cited CSI or day-error band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      GAEZ documents reference LGP and soil-moisture-balance layers. The NDVI LGP paper warns that
+      "possibilities for effective validation are limited" and that NDVI LGP is a proxy, not the exact
+      water-balance LGP used by AEZ. OpenAlex coverage checks found no PyAEZ LGP numeric threshold.
+
+  - dag_variable: thermal_zone
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI threshold for AEZ thermal-zone class agreement."
+        cites: []
+    secondary_metrics:
+      - metric: kappa
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Categorical map validation commonly reports kappa/overall accuracy, but no fetched AEZ thermal-zone threshold was found."
+        cites: [gaez2021, maleki2020]
+    validated_when: "UNRESOLVED - compare against a reference AEZ/GAEZ thermal zonation, but keep the automatic pass gate disabled until a fetched threshold paper is available."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      GAEZ v4 lists thermal climate and temperature-profile classifications as framework outputs.
+      The fetched categorical suitability paper uses kappa and overall accuracy, but it does not
+      reproduce a numeric thermal-zone CSI threshold.
+
+  - dag_variable: pet_daily
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: mm/day
+        bands: {very_good: 0.1, good: 0.17, satisfactory: 0.3}
+        pass_band: satisfactory
+        band_note: "Benchmark-derived ETo band: missing-wind FAO-56 PM RMSE 0.06-0.10 mm/day was called excellent; missing-RH cases were good/acceptable with RMSE up to 0.30 mm/day."
+        cites: [buytaert2012]
+      - metric: mbe
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 4.3, good: 7.2, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Same FAO-56 PM evaluation reports %MBE 1.63-4.21 for excellent missing-wind cases and up to 14.95 for missing-RH acceptable cases."
+        cites: [buytaert2012]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag metric is categorical/spatial, but ETo validation literature grades continuous FAO-56 PM estimates with RMSE and mean bias error."
+        cites: [buytaert2012]
+    validated_when: "RMSE <= 0.30 mm/day and absolute MBE <= 15% against a complete-meteorology FAO-56 PM or lysimeter/reference ETo product."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      This supersedes the dag's CSI headline for pet_daily. Buytaert et al. evaluate FAO-56
+      Penman-Monteith ETo with MBE, percent MBE, and RMSE; "calculations were excellent" when
+      only wind data were missing, while missing-RH cases were described as good/acceptable.
+      The band is a site-benchmark transfer, not a universal agronomic standard.
+
+  - dag_variable: yield_rain
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: good
+        band_note: "RRMSE/nRMSE crop-yield tier reproduced in fetched text: excellent <10%, good 10-20%, fair 20-30%, poor >30%."
+        cites: [conversa2015, rotter2011]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Rainfed PyAEZ reports maximum attainable yield, so observed farm yields can sit below the simulated upper envelope even when the agro-ecological comparison is meaningful."
+        cites: [alvar2023_nepal, alvar2023_bhutan]
+      - metric: kappa
+        direction: maximize
+        status: supportive
+        ceiling_reason: "For spatial crop/suitability maps, kappa/overall accuracy can describe pattern agreement, but the fetched papers do not give a PyAEZ yield-map threshold."
+        cites: [holzworth2022, maleki2020]
+    validated_when: "nRMSE <= 20% against observed yield, reference attainable-yield, or province/grid aggregates after explicitly documenting whether actual farm yields or attainable yields are being compared."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      The dag determining_metric pbias is not used as the automatic gate because PyAEZ rainfed output
+      is an attainable-yield upper envelope. Nepal states PyAEZ "provides maximum attainable yields";
+      Bhutan notes observed table values were lower than PyAEZ simulations because PyAEZ considered
+      maximum attainable yields. Use PBIAS diagnostically for direction of bias, not as the pass band.
+
+  - dag_variable: yield_rain
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: good
+        band_note: "RRMSE/nRMSE crop-yield tier reproduced in fetched text: excellent <10%, good 10-20%, fair 20-30%, poor >30%."
+        cites: [conversa2015, rotter2011]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Raw regional yield time series include management, variety, fertilizer, pest, and technology trends that a climate-only attainable-yield run is not designed to reproduce."
+        cites: [agera_maize2025, alvar2023_nepal]
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Regional farm statistics can be below attainable yield or trend upward for non-climate management reasons; compare detrended anomalies, ranks, or matched potential-yield benchmarks."
+        cites: [agera_maize2025, alvar2023_nepal]
+    validated_when: "nRMSE <= 20% on matched regional aggregates after detrending or otherwise separating technology/management trend from climatic attainable-yield signal."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      The AgERA/CMIP6 maize AEZ study validates modeled yields against provincial reports but says
+      management changes caused increasing reported yields that the model could not capture; the
+      same paper reports RMSE 0.62-1.74 t ha-1 as benchmark skill, not as a universal pass band.
+
+  - dag_variable: yield_irr
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: good
+        band_note: "RRMSE/nRMSE crop-yield tier reproduced in fetched text: excellent <10%, good 10-20%, fair 20-30%, poor >30%."
+        cites: [conversa2015, rotter2011]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Irrigated PyAEZ removes moisture limitation and estimates attainable yield; actual farm yields may remain below this upper envelope because of management and biotic stresses."
+        cites: [alvar2023_nepal, agera_maize2025]
+    validated_when: "nRMSE <= 20% against irrigated observed or reference attainable yields, with PBIAS interpreted relative to the upper-envelope nature of irrigated attainable yield."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Nepal describes PyAEZ irrigated runs as calculating a daily soil-water balance and refilling
+      water once easily extractable moisture is depleted; the same paper discusses missing pests,
+      diseases, CO2, and input-quality limitations.
+
+  - dag_variable: terrain_yield
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: good
+        band_note: "RRMSE/nRMSE crop-yield tier reproduced in fetched text: excellent <10%, good 10-20%, fair 20-30%, poor >30%."
+        cites: [conversa2015, rotter2011]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Even after soil and terrain reductions, the output remains an attainable-yield estimate; actual yields can differ due to management, pests, disease, and input data quality."
+        cites: [alvar2023_nepal, agera_maize2025]
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Use for map-pattern agreement where the observation has been classified; no fetched paper gives a CSI pass band for terrain_yield."
+        cites: [holzworth2022]
+    validated_when: "nRMSE <= 20% against gridded or sampled observed yield/reference yield, preferably after applying comparable soil/terrain constraints and crop management assumptions."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      This is the closest PyAEZ output to observed yield because it includes the reduction chain, but
+      it is still attainable yield. The crop-model review warns that RMSE alone is insufficient for
+      spatial validation and that validation data scale and footprint matter.
+
+  - dag_variable: terrain_yield
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 10.0, good: 20.0, satisfactory: 30.0}
+        pass_band: good
+        band_note: "RRMSE/nRMSE crop-yield tier reproduced in fetched text: excellent <10%, good 10-20%, fair 20-30%, poor >30%."
+        cites: [conversa2015, rotter2011]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Province/admin yield reports mix crop management and actual farm constraints with the attainable-yield estimate produced by AEZ."
+        cites: [agera_maize2025, alvar2023_nepal]
+    validated_when: "Aggregate to the same admin units and validate if nRMSE <= 20%; report PBIAS separately because actual administrative yields may not equal attainable yields."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      The AgERA/CMIP6 AEZ maize paper validates modeled yields against available provincial-level
+      yield data and reports RMSE 0.62-1.74 t ha-1 for its case study. That benchmark supports
+      aggregation-before-comparison, but it is not used as a universal kg/ha threshold.
+
+  - dag_variable: suitability_class
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI threshold for PyAEZ/GAEZ suitability-class validation."
+        cites: []
+    secondary_metrics:
+      - metric: kappa
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Categorical land-suitability studies validate classes with kappa and overall accuracy; fetched text gives examples but not a universal threshold table."
+        cites: [maleki2020, chen2020, cropsuite2025]
+      - metric: overall_accuracy
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Overall accuracy is informative for class agreement but lacks a fetched numeric pass band for AEZ suitability classes."
+        cites: [maleki2020]
+    validated_when: "UNRESOLVED - compare classes against reference GAEZ/survey/soil-profile suitability maps, but do not auto-pass until a fetched CSI/kappa threshold is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      The yam AEZ paper says all 42 survey sites matched suitable planting areas and calls that strong
+      validation, but it reports no CSI/kappa threshold. Maleki et al. state that kappa and overall
+      accuracy were used as validation criteria for land-suitability classes.
+
+  - dag_variable: net_revenue
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric spatial validation threshold for PyAEZ net revenue."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Net revenue depends on user-supplied prices and costs; treat magnitude agreement as scenario accounting rather than crop-physics validation."
+        cites: [alvar2023_nepal, gaez2021]
+    validated_when: "UNRESOLVED - verify accounting inputs and compare to independent gross-margin/net-revenue maps where available; no automatic literature band."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      PyAEZ includes an economic suitability function and GAEZ documents actual yield/production
+      modules, but the fetched papers do not provide a validation convention for spatial net revenue.
+      OpenAlex coverage checks did not find a directly usable PyAEZ net-revenue benchmark.
+
+deferred_paywalled:
+  - ref: "Jamieson et al. 1991 primary nRMSE crop-yield tier source, reproduced in Conversa et al. 2015"
+    doi: unknown_not_fetched
+    needed_for: [yield_rain, yield_irr, terrain_yield]
+  - ref: "Landis and Koch 1977 kappa agreement tier paper for categorical maps"
+    doi: 10.2307/2529310
+    needed_for: [thermal_zone, suitability_class]
+  - ref: "A PyAEZ/GAEZ validation study with explicit CSI or kappa pass thresholds for LGP and thermal-zone maps"
+    doi: unknown_not_fetched
+    needed_for: [lgp, thermal_zone, suitability_class]
+  - ref: "A PyAEZ or GAEZ economic-suitability validation paper with net-revenue error thresholds"
+    doi: unknown_not_fetched
+    needed_for: [net_revenue]

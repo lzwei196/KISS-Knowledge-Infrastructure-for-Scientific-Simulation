@@ -439,7 +439,7 @@ outputs:
   - var: "bmlt"
     validation_rank: 6
     unit: "m/yr"
-    description: "Basal melt rate (total / grounded / floating)"
+    description: "Basal ice melt rate (total / grounded ice / floating ice)"
     emitted_in: "[CF output] netCDF"
     observability:
       comparable_obs_shapes:
@@ -491,7 +491,7 @@ outputs:
   - var: "calving_flux / gl_flux"
     validation_rank: 10
     unit: "kg/s; kg/m/s"
-    description: "Calving mass flux and grounding-line flux"
+    description: "Ice calving mass flux and grounding-line ice flux"
     emitted_in: "[CF output] netCDF"
     observability:
       comparable_obs_shapes:
@@ -697,3 +697,13 @@ safety:
       scope: "Model boundary and implementation identity."
       source: "CISM 2.1 documentation, Sec. 7.5 Climate Forcing Configuration."
       status: "adopted"
+
+medium_evidence:
+  - var: "bmlt"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-12-387-2019.txt"
+    quote: "By default, melting beneath ice shelves is set to zero."
+    note: "The model-description paper places basal melt in ice-shelf and grounded-ice basal melting; the output is basal ice melt."
+  - var: "calving_flux / gl_flux"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-12-387-2019.txt"
+    quote: "Glissade supports several schemes for calving ice at marine margins."
+    note: "The model-description paper states that calving is calving of ice; grounding-line flux is an ice flux across the ice-sheet grounding line."

@@ -1,0 +1,367 @@
+schema_version: 1
+model_id: PISM
+domain: cryosphere
+generated_by: "Step-B validation-convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+references:
+  bedmap2_2013:
+    doi: 10.5194/tc-7-375-2013
+    title: "Bedmap2: improved ice bed, surface and thickness datasets for Antarctica"
+    venue: "The Cryosphere"
+    year: 2013
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-7-375-2013.txt
+  pism_pik_part2_2011:
+    doi: 10.5194/tc-5-727-2011
+    title: "The Potsdam Parallel Ice Sheet Model (PISM-PIK) - Part 2: Dynamic equilibrium simulation of the Antarctic ice sheet"
+    venue: "The Cryosphere"
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-5-727-2011.txt
+  bueler_brown_2009:
+    doi: 10.1029/2008JF001179
+    title: "Shallow shelf approximation as a sliding law in a thermomechanically coupled ice sheet model"
+    venue: "Journal of Geophysical Research"
+    year: 2009
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2008jf001179.txt
+  bueler_vanpelt_2015:
+    doi: 10.5194/gmd-8-1613-2015
+    title: "Mass-conserving subglacial hydrology in the Parallel Ice Sheet Model version 0.6"
+    venue: "Geoscientific Model Development"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-8-1613-2015.txt
+  phipps_2021:
+    doi: 10.5194/gmd-14-5107-2021
+    title: "An iterative process for efficient optimisation of parameters in geoscientific models: a demonstration using the Parallel Ice Sheet Model (PISM) version 0.7.3"
+    venue: "Geoscientific Model Development"
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-14-5107-2021.txt
+  gillet_chaulet_2012:
+    doi: 10.5194/tc-6-1561-2012
+    title: "Greenland ice sheet contribution to sea-level rise from a new-generation ice-sheet model"
+    venue: "The Cryosphere"
+    year: 2012
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-6-1561-2012.txt
+  albrecht_2020:
+    doi: 10.5194/tc-14-633-2020
+    title: "Glacial-cycle simulations of the Antarctic Ice Sheet with the Parallel Ice Sheet Model (PISM) - Part 2: Parameter ensemble analysis"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-14-633-2020.txt
+  goelzer_2020:
+    doi: 10.5194/tc-14-3071-2020
+    title: "The future sea-level contribution of the Greenland ice sheet: a multi-model ensemble study of ISMIP6"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-14-3071-2020.txt
+  seroussi_2019:
+    doi: 10.5194/tc-13-1441-2019
+    title: "initMIP-Antarctica: an ice sheet model initialization experiment of ISMIP6"
+    venue: "The Cryosphere"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-13-1441-2019.txt
+  lei_2022:
+    doi: 10.5194/essd-14-5111-2022
+    title: "Processing methodology for the ITS_LIVE Sentinel-1 ice velocity products"
+    venue: "Earth System Science Data"
+    year: 2022
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_essd-14-5111-2022.txt
+  otosaka_2023:
+    doi: 10.5194/essd-15-1597-2023
+    title: "Mass balance of the Greenland and Antarctic ice sheets from 1992 to 2020"
+    venue: "Earth System Science Data"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_essd-15-1597-2023.txt
+  aschwanden_2019:
+    doi: 10.1126/sciadv.aav9396
+    title: "Contribution of the Greenland Ice Sheet to sea level over the next millennium"
+    venue: "Science Advances"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1126_sciadv.aav9396.txt
+
+validation:
+  - dag_variable: thk
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 59, good: 149, satisfactory: 300}
+        pass_band: satisfactory
+        band_note: "Bedmap2 ice-thickness uncertainty classes report overall uncertainty of 59-149 m where data exist and 150-300 m for no-data/synthetic classes; use 300 m as the conservative mapped-product envelope."
+        cites: [bedmap2_2013]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DAG determinant retained as supportive only: PISM and ISMIP6 papers judge thickness snapshots primarily with RMSE or normalized volume/thickness errors, not a cited CSI threshold."
+        cites: [goelzer_2020, phipps_2021]
+    validated_when: "Ice-thickness RMSE is within the conservative Bedmap2 mapped-product uncertainty envelope (<=300 m); CSI may contextualize spatial pattern but is not a cited pass/fail convention."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Bedmap2 states '±300 m for the 66% of cells without data' and Table 6 gives 59, 83, 149, 150, 200, 295, 300 m uncertainty classes. Goelzer 2020 evaluates initial states using RMSE of observed thickness; Phipps 2021 uses normalized thickness/volume cost functions."
+
+  - dag_variable: thk
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched ice-sheet paper gives an NSE validation threshold for gridded ice-thickness-change time series."
+        cites: []
+    secondary_metrics:
+      - metric: drift_or_thickness_change
+        direction: minimize
+        status: supportive
+        ceiling_reason: "ISMIP6 reports control-run thickness change and drift as complementary diagnostics, but explicitly cautions that formal model weighting is outside scope."
+        cites: [goelzer_2020]
+    validated_when: "UNRESOLVED - compare matched-period thickness change to altimetry products, but no cited NSE band was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Goelzer 2020 uses absolute thickness change in ctrl_proj and RMSE initial-state diagnostics; it does not provide a numeric NSE convention."
+
+  - dag_variable: usurf
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 30, good: 30, satisfactory: 130}
+        pass_band: satisfactory
+        band_note: "Bedmap2 assigns ±30 m uncertainty to surface elevation, rising to ±130 m over mountains."
+        cites: [bedmap2_2013]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DAG determinant retained as supportive only; continuous surface elevation is conventionally evaluated with elevation error/RMSE rather than CSI."
+        cites: [bedmap2_2013, goelzer_2020]
+    validated_when: "Surface-elevation RMSE is within the Bedmap2 DEM uncertainty envelope (<=130 m; <=30 m away from mountains is stronger)."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Bedmap2: '±30 m uncertainty' for the surface grid, 'rising to ±130 m over mountains'. Goelzer 2020 supplements visual surface-elevation comparisons but gives no numeric pass tier."
+
+  - dag_variable: velsurf_mag
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m year-1
+        bands: {very_good: 60, good: 100, satisfactory: 100}
+        pass_band: satisfactory
+        band_note: "ITS_LIVE reports velocity-magnitude uncertainty around 60 m yr-1 and inter-product variation around 100 m yr-1 over fast-flowing outlets; fastest Jakobshavn differences can be 300-500 m yr-1 and should be reported separately, not used to loosen the gate."
+        cites: [lei_2022]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DAG determinant retained as supportive only; PISM/ISMIP6 evaluate speed magnitude with RMSE, log-speed RMSE, relative error, and observation-weighted misfit."
+        cites: [albrecht_2020, goelzer_2020, gillet_chaulet_2012]
+      - metric: log_rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Goelzer 2020 includes logarithm of velocity magnitude to reduce dominance of high outlet speeds."
+        cites: [goelzer_2020]
+    validated_when: "Surface-speed RMSE <=100 m yr-1 against a contemporaneous satellite velocity product; also report log-speed/rank metrics for four-orders-of-magnitude fields."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "Lei 2022: uncertainty is 'around 60 m yr-1' and product variation is 'around 100 m yr-1'. Albrecht 2020 best-fit PISM reports surface-velocity RMSE 35 m yr-1 and uncertainty-weighted misfit 66 m yr-1."
+
+  - dag_variable: velbase_mag
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric CSI threshold for basal sliding speed; the field usually infers basal motion through surface-velocity inversion or sliding-law parameters."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Basal yield/sliding state is not directly observed at ice-sheet scale; Bueler and Brown describe the bed as a 'poorly observed combination' of water, ice, and till, while later PISM work treats basal-motion parameters as underconstrained."
+        cites: [bueler_brown_2009, aschwanden_2019]
+    validated_when: "UNRESOLVED - treat basal sliding-speed CSI as inference-limited unless supported by an inversion study; do not auto-validate from a null band."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Bueler and Brown discuss basal stress at the base as poorly observed; Aschwanden 2019 attributes mass-loss uncertainty to underconstrained ice-dynamics parameters, particularly basal motion."
+
+  - dag_variable: mask
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: grounding_line_distance_rmse
+        direction: minimize
+        unit: km
+        bands: {very_good: 30, good: 30, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: "Albrecht 2020 assumes 30 km uncertainty for present-day grounding-line and calving-front location in PISM paleo constraints."
+        cites: [albrecht_2020]
+      - metric: area_error_percent
+        direction: minimize
+        unit: percent
+        bands: {very_good: 0.7, good: 1.6, satisfactory: 22.4}
+        pass_band: satisfactory
+        band_note: "PISM-PIK equilibrium benchmark reports total area error 0.7%, grounded area 1.6%, and floating area 22.4%; floating extent is the weakest class."
+        cites: [pism_pik_part2_2011]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "DAG determinant retained as supportive; fetched PISM literature uses grounding-line distance and area-error constraints rather than a CSI pass threshold."
+        cites: [albrecht_2020, pism_pik_part2_2011]
+    validated_when: "Grounding-line/calving-front RMSE <=30 km and classified-area error no worse than the PISM-PIK published equilibrium benchmark."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Albrecht 2020: grounding-line and calving-front location uncertainty is 30 km; PISM-PIK Table 2 gives key observed-vs-model area differences."
+
+  - dag_variable: ice_volume_glacierized
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives an NSE threshold for glacierized ice-volume time series; field tends to compare sea-level-equivalent volume histories and drift envelopes."
+        cites: []
+    secondary_metrics:
+      - metric: volume_anomaly
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "PISM paleo work reports score-weighted volume anomalies and large uncertainty ranges, but these are reconstruction uncertainty rather than an NSE pass band."
+        cites: [albrecht_2020]
+    validated_when: "UNRESOLVED - evaluate against matched sea-level-equivalent volume or mass-change histories; no cited NSE gate was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Albrecht 2020 reports present-day grounded ice volume anomaly 0.7±1.7 x 10^6 km3 and LGM uncertainty ranges; not a time-series NSE convention."
+
+  - dag_variable: ice_volume_glacierized
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: 0.8, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "PISM-PIK equilibrium benchmark reports total ice volume +0.8% and grounded ice volume +2.0% relative to observations."
+        cites: [pism_pik_part2_2011]
+    secondary_metrics:
+      - metric: absolute_volume_difference
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bedmap2 volume and ice-thickness uncertainty affect absolute regional volume, so percent volume bias should be interpreted with the source geometry product."
+        cites: [bedmap2_2013]
+    validated_when: "|PBIAS| in glacierized volume <=2.0% relative to the selected observed ice-volume product."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "PISM-PIK Table 2 gives +0.8% total ice volume and +2.0% grounded volume; Bueler and van Pelt 2015 also reports Greenland spun-up volume close to SeaRISE."
+
+  - dag_variable: tendency_of_ice_mass
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: mae
+        direction: minimize
+        unit: Gt year-1
+        bands: {very_good: 19, good: 33, satisfactory: 36}
+        pass_band: satisfactory
+        band_note: "IMBIE 2023 reports annual-rate differences between assessments averaging 36 Gt yr-1 for Greenland and 33 Gt yr-1 for Antarctica; Greenland technique spread is 19 Gt yr-1."
+        cites: [otosaka_2023]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "DAG determinant retained as supportive only; percent bias can be unstable when the observed regional mass trend is near zero, so IMBIE-style absolute uncertainty is preferred."
+        cites: [otosaka_2023]
+    validated_when: "Regional aggregate mass-change-rate MAE is within the IMBIE inter-assessment comparability envelope (<=36 Gt yr-1) over the matched observation period."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: "Otosaka 2023 combines 50 estimates and gives reconciled mass-balance uncertainty; the band is an observation/comparison envelope, not a hydrology-style PBIAS tier."
+
+  - dag_variable: tendency_of_ice_mass_due_to_discharge
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper provides an NSE validation threshold for modeled discharge/frontal or sub-shelf mass-loss time series."
+        cites: []
+    secondary_metrics:
+      - metric: mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "IMBIE constrains total mass balance robustly, but discharge partitioning depends on calving/front and sub-shelf melt assumptions and is not given a fetched numeric validation tier."
+        cites: [otosaka_2023, goelzer_2020]
+    validated_when: "UNRESOLVED - compare discharge component against input-output or frontal/sub-shelf melt estimates where available; no cited NSE band was fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Otosaka 2023 attributes Antarctic losses largely to ice discharge but reports reconciled total mass balance; Goelzer 2020 notes open-ocean, fjord and calving-front uncertainties."
+
+  - dag_variable: tillwat
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric spatial CSI band for effective till-water thickness."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "PISM hydrology paper states that identifying hydrology parameters with observed surface, in situ, basal reflectivity, and discharge data is needed but beyond scope; it also documents spatial smearing and missing R-channel conduit physics."
+        cites: [bueler_vanpelt_2015]
+    validated_when: "UNRESOLVED - till water is a diagnostic hydrology state; use qualitative/inference checks unless a site-specific inversion or hydrology benchmark supplies a threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Bueler and van Pelt 2015 demonstrates mass-conserving hydrology and whole-ice-sheet fields but does not publish a direct observation-based validation band for tillwat."
+
+  - dag_variable: temppabase
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: K
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric pressure-adjusted basal-temperature bias threshold against borehole observations."
+        cites: []
+    secondary_metrics:
+      - metric: temperature_profile_misfit
+        direction: minimize
+        status: supportive
+        ceiling_reason: "PISM parameter-optimization work identifies vertical temperature profiles as additional observational data that could evaluate the model, but the fetched set gives no numeric basal-temperature pass band."
+        cites: [phipps_2021]
+    validated_when: "UNRESOLVED - compare to borehole basal temperature or vertical profiles where available; null band means no automatic validation."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Phipps 2021 says additional datasets such as vertical profiles of temperature could evaluate PISM; no fetched basal-temperature threshold table was found."
+
+deferred_paywalled:
+  - ref: "Greve et al. basal-temperature/borehole comparison paper cited in PISM thermal literature"
+    doi: unknown_not_fetched
+    needed_for: [temppabase]
+  - ref: "Direct ice-sheet basal hydrology/till-water inversion or borehole-reflectivity benchmark"
+    doi: unknown_not_fetched
+    needed_for: [tillwat, velbase_mag]
+  - ref: "Component-resolved ice-discharge validation paper with NSE or RMSE thresholds"
+    doi: unknown_not_fetched
+    needed_for: [tendency_of_ice_mass_due_to_discharge]

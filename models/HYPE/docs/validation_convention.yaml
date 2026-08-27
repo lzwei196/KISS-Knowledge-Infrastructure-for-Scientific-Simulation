@@ -1,0 +1,391 @@
+schema_version: 1
+model_id: HYPE
+domain: hydrology
+generated_by: "Step-B validation-convention agent (GPT-5 Codex)"
+generated_at: 2026-08-14
+
+# One block per HYPE dag output name and observation shape. The campaign schema keys blocks
+# by dag_variable, not by an invented canonical quantity. Numeric bands below are used only
+# where a fetched paper supplied a threshold table or a model-specific benchmark convention.
+
+references:
+  pandit2025:
+    doi: 10.1016/j.watres.2025.123156
+    title: "Establishing performance criteria for evaluating watershed-scale sediment and nutrient models at fine temporal scales"
+    venue: "Water Research"
+    year: 2025
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.watres.2025.123156.txt
+  shrestha2020:
+    doi: 10.3808/jei.201900407
+    title: "Water Quality Management of a Cold Climate Region Watershed in Changing Climate"
+    venue: "Journal of Environmental Informatics"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3808_jei.201900407.txt
+  pechlivanidis2015:
+    doi: 10.5194/hess-19-4559-2015
+    title: "Large-scale hydrological modelling by using modified PUB recommendations: the India-HYPE case"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-4559-2015.txt
+  arheimer2020:
+    doi: 10.5194/hess-24-535-2020
+    title: "Global catchment modelling using World-Wide HYPE (WWH), open data, and stepwise parameter estimation"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-24-535-2020.txt
+  knoben2019:
+    doi: 10.5194/hess-23-4323-2019
+    title: "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-4323-2019.txt
+  stromqvist2012:
+    doi: 10.1080/02626667.2011.637497
+    title: "Water and nutrient predictions in ungauged basins: set-up and evaluation of a model at the national scale"
+    venue: "Hydrological Sciences Journal"
+    year: 2012
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1080_02626667.2011.637497.txt
+  lindstrom2010:
+    doi: 10.2166/nh.2010.007
+    title: "Development and testing of the HYPE (Hydrological Predictions for the Environment) water quality model for different spatial scales"
+    venue: "Hydrology Research"
+    year: 2010
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2166_nh.2010.007.txt
+  jiang2020:
+    doi: 10.3390/rs12050811
+    title: "Impact of Satellite and In Situ Data Assimilation on Hydrological Predictions"
+    venue: "Remote Sensing"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_rs12050811.txt
+  thorsteinsson2020:
+    doi: 10.3390/w12040975
+    title: "Benefits of Combining Satellite-Derived Snow Cover Data and Discharge Data to Calibrate a Hydrological Model"
+    venue: "Water"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w12040975.txt
+  berg2018:
+    doi: 10.5194/hess-22-989-2018
+    title: "Near-real-time adjusted reanalysis forcing data for hydrology"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-22-989-2018.txt
+
+validation:
+  - dag_variable: cout
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Daily/monthly flow threshold; Pandit 2025 Table 1 reports flow NSE classes, while Shrestha 2020 reproduces the Moriasi streamflow tiers."
+        cites: [pandit2025, shrestha2020]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5, good: 10, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Flow pBIAS threshold from Pandit 2025 Table 1; use as absolute percent bias."
+        cites: [pandit2025]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [pechlivanidis2015, arheimer2020, knoben2019]
+    validated_when: "NSE >= 0.50 and |PBIAS| <= 15% for gauged-subbasin discharge after warmup."
+    evidence_strength: strong
+    confidence: 0.88
+    notes: >-
+      HYPE discharge benchmarks use KGE heavily: India-HYPE reports median KGE increasing to 0.64, and
+      WWH reports median monthly KGE 0.40 over 5338 gauges. For the dag's NSE objective, the field
+      convention is the streamflow threshold table: "0.50 <= NSE < 0.70" satisfactory in Pandit 2025 and
+      "0.50 < NSE <= 0.65" satisfactory in the Moriasi-style table reproduced by Shrestha 2020. Knoben
+      2019 adds that KGE > -0.41 only beats the mean-flow benchmark, not that it is validated.
+
+  - dag_variable: snow
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched SWE-specific NSE threshold; HYPE snow papers evaluate SWE/FSC with KGE or normalized RMSE rather than an NSE pass table."
+        cites: []
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [jiang2020, knoben2019]
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [thorsteinsson2020]
+    validated_when: "UNRESOLVED - compare SWE dynamics to point snow observations, but do not auto-validate on NSE without a fetched SWE threshold."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Jiang 2020 evaluated HYPE snow water equivalent as one assimilated product with KGE components;
+      Thorsteinsson 2020 reports fractional snow-cover normalized RMSE improving from 0.25 to 0.22.
+      Those are benchmark results, not a field threshold for point SWE NSE.
+
+  - dag_variable: snow
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched HYPE or hydrology paper supplied a CSI threshold for spatial SWE/snow-cover fields."
+        cites: []
+    secondary_metrics:
+      - metric: nrmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [thorsteinsson2020]
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [jiang2020]
+    validated_when: "UNRESOLVED - use spatial snow-cover/SWE maps diagnostically; CSI requires a future fetched categorical snow-map convention."
+    evidence_strength: weak
+    confidence: 0.32
+    notes: >-
+      The fetched HYPE snow-cover study used normalized RMSE for fractional snow cover, and the assimilation
+      study used KGE, Pearson correlation, bias and variability coefficients for FSC/SWE. Neither provides a
+      CSI pass band.
+
+  - dag_variable: evap
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched point actual-ET NSE threshold; HYPE ET calibration commonly uses relative error, RMSE, bias, or KGE components."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [pechlivanidis2015, arheimer2020, jiang2020]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [pechlivanidis2015]
+    validated_when: "UNRESOLVED - compare flux-tower or satellite ET time series, but the fetched set does not justify an NSE pass band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      India-HYPE calibrated potential ET against MODIS using RMSE and absolute bias, where "0 values indicate
+      a perfect model"; WWH used relative error for PET parameter constraints and notes ActET biases against
+      flow signatures. This supersedes the dag NSE only as a literature caveat, not as a numeric gate.
+
+  - dag_variable: evap
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched ET spatial-field paper supplied a CSI threshold; HYPE ET evaluations use RE, RMSE, bias, or KGE-like components."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [arheimer2020, pechlivanidis2015]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [pechlivanidis2015]
+    validated_when: "UNRESOLVED - use gridded ET products diagnostically; do not auto-validate spatial ET on CSI until a fetched categorical convention exists."
+    evidence_strength: weak
+    confidence: 0.32
+    notes: >-
+      WWH constrained PET with MODIS and discusses ActET relative-error patterns; India-HYPE reports MODIS
+      potential-ET RMSE/bias calibration. The dag's CSI metric is not a documented ET validation convention
+      in the fetched HYPE literature.
+
+  - dag_variable: soim
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched soil-moisture NSE threshold; HYPE treats soil moisture/storage primarily as an internal process state."
+        cites: []
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [arheimer2020, knoben2019]
+    validated_when: "UNRESOLVED - compare anomaly/pattern only; no fetched paper supports an absolute NSE threshold for HYPE soil-moisture storage."
+    evidence_strength: weak
+    confidence: 0.30
+    notes: >-
+      WWH calibrated soil storage/discharge in HRUs with KGE against selected gauges, not direct soil-moisture
+      observations. India-HYPE visually checked soil moisture deficit with discharge and ET to avoid unrealistic
+      behavior, but no numeric validation band was provided.
+
+  - dag_variable: gwat
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched HYPE or groundwater-head paper supplied a numeric NSE/RMSE band for this conceptual relative water-table output."
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "HYPE groundwater table is a process state controlling flow paths and nutrient concentrations; compare temporal dynamics rather than absolute datum."
+        cites: [pechlivanidis2015, stromqvist2012]
+    validated_when: "UNRESOLVED - compare relative groundwater-table dynamics only; do not auto-validate without a fetched head-specific criterion."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      India-HYPE describes groundwater fluctuations in the model and S-HYPE states that realistic groundwater
+      fluctuation is key to water quality, but neither gives a groundwater-head performance band. One capped
+      OpenAlex check did not identify a fetched threshold table suitable for HYPE's conceptual `gwat`.
+
+  - dag_variable: wcom
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Transferred hydrologic NSE convention, corroborated by S-HYPE lake water-level median NSE 0.63."
+        cites: [pandit2025, shrestha2020, stromqvist2012]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: null
+        cites: [pandit2025]
+    validated_when: "NSE >= 0.50 for outlet-lake water level dynamics, interpreted cautiously for regulated lakes."
+    evidence_strength: moderate
+    confidence: 0.62
+    notes: >-
+      S-HYPE reports a typical "lake water level: 0.63" median NSE. Because no fetched paper gives a separate
+      lake-stage tier table, the pass band is transferred from hydrologic NSE practice and downgraded to moderate.
+
+  - dag_variable: c1TN
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.60, good: 0.45, satisfactory: 0.30}
+        pass_band: satisfactory
+        band_note: "Daily total-nutrient criterion; c1TN is total nitrogen concentration."
+        cites: [pandit2025]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 40}
+        pass_band: satisfactory
+        band_note: "Daily total-nutrient pBIAS criterion; use absolute percent bias on concentration."
+        cites: [pandit2025]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          Daily nutrient-concentration NSE can be artificially low because concentration observations have low
+          variance and are often grab samples, while HYPE simulates daily means; use PBIAS/relative error and
+          seasonal/spatial concentration checks to diagnose data limitations before treating an NSE failure as a KI defect.
+        cites: [stromqvist2012, pandit2025]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [pandit2025]
+    validated_when: "NSE >= 0.30 and |PBIAS| <= 40% for daily total nitrogen concentration; inspect sampling and low-variance limitations if NSE fails."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Pandit 2025 Table 1 gives daily total-nutrient bands: satisfactory NSE starts at 0.30 and satisfactory
+      pBIAS is within 40%. S-HYPE explains that nutrient concentration NSE was generally avoided for daily
+      interpretation, but long-term TN spatial variance was 0.88 with typical concentration errors around 19%.
+
+  - dag_variable: c1TP
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.60, good: 0.45, satisfactory: 0.30}
+        pass_band: satisfactory
+        band_note: "Daily total-nutrient criterion; c1TP is total phosphorus concentration."
+        cites: [pandit2025]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 20, satisfactory: 40}
+        pass_band: satisfactory
+        band_note: "Daily total-nutrient pBIAS criterion; use absolute percent bias on concentration."
+        cites: [pandit2025]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          HYPE phosphorus dynamics are especially limited for daily concentrations because lake attenuation is
+          simplified with no horizontal or vertical stratification, grab samples may not represent daily means,
+          and agricultural timing is difficult to observe.
+        cites: [stromqvist2012, lindstrom2010]
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [pandit2025]
+    validated_when: "NSE >= 0.30 and |PBIAS| <= 40% for daily total phosphorus concentration; inspect lake/sampling limitations if NSE fails."
+    evidence_strength: strong
+    confidence: 0.80
+    notes: >-
+      Pandit 2025 provides the total-nutrient threshold table. S-HYPE reports TP long-term spatial NSE 0.59 and
+      typical concentration error around 32%, but daily TP NSE can be poor because phosphorus day-to-day
+      variation is difficult and lake attenuation is simplified.
+
+deferred_paywalled:
+  - ref: "Groundwater head calibration guidance such as Anderson and Woessner / Hill-style MODFLOW head RMSE or scaled-RMSE criteria"
+    doi: unknown_not_fetched
+    needed_for: [gwat]
+  - ref: "A HYPE-specific SWE or snow-water-equivalent validation paper with categorical CSI or NSE pass thresholds"
+    doi: unknown_not_fetched
+    needed_for: [snow]
+  - ref: "A HYPE or hydrologic remote-sensing ET validation convention that gives CSI or NSE pass bands for gridded actual evapotranspiration"
+    doi: unknown_not_fetched
+    needed_for: [evap]

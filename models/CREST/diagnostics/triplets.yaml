@@ -1,255 +1,286 @@
+# ========================================================================
+# CREST Diagnostic Triplets
+# ========================================================================
+# 21 triplets. Converted 2026-08-12 from the `triplets:` mapping to the
+# canonical TOP-LEVEL LIST. Content is byte-verified identical — this changes the
+# container only. The two-shape ambiguity is what let the self-improve overlay read
+# a corpus as empty and overwrite it.
+# ========================================================================
+
+# Comments preserved from the previous file:
 # CREST/EF5 Diagnostic Triplets
 # Symptom → Diagnosis → Remedy
 # For troubleshooting common issues in CREST model runs
-
-triplets:
-
   # ── Unit Conversion Traps ─────────────────────────────────────────────────
-
-  - id: T001
-    symptom: "Simulated discharge is 24x too high compared to observations"
-    diagnosis: "Precipitation UNIT in config is set to mm/h but actual forcing files contain mm/day values"
-    remedy: |
-      Change the PrecipForcing UNIT from 'mm/h' to 'mm/d' in control.txt.
-      EF5 converts internally: mm/d → mm/h by dividing by 24.
-      Always verify forcing file units independently before setting config UNIT.
-
-  - id: T002
-    symptom: "Simulated discharge is 24x too low; hydrograph is nearly flat"
-    diagnosis: "Precipitation UNIT in config is set to mm/d but actual forcing files contain mm/h values"
-    remedy: |
-      Change the PrecipForcing UNIT from 'mm/d' to 'mm/h' in control.txt.
-      Open a sample forcing grid and check: if max values during a storm are 10-100,
-      the unit is likely mm/h. If max values are 50-300, it may be mm/d.
-
-  - id: T003
-    symptom: "Enormous PET values causing all precipitation to evaporate; zero or near-zero discharge"
-    diagnosis: "PET forcing is in Kelvin (K) but UNIT is set to 'C' for temperature-based PET"
-    remedy: |
-      Convert temperature from Kelvin to Celsius before writing grids:
-        T_celsius = T_kelvin - 273.15
-      Or pre-process the NetCDF: ncap2 -s 'temp=temp-273.15' input.nc output.nc
-
-  - id: T004
-    symptom: "IM parameter has no effect; impervious area fraction is essentially zero"
-    diagnosis: "IM value is specified as fraction (0-1) instead of percent (0-100) when no im_grid is provided"
-    remedy: |
-      When no im_grid is used, EF5 divides the scalar IM by 100 internally.
-      So im=0.05 becomes 0.0005 (nearly zero). Set im=5 for 5% impervious area.
-      When im_grid IS provided, the scalar acts as a direct multiplier.
-
-  - id: T005
-    symptom: "FC (Ksat) parameter causes all rainfall to become interflow; no overland flow"
-    diagnosis: "FC is specified in mm/day instead of mm/hr, making infiltration capacity 24x too high"
-    remedy: |
-      Divide FC values by 24 to convert from mm/day to mm/hr.
-      Typical Ksat for loam: ~13 mm/hr. If your values are 100-300, they are likely in mm/day.
-
-  - id: T006
-    symptom: "WM parameter causes soil to fill instantly; constant saturation excess"
-    diagnosis: "WM grid is in meters instead of millimeters, giving WM values of 0.1-0.5 instead of 100-500"
-    remedy: |
-      Multiply WM grid values by 1000 to convert m to mm.
-      EF5 expects WM in mm. Typical range: 50-500 mm.
-
   # ── Grid and Configuration Traps ─────────────────────────────────────────
-
-  - id: T007
-    symptom: "Water routes in wrong direction; downstream gauge has less flow than upstream"
-    diagnosis: "ESRIDDM flag does not match the DDM encoding used"
-    remedy: |
-      Check DDM source:
-      - TauDEM: uses 1-8 encoding → set ESRIDDM=false
-      - ArcGIS/ESRI: uses 1,2,4,8,16,32,64,128 → set ESRIDDM=true
-      Open DDM and check max value: if max <= 8, it's TauDEM; if max = 128, it's ESRI.
-
-  - id: T008
-    symptom: "EF5 crashes at startup with grid reading errors"
-    diagnosis: "DEM, DDM, and FAM grids have mismatched extents, resolutions, or projections"
-    remedy: |
-      All three basic grids must have identical:
-      - Number of rows and columns
-      - Cell size
-      - Bounding box (xllcorner, yllcorner)
-      - Projection
-      Use gdalinfo on each to verify. Re-clip all grids from the same source.
-
-  - id: T009
-    symptom: "Gauge does not snap to expected river cell; BASINAREA warning in output"
-    diagnosis: "Gauge coordinates are in a different projection than the grid, or BASINAREA is wrong"
-    remedy: |
-      Gauge LON/LAT must be in unprojected WGS84 degrees regardless of grid PROJ setting.
-      EF5 reprojects internally. Also set BASINAREA (km²) to help EF5 find the right cell
-      by searching nearby cells for matching flow accumulation.
-
-  - id: T010
-    symptom: "'File not found' errors for forcing at specific timesteps"
-    diagnosis: "NAME template date tokens don't match actual file naming convention"
-    remedy: |
-      Check that YYYY, MM, DD, HH, UU, SS tokens in NAME= match the actual filename format.
-      Example: if files are named 'precip_2001010100.asc', use NAME=precip_YYYYMMDDHH.asc
-      (note: no UU token if filenames don't include minutes).
-
   # ── Runtime and Numerical Issues ─────────────────────────────────────────
 
-  - id: T011
-    symptom: "Discharge output shows wild oscillations or numerical spikes"
-    diagnosis: "Model time step is too large for the grid resolution, causing Courant instability in routing"
-    remedy: |
-      Reduce TIMESTEP in the task section. For kinematic wave routing:
-        Δt < Δx / max_wave_speed
-      Try TIMESTEP=5u (5 minutes) for high-resolution grids (~100m).
-      Linear reservoir routing is more stable and may allow larger steps.
+- id: T001
+  symptom: Simulated discharge is 24x too high compared to observations
+  diagnosis: Precipitation UNIT in config is set to mm/h but actual forcing files contain mm/day values
+  remedy: 'Change the PrecipForcing UNIT from ''mm/h'' to ''mm/d'' in control.txt.
 
-  - id: T012
-    symptom: "Zero discharge everywhere; model produces no runoff"
-    diagnosis: "Multiple possible causes: forcing directory empty, precipitation files not matching time window, or WM set extremely high"
-    remedy: |
-      Check in order:
-      1. ls the PRECIP LOC directory — are there files covering TIME_BEGIN to TIME_END?
-      2. Check NAME template matches actual filenames
-      3. Check UNIT — is precipitation being converted to near-zero?
-      4. Check WM — if WM > 1000mm, soil never saturates
-      5. Check KE — if KE > 2, all precip goes to ET
+    EF5 converts internally: mm/d → mm/h by dividing by 24.
 
-  - id: T013
-    symptom: "Output directory is empty after apparently successful run"
-    diagnosis: "ROUTING is not specified in task; only water balance runs without discharge computation"
-    remedy: |
-      Add ROUTING=LR or ROUTING=KW to the task section, and add the corresponding
-      ROUTING_PARAM_SET. Without routing, CREST computes excess water but does not
-      generate discharge output.
+    Always verify forcing file units independently before setting config UNIT.
 
-  - id: T014
-    symptom: "Model runs but output time series has only zeros after warm-up period"
-    diagnosis: "Forcing frequency (FREQ) is higher than file availability, causing EF5 to use the last available file repeatedly"
-    remedy: |
-      Match FREQ to actual file temporal resolution. If you have daily files,
-      set FREQ=d, not FREQ=1h. EF5 reads the most recently available file at each
-      time step, so mismatched FREQ causes stale forcing data.
+    '
+- id: T002
+  symptom: Simulated discharge is 24x too low; hydrograph is nearly flat
+  diagnosis: Precipitation UNIT in config is set to mm/d but actual forcing files contain mm/h values
+  remedy: 'Change the PrecipForcing UNIT from ''mm/d'' to ''mm/h'' in control.txt.
 
-  - id: T015
-    symptom: "NSE is extremely negative (< -10) despite reasonable hydrograph shape"
-    diagnosis: "Observation file discharge is in different units (e.g., cfs instead of m³/s, or mm/day instead of m³/s)"
-    remedy: |
-      EF5 outputs discharge in m³/s (cms). Ensure observation file uses the same units:
-      - cfs to m³/s: multiply by 0.02832
-      - mm/day to m³/s: multiply by basin_area_km² / 86.4
-      - L/s to m³/s: divide by 1000
+    Open a sample forcing grid and check: if max values during a storm are 10-100,
 
-  - id: T016
-    symptom: "Calibration (CALI_DREAM) runs indefinitely without convergence"
-    diagnosis: "Parameter search ranges are too wide, or objective function is flat due to underlying configuration errors"
-    remedy: |
-      1. First ensure a manual simulation with reasonable parameters produces non-zero output
-      2. Narrow calibration parameter ranges based on literature or soil data
-      3. Increase the number of chains (default is often too few for >6 parameters)
-      4. Check that OBS file has data overlapping with simulation period
+    the unit is likely mm/h. If max values are 50-300, it may be mm/d.
 
-  - id: T017
-    symptom: "Soil moisture always at 100% or always at 0%"
-    diagnosis: "WM parameter is too small (soil fills instantly) or IWU is set to 0/100 with no warm-up"
-    remedy: |
-      For WM: typical range is 50-500 mm. Values < 10 mm cause instant saturation.
-      For IWU: set to ~50% and use TIME_WARMEND to allow spin-up.
-      Check parameter grids for extreme values or nodata cells being read as valid.
+    '
+- id: T003
+  symptom: Enormous PET values causing all precipitation to evaporate; zero or near-zero discharge
+  diagnosis: PET forcing is in Kelvin (K) but UNIT is set to 'C' for temperature-based PET
+  remedy: "Convert temperature from Kelvin to Celsius before writing grids:\n  T_celsius = T_kelvin -\
+    \ 273.15\nOr pre-process the NetCDF: ncap2 -s 'temp=temp-273.15' input.nc output.nc\n"
+- id: T004
+  symptom: IM parameter has no effect; impervious area fraction is essentially zero
+  diagnosis: IM value is specified as fraction (0-1) instead of percent (0-100) when no im_grid is provided
+  remedy: 'When no im_grid is used, EF5 divides the scalar IM by 100 internally.
 
-  - id: T018
-    symptom: "Build fails: 'xtiffio.h not found'"
-    diagnosis: "libgeotiff development headers are not installed or are in a non-standard location"
-    remedy: |
-      Install: sudo apt install libgeotiff-dev
-      If headers are in a non-standard path, configure may need:
-        CPPFLAGS="-I/usr/include/geotiff" ./configure
-      Check configure.ac for the three possible header locations it checks.
+    So im=0.05 becomes 0.0005 (nearly zero). Set im=5 for 5% impervious area.
 
-  - id: T019
-    symptom: |
-      EF5 prints "Walked N (out of M) nodes for <gauge>!" with N << M (e.g. 4/24, 3/3262),
-      run completes with exit_code=0, ts.<gauge>.crest.csv produced but Discharge column is
-      identically 0.00 for every timestep. Soil moisture (SM) and basin-avg precip
-      look reasonable in the CSV.
-    diagnosis: |
-      The DDM/FAM grids fed to EF5 have a fragmented routing topology — unfilled sinks
-      and/or wrong drainage-direction encoding break the upstream flow path to the gauge.
-      Common causes:
-        - DDM was derived without sink-filling (e.g. wflow pcraster ldd_create defaults)
-        - DDM uses TauDEM 1-8 codes but ESRIDDM=true is set in control.txt
-        - SELFFAM convention mismatch between FAM tool and EF5 (EF5 expects min FAM=1)
-        - DEM clipped too tightly so headwater cells are missing
-      Diagnostic: grep DDM=0 cell count. If > 1% of basin cells, sinks are unfilled.
-    remedy: |
-      Regenerate DDM/FAM with the KI's Stage-1 tool:
+    When im_grid IS provided, the scalar acts as a direct multiplier.
 
-        python tools/prepare_basic_grids.py \
-          --dem raw_dem.tif --out-dir basin/grids/ \
-          --method breach --out-format asc \
-          --expected-outlet <gauge_lon> <gauge_lat>
+    '
+- id: T005
+  symptom: FC (Ksat) parameter causes all rainfall to become interflow; no overland flow
+  diagnosis: FC is specified in mm/day instead of mm/hr, making infiltration capacity 24x too high
+  remedy: 'Divide FC values by 24 to convert from mm/day to mm/hr.
 
-      The tool runs WhiteboxTools BreachDepressionsLeastCost → D8Pointer (ESRI) →
-      D8FlowAccumulation (cells, +1 for SELFFAM=true), and verifies:
-        - DDM unique values are subset of {0, 1, 2, 4, 8, 16, 32, 64, 128}
-        - DDM sinks < 1% of basin
-        - FAM at expected outlet is non-trivial (not 1)
+    Typical Ksat for loam: ~13 mm/hr. If your values are 100-300, they are likely in mm/day.
 
-      Verified empirical effect on Nuxia 94109 (Yarlung Tsangpo, 2026-04-28):
-        old prepared DDM: 171 sinks (7.8%), FAM_max=129, walked 4/24 → sim_Q=0
-        regenerated DDM:  60 sinks (2.8%),  FAM_max=970, walked 180/181 → routing connected
+    '
+- id: T006
+  symptom: WM parameter causes soil to fill instantly; constant saturation excess
+  diagnosis: WM grid is in meters instead of millimeters, giving WM values of 0.1-0.5 instead of 100-500
+  remedy: 'Multiply WM grid values by 1000 to convert m to mm.
 
-  - id: T020
-    symptom: |
-      `ef5 -z dem.tif -d ddm.tif -a fam.tif -p` runs (prints banner) and exits cleanly,
-      but no DDM or FAM file is produced. Exit code is 0.
-    diagnosis: |
-      EF5 v1.2.3's `-p` flag (mode=1, "process DEM from scratch") is present in the
-      getopt argument parser but its implementation in `ProcessDEM()` is empty —
-      mode=1 falls through to a no-op. Only mode=2 (`-s`, FAM from existing DDM) works.
-    remedy: |
-      Do NOT use `ef5 -p`. Use the KI's Stage-1 tool instead:
-        python tools/prepare_basic_grids.py --dem raw_dem.tif --out-dir basin/grids/ ...
-      If you must run EF5 directly, only `-s` (recompute FAM from a known-good DDM) works:
-        ef5 -z dem.tif -d ddm.tif -a fam.tif -s
+    EF5 expects WM in mm. Typical range: 50-500 mm.
 
-  - id: T021
-    symptom: |
-      EF5 runs to completion with ROUTING=LR. Walked-nodes diagnostic looks good
-      (high connectivity, e.g. 180/181). Soil moisture and Fast/Slow Flow columns
-      in ts.<gauge>.crest.csv are non-zero. But the Discharge column is identically
-      0.00 for every timestep. NSE/r/KGE all NaN or undefined.
-    diagnosis: |
-      EF5 v1.2.3 LR (Linear Reservoir) routing is BROKEN for discharge output:
-      LinearRoute.cpp's Route() function has `discharge` in its signature but
-      NEVER assigns to it. The simulator initializes currentQ to 0.0 and
-      LR routing leaves it at 0.0. KinematicRoute.cpp does correctly populate
-      discharge->at(i) at channel cells.
+    '
+- id: T007
+  symptom: Water routes in wrong direction; downstream gauge has less flow than upstream
+  diagnosis: ESRIDDM flag does not match the DDM encoding used
+  remedy: 'Check DDM source:
 
-      The water balance and routing are still happening correctly internally —
-      water is flowing between cells via incomingWater[LR_LAYER_OVERLAND/INTERFLOW]
-      buffers, but the simulator never converts those to m³/s for the output CSV.
-      The discharge formula (FF+SF)*area/3.6 exists in Simulator.cpp but only in
-      the calibration path (CALI_DREAM), not the regular SIMU path.
-    remedy: |
-      Switch to ROUTING=KW (Kinematic Wave) in the [Task] block, and replace
-      the [LRParamSet] with a [KWParamSet] block:
+    - TauDEM: uses 1-8 encoding → set ESRIDDM=false
 
-        [kwparamset NAME]
-        GAUGE=<gauge>
-        UNDER=1.67     # interflow speed multiplier (range 0.1-10)
-        LEAKI=0.043    # interflow leak rate (0-1)
-        TH=6.66        # channel threshold (FAM cells)
-        ISU=0.0        # initial interflow storage
-        ALPHA=2.99     # channel Q = alpha * A^beta multiplier
-        BETA=0.93      # channel exponent (range 0.5-1.5)
-        ALPHA0=4.60    # overland alpha
+    - ArcGIS/ESRI: uses 1,2,4,8,16,32,64,128 → set ESRIDDM=true
 
-      Then in [Task]:  ROUTING=KW, ROUTING_PARAM_SET=NAME
+    Open DDM and check max value: if max <= 8, it''s TauDEM; if max = 128, it''s ESRI.
 
-      Verified empirical effect (2026-04-29):
-        Bengbu sub-basin 1990: LR sim_Q=0, KW sim_Q max=652 m³/s, r=0.57, PBIAS=-66%
-        Nuxia 1991-2000:        LR sim_Q=0, KW sim_Q max=2364 m³/s, r=0.80, PBIAS=-84%
+    '
+- id: T008
+  symptom: EF5 crashes at startup with grid reading errors
+  diagnosis: DEM, DDM, and FAM grids have mismatched extents, resolutions, or projections
+  remedy: 'All three basic grids must have identical:
 
-      KW captures monsoon timing well (r > 0.5 with default params); volume bias
-      requires UNDER/LEAKI/ALPHA calibration. The Python surrogate at
-      `auto_dissect/_work/CREST/run_validation.py` re-implements LR in Python
-      and DOES produce non-zero Q because the surrogate computes Q correctly —
-      this is a binary-side bug, not an algorithm bug.
+    - Number of rows and columns
+
+    - Cell size
+
+    - Bounding box (xllcorner, yllcorner)
+
+    - Projection
+
+    Use gdalinfo on each to verify. Re-clip all grids from the same source.
+
+    '
+- id: T009
+  symptom: Gauge does not snap to expected river cell; BASINAREA warning in output
+  diagnosis: Gauge coordinates are in a different projection than the grid, or BASINAREA is wrong
+  remedy: 'Gauge LON/LAT must be in unprojected WGS84 degrees regardless of grid PROJ setting.
+
+    EF5 reprojects internally. Also set BASINAREA (km²) to help EF5 find the right cell
+
+    by searching nearby cells for matching flow accumulation.
+
+    '
+- id: T010
+  symptom: '''File not found'' errors for forcing at specific timesteps'
+  diagnosis: NAME template date tokens don't match actual file naming convention
+  remedy: 'Check that YYYY, MM, DD, HH, UU, SS tokens in NAME= match the actual filename format.
+
+    Example: if files are named ''precip_2001010100.asc'', use NAME=precip_YYYYMMDDHH.asc
+
+    (note: no UU token if filenames don''t include minutes).
+
+    '
+- id: T011
+  symptom: Discharge output shows wild oscillations or numerical spikes
+  diagnosis: Model time step is too large for the grid resolution, causing Courant instability in routing
+  remedy: "Reduce TIMESTEP in the task section. For kinematic wave routing:\n  Δt < Δx / max_wave_speed\n\
+    Try TIMESTEP=5u (5 minutes) for high-resolution grids (~100m).\nLinear reservoir routing is more stable\
+    \ and may allow larger steps.\n"
+- id: T012
+  symptom: Zero discharge everywhere; model produces no runoff
+  diagnosis: 'Multiple possible causes: forcing directory empty, precipitation files not matching time
+    window, or WM set extremely high'
+  remedy: 'Check in order:
+
+    1. ls the PRECIP LOC directory — are there files covering TIME_BEGIN to TIME_END?
+
+    2. Check NAME template matches actual filenames
+
+    3. Check UNIT — is precipitation being converted to near-zero?
+
+    4. Check WM — if WM > 1000mm, soil never saturates
+
+    5. Check KE — if KE > 2, all precip goes to ET
+
+    '
+- id: T013
+  symptom: Output directory is empty after apparently successful run
+  diagnosis: ROUTING is not specified in task; only water balance runs without discharge computation
+  remedy: 'Add ROUTING=LR or ROUTING=KW to the task section, and add the corresponding
+
+    ROUTING_PARAM_SET. Without routing, CREST computes excess water but does not
+
+    generate discharge output.
+
+    '
+- id: T014
+  symptom: Model runs but output time series has only zeros after warm-up period
+  diagnosis: Forcing frequency (FREQ) is higher than file availability, causing EF5 to use the last available
+    file repeatedly
+  remedy: 'Match FREQ to actual file temporal resolution. If you have daily files,
+
+    set FREQ=d, not FREQ=1h. EF5 reads the most recently available file at each
+
+    time step, so mismatched FREQ causes stale forcing data.
+
+    '
+- id: T015
+  symptom: NSE is extremely negative (< -10) despite reasonable hydrograph shape
+  diagnosis: Observation file discharge is in different units (e.g., cfs instead of m³/s, or mm/day instead
+    of m³/s)
+  remedy: 'EF5 outputs discharge in m³/s (cms). Ensure observation file uses the same units:
+
+    - cfs to m³/s: multiply by 0.02832
+
+    - mm/day to m³/s: multiply by basin_area_km² / 86.4
+
+    - L/s to m³/s: divide by 1000
+
+    '
+- id: T016
+  symptom: Calibration (CALI_DREAM) runs indefinitely without convergence
+  diagnosis: Parameter search ranges are too wide, or objective function is flat due to underlying configuration
+    errors
+  remedy: '1. First ensure a manual simulation with reasonable parameters produces non-zero output
+
+    2. Narrow calibration parameter ranges based on literature or soil data
+
+    3. Increase the number of chains (default is often too few for >6 parameters)
+
+    4. Check that OBS file has data overlapping with simulation period
+
+    '
+- id: T017
+  symptom: Soil moisture always at 100% or always at 0%
+  diagnosis: WM parameter is too small (soil fills instantly) or IWU is set to 0/100 with no warm-up
+  remedy: 'For WM: typical range is 50-500 mm. Values < 10 mm cause instant saturation.
+
+    For IWU: set to ~50% and use TIME_WARMEND to allow spin-up.
+
+    Check parameter grids for extreme values or nodata cells being read as valid.
+
+    '
+- id: T018
+  symptom: 'Build fails: ''xtiffio.h not found'''
+  diagnosis: libgeotiff development headers are not installed or are in a non-standard location
+  remedy: "Install: sudo apt install libgeotiff-dev\nIf headers are in a non-standard path, configure\
+    \ may need:\n  CPPFLAGS=\"-I/usr/include/geotiff\" ./configure\nCheck configure.ac for the three possible\
+    \ header locations it checks.\n"
+- id: T019
+  symptom: 'EF5 prints "Walked N (out of M) nodes for <gauge>!" with N << M (e.g. 4/24, 3/3262),
+
+    run completes with exit_code=0, ts.<gauge>.crest.csv produced but Discharge column is
+
+    identically 0.00 for every timestep. Soil moisture (SM) and basin-avg precip
+
+    look reasonable in the CSV.
+
+    '
+  diagnosis: "The DDM/FAM grids fed to EF5 have a fragmented routing topology — unfilled sinks\nand/or\
+    \ wrong drainage-direction encoding break the upstream flow path to the gauge.\nCommon causes:\n \
+    \ - DDM was derived without sink-filling (e.g. wflow pcraster ldd_create defaults)\n  - DDM uses TauDEM\
+    \ 1-8 codes but ESRIDDM=true is set in control.txt\n  - SELFFAM convention mismatch between FAM tool\
+    \ and EF5 (EF5 expects min FAM=1)\n  - DEM clipped too tightly so headwater cells are missing\nDiagnostic:\
+    \ grep DDM=0 cell count. If > 1% of basin cells, sinks are unfilled.\n"
+  remedy: "Regenerate DDM/FAM with the KI's Stage-1 tool:\n\n  python tools/prepare_basic_grids.py \\\n\
+    \    --dem raw_dem.tif --out-dir basin/grids/ \\\n    --method breach --out-format asc \\\n    --expected-outlet\
+    \ <gauge_lon> <gauge_lat>\n\nThe tool runs WhiteboxTools BreachDepressionsLeastCost → D8Pointer (ESRI)\
+    \ →\nD8FlowAccumulation (cells, +1 for SELFFAM=true), and verifies:\n  - DDM unique values are subset\
+    \ of {0, 1, 2, 4, 8, 16, 32, 64, 128}\n  - DDM sinks < 1% of basin\n  - FAM at expected outlet is\
+    \ non-trivial (not 1)\n\nVerified empirical effect on Nuxia 94109 (Yarlung Tsangpo, 2026-04-28):\n\
+    \  old prepared DDM: 171 sinks (7.8%), FAM_max=129, walked 4/24 → sim_Q=0\n  regenerated DDM:  60\
+    \ sinks (2.8%),  FAM_max=970, walked 180/181 → routing connected\n"
+- id: T020
+  symptom: '`ef5 -z dem.tif -d ddm.tif -a fam.tif -p` runs (prints banner) and exits cleanly,
+
+    but no DDM or FAM file is produced. Exit code is 0.
+
+    '
+  diagnosis: 'EF5 v1.2.3''s `-p` flag (mode=1, "process DEM from scratch") is present in the
+
+    getopt argument parser but its implementation in `ProcessDEM()` is empty —
+
+    mode=1 falls through to a no-op. Only mode=2 (`-s`, FAM from existing DDM) works.
+
+    '
+  remedy: "Do NOT use `ef5 -p`. Use the KI's Stage-1 tool instead:\n  python tools/prepare_basic_grids.py\
+    \ --dem raw_dem.tif --out-dir basin/grids/ ...\nIf you must run EF5 directly, only `-s` (recompute\
+    \ FAM from a known-good DDM) works:\n  ef5 -z dem.tif -d ddm.tif -a fam.tif -s\n"
+- id: T021
+  symptom: 'EF5 runs to completion with ROUTING=LR. Walked-nodes diagnostic looks good
+
+    (high connectivity, e.g. 180/181). Soil moisture and Fast/Slow Flow columns
+
+    in ts.<gauge>.crest.csv are non-zero. But the Discharge column is identically
+
+    0.00 for every timestep. NSE/r/KGE all NaN or undefined.
+
+    '
+  diagnosis: 'EF5 v1.2.3 LR (Linear Reservoir) routing is BROKEN for discharge output:
+
+    LinearRoute.cpp''s Route() function has `discharge` in its signature but
+
+    NEVER assigns to it. The simulator initializes currentQ to 0.0 and
+
+    LR routing leaves it at 0.0. KinematicRoute.cpp does correctly populate
+
+    discharge->at(i) at channel cells.
+
+
+    The water balance and routing are still happening correctly internally —
+
+    water is flowing between cells via incomingWater[LR_LAYER_OVERLAND/INTERFLOW]
+
+    buffers, but the simulator never converts those to m³/s for the output CSV.
+
+    The discharge formula (FF+SF)*area/3.6 exists in Simulator.cpp but only in
+
+    the calibration path (CALI_DREAM), not the regular SIMU path.
+
+    '
+  remedy: "Switch to ROUTING=KW (Kinematic Wave) in the [Task] block, and replace\nthe [LRParamSet] with\
+    \ a [KWParamSet] block:\n\n  [kwparamset NAME]\n  GAUGE=<gauge>\n  UNDER=1.67     # interflow speed\
+    \ multiplier (range 0.1-10)\n  LEAKI=0.043    # interflow leak rate (0-1)\n  TH=6.66        # channel\
+    \ threshold (FAM cells)\n  ISU=0.0        # initial interflow storage\n  ALPHA=2.99     # channel\
+    \ Q = alpha * A^beta multiplier\n  BETA=0.93      # channel exponent (range 0.5-1.5)\n  ALPHA0=4.60\
+    \    # overland alpha\n\nThen in [Task]:  ROUTING=KW, ROUTING_PARAM_SET=NAME\n\nVerified empirical\
+    \ effect (2026-04-29):\n  Bengbu sub-basin 1990: LR sim_Q=0, KW sim_Q max=652 m³/s, r=0.57, PBIAS=-66%\n\
+    \  Nuxia 1991-2000:        LR sim_Q=0, KW sim_Q max=2364 m³/s, r=0.80, PBIAS=-84%\n\nKW captures monsoon\
+    \ timing well (r > 0.5 with default params); volume bias\nrequires UNDER/LEAKI/ALPHA calibration.\
+    \ The Python surrogate at\n`auto_dissect/_work/CREST/run_validation.py` re-implements LR in Python\n\
+    and DOES produce non-zero Q because the surrogate computes Q correctly —\nthis is a binary-side bug,\
+    \ not an algorithm bug.\n"

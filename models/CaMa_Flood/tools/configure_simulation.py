@@ -40,6 +40,104 @@ import numpy as np
 
 CAMA_ROOT = "KISSPATH_BINARIES/cmf_v420_pkg"
 GLB_MAP = os.path.join(CAMA_ROOT, "map", "glb_15min")
+
+
+def _read_diminfo(diminfo_path):
+    """Parse a CaMa diminfo_*.txt -> dict(nx, ny, west, east, north, south)."""
+    with open(diminfo_path) as f:
+        lines = [l.split('!!')[0].strip() for l in f.readlines()]
+    west, east, north, south = (float(x) for x in lines[7:11])
+    return {'nx': int(lines[0]), 'ny': int(lines[1]),
+            'west': west, 'east': east, 'north': north, 'south': south}
+
+
+def _assert_channel_geometry_sane(map_dir, regional_diminfo_path, wc=2.00, wp=0.60, wmin=2.0,
+                                  width_file="rivwth.bin"):
+    """POST-CONDITION: channel width must grow downstream (correlate with drainage area).
+
+    Catches BOTH historical failure modes of this step: a global/regional outclm mismatch (uniform
+    WMIN everywhere) and a transposed clip (right values, wrong cells). Degenerate-aware: an
+    all-floor field is accepted when the basin's own Qmax could not produce anything above WMIN
+    (arid/headwater/tiny domains), and the correlation bar is only applied where it is meaningful.
+    Override with CAMA_SKIP_GEOMETRY_CHECK=1. Raises RuntimeError otherwise."""
+    if os.environ.get("CAMA_SKIP_GEOMETRY_CHECK", "") in ("1", "true", "yes"):
+        print("  [channel-geometry check SKIPPED — CAMA_SKIP_GEOMETRY_CHECK set]")
+        return None
+    try:
+        from scipy.stats import spearmanr
+    except ImportError:
+        print("  [channel-geometry check SKIPPED — scipy unavailable]")
+        return None
+    reg = _read_diminfo(regional_diminfo_path)
+    nx, ny = reg['nx'], reg['ny']
+    up_p = os.path.join(map_dir, "uparea.bin")
+    w_p = os.path.join(map_dir, width_file)
+    if not (os.path.isfile(up_p) and os.path.isfile(w_p)):
+        raise RuntimeError(f"channel-geometry check: missing {up_p} or {w_p}")
+    up = np.fromfile(up_p, dtype='float32').reshape((nx, ny), order='F')
+    rw = np.fromfile(w_p, dtype='float32').reshape((nx, ny), order='F')
+    m = (up > 0) & np.isfinite(up) & (rw > 0) & np.isfinite(rw)
+    n = int(m.sum())
+    if n == 0:
+        raise RuntimeError("channel-geometry check: NO valid cells — map dir empty/unreadable")
+    q_max = None
+    oc_p = os.path.join(map_dir, "outclm.bin")
+    if os.path.isfile(oc_p) and os.path.getsize(oc_p) == nx * ny * 4:
+        oc = np.fromfile(oc_p, dtype='float32')
+        fin = oc[np.isfinite(oc)]
+        if fin.size:
+            q_max = float(fin.max())
+    outlet = np.unravel_index(np.argmax(np.where(m, up, -1)), up.shape)
+    rho, p = spearmanr(rw[m], up[m]) if n >= 3 else (float('nan'), float('nan'))
+    print(f"  channel geometry [{width_file}]: spearman(width, uparea) = {rho:.3f} (p={p:.2g}) "
+          f"over {n} cells; outlet {outlet} uparea={up[outlet]:.3g} width={rw[outlet]:.1f} m"
+          + (f"; outclm Qmax={q_max:.3g} m3/s" if q_max is not None else ""))
+    if rw[m].max() <= wmin:
+        if q_max is not None and (wc * max(q_max, 0.0) ** wp) <= wmin:
+            print(f"  [WARN] all widths at the WMIN floor but Qmax={q_max:.3g} m3/s makes that "
+                  "physically legitimate here — not failing.")
+            return {'spearman': float(rho), 'degenerate': True}
+        raise RuntimeError(f"channel geometry collapsed to the WMIN floor (<= {wmin} m) while "
+                           f"outclm reports Qmax={q_max} m3/s — unusable outclm.bin (dt_cama_012)")
+    if n < 30 or not np.isfinite(rho) or np.unique(np.round(rw[m], 3)).size < 3:
+        print(f"  [WARN] degenerate domain for the correlation test (n={n}) — reporting only.")
+        return {'spearman': float(rho), 'degenerate': True}
+    if not (rho > 0.3):
+        raise RuntimeError(
+            f"channel geometry is NOT downstream-consistent: spearman(width, uparea)={rho:.3f} "
+            "(expected > 0.3). Widths are mis-located — check that outclm.bin was CLIPPED to the "
+            "regional domain and written in Fortran order (dt_cama_012). "
+            "Override: CAMA_SKIP_GEOMETRY_CHECK=1")
+    return {'spearman': float(rho), 'degenerate': False}
+
+
+def _clip_global_outclm(glb_outclm_path, glb_diminfo_path, regional_diminfo_path, dst_path):
+    """Clip the GLOBAL discharge climatology to the regional domain for calc_rivwth.
+
+    calc_outclm MUST run on the global grid (it routes the global runoff climatology through the
+    full network), but calc_rivwth expects a REGIONAL-sized array read with fixed-recl direct
+    access. Copying the global file instead of clipping it hands calc_rivwth a meaningless byte
+    slice, collapsing width/depth to WMIN/HMIN everywhere. Fortran order is mandatory on write:
+    calc_rivwth declares rivout(nx,ny) (index = ix + iy*nx) while tofile() writes C order.
+    """
+    glb = _read_diminfo(glb_diminfo_path)
+    reg = _read_diminfo(regional_diminfo_path)
+    gsize = (glb['east'] - glb['west']) / glb['nx']
+    arr = np.fromfile(str(glb_outclm_path), dtype='float32')
+    if arr.size != glb['nx'] * glb['ny']:
+        raise ValueError(f"global outclm.bin size {arr.size} != {glb['nx']}x{glb['ny']} — "
+                         "diminfo/outclm mismatch, refusing to clip blindly")
+    arr = arr.reshape((glb['nx'], glb['ny']), order='F')
+    col_start = round((reg['west'] - glb['west']) / gsize)
+    row_start = round((glb['north'] - reg['north']) / gsize)
+    if (col_start < 0 or row_start < 0 or col_start + reg['nx'] > glb['nx']
+            or row_start + reg['ny'] > glb['ny']):
+        raise ValueError(f"regional domain falls outside the global grid "
+                         f"(col_start={col_start}, row_start={row_start})")
+    sub = arr[col_start:col_start + reg['nx'], row_start:row_start + reg['ny']]
+    sub.astype('float32').ravel(order='F').tofile(str(dst_path))
+    return {'col_start': col_start, 'row_start': row_start, 'shape': sub.shape,
+            'min': float(sub.min()), 'mean': float(sub.mean()), 'max': float(sub.max())}
 GPCC_CLIM = os.path.join(CAMA_ROOT, "map", "data",
                          "ELSE_GPCC_coastmod_dayclm-1981-2010.one")
 
@@ -60,7 +158,19 @@ def read_grid_nc(grid_nc_path):
         print("ERROR: xarray required for --grid_nc. Install: pip install xarray")
         sys.exit(1)
 
-    ds = xr.open_dataset(grid_nc_path)
+    # Engine fallback: xarray's default netcdf4 backend is broken in this python_env and
+    # raises "NetCDF: HDF error" on every NETCDF4 file -- see dt_cama_014 / tools/parse_cama_output.py.
+    ds = None
+    _last = None
+    for _engine in (None, "h5netcdf", "netcdf4", "scipy"):
+        try:
+            ds = xr.open_dataset(grid_nc_path, engine=_engine)
+            break
+        except Exception as _exc:                      # noqa: BLE001 - try every backend
+            _last = _exc
+    if ds is None:
+        print(f"ERROR: cannot open {grid_nc_path} with any xarray engine (dt_cama_014): {_last}")
+        sys.exit(1)
     lat_name = "lat" if "lat" in ds.coords else "y"
     lon_name = "lon" if "lon" in ds.coords else "x"
     lats = ds[lat_name].values
@@ -324,10 +434,24 @@ def step3_channel_params(map_dir, basin_name, hc=0.10, hp=0.50, ho=0.00,
         print(f"  ERROR: outclm.bin not generated in glb_15min")
         return False
 
-    # Copy outclm.bin to regional directory
+    # CLIP (do NOT copy) outclm.bin into the regional directory.
+    # A raw copy hands calc_rivwth a GLOBAL-sized (1440x720) array where it expects a REGIONAL one
+    # and reads it with fixed-recl direct access — so it consumes an arbitrary byte-slice, and
+    # channel width/depth collapse to the WMIN/HMIN floor (2.0 m / 1.0 m) across the whole basin.
+    # Measured 2026-08-19: 40 of 43 existing regional maps on this server have rivhgt.bin pinned at
+    # the 1.0 m floor because of this. set_gwdlr masks it for WIDTH (satellite GWD-LR), but nothing
+    # repairs DEPTH — and rivhgt.bin is what the run consumes via CRIVHGT.
+    # NOTE the byte order: calc_rivwth declares rivout(nx,ny) and reads index = ix + iy*nx, i.e.
+    # Fortran order, while ndarray.tofile() always writes C order — so the clip MUST be written
+    # with ravel(order='F') or the values land on the wrong cells.
     regional_outclm = os.path.join(map_dir, "outclm.bin")
-    shutil.copy2(glb_outclm, regional_outclm)
-    print(f"  Copied outclm.bin to regional directory")
+    try:
+        os.remove(regional_outclm)          # never leave a stale regional file to be read
+    except FileNotFoundError:
+        pass
+    _clip_global_outclm(glb_outclm, os.path.join(GLB_MAP, "diminfo_test-1deg.txt"),
+                        os.path.join(map_dir, f"diminfo_{basin_name}_025deg.txt"), regional_outclm)
+    print(f"  Clipped outclm.bin (global -> regional domain, Fortran order)")
 
     # Step 3b: Run calc_rivwth from REGIONAL directory with REGIONAL diminfo
     print("  Step 3b: Computing channel width/depth (from regional dir)...")
@@ -348,11 +472,24 @@ def step3_channel_params(map_dir, basin_name, hc=0.10, hp=0.50, ho=0.00,
     if not run_cmd(cmd, cwd=map_dir, desc="calc_rivwth with regional diminfo"):
         return False
 
-    # Generate GWDLR width and Manning's n
+    # Generate GWDLR width and Manning's n.
+    # NOTE (codex review 2026-08-20): this KI path deliberately does NOT run src_param/set_gwdlr —
+    # it uses the power-law width for CRIVWTH instead of GWD-LR satellite widths, so the run's
+    # geometry is fully determined by outclm + (wc, wp, wmin). That is a legitimate choice, but it
+    # also removes the accidental repair that hid the outclm bug for years on the skills/ path:
+    # here a bad outclm shows up directly in the file the run consumes. Hence the post-condition
+    # below is MANDATORY on this path.
     rivwth_path = os.path.join(map_dir, "rivwth.bin")
     if os.path.isfile(rivwth_path):
-        shutil.copy2(rivwth_path, os.path.join(map_dir, "rivwth_gwdlr.bin"))
-        print("  Created rivwth_gwdlr.bin (copy of rivwth.bin)")
+        gwdlr_path = os.path.join(map_dir, "rivwth_gwdlr.bin")
+        try:
+            os.remove(gwdlr_path)          # never let a previous basin's file survive
+        except FileNotFoundError:
+            pass
+        shutil.copy2(rivwth_path, gwdlr_path)
+        print("  Created rivwth_gwdlr.bin (power-law width; set_gwdlr NOT used on this path)")
+        _assert_channel_geometry_sane(map_dir, diminfo_path, wc=wc, wp=wp, wmin=wmin,
+                                      width_file="rivwth_gwdlr.bin")
 
         # Generate uniform Manning's n = 0.03
         data = np.fromfile(rivwth_path, dtype="float32")
@@ -388,8 +525,21 @@ def step3_channel_params(map_dir, basin_name, hc=0.10, hp=0.50, ho=0.00,
 def step4_generate_run_script(basin_name, map_dir, runoff_dir, runoff_prefix,
                               start_year, end_year, output_dir=None,
                               pmanriv=0.03, pmanfld=0.10, nspinup=2,
-                              output_vars="outflw,rivdph,sfcelv,flddph,fldfrc"):
-    """Generate CaMa-Flood run shell script."""
+                              output_vars="outflw,rivdph,sfcelv,flddph,fldfrc",
+                              loutcdf=True):
+    """Generate CaMa-Flood run shell script.
+
+    output_vars maps to CVARSOUT. The dag declares NINE outputs; the historical default here
+    emitted only five, so `fldare` (rank 7), `rivout` (rank 2), `rivvel` (rank 8) and `rivsto`
+    (rank 9) were unreachable without hand-editing the generated script.
+
+    loutcdf maps to LOUTCDF. NetCDF (.TRUE.) gives `o_{var}{YYYY}.nc`; binary (.FALSE.) gives
+    `{var}{YYYY}.bin`, a direct-access float32 file with RECL=4*NX*NY, one record per output
+    step. Binary is NOT optional for flood-extent work: CaMa's own downscaling utility
+    (etc/downscale_flddph/src/downscale_flddph_trib) reads `out/flddph{YYYY}.bin` and cannot read
+    the NetCDF form, and docs/validation_convention.yaml requires downscaling fldfrc to the
+    native high-resolution grid before wet/dry thresholding against a satellite flood map.
+    """
     print("\n" + "=" * 60)
     print("  STEP 4: Generate Run Script")
     print("=" * 60)
@@ -512,7 +662,7 @@ def step4_generate_run_script(basin_name, map_dir, runoff_dir, runoff_prefix,
           COUTDIR  = './'
           CVARSOUT = '{output_vars}'
           COUTTAG  = '${{CYR}}'
-          LOUTCDF  = .TRUE.
+          LOUTCDF  = {'.TRUE.' if loutcdf else '.FALSE.'}
           NDLEVEL  = 0
           IFRQ_OUT = 24
           /
@@ -532,7 +682,10 @@ def step4_generate_run_script(basin_name, map_dir, runoff_dir, runoff_prefix,
             CYR1=`printf %04d ${{IYR1}}`
             mv ./restart${{CYR1}}010100.nc ./restart${{CYR}}010100.nc 2>/dev/null
             mkdir -p spinup-${{ISP}}
-            mv ./*${{CYR}}.nc spinup-${{ISP}}/ 2>/dev/null
+            # move BOTH output forms: LOUTCDF=.TRUE. writes o_*.nc, .FALSE. writes *.bin/*.ctl.
+            # (the restart file is NetCDF either way and was already renamed above, so it stays)
+            mv ./o_*${{CYR}}.nc spinup-${{ISP}}/ 2>/dev/null
+            mv ./*${{CYR}}.bin ./*${{CYR}}.ctl spinup-${{ISP}}/ 2>/dev/null
             ISP=`expr ${{ISP}} + 1`
           else
             IYR=`expr ${{IYR}} + 1`
@@ -579,6 +732,12 @@ def main():
     parser.add_argument("--pmanriv", type=float, default=0.03, help="River Manning n")
     parser.add_argument("--pmanfld", type=float, default=0.10, help="Floodplain Manning n")
     parser.add_argument("--nspinup", type=int, default=2, help="Number of spin-up iterations")
+    parser.add_argument("--output_vars", default="outflw,rivdph,sfcelv,flddph,fldfrc",
+                        help="CVARSOUT list (comma-separated). dag.yaml declares: outflw, rivout, "
+                             "rivdph, sfcelv, flddph, fldfrc, fldare, rivvel, rivsto")
+    parser.add_argument("--output_format", choices=["netcdf", "binary"], default="netcdf",
+                        help="LOUTCDF: 'netcdf' -> o_{var}{YYYY}.nc; 'binary' -> {var}{YYYY}.bin "
+                             "(required by etc/downscale_flddph for flood-extent downscaling)")
     parser.add_argument("--skip_step1", action="store_true", help="Skip regionalization")
     parser.add_argument("--skip_step2", action="store_true", help="Skip inpmat generation")
     parser.add_argument("--skip_step3", action="store_true", help="Skip channel parameters")
@@ -658,7 +817,8 @@ def main():
     script_path = step4_generate_run_script(
         args.basin_name, map_dir, args.runoff_dir, args.runoff_prefix,
         args.start_year, args.end_year, args.output_dir,
-        pmanriv=args.pmanriv, pmanfld=args.pmanfld, nspinup=args.nspinup
+        pmanriv=args.pmanriv, pmanfld=args.pmanfld, nspinup=args.nspinup,
+        output_vars=args.output_vars, loutcdf=(args.output_format == "netcdf")
     )
 
     print(f"\n{'='*60}")

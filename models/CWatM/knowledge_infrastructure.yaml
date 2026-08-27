@@ -1,106 +1,114 @@
+# knowledge_infrastructure.yaml — the KI's manifest, PROJECTED from dag.yaml,
+# the KI contents and the models DB (generate_ki_manifest.py, 2026-08-15).
+
 package:
-  created: '2026-03-25T03:58:07.431194'
-  domain: hydrology
   name: CWatM
-  version: auto-generated
+  language: python
+  implementation:
+    id: cwatm
+    version: 1.5 (develop branch, commit 5e5c455)
+    provenance: Python 3.8+ terrestrial water-cycle model with a C++ kinematic-routing acceleration library
+      (t5 shared object); IIASA Water Security group, repo iiasa/CWatM.
+  scientific_reference_version: CWatM v1.04 (Burek et al. 2020, GMD 13:3267-3298, doi:10.5194/gmd-13-3267-2020)
+  binary:
+    path: KISSPATH_KI_ROOT/CWatM/source/repo/run_cwatm.py
+    type: work_dir
 pipeline:
   stages:
-  - depends_on: []
-    description: Set basin, period, resolution, paths
-    id: s0_config
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Configuration completed successfully
-      id: m_s0_config
-      verification: Output files exist and pass validation
-    name: Configuration
-    tools: []
-  - depends_on: []
-    description: Define computational grid or HRUs from DEM and basin shapefile
-    id: s1_domain
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Domain / Grid Setup completed successfully
-      id: m_s1_domain
-      verification: Output files exist and pass validation
-    name: Domain / Grid Setup
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Derive soil hydraulic properties from HWSD or SoilGrids
-    id: s2_soil
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Soil Parameters completed successfully
-      id: m_s2_soil
-      verification: Output files exist and pass validation
-    name: Soil Parameters
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Classify land cover from AVHRR into model vegetation classes
-    id: s3_vegetation
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Vegetation / Land Cover completed successfully
-      id: m_s3_vegetation
-      verification: Output files exist and pass validation
-    name: Vegetation / Land Cover
-    tools: []
-  - depends_on:
-    - s1_domain
-    description: Convert CMFD/MSWX/NASA POWER to model forcing format
-    id: s4_forcing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Meteorological Forcing completed successfully
-      id: m_s4_forcing
-      verification: Output files exist and pass validation
-    name: Meteorological Forcing
-    tools: []
-  - depends_on:
-    - s2_soil
-    - s3_vegetation
-    description: Set calibration parameters or defaults
-    id: s5_parameters
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Parameters completed successfully
-      id: m_s5_parameters
-      verification: Output files exist and pass validation
-    name: Model Parameters
-    tools: []
-  - depends_on:
-    - s4_forcing
-    - s5_parameters
-    description: Run the model binary
-    id: s6_run
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Model Execution completed successfully
-      id: m_s6_run
-      verification: Output files exist and pass validation
-    name: Model Execution
-    tools: []
-  - depends_on:
-    - s6_run
-    description: Extract discharge, soil moisture, ET from model output
-    id: s7_postprocess
-    knowledge_type: procedural
-    milestones:
-    - description: Stage Output Parsing completed successfully
-      id: m_s7_postprocess
-      verification: Output files exist and pass validation
-    name: Output Parsing
-    tools: []
-  - depends_on:
-    - s7_postprocess
-    description: Route runoff through river network if model doesn't include routing
-    id: s8_routing
-    knowledge_type: procedural
-    milestones:
-    - description: Stage River Routing (optional) completed successfully
-      id: m_s8_routing
-      verification: Output files exist and pass validation
-    name: River Routing (optional)
-    tools: []
+  - s0_configuration
+  - s1_forcing_preparation
+  - s2_static_data_preparation
+  - s3_model_execution
+  - s4_output_analysis
+  - s5_calibration
+tools:
+  count: 7
+  files:
+  - tools/build_cwatm_ancillary.py
+  - tools/build_cwatm_static.py
+  - tools/build_cwatm_waterbodies.py
+  - tools/convert_forcing_to_cwatm.py
+  - tools/convert_soil_to_cwatm.py
+  - tools/parse_cwatm_output.py
+  - tools/run_cwatm_wrapper.py
+inputs:
+  forcing:
+  - name: Precipitation
+    unit: kg m-2 s-1 (or m/day, mm/day)
+  - name: Average air temperature (Tavg)
+    unit: K (or degC)
+  - name: Minimum / maximum air temperature (Tmin, Tmax)
+    unit: K
+  - name: Surface pressure
+    unit: Pa
+  - name: Humidity (relative % or specific kg/kg)
+    unit: '% or kg/kg'
+  - name: Wind speed (10 m)
+    unit: m/s
+  - name: Downward shortwave radiation
+    unit: W m-2
+  - name: Downward longwave radiation
+    unit: W m-2
+  - name: Reference ET (pre-computed, water E0 / crop ET)
+    unit: m/day
+  - name: CO2 concentration
+    unit: ppm
+  parameters:
+  - name: Local drain direction (Ldd)
+    unit: 1-9 PCRaster code (5=pit)
+  - name: Digital elevation model + elevation std dev
+    unit: m
+  - name: River channel properties (length, gradient, width, depth, Manning n)
+    unit: m, dimensionless, s/m^(1/3)
+  - name: Soil hydraulic parameters (KSat1/2/3, alpha, lambda, thetas, thetar, StorDepth)
+    unit: cm/day, 1/cm, -, -, -, m
+  - name: Land-cover fractions + per-type vegetation params (root depth, interception capacity, crop coefficient,
+      depletion factor)
+    unit: fraction, m, -
+  - name: Groundwater recession constant and reservoir/storage coefficient
+    unit: frac, day
+  - name: Lakes & reservoirs (HydroLakes geometry; reservoir operating rules)
+    unit: m3, fraction
+  - name: Monthly water-demand maps (industry, domestic)
+    unit: volume per timestep
+  - name: Calibration parameters (SnowMeltCoef, arnoBeta_add, soildepth_factor, factor_interflow, recessionCoeff_factor,
+      crop_correct, manningsN, preferentialFlowConstant, normalStorageLimit, lakeAFactor, lakeEvaFactor)
+    unit: various (dimensionless multipliers/shape factors)
+  initial_conditions:
+  - name: Initial soil moisture (3 layers), groundwater storage, snow cover, channel storage, lake/reservoir
+      storage
+    unit: m / m3
+  boundary_conditions:
+  - name: Process/method switches
+    unit: boolean / enum
+  - name: Water-demand / abstraction scenario
+    unit: volume per timestep
+  - name: Simulation period and calendar
+    unit: date
+  - name: Optional upstream couplings (MODFLOW 6 groundwater, OGGM glacier inflow)
+    unit: m/day flux
+io_detail: 'full I/O contract incl. units/observability: docs/format_spec.yaml'
+outputs:
+  observable:
+  - discharge
+  - tws
+  - totalET
+  - SnowCover
+  - storGroundwater
+  - baseflow
+  - sum_gwRecharge
+  - unmetDemand
+  other: []
+validation:
+  tier: tested
+  tier_justification: 'measured: NSE=0.864, KGE=0.905, R=0.930, 2 scorecard(s)'
+  metrics:
+    best_nse: 0.864
+    best_kge: 0.9055
+    best_r: 0.9302
+summary:
+  total_tools: 7
+  total_stage_docs: 6
+  total_diagnostic_triplets: 28
+  generated: '2026-08-15'
+  generated_by: generate_ki_manifest.py (projection; regenerate any time)

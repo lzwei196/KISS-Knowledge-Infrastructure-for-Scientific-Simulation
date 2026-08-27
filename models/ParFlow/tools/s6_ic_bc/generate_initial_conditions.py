@@ -139,45 +139,45 @@ def process(domain_json, mask_npy, output_dir, method="hydrostatic",
         pressure[mask_3d == 0] = 0.0
 
     elif method == "reinecke":
-        # Use Reinecke global water table depth
+        # Spatially varying WTD from the equilibrium mean water-table map on
+        # disk (Fan 2013, staged under data/soil/water_table_depth/). The
+        # previous path 'reinecke_wtd.tif' never existed, so this method
+        # SILENTLY fell back to uniform hydrostatic -- now a hard error.
         wtd_file = os.path.join("KISSPATH_ROOT",
-                                "data/soil/water_table_depth/reinecke_wtd.tif")
-        if os.path.exists(wtd_file):
-            import rasterio
-            from pyproj import Transformer
-            utm_epsg = domain["crs"]["epsg"]
-            transformer = Transformer.from_crs(
-                f"EPSG:{utm_epsg}", "EPSG:4326", always_xy=True
-            )
-            with rasterio.open(wtd_file) as src:
-                for j in range(ny):
-                    for i in range(nx):
-                        if mask_3d[0, j, i] == 0:
-                            continue
-                        cx = origin_x + (i + 0.5) * dx
-                        cy = origin_y + (j + 0.5) * dy
-                        lon, lat = transformer.transform(cx, cy)
-                        try:
-                            row, col = src.index(lon, lat)
-                            local_wtd = float(src.read(1, window=rasterio.windows.Window(col, row, 1, 1))[0, 0])
-                        except Exception:
-                            local_wtd = wtd  # fallback
-                        if local_wtd < 0 or local_wtd > 500:
-                            local_wtd = wtd
-                        surf_elev = elevation_2d[j, i] if elevation_2d is not None else total_depth
-                        wt_elev = surf_elev - local_wtd
-                        for k in range(nz):
-                            pressure[k, j, i] = wt_elev - cell_z[k, j, i]
-        else:
-            # Fall back to hydrostatic with default wtd
+                                "data/groundwater/fan_wtd/MeanWaterTableDepth_meter.tif")
+        if not os.path.exists(wtd_file):
+            raise FileNotFoundError(
+                f"Water-table-depth map not found: {wtd_file} -- "
+                "use --method hydrostatic explicitly if a uniform IC is intended")
+        import rasterio
+        from pyproj import Transformer
+        utm_epsg = domain["crs"]["epsg"]
+        transformer = Transformer.from_crs(
+            f"EPSG:{utm_epsg}", "EPSG:4326", always_xy=True
+        )
+        n_fallback = 0
+        with rasterio.open(wtd_file) as src:
             for j in range(ny):
                 for i in range(nx):
                     if mask_3d[0, j, i] == 0:
                         continue
+                    cx = origin_x + (i + 0.5) * dx
+                    cy = origin_y + (j + 0.5) * dy
+                    lon, lat = transformer.transform(cx, cy)
+                    try:
+                        row, col = src.index(lon, lat)
+                        local_wtd = float(src.read(1, window=rasterio.windows.Window(col, row, 1, 1))[0, 0])
+                    except Exception:
+                        local_wtd = wtd
+                        n_fallback += 1
+                    if not np.isfinite(local_wtd) or local_wtd < 0 or local_wtd > 500:
+                        local_wtd = wtd
+                        n_fallback += 1
                     surf_elev = elevation_2d[j, i] if elevation_2d is not None else total_depth
-                    wt_elev = surf_elev - wtd
+                    wt_elev = surf_elev - local_wtd
                     for k in range(nz):
                         pressure[k, j, i] = wt_elev - cell_z[k, j, i]
+        print(f"reinecke IC: {n_fallback} cells fell back to uniform wtd={wtd}")
 
     # Save
     output_file = os.path.join(output_dir, "initial_pressure.npy")

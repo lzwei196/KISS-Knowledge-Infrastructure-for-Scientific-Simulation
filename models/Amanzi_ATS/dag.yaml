@@ -444,7 +444,7 @@ outputs:
   - var: "saturation_liquid"
     validation_rank: 3
     unit: "dimensionless (0–1)"
-    description: "Liquid saturation field derived from pressure via the retention curve."
+    description: "Subsurface liquid saturation field derived from pressure via the retention curve."
     emitted_in: "HDF5+XDMF visualization"
     observability:
       comparable_obs_shapes:
@@ -462,7 +462,7 @@ outputs:
   - var: "darcy_velocity"
     validation_rank: 4
     unit: "m/s"
-    description: "Darcy flux field; also integrated to volumetric flux / discharge at observation regions."
+    description: "Subsurface Darcy flux field; also integrated to volumetric flux / discharge at observation regions."
     emitted_in: "HDF5+XDMF visualization and observation time-series (.out, volumetric_flux)"
     observability:
       comparable_obs_shapes:
@@ -480,7 +480,7 @@ outputs:
   - var: "total_component_concentration"
     validation_rank: 5
     unit: "mol/L"
-    description: "Per-solute aqueous concentration (reactive transport primary unknown)."
+    description: "Per-solute aqueous concentration in subsurface water (reactive transport primary unknown)."
     emitted_in: "HDF5+XDMF visualization and observation time-series (.out, aqueous_conc)"
     observability:
       comparable_obs_shapes:
@@ -731,3 +731,17 @@ safety:
       scope: "Conservation closure."
       source: "Amanzi/ATS flow, transport, and energy PK formulation (Painter et al. 2016 WRR; ATS flow PK docs)."
       status: adopted
+
+medium_evidence:
+  - var: "saturation_liquid"
+    source: "dag.yaml"
+    quote: "Variably-saturated subsurface flow (Richards equation, van Genuchten/Brooks-Corey retention, Mualem rel-perm)"
+    note: "boundary.scope_in ties retention-derived liquid saturation to subsurface flow."
+  - var: "darcy_velocity"
+    source: "dag.yaml"
+    quote: "Variably-saturated Richards (nonlinear) or saturated Darcy flow; assembles diffusion + accumulation operators; primary unknown pressure, conserved water_content."
+    note: "Flow_PK is the Richards/Darcy process that writes Darcy velocity."
+  - var: "total_component_concentration"
+    source: "SKILL.md"
+    quote: "This knowledge infrastructure enables autonomous simulation of subsurface flow and reactive transport using Amanzi/ATS."
+    note: "Reactive transport concentration is documented as part of the KI's subsurface flow and transport scope."

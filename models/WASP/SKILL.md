@@ -1,14 +1,3 @@
----
-name: wasp
-description: >-
-  WASP (US EPA Water Analysis Simulation Program) core water-quality physics; analytic
-  lake/reservoir reimplementation (temperature, DO, BOD, TSI). Covers Seasonal surface
-  water temperature (sinusoidal annual cycle); Seasonal dissolved-oxygen time series
-  (steady-state Streeter-Phelps); 1-D vertical temperature profile (logistic thermocline
-  structure). Use when the task involves running, configuring, calibrating or interpreting
-  WASP.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -32,6 +21,40 @@ description: >-
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
 
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (6 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (26 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (16 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_wasp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_wasp.py --help` |
+| `tools/convert_parameters_to_wasp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_parameters_to_wasp.py --help` |
+| `tools/parse_output_wasp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_output_wasp.py --help` |
+| `tools/run_wasp.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_wasp.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
+
 # WASP Knowledge Infrastructure
 
 **Package**: hydrocraft-wasp v1.0.0
@@ -46,7 +69,7 @@ description: >-
 |--------|-------|
 | Tools | 4 |
 | Pipeline stages | 6 |
-| Diagnostic triplets | 14 |
+| Diagnostic triplets | 26 |
 | Validation lake | Lake Erie Central Basin |
 
 ---
@@ -177,9 +200,66 @@ pip install numpy pandas scipy matplotlib
 **Parallelism**: Stages 1--2 can run in parallel. Stage 3 depends on 1--2.
 Stage 4 depends on 3.
 
+### Stage skill documents
+
+- [Stage 1: Forcing preparation](docs/s1_forcing_preparation.md)
+- [Stage 2: Parameter setup](docs/s2_parameter_setup.md)
+- [Stage 3: Model execution](docs/s3_model_execution.md)
+- [Stage 4: Output parsing](docs/s4_output_parsing.md)
+- [Stage 5: Calibration](docs/s5_calibration.md)
+- [Stage 6: TSI analysis](docs/s6_tsi_analysis.md)
+
 ---
 
-## 4. Unit Trap Table
+## 4. Output Description
+
+Source: `dag.yaml`. The dag is the authority for output identity; if this
+section ever disagrees with `dag.yaml`, the dag wins and this section should be
+fixed.
+
+**Headline output** (`validation_rank: 1`, the variable this model is judged by):
+
+> `do_timeseries` -- Seasonal dissolved-oxygen time series (steady-state Streeter-Phelps). (mg/L)
+
+Dag outputs restated from the KI:
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `do_timeseries` | 1 | mg/L | Seasonal dissolved-oxygen time series (steady-state Streeter-Phelps). |
+| `temperature_timeseries` | See `dag.yaml` | See `dag.yaml` | See `dag.yaml` |
+| `temperature_profile` | See `dag.yaml` | See `dag.yaml` | See `dag.yaml` |
+| `do_profile` | See `dag.yaml` | See `dag.yaml` | See `dag.yaml` |
+| `do_saturation` | See `dag.yaml` | See `dag.yaml` | See `dag.yaml` |
+| `TSI` | See `dag.yaml` | See `dag.yaml` | See `dag.yaml` |
+
+The rank-1 output is the seasonal dissolved-oxygen time series,
+`do_timeseries`, in mg/L.
+
+---
+
+## 4a. Unit Table
+
+This unit table summarizes the model-facing units used by the pipeline. Exact
+I/O shapes live in `docs/format_spec.yaml`; `dag.yaml` is authoritative for
+output variables.
+
+| Variable | Model unit | Source or context | Notes |
+|----------|------------|-------------------|-------|
+| `do_timeseries` | mg/L | `dag.yaml` rank-1 output | Seasonal dissolved-oxygen time series. |
+| Temperature | deg C | WQP / forcing / seasonal model | Convert Fahrenheit or Kelvin before use. |
+| Dissolved oxygen | mg/L | WQP observations and DO outputs | Values > 20 mg/L are suspect. |
+| Depth | m | WQP profile depth and lake morphometry | Convert ft or cm before use. |
+| Chlorophyll-a | ug/L | TSI input | Used for Carlson TSI. |
+| Total phosphorus | ug/L | TSI input | Used for Carlson TSI. |
+| Secchi depth | m | TSI input | Used for Carlson TSI. |
+| BOD decay rate `kd` | 1/d | DO seasonal model parameter | Convert hourly rates to daily rates. |
+| Reaeration rate `ka` | 1/d | DO seasonal model parameter | Convert hourly rates to daily rates. |
+| Lake area | km2 | Lake morphometry | Convert ha or m2 before use. |
+| Lake volume | m3 | Lake morphometry | Convert acre-ft before use. |
+
+---
+
+## 4b. Unit Trap Table
 
 These unit conversions cause **silent failures** if wrong. The model performs
 no internal unit conversion; all inputs must be in the expected units.
@@ -341,7 +421,7 @@ Typical parameter values for lakes:
 
 ---
 
-## 9. Validation Results (Lake Erie Central Basin)
+## 9. Validated Results (Lake Erie Central Basin)
 
 | Metric                  | Calibration | Validation |
 |-------------------------|-------------|------------|
@@ -360,6 +440,24 @@ Temperature model shows strong generalization (R improves from cal to val).
 DO model shows reduced generalization, typical for simple seasonal models
 that cannot capture interannual variability in loading and stratification.
 Thermal profile model achieves near-perfect fit (R=0.996) for summer conditions.
+
+### Performance Metrics -- Convention Bars
+
+Source: `docs/validation_convention.yaml`. These bars are the KI's cited
+field convention for judging model skill. A null band in the convention is
+reported here as "no cited threshold".
+
+| Dag variable | Metric | Direction | Satisfactory band | Good band | Very good band |
+|--------------|--------|-----------|-------------------|-----------|----------------|
+| `temperature_timeseries` | nse | maximize | 0.5 (`arnold2012`, `efdc2021`, `piccolroaz2013`) | no cited threshold (`arnold2012`, `efdc2021`, `piccolroaz2013`) | 0.75 (`arnold2012`, `efdc2021`, `piccolroaz2013`) |
+| `do_timeseries` | nse | maximize | 0.5 (`arnold2012`, `efdc2021`, `deepavarsa2023`) | no cited threshold (`arnold2012`, `efdc2021`, `deepavarsa2023`) | 0.75 (`arnold2012`, `efdc2021`, `deepavarsa2023`) |
+| `do_timeseries` | r2 | maximize | 0.5 (`deepavarsa2023`, `lushui2021`) | 0.6 (`deepavarsa2023`, `lushui2021`) | 0.75 (`deepavarsa2023`, `lushui2021`) |
+| `temperature_profile` | pbias | zero_centered | 15 (`lushui2021`) | no cited threshold (`lushui2021`) | no cited threshold (`lushui2021`) |
+
+For the headline dag variable `do_timeseries`, the convention bars are:
+
+- `nse`, maximize: satisfactory 0.5 (`arnold2012`, `efdc2021`, `deepavarsa2023`), good no cited threshold (`arnold2012`, `efdc2021`, `deepavarsa2023`), very good 0.75 (`arnold2012`, `efdc2021`, `deepavarsa2023`).
+- `r2`, maximize: satisfactory 0.5 (`deepavarsa2023`, `lushui2021`), good 0.6 (`deepavarsa2023`, `lushui2021`), very good 0.75 (`deepavarsa2023`, `lushui2021`).
 
 ---
 

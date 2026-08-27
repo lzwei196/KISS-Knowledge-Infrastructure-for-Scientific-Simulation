@@ -1,0 +1,316 @@
+schema_version: 1
+model_id: FloPy
+domain: hydrology
+generated_by: "Step-B validation convention agent"
+generated_at: 2026-08-14
+
+references:
+  marker2015:
+    doi: 10.5194/hess-19-3875-2015
+    title: "Performance evaluation of groundwater model hydrostratigraphy from airborne electromagnetic data and lithological borehole logs"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2015
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-19-3875-2015.txt
+  schoups2005:
+    doi: 10.5194/hess-9-549-2005
+    title: "Multi-objective calibration of a surface water-groundwater flow model in an irrigated agricultural region"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2005
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-9-549-2005.txt
+  antelope2014:
+    doi: 10.3133/sir20145166
+    title: "Groundwater-flow and land-subsidence model of Antelope Valley, California"
+    venue: "USGS Scientific Investigations Report"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3133_sir20145166.txt
+  modflow6doc2017:
+    doi: 10.3133/tm6a55
+    title: "Documentation for the MODFLOW 6 Groundwater Flow Model"
+    venue: "USGS Techniques and Methods"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3133_tm6a55.txt
+  pulighe2019:
+    doi: 10.3390/agronomy10010002
+    title: "Predicting Streamflow and Nutrient Loadings in a Semi-Arid Mediterranean Watershed with Ephemeral Streams Using the SWAT Model"
+    venue: "Agronomy"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_agronomy10010002.txt
+  cwatm2020:
+    doi: 10.5194/gmd-13-3267-2020
+    title: "Development of the Community Water Model (CWatM v1.04) - a high-resolution hydrological model for global and regional assessment of integrated water resources management"
+    venue: "Geoscientific Model Development"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-3267-2020.txt
+  swatmodflow2019:
+    doi: 10.5194/hess-2019-232
+    title: "Comparing SWAT with SWAT-MODFLOW hydrological simulations when assessing the impacts of groundwater abstractions"
+    venue: "Hydrology and Earth System Sciences Discussions"
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-2019-232.txt
+  flopy2016:
+    doi: 10.1111/gwat.12413
+    title: "Scripting MODFLOW Model Development Using Python and FloPy"
+    venue: "Groundwater"
+    year: 2016
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1111_gwat.12413.txt
+  flopy2024:
+    doi: 10.1111/gwat.13327
+    title: "FloPy Workflows for Creating Structured and Unstructured MODFLOW Models"
+    venue: "Groundwater"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1111_gwat.13327.txt
+
+validation:
+  - dag_variable: hydraulic head
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.95, good: 1.4, satisfactory: 2.2}
+        pass_band: satisfactory
+        band_note: "Head-error budget bands from Marker et al.: total errors amount to 0.95, 1.4, and 2.2 m."
+        cites: [marker2015]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The DAG metric is retained only as context; groundwater-head studies use residual, RMSE, and mean error rather than percent bias against datum-elevation heads."
+        cites: [marker2015, antelope2014]
+    validated_when: "Point head snapshots are validated when head RMSE or absolute single-well residual is <= 2.2 m, matching the upper cited head-observation error budget."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Marker et al. estimate head-observation uncertainty with measurement, elevation, interpolation,
+      heterogeneity, and unknown terms; the total errors are 0.95, 1.4, and 2.2 m. The Antelope Valley
+      MODFLOW benchmark reports that its calibrated model reproduced water levels with a "reasonable
+      level of accuracy" and lists RMSE residual statistics, supporting RMSE rather than PBIAS as the
+      field convention for hydraulic head.
+
+  - dag_variable: hydraulic head
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.95, good: 1.4, satisfactory: 2.2}
+        pass_band: satisfactory
+        band_note: "Transferred from the fetched groundwater-head observation error budget: 0.95, 1.4, and 2.2 m."
+        cites: [marker2015]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG temporal-pattern metric is informative, but fetched groundwater calibration papers report head hydrograph fit with RMSE, mean error, residuals, and plots."
+        cites: [marker2015, antelope2014]
+    validated_when: "Transient head time series are validated when RMSE <= 2.2 m over observation wells; correlation is diagnostic but not the pass gate."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Marker et al. report calibration and validation head RMSE and ME for a temporally split sample;
+      the 5-cluster validation head RMSE is 2.24 m, essentially at the 2.2 m observation-error band.
+      Antelope Valley gives a second MODFLOW-style benchmark using residual/RMSE summaries for
+      transient hydraulic head.
+
+  - dag_variable: hydraulic head
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.95, good: 1.4, satisfactory: 2.2}
+        pass_band: satisfactory
+        band_note: "Continuous groundwater-head surfaces are assessed with residual/RMSE at wells, not categorical CSI."
+        cites: [marker2015]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is a spatial-pattern diagnostic for categorical maps; fetched groundwater-head papers compare continuous simulated heads to wells with RMSE, ME, scatter plots, maps, and residuals."
+        cites: [marker2015, antelope2014]
+    validated_when: "Spatial head snapshots are validated when well-sampled head-surface RMSE <= 2.2 m against consistent-datum observations."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Marker et al. compare distributed simulated heads with observed heads and report RMSE/ME; their
+      error budget supplies the numeric pass band. Antelope Valley likewise validates spatial and temporal
+      hydraulic heads using observed-minus-simulated residual statistics and residual maps.
+
+  - dag_variable: drawdown
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: null, good: null, satisfactory: 8.0}
+        pass_band: satisfactory
+        band_note: "Converted from the Antelope Valley accepted-model transient drawdown RMSE of 26.26 ft."
+        cites: [antelope2014]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG NSE metric is retained as context, but the fetched MODFLOW drawdown benchmark reports drawdown fit as residual/RMSE, not NSE."
+        cites: [antelope2014]
+    validated_when: "Drawdown time series are validated when drawdown RMSE <= 8.0 m, the converted RMSE from an accepted MODFLOW drawdown benchmark."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Antelope Valley table 1 lists transient drawdown RMSE = 26.26 ft and average residual = 2.09 ft
+      for 4,833 observations in a calibrated groundwater-flow and subsidence model. This is a benchmark
+      band, not a universal threshold; confidence is reduced accordingly.
+
+  - dag_variable: cell-by-cell flow budget
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Hydrologic flow convention transferred to regional budget magnitudes; Pulighe et al. quote streamflow satisfactory if PBIAS < +/-15%."
+        cites: [pulighe2019]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Regional budget terms should also be inspected as absolute volumetric residuals, but fetched conventions give PBIAS/NSE/RSR thresholds for hydrologic flow simulations."
+        cites: [pulighe2019, cwatm2020]
+    validated_when: "Regional aggregate flow-budget terms are validated when absolute PBIAS <= 15% against independent recharge, pumping, or exchange estimates."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      This is a transferred hydrologic-flow convention, not a MODFLOW cell-budget-specific threshold.
+      Pulighe et al. state that streamflow simulation is satisfactory if NSE > 0.5, RSR <= 0.70, and
+      PBIAS < +/-15%. CWatM also reports PBias thresholds for global discharge station evaluation.
+
+  - dag_variable: cell-by-cell flow budget
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Pulighe et al. reproduce the watershed convention: streamflow simulation satisfactory if NSE > 0.5."
+        cites: [pulighe2019]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 15.0}
+        pass_band: satisfactory
+        band_note: "Pulighe et al. quote streamflow satisfactory if PBIAS < +/-15%."
+        cites: [pulighe2019]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CWatM reports Pearson R together with KGE, NSE, and PBias for discharge stations; R is useful but not the cited hydrologic pass gate."
+        cites: [cwatm2020]
+    validated_when: "Stream-aquifer or baseflow-exchange time series are validated when NSE >= 0.5 and absolute PBIAS <= 15%."
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      The fetched SWAT-MODFLOW comparison uses Moriasi et al. criteria qualitatively and reports that
+      PEST calibration improved validation from unsatisfactory to satisfactory by NSE. Numeric bands here
+      are cited to the fetched OA paper that explicitly states the NSE and PBIAS thresholds.
+
+  - dag_variable: specific discharge
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper supplied a numeric CSI or vector-flux validation threshold for MODFLOW/FloPy specific discharge."
+        cites: []
+    secondary_metrics:
+      - metric: vector_direction_agreement
+        direction: maximize
+        status: supportive
+        ceiling_reason: "FloPy papers demonstrate plotting and extracting specific-discharge vectors, but the fetched texts do not provide numeric validation bands against direct flux observations."
+        cites: [flopy2016, flopy2024]
+    validated_when: "UNRESOLVED - no cited numeric threshold; use qualitative/vector-map comparison only until a flux-observation benchmark is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      FloPy documentation papers show specific-discharge extraction and maps, including "specific
+      discharge for each cell" in cell-by-cell budgets, but do not establish a validation threshold. The
+      null band is intentional and must not auto-validate or loosen a gate.
+
+  - dag_variable: solute concentration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: 0.35}
+        pass_band: satisfactory
+        band_note: "Transferred water-quality convention; Pulighe et al. state nutrient simulation satisfactory if NSE > 0.35."
+        cites: [pulighe2019]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 30.0}
+        pass_band: satisfactory
+        band_note: "Transferred water-quality convention; Pulighe et al. state nutrient simulation satisfactory if PBIAS < +/-30%."
+        cites: [pulighe2019]
+    secondary_metrics:
+      - metric: breakthrough_timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "For transport applications, breakthrough timing should be inspected, but no fetched MODFLOW/MT3D/SEAWAT concentration-threshold paper was available."
+        cites: [modflow6doc2017]
+    validated_when: "Solute concentration time series are provisionally validated when NSE >= 0.35 and absolute PBIAS <= 30%, using transferred water-quality model criteria."
+    evidence_strength: moderate
+    confidence: 0.45
+    notes: >-
+      This is not a groundwater-transport-specific band. It is the closest fetched numeric convention for
+      concentration-like water-quality simulation. Confidence is deliberately low-moderate because
+      transport breakthrough timing and dispersivity/porosity errors may dominate concentration skill.
+
+  - dag_variable: volumetric water-balance discrepancy
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: 0.01}
+        pass_band: satisfactory
+        band_note: "Schoups et al. report water-balance errors always less than 0.01% after time-step testing."
+        cites: [schoups2005]
+    secondary_metrics:
+      - metric: convergence_head_change
+        direction: minimize
+        status: supportive
+        ceiling_reason: "MODFLOW 6 documentation states convergence is based on maximum absolute head change falling below the user-specified closure criterion."
+        cites: [modflow6doc2017]
+    validated_when: "Internal water-balance closure is accepted when absolute percent discrepancy <= 0.01%; this is a QA closure rule, not an external-observation validation."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      The DAG caveat mentions a common well-converged target below 1%, but the fetched numeric benchmark
+      is stricter: Schoups et al. state that water balance errors were always less than 0.01% and that the
+      temporal discretization was sufficiently accurate. Because this is an internal diagnostic, the block
+      should not be interpreted as external model validation.
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 - Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    doi: 10.13031/trans.58.10715
+    needed_for: [cell-by-cell flow budget, solute concentration]
+  - ref: "Moriasi et al. 2007 - Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    doi: 10.13031/2013.23153
+    needed_for: [cell-by-cell flow budget, solute concentration]
+  - ref: "Effective Groundwater Model Calibration"
+    doi: 10.1002/0470041080
+    needed_for: [hydraulic head, drawdown]

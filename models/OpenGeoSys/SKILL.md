@@ -1,13 +1,3 @@
----
-name: opengeosys
-description: >-
-  OpenGeoSys 6 (OGS-6) THMC finite-element multiphysics; doxygen-stable 6.5.7 lineage.
-  Covers Coupled thermo-hydro-mechanical-chemical (THMC) processes in porous and fractured
-  media; Single-phase saturated (Darcy) liquid flow and steady-state diffusion;
-  Variably-saturated (Richards) and two-phase non-isothermal flow. Use when the task
-  involves running, configuring, calibrating or interpreting OpenGeoSys.
----
-
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.
@@ -30,6 +20,40 @@ description: >-
 > 4. **Fix the tool** — With knowledge of what "correct" looks like
 >
 > Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+<!-- KI-MAP:BEGIN (projected by generate_skill_map.py — edit the KI, not this table) -->
+## KI map — what to read, and when
+
+| when you need | read | why |
+|---|---|---|
+| FIRST, always | `preflight_check.py` | run it (`python preflight_check.py`): proves env/binary/data are usable and emits a machine-readable `PREFLIGHT_REPORT=` line. Do not debug a run that never had a healthy environment. |
+| to run the pipeline stages | `tools/` (4 tools) | the executable pipeline. Read each tool's argparse (`--help`) before composing a command; SKILL.md's stage table says which tool serves which stage. |
+| before running a stage | `docs/s*_*.md` (8 stage docs) | per-stage procedure, verification and traps — the how-to that SKILL.md's overview compresses. |
+| on ANY error, before debugging | `diagnostics/triplets.yaml` (18 entries) | symptom → diagnosis → remedy for this model's known failure modes. Check here FIRST; the answer usually exists. Never renumber or rewrite entries. |
+| to know what an output IS | `dag.yaml` | the model's identity: every output's medium, units, `validation_rank` (1 = the headline variable) and observability. Scoring and obs-binding read THIS — when asked 'what does this model predict', the dag is the answer, not a guess. |
+| when building inputs / parsing outputs | `docs/format_spec.yaml` | exact I/O shapes + `known_issues`, projected from dag + triplets. Regenerate with `ki_tools_common/generate_format_spec.py` after changing either — never hand-edit. |
+| to judge a run's skill | `docs/validation_convention.yaml` | how this model's field judges it validated: per-`dag_variable` metrics, directions and CITED pass-bands. A run is graded against these, not against intuition. |
+| for claims and thresholds | `docs/gathered_papers.json` (22 papers) + `docs/papers_index.md` | the literature this KI is judged by; each entry's `text_path` is fetched full text in the central paper cache. `role: benchmark` marks the model's own skill paper. |
+| for a machine-readable summary | `knowledge_infrastructure.yaml` | the manifest (package, pipeline, validation tier, counts) — projected by `ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, never hand-edit. |
+
+*Projected 2026-08-17 from the KI's actual contents — 9 components present. Refresh: `python3 ki_tools_common/generate_skill_map.py --ki_dir <this KI>`.*
+<!-- KI-MAP:END -->
+
+<!-- KI-TOOL-INDEX:BEGIN (projected by generate_skill_map.py — the discoverability contract: every public tool, exact path; PURPOSE stays human-authored elsewhere) -->
+### Executable tool index (projected — complete by construction)
+
+Every public tool in this KI, by exact path. What each is FOR lives in the
+human-written Tool Inventory above; `--help` on any of these prints its arguments.
+
+| tool (exact path) | invocation |
+|---|---|
+| `tools/convert_forcing_to_ogs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_forcing_to_ogs.py --help` |
+| `tools/convert_soil_to_ogs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/convert_soil_to_ogs.py --help` |
+| `tools/parse_ogs_output.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/parse_ogs_output.py --help` |
+| `tools/run_ogs.py` | `KISSPATH_PYTHON_ENV/bin/python {KI}/tools/run_ogs.py --help` |
+
+*4 public tools; `_`-prefixed helpers and packaging files excluded.*
+<!-- KI-TOOL-INDEX:END -->
 
 # OpenGeoSys 6 (OGS-6) — Knowledge Infrastructure
 
@@ -78,7 +102,7 @@ This knowledge infrastructure enables simulation of subsurface processes using O
 ### Building from source
 
 ```bash
-cd KISSPATH_BINARIES/OpenGeoSys/source/repo
+cd KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenGeoSys/source/repo
 mkdir -p build && cd build
 cmake .. -DOGS_BUILD_CLI=ON -DOGS_BUILD_TESTING=OFF -DOGS_BUILD_UTILS=OFF
 make -j$(nproc)
@@ -147,6 +171,28 @@ Stage 6 depends on 5.
 | `parse_ogs_output` | s6 | `tools/parse_ogs_output.py` | 290 | Parse VTU output → CSV time series + summary JSON |
 
 **Total**: 4 tools, ~1,140 lines of validated Python code.
+
+---
+
+## 6. Output Description
+
+**Source of truth**: `dag.yaml`. The dag defines the model's observable outputs; if this section and `dag.yaml` disagree, `dag.yaml` wins.
+
+**Headline output** (dag `validation_rank: 1`):
+
+> `temperature` — Subsurface (rock/soil porous-medium) temperature field at FEM nodes; primary variable of thermal/heat-transport processes. (K)
+
+| Output variable (dag `var`) | Rank | Unit | Description |
+|-----------------------------|------|------|-------------|
+| `temperature` | 1 | K | Subsurface (rock/soil porous-medium) temperature field at FEM nodes; primary variable of thermal/heat-transport processes. |
+| `pressure` | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| `displacement` | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| `darcy_velocity` | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| `stress` | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| `saturation` | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+| `concentration` | see `dag.yaml` | see `dag.yaml` | see `dag.yaml` |
+
+The dag's other listed outputs are: `pressure`, `displacement`, `darcy_velocity`, `stress`, `saturation`, and `concentration`.
 
 ---
 
@@ -273,6 +319,24 @@ OGS uses XML project files with this top-level structure:
 
 ---
 
+## 8. Unit Conversion Table
+
+Exact I/O shapes live in `docs/format_spec.yaml`. This table collects the unit conversions already used by this KI's tools and warnings; OGS itself expects strict SI units and does not apply forgiving unit normalization.
+
+| Variable | Source unit | OGS unit | Conversion | Trap severity |
+|----------|-------------|----------|------------|---------------|
+| Temperature | °C | K | T + 273.15 | silent |
+| Pressure from hydraulic head | m | Pa | h × ρ × g | silent |
+| Recharge / precipitation flux | mm/day | m/s | P / (1000 × 86400) | silent |
+| Permeability from hydraulic conductivity | m/s | m² | κ = K × μ / (ρ × g) | silent |
+| Permeability from Darcy | Darcy | m² | κ × 9.869e-13 | silent |
+| Time duration | days | s | × 86400 | silent |
+| Time duration | years | s | × 3.1536e7 | silent |
+| van Genuchten alpha | 1/cm | 1/Pa entry-pressure form | p_b = ρ·g/(α×100) | silent |
+| Transmissivity | m²/s | m² | T / aquifer_thickness × μ/(ρg) | silent |
+
+---
+
 ## Unit Trap Table
 
 | External Source | Variable | Source Unit | OGS Unit | Conversion | Trap Severity |
@@ -326,6 +390,38 @@ result.pvd                          # PVD collection file (time series index)
 **PVD file**: XML index linking timesteps to VTU files. Use to reconstruct time series.
 
 **Alternative**: XDMF/HDF5 format for large parallel runs (`<type>XDMF_HDF5</type>`).
+
+---
+
+## 11. Validated Results
+
+**Source of truth**: `docs/validation_convention.yaml`. Convention bands below restate the KI's extracted convention facts. Null convention bands are written as `no cited threshold`; no replacement threshold is inferred.
+
+### Headline validation variable
+
+The headline validation variable is `temperature`, matching the dag's rank-1 output:
+
+> `temperature` — Subsurface (rock/soil porous-medium) temperature field at FEM nodes; primary variable of thermal/heat-transport processes. (K)
+
+### Performance metrics and convention bars
+
+| Dag variable | Metric | Direction | Satisfactory band | Convention cites |
+|--------------|--------|-----------|-------------------|------------------|
+| `pressure` | nse | maximize | no cited threshold | [] |
+| `pressure` | pbias | zero_centered | no cited threshold | [] |
+| `temperature` | nse | maximize | no cited threshold | [] |
+| `temperature` | nmae | minimize | 15 | heldt2023 |
+
+This SKILL body does not add achieved calibration or validation values beyond the KI's extracted convention facts. A run should be judged by the metric directions and cited bands in `docs/validation_convention.yaml`, with `dag.yaml` defining which output is the headline variable.
+
+### Validation status
+
+| Item | Value |
+|------|-------|
+| Validation status | `test_validated` |
+| Current validated benchmark named in this SKILL | LiquidFlow gravity-driven benchmark |
+| Headline output | `temperature` |
+| Headline output unit | K |
 
 ---
 

@@ -1,0 +1,407 @@
+schema_version: 1
+model_id: Delft3D
+domain: coastal_hydrodynamics
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  whitehouse2017:
+    doi: 10.1155/2017/5251902
+    title: "Guidance on Setup, Calibration, and Validation of Hydrodynamic, Wave, and Sediment Models for Shelf Seas and Estuaries"
+    venue: "Advances in Civil Engineering"
+    year: 2017
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1155_2017_5251902.txt
+  sanchez2014:
+    doi: 10.5194/nhess-14-2993-2014
+    title: "Hydro-morphodynamic modelling in Mediterranean storms - errors and uncertainties under sparse data conditions"
+    venue: "Natural Hazards and Earth System Sciences"
+    year: 2014
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_nhess-14-2993-2014.txt
+  bosboom2020:
+    doi: 10.1016/j.coastaleng.2020.103662
+    title: "Optimal sediment transport for morphodynamic model validation"
+    venue: "Coastal Engineering"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.coastaleng.2020.103662.txt
+  xu2023:
+    doi: 10.3389/fmars.2023.1096896
+    title: "Simulation of red tide drift-diffusion process in the Pearl River Estuary and its validation"
+    venue: "Frontiers in Marine Science"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3389_fmars.2023.1096896.txt
+  ye2023:
+    doi: 10.5194/gmd-16-2565-2023
+    title: "Global seamless tidal simulation using a 3D unstructured-grid model (SCHISM v5.10.0)"
+    venue: "Geoscientific Model Development"
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-16-2565-2023.txt
+  baracchini2020:
+    doi: 10.5194/gmd-13-1267-2020
+    title: "Data assimilation of in situ and satellite remote sensing data to 3D hydrodynamic lake models"
+    venue: "Geoscientific Model Development"
+    year: 2020
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-1267-2020.txt
+  mohid2019:
+    doi: 10.3390/w11081713
+    title: "Validation of the 3D-MOHID Hydrodynamic Model for the Tagus Coastal Area"
+    venue: "Water"
+    year: 2019
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w11081713.txt
+  robson2020:
+    doi: 10.1016/j.envsoft.2020.104697
+    title: "A system of metrics for the assessment and improvement of aquatic ecosystem models"
+    venue: "Environmental Modelling and Software"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2020.104697.txt
+  liu2021:
+    doi: 10.1029/2021ms002493
+    title: "Global Wave Hindcasts Using the Observation-Based Source Terms: Description and Validation"
+    venue: "Journal of Advances in Modeling Earth Systems"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2021ms002493.txt
+  ravdas2018:
+    doi: 10.5194/nhess-18-2675-2018
+    title: "Implementation and validation of a new operational wave forecasting system of the Netherlands"
+    venue: "Natural Hazards and Earth System Sciences"
+    year: 2018
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_nhess-18-2675-2018.txt
+  muis2024:
+    doi: 10.1038/s43247-024-01707-x
+    title: "Modeling surge dynamics improves coastal flood estimates in a global set of tropical cyclones"
+    venue: "Communications Earth and Environment"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s43247-024-01707-x.txt
+
+validation:
+  - dag_variable: water_level
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.1, good: 0.2, satisfactory: 0.3}
+        pass_band: satisfactory
+        band_note: "Whitehouse et al. give coastal water-level RMSE of 0.1 m and estuary head RMSE of 0.3 m as minimum calibration guidance."
+        cites: [whitehouse2017]
+      - metric: bias
+        direction: zero_centered
+        unit: m
+        bands: {very_good: 0.1, good: 0.1, satisfactory: 0.2}
+        pass_band: satisfactory
+        band_note: "Bias limits follow the same coastal/estuarine water-level guidance table."
+        cites: [whitehouse2017]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.95, good: 0.95, satisfactory: 0.95}
+        pass_band: satisfactory
+        band_note: "The guidance table lists R > 0.95 for water level; Delft3D-family tidal benchmarks report comparable correlation and low RMSE."
+        cites: [whitehouse2017, xu2023, ye2023]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG names NSE, but the fetched coastal validation convention uses RMSE, bias, phase, correlation, and scatter index for tidal water levels."
+        cites: [whitehouse2017]
+      - metric: phase_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Whitehouse et al. list water-level phase guidance of 15 min at the coast and 15-25 min in estuaries."
+        cites: [whitehouse2017]
+    validated_when: "Water-level time series meet RMSE <= 0.3 m, absolute bias <= 0.2 m, and r >= 0.95 after datum alignment; report phase error separately for tidal records."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      This supersedes the DAG determining metric nse for tidal sea-surface elevation. Whitehouse et al. state their table provides
+      "calibration standards for a minimum level of performance"; Xu et al. call Delft3D water-level RMSE of 0.19-0.23 m
+      "acceptable"; Ye et al. report nontidal residual mean RMSE of 7 cm and that about 88% of RMSEs are below 10 cm.
+
+  - dag_variable: water_level
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched Delft3D/coastal water-level paper stated a numeric CSI pass threshold for a spatial water-surface snapshot."
+        cites: []
+    secondary_metrics:
+      - metric: f2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Flood-extent studies often use F2/CSI-style wet/dry overlap, but the fetched source defines the metric rather than a validation cutoff."
+        cites: [muis2024]
+    validated_when: "UNRESOLVED - use CSI/F2-style spatial agreement only as context until a fetched coastal water-level snapshot threshold is available."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Muis et al. define F2/CSI-like wet-area overlap as wet by both model and observation divided by wet by either, and use a
+      10 cm inundation-depth threshold for wet/dry mapping, but they do not define a pass/fail CSI band. Keep the band null.
+
+  - dag_variable: velocity
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m/s
+        bands: {very_good: 0.05, good: 0.1, satisfactory: 0.2}
+        pass_band: satisfactory
+        band_note: "Current-speed guidance lists peak-speed errors <0.05, <0.1, and <0.2 m/s as very good, good, and moderate; average current speed should be within about 0.2 m/s."
+        cites: [whitehouse2017]
+      - metric: bias
+        direction: zero_centered
+        unit: m/s
+        bands: {very_good: 0.1, good: 0.1, satisfactory: 0.2}
+        pass_band: satisfactory
+        band_note: "Whitehouse et al. state bias <0.2 and RMSE <0.2 demonstrate a statistically significant fit for current speed."
+        cites: [whitehouse2017, mohid2019]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG names NSE, but coastal current validation convention relies on speed RMSE/bias plus direction and ADCP layer matching."
+        cites: [whitehouse2017]
+      - metric: direction_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Current direction should normally be within 10 degrees at the coast and 15 degrees in estuaries."
+        cites: [whitehouse2017]
+    validated_when: "Current speed RMSE <= 0.2 m/s and absolute bias <= 0.2 m/s, with current direction checked against the coastal/estuarine angular guidance."
+    evidence_strength: strong
+    confidence: 0.82
+    notes: >-
+      Whitehouse et al. recommend predicted current speeds from 2D/3D models be within 0.20 m/s or 10-20% of measured speed.
+      The Tagus 3D-MOHID benchmark reports velocity RMSE and bias always lower than 0.2 and says this indicates a statistically
+      significant fit, using the same Williams and Esteves guidance.
+
+  - dag_variable: salinity
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched salinity validation paper stated an NSE cutoff."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: PSU
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched papers report salinity RMSE/MAE benchmark values but not a numeric pass threshold."
+        cites: []
+    secondary_metrics:
+      - metric: mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Aquatic ecosystem guidance lists time-series salinity comparison with error and correlation metrics but emphasizes user-determined acceptable criteria."
+        cites: [robson2020]
+      - metric: bias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "The Tagus hydrodynamic benchmark judged salinity using r, bias, and RMSE, but did not state a reusable pass band."
+        cites: [mohid2019]
+    validated_when: "UNRESOLVED - compare salinity time series using NSE/RMSE/bias/r, but do not auto-validate without a fetched numeric salinity band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Robson et al. write that lack of universally accepted performance criteria impedes setting an acceptable goodness-of-fit value.
+      MOHID reports salinity r = 0.86, bias = -0.9, RMSE = 2.9 PSU and calls the RMSE low, but this is a benchmark result, not a threshold.
+
+  - dag_variable: salinity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper stated a numeric CSI pass threshold for salinity plume or salt-intrusion extent."
+        cites: []
+    secondary_metrics:
+      - metric: mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Aquatic ecosystem model guidance lists spatial salinity comparison with MAE-type fields but leaves acceptable criteria user determined."
+        cites: [robson2020]
+    validated_when: "UNRESOLVED - spatial salinity/plume agreement can be reported, but no auto-validation band is available from fetched sources."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Robson et al. list salinity spatial comparison with MAE-style metrics, and Ye et al. say plume shape and extent are important,
+      but neither fetched source provides a numeric CSI acceptance band.
+
+  - dag_variable: temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched hydrodynamic temperature paper stated an NSE cutoff."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Fetched papers report temperature RMSE/MAE benchmark values but not a reusable pass threshold."
+        cites: []
+    secondary_metrics:
+      - metric: mae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Aquatic ecosystem guidance lists water-temperature time-series assessment by error/correlation metrics while noting accepted criteria are not universal."
+        cites: [robson2020]
+      - metric: satellite_skin_bulk_difference
+        direction: minimize
+        status: structurally_limited
+        ceiling_reason: "Satellite surface-temperature validation can be limited by skin-to-bulk mismatch; Baracchini et al. observed fluctuations up to 3 degC between skin and bulk temperature."
+        cites: [baracchini2020]
+    validated_when: "UNRESOLVED - evaluate temperature with RMSE/MAE/r/NSE, but do not auto-validate without a fetched numeric pass band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Baracchini et al. report Delft3D-FLOW Lake Geneva temperature RMSE improved from 2.07 to 0.95 degC after assimilation.
+      MOHID reports SST r = 0.91, bias = 0.1 degC, RMSE = 0.4 degC and calls this good agreement. These are benchmarks, not pass thresholds.
+
+  - dag_variable: bed_shear_stress
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: N/m2
+        bands: {very_good: 0.05, good: 0.05, satisfactory: 0.05}
+        pass_band: satisfactory
+        band_note: "Whitehouse et al. recommend bed shear stress estimation within 0.05 N/m2 for shelf-sea and estuarine models."
+        cites: [whitehouse2017]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 10.0, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "The guidance table lists bed shear stress within 10% of measured mean stress."
+        cites: [whitehouse2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: "Whitehouse et al. state that, except for specialist research instruments, no reliable direct way of measuring bed shear stress is yet available, so time-series NSE is usually observation-limited."
+        cites: [whitehouse2017]
+    validated_when: "Bed shear stress is validated only when independent estimates support RMSE <= 0.05 N/m2 and |PBIAS| <= 10%; direct time-series NSE is a data-ceiling metric."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      Bed shear stress is usually inferred from flow/roughness or specialized sensors. The DAG's nse metric is retained as structurally limited rather than used as the pass gate.
+
+  - dag_variable: bed_level_change
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: bss
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 1.0, good: 0.44, satisfactory: 0.4}
+        pass_band: satisfactory
+        band_note: "Sanchez-Arcilla et al. state that the BSS threshold for acceptable morphodynamic reproduction is about 0.4 and cite prior Catalan-coast work with BSS around 0.44 as acceptable."
+        cites: [sanchez2014]
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "The DAG names CSI for spatial bed-level change, but no fetched morphodynamic paper stated a CSI cutoff; BSS is the fetched field convention."
+        cites: []
+    secondary_metrics:
+      - metric: rmste
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bosboom et al. recommend combining metrics because RMSE/BSS can reward underprediction of morphodynamic variability."
+        cites: [bosboom2020]
+    validated_when: "Spatial bed-level change is validated when BSS >= 0.4, while CSI remains unresolved and RMSTE/RMSE diagnostics are reported as context."
+    evidence_strength: moderate
+    confidence: 0.75
+    notes: >-
+      Sanchez-Arcilla et al. define BSS so that 1 means simulations and measurements fully agree and state the acceptable threshold is about 0.4.
+      Bosboom et al. caution that single-number morphodynamic metrics highlight only selected aspects of model performance.
+
+  - dag_variable: bed_level_change
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched morphodynamic paper stated a PBIAS threshold for point time series of accumulated bed-level change."
+        cites: []
+    secondary_metrics:
+      - metric: rmste
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Morphodynamic validation papers favor spatial bed-change fields and transport-aware diagnostics over a single point bias score."
+        cites: [bosboom2020, sanchez2014]
+    validated_when: "UNRESOLVED - report point bed-level-change PBIAS only as context unless a fetched point-time-series morphology threshold is added."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The fetched field convention is spatial BSS for post-storm morphology, not point PBIAS. Keep the DAG metric but leave the band null.
+
+  - dag_variable: significant_wave_height
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m
+        bands: {very_good: 0.4, good: 0.5, satisfactory: 0.6}
+        pass_band: satisfactory
+        band_note: "Whitehouse et al. reproduce wave-model RMSE categories for Hm0: design <=0.4 m, appraisal <=0.5 m, strategy <=0.6 m, unsatisfactory >0.6 m."
+        cites: [whitehouse2017]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10.0, good: 10.0, satisfactory: 10.0}
+        pass_band: satisfactory
+        band_note: "The coastal guidance paper says wave-model height output is acceptable when biased within 10% of mean observed height."
+        cites: [whitehouse2017]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The DAG names NSE, but wave-model validation convention uses RMSE, bias, scatter index, correlation, and QQ/scatter diagnostics."
+        cites: [whitehouse2017, ravdas2018, liu2021]
+      - metric: scatter_index
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Wave benchmarks report scatter index as a core diagnostic; Liu et al. describe SI = 0.12 as low and Ravdas et al. report SI of 25% for accurate Mediterranean Hs hindcasts."
+        cites: [liu2021, ravdas2018]
+    validated_when: "Significant wave height is validated when RMSE <= 0.6 m and |PBIAS| <= 10%; also report scatter index and correlation against buoy or altimeter records."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Ravdas et al. report overall Hs RMSE = 0.21 m and bias = -0.03 m against buoys and call significant wave height accurately simulated.
+      Liu et al. report global Hs RMSE about 0.3 m, SI = 0.12, and correlation 0.97 as excellent agreement with altimeters.
+
+deferred_paywalled:
+  - ref: "Hypothesis-driven sensitivity analysis of Delft3D flexible mesh hydrodynamic model: insights into coastal processes in the monsoonal tropical Goa Coast, India"
+    doi: 10.1007/s10236-025-01724-0
+    needed_for: [water_level, velocity, salinity]
+  - ref: "Morphodynamic upscaling with the MORFAC approach: Dependencies and sensitivities"
+    doi: 10.1016/j.coastaleng.2011.03.010
+    needed_for: [bed_level_change]
+  - ref: "The use of a morphological acceleration factor in the simulation of large-scale fluvial morphodynamics"
+    doi: 10.1016/j.geomorph.2020.107088
+    needed_for: [bed_level_change]

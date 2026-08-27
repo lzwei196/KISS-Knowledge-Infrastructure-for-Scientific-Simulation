@@ -1,0 +1,303 @@
+schema_version: 1
+model_id: DuMux
+domain: hydrology
+generated_by: "step-b validation convention agent"
+generated_at: 2026-08-14
+
+# DuMux is a general porous-media simulator. The fetched benchmark literature mostly
+# defines comparison targets and metrics, not universal pass/fail thresholds. Only the
+# derived baseflow/discharge time-series block gets a numeric gate, transferred from a
+# fetched SWAT calibration/validation review that reproduces the Moriasi NSE convention.
+# All other headline bands remain null because the fetched DuMux/porous-media benchmark
+# papers report intercomparison spread, visual agreement, Wasserstein distance, L2 norms,
+# or proxy quantities, but not accepted validation tiers for these dag variables.
+
+references:
+  arnold2012_swat:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: green
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42256.txt
+  flemisch2024_fluidflower:
+    doi: 10.1007/s11242-023-01977-7
+    title: "The FluidFlower Validation Benchmark Study for the Storage of CO2"
+    venue: "Transport in Porous Media"
+    year: 2024
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s11242-023-01977-7.txt
+  berre2020_fracture3d:
+    doi: 10.1016/j.advwatres.2020.103759
+    title: "Verification benchmarks for single-phase flow in three-dimensional fractured porous media"
+    venue: "Advances in Water Resources"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.advwatres.2020.103759.txt
+  maxwell2014_ihmip:
+    doi: 10.1002/2013WR013725
+    title: "Surface-subsurface model intercomparison: A first set of benchmark results to diagnose integrated hydrology and feedbacks"
+    venue: "Water Resources Research"
+    year: 2014
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2013wr013725.txt
+  carrayrou2010_momas:
+    doi: 10.1007/s10596-010-9178-2
+    title: "Comparison of numerical methods for simulating strongly nonlinear and heterogeneous reactive transport problems - the MoMaS benchmark case"
+    venue: "Computational Geosciences"
+    year: 2010
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s10596-010-9178-2.txt
+  nordbotten2024_spe11:
+    doi: 10.2118/218015-pa
+    title: "The 11th Society of Petroleum Engineers Comparative Solution Project: Problem Definition"
+    venue: "SPE Journal"
+    year: 2024
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.2118_218015-pa.txt
+
+validation:
+  - dag_variable: pressure
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched groundwater-head or pressure point-snapshot paper gives a numeric PBIAS acceptance band; compare pressure after conversion to hydraulic head."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Porous-media benchmark studies compare pressure/head profiles and sensor traces directly; no fetched paper turns that into a point-snapshot RMSE pass tier."
+        cites: [flemisch2024_fluidflower, berre2020_fracture3d]
+    validated_when: "UNRESOLVED - convert pressure to hydraulic head and judge against a fetched groundwater-head RMSE/nRMSE convention when available; current PBIAS band is null."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      The fractured-flow benchmark compares "computed pressure head and concentration" and reports that
+      hydraulic-head differences decrease with refinement; FluidFlower reports pressure sensor time series.
+      Neither provides a numeric point-snapshot PBIAS threshold, so the dag determining_metric is retained
+      with a null band.
+
+  - dag_variable: pressure
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched groundwater-head time-series source gives a numeric NSE validation band; hydrologic discharge NSE conventions were not transferred to pressure/head."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Groundwater and porous-media benchmarks emphasize head/pressure traces and profiles; threshold source for head RMSE/nRMSE remains unfetched."
+        cites: [flemisch2024_fluidflower, maxwell2014_ihmip]
+    validated_when: "UNRESOLVED - transient pressure/head series require a fetched head-specific RMSE/nRMSE or NSE convention; current NSE band is null."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      FluidFlower uses pressure at two sensors as a reported sparse quantity, while integrated hydrology
+      intercomparison papers diagnose water-table and hydrograph behavior. The fetched set does not supply
+      a universal pass/fail NSE threshold for pressure converted to head.
+
+  - dag_variable: pressure
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper defines a CSI pass band for spatial hydraulic-head or pressure maps."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fractured-flow benchmarks compare hydraulic-head fields/profiles and report relative spread, but not a categorical-map CSI threshold."
+        cites: [berre2020_fracture3d]
+    validated_when: "UNRESOLVED - compare spatial pressure after conversion to head; current CSI band is null until a fetched spatial-head convention is available."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      The dag's CSI metric is admissible for maps, but fetched groundwater/porous-media studies use head
+      profiles, relative spread, or visual field comparisons rather than CSI tiers.
+
+  - dag_variable: velocity
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Direct Darcy-velocity observations are rare, and no fetched porous-media benchmark gives a point-velocity PBIAS threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Fractured-flow benchmarks use velocity fields to drive transport comparisons, but validate mainly head and concentration behavior."
+        cites: [berre2020_fracture3d]
+    validated_when: "UNRESOLVED - velocity should be checked through tracer travel time, head gradient, or flux consistency; current PBIAS band is null."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      Berre et al. state that velocities are inserted into a standard upwind transport scheme and compare
+      resulting head/concentration metrics. This supports velocity as a diagnostic, not a cited numeric
+      velocity-validation convention.
+
+  - dag_variable: saturation
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched saturation/moisture time-series paper gives a numeric NSE pass band for DuMux-style variably saturated or multiphase saturation."
+        cites: []
+    secondary_metrics:
+      - metric: timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Saturation-front arrival depends on capillary pressure and relative-permeability choices; the fetched benchmarks discuss this qualitatively."
+        cites: [flemisch2024_fluidflower, nordbotten2024_spe11]
+    validated_when: "UNRESOLVED - compare saturation probes or wetting-front arrival, but do not auto-validate on NSE without a fetched saturation-specific threshold."
+    evidence_strength: weak
+    confidence: 0.25
+    notes: >-
+      FluidFlower concludes that capillary pressure-saturation relationships and grid resolution strongly
+      affect multiphase behavior. SPE11 reports pressure, saturation, and phase-composition maps as target
+      quantities, but explicitly frames the exercise as benchmarking rather than a pass-tier convention.
+
+  - dag_variable: saturation
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "FluidFlower uses segmentation thresholds and Wasserstein/visual comparisons for saturation/plume maps, but no fetched source defines a CSI pass band."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          Spatial saturation/front agreement is limited by unresolved heterogeneity, capillary-pressure and
+          relative-permeability choices, and grid resolution; FluidFlower reports large variations in dissolution
+          and fingering, and SPE11 notes sharp gas-water interfaces that require very fine grids.
+        cites: [flemisch2024_fluidflower, nordbotten2024_spe11]
+    validated_when: "UNRESOLVED - spatial saturation CSI is context only until a fetched plume/segmentation CSI convention is available."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      FluidFlower declares cells gaseous at saturation > 1e-2 for segmentation and states that gas-plume
+      locations are "reasonably well captured" by several participants, but it does not define that as a CSI
+      pass threshold. The structural limit is cited; the headline band remains null.
+
+  - dag_variable: "tracer concentration / mass fraction"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched reactive-transport or breakthrough-curve paper gives a generic NSE acceptance threshold for tracer concentration or mass fraction."
+        cites: []
+    secondary_metrics:
+      - metric: l2_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Reactive-transport benchmarks use L2 norms and breakthrough-curve/profile comparisons against reference solutions, not universal NSE tiers."
+        cites: [carrayrou2010_momas, berre2020_fracture3d]
+    validated_when: "UNRESOLVED - breakthrough curves should be compared for timing and magnitude, but the NSE pass band is null."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      MoMaS defines an L2 norm for concentration error and compares concentration profiles and breakthrough
+      curves; the fractured-flow benchmark compares tracer concentration profiles and outlet concentration
+      fluxes. Neither fetched paper supplies a generic NSE threshold.
+
+  - dag_variable: "tracer concentration / mass fraction"
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper defines a CSI threshold for tracer plume or mass-fraction spatial snapshots."
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          Spatial concentration/plume extent is limited by grid resolution, numerical diffusion, solubility and
+          constitutive choices, and unresolved heterogeneity; FluidFlower reports large variation in dissolved
+          CO2 regions and SPE11 notes sub-grid convective-mixing requirements.
+        cites: [flemisch2024_fluidflower, nordbotten2024_spe11]
+    validated_when: "UNRESOLVED - plume CSI can diagnose spatial overlap, but no fetched CSI pass band exists for DuMux tracer concentration maps."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      FluidFlower declares CO2-rich water using concentration > 1e-1 kg m-3 for segmentation and reports
+      considerably less agreement for dissolved-CO2 regions than for gas plumes. This is a comparison method,
+      not a validation tier.
+
+  - dag_variable: "baseflow (derived flux)"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: null, satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Fetched SWAT review reproduces Moriasi et al. monthly hydrologic criterion: NSE should exceed 0.5 for satisfactory and >0.75 is described as very good."
+        cites: [arnold2012_swat]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "PBIAS is widely reported for hydrologic calibration/validation, but the fetched SWAT review excerpt used here does not reproduce a numeric PBIAS band."
+        cites: [arnold2012_swat]
+      - metric: hydrograph_timing
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Integrated surface-subsurface intercomparisons diagnose hydrograph onset, peak flow, and water-table behavior in addition to scalar scores."
+        cites: [maxwell2014_ihmip]
+    validated_when: "NSE >= 0.5 for derived baseflow/discharge time series; PBIAS and hydrograph timing remain supportive until a fetched numeric band is available."
+    rule:
+      all_of:
+        - {metric: nse, op: gte, value: 0.5}
+    evidence_strength: moderate
+    confidence: 0.65
+    notes: >-
+      Arnold et al. report that Moriasi et al. proposed NSE values should exceed 0.5 for satisfactory
+      hydrologic and pollutant-loss evaluations on monthly time steps, and that "very good" meant NSE
+      and r2 > 0.75. This is transferred to DuMux derived baseflow because it is a groundwater-discharge
+      flux/hydrograph, not a primary pressure or concentration field.
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 - Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    doi: 10.13031/trans.58.10715
+    needed_for: ["baseflow (derived flux)", pressure]
+  - ref: "Moriasi et al. 2007 - Model evaluation guidelines for systematic quantification of accuracy in watershed simulations"
+    doi: 10.13031/2013.23153
+    needed_for: ["baseflow (derived flux)"]
+  - ref: "Hill 1998 - Methods and guidelines for effective model calibration"
+    doi: unknown_not_fetched
+    needed_for: [pressure]
+  - ref: "Anderson and Woessner groundwater-flow calibration guidance"
+    doi: unknown_not_fetched
+    needed_for: [pressure]

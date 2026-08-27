@@ -33,6 +33,7 @@ N_TRIALS = 1200
 MSWX_DIR = "KISSPATH_FORCING/"
 
 sys.path.insert(0, os.path.join(KI, "tools"))
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/validators")
 from ki_tools_common.metrics import all_metrics
 from standard_calval import compute_calval_metrics
 import calibrate_topmodel as CT

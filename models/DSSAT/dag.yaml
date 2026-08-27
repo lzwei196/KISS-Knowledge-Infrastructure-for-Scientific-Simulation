@@ -389,7 +389,7 @@ outputs:
   - var: "MDAT (physiological maturity date)"
     validation_rank: 12
     unit: "YRDOY"
-    description: "Day of year of physiological maturity."
+    description: "Day of year when the simulated crop reaches physiological maturity."
     emitted_in: "Summary.OUT"
     observability:
       comparable_obs_shapes:
@@ -433,7 +433,7 @@ outputs:
   - var: "LAID / XLAI (daily leaf area index)"
     validation_rank: 14
     unit: "m2/m2"
-    description: "Daily leaf area index trajectory."
+    description: "Daily crop canopy leaf area index trajectory."
     emitted_in: "PlantGro.OUT"
     observability:
       comparable_obs_shapes:
@@ -451,7 +451,7 @@ outputs:
   - var: "CWAD (daily aboveground dry weight)"
     validation_rank: 15
     unit: "kg/ha"
-    description: "Daily tops dry-matter accumulation."
+    description: "Daily aboveground crop-plant tops dry-matter accumulation."
     emitted_in: "PlantGro.OUT"
     observability:
       comparable_obs_shapes:
@@ -464,7 +464,7 @@ outputs:
   - var: "GWAD (daily grain dry weight)"
     validation_rank: 4
     unit: "kg/ha"
-    description: "Daily grain dry-matter accumulation during grain filling."
+    description: "Daily crop grain dry-matter accumulation during grain filling."
     emitted_in: "PlantGro.OUT"
     observability:
       comparable_obs_shapes:
@@ -495,7 +495,7 @@ outputs:
   - var: "ET (daily actual evapotranspiration)"
     validation_rank: 8
     unit: "mm/d"
-    description: "Daily evapotranspiration components (EO, EOP, EOS, EP, ES, EF, EM)."
+    description: "Daily soil-plant-atmosphere evapotranspiration components (EO, EOP, EOS, EP, ES, EF, EM)."
     emitted_in: "ET.OUT"
     observability:
       comparable_obs_shapes:
@@ -586,7 +586,7 @@ outputs:
   - var: "GNAM (grain N content at maturity)"
     validation_rank: 5
     unit: "kg N/ha"
-    description: "Total N in the grain pool at maturity."
+    description: "Total N in the crop grain pool at maturity."
     emitted_in: "Summary.OUT"
     observability:
       comparable_obs_shapes:
@@ -897,3 +897,29 @@ safety:
       scope: "N balance"
       source: "IPSIM.for control-switch validation and CROPGRO NFIX module behavior in DSSAT-CSM source"
       status: "adopted"
+
+medium_evidence:
+  - var: "MDAT (physiological maturity date)"
+    source: "dag.yaml"
+    quote: "Daily simulation of crop growth, development, and yield for 45+ crops as a function of soil-plant-atmosphere dynamics"
+    note: "boundary.scope_in declares this DAG as crop growth and development, so physiological maturity is a crop development date."
+  - var: "LAID / XLAI (daily leaf area index)"
+    source: "docs/s9_output_parsing_skill.md"
+    quote: "PlantGro.OUT contains daily plant growth variables for each treatment."
+    note: "PlantGro.OUT is the daily plant-growth output; LAI is a crop canopy plant variable."
+  - var: "CWAD (daily aboveground dry weight)"
+    source: "docs/s9_output_parsing_skill.md"
+    quote: "PlantGro.OUT contains daily plant growth variables for each treatment."
+    note: "PlantGro.OUT is the daily plant-growth output; CWAD is aboveground crop-plant tops dry matter."
+  - var: "GWAD (daily grain dry weight)"
+    source: "docs/s9_output_parsing_skill.md"
+    quote: "PlantGro.OUT contains daily plant growth variables for each treatment."
+    note: "PlantGro.OUT is the daily plant-growth output; GWAD is dry matter in the crop grain pool."
+  - var: "ET (daily actual evapotranspiration)"
+    source: "KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1515_johh-2017-0055.txt"
+    quote: "Coupling DSSAT and HYDRUS-1D for simulations of soil water dynamics in the soil-plant-atmosphere system"
+    note: "DSSAT ET is a soil-plant-atmosphere water-flux output, not a generic open-water flux."
+  - var: "GNAM (grain N content at maturity)"
+    source: "docs/s9_output_parsing_skill.md"
+    quote: "GNAM     | kg N/ha    | Grain N content at maturity                        | 5-150"
+    note: "The output parsing table identifies GNAM as grain N, so the description specifies the crop grain pool."

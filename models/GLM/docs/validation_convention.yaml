@@ -1,0 +1,443 @@
+schema_version: 1
+model_id: GLM
+domain: lake
+generated_by: "Step-B validation-convention agent"
+generated_at: 2026-08-14
+
+references:
+  hipsey2019:
+    doi: 10.5194/gmd-12-473-2019
+    title: "A General Lake Model (GLM 3.0) for linking with high-frequency sensor data from the Global Lake Ecological Observatory Network (GLEON)"
+    venue: "Geosci. Model Dev."
+    year: 2019
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-12-473-2019.txt
+  bruce2018:
+    doi: 10.1016/j.envsoft.2017.11.016
+    title: "A multi-lake comparative analysis of the General Lake Model (GLM): Stress-testing across a global observatory network"
+    venue: "Environmental Modelling & Software"
+    year: 2018
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2017.11.016.txt
+  feldbauer2025:
+    doi: 10.5194/hess-29-1183-2025
+    title: "Learning from a large-scale calibration effort of multiple lake temperature models"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-29-1183-2025.txt
+  tan2021:
+    doi: 10.1029/2020JD033417
+    title: "Validation and Sensitivity Analysis of a 1-D Lake Model Across Global Lakes"
+    venue: "Journal of Advances in Modeling Earth Systems"
+    year: 2021
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2020jd033417.txt
+  bennett2020:
+    doi: 10.1016/j.envsoft.2020.104697
+    title: "A system of metrics for the assessment and improvement of aquatic ecosystem models"
+    venue: "Environmental Modelling & Software"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2020.104697.txt
+  clayer2023:
+    doi: 10.5194/hess-27-1361-2023
+    title: "Sources of skill in lake temperature, discharge and ice-off seasonal forecasting tools"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2023
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-27-1361-2023.txt
+  thomas2020:
+    doi: 10.1029/2019WR026138
+    title: "A Near-Term Iterative Forecasting System Successfully Predicts Reservoir Hydrodynamics and Biogeochemical Dynamics"
+    venue: "Water Resources Research"
+    year: 2020
+    oa: manual
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2019wr026138.txt
+  ladwig2021:
+    doi: 10.5194/hess-25-1009-2021
+    title: "Lake thermal structure drives interannual variability in summer anoxia dynamics in a eutrophic lake"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2021
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-25-1009-2021.txt
+  lakebed2025:
+    doi: 10.5194/essd-17-3141-2025
+    title: "LakeBeD-US: a benchmark dataset for lake water quality time series and vertical profiles"
+    venue: "Earth Syst. Sci. Data"
+    year: 2025
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_essd-17-3141-2025.txt
+  betrie2011:
+    doi: 10.5194/hess-15-807-2011
+    title: "Sediment management modelling in the Blue Nile Basin using SWAT model"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2011
+    oa: gold
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-15-807-2011.txt
+
+validation:
+  - dag_variable: temp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 1.34, good: 1.71, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "Bruce 2018 states calibration continued until profile-temperature RMSE was less than 2 degC; 32-lake GLM mean full-profile RMSE was 1.34 degC. Feldbauer 2025 reports median RMSE 1.2 degC for 73 calibrated lakes."
+        cites: [bruce2018, feldbauer2025, tan2021]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The dag names NSE, but GLM lake-temperature papers use RMSE as the primary absolute validation metric and report MEFF/NSE as supporting skill."
+        cites: [bruce2018, feldbauer2025]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Bruce 2018 reports percent relative error for temperature bias; values ranged about -15% to +18% with mean near zero."
+        cites: [bruce2018]
+    validated_when: "Full-profile water-temperature RMSE <= 2.0 degC at matched depths after interpolation to fixed observation depths."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: "Field convention supersedes the dag determining_metric nse for temperature: Bruce 2018 used RMSE for temperatures and MEFF for thermocline depth and Schmidt stability; Tan 2021 reports 70%-75% of lakes below 2 degC after calibration."
+
+  - dag_variable: temp
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 1.34, good: 1.71, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "The spatial axis is the vertical depth-time temperature field; GLM benchmark papers evaluate full-profile/vertical-profile temperature RMSE."
+        cites: [bruce2018, feldbauer2025, tan2021]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CSI is a categorical/spatial-event score; fetched GLM profile-temperature benchmarks report RMSE, r, PRE, NMAE, and MEFF instead."
+        cites: [bruce2018, tan2021]
+    validated_when: "Vertical profile temperature field RMSE <= 2.0 degC over matched depth-time points."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "The dag csi metric is not the field convention for vertical GLM thermal profiles; this block uses the full-profile RMSE convention."
+
+  - dag_variable: surface_temp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 1.13, good: 1.62, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "Bruce 2018 reports epilimnion mean RMSE 1.62 degC; Thomas 2020 FLARE reports near-surface 7-day forecast RMSE 1.13 degC, while Tan 2021 uses the same below-2-degC lake-temperature range."
+        cites: [bruce2018, tan2021, thomas2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Large lake-temperature calibration studies co-report NSE/R but select and discuss RMSE as the main surface-temperature validation measure."
+        cites: [feldbauer2025, tan2021]
+    validated_when: "Surface or epilimnetic water-temperature RMSE <= 2.0 degC."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: "Satellite LSWT skin-vs-bulk caveat remains observational; no numeric offset threshold was found in fetched GLM validation papers."
+
+  - dag_variable: bottom_temp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: degC
+        bands: {very_good: 1.20, good: 1.31, satisfactory: 2.0}
+        pass_band: satisfactory
+        band_note: "Bruce 2018 reports hypolimnion mean RMSE 1.31 degC; a GLM forecasting benchmark reports near-sediment RMSE 1.20 degC for 16-day forecasts."
+        cites: [bruce2018, thomas2020]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Fetched benchmarks use RMSE for bottom/hypolimnetic temperature and co-report efficiency/correlation as diagnostics."
+        cites: [bruce2018, tan2021]
+    validated_when: "Bottom or hypolimnetic water-temperature RMSE <= 2.0 degC."
+    evidence_strength: strong
+    confidence: 0.78
+    notes: "Hypolimnetic temperature can be affected by mixing and seiche representation; no structurally_limited claim is made because the gate needs a run-specific diagnostic."
+
+  - dag_variable: lake_level
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Open HESS paper reproduces Moriasi et al. 2007 hydrologic convention: model simulation satisfactory if NSE > 0.5. Transferred here to lake water-balance level time series."
+        cites: [betrie2011]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Water-level validation should include bias or MAE/RMSE when available; Bennett 2020 lists water level as a time-series comparison using traditional error metrics."
+        cites: [bennett2020]
+    validated_when: "NSE >= 0.5 for water-level time series, with bias/RMSE reviewed as supporting diagnostics."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: "Threshold is transferred from hydrologic flow simulation because no fetched GLM paper supplied a lake-level pass band; water-balance forcing quality remains a major caveat."
+
+  - dag_variable: lake_volume
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Open HESS paper reproduces Moriasi et al. 2007 hydrologic convention: satisfactory if NSE > 0.5. Storage volume is commonly derived from level via hypsography, so this is a transferred water-balance convention."
+        cites: [betrie2011]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Volume should be checked for mass-balance bias because it is derived from observed level and the same hypsographic relation."
+        cites: [bennett2020]
+    validated_when: "NSE >= 0.5 for storage-volume time series derived consistently from model and observed level."
+    evidence_strength: moderate
+    confidence: 0.48
+    notes: "No lake-storage-specific numeric band was found; this block is a transferred hydrologic convention and should not override clear level/volume observation uncertainty."
+
+  - dag_variable: ice_thickness
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched lake-ice paper gave a numeric PBIAS pass band for ice thickness."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Tan 2021 evaluates ice phenology and ice thickness among lake-model sensitivity outputs but does not provide a thickness pass threshold."
+        cites: [tan2021]
+    validated_when: "UNRESOLVED - no cited numeric threshold for lake ice-thickness PBIAS in the fetched set."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The dag caveat about ice parameters is model-configuration knowledge, not a fetched-paper validation convention."
+
+  - dag_variable: ice_thickness
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: rocss
+        direction: maximize
+        unit: dimensionless
+        bands: {good: 0.47, satisfactory: 0.0}
+        pass_band: satisfactory
+        band_note: "Clayer 2023 states ROCSS has zero as no skill; significant values for their lake hindcasts typically ranged about 0.47-0.55. This supersedes dag csi for seasonal ice-off event forecasts."
+        cites: [clayer2023]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "The fetched lake ice-off forecast benchmark evaluates categorical event skill with ROCSS/RPSS rather than CSI."
+        cites: [clayer2023]
+      - metric: event_date_bias_days
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Clayer 2023 reports ice-off date bias and RMSE for observed seasonal cases, but does not provide a universal pass day-window."
+        cites: [clayer2023]
+    validated_when: "ROCSS > 0 for categorical ice-off skill against a climatological/reference forecast; use significance thresholds when the same hindcast design supports them."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: "This is an event-forecast convention, not an ice-thickness convention. If the produced score is CSI rather than ROCSS/RPSS, keep the decision manual."
+
+  - dag_variable: evaporation
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.5}
+        pass_band: satisfactory
+        band_note: "Open HESS hydrology paper reproduces the Moriasi et al. 2007 satisfactory NSE > 0.5 convention. Transferred to daily evaporative flux because direct lake evaporation observations are rare."
+        cites: [betrie2011]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Bennett 2020 lists evaporation as a time-series comparison using traditional error and bias metrics, with direct observations often from pans, chambers, or inferred isotope/water-balance methods."
+        cites: [bennett2020]
+    validated_when: "NSE >= 0.5 for daily evaporative flux, with bias diagnostics reviewed because observations are often indirect."
+    evidence_strength: moderate
+    confidence: 0.45
+    notes: "No fetched lake-evaporation-specific pass band was found; this is a transferred hydrologic time-series rule."
+
+  - dag_variable: thermocline_depth
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched GLM paper gave a numeric NSE pass threshold for thermocline depth."
+        cites: []
+    secondary_metrics:
+      - metric: meff
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Bruce 2018 reports MEFF for thermocline depth and Schmidt stability and uses RMSE for temperatures."
+        cites: [bruce2018]
+      - metric: nmae
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bruce 2018 reports thermocline-depth NMAE across lakes but does not define a pass band."
+        cites: [bruce2018]
+    validated_when: "UNRESOLVED - compare thermocline-depth time series with MEFF/NSE, NMAE/MAE, and bias, but do not auto-validate without a cited numeric band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Thermocline depth should be derived consistently from model and observations, commonly with LakeAnalyzer-style density-gradient definitions."
+
+  - dag_variable: schmidt_stability
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched lake-model paper gave a numeric NSE pass threshold for Schmidt stability."
+        cites: []
+    secondary_metrics:
+      - metric: meff
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Bruce 2018 reports MEFF and r for Schmidt stability as GLM stratification diagnostics."
+        cites: [bruce2018]
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bennett 2020 lists Schmidt stability as a water-column stratification assessment variable using traditional time-series metrics."
+        cites: [bennett2020]
+    validated_when: "UNRESOLVED - evaluate with MEFF/NSE, correlation, RMSE/MAE, and bias, but do not auto-validate without a cited numeric band."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Schmidt stability is derived from the temperature profile and hypsography; metric validity depends on using the same algorithm on model and observations."
+
+  - dag_variable: PHY_tchla
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched aquatic-ecosystem or GLM-AED paper gave a numeric NSE pass band for chlorophyll-a time series."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bennett 2020 lists chlorophyll-a time-series comparison with traditional error metrics; LakeBeD-US provides benchmark chlorophyll observations but not pass thresholds."
+        cites: [bennett2020, lakebed2025]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Chlorophyll-a magnitude and bloom timing should be assessed, but fetched papers did not define a universal percent-bias gate."
+        cites: [bennett2020]
+    validated_when: "UNRESOLVED - no cited numeric chlorophyll-a threshold; use RMSE/MAE, bias, correlation, and bloom timing as diagnostics."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Bennett 2020 explicitly notes lack of universally accepted performance criteria for aquatic ecosystem models; do not fabricate a chlorophyll gate."
+
+  - dag_variable: PHY_tchla
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper quantifies a chlorophyll-a snapshot or seasonal-mean PBIAS threshold."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Bennett 2020 lists chlorophyll-a concentration assessment with traditional metrics, but no numeric pass band."
+        cites: [bennett2020]
+    validated_when: "UNRESOLVED - snapshot/seasonal trophic-state chlorophyll comparison remains diagnostic only without a cited threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "Use consistent aggregation windows before computing bias; no fetched threshold supports auto-validation."
+
+  - dag_variable: OXY_oxy
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched GLM-AED oxygen paper gave a general NSE validation threshold."
+        cites: []
+      - metric: rmse
+        direction: minimize
+        unit: mg/L
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Ladwig 2021 reports dissolved-oxygen validation RMSE and NSE values, but not pass/fail bands."
+        cites: []
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Ladwig 2021 reports dissolved oxygen RMSE 3.22 mg/L, NSE 0.56, and KGE 0.77 over the total period as benchmark skill."
+        cites: [ladwig2021]
+      - metric: hypoxia_anoxia_threshold
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Ladwig 2021 defines hypoxia as dissolved oxygen below 2 mg/L and anoxia below 1 mg/L, useful for event diagnostics rather than concentration RMSE validation."
+        cites: [ladwig2021, bennett2020]
+    validated_when: "UNRESOLVED - no cited numeric DO concentration pass band; use RMSE/NSE/KGE plus hypoxia/anoxia event diagnostics manually."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: "Hypolimnetic DO is strongly controlled by sediment oxygen demand and physical stratification; this is noted as diagnostic context, not structurally_limited, because no fetched paper supplies a universal ceiling rule."
+
+  - dag_variable: "NIT_nit, NIT_amm, PHS_frp"
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched GLM-AED or aquatic ecosystem model paper gave a numeric NSE threshold for dissolved nitrate, ammonium, or filterable reactive phosphorus."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Ladwig 2021 reports validation RMSE/NSE/KGE for nitrate, ammonium, and phosphate species, but not universal pass bands."
+        cites: [ladwig2021]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Bennett 2020 recommends multiple traditional metrics for nutrients and organic matter and highlights loading-response/process checks."
+        cites: [bennett2020]
+    validated_when: "UNRESOLVED - no cited nutrient-species threshold; evaluate RMSE/MAE, bias, correlation, loading-response behavior, and process diagnostics."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: "The dag caveat about inflow and sediment loading is consistent with aquatic-ecosystem model practice, but without a fetched numeric threshold it cannot loosen a validation gate."
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2015 hydrologic model performance recommendations"
+    doi: 10.13031/trans.58.10715
+    needed_for: [lake_level, lake_volume, evaporation]
+  - ref: "Moriasi et al. 2007 model evaluation guidelines"
+    doi: 10.13031/2013.23153
+    needed_for: [lake_level, lake_volume, evaporation]

@@ -28,6 +28,10 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
 .cardhead{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--line)}
 .cardhead h3{font-size:14px;margin:0;flex:1}.cardbody{padding:16px}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .controls select{max-width:250px}.agent-note{color:var(--fg2);font-size:12px;margin-top:9px}
+.install-location{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:11px 12px;margin-bottom:12px}
+.install-location-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}.install-location-head b{font-size:12px}.install-location-head .badge{margin-left:auto}
+.install-location-row{display:flex;gap:7px}.install-location-row input{flex:1;min-width:0;font:11.5px/18px ui-monospace,SFMono-Regular,Menlo,monospace}
+.install-location-note{color:var(--fg2);font-size:11.5px;margin-top:6px}
 .log{margin:14px 0 0;min-height:330px;max-height:58vh;overflow:auto;background:#111318;color:#e8ebef;
   border-radius:12px;padding:14px;font:12px/18px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word}
 .emptylog{color:#8c939d}.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:currentColor;
@@ -74,6 +78,11 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
       <div class="cardhead"><span class="mark" style="width:27px;height:27px;border-radius:8px;font-size:10px">AI</span>
         <h3>Setup agent</h3><span id="runstate" style="color:var(--fg3);font-size:12px"></span></div>
       <div class="cardbody">
+        <div class="install-location">
+          <div class="install-location-head"><b>Model installation folder</b><span id="locationbadge" class="badge">Default location</span></div>
+          <div class="install-location-row"><input id="installpath" type="text" spellcheck="false" aria-label="Model installation folder"><button id="chooseinstall">Choose folder</button><button id="saveinstall">Use location</button></div>
+          <div class="install-location-note" id="locationnote">GeoForge can create a folder that does not exist. The choice is recorded with this local KI.</div>
+        </div>
         <div class="controls"><select id="provider"></select>
           <select id="llm"></select>
           <button class="primary" id="start">Start agent setup</button>
@@ -113,7 +122,7 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
 <script>
 const $=s=>document.querySelector(s), params=new URLSearchParams(location.search), MODEL=params.get("model")||"";
 const esc=s=>String(s??"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;"}[c]));
-let STATE=null, PROVIDERS=[], busy=false, rawLog="",runStartedAt=0,lastSignalAt=0;
+let STATE=null, PROVIDERS=[], busy=false, rawLog="",runStartedAt=0,lastSignalAt=0,installPathDirty=false;
 function fmtSize(n){return n>1048576?(n/1048576).toFixed(1)+" MB":n>1024?(n/1024).toFixed(1)+" KB":n+" B"}
 function isZh(){return !!(window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN")}
 function toolActivity(name){
@@ -180,6 +189,26 @@ function drawLLM(){const p=PROVIDERS.find(x=>x.name===$("#provider").value)||{},
 async function loadProviders(){const d=await (await fetch("/api/providers")).json();PROVIDERS=d.providers||[];
   const usable=PROVIDERS.filter(p=>p.usable);$("#provider").innerHTML=PROVIDERS.map(p=>`<option value="${esc(p.name)}" ${p.usable?'':'disabled'}>${esc(p.label)}${p.usable?'':' — unavailable'}</option>`).join("");
   const requested=params.get("provider")||"";$("#provider").value=(usable.find(p=>p.name===requested)||usable.find(p=>p.name===d.default)||usable[0]||{}).name||"";drawLLM();}
+function drawInstallLocation(){
+  const loc=STATE&&STATE.install_location||{},input=$("#installpath");if(!installPathDirty)input.value=loc.path||loc.default_path||"";
+  $("#locationbadge").textContent=loc.custom?(isZh()?"用户选择":"Custom location"):(isZh()?"默认位置":"Default location");
+  $("#locationnote").textContent=loc.recorded?(isZh()?`已记录在 ${loc.config_path} 和本机 KI 的 .geoforge-install.json 中。`:`Recorded in ${loc.config_path} and this local KI's .geoforge-install.json.`):(isZh()?"可以输入尚不存在的文件夹；GeoForge 会创建它，并把选择记录在本机 KI 中。":"You may enter a folder that does not exist. GeoForge will create it and record the choice with this local KI.");
+  input.disabled=busy;$("#chooseinstall").disabled=busy;$("#saveinstall").disabled=busy||!installPathDirty;
+}
+async function chooseInstallLocation(){
+  const nativeApi=window.pywebview&&window.pywebview.api;
+  if(!nativeApi||!nativeApi.choose_project_parent){alert(isZh()?"请直接在安装路径框中输入完整路径。":"Type the full path directly in the installation field.");return}
+  const picked=await nativeApi.choose_project_parent($("#installpath").value||"");if(!picked)return;
+  $("#installpath").value=picked;installPathDirty=true;drawInstallLocation();
+}
+async function saveInstallLocation(){
+  const value=$("#installpath").value.trim();if(!value){alert(isZh()?"请选择安装文件夹。":"Choose an installation folder.");return false}
+  const current=STATE&&STATE.install_location&&STATE.install_location.path;
+  if(!installPathDirty&&value===current)return true;
+  const r=await fetch("/api/setup-location",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,path:value})});
+  const d=await r.json().catch(()=>({}));if(!r.ok){alert(d.error||"Could not save installation folder");return false}
+  installPathDirty=false;await loadState();return true;
+}
 function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,failed=sw.state==="failed";
   $("#title").textContent=STATE.name;$("#headmodel").textContent=STATE.name;$("#reference").textContent=STATE.reference||STATE.version||"Knowledge Infrastructure";
   $("#statusbadge").className=`badge ${ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=sw.label||"Setup needed";
@@ -211,12 +240,12 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,fai
       `<div class="explain">Nothing is waiting on you. The agent can continue working autonomously.${files?`<div class="files"><b>Files supplied</b>${files}</div>`:""}</div>`;
     $("#start").disabled=busy||!$("#provider").value;
   }
-  drawRunState();
+  drawInstallLocation();drawRunState();
   const steps=sw.steps||[];$("#verification").innerHTML=steps.length?`<div class="steps">${steps.map(s=>`<div class="step ${s.ok||s.recovered?'good':s.skipped?'skip':'bad'}"><span class="icon">${s.ok?'✓':s.recovered?'↺':s.deferred?'◇':s.skipped?'–':'✕'}</span><div><b>${esc(s.name)}${s.recovered?' · repaired':s.deferred?' · handled in each project':''}</b>${s.detail?`<details><summary>details</summary>${esc(s.detail)}</details>`:""}</div></div>`).join("")}</div>`:
     '<div class="explain">Not checked yet. The agent will run the KI preflight.</div>';
 }
 async function loadState(){if(!MODEL){$("#title").textContent="No KI selected";return;}const r=await fetch("/api/setup/"+encodeURIComponent(MODEL));STATE=await r.json();draw();}
-async function startAgent(){if(busy)return;busy=true;rawLog="";runStartedAt=Date.now();lastSignalAt=runStartedAt;draw();const log=$(".log");log.textContent="";drawRunState();
+async function startAgent(){if(busy)return;if(!await saveInstallLocation())return;busy=true;rawLog="";runStartedAt=Date.now();lastSignalAt=runStartedAt;draw();const log=$(".log");log.textContent="";drawRunState();
   try{const r=await fetch("/api/setup-agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,provider:$("#provider").value,llm_model:$("#llm").value})});
     if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`HTTP ${r.status}`)}const rd=r.body.getReader(),dec=new TextDecoder();
     for(;;){const{done,value}=await rd.read();if(done)break;lastSignalAt=Date.now();rawLog+=dec.decode(value,{stream:true});log.textContent=presentSetupLog(rawLog);drawRunState();log.scrollTop=log.scrollHeight;}rawLog+=dec.decode();}
@@ -235,6 +264,7 @@ async function chatForHelp(){
 async function uploadFile(){const f=$("#userfile").files[0];if(!f)return;$("#upload").disabled=true;const r=await fetch(`/api/setup-upload?model=${encodeURIComponent(MODEL)}&name=${encodeURIComponent(f.name)}`,{method:"POST",body:f});
   if(!r.ok){const d=await r.json().catch(()=>({}));alert(d.error||"Upload failed");$("#upload").disabled=false;return}await loadState();startAgent();}
 async function useChat(){const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[MODEL],provider:$("#provider").value})});const s=await r.json();location.href="/?session="+encodeURIComponent(s.id)}
+$("#installpath").oninput=()=>{installPathDirty=true;drawInstallLocation()};$("#chooseinstall").onclick=chooseInstallLocation;$("#saveinstall").onclick=saveInstallLocation;
 $("#provider").onchange=drawLLM;$("#start").onclick=startAgent;$("#chat").onclick=useChat;$("#theme").onclick=()=>{const d=document.body.hasAttribute("data-dark");d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");localStorage.setItem("kiss-dark",d?"0":"1")};
 if(localStorage.getItem("kiss-dark")==="1"||(localStorage.getItem("kiss-dark")===null&&matchMedia("(prefers-color-scheme:dark)").matches))document.body.setAttribute("data-dark","");
 Promise.all([loadProviders(),loadState()]).then(()=>{draw();setInterval(loadState,1500);setInterval(drawRunState,1000)});

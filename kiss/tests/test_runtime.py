@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, harness_runtime, install, kimi_security, mcp, paths, plotting, policy, port, preparation, projectrun, projectview, prompt, providers, sessions, settings, setup, shellenv, skilllib, software_audit, tls
+from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, harness_runtime, install, install_locations, kimi_security, mcp, paths, plotting, policy, port, preparation, projectrun, projectview, prompt, providers, sessions, settings, setup, shellenv, skilllib, software_audit, tls
 from kiss_cli.catalog import KI
 from kiss_cli.manifest import Acquire, DataNeed, Manifest
 
@@ -574,6 +574,11 @@ print(MARKER, len(text), implementation.__file__)
     def test_dssat_weather_fields_do_not_silently_drop_a_digit(self):
         script = (Path(__file__).parents[2] / "models" / "DSSAT" / "tools" /
                   "run_reference_case.py")
+        # The refreshed real-case runner imports NumPy.  Load it before
+        # patch.dict snapshots sys.modules; otherwise patch restoration removes
+        # NumPy's extension modules and a later readiness check cannot safely
+        # import them a second time in the same process.
+        import numpy  # noqa: F401
         forcing = types.ModuleType("ki_tools_common.load_forcing")
         forcing.NASA_POWER_DAILY_PARAMS = ()
         forcing.NASA_POWER_DAILY_URL = "https://example.invalid"
@@ -650,6 +655,23 @@ print(MARKER, len(text), implementation.__file__)
             self.assertEqual((root / "Demo").resolve(), prefix.resolve())
             self.assertIn("linked install tree", notes[0])
 
+    def test_builtin_git_acquisition_inherits_selected_provider_proxy(self):
+        with tempfile.TemporaryDirectory() as td:
+            proxy_env = {"HTTPS_PROXY": "http://127.0.0.1:7897"}
+            man = Manifest(
+                model="Demo",
+                acquire=Acquire(
+                    strategy="build", repo="https://example.invalid/demo.git",
+                    ref="main"),
+            )
+            with mock.patch.object(
+                    install, "_run", return_value=(1, "network unavailable")) as run:
+                step, _binary = install.acquire(
+                    man, Path(td) / "Demo", sys.executable, env=proxy_env)
+
+            self.assertFalse(step.ok)
+            self.assertEqual(run.call_args.kwargs["env"], proxy_env)
+
 
 class EnvironmentAndTlsTests(unittest.TestCase):
     def test_interactive_login_environment_is_nul_delimited(self):
@@ -711,14 +733,14 @@ class ProxySettingsTests(unittest.TestCase):
                 "HTTP_PROXY", settings.with_provider_proxy("cli:codex", {}))
             self.assertEqual(settings.masked()["proxy_effective"], "")
 
-    def test_proxy_provider_selection_is_saved_and_defaults_to_claude_codex(self):
+    def test_proxy_provider_selection_includes_github_updates_by_default(self):
         with tempfile.TemporaryDirectory() as td, \
              mock.patch.object(settings, "_path", return_value=Path(td) / "settings.json"), \
              mock.patch.object(settings.urllib.request, "getproxies", return_value={
                  "https": "http://127.0.0.1:7897"}):
             self.assertEqual(
                 set(settings.masked()["proxy_providers"]),
-                {"cli:claude", "cli:codex"})
+                {"network:github", "cli:claude", "cli:codex"})
             settings.update({"proxy_providers": ["cli:kimi", "api:anthropic"]})
             self.assertEqual(
                 set(settings.masked()["proxy_providers"]),
@@ -726,6 +748,17 @@ class ProxySettingsTests(unittest.TestCase):
             self.assertEqual(
                 settings.proxy_url_for("cli:kimi"), "http://127.0.0.1:7897")
             self.assertEqual(settings.proxy_url_for("api:deepseek"), "")
+
+    def test_old_saved_proxy_selection_adopts_new_github_target_once(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(settings, "_path", return_value=Path(td) / "settings.json"), \
+             mock.patch.object(settings.urllib.request, "getproxies", return_value={
+                 "https": "http://127.0.0.1:7897"}):
+            settings.save({"proxy_mode": "auto",
+                           "proxy_providers": ["cli:claude"]})
+            self.assertIn("network:github", settings.proxy_providers())
+            settings.update({"proxy_providers": ["cli:claude"]})
+            self.assertNotIn("network:github", settings.proxy_providers())
 
     def test_manual_proxy_rejects_missing_or_credential_bearing_addresses(self):
         with tempfile.TemporaryDirectory() as td, \
@@ -1563,7 +1596,7 @@ class McpConnectionTests(unittest.TestCase):
 class FrontendRegressionTests(unittest.TestCase):
     def test_environment_selfcheck_proves_the_harness_before_providers(self):
         source = (Path(__file__).parents[1] / "kiss_cli" / "gui.py").read_text()
-        self.assertIn("[1/5] KI harness contract", source)
+        self.assertIn("[1/6] KI harness contract", source)
         self.assertIn("harness_runtime.status", source)
 
     def test_explicit_autonomous_chat_does_not_require_a_second_approval(self):
@@ -1598,7 +1631,8 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("/api/providers?refresh=1", page)
         self.assertIn('id="s-proxy-mode"', page)
         self.assertIn('id="s-proxy-url"', page)
-        self.assertIn("Test AI connection", page)
+        self.assertIn("Test AI & GitHub", page)
+        self.assertIn("agent-run Git, pip, curl, and download commands", page)
         self.assertIn("/api/selfcheck?provider=", page)
         self.assertIn("refreshMachineStatus", page)
         self.assertIn('fetch("/api/status",{cache:"no-store"})', page)
@@ -1748,6 +1782,11 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("Agent process connected", page)
         self.assertIn("setInterval(drawRunState,1000)", page)
         self.assertIn("prefers-reduced-motion:reduce", page)
+        self.assertIn('id="installpath"', page)
+        self.assertIn("Model installation folder", page)
+        self.assertIn("chooseInstallLocation", page)
+        self.assertIn("/api/setup-location", page)
+        self.assertIn("GeoForge will create it and record the choice", page)
         self.assertNotIn('req.expected_path||["download","licence"]', page)
         chat = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text()
         self.assertIn("kiss.draft.", chat)
@@ -1968,6 +2007,61 @@ class ProjectPreparationTests(unittest.TestCase):
         self.assertEqual(by_lane["choices"]["items"][0]["action"], "needs_decision")
 
 
+class InstallLocationTests(unittest.TestCase):
+    def test_user_can_select_a_folder_that_does_not_exist_yet(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "external-disk" / "scientific-models" / "DSSAT"
+
+            selected = install_locations.select(root / "geoforge", "DSSAT", target)
+
+            self.assertEqual(selected, target.resolve())
+            self.assertTrue(target.is_dir())
+            self.assertEqual(
+                install_locations.resolve(root / "geoforge", "dssat"),
+                target.resolve(),
+            )
+            info = install_locations.info(root / "geoforge", "DSSAT")
+            self.assertTrue(info["custom"])
+            self.assertEqual(info["path"], str(target.resolve()))
+
+    def test_install_path_is_recorded_beside_and_inside_local_ki(self):
+        with tempfile.TemporaryDirectory() as td:
+            workroot = Path(td) / "geoforge"
+            workspace = Path(td) / "chosen" / "VIC"
+            install_locations.select(workroot, "VIC", workspace)
+            live = workspace / "ki"
+            live.mkdir(parents=True)
+            cfg = paths.KissConfig.default(workspace)
+            (workspace / paths.CONFIG_NAME).write_text(cfg.dumps())
+
+            value = install_locations.record(
+                "VIC", workspace, cfg, ki_root=live, verified=True)
+
+            outer = json.loads(
+                (workspace / install_locations.RECORD_FILE).read_text())
+            inner = json.loads(
+                (live / install_locations.RECORD_FILE).read_text())
+            self.assertEqual(outer, inner)
+            self.assertEqual(outer["workspace"], str(workspace.resolve()))
+            self.assertEqual(outer["binaries"], str(cfg.roles["binaries"]))
+            self.assertTrue(value["verified"])
+            self.assertTrue(install_locations.info(workroot, "VIC")["recorded"])
+
+    def test_gui_workdir_uses_the_saved_model_location(self):
+        with tempfile.TemporaryDirectory() as td:
+            workroot = Path(td) / "geoforge"
+            target = Path(td) / "models-on-another-disk" / "CRHM"
+            install_locations.select(workroot, "CRHM", target)
+            handler = object.__new__(gui.Handler)
+            handler.workroot = workroot
+
+            self.assertEqual(
+                gui.Handler._workdir(handler, SimpleNamespace(name="CRHM")),
+                target.resolve(),
+            )
+
+
 class InstallStatusTests(unittest.TestCase):
     def test_verified_preflight_is_injected_as_machine_evidence_for_chat(self):
         handler = object.__new__(gui.Handler)
@@ -2080,6 +2174,79 @@ class AgentSetupTests(unittest.TestCase):
 
             installed = (target / "ki_tools_common" / "__init__.py").read_text()
             self.assertIn(str(cfg.roles["outputs"]), installed)
+
+    def test_agent_prepare_maps_legacy_ki_tools_before_first_preflight(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            package = root / "repo" / "models" / "Demo"
+            (package / "tools").mkdir(parents=True)
+            (package / "tools" / "prepare.py").write_text("print('ready')\n")
+            (package / "preflight_check.py").write_text(
+                'check_dir("KISSPATH_KI_ROOT/Demo/knowledge_infrastructure/tools", '
+                '"KI tools directory")\n'
+            )
+            common = root / "repo" / "ki_tools_common" / "ki_tools_common"
+            common.mkdir(parents=True)
+            (common / "__init__.py").write_text("# bundled common tools\n")
+            ki = KI("Demo", package)
+
+            with mock.patch("kiss_cli.handoff.write_setup"):
+                live, cfg = setup.prepare(
+                    ki, SimpleNamespace(), root / "work", root / "repo",
+                    root / "repo" / "models",
+                )
+
+            expected = (root / "work" / "models" / "Demo" /
+                        "knowledge_infrastructure" / "tools")
+            self.assertTrue(expected.is_symlink())
+            self.assertEqual(expected.resolve(), (live.root / "tools").resolve())
+            self.assertEqual(
+                cfg.roles["ki_root"], (root / "work" / "models").resolve())
+
+    def test_provider_network_failure_becomes_specific_user_handoff(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            made = setup.request_for_provider_connection(
+                root, "kimi", "auth.kimi.com")
+            shown = setup.request(root)
+
+            self.assertEqual(made["kind"], "login")
+            self.assertEqual(shown["title"], "Kimi Code cannot connect")
+            self.assertIn("auth.kimi.com", shown["message"])
+            self.assertIn("installation has not failed", shown["message"])
+            self.assertIn("AI Settings", shown["message"])
+
+    def test_api_setup_command_inherits_its_provider_proxy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki_root = root / "ki"
+            ki_root.mkdir()
+            cfg = SimpleNamespace(
+                root=root, python=sys.executable,
+                roles={"binaries": root / "binaries"},
+            )
+            completed = subprocess.CompletedProcess(
+                ["git", "--version"], 0, stdout="git version test\n", stderr="")
+
+            def routed(provider, env):
+                self.assertEqual(provider, "api:deepseek")
+                return {**env, "HTTPS_PROXY": "http://127.0.0.1:7897"}
+
+            with mock.patch.object(
+                    settings, "with_provider_proxy", side_effect=routed) as route, \
+                 mock.patch.object(api.subprocess, "run", return_value=completed) as run:
+                result = api.execute_tool(
+                    "run_setup_command", {"argv": ["git", "--version"]},
+                    SimpleNamespace(root=ki_root), cfg, setup_mode=True,
+                    setup_context={"provider_id": "api:deepseek"},
+                )
+
+            self.assertIn("git version test", result)
+            self.assertEqual(route.call_count, 1)
+            self.assertEqual(
+                run.call_args.kwargs["env"]["HTTPS_PROXY"],
+                "http://127.0.0.1:7897")
 
     def test_agent_final_preflight_becomes_the_saved_verification_state(self):
         with tempfile.TemporaryDirectory() as td:

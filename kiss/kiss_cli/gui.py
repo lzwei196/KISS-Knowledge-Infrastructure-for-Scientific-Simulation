@@ -30,7 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import api, calibration, clipboard, doctor, handoff, harness_runtime, install, kdtstudio, ki_updates, mcp, paths, policy, port, preparation, projectrun, projectview, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
+from . import api, calibration, clipboard, doctor, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, paths, policy, port, preparation, projectrun, projectview, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI
 from .manifest import Manifest
 
@@ -616,7 +616,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.catalog.get(unquote(name))
 
     def _workdir(self, ki) -> Path:
-        return self.workroot / ki.name.lower()
+        return install_locations.resolve(self.workroot, ki.name)
 
     def _status_for(self, ki) -> dict:
         """User-facing software state for one KI on this machine."""
@@ -933,7 +933,7 @@ class Handler(BaseHTTPRequestHandler):
             self._open_stream()
             emit = lambda s: self._chunk(s + "\n")
 
-            emit("[1/5] KI harness contract")
+            emit("[1/6] KI harness contract")
             probe_ki = next((candidate for candidate in self.catalog
                              if candidate.skill), None)
             harness = harness_runtime.status(probe_ki.root if probe_ki else None)
@@ -948,7 +948,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 emit(f"   FAIL  {harness.get('error')}")
 
-            emit("[2/5] Python 3 for model environments")
+            emit("[2/6] Python 3 for model environments")
             base = install.find_base_python()
             if base:
                 emit(f"   OK  {base}")
@@ -956,7 +956,7 @@ class Handler(BaseHTTPRequestHandler):
                 emit("   FAIL  none found. One-time fix:")
                 emit("         macOS: brew install python   |   or: xcode-select --install")
 
-            emit("[3/5] Agent CLIs on this machine")
+            emit("[3/6] Agent CLIs on this machine")
             detected = providers.detected()
 
             def _skill_count(cli: str) -> int:
@@ -993,7 +993,31 @@ class Handler(BaseHTTPRequestHandler):
             # short health cache for one more diagnostic run.
             avail = providers.available()
 
-            emit("[4/5] API keys in the environment")
+            emit("[4/6] GitHub model-source connection")
+            source_proxy = settings.proxy_url_for(settings.GITHUB_PROXY_TARGET)
+            emit("   route=GitHub & KI updates")
+            emit(f"   network proxy={source_proxy or 'direct'}")
+            import urllib.request as _source_request
+            try:
+                source_req = _source_request.Request(
+                    "https://github.com", method="HEAD",
+                    headers={"User-Agent": "geoforge-desktop"})
+                source_handlers = [
+                    _source_request.ProxyHandler(
+                        {"http": source_proxy, "https": source_proxy}
+                        if source_proxy else {}),
+                    _source_request.HTTPSHandler(context=tls.context()),
+                ]
+                with _source_request.build_opener(*source_handlers).open(
+                        source_req, timeout=20) as response:
+                    emit(f"   OK  GitHub answered (HTTP {response.status}) — "
+                         "agent installs can download source")
+            except Exception as error:
+                emit(f"   FAIL  cannot reach GitHub: {error}")
+                emit("         Fix: open Network & proxy, enable ‘GitHub & KI "
+                     "updates’, or correct the proxy address, then test again.")
+
+            emit("[5/6] API keys in the environment")
             akeys = api.available()
             if akeys:
                 for p in akeys:
@@ -1001,7 +1025,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 emit("   none set (fine if you use an agent CLI)")
 
-            emit("[5/5] Agent sign-in — running the agent for real")
+            emit("[6/6] Agent sign-in — running the agent for real")
             kind, _, pname = want.partition(":")
             if kind == "api" and pname in api.PROVIDERS:
                 p = api.PROVIDERS[pname]
@@ -1250,6 +1274,8 @@ class Handler(BaseHTTPRequestHandler):
                 "reference": (ki.meta or {}).get("reference"),
                 "version": (ki.meta or {}).get("version"),
                 "manifest_verified": self._manifest(ki).verified,
+                "install_location": install_locations.info(
+                    self.workroot, ki.name),
                 **setup_flow.setup_state(self._workdir(ki), self._status_for(ki)),
             })
 
@@ -1573,6 +1599,29 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/setup-agent":
             return self._stream_agent_setup(req)
 
+        if route == "/api/setup-location":
+            try:
+                ki = self._ki(req["model"])
+                target = install_locations.select(
+                    self.workroot, ki.name, req.get("path") or "")
+                cfg_file = target / paths.CONFIG_NAME
+                if not cfg_file.exists():
+                    cfg = paths.KissConfig.default(target)
+                    cfg.python = install.runtime_python(cfg.python)
+                    cfg_file.write_text(cfg.dumps(), encoding="utf-8")
+                else:
+                    cfg = paths.KissConfig.load(target)
+                install_locations.record(ki.name, target, cfg)
+            except KeyError as error:
+                return self._json({"error": str(error)}, 404)
+            except (ValueError, OSError) as error:
+                return self._json({"error": str(error)}, 400)
+            return self._json({
+                "ok": True,
+                "install_location": install_locations.info(
+                    self.workroot, ki.name),
+            })
+
         if route == "/api/mcp/github/configure-codex":
             try:
                 return self._json(mcp.configure_github_for_codex())
@@ -1843,6 +1892,10 @@ class Handler(BaseHTTPRequestHandler):
             "agent_setup": True,
         })
         status_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
+        install_locations.record(
+            ki.name, root, cfg,
+            ki_root=getattr(live_ki, "root", Path(root) / "ki"),
+            verified=check.ok)
         if check.ok:
             setup_flow.clear_request(root)
         return check.ok
@@ -1932,7 +1985,10 @@ class Handler(BaseHTTPRequestHandler):
                     output.append(piece)
                     return emit(piece)
 
-                run_install(ki, self._manifest(ki), root, capture, self.repo_root)
+                run_install(
+                    ki, self._manifest(ki), root, capture, self.repo_root,
+                    provider_id=want if ":" in want else f"cli:{want}",
+                )
                 return "".join(output)
 
             if kind == "api":
@@ -1973,6 +2029,13 @@ class Handler(BaseHTTPRequestHandler):
                         permission_event.get("provider") == "kimi"):
                     setup_flow.request_for_kimi_permission(
                         root, str(permission_event.get("path") or ""))
+                connection_event = runtime_events.get("connection")
+                if isinstance(connection_event, dict):
+                    setup_flow.request_for_provider_connection(
+                        root,
+                        str(connection_event.get("provider") or pname),
+                        str(connection_event.get("service") or ""),
+                    )
 
             self._record_agent_preflight(ki, live_ki, cfg, root, emit)
             handoff_req = setup_flow.request(root)
@@ -3002,7 +3065,7 @@ class Handler(BaseHTTPRequestHandler):
         # Prefer each model's materialised copy when it has been installed.
         resolved = []
         for k in kis:
-            live = (self.workroot / k.name.lower() / "ki")
+            live = self._workdir(k) / "ki"
             resolved.append(type(k)(name=k.name, root=live) if live.exists() else k)
         full = prompt.compose_multi(resolved, cfg, task=req.get("message", ""))
 
@@ -3028,7 +3091,8 @@ class Handler(BaseHTTPRequestHandler):
         self._end_stream()
 
 
-def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
+def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
+                *, provider_id: str = "") -> None:
     """The same six steps as ``kiss init``, streamed line by line."""
     root.mkdir(parents=True, exist_ok=True)
     cfg_file = root / paths.CONFIG_NAME
@@ -3040,6 +3104,8 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
         cfg_file.write_text(cfg.dumps(), encoding="utf-8")
         emit(f"wrote {cfg_file}\n")
     cfg.python = install.runtime_python(cfg.python)
+    network_env = (settings.with_provider_proxy(provider_id, {})
+                   if provider_id else None)
 
     strategy = man.acquire.strategy if man.acquire else "none"
     emit(f"\ninitialising {ki.name} (strategy: {strategy})\n\n")
@@ -3080,7 +3146,8 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
 
     step("[3/8] ki_tools_common", install.install_ki_tools_common(cfg, repo_root))
     step("[4/8] system deps", install.check_system_deps(man.system_deps))
-    step("[5/8] python deps", install.install_python_deps(man.python_deps, cfg.python))
+    step("[5/8] python deps", install.install_python_deps(
+        man.python_deps, cfg.python, env=network_env))
     prefix = cfg.roles["binaries"] / (man.install_dir or ki.name)
     blocker = next((prior for prior in result.steps if not prior.ok), None)
     if blocker:
@@ -3090,7 +3157,7 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
             f"not run because {blocker.name} failed: {blocker.detail}", skipped=True,
         ), None
     else:
-        s, binary = install.acquire(man, prefix, cfg.python)
+        s, binary = install.acquire(man, prefix, cfg.python, env=network_env)
     result.binary = binary
     for note in install.place_where_the_ki_expects(ki, binary, cfg, prefix):
         emit(f"      {note}\n")
@@ -3127,6 +3194,8 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
                    "detail": s.detail[:4000], "commands": s.commands[:20]}
                   for s in result.steps],
     }, indent=2), encoding="utf-8")
+    install_locations.record(
+        ki.name, root, cfg, ki_root=ki.root, verified=result.ok)
 
     if result.ok:
         emit(f"{ki.name} is verified on this machine.  {root}\n")

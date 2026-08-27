@@ -3,5 +3,10 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+# PyInstaller writes throwaway .spec files beside a build. The two we
+# maintain by hand are build inputs, not output, and this rule silently
+# swallowed KISS.spec: the Linux job was pointed at a file that never
+# reached the repository.
 *.spec
 !GeoForgeDesktop.spec
+!KISS.spec

@@ -243,6 +243,19 @@ select option:disabled{color:var(--fg-3)}
   <div id="modal"><div class="card2">
     <h2>Settings</h2>
     <label>Default provider</label><select id="s-def"></select>
+    <div style="margin-top:14px;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--surface)">
+      <label for="s-proxy-mode" style="margin-top:0">Network &amp; proxy</label>
+      <select id="s-proxy-mode">
+        <option value="auto">Use Mac system proxy (recommended)</option>
+        <option value="manual">Enter proxy manually</option>
+        <option value="off">Do not use a proxy</option>
+      </select>
+      <div id="s-proxy-manual" style="display:none;margin-top:8px"><input id="s-proxy-url" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:7897"></div>
+      <div class="hint" id="s-proxy-note" style="margin:7px 0 0">GeoForge passes this proxy only to the services selected below.</div>
+      <label style="margin-top:11px">Use proxy for</label>
+      <div id="s-proxy-providers" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px"></div>
+      <div class="hint" style="margin:7px 0 0">Select GitHub &amp; KI updates for the built-in updater. Select an AI provider when that provider and its agent-run Git, pip, curl, and download commands need the same route.</div>
+    </div>
     <label>Anthropic API key (ANTHROPIC_API_KEY)</label><input id="s-anthropic" placeholder="sk-ant-…" autocomplete="off">
     <label>DeepSeek API key (DEEPSEEK_API_KEY)</label><input id="s-deepseek" placeholder="sk-…" autocomplete="off">
     <label>OpenAI API key (OPENAI_API_KEY)</label><input id="s-openai" placeholder="sk-…" autocomplete="off">
@@ -267,7 +280,7 @@ select option:disabled{color:var(--fg-3)}
     <div class="update-summary" id="updatesummary">Checking update status…</div>
     <div id="updatedetails"></div>
     <p class="update-note">GeoForge updates only KI definitions and their install manifests from the official repository. It does not change chat projects, input data, installed model binaries, verification history, or KIs you imported yourself. A downloaded snapshot becomes active only after deterministic package checks pass.</p>
-    <div style="display:flex;gap:8px;margin-top:14px"><button class="primary" id="updateretry">Check again</button><a id="updatesource" target="_blank" rel="noreferrer"><button>Open source repository</button></a></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="primary" id="updateretry">Check again</button><button id="updatenetwork">Network settings</button><a id="updatesource" target="_blank" rel="noreferrer"><button>Open source repository</button></a></div>
   </div></div>
 </main>
 
@@ -315,7 +328,7 @@ function when(ts){return ts?new Date(ts*1000).toLocaleString():"Not yet";}
 function updateZh(){return window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN"}function updateText(en,zh){return updateZh()?zh:en}
 function updateNames(title,items){return (items||[]).length?`<b>${esc(title)}</b><div class="update-list">${items.map(x=>`<span class="update-name">${esc(x)}</span>`).join("")}</div>`:""}
 function updateSummary(u){if(!updateZh())return u.summary||"KI update status is not available.";if(u.state==="checking")return "正在从 GeoForge 仓库检查 KI 更新……";if(u.state==="updated")return `KI 库已更新：新增 ${(u.added||[]).length} 个，更新 ${(u.updated||[]).length} 个，移除 ${(u.removed||[]).length} 个。`;if(u.state==="up_to_date")return "KI 库已经是最新版本。";if(u.state==="error")return "KI 更新未完成；GeoForge 已继续使用上一次验证通过的版本。";return "尚未检查 KI 更新。"}
-function drawKiUpdate(){const u=KIUPDATE||{},checking=u.state==="checking";$("#kiupdatelabel").textContent=checking?updateText("Checking KIs…","正在检查 KI……"):u.state==="updated"?updateText("KIs updated","KI 已更新"):u.state==="error"?updateText("Update issue","更新问题"):updateText("KI updates","KI 更新");$("#updatesummary").innerHTML=`<b>${esc(updateSummary(u))}</b><br><small>${esc(u.branch||"")}${u.checked_at?` · ${esc(when(u.checked_at))}`:""}${u.active_revision?` · ${esc(String(u.active_revision).slice(0,17))}`:""}</small>`;const changes=(u.changes||[]).map(row=>`<div class="update-detail"><b>${esc(row.name)}</b>${updateNames(updateText("Added files","新增文件"),row.added_files)}${updateNames(updateText("Changed files","更新文件"),row.updated_files)}${updateNames(updateText("Removed files","移除文件"),row.removed_files)}</div>`).join("");$("#updatedetails").innerHTML=(u.error?`<div class="finding WARN"><b>${updateText("Current library kept safely","已安全保留当前 KI 库")}</b> · ${esc(u.error)}</div>`:"")+updateNames(updateText("New KIs","新增 KI"),u.added)+updateNames(updateText("Updated KIs","已更新 KI"),u.updated)+updateNames(updateText("Removed upstream","上游已移除"),u.removed)+changes+(u.warning_count?`<div class="finding WARN"><b>${u.warning_count} ${updateText("non-blocking package warnings","项非阻塞软件包警告")}</b> · ${updateText("The update passed all blocking checks.","本次更新已通过全部阻塞性检查。")}</div>`:"");$("#updateretry").disabled=checking;$("#updateretry").textContent=checking?updateText("Checking…","正在检查……"):updateText("Check again","再次检查");$("#updatesource").href=safeUrl(u.source_url)||"#"}
+function drawKiUpdate(){const u=KIUPDATE||{},checking=u.state==="checking",route=u.network_route?` · ${updateText("route","线路")}: ${u.network_route==="direct"?updateText("direct","直连"):u.network_route}`:"";$("#kiupdatelabel").textContent=checking?updateText("Checking KIs…","正在检查 KI……"):u.state==="updated"?updateText("KIs updated","KI 已更新"):u.state==="error"?updateText("Update issue","更新问题"):updateText("KI updates","KI 更新");$("#updatesummary").innerHTML=`<b>${esc(updateSummary(u))}</b><br><small>${esc(u.branch||"")}${u.checked_at?` · ${esc(when(u.checked_at))}`:""}${u.source_commit?` · ${esc(String(u.source_commit).slice(0,12))}`:""}${esc(route)}</small>`;const changes=(u.changes||[]).map(row=>`<div class="update-detail"><b>${esc(row.name)}</b>${updateNames(updateText("Added files","新增文件"),row.added_files)}${updateNames(updateText("Changed files","更新文件"),row.updated_files)}${updateNames(updateText("Removed files","移除文件"),row.removed_files)}</div>`).join("");$("#updatedetails").innerHTML=(u.error?`<div class="finding WARN"><b>${updateText("Current library kept safely","已安全保留当前 KI 库")}</b> · ${esc(u.error)}</div>`:"")+updateNames(updateText("New KIs","新增 KI"),u.added)+updateNames(updateText("Updated KIs","已更新 KI"),u.updated)+updateNames(updateText("Removed upstream","上游已移除"),u.removed)+changes+(u.warning_count?`<div class="finding WARN"><b>${u.warning_count} ${updateText("non-blocking package warnings","项非阻塞软件包警告")}</b> · ${updateText("The update passed all blocking checks.","本次更新已通过全部阻塞性检查。")}</div>`:"");$("#updateretry").disabled=checking;$("#updateretry").textContent=checking?updateText("Checking…","正在检查……"):updateText("Check again","再次检查");$("#updatesource").href=safeUrl(u.source_url)||"#"}
 async function loadKiUpdate(open=false){try{KIUPDATE=await (await fetch("/api/ki-updates")).json();drawKiUpdate();const revision=KIUPDATE.active_revision||"";if(revision&&revision!==KIUPDATE_REVISION){KIUPDATE_REVISION=revision;MODELS=await (await fetch("/api/models")).json();STATUS=await (await fetch("/api/status")).json();drawList();drawDetails([...SEL][0]);drawSetup()}if(KIUPDATE.state==="checking"){clearTimeout(KIUPDATE_TIMER);KIUPDATE_TIMER=setTimeout(()=>loadKiUpdate(false),1000)}if(open)$("#updatemodal").classList.add("open")}catch(e){KIUPDATE={state:"error",summary:"Could not read KI update status.",error:e.message};drawKiUpdate();if(open)$("#updatemodal").classList.add("open")}}
 
 function drawList(){
@@ -522,6 +535,7 @@ $("#importcancel").onclick=()=>{$("#importmodal").classList.remove("open");PENDI
 $("#kiupdates").onclick=()=>loadKiUpdate(true);
 $("#updateclose").onclick=()=>$("#updatemodal").classList.remove("open");
 $("#updateretry").onclick=async()=>{await fetch("/api/ki-updates/check",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});await loadKiUpdate(false)};
+$("#updatenetwork").onclick=async()=>{$("#updatemodal").classList.remove("open");await openSettings()};
 $("#envcheck").onclick=async()=>{
   const box=$("#envout"); box.style.display="block"; box.textContent="running…\n";
   const r=await fetch("/api/selfcheck?provider="+encodeURIComponent($("#prov").value||""));
@@ -539,6 +553,8 @@ if(localStorage.getItem("kiss-dark")==="1"||
   document.body.setAttribute("data-dark","");
 
 let PROV={providers:[],any_usable:false,default:""};
+let SETTINGS_PROXY_EFFECTIVE="";
+let SETTINGS_PROXY_PROVIDERS=new Set(["network:github","cli:claude","cli:codex"]);
 async function loadProviders(){
   PROV=await (await fetch("/api/providers")).json();
   const sel=$("#prov");
@@ -550,6 +566,23 @@ async function loadProviders(){
     sel.value=usable[0].name;
   if(!usable.length) sel.innerHTML='<option value="">No AI connection</option>';
 }
+function drawProxyProviderSettings(){
+  const box=$("#s-proxy-providers");if(!box)return;
+  const targets=[{name:"network:github",label:updateText("GitHub & KI updates","GitHub 与 KI 更新")},...PROV.providers];
+  box.innerHTML=targets.map(p=>`<label style="display:flex;align-items:center;gap:7px;margin:0;padding:7px 9px;border:1px solid var(--line);border-radius:9px;color:var(--fg)"><input style="width:auto" type="checkbox" data-proxy-provider="${esc(p.name)}" ${SETTINGS_PROXY_PROVIDERS.has(p.name)?"checked":""}><span>${esc(p.label)}</span></label>`).join("");
+  box.querySelectorAll("[data-proxy-provider]").forEach(input=>input.onchange=()=>{
+    input.checked?SETTINGS_PROXY_PROVIDERS.add(input.dataset.proxyProvider):SETTINGS_PROXY_PROVIDERS.delete(input.dataset.proxyProvider);
+  });
+}
+function drawProxySettingsNote(){
+  const mode=$("#s-proxy-mode").value;
+  $("#s-proxy-manual").style.display=mode==="manual"?"block":"none";
+  if(mode==="auto")$("#s-proxy-note").textContent=SETTINGS_PROXY_EFFECTIVE
+    ?updateText(`Detected ${SETTINGS_PROXY_EFFECTIVE}. GeoForge will use it only for the selected services.`,`已检测到 ${SETTINGS_PROXY_EFFECTIVE}。GeoForge 只会将它用于已勾选的服务。`)
+    :updateText("No system proxy detected. GeoForge will use the normal network connection.","没有检测到系统代理，GeoForge 将使用普通网络连接。");
+  else if(mode==="manual")$("#s-proxy-note").textContent=updateText("Enter the local HTTP or mixed proxy port. Proxy passwords are not stored here.","请输入本地 HTTP 或 mixed 代理端口；这里不会保存代理密码。");
+  else $("#s-proxy-note").textContent=updateText("GeoForge will connect directly without a proxy.","GeoForge 将不通过代理直接连接。");
+}
 async function openSettings(){
   const s=await (await fetch("/api/settings")).json();
   $("#s-def").innerHTML='<option value="">(first usable)</option>'+PROV.providers.map(p=>
@@ -557,17 +590,26 @@ async function openSettings(){
   for(const [id,k] of [["s-anthropic","ANTHROPIC_API_KEY"],["s-deepseek","DEEPSEEK_API_KEY"],
                        ["s-openai","OPENAI_API_KEY"],["s-openrouter","OPENROUTER_API_KEY"]])
     $("#"+id).value=s.api_keys[k]||"";
+  $("#s-proxy-mode").value=s.proxy_mode||"auto";
+  $("#s-proxy-url").value=s.proxy_url||"";
+  SETTINGS_PROXY_EFFECTIVE=s.proxy_effective||"";
+  SETTINGS_PROXY_PROVIDERS=new Set(s.proxy_providers||["network:github","cli:claude","cli:codex"]);
+  drawProxyProviderSettings();drawProxySettingsNote();
   $("#modal").classList.add("open");
 }
 $("#settings").onclick=openSettings;
+$("#s-proxy-mode").onchange=drawProxySettingsNote;
 $("#s-close").onclick=()=>$("#modal").classList.remove("open");
 $("#s-save").onclick=async()=>{
-  const body={default_provider:$("#s-def").value,api_keys:{
+  const body={default_provider:$("#s-def").value,proxy_mode:$("#s-proxy-mode").value,
+    proxy_url:$("#s-proxy-url").value,proxy_providers:[...SETTINGS_PROXY_PROVIDERS],api_keys:{
     ANTHROPIC_API_KEY:$("#s-anthropic").value,DEEPSEEK_API_KEY:$("#s-deepseek").value,
     OPENAI_API_KEY:$("#s-openai").value,OPENROUTER_API_KEY:$("#s-openrouter").value}};
   const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body)});
-  $("#s-msg").textContent=r.ok?"saved":"error";
+  let result={};try{result=await r.json()}catch(_error){}
+  $("#s-msg").textContent=r.ok?updateText("saved","已保存"):(result.error||updateText("error","保存失败"));
+  if(r.ok){SETTINGS_PROXY_EFFECTIVE=result.proxy_effective||"";SETTINGS_PROXY_PROVIDERS=new Set(result.proxy_providers||[]);drawProxyProviderSettings();drawProxySettingsNote();}
   await loadProviders();
   setTimeout(()=>{$("#s-msg").textContent="";},1500);
 };

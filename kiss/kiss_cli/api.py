@@ -494,6 +494,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
     """Run one tool. Every path argument is confined to the KI package."""
     root = Path(ki.root).resolve()
     workroot = Path(cfg.root).resolve()
+    provider_id = str((setup_context or {}).get("provider_id") or "")
     # During a direct-API installation turn the model setup workspace and the
     # chat project are deliberately separate.  Keep both roots explicit so an
     # agent can finish installation and then run/publish into the chat project
@@ -662,6 +663,9 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         child_env = with_ki_tools_common(cfg, child_env)
         from .calibration import with_framework_env
         child_env = with_framework_env(child_env)
+        if provider_id:
+            from .settings import with_provider_proxy
+            child_env = with_provider_proxy(provider_id, child_env)
         try:
             proc = subprocess.run(
                 [str(cfg.python), str(script), *arguments], cwd=str(cwd),
@@ -896,6 +900,9 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         }
         from .paths import with_ki_tools_common
         child_env = with_ki_tools_common(cfg, child_env)
+        if provider_id:
+            from .settings import with_provider_proxy
+            child_env = with_provider_proxy(provider_id, child_env)
         try:
             proc = subprocess.run(
                 argv, cwd=str(cwd), env={**child_env, **safe_env},
@@ -1136,6 +1143,8 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                f"{list(prov.models)}]")
         return
     model_id = prov.models.get(want, want)
+    tool_context = dict(setup_context or {})
+    tool_context.setdefault("provider_id", f"api:{prov.name}")
     tools = tool_schemas(ki, setup_mode=setup_mode, project_mode=project_mode)
     # Prior turns travel as REAL messages, not flattened into one user blob
     # with USER:/YOU: markers — the vendor's own multi-turn handling is the
@@ -1203,7 +1212,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
             else:
                 try:
                     out = execute_tool(name, args, ki, cfg, setup_mode=setup_mode,
-                                       setup_context=setup_context,
+                                       setup_context=tool_context,
                                        project_mode=project_mode)
                 except ToolError as e:
                     out = f"ERROR: {e}"

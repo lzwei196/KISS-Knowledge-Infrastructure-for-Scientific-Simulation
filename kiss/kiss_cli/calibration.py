@@ -14,7 +14,6 @@ lets an agent adapt a general KI to one case without mutating the curated KI.
 from __future__ import annotations
 
 import contextlib
-import functools
 import importlib
 import importlib.metadata
 import io
@@ -96,7 +95,6 @@ def framework_root() -> Path | None:
     return None
 
 
-@functools.lru_cache(maxsize=1)
 def dependency_status() -> dict[str, dict]:
     """Report imports, not merely installed-package metadata.
 
@@ -122,7 +120,6 @@ def dependency_status() -> dict[str, dict]:
     return out
 
 
-@functools.lru_cache(maxsize=1)
 def backend_module_status() -> dict[str, dict]:
     """Prove that each dynamically loaded production algorithm is frozen.
 

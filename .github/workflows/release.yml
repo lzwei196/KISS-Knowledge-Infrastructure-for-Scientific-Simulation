@@ -500,6 +500,8 @@ jobs:
             [ -f "GeoForge-Desktop-$a" ] \
               || echo "::warning::${a%%.*} did not build — this release ships without it"
           done
+          sha256sum "${ASSETS[@]}" > SHA256SUMS.txt
+          ASSETS+=(release-manifest.json DESKTOP_CHANGELOG.md SHA256SUMS.txt)
           gh release create "$TAG" \
             --title "GeoForge Desktop $TAG — macOS, Windows, Linux" \
             --notes-file .github/RELEASE_NOTES_MACOS.md \

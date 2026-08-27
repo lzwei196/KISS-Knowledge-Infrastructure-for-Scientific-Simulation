@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from kiss_cli import ki_updates
+from kiss_cli import ki_updates, settings
 
 
 class KiUpdateTests(unittest.TestCase):
@@ -149,6 +149,47 @@ class KiUpdateTests(unittest.TestCase):
         self.assertEqual(report["state"], "up_to_date")
         download.assert_not_called()
 
+    def test_remote_revision_pins_archive_to_exact_commit(self):
+        manager = ki_updates.UpdateManager(
+            self.base, lambda _path: None, branch="mac-version")
+        commit_sha = "1" * 40
+        tree_sha = "2" * 40
+        models_sha = "3" * 40
+        kiss_sha = "4" * 40
+        manifests_sha = "5" * 40
+        replies = [
+            {"sha": commit_sha, "commit": {"tree": {"sha": tree_sha}}},
+            {"tree": [{"path": "models", "sha": models_sha},
+                      {"path": "kiss", "sha": kiss_sha}]},
+            {"tree": [{"path": "manifests", "sha": manifests_sha}]},
+        ]
+        with mock.patch.object(manager, "_request_json", side_effect=replies) as request:
+            revision, got_models, got_manifests = manager._remote_revision()
+        self.assertEqual(revision, f"{'3' * 16}-{'5' * 16}")
+        self.assertEqual((got_models, got_manifests), (models_sha, manifests_sha))
+        self.assertEqual(manager._archive_ref, commit_sha)
+        self.assertEqual(manager._source_commit, commit_sha)
+        self.assertIn(f"/commits/{manager.branch}", request.call_args_list[0].args[0])
+
+    def test_updater_uses_dedicated_github_proxy_route(self):
+        manager = ki_updates.UpdateManager(
+            self.base, lambda _path: None, branch="mac-version")
+        opener = mock.Mock()
+        response = object()
+        opener.open.return_value = response
+        request = ki_updates.urllib.request.Request("https://api.github.com/test")
+        with mock.patch.object(
+                settings, "proxy_url_for",
+                return_value="http://127.0.0.1:7897") as route, \
+             mock.patch.object(
+                 ki_updates.urllib.request, "build_opener",
+                 return_value=opener) as build:
+            self.assertIs(manager._open(request, timeout=12), response)
+        route.assert_called_with(settings.GITHUB_PROXY_TARGET)
+        proxy_handler = build.call_args.args[0]
+        self.assertEqual(proxy_handler.proxies["https"], "http://127.0.0.1:7897")
+        opener.open.assert_called_once_with(request, timeout=12)
+
     def test_frontend_explains_scope_and_desktop_starts_updates(self):
         package = Path(__file__).parents[1] / "kiss_cli"
         app = (package / "app.py").read_text(encoding="utf-8")
@@ -160,3 +201,6 @@ class KiUpdateTests(unittest.TestCase):
         self.assertIn('route == "/api/ki-updates/check"', gui)
         self.assertIn("does not change chat projects", library)
         self.assertIn("ki-update-toast", chat)
+        self.assertIn("network:github", chat)
+        self.assertIn("network:github", library)
+        self.assertIn("Network settings", library)

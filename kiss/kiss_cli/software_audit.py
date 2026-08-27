@@ -18,7 +18,7 @@ import json
 import re
 from pathlib import Path
 
-from . import install, providers
+from . import install, install_locations, providers
 from .catalog import Catalog
 from .manifest import Manifest
 from .paths import CONFIG_NAME, KissConfig
@@ -98,7 +98,8 @@ def audit(models: Path, workroot: Path, manifests: Path,
     for ki in catalogue:
         try:
             man = _manifest(ki, manifests)
-            static_cfg = KissConfig.default(workroot / ki.name.lower())
+            static_cfg = KissConfig.default(
+                install_locations.resolve(workroot, ki.name))
             static_policy = Policy.derive(ki, man, static_cfg)
             if not static_policy.allows("read", ki.root):
                 raise RuntimeError("KI root is not readable by its derived policy")
@@ -118,7 +119,7 @@ def audit(models: Path, workroot: Path, manifests: Path,
             })
             continue
 
-        workspace = workroot / ki.name.lower()
+        workspace = install_locations.resolve(workroot, ki.name)
         status_path = workspace / "status.json"
         if not status_path.is_file():
             continue

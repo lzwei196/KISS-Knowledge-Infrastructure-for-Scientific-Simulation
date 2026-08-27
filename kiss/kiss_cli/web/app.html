@@ -130,7 +130,11 @@ footer{border-top:1px solid var(--line);padding:11px 18px}
 .activitynote{display:none;max-width:800px;margin:7px auto 0;padding:7px 9px;border-radius:10px;background:var(--brand-50);color:var(--fg-2);font-size:11.5px;align-items:center;gap:8px}
 .activitynote.show{display:flex}.activitynote span:nth-child(2){flex:1}.activitynote button{padding:3px 7px;font-size:11px;background:var(--raised)}
 .activitypulse{width:8px;height:8px;border-radius:99px;background:var(--brand);box-shadow:0 0 0 0 color-mix(in srgb,var(--brand) 35%,transparent);animation:pulse 1.6s infinite}
-.livewaiting{display:grid;grid-template-columns:18px 1fr;align-items:center;gap:2px 7px;color:var(--fg-2)}.livewaiting .spin{grid-row:1/3}.livewaiting small{color:var(--fg-3)}
+.activitynote.quiet{background:color-mix(in srgb,var(--warn) 9%,var(--raised))}.activitynote.stalled{background:color-mix(in srgb,var(--warn) 15%,var(--raised));color:var(--warn)}
+.livewaiting{display:grid;grid-template-columns:18px 1fr;align-items:center;gap:2px 7px;color:var(--fg-2)}.livewaiting small{color:var(--fg-3)}
+.agentstate-icon{grid-row:1/3;width:11px;height:11px;border:2px solid color-mix(in srgb,var(--brand) 25%,var(--line));border-top-color:var(--brand);border-radius:99px;animation:spin .9s linear infinite}
+.livewaiting.quiet .agentstate-icon{border:0;background:var(--warn);animation:pulse 1.8s infinite}.livewaiting.stalled .agentstate-icon{border:0;background:var(--warn);animation:none;box-shadow:0 0 0 4px color-mix(in srgb,var(--warn) 14%,transparent)}
+.livewaiting.disconnected .agentstate-icon{border:0;background:var(--danger);animation:none}.livewaiting.stalled b,.livewaiting.disconnected b{color:var(--warn)}
 @keyframes pulse{70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
 #slashmenu{display:none;position:absolute;left:0;right:70px;bottom:50px;max-height:280px;
   overflow-y:auto;background:var(--raised);border:1px solid var(--line);border-radius:12px;
@@ -243,6 +247,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .runstep b{font-size:12.5px}.runstep small{display:block;color:var(--fg-3)}
 .projectbtn.run-working{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}.projectbtn.run-waiting{color:var(--warn);border-color:var(--warn)}
 .projectbtn.run-complete{color:var(--ok);border-color:var(--ok)}.projectbtn.run-failed{color:var(--block);border-color:var(--block)}
+.ki-update-toast{position:fixed;right:18px;bottom:18px;z-index:40;width:min(390px,calc(100vw - 36px));padding:13px 14px;border:1px solid var(--line);border-radius:14px;background:var(--raised);box-shadow:0 16px 45px rgba(20,28,40,.16);display:none}.ki-update-toast.open{display:block}.ki-update-toast b{display:block;margin-bottom:3px}.ki-update-toast small{display:block;color:var(--fg-2);line-height:17px}.ki-update-actions{display:flex;gap:7px;margin-top:10px}.ki-update-actions button{padding:5px 9px;font-size:12px}
 </style></head>
 <body>
 <aside>
@@ -298,6 +303,19 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <div style="display:flex;gap:8px;margin:6px 0 12px"><button id="s-recheck">Recheck local CLIs</button><span class="hint" id="s-local-msg" style="align-self:center;margin:0"></span></div>
     <label>Default provider</label><select id="s-def"></select>
     <div class="datacard" style="margin-top:12px;padding:14px">
+      <label for="s-proxy-mode" style="margin-top:0">AI network proxy</label>
+      <select id="s-proxy-mode">
+        <option value="auto">Use Mac system proxy (recommended)</option>
+        <option value="manual">Enter proxy manually</option>
+        <option value="off">Do not use a proxy</option>
+      </select>
+      <div id="s-proxy-manual" style="display:none;margin-top:8px"><input id="s-proxy-url" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:7897"></div>
+      <div class="hint" id="s-proxy-note" style="margin:7px 0 0">GeoForge passes this proxy only to the providers selected below.</div>
+      <label style="margin-top:11px">Use proxy for</label>
+      <div id="s-proxy-providers" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px"></div>
+      <div class="hint" style="margin:7px 0 0">Claude Code and Codex are enabled by default. Kimi and DeepSeek use their normal connection unless you enable them.</div>
+    </div>
+    <div class="datacard" style="margin-top:12px;padding:14px">
       <label for="s-kimi-security" style="margin-top:0">Kimi Code file access</label>
       <select id="s-kimi-security">
         <option value="scoped">Project scoped (recommended)</option>
@@ -311,9 +329,11 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <label>OpenRouter API key</label><input id="s-openrouter" autocomplete="off">
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="primary" id="s-save">Save</button>
+      <button id="s-test">Test AI connection</button>
       <button id="s-close">Close</button>
       <span class="hint" id="s-msg" style="align-self:center"></span>
     </div>
+    <pre id="s-test-output" style="display:none;max-height:240px;overflow:auto;white-space:pre-wrap;background:#11151b;color:#e8edf4;border-radius:10px;padding:12px;margin:12px 0 0;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace"></pre>
   </div></div>
   <div id="sessionpick"><div class="card2" style="width:min(560px,92vw)">
     <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span class="mark">▣</span><h2 style="margin:0">New project chat</h2></div>
@@ -405,6 +425,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
     </div>
   </section>
 </main>
+<div class="ki-update-toast" id="ki-update-toast"><b id="ki-update-title">KI library</b><small id="ki-update-message"></small><div class="ki-update-actions"><button class="primary" id="ki-update-view">View report</button><button id="ki-update-dismiss">Dismiss</button></div></div>
 <script src="/clipboard.js"></script>
 <script src="/i18n.js"></script>
 <script>
@@ -421,6 +442,8 @@ function artifactImage(alt,raw,sid){
 const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",publish_project_view:"Updated Project View",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command"};
 const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",publish_project_view:"已更新项目视图",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令"};
 const chineseUI=()=>window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
+let KI_UPDATE_REVISION="",KI_UPDATE_POLL=null;
+async function watchKiUpdates(){try{const r=await fetch("/api/ki-updates",{cache:"no-store"}),u=await r.json();if(u.state==="checking"){clearTimeout(KI_UPDATE_POLL);KI_UPDATE_POLL=setTimeout(watchKiUpdates,1000);return}if(["updated","up_to_date","error"].includes(u.state)){const revision=u.active_revision||"";if(revision&&revision!==KI_UPDATE_REVISION){KI_UPDATE_REVISION=revision;MODELS=await (await fetch("/api/models",{cache:"no-store"})).json();STATUS=await (await fetch("/api/status",{cache:"no-store"})).json();if(CUR)drawModelLabel()}const zh=chineseUI();$("#ki-update-title").textContent=u.state==="error"?(zh?"KI 更新未完成":"KI update not completed"):(zh?"KI 库检查完成":"KI library checked");$("#ki-update-message").textContent=u.state==="error"?(zh?"网络或验证出现问题，GeoForge 已继续使用上一次验证通过的 KI 库。":"A network or validation issue occurred. GeoForge kept the last validated KI library."):zh?(u.state==="updated"?`KI 库已更新：新增 ${(u.added||[]).length} 个，更新 ${(u.updated||[]).length} 个，移除 ${(u.removed||[]).length} 个。`:"KI 库已经是最新版本。"):(u.summary||"");$("#ki-update-view").textContent=zh?"查看报告":"View report";$("#ki-update-dismiss").textContent=zh?"关闭":"Dismiss";$("#ki-update-toast").classList.add("open")}}catch(_error){}}
 function workLabel(name){if(chineseUI()&&TOOL_LABELS_ZH[name])return TOOL_LABELS_ZH[name];if(TOOL_LABELS[name])return TOOL_LABELS[name];const words=String(name).replace(/([a-z])([A-Z])/g,"$1 $2").replace(/[_.-]+/g," ");return chineseUI()?"已使用 "+words:"Used "+words.toLowerCase();}
 function extractWork(t,streaming){const tools=[];let body=String(t??"");
   let invalidToolText=false;
@@ -603,7 +626,7 @@ function drawSessions(){
   $("#slist").innerHTML=SESSIONS.map(s=>`
     <div class="sess ${CUR&&CUR.id===s.id?'sel':''} ${INFLIGHT.has(s.id)?'running':''}" data-id="${esc(s.id)}">
       <div class="t">${esc(s.title)}<button class="del" data-id="${esc(s.id)}" title="Archive chat; project files are kept" ${INFLIGHT.has(s.id)?"disabled":""}>✕</button></div>
-      <div class="m">${s.models.length?esc(s.models.join(", ")):"Auto KI"} · ${s.n} messages${s.skills&&s.skills.length?` · ${s.skills.length} skill${s.skills.length===1?"":"s"}`:""}${s.mcps&&s.mcps.length?` · ${s.mcps.length} MCP`:""}${INFLIGHT.has(s.id)?' · <span class="sessionworking">Working</span>':''}</div>
+      <div class="m">${s.models.length?esc(s.models.join(", ")):"Auto KI"} · ${s.n} messages${s.skills&&s.skills.length?` · ${s.skills.length} skill${s.skills.length===1?"":"s"}`:""}${s.mcps&&s.mcps.length?` · ${s.mcps.length} MCP`:""}${INFLIGHT.has(s.id)?` · <span class="sessionworking">${esc(agentStateText(INFLIGHT.get(s.id),true))}</span>`:""}</div>
     </div>`).join("");
   document.querySelectorAll(".sess").forEach(e=>e.onclick=ev=>{
     if(ev.target.classList.contains("del")) return; openSession(e.dataset.id);});
@@ -789,19 +812,63 @@ function renderLiveTurn(id){
 function liveBubble(id){return document.querySelector(`.turn[data-flight="${id}"] .bubble`);}
 function providerDisplay(name){const p=PROV.providers.find(item=>item.name===name);return p&&p.label||String(name||"AI").replace(/^(api|cli):/,"");}
 function elapsedTime(started){const seconds=Math.max(0,Math.floor((Date.now()-started)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
+function durationLabel(seconds){seconds=Math.max(0,Number(seconds)||0);return seconds<60?`${Math.floor(seconds)}s`:`${Math.floor(seconds/60)}m ${Math.floor(seconds%60)}s`;}
+function agentLiveState(flight){
+  const status=flight.agentStatus||{},now=Date.now(),transportAge=Math.max(0,Math.floor((now-(flight.lastHeartbeat||flight.started))/1000));
+  const eventAge=status.event_silence_seconds,activity=status.activity&&status.activity!=="starting"?status.activity:null;
+  const apiTurn=String(flight.provider||"").startsWith("api:");
+  if(status.process_alive){
+    if(eventAge!==null&&eventAge!==undefined&&eventAge<=12)return{kind:"active",activity,age:eventAge};
+    if(eventAge===null||eventAge===undefined){
+      const age=Math.max(0,Number(status.elapsed_seconds)||0);
+      return{kind:age>=90?"stalled":"quiet",activity,age};
+    }
+    return{kind:eventAge>=90?"stalled":"quiet",activity,age:eventAge};
+  }
+  if(status.state==="finishing"||status.state==="finished")return{kind:"active",activity:null,age:0,finishing:true};
+  if(transportAge<=12)return{kind:apiTurn?"active":"quiet",activity:null,age:transportAge,transportOnly:true};
+  return{kind:"disconnected",activity:null,age:transportAge};
+}
+function agentStateText(flight,compact=false){
+  const label=providerDisplay(flight.provider),elapsed=elapsedTime(flight.started),state=agentLiveState(flight),age=durationLabel(state.age);
+  if(compact){
+    if(state.kind==="active")return chineseUI()?"有新活动":"Active";
+    if(state.kind==="quiet")return chineseUI()?"运行中·静默":"Running · quiet";
+    if(state.kind==="stalled")return chineseUI()?"需要检查":"Check status";
+    return chineseUI()?"连接异常":"Connection issue";
+  }
+  if(state.finishing)return chineseUI()?`${label} 已结束，正在保存对话结果 · ${elapsed}`:`${label} finished; GeoForge is saving the result · ${elapsed}`;
+  if(state.kind==="active"){
+    if(state.transportOnly)return chineseUI()?`${label} 的 API 连接正常，正在等待服务返回 · ${elapsed}`:`${label} API connection is active; waiting for the provider · ${elapsed}`;
+    return state.activity?(chineseUI()?`${label} 正在执行 ${state.activity} · ${elapsed}`:`${label} is using ${state.activity} · ${elapsed}`):(chineseUI()?`${label} 刚刚产生了新活动 · ${elapsed}`:`${label} produced new activity · ${elapsed}`);
+  }
+  if(state.kind==="quiet")return state.activity?(chineseUI()?`${label} 进程仍在，正在执行 ${state.activity}；${age} 没有新事件 · ${elapsed}`:`${label} process is alive in ${state.activity}; no new event for ${age} · ${elapsed}`):(chineseUI()?`${label} 进程仍在；${age} 没有新事件 · ${elapsed}`:`${label} process is alive; no new event for ${age} · ${elapsed}`);
+  if(state.kind==="stalled")return chineseUI()?`${label} 进程仍在，但已静默 ${age}；可能是长任务，也可能卡住 · ${elapsed}`:`${label} process is alive but silent for ${age}; it may be a long task or stuck · ${elapsed}`;
+  return chineseUI()?`${label} 的实时连接已超过 ${age} 没有心跳；可能已中断 · ${elapsed}`:`No heartbeat from ${label} for ${age}; the live connection may be interrupted · ${elapsed}`;
+}
 function liveWaitingHtml(flight){
-  const label=providerDisplay(flight.provider),elapsed=elapsedTime(flight.started);
-  return chineseUI()?`<div class="livewaiting"><span class="spin"></span><b>${esc(label)} 正在处理 · ${elapsed}</b><small>连接仍然正常；正在等待下一段结果。</small></div>`:`<div class="livewaiting"><span class="spin"></span><b>${esc(label)} is working · ${elapsed}</b><small>The connection is active; waiting for the next result.</small></div>`;
+  const state=agentLiveState(flight),line=agentStateText(flight),detail=state.kind==="stalled"?(chineseUI()?"GeoForge 只能确认进程仍存活，不能确认它正在计算。你可以继续使用其他对话。":"GeoForge can confirm that the process is alive, but not that it is computing. You can continue in another chat."):(chineseUI()?"状态来自 Agent 进程和输出事件，不只是浏览器连接。":"Status uses the agent process and output events, not only the browser connection.");
+  return `<div class="livewaiting ${state.kind}"><span class="agentstate-icon"></span><b>${esc(line)}</b><small>${esc(detail)}</small></div>`;
 }
 function updateActivityUI(){
   const flight=CUR&&INFLIGHT.get(CUR.id),note=$("#activitynote"),sendButton=$("#send");
   note.classList.toggle("show",!!flight);
   if(flight){
-    const label=providerDisplay(flight.provider),elapsed=elapsedTime(flight.started);
-    $("#activitytext").textContent=chineseUI()?`${label} 已运行 ${elapsed}。你可以新建对话；本对话会在后台继续。`:`${label} has been working for ${elapsed}. You can start another chat; this one will continue in the background.`;
+    const state=agentLiveState(flight);
+    note.classList.toggle("quiet",state.kind==="quiet");note.classList.toggle("stalled",state.kind==="stalled"||state.kind==="disconnected");
+    $("#activitytext").textContent=agentStateText(flight)+" "+(chineseUI()?"你可以新建对话；本对话会在后台继续。":"You can start another chat; this one will continue in the background.");
     sendButton.textContent=chineseUI()?"处理中…":"Working…";
     if(!flight.raw.trim()){const out=liveBubble(CUR.id);if(out)out.innerHTML=liveWaitingHtml(flight);}
-  }else sendButton.textContent=chineseUI()?"发送":"Send";
+  }else{note.classList.remove("quiet","stalled");sendButton.textContent=chineseUI()?"发送":"Send";}
+}
+async function refreshAgentStatus(id=CUR&&CUR.id){
+  if(!id||!INFLIGHT.has(id))return null;
+  try{
+    const r=await fetch(`/api/session/${id}/agent-status`,{cache:"no-store"});if(!r.ok)return null;
+    const status=await r.json(),flight=INFLIGHT.get(id);if(!flight)return status;
+    flight.agentStatus=status;
+    if(CUR&&CUR.id===id)updateActivityUI();drawSessions();return status;
+  }catch(_error){return null;}
 }
 function closeActionPicker(){
   $("#actionpick").classList.remove("open");ACTION_REQUEST=null;ACTION_SESSION=null;ACTION_INDEX=-1;
@@ -920,10 +987,10 @@ async function send(){
   if(window.GeoForgeI18n&&GeoForgeI18n.isChineseText(text))
     GeoForgeI18n.setLanguage("zh-CN");
   const provider=$("#prov").value,llm=$("#llm").value;
-  const flight={raw:"",started:Date.now(),provider};INFLIGHT.set(target,flight);drawSessions();setControls(true);
+  const flight={raw:"",started:Date.now(),lastHeartbeat:Date.now(),lastOutput:null,provider,agentStatus:null};INFLIGHT.set(target,flight);drawSessions();setControls(true);
   $("#msg").value="";DRAFTS.delete(target);
   drawSlash();
-  let runPoll=setInterval(()=>refreshRun(target).catch(()=>{}),1000);
+  let runPoll=setInterval(()=>{refreshRun(target).catch(()=>{});refreshAgentStatus(target).catch(()=>{});},1500);
   try{
     const up=await fetch(`/api/session/${target}/update`,{method:"POST",
       headers:{"Content-Type":"application/json"},
@@ -942,7 +1009,9 @@ async function send(){
     PENDING_ATTACHMENTS.delete(target);if(CUR&&CUR.id===target)renderAttachments();
     const rd=r.body.getReader(), dec=new TextDecoder();
     for(;;){const{done,value}=await rd.read(); if(done)break;
-      flight.raw+=dec.decode(value,{stream:true});
+      const chunk=dec.decode(value,{stream:true});flight.lastHeartbeat=Date.now();
+      if(chunk.replaceAll("\u200b","").length)flight.lastOutput=Date.now();
+      flight.raw+=chunk;
       if(CUR&&CUR.id===target){const out=liveBubble(target),visible=flight.raw.replaceAll("\u200b","");if(out){out.innerHTML=visible.trim()?md(visible,target,true):liveWaitingHtml(flight);$("#chat").scrollTop=$("#chat").scrollHeight;}}}
     flight.raw=flight.raw.replaceAll("\u200b","");
     if(CUR&&CUR.id===target){const out=liveBubble(target);if(out)out.innerHTML=flight.raw.trim()?md(flight.raw,target,false):'<p style="color:var(--fg-3)">(no output)</p>';}
@@ -1506,6 +1575,8 @@ function drawLocalSettings(){
     :'<div class="hint" style="margin:0">No local agent CLI found. Install Claude Code, Codex, Gemini, Kimi, or Qwen, then recheck.</div>';
 }
 let LAST_PROVIDER_CHECK=0;
+let SETTINGS_PROXY_EFFECTIVE="";
+let SETTINGS_PROXY_PROVIDERS=new Set(["cli:claude","cli:codex"]);
 async function refreshProviders(showStatus=false){
   const note=$("#s-local-msg");if(showStatus&&note)note.textContent="checking…";
   try{
@@ -1514,6 +1585,31 @@ async function refreshProviders(showStatus=false){
     if(showStatus&&note)note.textContent="checked";
   }catch(e){if(showStatus&&note)note.textContent="could not recheck";}
 }
+function drawProxyProviderSettings(){
+  const box=$("#s-proxy-providers");if(!box)return;
+  box.innerHTML=PROV.providers.map(p=>`<label style="display:flex;align-items:center;gap:7px;margin:0;padding:7px 9px;border:1px solid var(--line);border-radius:9px"><input type="checkbox" data-proxy-provider="${esc(p.name)}" ${SETTINGS_PROXY_PROVIDERS.has(p.name)?"checked":""}><span>${esc(p.label)}</span></label>`).join("");
+  box.querySelectorAll("[data-proxy-provider]").forEach(input=>input.onchange=()=>{
+    input.checked?SETTINGS_PROXY_PROVIDERS.add(input.dataset.proxyProvider):SETTINGS_PROXY_PROVIDERS.delete(input.dataset.proxyProvider);
+  });
+}
+function drawProxySettingsNote(){
+  const mode=$("#s-proxy-mode").value;
+  $("#s-proxy-manual").style.display=mode==="manual"?"block":"none";
+  const zh=chineseUI();
+  if(mode==="auto"){
+    $("#s-proxy-note").textContent=SETTINGS_PROXY_EFFECTIVE
+      ?(zh?`已检测到 ${SETTINGS_PROXY_EFFECTIVE}。GeoForge 只会把它传给下方选中的服务。`:`Detected ${SETTINGS_PROXY_EFFECTIVE}. GeoForge will pass it only to the providers selected below.`)
+      :(zh?"没有检测到系统代理，GeoForge 将使用普通网络连接。":"No system proxy detected. GeoForge will use the normal network connection.");
+  }else if(mode==="manual"){
+    $("#s-proxy-note").textContent=zh
+      ?"GeoForge 只会把这个地址传给下方选中的服务。这里不保存代理密码。"
+      :"GeoForge will pass this address only to the providers selected below. Proxy credentials are not stored here.";
+  }else{
+    $("#s-proxy-note").textContent=zh
+      ?"GeoForge 会从本地 CLI 和 API 连接中移除代理变量。"
+      :"GeoForge will remove proxy variables from its local CLI and API connections.";
+  }
+}
 async function openSettings(){
   const s=await (await fetch("/api/settings")).json();
   $("#s-def").innerHTML='<option value="">(first usable)</option>'+PROV.providers.map(p=>
@@ -1521,6 +1617,12 @@ async function openSettings(){
   for(const [id,k] of [["s-anthropic","ANTHROPIC_API_KEY"],["s-deepseek","DEEPSEEK_API_KEY"],
                        ["s-openai","OPENAI_API_KEY"],["s-openrouter","OPENROUTER_API_KEY"]])
     $("#"+id).value=s.api_keys[k]||"";
+  $("#s-proxy-mode").value=s.proxy_mode||"auto";
+  $("#s-proxy-url").value=s.proxy_url||"";
+  SETTINGS_PROXY_EFFECTIVE=s.proxy_effective||"";
+  SETTINGS_PROXY_PROVIDERS=new Set(s.proxy_providers||["cli:claude","cli:codex"]);
+  drawProxyProviderSettings();
+  drawProxySettingsNote();
   $("#s-kimi-security").value=s.kimi_security_mode||"scoped";
   drawKimiSecurityNote();
   drawLocalSettings();
@@ -1528,6 +1630,7 @@ async function openSettings(){
 }
 $("#settings").onclick=openSettings;
 $("#s-recheck").onclick=()=>refreshProviders(true);
+$("#s-proxy-mode").onchange=drawProxySettingsNote;
 function drawKimiSecurityNote(){
   const full=$("#s-kimi-security").value==="full";
   $("#s-kimi-security-note").textContent=full
@@ -1538,15 +1641,46 @@ $("#s-kimi-security").onchange=drawKimiSecurityNote;
 $("#help").onclick=()=>$("#guide").classList.add("open");
 $("#guide-close").onclick=()=>$("#guide").classList.remove("open");
 $("#s-close").onclick=()=>$("#modal").classList.remove("open");
-$("#s-save").onclick=async()=>{
-  const body={default_provider:$("#s-def").value,kimi_security_mode:$("#s-kimi-security").value,api_keys:{
+async function saveSettings(showMessage=true){
+  const body={default_provider:$("#s-def").value,kimi_security_mode:$("#s-kimi-security").value,
+    proxy_mode:$("#s-proxy-mode").value,proxy_url:$("#s-proxy-url").value,
+    proxy_providers:[...SETTINGS_PROXY_PROVIDERS],api_keys:{
     ANTHROPIC_API_KEY:$("#s-anthropic").value,DEEPSEEK_API_KEY:$("#s-deepseek").value,
     OPENAI_API_KEY:$("#s-openai").value,OPENROUTER_API_KEY:$("#s-openrouter").value}};
   const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body)});
-  $("#s-msg").textContent=r.ok?"saved":"error";
-  PROV=await (await fetch("/api/providers")).json(); drawProviders();
-  setTimeout(()=>{$("#s-msg").textContent="";},1500);
+  let result={};try{result=await r.json()}catch(_error){}
+  if(!r.ok){$("#s-msg").textContent=result.error||"Could not save settings";return false;}
+  SETTINGS_PROXY_EFFECTIVE=result.proxy_effective||"";
+  SETTINGS_PROXY_PROVIDERS=new Set(result.proxy_providers||[]);
+  $("#s-proxy-mode").value=result.proxy_mode||body.proxy_mode;
+  $("#s-proxy-url").value=result.proxy_url||"";
+  drawProxyProviderSettings();
+  drawProxySettingsNote();
+  if(showMessage)$("#s-msg").textContent=chineseUI()?"已保存":"saved";
+  await refreshProviders(false);
+  if(showMessage)setTimeout(()=>{$("#s-msg").textContent="";},1500);
+  return true;
+}
+$("#s-save").onclick=()=>saveSettings(true);
+$("#s-test").onclick=async()=>{
+  const button=$("#s-test"),output=$("#s-test-output"),zh=chineseUI();
+  button.disabled=true;$("#s-msg").textContent=zh?"正在测试真实连接……":"testing a real connection…";
+  output.style.display="block";output.textContent=zh?"正在保存设置并启动连接测试……":"Saving settings and starting the connection test…";
+  try{
+    if(!await saveSettings(false))return;
+    const want=$("#s-def").value||$("#prov").value||"";
+    const r=await fetch(`/api/selfcheck?provider=${encodeURIComponent(want)}`,{cache:"no-store"});
+    if(r.body&&r.body.getReader){
+      const reader=r.body.getReader(),decoder=new TextDecoder();let report="";
+      while(true){const {done,value}=await reader.read();if(done)break;report+=decoder.decode(value,{stream:true});output.textContent=report;output.scrollTop=output.scrollHeight;}
+      report+=decoder.decode();output.textContent=report;
+    }else output.textContent=await r.text();
+    $("#s-msg").textContent=r.ok?(zh?"测试完成":"test complete"):(zh?"测试未完成":"test did not complete");
+  }catch(error){
+    output.textContent=(zh?"连接测试失败：":"Connection test failed: ")+(error.message||error);
+    $("#s-msg").textContent=zh?"测试失败":"test failed";
+  }finally{button.disabled=false;}
 };
 window.addEventListener("focus",()=>{
   refreshSessionList();
@@ -1571,5 +1705,8 @@ if(localStorage.getItem("kiss-dark")==="1"||
 setInterval(updateActivityUI,1000);
 setInterval(refreshSessionList,5000);
 setInterval(()=>{if(CUR&&$("#viewpanel").classList.contains("open"))refreshProjectView(false).catch(()=>{});},5000);
+$("#ki-update-view").onclick=()=>location.href="/library?updates=1";
+$("#ki-update-dismiss").onclick=()=>$("#ki-update-toast").classList.remove("open");
 loadAll();
+watchKiUpdates();
 </script></body></html>

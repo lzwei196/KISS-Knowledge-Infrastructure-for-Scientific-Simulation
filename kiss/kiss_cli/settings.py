@@ -15,13 +15,25 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .firstrun import data_dir
 
 KEY_NAMES = ("ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY",
              "OPENAI_API_KEY", "OPENROUTER_API_KEY")
 KIMI_SECURITY_MODES = {"scoped", "full"}
+PROXY_MODES = {"auto", "manual", "off"}
+DEFAULT_PROXY_PROVIDERS = ("cli:claude", "cli:codex")
+PROXY_ENV_KEYS = (
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+)
+# A Desktop settings change should affect this app process, not permanently
+# rewrite the user's Terminal environment. Remember what Finder/shell supplied
+# when GeoForge started so switching Auto/Manual/Off remains reversible.
+_BASE_PROXY_ENV = {key: os.environ.get(key) for key in PROXY_ENV_KEYS}
 
 
 def _path() -> Path:
@@ -50,11 +62,120 @@ def save(data: dict) -> None:
 
 
 def apply_to_env() -> None:
-    """Adopt saved keys into the environment. A real env var always wins."""
-    keys = load().get("api_keys") or {}
+    """Adopt saved API keys into the app process.
+
+    Proxy policy is provider-specific, so it is applied to each child CLI or
+    HTTP request rather than mutating the whole desktop process.
+    """
+    data = load()
+    keys = data.get("api_keys") or {}
     for k, v in keys.items():
         if k in KEY_NAMES and v and not os.environ.get(k):
             os.environ[k] = v
+
+
+def _normalise_proxy_url(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("proxy address is required in manual mode")
+    parsed = urlsplit(raw)
+    if parsed.scheme not in {"http", "https", "socks5", "socks5h"}:
+        raise ValueError("proxy must start with http://, https://, socks5://, or socks5h://")
+    if not parsed.hostname:
+        raise ValueError("proxy address has no host")
+    if parsed.username or parsed.password:
+        raise ValueError("proxy credentials are not stored here; use a local authenticated proxy")
+    try:
+        parsed.port
+    except ValueError as error:
+        raise ValueError(f"invalid proxy port: {error}") from None
+    if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+        raise ValueError("proxy address must not contain a path, query, or fragment")
+    return raw.rstrip("/")
+
+
+def detected_system_proxy() -> str:
+    """Return the Mac/Windows/environment proxy Python would actually use."""
+    try:
+        proxies = urllib.request.getproxies()
+    except (OSError, ValueError):
+        return ""
+    candidate = (proxies.get("https") or proxies.get("http") or
+                 proxies.get("socks") or "")
+    if candidate and "://" not in candidate:
+        candidate = "http://" + candidate
+    try:
+        return _normalise_proxy_url(candidate) if candidate else ""
+    except ValueError:
+        return ""
+
+
+def proxy_mode(data: dict | None = None) -> str:
+    mode = (data if data is not None else load()).get("proxy_mode", "auto")
+    return mode if mode in PROXY_MODES else "auto"
+
+
+def proxy_details(data: dict | None = None) -> dict:
+    current = data if data is not None else load()
+    mode = proxy_mode(current)
+    manual = str(current.get("proxy_url") or "").strip()
+    effective = (manual if mode == "manual" else
+                 detected_system_proxy() if mode == "auto" else "")
+    return {
+        "proxy_mode": mode,
+        "proxy_url": manual,
+        "proxy_effective": effective,
+        "proxy_source": ("manual" if mode == "manual" else
+                         "system" if effective else "none"),
+        "proxy_providers": sorted(proxy_providers(current)),
+    }
+
+
+def proxy_providers(data: dict | None = None) -> set[str]:
+    current = data if data is not None else load()
+    raw = current.get("proxy_providers")
+    if not isinstance(raw, list):
+        return set(DEFAULT_PROXY_PROVIDERS)
+    return {str(value) for value in raw if isinstance(value, str)}
+
+
+def provider_uses_proxy(provider: str, data: dict | None = None) -> bool:
+    current = data if data is not None else load()
+    return proxy_mode(current) != "off" and provider in proxy_providers(current)
+
+
+def with_provider_proxy(provider: str, env: dict | None = None,
+                        data: dict | None = None) -> dict:
+    """Return a child environment with proxy policy for one AI provider.
+
+    Unselected providers have proxy variables removed from their child only;
+    selected providers receive the effective automatic/manual address. This
+    keeps Claude/Codex proxy routing from silently changing Kimi or DeepSeek.
+    """
+    current = data if data is not None else load()
+    result = dict(os.environ if env is None else env)
+    for key in PROXY_ENV_KEYS:
+        result.pop(key, None)
+    details = proxy_details(current)
+    url = details["proxy_effective"] if provider_uses_proxy(provider, current) else ""
+    if not url:
+        return result
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                "http_proxy", "https_proxy", "all_proxy"):
+        result[key] = url
+    bypass = (_BASE_PROXY_ENV.get("NO_PROXY") or
+              _BASE_PROXY_ENV.get("no_proxy") or
+              "127.0.0.1,localhost,::1")
+    result["NO_PROXY"] = bypass
+    result["no_proxy"] = bypass
+    return result
+
+
+def proxy_url_for(provider: str, data: dict | None = None) -> str:
+    current = data if data is not None else load()
+    if not provider_uses_proxy(provider, current):
+        return ""
+    return str(proxy_details(current).get("proxy_effective") or "")
 
 
 def masked() -> dict:
@@ -62,7 +183,7 @@ def masked() -> dict:
     s = load()
     out = {"default_provider": s.get("default_provider", ""),
            "kimi_security_mode": kimi_security_mode(s),
-           "api_keys": {}}
+           "api_keys": {}, **proxy_details(s)}
     for k in KEY_NAMES:
         v = (s.get("api_keys") or {}).get(k) or os.environ.get(k) or ""
         out["api_keys"][k] = (f"…{v[-4:]}" if v else "")
@@ -108,4 +229,30 @@ def update(payload: dict) -> None:
         if mode not in KIMI_SECURITY_MODES:
             raise ValueError(f"unknown Kimi security mode {mode!r}")
         s["kimi_security_mode"] = mode
+    if "proxy_mode" in payload:
+        mode = payload["proxy_mode"]
+        if mode not in PROXY_MODES:
+            raise ValueError(f"unknown proxy mode {mode!r}")
+        s["proxy_mode"] = mode
+    if "proxy_url" in payload:
+        raw = str(payload.get("proxy_url") or "").strip()
+        if raw:
+            s["proxy_url"] = _normalise_proxy_url(raw)
+        else:
+            s.pop("proxy_url", None)
+    if proxy_mode(s) == "manual" and not s.get("proxy_url"):
+        raise ValueError("proxy address is required in manual mode")
+    if "proxy_providers" in payload:
+        requested = payload.get("proxy_providers")
+        if not isinstance(requested, list) or not all(
+                isinstance(item, str) for item in requested):
+            raise ValueError("proxy providers must be a list")
+        from . import api as _api
+        from . import providers as _prov
+        allowed = ({f"cli:{name}" for name in _prov.PROVIDERS} |
+                   {f"api:{name}" for name in _api.PROVIDERS})
+        unknown = sorted(set(requested) - allowed)
+        if unknown:
+            raise ValueError(f"unknown proxy providers: {', '.join(unknown)}")
+        s["proxy_providers"] = sorted(set(requested))
     save(s)

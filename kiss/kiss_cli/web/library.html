@@ -203,6 +203,8 @@ select option:disabled{color:var(--fg-3)}
 #importmodal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:30}
 #importmodal.open{display:flex}
 #importmodal .card2{background:var(--bg);border:1px solid var(--line);border-radius:16px;width:min(620px,92vw);max-height:84vh;overflow:auto;padding:19px}
+.update-modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:31}
+.update-modal.open{display:flex}.update-modal .card2{background:var(--bg);border:1px solid var(--line);border-radius:16px;width:min(680px,92vw);max-height:84vh;overflow:auto;padding:19px}.update-summary{padding:11px 13px;border-radius:11px;background:var(--surface);margin:11px 0}.update-list{display:flex;gap:7px;flex-wrap:wrap;margin:7px 0 13px}.update-name{border:1px solid var(--line);border-radius:99px;padding:2px 8px;font-size:11px}.update-detail{border-top:1px solid var(--line);padding:8px 0;font-size:12px}.update-detail code{font-size:11px;overflow-wrap:anywhere}.update-note{color:var(--fg-2);font-size:12px;line-height:19px}
 .finding{padding:7px 9px;border-radius:8px;background:var(--surface);font-size:12px;margin-top:6px}
 .finding.BLOCK{color:var(--block)} .finding.WARN{color:var(--warn)}
 @media(max-width:900px){.group-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -222,6 +224,7 @@ select option:disabled{color:var(--fg-3)}
     <span class="spacer"></span>
     <button id="creatki" title="Create a KI from your own model"><span class="mark">KI+</span> Create KI</button>
     <button id="importki" title="Check and import a KI package"><span class="mark import">↓</span> Check &amp; Import</button>
+    <button id="kiupdates" title="View automatic KI update report"><span class="mark verify">↻</span> <span id="kiupdatelabel">KI updates</span></button>
     <input type="file" id="importfile" accept=".zip" style="display:none">
     <select id="prov" title="AI used for guided setup"></select>
     <button id="settings" title="Settings">⚙</button>
@@ -259,6 +262,13 @@ select option:disabled{color:var(--fg-3)}
       <button id="importcancel">Cancel</button>
     </div>
   </div></div>
+  <div id="updatemodal" class="update-modal"><div class="card2">
+    <div style="display:flex;align-items:center;gap:10px"><span class="mark verify">↻</span><h2 style="margin:0">KI library updates</h2><span class="spacer"></span><button id="updateclose">Close</button></div>
+    <div class="update-summary" id="updatesummary">Checking update status…</div>
+    <div id="updatedetails"></div>
+    <p class="update-note">GeoForge updates only KI definitions and their install manifests from the official repository. It does not change chat projects, input data, installed model binaries, verification history, or KIs you imported yourself. A downloaded snapshot becomes active only after deterministic package checks pass.</p>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="primary" id="updateretry">Check again</button><a id="updatesource" target="_blank" rel="noreferrer"><button>Open source repository</button></a></div>
+  </div></div>
 </main>
 
 <script src="/clipboard.js"></script>
@@ -266,6 +276,7 @@ select option:disabled{color:var(--fg-3)}
 <script>
 const $=s=>document.querySelector(s);
 let MODELS=[], SEL=new Set(), busy=false;
+let KIUPDATE=null, KIUPDATE_TIMER=null, KIUPDATE_REVISION="";
 
 /* Minimal markdown: fenced code, inline code, bold, headings, rules, paragraphs.
    Everything is escaped first, so model output can never inject markup. */
@@ -301,6 +312,11 @@ function packageLabel(m){
 function packageClass(m){return m.package_valid?"ok":"warn";}
 function safeUrl(s){try{const u=new URL(s);return /^https?:$/.test(u.protocol)?u.href:"";}catch{return "";}}
 function when(ts){return ts?new Date(ts*1000).toLocaleString():"Not yet";}
+function updateZh(){return window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN"}function updateText(en,zh){return updateZh()?zh:en}
+function updateNames(title,items){return (items||[]).length?`<b>${esc(title)}</b><div class="update-list">${items.map(x=>`<span class="update-name">${esc(x)}</span>`).join("")}</div>`:""}
+function updateSummary(u){if(!updateZh())return u.summary||"KI update status is not available.";if(u.state==="checking")return "正在从 GeoForge 仓库检查 KI 更新……";if(u.state==="updated")return `KI 库已更新：新增 ${(u.added||[]).length} 个，更新 ${(u.updated||[]).length} 个，移除 ${(u.removed||[]).length} 个。`;if(u.state==="up_to_date")return "KI 库已经是最新版本。";if(u.state==="error")return "KI 更新未完成；GeoForge 已继续使用上一次验证通过的版本。";return "尚未检查 KI 更新。"}
+function drawKiUpdate(){const u=KIUPDATE||{},checking=u.state==="checking";$("#kiupdatelabel").textContent=checking?updateText("Checking KIs…","正在检查 KI……"):u.state==="updated"?updateText("KIs updated","KI 已更新"):u.state==="error"?updateText("Update issue","更新问题"):updateText("KI updates","KI 更新");$("#updatesummary").innerHTML=`<b>${esc(updateSummary(u))}</b><br><small>${esc(u.branch||"")}${u.checked_at?` · ${esc(when(u.checked_at))}`:""}${u.active_revision?` · ${esc(String(u.active_revision).slice(0,17))}`:""}</small>`;const changes=(u.changes||[]).map(row=>`<div class="update-detail"><b>${esc(row.name)}</b>${updateNames(updateText("Added files","新增文件"),row.added_files)}${updateNames(updateText("Changed files","更新文件"),row.updated_files)}${updateNames(updateText("Removed files","移除文件"),row.removed_files)}</div>`).join("");$("#updatedetails").innerHTML=(u.error?`<div class="finding WARN"><b>${updateText("Current library kept safely","已安全保留当前 KI 库")}</b> · ${esc(u.error)}</div>`:"")+updateNames(updateText("New KIs","新增 KI"),u.added)+updateNames(updateText("Updated KIs","已更新 KI"),u.updated)+updateNames(updateText("Removed upstream","上游已移除"),u.removed)+changes+(u.warning_count?`<div class="finding WARN"><b>${u.warning_count} ${updateText("non-blocking package warnings","项非阻塞软件包警告")}</b> · ${updateText("The update passed all blocking checks.","本次更新已通过全部阻塞性检查。")}</div>`:"");$("#updateretry").disabled=checking;$("#updateretry").textContent=checking?updateText("Checking…","正在检查……"):updateText("Check again","再次检查");$("#updatesource").href=safeUrl(u.source_url)||"#"}
+async function loadKiUpdate(open=false){try{KIUPDATE=await (await fetch("/api/ki-updates")).json();drawKiUpdate();const revision=KIUPDATE.active_revision||"";if(revision&&revision!==KIUPDATE_REVISION){KIUPDATE_REVISION=revision;MODELS=await (await fetch("/api/models")).json();STATUS=await (await fetch("/api/status")).json();drawList();drawDetails([...SEL][0]);drawSetup()}if(KIUPDATE.state==="checking"){clearTimeout(KIUPDATE_TIMER);KIUPDATE_TIMER=setTimeout(()=>loadKiUpdate(false),1000)}if(open)$("#updatemodal").classList.add("open")}catch(e){KIUPDATE={state:"error",summary:"Could not read KI update status.",error:e.message};drawKiUpdate();if(open)$("#updatemodal").classList.add("open")}}
 
 function drawList(){
   const q=$("#q").value.toLowerCase();
@@ -503,6 +519,9 @@ $("#importconfirm").onclick=async()=>{
   selectKI(d.name);
 };
 $("#importcancel").onclick=()=>{$("#importmodal").classList.remove("open");PENDING_IMPORT=null;$("#importfile").value="";};
+$("#kiupdates").onclick=()=>loadKiUpdate(true);
+$("#updateclose").onclick=()=>$("#updatemodal").classList.remove("open");
+$("#updateretry").onclick=async()=>{await fetch("/api/ki-updates/check",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});await loadKiUpdate(false)};
 $("#envcheck").onclick=async()=>{
   const box=$("#envout"); box.style.display="block"; box.textContent="running…\n";
   const r=await fetch("/api/selfcheck?provider="+encodeURIComponent($("#prov").value||""));
@@ -558,5 +577,6 @@ $("#s-save").onclick=async()=>{
   STATUS=await (await fetch("/api/status")).json();
   drawList(); drawDetails(); drawSetup();
   await loadProviders();
+  await loadKiUpdate(new URLSearchParams(location.search).get("updates")==="1");
 })();
 </script></body></html>

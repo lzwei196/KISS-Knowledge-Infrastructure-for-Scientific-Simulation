@@ -20,8 +20,9 @@ absent from the shared contract:
 * the headless long-job rule, because our CLI driver is one-shot
 * output formatting, because the reply is rendered in a chat panel
 
-If the harness cannot be imported the prompt is still built, minus the shared
-contract, and says so rather than pretending it had it.
+If one KI is incomplete, the prompt can still explain that KI-specific gap.
+If the shared harness itself cannot be imported, prompt construction fails
+loudly: silently weakening every agent is not an acceptable release fallback.
 """
 
 from __future__ import annotations
@@ -86,80 +87,20 @@ HEADLESS_LONG_JOB_RULE = _HEADLESS_LONG_JOB_TEMPLATE.format(
     detach="nohup" if os.name == "nt" else "setsid nohup")
 
 
-def _load_harness_standalone():
-    """Load ``ki_harness`` from its file, bypassing its package's ``__init__``.
-
-    ``ki_tools_common/__init__.py`` eagerly imports seventeen submodules —
-    netcdf_utils, load_forcing, soil_utils, climate_scenarios — so
-    ``from ki_tools_common.harness import contract`` drags in numpy, netCDF4
-    and h5py. The desktop build ships none of them, and should not: the harness
-    is text generation and imports nothing but the standard library. Frozen,
-    that mismatch made every agent prompt fall back to the weaker pointer list
-    with the ten obligations missing, announced only in a line nobody reads.
-
-    ki_harness.py already inserts its own directory on sys.path for sibling
-    imports, so loading it by path is how it was built to be used.
-    """
-    import importlib.util
-    import sys
-
-    rel = Path("ki_tools_common") / "ki_tools_common" / "harness" / "ki_harness.py"
-    roots = []
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass:
-        roots.append(Path(meipass))
-    roots.append(Path(__file__).resolve().parents[2])   # a source checkout
-    for root in roots:
-        f = root / rel
-        if not f.is_file():
-            continue
-        try:
-            spec = importlib.util.spec_from_file_location("_kiss_ki_harness", f)
-            mod = importlib.util.module_from_spec(spec)
-            sys.modules.setdefault("_kiss_ki_harness", mod)
-            spec.loader.exec_module(mod)
-            if hasattr(mod, "contract"):
-                return mod
-        except Exception:
-            continue
-    return None
-
-
 def _harness_contract(ki, *, execute: bool, python: str | None) -> tuple[str, str | None]:
     """The shared KI-usage contract, or ('', reason) if it is unavailable."""
-    import os
+    from . import harness_runtime
 
     try:
-        from ki_tools_common.harness import contract as _contract
-        from ki_tools_common.harness import ki_harness as _kh
-    except Exception:
-        _kh = _load_harness_standalone()
-        if _kh is None:
-            return "", ("the KI usage contract could not be loaded — "
-                        "ki_tools_common/ki_tools_common/harness/ki_harness.py "
-                        "is not beside this build")
-        _contract = _kh.contract
-
-    # The harness renders every tool command with a project interpreter, and it
-    # resolves that ONCE at import time:
-    #
-    #     PROJECT_PY = os.environ.get("HC_PROJECT_PYTHON", "<authoring machine>")
-    #
-    # so setting the environment variable here is a no-op — the module is
-    # already imported. Left unset it emits the authoring machine's python, and
-    # an agent dutifully copies a path that does not exist on this one. Rebind
-    # the module attribute for the duration of the call instead.
-    prev = getattr(_kh, "PROJECT_PY", None)
-    if python:
-        _kh.PROJECT_PY = str(python)
-    try:
-        return _contract(ki.root, execute=execute), None
-    except Exception as e:
-        # A KI with no SKILL.md raises on an execute contract by design.
+        text, receipt = harness_runtime.verified_contract(
+            ki.root, execute=execute, python=python)
+        return text + "\n" + harness_runtime.receipt_line(receipt), None
+    except harness_runtime.KiContractUnavailable as e:
+        # The shared harness itself loaded and passed, but this individual KI
+        # is incomplete (for example it has no SKILL.md). HarnessUnavailable
+        # is deliberately not caught: a broken bundled runtime must stop the
+        # turn rather than silently weakening every provider.
         return "", f"{type(e).__name__}: {e}"
-    finally:
-        if python and prev is not None:
-            _kh.PROJECT_PY = prev
 
 
 def _rel(p: Path | None, root: Path) -> str:

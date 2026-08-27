@@ -32,6 +32,18 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
   border-radius:12px;padding:14px;font:12px/18px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word}
 .emptylog{color:#8c939d}.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:currentColor;
   border-radius:50%;animation:s .7s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
+.activity{display:none;margin-top:13px;padding:12px 13px;border:1px solid color-mix(in srgb,var(--brand) 28%,var(--line));
+  border-radius:12px;background:linear-gradient(110deg,var(--brand50),var(--raised) 55%,var(--brand50));background-size:220% 100%;animation:activity-shimmer 3.5s ease-in-out infinite}
+.activity.on{display:block}.activity-main{display:flex;align-items:center;gap:11px}.activity-copy{min-width:0;flex:1}
+.activity-title{font-weight:720}.activity-meta{color:var(--fg2);font-size:11.5px;margin-top:1px}.activity-time{font:650 12px/18px ui-monospace,Menlo,monospace;color:var(--brand)}
+.agent-orbit{width:31px;height:31px;position:relative;flex:0 0 auto;border:1px solid color-mix(in srgb,var(--brand) 38%,transparent);border-radius:50%;animation:orbit 1.8s linear infinite}
+.agent-orbit:before{content:"";position:absolute;width:8px;height:8px;left:10px;top:10px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 5px color-mix(in srgb,var(--brand) 16%,transparent);animation:pulse 1.15s ease-in-out infinite}
+.agent-orbit:after{content:"";position:absolute;width:6px;height:6px;left:12px;top:-3px;border-radius:50%;background:var(--brand)}
+.phasebar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}.phase{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:8px;padding:5px 8px;color:var(--fg3);font-size:10.5px;text-align:center;background:var(--raised)}
+.phase.active{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line));font-weight:700}.phase.active:after{content:"";position:absolute;inset:auto 0 0;height:2px;background:linear-gradient(90deg,transparent,var(--brand),transparent);animation:scan 1.2s linear infinite}
+.phase.done{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}.live-dots{display:inline-flex;gap:3px;margin-left:5px;vertical-align:1px}.live-dots i{width:3px;height:3px;background:currentColor;border-radius:50%;animation:dot 1.2s ease-in-out infinite}.live-dots i:nth-child(2){animation-delay:.18s}.live-dots i:nth-child(3){animation-delay:.36s}
+@keyframes orbit{to{transform:rotate(360deg)}}@keyframes pulse{50%{transform:scale(.72);opacity:.65}}@keyframes dot{0%,65%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-2px)}}@keyframes scan{from{transform:translateX(-100%)}to{transform:translateX(100%)}}@keyframes activity-shimmer{0%,100%{background-position:0 0}50%{background-position:100% 0}}
+@media(prefers-reduced-motion:reduce){.spin,.activity,.agent-orbit,.agent-orbit:before,.phase.active:after,.live-dots i{animation:none!important}}
 .request{border:1px solid color-mix(in srgb,var(--warn) 45%,var(--line));background:color-mix(in srgb,var(--warn) 7%,var(--raised));
   border-radius:13px;padding:13px}.request h4{font-size:14px;margin:5px 0}.request p{color:var(--fg2);margin:5px 0 10px}
 .request a{color:var(--brand);font-weight:650}.label{font-size:10px;letter-spacing:.08em;font-weight:800;color:var(--warn)}
@@ -67,6 +79,13 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
           <button class="primary" id="start">Start agent setup</button>
           <button id="chat" style="display:none">Use KI in chat</button></div>
         <div class="agent-note">The agent reads this KI and its KDT diagnostics, installs inside the model workspace, checks the real software, and repairs failures until it passes or needs you.</div>
+        <div class="activity" id="setupactivity" aria-live="polite">
+          <div class="activity-main"><span class="agent-orbit" aria-hidden="true"></span>
+            <div class="activity-copy"><div class="activity-title" id="activitytitle">Agent is working</div>
+              <div class="activity-meta" id="activitymeta">Live connection active</div></div>
+            <span class="activity-time" id="activitytime">00:00</span></div>
+          <div class="phasebar"><span class="phase" data-phase="0">1 · Read KI</span><span class="phase" data-phase="1">2 · Install &amp; repair</span><span class="phase" data-phase="2">3 · Verify</span></div>
+        </div>
         <pre class="log"><span class="emptylog">The agent's work will appear here. It may build software for several minutes.</span></pre>
       </div>
     </section>
@@ -94,7 +113,7 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
 <script>
 const $=s=>document.querySelector(s), params=new URLSearchParams(location.search), MODEL=params.get("model")||"";
 const esc=s=>String(s??"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;"}[c]));
-let STATE=null, PROVIDERS=[], busy=false, rawLog="";
+let STATE=null, PROVIDERS=[], busy=false, rawLog="",runStartedAt=0,lastSignalAt=0;
 function fmtSize(n){return n>1048576?(n/1048576).toFixed(1)+" MB":n>1024?(n/1024).toFixed(1)+" KB":n+" B"}
 function isZh(){return !!(window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN")}
 function toolActivity(name){
@@ -117,8 +136,27 @@ function latestActivity(){
   const names=[...rawLog.matchAll(/\[\[GEOF_TOOL:([A-Za-z0-9_.-]+)\]\]/g)];
   return names.length?toolActivity(names[names.length-1][1]):(isZh()?"Agent 正在处理":"Agent working");
 }
+function setupPhase(){
+  const text=rawLog.toLowerCase(),tail=text.slice(-2400),names=[...rawLog.matchAll(/\[\[GEOF_TOOL:([A-Za-z0-9_.-]+)\]\]/g)].map(x=>x[1]);
+  if(/geoforge final check|already verified and ready|最终检查/.test(tail))return 2;
+  if(names.some(n=>["Write","Edit","Bash","run_setup_command","run_ki_tool"].includes(n))||/install|build|clone|compile|cmake|安装|编译/.test(text))return 1;
+  return 0;
+}
+function duration(ms){const total=Math.max(0,Math.floor(ms/1000)),m=Math.floor(total/60),s=total%60;return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`}
+function drawActivity(){
+  const box=$("#setupactivity");if(!box)return;
+  const waiting=STATE&&STATE.request&&STATE.request.status==="waiting";
+  box.classList.toggle("on",busy&&!waiting);if(!busy||waiting)return;
+  const now=Date.now(),age=Math.max(0,Math.floor((now-(lastSignalAt||now))/1000)),phase=setupPhase();
+  $("#activitytitle").innerHTML=`${esc(latestActivity())}<span class="live-dots" aria-hidden="true"><i></i><i></i><i></i></span>`;
+  $("#activitymeta").textContent=age<=14?(isZh()?`Agent 进程连接正常 · ${age} 秒前收到信号`:`Agent process connected · signal ${age}s ago`):(isZh()?`命令仍在运行 · 等待下一次 Agent 信号（${age} 秒）`:`Command still running · awaiting the next agent signal (${age}s)`);
+  $("#activitytime").textContent=duration(now-(runStartedAt||now));
+  const labels=isZh()?["1 · 读取 KI","2 · 安装与修复","3 · 最终验证"]:["1 · Read KI","2 · Install & repair","3 · Verify"];
+  document.querySelectorAll(".phase").forEach((el,i)=>{el.textContent=labels[i];el.classList.toggle("done",i<phase);el.classList.toggle("active",i===phase)});
+}
 function drawRunState(){
   const waiting=STATE&&STATE.request&&STATE.request.status==="waiting";
+  drawActivity();
   if(!busy){$("#runstate").textContent="";return}
   if(waiting){$("#runstate").textContent=isZh()?"正在等待你的授权":"Waiting for your permission";return}
   $("#runstate").innerHTML=`<span class="spin"></span> ${esc(latestActivity())}`;
@@ -178,13 +216,13 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,fai
     '<div class="explain">Not checked yet. The agent will run the KI preflight.</div>';
 }
 async function loadState(){if(!MODEL){$("#title").textContent="No KI selected";return;}const r=await fetch("/api/setup/"+encodeURIComponent(MODEL));STATE=await r.json();draw();}
-async function startAgent(){if(busy)return;busy=true;rawLog="";draw();const log=$(".log");log.textContent="";drawRunState();
+async function startAgent(){if(busy)return;busy=true;rawLog="";runStartedAt=Date.now();lastSignalAt=runStartedAt;draw();const log=$(".log");log.textContent="";drawRunState();
   try{const r=await fetch("/api/setup-agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,provider:$("#provider").value,llm_model:$("#llm").value})});
     if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`HTTP ${r.status}`)}const rd=r.body.getReader(),dec=new TextDecoder();
-    for(;;){const{done,value}=await rd.read();if(done)break;rawLog+=dec.decode(value,{stream:true});log.textContent=presentSetupLog(rawLog);drawRunState();log.scrollTop=log.scrollHeight;}rawLog+=dec.decode();}
+    for(;;){const{done,value}=await rd.read();if(done)break;lastSignalAt=Date.now();rawLog+=dec.decode(value,{stream:true});log.textContent=presentSetupLog(rawLog);drawRunState();log.scrollTop=log.scrollHeight;}rawLog+=dec.decode();}
   catch(e){const zh=window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
     rawLog+="\n"+(zh?"实时显示连接已中断。Agent 会在后台继续；此页面将从保存的日志中刷新状态。":"The live display was interrupted. The agent will continue in the background; this page will refresh from its saved log.")+"\n";log.textContent=presentSetupLog(rawLog)}
-  busy=false;$("#runstate").textContent="";await loadState();}
+  busy=false;$("#runstate").textContent="";drawActivity();await loadState();}
 async function resumeAgent(){await fetch("/api/setup-resume",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,note:$("#note").value})});await loadState();startAgent();}
 async function chatForHelp(){
   const block=(STATE.request&&STATE.request.status==="waiting")?STATE.request:(STATE.attention||{}),sw=STATE.software||{},primary=sw.primary_error||{};
@@ -199,5 +237,5 @@ async function uploadFile(){const f=$("#userfile").files[0];if(!f)return;$("#upl
 async function useChat(){const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[MODEL],provider:$("#provider").value})});const s=await r.json();location.href="/?session="+encodeURIComponent(s.id)}
 $("#provider").onchange=drawLLM;$("#start").onclick=startAgent;$("#chat").onclick=useChat;$("#theme").onclick=()=>{const d=document.body.hasAttribute("data-dark");d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");localStorage.setItem("kiss-dark",d?"0":"1")};
 if(localStorage.getItem("kiss-dark")==="1"||(localStorage.getItem("kiss-dark")===null&&matchMedia("(prefers-color-scheme:dark)").matches))document.body.setAttribute("data-dark","");
-Promise.all([loadProviders(),loadState()]).then(()=>{draw();setInterval(loadState,1500)});
+Promise.all([loadProviders(),loadState()]).then(()=>{draw();setInterval(loadState,1500);setInterval(drawRunState,1000)});
 </script></body></html>

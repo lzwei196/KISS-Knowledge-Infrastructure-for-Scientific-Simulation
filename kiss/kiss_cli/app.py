@@ -59,6 +59,32 @@ class _DesktopApi:
             return str(picked[0]) if picked else None
         return str(picked)
 
+    def choose_file(self, initial: str = "") -> str | None:
+        """Show the operating system's file picker and return one file."""
+        if self.window is None:
+            return None
+        start = Path(initial).expanduser() if initial else Path.home()
+        if start.is_file():
+            start = start.parent
+        if not start.is_dir():
+            candidate = start
+            while candidate != candidate.parent and not candidate.is_dir():
+                candidate = candidate.parent
+            start = candidate if candidate.is_dir() else Path.home()
+        try:
+            picked = self.window.create_file_dialog(
+                self.webview.OPEN_DIALOG,
+                directory=str(start),
+                allow_multiple=False,
+            )
+        except Exception:
+            return None
+        if not picked:
+            return None
+        if isinstance(picked, (list, tuple)):
+            return str(picked[0]) if picked else None
+        return str(picked)
+
 
 def _free_port() -> int:
     with socket.socket() as s:
@@ -169,7 +195,7 @@ def run_app(models_dir: Path | None, workroot: Path | None = None) -> int:
     server = threading.Thread(
         target=gui.serve,
         kwargs=dict(models_dir=models_dir, port=port, open_browser=False,
-                    workroot=workroot),
+                    workroot=workroot, auto_update=True),
         daemon=True,           # window closing ends the process, server included
     )
     server.start()

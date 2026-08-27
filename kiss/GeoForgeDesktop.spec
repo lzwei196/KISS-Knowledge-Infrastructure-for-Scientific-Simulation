@@ -6,12 +6,13 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs, copy_metadata
 
 
-VERSION = "0.6.38"
-BUILD_NUMBER = "638"
+VERSION = "0.6.43"
+BUILD_NUMBER = "643"
 # PyInstaller exposes SPECPATH as the directory containing this spec.
 SOURCE = Path(SPECPATH).resolve()
 REPO = SOURCE.parent
 ICON = REPO / "assets" / "logo.icns"
+KI_TOOLS_SOURCE = REPO / "ki_tools_common"
 
 trust_datas, trust_binaries, trust_hidden = collect_all("truststore")
 calibration_datas = []
@@ -33,10 +34,18 @@ calibration_hidden = [
     "pymoo.functions.compiled.pruning_cd",
     "pymoo.functions.compiled.stochastic_ranking",
 ]
+harness_hidden = [
+    "ki_tools_common",
+    "ki_tools_common.harness",
+    "ki_tools_common.harness.ki_harness",
+    "ki_tools_common.harness.ki_path",
+    "ki_tools_common.harness.ki_attention",
+    "ki_tools_common.harness.agent_spawn",
+]
 
 a = Analysis(
     [str(SOURCE / "kiss_entry.py")],
-    pathex=[str(SOURCE)],
+    pathex=[str(SOURCE), str(KI_TOOLS_SOURCE)],
     binaries=[*trust_binaries, *calibration_binaries],
     datas=[
         (str(SOURCE / "kiss_cli" / "web"), "kiss_cli/web"),
@@ -48,7 +57,7 @@ a = Analysis(
         *trust_datas,
         *calibration_datas,
     ],
-    hiddenimports=[*trust_hidden, *calibration_hidden],
+    hiddenimports=[*trust_hidden, *calibration_hidden, *harness_hidden],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

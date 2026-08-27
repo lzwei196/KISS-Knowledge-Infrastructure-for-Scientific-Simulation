@@ -6,6 +6,39 @@ Desktop update agents should read the JSON manifest first and use this file to e
 这是 `release-manifest.json` 的用户版说明。Windows、macOS 和 Linux 的更新 Agent
 应先读取 JSON，再用本文件向用户解释更新内容。
 
+## v0.6.46 — 2026-08-27
+
+### 中文
+
+- **KI 库页面现在能直接设置代理**：点击右上角 `⚙ → 网络与代理`，选择系统代理或
+  手动输入本地 HTTP/mixed 端口，再勾选“GitHub 与 KI 更新”。更新失败窗口也新增了
+  “网络设置”快捷按钮。
+- **内置 KI 更新器正式使用独立代理线路**：不再依赖当前选中的 Claude、Codex 或 Kimi。
+  老版本已经保存的代理设置会自动为新线路启用一次，用户仍可随时关闭。
+- **避免 GitHub 分支缓存错配**：先读取分支的精确 commit，再下载该 commit 的归档；
+  API 与压缩包不会再分别指向新旧两个版本。更新报告会显示实际线路和 commit。
+- **实机验证**：通过 `http://127.0.0.1:7897` 连接 GitHub，锁定 commit
+  `d3751874f6be277003fed19a3a1aa2dde612d166`，下载并安全解包 88,618,886 字节、
+  127 个 KI，绝对符号链接为 0。
+
+验证结果：GeoForge 测试 **159/159 通过**。
+
+### English
+
+- **Proxy settings are available in the KI Library:** use `⚙ > Network & proxy`, choose the
+  system route or a local HTTP/mixed proxy port, and enable “GitHub & KI updates”. The update
+  report now also offers a direct Network settings button.
+- **The built-in updater has its own proxy target:** it no longer borrows the currently selected
+  Claude, Codex, or Kimi route. Existing saved proxy settings adopt the new target once and remain
+  user-controllable.
+- **Commit-pinned downloads prevent branch-cache mismatches:** GeoForge resolves the exact branch
+  commit first and downloads that immutable archive. Reports include the route and source commit.
+- **Real-path validation:** the configured `http://127.0.0.1:7897` route reached GitHub, pinned
+  commit `d3751874f6be277003fed19a3a1aa2dde612d166`, and safely extracted 88,618,886 bytes containing
+  127 KIs with zero absolute symbolic links.
+
+Validation: **159/159 GeoForge tests passed**.
+
 ## v0.6.45 — 2026-08-27
 
 ### 中文

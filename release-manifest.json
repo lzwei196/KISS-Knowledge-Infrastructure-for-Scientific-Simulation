@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "product": "GeoForge Desktop",
-  "version": "0.6.45",
+  "version": "0.6.46",
   "release_date": "2026-08-27",
   "source": {
     "branch": "mac-version",
-    "code_commit": "0cbe28bf6d9ca461292fc54df9f947008e26db90",
+    "code_commit": "e6a9b00af9a3d4cd9d8056517fcc00ac254cc52c",
     "repository": "https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation"
   },
   "ki_library": {
@@ -21,6 +21,24 @@
     ]
   },
   "changes": [
+    {
+      "id": "ki-updater-network-route",
+      "area": "connectivity",
+      "summary": "The built-in GitHub and KI updater now has an explicit proxy target available from both Chat and KI Library settings.",
+      "user_action": "Open the gear menu, choose Network & proxy, then enable GitHub & KI updates. Use an HTTP or mixed proxy port for the built-in updater."
+    },
+    {
+      "id": "commit-pinned-ki-archive",
+      "area": "knowledge-infrastructure",
+      "summary": "KI updates resolve the branch commit first and download that immutable commit archive, preventing GitHub API and codeload branch-cache mismatches.",
+      "user_action": "Use Check again after changing the route. The report shows the route and exact source commit."
+    },
+    {
+      "id": "ki-library-network-settings",
+      "area": "user-interface",
+      "summary": "The KI Library gear and update report now expose network settings directly instead of hiding proxy controls only in the Chat page.",
+      "user_action": "From a failed KI update report, choose Network settings, save the route, and retry."
+    },
     {
       "id": "provider-proxy-routing",
       "area": "connectivity",
@@ -76,7 +94,7 @@
   },
   "validation": {
     "geoforge_tests": {
-      "passed": 156,
+      "passed": 159,
       "failed": 0,
       "command": "python -m pytest -q kiss/tests"
     },

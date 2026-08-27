@@ -25,7 +25,8 @@ KEY_NAMES = ("ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY",
              "OPENAI_API_KEY", "OPENROUTER_API_KEY")
 KIMI_SECURITY_MODES = {"scoped", "full"}
 PROXY_MODES = {"auto", "manual", "off"}
-DEFAULT_PROXY_PROVIDERS = ("cli:claude", "cli:codex")
+GITHUB_PROXY_TARGET = "network:github"
+DEFAULT_PROXY_PROVIDERS = (GITHUB_PROXY_TARGET, "cli:claude", "cli:codex")
 PROXY_ENV_KEYS = (
     "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
     "http_proxy", "https_proxy", "all_proxy", "no_proxy",
@@ -136,7 +137,13 @@ def proxy_providers(data: dict | None = None) -> set[str]:
     raw = current.get("proxy_providers")
     if not isinstance(raw, list):
         return set(DEFAULT_PROXY_PROVIDERS)
-    return {str(value) for value in raw if isinstance(value, str)}
+    selected = {str(value) for value in raw if isinstance(value, str)}
+    # Older releases had no separate updater target. Adopt the same route on
+    # first upgrade so a proxy that already fixed Claude/Codex also fixes KI
+    # updates. Once the new UI is saved, an explicit unchecked choice wins.
+    if int(current.get("proxy_targets_version") or 0) < 1:
+        selected.add(GITHUB_PROXY_TARGET)
+    return selected
 
 
 def provider_uses_proxy(provider: str, data: dict | None = None) -> bool:
@@ -249,10 +256,12 @@ def update(payload: dict) -> None:
             raise ValueError("proxy providers must be a list")
         from . import api as _api
         from . import providers as _prov
-        allowed = ({f"cli:{name}" for name in _prov.PROVIDERS} |
+        allowed = ({GITHUB_PROXY_TARGET} |
+                   {f"cli:{name}" for name in _prov.PROVIDERS} |
                    {f"api:{name}" for name in _api.PROVIDERS})
         unknown = sorted(set(requested) - allowed)
         if unknown:
             raise ValueError(f"unknown proxy providers: {', '.join(unknown)}")
         s["proxy_providers"] = sorted(set(requested))
+        s["proxy_targets_version"] = 1
     save(s)

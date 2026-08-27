@@ -1,6 +1,6 @@
 [project]
 name = "kiss-ki"
-version = "0.6.45"
+version = "0.6.46"
 description = "Installer and agent handoff for KISS Knowledge Infrastructure packages"
 requires-python = ">=3.11"
 dependencies = [

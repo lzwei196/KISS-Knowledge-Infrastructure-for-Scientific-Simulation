@@ -733,14 +733,14 @@ class ProxySettingsTests(unittest.TestCase):
                 "HTTP_PROXY", settings.with_provider_proxy("cli:codex", {}))
             self.assertEqual(settings.masked()["proxy_effective"], "")
 
-    def test_proxy_provider_selection_is_saved_and_defaults_to_claude_codex(self):
+    def test_proxy_provider_selection_includes_github_updates_by_default(self):
         with tempfile.TemporaryDirectory() as td, \
              mock.patch.object(settings, "_path", return_value=Path(td) / "settings.json"), \
              mock.patch.object(settings.urllib.request, "getproxies", return_value={
                  "https": "http://127.0.0.1:7897"}):
             self.assertEqual(
                 set(settings.masked()["proxy_providers"]),
-                {"cli:claude", "cli:codex"})
+                {"network:github", "cli:claude", "cli:codex"})
             settings.update({"proxy_providers": ["cli:kimi", "api:anthropic"]})
             self.assertEqual(
                 set(settings.masked()["proxy_providers"]),
@@ -748,6 +748,17 @@ class ProxySettingsTests(unittest.TestCase):
             self.assertEqual(
                 settings.proxy_url_for("cli:kimi"), "http://127.0.0.1:7897")
             self.assertEqual(settings.proxy_url_for("api:deepseek"), "")
+
+    def test_old_saved_proxy_selection_adopts_new_github_target_once(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(settings, "_path", return_value=Path(td) / "settings.json"), \
+             mock.patch.object(settings.urllib.request, "getproxies", return_value={
+                 "https": "http://127.0.0.1:7897"}):
+            settings.save({"proxy_mode": "auto",
+                           "proxy_providers": ["cli:claude"]})
+            self.assertIn("network:github", settings.proxy_providers())
+            settings.update({"proxy_providers": ["cli:claude"]})
+            self.assertNotIn("network:github", settings.proxy_providers())
 
     def test_manual_proxy_rejects_missing_or_credential_bearing_addresses(self):
         with tempfile.TemporaryDirectory() as td, \
@@ -1585,7 +1596,7 @@ class McpConnectionTests(unittest.TestCase):
 class FrontendRegressionTests(unittest.TestCase):
     def test_environment_selfcheck_proves_the_harness_before_providers(self):
         source = (Path(__file__).parents[1] / "kiss_cli" / "gui.py").read_text()
-        self.assertIn("[1/5] KI harness contract", source)
+        self.assertIn("[1/6] KI harness contract", source)
         self.assertIn("harness_runtime.status", source)
 
     def test_explicit_autonomous_chat_does_not_require_a_second_approval(self):

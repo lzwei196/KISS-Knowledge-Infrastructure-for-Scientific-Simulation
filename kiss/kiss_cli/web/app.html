@@ -303,17 +303,17 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <div style="display:flex;gap:8px;margin:6px 0 12px"><button id="s-recheck">Recheck local CLIs</button><span class="hint" id="s-local-msg" style="align-self:center;margin:0"></span></div>
     <label>Default provider</label><select id="s-def"></select>
     <div class="datacard" style="margin-top:12px;padding:14px">
-      <label for="s-proxy-mode" style="margin-top:0">AI network proxy</label>
+      <label for="s-proxy-mode" style="margin-top:0">Network &amp; proxy</label>
       <select id="s-proxy-mode">
         <option value="auto">Use Mac system proxy (recommended)</option>
         <option value="manual">Enter proxy manually</option>
         <option value="off">Do not use a proxy</option>
       </select>
       <div id="s-proxy-manual" style="display:none;margin-top:8px"><input id="s-proxy-url" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:7897"></div>
-      <div class="hint" id="s-proxy-note" style="margin:7px 0 0">GeoForge passes this proxy only to the providers selected below.</div>
+      <div class="hint" id="s-proxy-note" style="margin:7px 0 0">GeoForge passes this proxy only to the services selected below.</div>
       <label style="margin-top:11px">Use proxy for</label>
       <div id="s-proxy-providers" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px"></div>
-      <div class="hint" style="margin:7px 0 0">Select every provider that needs this proxy. Its agent-run Git, pip, curl, and download commands will use the same route.</div>
+      <div class="hint" style="margin:7px 0 0">Select GitHub &amp; KI updates for the built-in updater. Select an AI provider when that provider and its agent-run Git, pip, curl, and download commands need the same route.</div>
     </div>
     <div class="datacard" style="margin-top:12px;padding:14px">
       <label for="s-kimi-security" style="margin-top:0">Kimi Code file access</label>
@@ -1576,7 +1576,7 @@ function drawLocalSettings(){
 }
 let LAST_PROVIDER_CHECK=0;
 let SETTINGS_PROXY_EFFECTIVE="";
-let SETTINGS_PROXY_PROVIDERS=new Set(["cli:claude","cli:codex"]);
+let SETTINGS_PROXY_PROVIDERS=new Set(["network:github","cli:claude","cli:codex"]);
 async function refreshProviders(showStatus=false){
   const note=$("#s-local-msg");if(showStatus&&note)note.textContent="checking…";
   try{
@@ -1587,7 +1587,8 @@ async function refreshProviders(showStatus=false){
 }
 function drawProxyProviderSettings(){
   const box=$("#s-proxy-providers");if(!box)return;
-  box.innerHTML=PROV.providers.map(p=>`<label style="display:flex;align-items:center;gap:7px;margin:0;padding:7px 9px;border:1px solid var(--line);border-radius:9px"><input type="checkbox" data-proxy-provider="${esc(p.name)}" ${SETTINGS_PROXY_PROVIDERS.has(p.name)?"checked":""}><span>${esc(p.label)}</span></label>`).join("");
+  const targets=[{name:"network:github",label:chineseUI()?"GitHub 与 KI 更新":"GitHub & KI updates"},...PROV.providers];
+  box.innerHTML=targets.map(p=>`<label style="display:flex;align-items:center;gap:7px;margin:0;padding:7px 9px;border:1px solid var(--line);border-radius:9px"><input type="checkbox" data-proxy-provider="${esc(p.name)}" ${SETTINGS_PROXY_PROVIDERS.has(p.name)?"checked":""}><span>${esc(p.label)}</span></label>`).join("");
   box.querySelectorAll("[data-proxy-provider]").forEach(input=>input.onchange=()=>{
     input.checked?SETTINGS_PROXY_PROVIDERS.add(input.dataset.proxyProvider):SETTINGS_PROXY_PROVIDERS.delete(input.dataset.proxyProvider);
   });
@@ -1620,7 +1621,7 @@ async function openSettings(){
   $("#s-proxy-mode").value=s.proxy_mode||"auto";
   $("#s-proxy-url").value=s.proxy_url||"";
   SETTINGS_PROXY_EFFECTIVE=s.proxy_effective||"";
-  SETTINGS_PROXY_PROVIDERS=new Set(s.proxy_providers||["cli:claude","cli:codex"]);
+  SETTINGS_PROXY_PROVIDERS=new Set(s.proxy_providers||["network:github","cli:claude","cli:codex"]);
   drawProxyProviderSettings();
   drawProxySettingsNote();
   $("#s-kimi-security").value=s.kimi_security_mode||"scoped";

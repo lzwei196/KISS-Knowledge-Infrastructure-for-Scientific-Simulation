@@ -933,7 +933,7 @@ class Handler(BaseHTTPRequestHandler):
             self._open_stream()
             emit = lambda s: self._chunk(s + "\n")
 
-            emit("[1/5] KI harness contract")
+            emit("[1/6] KI harness contract")
             probe_ki = next((candidate for candidate in self.catalog
                              if candidate.skill), None)
             harness = harness_runtime.status(probe_ki.root if probe_ki else None)
@@ -948,7 +948,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 emit(f"   FAIL  {harness.get('error')}")
 
-            emit("[2/5] Python 3 for model environments")
+            emit("[2/6] Python 3 for model environments")
             base = install.find_base_python()
             if base:
                 emit(f"   OK  {base}")
@@ -956,7 +956,7 @@ class Handler(BaseHTTPRequestHandler):
                 emit("   FAIL  none found. One-time fix:")
                 emit("         macOS: brew install python   |   or: xcode-select --install")
 
-            emit("[3/5] Agent CLIs on this machine")
+            emit("[3/6] Agent CLIs on this machine")
             detected = providers.detected()
 
             def _skill_count(cli: str) -> int:
@@ -994,11 +994,9 @@ class Handler(BaseHTTPRequestHandler):
             avail = providers.available()
 
             emit("[4/6] GitHub model-source connection")
-            network_provider = want if ":" in want else (
-                f"cli:{want}" if want else "")
-            source_proxy = settings.proxy_url_for(network_provider)
-            emit(f"   provider route={network_provider or 'direct'}")
-            emit(f"   network proxy={source_proxy or 'not enabled for this provider'}")
+            source_proxy = settings.proxy_url_for(settings.GITHUB_PROXY_TARGET)
+            emit("   route=GitHub & KI updates")
+            emit(f"   network proxy={source_proxy or 'direct'}")
             import urllib.request as _source_request
             try:
                 source_req = _source_request.Request(
@@ -1016,8 +1014,8 @@ class Handler(BaseHTTPRequestHandler):
                          "agent installs can download source")
             except Exception as error:
                 emit(f"   FAIL  cannot reach GitHub: {error}")
-                emit("         Fix: select this provider under ‘Use proxy for’, "
-                     "or correct the proxy address, then test again.")
+                emit("         Fix: open Network & proxy, enable ‘GitHub & KI "
+                     "updates’, or correct the proxy address, then test again.")
 
             emit("[5/6] API keys in the environment")
             akeys = api.available()

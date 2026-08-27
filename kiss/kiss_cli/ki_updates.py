@@ -28,16 +28,16 @@ import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Callable
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
-from . import doctor, firstrun, tls
+from . import doctor, firstrun, settings, tls
 from .catalog import Catalog
 
 
 REPOSITORY = "lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation"
 REPOSITORY_URL = f"https://github.com/{REPOSITORY}"
 API_ROOT = f"https://api.github.com/repos/{REPOSITORY}"
-ARCHIVE_ROOT = f"https://codeload.github.com/{REPOSITORY}/zip/refs/heads"
+ARCHIVE_ROOT = f"https://codeload.github.com/{REPOSITORY}/zip"
 MAX_ARCHIVE_BYTES = 900 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
 MAX_ARCHIVE_FILES = 50_000
@@ -166,6 +166,11 @@ class UpdateManager:
         self.current_library_root = Path(current_library_root).resolve()
         self.activate = activate
         self.branch = branch or branch_for_platform()
+        # This starts as a branch reference only for diagnostic visibility.
+        # A real update check replaces it with the exact commit SHA before the
+        # archive is downloaded, avoiding mutable-branch CDN cache mismatches.
+        self._archive_ref = f"refs/heads/{self.branch}"
+        self._source_commit = ""
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
         previous = _read_json(update_root() / "last-report.json")
@@ -217,15 +222,40 @@ class UpdateManager:
             "User-Agent": "GeoForge-Desktop-KI-Updater",
             "X-GitHub-Api-Version": "2022-11-28",
         })
-        with urllib.request.urlopen(request, timeout=30, context=tls.context()) as response:
+        with self._open(request, timeout=30) as response:
             value = json.loads(response.read().decode("utf-8"))
         if not isinstance(value, dict):
             raise RuntimeError("GitHub returned an invalid repository response")
         return value
 
+    def _proxy_url(self) -> str:
+        proxy = settings.proxy_url_for(settings.GITHUB_PROXY_TARGET)
+        if proxy and urlsplit(proxy).scheme not in {"http", "https"}:
+            raise RuntimeError(
+                "GitHub and KI updates require an HTTP/HTTPS proxy address. "
+                "For Clash or another local proxy, select its HTTP or mixed port.")
+        return proxy
+
+    def _open(self, request: urllib.request.Request, *, timeout: int):
+        """Open one updater request through the dedicated saved route."""
+        proxy = self._proxy_url()
+        handlers = [
+            urllib.request.ProxyHandler(
+                {"http": proxy, "https": proxy} if proxy else {}),
+            urllib.request.HTTPSHandler(context=tls.context()),
+        ]
+        return urllib.request.build_opener(*handlers).open(request, timeout=timeout)
+
     def _remote_revision(self) -> tuple[str, str, str]:
-        root = self._request_json(
-            f"{API_ROOT}/git/trees/{quote(self.branch, safe='')}")
+        commit = self._request_json(
+            f"{API_ROOT}/commits/{quote(self.branch, safe='')}")
+        commit_sha = str(commit.get("sha") or "")
+        tree_sha = str(((commit.get("commit") or {}).get("tree") or {}).get("sha") or "")
+        if not commit_sha or not tree_sha:
+            raise RuntimeError("GitHub returned an incomplete branch revision")
+        self._source_commit = commit_sha
+        self._archive_ref = commit_sha
+        root = self._request_json(f"{API_ROOT}/git/trees/{tree_sha}")
         entries = {row.get("path"): row for row in root.get("tree") or []
                    if isinstance(row, dict)}
         models_sha = str((entries.get("models") or {}).get("sha") or "")
@@ -243,10 +273,11 @@ class UpdateManager:
         return revision, models_sha, manifests_sha
 
     def _download(self, destination: Path) -> None:
-        url = f"{ARCHIVE_ROOT}/{quote(self.branch, safe='')}"
+        url = f"{ARCHIVE_ROOT}/{quote(self._archive_ref, safe='')}"
         request = urllib.request.Request(
-            url, headers={"User-Agent": "GeoForge-Desktop-KI-Updater"})
-        with urllib.request.urlopen(request, timeout=90, context=tls.context()) as response:
+            url, headers={"User-Agent": "GeoForge-Desktop-KI-Updater",
+                          "Cache-Control": "no-cache"})
+        with self._open(request, timeout=90) as response:
             declared = int(response.headers.get("Content-Length") or 0)
             if declared > MAX_ARCHIVE_BYTES:
                 raise RuntimeError("the KI update archive is unexpectedly large")
@@ -334,6 +365,7 @@ class UpdateManager:
         checked_at = time.time()
         try:
             revision, models_sha, manifests_sha = self._remote_revision()
+            route = self._proxy_url() or "direct"
             state_path = update_root() / "state.json"
             state = _read_json(state_path)
             if (state.get("revision") == revision and active_library_root() is not None):
@@ -341,6 +373,7 @@ class UpdateManager:
                     state="up_to_date", checked_at=checked_at,
                     active_revision=revision,
                     summary="The KI library is already up to date.",
+                    network_route=route, source_commit=self._source_commit,
                     added=[], updated=[], removed=[], changes=[],
                     unchanged_count=int(state.get("package_count") or 0),
                 )
@@ -371,6 +404,7 @@ class UpdateManager:
                     "package_count": package_count,
                     "activated_at": time.time(),
                     "branch": self.branch,
+                    "source_commit": self._source_commit,
                 }
                 _atomic_json(state_path, new_state)
                 self.activate(snapshot)
@@ -383,6 +417,7 @@ class UpdateManager:
                 self._set(
                     state="updated" if changed_count else "up_to_date",
                     checked_at=checked_at, active_revision=revision,
+                    network_route=route, source_commit=self._source_commit,
                     summary=summary, package_count=package_count,
                     warning_count=warning_count, warnings=warnings, **diff)
             finally:
@@ -397,5 +432,7 @@ class UpdateManager:
                 state="error", checked_at=checked_at,
                 summary=("Could not update the KI library. GeoForge kept the last "
                          "validated version."),
+                network_route=(settings.proxy_url_for(
+                    settings.GITHUB_PROXY_TARGET) or "direct"),
                 error=str(error)[:2000],
             )

@@ -46,59 +46,69 @@ is geography: outside China, Baidu registration needs a mainland phone number
 and download speeds are unusable. A "cross-platform capability" built only on
 Baidu is a China-only capability.
 
-## Proposed design
+## The design, and why the split works
 
-Three layers, in the order they are worth building.
+Serve what is small over an authenticated endpoint; point at the Netdisk for
+what is not. The measured split is unusually favourable:
 
-### 1. Ship the index, never the credentials
+| tier | datasets | volume | route |
+|---|---|---|---|
+| under 100 MB | **823** (75%) | **10.3 GB** | served by `app.geoforgehhu.com`, behind login |
+| over 100 MB | 281 | ~93 GB | agent hands the user the share link and password |
 
-Export the mirror as metadata the app already knows how to carry — dataset id,
-name, type, variables, coverage, date range, format, `data_ki`, and the share
-link and password. The agent can then tell a user exactly which dataset serves
-the quantity it needs and where to get it, instead of reporting that data is
-missing. This is knowledge, which is what this project ships.
+Three quarters of the library is served for a tenth of a percent of the
+storage. The 281 large ones are where Baidu's folder-download requirement bites,
+and those are exactly the ones a user is willing to fetch by hand once.
 
-Costs nothing at runtime, works on every platform, and is the fallback the
-other two layers degrade to.
+This also retires the open question below: with the index behind a login, the
+1,104 links and passwords never need to enter a public repository at all.
 
-### 2. The user's own Baidu account, entered like an API key
+## What the backend already provides
 
-Settings already takes provider API keys. A Baidu login belongs in the same
-place. With it present the app can install BaiduPCS-Py on demand and perform
-save-then-download without the user leaving the application.
+Nothing has to be built from scratch.
 
-- credentials belong to the user, are entered by the user, and stay on their
-  machine — the same trust model as their Anthropic or DeepSeek key
-- absent credentials must degrade to layer 1, never block a project
-- install BaiduPCS-Py lazily; it pulls fastapi, uvicorn, pillow and
-  cryptography, which is a lot to impose on someone who will never use it
+- `backend/auth.py` — bcrypt password hashing, user accounts, JWT sessions via
+  `create_token(user_id, username)`, secret from `HYDROCRAFT_JWT_SECRET` or a
+  0600 `.jwt_secret`. The login the service needs already exists.
+- `backend/api/files.py` — `FileResponse` serving with an extension allowlist
+  and a directory guard. The serving mechanics exist too.
+- `obs_datasets.path` resolves for all 1,104 rows, so the file to serve is
+  already recorded.
 
-### 3. A neutral mirror for everyone else
+**One caveat that matters.** `main.py` installs CORS and no authentication
+middleware, and `files.py` declares no `Depends`, so `/api/files/*` is open. An
+observation endpoint must not follow that pattern — serving 10.3 GB of curated
+data from an unauthenticated path would publish the library by accident.
+Attach the JWT dependency explicitly on the new routes.
 
-Baidu solves this for users in China. For anyone else the answer is anonymous
-HTTPS — Zenodo for citable datasets, object storage or release assets for the
-rest. That is a migration rather than a feature, but without it the capability
-is regional.
+## Implementation sketch
+
+1. `GET /api/obs/catalogue` — the full list behind the login: id, name, type,
+   variables, coverage, dates, size, and whether it is served or manual. This
+   is the page a user browses.
+2. `GET /api/obs/{dataset_id}/download` — JWT-guarded `FileResponse` from
+   `obs_datasets.path`. Enforce the 100 MB rule *server-side* from the file on
+   disk rather than from a stored number, so a dataset that grows past the
+   threshold stops being served rather than quietly streaming 40 GB.
+3. Over the threshold, return the share link and password in a structured
+   refusal — `{"served": false, "baidu_url": ..., "baidu_pwd": ..., "size": ...}`
+   — so the agent can tell the user precisely what to fetch and where to put it,
+   rather than reporting that data is unavailable.
+4. In the app, the agent asks the service first and falls back to the manual
+   instruction. Credentials are the user's GeoForge login, which they already
+   have; no Baidu account is needed for the 75% that is served.
 
 ## A "pandisk KI"
 
 This fits the existing `data_ki` pattern rather than needing a new concept. A
 data-access KI would document how to obtain a mirrored dataset, what arrives,
 and which tool reads it — the same shape as `ObservedQ`, which already declares
-`tool: read_station.py`. It would ship knowledge and links, and hold no
-secrets, so it can go in the public repository as it stands.
+`tool: read_station.py`. It ships knowledge and holds no secrets.
 
-## Open question for the repository owner
+## Still unknown
 
-Publishing `docs/` with 1,104 share links and passwords in a public repository
-makes those datasets effectively public and search-indexable, permanently. That
-appears to be the intent — the mirror exists to distribute them — but it is not
-reversible once indexed, so it needs an explicit decision before the index is
-committed. Until then this document contains one example link only.
-
-## What is not yet known
-
-- whether Baidu rate-limits or blocks a share accessed by many accounts
-- whether `deferred_forcing` (29 rows) should be mirrored at all, given the
-  grid × year tiling that deferred them
-- how large a typical dataset is, and therefore what a download costs a user
+- what `app.geoforgehhu.com` costs in egress if the served tier becomes popular
+- whether the 29 `deferred_forcing` rows should be mirrored at all, given the
+  grid x year tiling that deferred them
+- whether existing GeoForge accounts are the right identity for this, or
+  whether data access needs its own tier

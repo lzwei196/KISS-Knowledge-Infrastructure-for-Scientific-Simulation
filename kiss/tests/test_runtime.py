@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, harness_runtime, install, kimi_security, mcp, paths, plotting, policy, port, preparation, projectrun, projectview, prompt, providers, sessions, settings, setup, shellenv, skilllib, software_audit, tls
+from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, harness_runtime, install, install_locations, kimi_security, mcp, paths, plotting, policy, port, preparation, projectrun, projectview, prompt, providers, sessions, settings, setup, shellenv, skilllib, software_audit, tls
 from kiss_cli.catalog import KI
 from kiss_cli.manifest import Acquire, DataNeed, Manifest
 
@@ -1748,6 +1748,11 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("Agent process connected", page)
         self.assertIn("setInterval(drawRunState,1000)", page)
         self.assertIn("prefers-reduced-motion:reduce", page)
+        self.assertIn('id="installpath"', page)
+        self.assertIn("Model installation folder", page)
+        self.assertIn("chooseInstallLocation", page)
+        self.assertIn("/api/setup-location", page)
+        self.assertIn("GeoForge will create it and record the choice", page)
         self.assertNotIn('req.expected_path||["download","licence"]', page)
         chat = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text()
         self.assertIn("kiss.draft.", chat)
@@ -1966,6 +1971,61 @@ class ProjectPreparationTests(unittest.TestCase):
         by_lane = {lane["id"]: lane for lane in result["lanes"]}
         self.assertEqual(by_lane["spatial_parameters"]["items"][0]["name"], "soil depth")
         self.assertEqual(by_lane["choices"]["items"][0]["action"], "needs_decision")
+
+
+class InstallLocationTests(unittest.TestCase):
+    def test_user_can_select_a_folder_that_does_not_exist_yet(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "external-disk" / "scientific-models" / "DSSAT"
+
+            selected = install_locations.select(root / "geoforge", "DSSAT", target)
+
+            self.assertEqual(selected, target.resolve())
+            self.assertTrue(target.is_dir())
+            self.assertEqual(
+                install_locations.resolve(root / "geoforge", "dssat"),
+                target.resolve(),
+            )
+            info = install_locations.info(root / "geoforge", "DSSAT")
+            self.assertTrue(info["custom"])
+            self.assertEqual(info["path"], str(target.resolve()))
+
+    def test_install_path_is_recorded_beside_and_inside_local_ki(self):
+        with tempfile.TemporaryDirectory() as td:
+            workroot = Path(td) / "geoforge"
+            workspace = Path(td) / "chosen" / "VIC"
+            install_locations.select(workroot, "VIC", workspace)
+            live = workspace / "ki"
+            live.mkdir(parents=True)
+            cfg = paths.KissConfig.default(workspace)
+            (workspace / paths.CONFIG_NAME).write_text(cfg.dumps())
+
+            value = install_locations.record(
+                "VIC", workspace, cfg, ki_root=live, verified=True)
+
+            outer = json.loads(
+                (workspace / install_locations.RECORD_FILE).read_text())
+            inner = json.loads(
+                (live / install_locations.RECORD_FILE).read_text())
+            self.assertEqual(outer, inner)
+            self.assertEqual(outer["workspace"], str(workspace.resolve()))
+            self.assertEqual(outer["binaries"], str(cfg.roles["binaries"]))
+            self.assertTrue(value["verified"])
+            self.assertTrue(install_locations.info(workroot, "VIC")["recorded"])
+
+    def test_gui_workdir_uses_the_saved_model_location(self):
+        with tempfile.TemporaryDirectory() as td:
+            workroot = Path(td) / "geoforge"
+            target = Path(td) / "models-on-another-disk" / "CRHM"
+            install_locations.select(workroot, "CRHM", target)
+            handler = object.__new__(gui.Handler)
+            handler.workroot = workroot
+
+            self.assertEqual(
+                gui.Handler._workdir(handler, SimpleNamespace(name="CRHM")),
+                target.resolve(),
+            )
 
 
 class InstallStatusTests(unittest.TestCase):

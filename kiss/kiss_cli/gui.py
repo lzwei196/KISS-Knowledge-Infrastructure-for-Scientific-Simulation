@@ -30,7 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import api, calibration, clipboard, doctor, handoff, harness_runtime, install, kdtstudio, ki_updates, mcp, paths, policy, port, preparation, projectrun, projectview, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
+from . import api, calibration, clipboard, doctor, handoff, harness_runtime, install, install_locations, kdtstudio, ki_updates, mcp, paths, policy, port, preparation, projectrun, projectview, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI
 from .manifest import Manifest
 
@@ -616,7 +616,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.catalog.get(unquote(name))
 
     def _workdir(self, ki) -> Path:
-        return self.workroot / ki.name.lower()
+        return install_locations.resolve(self.workroot, ki.name)
 
     def _status_for(self, ki) -> dict:
         """User-facing software state for one KI on this machine."""
@@ -1250,6 +1250,8 @@ class Handler(BaseHTTPRequestHandler):
                 "reference": (ki.meta or {}).get("reference"),
                 "version": (ki.meta or {}).get("version"),
                 "manifest_verified": self._manifest(ki).verified,
+                "install_location": install_locations.info(
+                    self.workroot, ki.name),
                 **setup_flow.setup_state(self._workdir(ki), self._status_for(ki)),
             })
 
@@ -1573,6 +1575,29 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/setup-agent":
             return self._stream_agent_setup(req)
 
+        if route == "/api/setup-location":
+            try:
+                ki = self._ki(req["model"])
+                target = install_locations.select(
+                    self.workroot, ki.name, req.get("path") or "")
+                cfg_file = target / paths.CONFIG_NAME
+                if not cfg_file.exists():
+                    cfg = paths.KissConfig.default(target)
+                    cfg.python = install.runtime_python(cfg.python)
+                    cfg_file.write_text(cfg.dumps(), encoding="utf-8")
+                else:
+                    cfg = paths.KissConfig.load(target)
+                install_locations.record(ki.name, target, cfg)
+            except KeyError as error:
+                return self._json({"error": str(error)}, 404)
+            except (ValueError, OSError) as error:
+                return self._json({"error": str(error)}, 400)
+            return self._json({
+                "ok": True,
+                "install_location": install_locations.info(
+                    self.workroot, ki.name),
+            })
+
         if route == "/api/mcp/github/configure-codex":
             try:
                 return self._json(mcp.configure_github_for_codex())
@@ -1843,6 +1868,10 @@ class Handler(BaseHTTPRequestHandler):
             "agent_setup": True,
         })
         status_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
+        install_locations.record(
+            ki.name, root, cfg,
+            ki_root=getattr(live_ki, "root", Path(root) / "ki"),
+            verified=check.ok)
         if check.ok:
             setup_flow.clear_request(root)
         return check.ok
@@ -3002,7 +3031,7 @@ class Handler(BaseHTTPRequestHandler):
         # Prefer each model's materialised copy when it has been installed.
         resolved = []
         for k in kis:
-            live = (self.workroot / k.name.lower() / "ki")
+            live = self._workdir(k) / "ki"
             resolved.append(type(k)(name=k.name, root=live) if live.exists() else k)
         full = prompt.compose_multi(resolved, cfg, task=req.get("message", ""))
 
@@ -3127,6 +3156,8 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
                    "detail": s.detail[:4000], "commands": s.commands[:20]}
                   for s in result.steps],
     }, indent=2), encoding="utf-8")
+    install_locations.record(
+        ki.name, root, cfg, ki_root=ki.root, verified=result.ok)
 
     if result.ok:
         emit(f"{ki.name} is verified on this machine.  {root}\n")

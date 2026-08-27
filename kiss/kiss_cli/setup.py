@@ -24,7 +24,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import install, paths, port
+from . import install, install_locations, paths, port
 
 REQUEST_FILE = "setup-request.json"
 USER_FILES_DIR = "user-files"
@@ -356,6 +356,7 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
     prepare_common(cfg, repo_root)
 
     live_ki = type(ki)(name=ki.name, root=live)
+    install_locations.record(ki.name, root, cfg, ki_root=live)
     handoff.write_setup(
         live_ki, man, cfg, root,
         built_in_command=runtime_command(models_dir, ki.name, root),

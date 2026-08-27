@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from . import doctor, gui, handoff, install, paths, port, recipe
+from . import doctor, gui, handoff, install, install_locations, paths, port, recipe
 from .catalog import Catalog
 from .manifest import Manifest
 
@@ -137,7 +137,11 @@ def cmd_init(args) -> int:
     # Installing to ./kiss-<model> while verify looked in ~/kiss meant the two
     # commands could not see each other's work: `kiss init MODFLOW6` followed
     # by `kiss verify MODFLOW6` reported the model missing.
-    root = Path(args.workdir or Path.home() / "kiss" / ki.name.lower()).expanduser().resolve()
+    default_workroot = Path.home() / "kiss"
+    if args.workdir:
+        root = install_locations.select(default_workroot, ki.name, args.workdir)
+    else:
+        root = install_locations.resolve(default_workroot, ki.name)
     root.mkdir(parents=True, exist_ok=True)
     cfg_file = root / paths.CONFIG_NAME
     if cfg_file.exists():
@@ -235,6 +239,8 @@ def cmd_init(args) -> int:
           f"{_c('ok' if s.ok else 'WARN' if s.skipped else 'BLOCK', s.mark)}")
 
     written = handoff.write(ki, result, man, cfg, root)
+    install_locations.record(
+        ki.name, root, cfg, ki_root=ki.root, verified=result.ok)
     print(f"    agent handoff ... {_c('ok', 'ok')} ({len(written)} files)")
 
     print()
@@ -497,7 +503,7 @@ def cmd_verify(args) -> int:
     workroot = Path(args.workdir).expanduser().resolve() if args.workdir else Path.home() / "kiss"
     results = []
     for ki in kis:
-        root = workroot / ki.name.lower()
+        root = install_locations.resolve(workroot, ki.name)
         cfg = None
         if (root / paths.CONFIG_NAME).exists():
             try:

@@ -215,8 +215,12 @@ software's real preflight passes or a person must do something you cannot.
 6. Keep repairing and retrying in this same task. Never claim success until
    preflight passes, and never substitute a fake or simplified model.
 
-The writable workspace is `{dest}`. User-supplied files appear under
-`{dest / 'user-files'}`. Binaries belong under `{cfg.roles.get('binaries')}`.
+The user selected `{dest}` as this model's installation workspace. The local
+path contract is recorded in `{dest / '.geoforge-install.json'}` and
+`{ki.root / '.geoforge-install.json'}`. Read that record and `kiss.toml`; do not
+relocate the installation or write model software outside the configured
+`{cfg.roles.get('binaries')}` directory. User-supplied files appear under
+`{dest / 'user-files'}`.
 
 ## When a person is required
 

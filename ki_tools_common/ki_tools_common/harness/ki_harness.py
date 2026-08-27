@@ -30,58 +30,6 @@ sys.path.insert(0, str(_HERE))  # CLI fallback for sibling imports
 PROJECT_PY = os.environ.get("HC_PROJECT_PYTHON",
                             "KISSPATH_PYTHON_ENV/bin/python")
 MARKER = "[KI HARNESS v1]"
-
-# ── THE OBLIGATIONS REGISTRY (G3, 2026-08-20) ───────────────────────────────────────────────────
-# The ten KI-usage obligations exist on TWO surfaces: this module's contract() (injected into the
-# self-improve loop's agents) and the chat exec-prefix in
-# hydrocraft-web/backend/services/cli_process_manager.py (baked text). They agreed in 2026-08 only
-# because they were written the same week. This registry is the ONE canonical list; the parity
-# test (knowledge-dissection-toolkit/test_harness_parity.py) renders/reads BOTH surfaces and fails
-# the moment either drops an obligation. Each entry: accepted marker regexes per surface — the
-# wording may differ (chat says it generically, the contract per-KI); the OBLIGATION may not.
-OBLIGATIONS = {
-    "policy_no_surrogates": {
-        "contract": r"MANDATORY EXECUTION POLICY|substitut\w+ a toy|simplified approach",
-        "chat":     r"NO SHORTCUTS|simplified approach|literature values as results",
-    },
-    "protocol_in_order": {
-        "contract": r"READ and FOLLOW .*SKILL\.md.*IN ORDER",
-        "chat":     r"read the SKILL\.md BEFORE running",
-    },
-    "tools_absolute_path": {
-        "contract": r"ABSOLUTE PATH.*project\s+python|do NOT search, do NOT disk-glob",
-        "chat":     r"Resolve the real path from the DB|harness\\.ki_path '<Model>'",
-    },
-    "know_the_outputs": {
-        "contract": r"WHAT THIS MODEL PRODUCES",
-        "chat":     r"machine-file digest.*read it in full|KI DIGEST . server-rendered.*READ BEFORE RUNNING",
-    },
-    "verify_units_from_files": {
-        "contract": r"FILE'S OWN attributes|never from documentation",
-        "chat":     r"FILE'S OWN metadata|files on disk are ground truth",
-    },
-    "preflight_first": {
-        "contract": r"preflight_check\.py.*OBEY",
-        "chat":     r"preflight",
-    },
-    "failure_ladder": {
-        "contract": r"ON FAILURE.*triplets|symptom .?\u2192.? diagnosis|triplets\.yaml for the error",
-        "chat":     r"grep -i '<error_keyword>'.*triplets",
-    },
-    "never_weaken": {
-        "contract": r"NEVER weaken a tool or gate",
-        "chat":     r"DO NOT EDIT KI TOOLS.*STOP and report",
-    },
-    "not_your_own_judge": {
-        "contract": r"do not declare your own .*verdict|NOT YOUR OWN JUDGE",
-        "chat":     r"NOT YOUR OWN JUDGE",
-    },
-    "evidence_series_csv": {
-        "contract": r"simulated time series to CSV|reproducib",
-        "chat":     r"BEFORE computing any metric.*paired simulated \+ observed series.*CSV",
-    },
-}
-
 _MAX_TOOLS_LISTED = 24
 
 
@@ -132,30 +80,7 @@ def manifest(ki_path) -> dict:
         "preflight_check.py": (ki / "preflight_check.py").is_file(),
         "knowledge_infrastructure.yaml": (ki / "knowledge_infrastructure.yaml").is_file(),
     }
-    # OUTPUTS (G3 parity fix, 2026-08-20): the spec promised outputs (name/unit/rank/obs_shapes)
-    # in the manifest; the built module never implemented it, so contract() had nothing to render.
-    outputs = []
-    dagf = ki / "dag.yaml"
-    if dagf.is_file():
-        try:
-            import yaml as _y
-            _d = _y.safe_load(dagf.read_text(errors="ignore")) or {}
-            for o in (_d.get("outputs") or []):
-                if not isinstance(o, dict):
-                    continue
-                shp = []
-                for c in ((o.get("observability") or {}).get("comparable_obs_shapes") or []):
-                    if isinstance(c, dict) and c.get("obs_shape"):
-                        shp.append(str(c["obs_shape"]))
-                    elif isinstance(c, str):
-                        shp.append(c)
-                outputs.append({"name": o.get("var") or o.get("name"), "unit": o.get("unit"),
-                                "rank": o.get("validation_rank"), "obs_shapes": shp})
-            outputs.sort(key=lambda x: (int(x["rank"]) if str(x.get("rank") or "").isdigit() else 99))
-        except Exception:
-            outputs = []
     return {"ki_path": str(ki), "artifacts": arts, "tools": _tools(ki),
-            "outputs": outputs,
             "missing": sorted(k for k, v in arts.items() if not v)}
 
 
@@ -186,26 +111,12 @@ def assert_injected(prompt_text: str) -> None:
 
 
 def contract(ki_path, *, execute: bool = True, target_var: str | None = None,
-             full: bool | None = None, attention_budget: int = 4500,
-             mode: str | None = None) -> str:
+             full: bool | None = None, attention_budget: int = 4500) -> str:
     """The injectable KI-usage contract. See module docstring.
 
-    THREE WORDINGS (G1 round 2, codex): an agent is a runner, a reader, or an editor — and the
-    contract must say which, or it mis-instructs:
-      mode="execute" (default; = execute=True)  runs the model: full run discipline.
-      mode="inspect" (= execute=False)          reads to plan/diagnose: non-mutating probes
-                                                 (--help, preflight, grep) are ALLOWED; never run
-                                                 the model pipeline, never mutate files.
-      mode="edit"                                edits KI files but must NOT run the model
-                                                 (apply-only fix agents: the reviewer gate comes
-                                                 between their edit and any rerun).
-    full=None -> read env KI_HARNESS_FULL (default off) for the RUN-TIME ATTENTION digest.
+    execute=False -> inspect-only wording (planning agents): may READ everything, runs nothing.
+    full=None     -> read env KI_HARNESS_FULL (default off) for the RUN-TIME ATTENTION digest.
     """
-    if mode is None:
-        mode = "execute" if execute else "inspect"
-    if mode not in ("execute", "inspect", "edit"):
-        raise KiHarnessError(f"unknown contract mode {mode!r}")
-    execute = (mode == "execute")
     ki = Path(ki_path)
     if not ki.is_dir():
         raise KiHarnessError(f"KI dir does not exist: {ki}")
@@ -230,7 +141,7 @@ def contract(ki_path, *, execute: bool = True, target_var: str | None = None,
         if execute:
             raise KiHarnessError(f"SKILL.md missing at {ki} — an agent cannot RUN a KI without "
                                  f"its protocol (thin/unbuilt KI); refuse rather than improvise")
-        missing.append("SKILL.md MISSING — no protocol; nothing here is runnable")
+        missing.append("SKILL.md MISSING — no protocol; inspection only, nothing is runnable")
 
     # TOOLS --------------------------------------------------------------------------------------
     tools = _tools(ki)
@@ -245,16 +156,9 @@ def contract(ki_path, *, execute: bool = True, target_var: str | None = None,
             if len(tools) > len(shown):
                 lines.append(f"     … +{len(tools) - len(shown)} more under {ki / 'tools'} "
                              f"(same invocation pattern)")
-        elif mode == "inspect":
+        else:
             lines.append(f"2. TOOLS — {len(tools)} validated tools under {ki / 'tools'}. You are "
-                         f"in INSPECT mode: read them to plan/diagnose. Non-mutating probes ARE "
-                         f"allowed (--help, preflight_check.py, grep/read); do NOT run the model "
-                         f"pipeline and do NOT mutate any file.")
-        else:   # edit
-            lines.append(f"2. TOOLS — {len(tools)} validated tools under {ki / 'tools'}. You are "
-                         f"in EDIT mode: you may modify KI files per your task, but do NOT run "
-                         f"the model pipeline (a reviewer gate sits between your edit and any "
-                         f"rerun), and NEVER weaken a tool or gate to make something pass.")
+                         f"in INSPECT-ONLY mode: read them to plan, execute nothing.")
     else:
         missing.append("tools/ has no python tools — nothing validated to execute")
 
@@ -273,23 +177,6 @@ def contract(ki_path, *, execute: bool = True, target_var: str | None = None,
     else:
         man = manifest(ki)
         missing.extend(f"{a} absent" for a in man["missing"] if a != "SKILL.md")
-        # G3 parity fix (2026-08-20): spec §5 — WHAT THIS MODEL PRODUCES — is an obligation, not a
-        # KI_HARNESS_FULL luxury. The parity test caught this on its first run: with the flag off
-        # (the default) the contract never told the agent what the model outputs. A compact digest
-        # always renders; the full attention digest remains the flag-gated upgrade.
-        outs = (man.get("outputs") or [])[:5]
-        if outs:
-            lines.append("2b. WHAT THIS MODEL PRODUCES (from dag.yaml; rank 1 = the headline "
-                         "variable this model is judged by):")
-            for o in outs:
-                lines.append(f"     rank {o.get('rank','?')}: {o.get('name')} [{o.get('unit','?')}]"
-                             + (f" — obs shapes: {', '.join(o.get('obs_shapes', [])[:2])}"
-                                if o.get("obs_shapes") else ""))
-            lines.append(f"     full detail: {ki / 'dag.yaml'} — or render the attention digest: "
-                         f"{PROJECT_PY} -m ki_tools_common.harness.ki_attention '<model>'")
-        else:
-            missing.append("dag.yaml has no readable outputs — the agent cannot know what this "
-                           "model produces")
 
     # RECOVERED TESTED KEYS (KI_PROMPT_KEYS.md, owner-approved 2026-08-18) -----------------------
     if execute:

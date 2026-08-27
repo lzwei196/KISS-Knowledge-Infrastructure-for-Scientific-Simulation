@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "product": "GeoForge Desktop",
+  "version": "0.6.45",
+  "release_date": "2026-08-27",
+  "source": {
+    "branch": "mac-version",
+    "code_commit": "0cbe28bf6d9ca461292fc54df9f947008e26db90",
+    "repository": "https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation"
+  },
+  "ki_library": {
+    "package_count": 127,
+    "source_branch": "main",
+    "source_commit": "90a9163bd696fa6d42a471fc0c5ac2b347156d64",
+    "catalog_check": "127 of 127 packages",
+    "broken_symbolic_links": 0,
+    "portable_materializations": [
+      "VIC calibration and plotting tools",
+      "CaMa-Flood downscaling tools",
+      "Lohmann Routing VIC preprocessing tool"
+    ]
+  },
+  "changes": [
+    {
+      "id": "provider-proxy-routing",
+      "area": "connectivity",
+      "summary": "One user-configurable proxy route now covers the selected AI provider and its agent-run Git, pip, curl and model-download commands.",
+      "user_action": "Use AI Settings > Network route. Auto detects the system proxy; Manual accepts an HTTP or SOCKS URL; Off keeps direct access. Select only the providers that need it."
+    },
+    {
+      "id": "provider-connection-handoff",
+      "area": "user-interface",
+      "summary": "Claude, Codex and Kimi DNS, proxy, VPN and authentication failures now become a specific Needs You popup instead of an unexplained Load failed state.",
+      "user_action": "Follow the popup to test or change the route, then retry the same turn."
+    },
+    {
+      "id": "model-install-location",
+      "area": "model-setup",
+      "summary": "Users can choose a model installation folder, including a folder that does not exist yet. GeoForge creates it and records the location in kiss.toml and .geoforge-install.json.",
+      "user_action": "Choose the folder on the Agent setup page before starting or continuing setup."
+    },
+    {
+      "id": "legacy-ki-layout-bridge",
+      "area": "model-setup",
+      "summary": "GeoForge maps the current portable KI layout to legacy model paths before the first preflight, preventing installed tools from being reported missing.",
+      "user_action": "No migration is required; rerun setup for an affected KI."
+    },
+    {
+      "id": "canonical-ki-refresh",
+      "area": "knowledge-infrastructure",
+      "summary": "All 127 bundled KIs were refreshed from the canonical main snapshot and server-only links needed by VIC, CaMa-Flood and Lohmann Routing were converted to portable files.",
+      "user_action": "Existing chat projects remain unchanged. The desktop KI library updates independently."
+    },
+    {
+      "id": "harness-and-calibration-proof",
+      "area": "agent-runtime",
+      "summary": "The full KI harness contract is bundled and import-checked, and calibration dependency/backend readiness is checked from real imports rather than a stale cached result.",
+      "user_action": "Environment Check reports the loaded harness source and calibration readiness."
+    },
+    {
+      "id": "single-version-source",
+      "area": "release-engineering",
+      "summary": "macOS, Windows and CLI builds now read the same version from pyproject.toml. Release assets include this manifest, the desktop changelog and SHA256SUMS.txt.",
+      "user_action": "Update agents should compare version, code_commit and ki_library.source_commit before replacing software or KI content."
+    }
+  ],
+  "compatibility": {
+    "project_data_migration_required": false,
+    "saved_model_install_locations_preserved": true,
+    "proxy_credentials_stored_in_release": false,
+    "platform_notes": {
+      "macos": "The local release is built for Apple Silicon.",
+      "windows": "Use the Windows asset built from the same version and read this manifest before updating.",
+      "linux": "Use the Linux asset built from the same version."
+    }
+  },
+  "validation": {
+    "geoforge_tests": {
+      "passed": 156,
+      "failed": 0,
+      "command": "python -m pytest -q kiss/tests"
+    },
+    "python_compile_check": "passed",
+    "ki_catalog": "passed",
+    "ki_broken_link_scan": "passed"
+  },
+  "agent_update_protocol": [
+    "Read release-manifest.json before changing an installation.",
+    "Compare product version and source.code_commit for application changes.",
+    "Compare ki_library.source_commit for KI-only changes.",
+    "Preserve user settings, API keys, proxy choices, projects, data and recorded model installation paths.",
+    "Verify the downloaded asset against SHA256SUMS.txt.",
+    "Report the applied change IDs and any migration or retry action to the user."
+  ]
+}

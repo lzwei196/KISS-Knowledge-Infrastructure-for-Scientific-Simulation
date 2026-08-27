@@ -1,23 +1,26 @@
 GeoForge Desktop — 127 Earth-system models with their KISS Knowledge
 Infrastructures, driven by the GeoForge agent.
 
-## What is new in v0.6.25
+## What is new in v0.6.45
 
-- Every KI input requirement can now be opened independently. Each item shows
-  its purpose, unit, format, source, destination, preparation method, defaults,
-  valid range, and evidence on disk.
-- Every input item has a read-only “Ask Agent: what is this?” action and a
-  separate action for asking the agent to prepare, find, or decide that item.
-- Setup requests now appear immediately while an agent is still working.
-  Claude, Codex, Kimi, and API tool events are reduced to readable progress
-  instead of exposing raw `GEOF_TOOL` markers.
-- Downloaded build runtimes inside a model's own workspace—such as APSIM's
-  local .NET SDK—receive model-scoped execution permission. No global Claude
-  permission edit is needed.
-- Permission cards show one clear action with expandable technical details;
-  they no longer show an irrelevant file upload control.
-- Includes the complete project-folder, dynamic-data, calibration, bilingual
-  interface, file attachment, and inline-result work from the 0.6.24 source.
+- One configurable network route now covers the selected AI provider and the
+  Git, pip, curl, and model-download commands its Agent launches. Auto, manual
+  HTTP/SOCKS, and off modes can be enabled separately for Claude, Codex, and Kimi.
+- Provider DNS, VPN, proxy, and sign-in failures now create a clear Needs You
+  request instead of an unexplained `Load failed`.
+- Users can choose or create each model installation folder. GeoForge records
+  the path in both `kiss.toml` and `.geoforge-install.json`.
+- The complete KI library was refreshed from canonical revision
+  `90a9163bd696fa6d42a471fc0c5ac2b347156d64`; all 127 packages catalogue and
+  server-only VIC, CaMa-Flood, and Lohmann Routing links are now portable files.
+- The full KI harness contract is import-checked. Calibration dependencies and
+  numerical backends are checked from current imports, not a stale cached state.
+- macOS, Windows, and CLI packages use one version source. See
+  `release-manifest.json` for the machine-readable update contract and
+  `DESKTOP_CHANGELOG.md` for bilingual details.
+
+Validation: 156/156 GeoForge tests passed, 127/127 KIs catalogued, and no broken
+KI symbolic links remain.
 
 ## Install
 

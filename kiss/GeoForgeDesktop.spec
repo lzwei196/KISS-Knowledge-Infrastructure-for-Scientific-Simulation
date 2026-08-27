@@ -56,6 +56,8 @@ a = Analysis(
         (str(SOURCE / "vendor" / "agent-calibration-framework"),
          "agent-calibration-framework"),
         (str(SOURCE / "manifests"), "kiss/manifests"),
+        (str(REPO / "release-manifest.json"), "."),
+        (str(REPO / "DESKTOP_CHANGELOG.md"), "."),
         *trust_datas,
         *calibration_datas,
     ],

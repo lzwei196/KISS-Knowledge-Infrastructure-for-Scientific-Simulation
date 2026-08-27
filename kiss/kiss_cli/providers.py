@@ -633,7 +633,9 @@ def run(provider: Provider, prompt: str, cwd: Path,
 
     argv = provider.build(prompt, extra_dirs=cli_extra_dirs, model=model,
                           resume=resume)
-    env = {**os.environ, **provider.env}
+    from .settings import with_provider_proxy
+    env = with_provider_proxy(f"cli:{provider.name}",
+                              {**os.environ, **provider.env})
     if cfg is not None:
         from .paths import with_ki_tools_common
         env = with_ki_tools_common(cfg, env)
@@ -737,6 +739,19 @@ def run(provider: Provider, prompt: str, cwd: Path,
         yield f"[failed to start {provider.label}: {e}]"
         return
 
+    if runtime_events is not None:
+        now = time.time()
+        pid = getattr(proc, "pid", None)
+        runtime_events["_process_handle"] = proc
+        runtime_events["process"] = {
+            "state": "running",
+            "pid": pid if isinstance(pid, int) else None,
+            "started_at": now,
+            "last_event_at": None,
+            "last_output_at": None,
+            "activity": "starting",
+        }
+
     # Written from a thread, not inline: a prompt larger than the pipe buffer
     # blocks the writer until the child drains it, and the child cannot be
     # drained by a reader that has not started yet. Closing the pipe is the
@@ -759,6 +774,10 @@ def run(provider: Provider, prompt: str, cwd: Path,
     produced = False
     try:
         for line in proc.stdout:  # type: ignore[union-attr]
+            process_event = ((runtime_events or {}).get("process")
+                             if runtime_events is not None else None)
+            if isinstance(process_event, dict):
+                process_event["last_event_at"] = time.time()
             if provider.output == "stream-json":
                 if session_out is not None and not session_out.get("session_id"):
                     sid = _session_id_from_stream_json(line)
@@ -766,6 +785,11 @@ def run(provider: Provider, prompt: str, cwd: Path,
                         session_out["session_id"] = sid
                 text = _text_from_stream_json(line)
                 if text:
+                    if isinstance(process_event, dict):
+                        process_event["last_output_at"] = time.time()
+                        tool = re.search(r"\[\[GEOF_TOOL:([^\]]+)\]\]", text)
+                        process_event["activity"] = (tool.group(1) if tool
+                                                     else "responding")
                     produced = True
                     if session_out is not None:
                         # Flagged the instant real output exists, not at exit:
@@ -774,6 +798,9 @@ def run(provider: Provider, prompt: str, cwd: Path,
                         session_out["produced"] = True
                     yield text
             else:
+                if isinstance(process_event, dict):
+                    process_event["last_output_at"] = time.time()
+                    process_event["activity"] = "responding"
                 produced = True
                 if session_out is not None:
                     session_out["produced"] = True
@@ -799,6 +826,12 @@ def run(provider: Provider, prompt: str, cwd: Path,
             # only the first is safe to retry, because nothing reached the user.
             session_out["returncode"] = rc
             session_out["produced"] = produced
+        if runtime_events is not None:
+            process_event = runtime_events.get("process")
+            if isinstance(process_event, dict):
+                process_event["state"] = "exited"
+                process_event["returncode"] = rc
+                process_event["ended_at"] = time.time()
         if rc != 0:
             tail = ""
             if provider.stdout_only:

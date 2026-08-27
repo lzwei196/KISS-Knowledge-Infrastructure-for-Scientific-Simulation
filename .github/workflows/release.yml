@@ -276,31 +276,20 @@ jobs:
             --paths kiss \
             kiss/kiss_entry.py
           ./dist/kiss --help
-          # The self-contained desktop build: KI packages travel inside it, as
-          # on macOS, so one download is the whole product.
-          pyinstaller --onefile --name "GeoForge-Desktop" \
-            --collect-all truststore \
-            --collect-data certifi \
-            --hidden-import spotpy \
-            --hidden-import pymoo.core.problem --hidden-import pymoo.optimize \
-            --hidden-import pymoo.algorithms.moo.nsga2 \
-            --hidden-import pymoo.algorithms.moo.nsga3 \
-            --hidden-import pymoo.algorithms.moo.moead \
-            --hidden-import pymoo.util.ref_dirs \
-            --collect-binaries pymoo \
-            --copy-metadata numpy --copy-metadata PyYAML \
-            --copy-metadata spotpy --copy-metadata pymoo --copy-metadata moocore \
-            --exclude-module torch --exclude-module pandas \
-            --exclude-module matplotlib --exclude-module pyarrow \
-            --add-data "kiss/kiss_cli/web:kiss_cli/web" \
-            --add-data "models:models" \
-            --add-data "ki_tools_common:ki_tools_common" \
-            --add-data "kiss/vendor/agent-calibration-framework:agent-calibration-framework" \
-            --add-data "kiss/manifests:kiss/manifests" \
-            --paths kiss \
-            kiss/kiss_entry.py
+          # Built from kiss/KISS.spec. The flags this replaces mounted
+          # ki_tools_common as data only, which left the import package one
+          # level below the name it was mounted under: ki_tools_common.harness
+          # resolved to an empty namespace package and the application shipped
+          # without the KI execution contract, announcing it only inside a
+          # prompt. The spec lists the harness modules as hiddenimports, so
+          # they are frozen as code and the loss is a build error rather than a
+          # silent downgrade.
+          pyinstaller --noconfirm --distpath dist --workpath build kiss/KISS.spec
           ./dist/GeoForge-Desktop list | tail -2
           ./dist/GeoForge-Desktop calibration-status | grep -q '"ready": true'
+          # The contract must be reachable inside the frozen binary, not merely
+          # present as files beside it.
+          ./dist/GeoForge-Desktop harness-status | grep -q '"ready": true'
 
       - name: Smoke test the frozen HTTPS stack
         run: |

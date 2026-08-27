@@ -986,13 +986,20 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
 # --- wire formats -----------------------------------------------------------
 
-def _post(url: str, headers: dict, payload: dict) -> dict:
+def _post(url: str, headers: dict, payload: dict, *, provider: str) -> dict:
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(), method="POST",
         headers={"Content-Type": "application/json", **headers},
     )
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT, context=tls.context()) as r:
+        from .settings import proxy_url_for
+        proxy = proxy_url_for(provider)
+        handlers = [
+            urllib.request.ProxyHandler(
+                {"http": proxy, "https": proxy} if proxy else {}),
+            urllib.request.HTTPSHandler(context=tls.context()),
+        ]
+        with urllib.request.build_opener(*handlers).open(req, timeout=TIMEOUT) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "replace")[:800]
@@ -1042,7 +1049,8 @@ def _anthropic_turn(prov, model, system, messages, tools, key):
                  {"x-api-key": key, "anthropic-version": "2023-06-01"},
                  {"model": model, "max_tokens": 4096,
                   "system": _cacheable_system(system),
-                  "messages": _cached_messages(messages), "tools": tools})
+                  "messages": _cached_messages(messages), "tools": tools},
+                 provider=f"api:{getattr(prov, 'name', 'anthropic')}")
     text = "".join(b.get("text", "") for b in data.get("content", [])
                    if b.get("type") == "text")
     calls = [(b["id"], b["name"], b.get("input") or {})
@@ -1056,7 +1064,8 @@ def _openai_turn(prov, model, system, messages, tools, key):
                                "parameters": t["input_schema"]}} for t in tools]
     msgs = [{"role": "system", "content": system}, *messages]
     data = _post(prov.base_url, {"Authorization": f"Bearer {key}"},
-                 {"model": model, "messages": msgs, "tools": oai_tools})
+                 {"model": model, "messages": msgs, "tools": oai_tools},
+                 provider=f"api:{getattr(prov, 'name', 'openai')}")
     choice = (data.get("choices") or [{}])[0].get("message", {})
     text = choice.get("content") or ""
     calls = []

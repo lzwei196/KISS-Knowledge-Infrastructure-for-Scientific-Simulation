@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, install, kimi_security, mcp, paths, plotting, policy, port, preparation, projectrun, projectview, providers, sessions, settings, setup, shellenv, skilllib, software_audit, tls
+from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, harness_runtime, install, kimi_security, mcp, paths, plotting, policy, port, preparation, projectrun, projectview, prompt, providers, sessions, settings, setup, shellenv, skilllib, software_audit, tls
 from kiss_cli.catalog import KI
 from kiss_cli.manifest import Acquire, DataNeed, Manifest
 
@@ -307,6 +307,30 @@ class ProviderHealthTests(unittest.TestCase):
         self.assertIn(gui.CHAT_KEEPALIVE, forwarded)
         self.assertEqual(forwarded[-1], "finished")
 
+    def test_live_agent_snapshot_separates_process_from_transport(self):
+        class RunningProcess:
+            def poll(self):
+                return None
+
+        events = {"provider": "cli:claude"}
+        gui._register_agent_run("status-test", events)
+        events["_process_handle"] = RunningProcess()
+        events["process"] = {
+            "state": "running", "pid": 31415,
+            "started_at": time.time() - 120,
+            "last_event_at": time.time() - 95,
+            "last_output_at": time.time() - 100,
+            "activity": "Bash",
+        }
+        try:
+            status = gui._agent_run_snapshot("status-test")
+        finally:
+            gui._LIVE_AGENT_RUNS.pop("status-test", None)
+        self.assertTrue(status["process_alive"])
+        self.assertEqual(status["activity"], "Bash")
+        self.assertGreaterEqual(status["event_silence_seconds"], 94)
+        self.assertEqual(status["pid"], 31415)
+
     def test_missing_alias_and_duplicate_workdir_are_not_passed_to_cli(self):
         provider = providers.Provider(
             name="kimi", binary="kimi", argv=["kimi", "-p", "{prompt}"],
@@ -445,6 +469,77 @@ class ProviderHealthTests(unittest.TestCase):
 
 
 class FrozenRuntimeTests(unittest.TestCase):
+    def test_harness_import_is_repo_local_and_dependency_light(self):
+        """No user-site/editable copy may make this release test pass."""
+        repo = Path(__file__).parents[2]
+        app_source = Path(__file__).parents[1]
+        common_source = repo / "ki_tools_common"
+        model = repo / "models" / "DSSAT"
+        script = f"""
+import sys
+from pathlib import Path
+sys.path[:0] = [{str(app_source)!r}, {str(common_source)!r}]
+from kiss_cli.catalog import KI
+from kiss_cli import prompt
+from ki_tools_common.harness import MARKER
+import ki_tools_common.harness.ki_harness as implementation
+text = prompt.compose(KI('DSSAT', Path({str(model)!r})), headless=False)
+assert MARKER in text
+assert '[KI USAGE CONTRACT UNAVAILABLE]' not in text
+assert Path(implementation.__file__).resolve().is_relative_to(
+    Path({str(common_source)!r}).resolve())
+print(MARKER, len(text), implementation.__file__)
+"""
+        result = subprocess.run(
+            [sys.executable, "-S", "-c", script],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[KI HARNESS v1]", result.stdout)
+
+    def test_pyinstaller_specs_collect_harness_as_python_not_only_data(self):
+        source = Path(__file__).parents[1]
+        mac = (source / "GeoForgeDesktop.spec").read_text()
+        generic = (source / "KISS.spec").read_text()
+        for spec in (mac, generic):
+            self.assertIn("ki_tools_common.harness.ki_harness", spec)
+            self.assertIn("ki_tools_common.harness.ki_attention", spec)
+            self.assertIn("ki_tools_common.harness.agent_spawn", spec)
+            self.assertIn("ki_tools_common", spec)
+        self.assertIn("str(KI_TOOLS_SOURCE)", mac)
+        self.assertIn("'../ki_tools_common'", generic)
+
+    def test_every_ki_prompt_is_verified_and_carries_a_receipt(self):
+        model = Path(__file__).parents[2] / "models" / "DSSAT"
+        ki = KI("DSSAT", model)
+        with mock.patch.object(
+                harness_runtime, "verified_contract",
+                wraps=harness_runtime.verified_contract) as verify:
+            first = prompt.compose(ki, headless=False)
+            second = prompt.compose(ki, headless=False)
+        self.assertEqual(verify.call_count, 2)
+        for text in (first, second):
+            self.assertIn("[KI HARNESS v1]", text)
+            self.assertIn("[GEOFORGE HARNESS RECEIPT]", text)
+            self.assertIn("implementation_sha256=", text)
+            self.assertIn("contract_sha256=", text)
+
+    def test_broken_harness_stops_prompt_instead_of_using_fallback(self):
+        model = Path(__file__).parents[2] / "models" / "DSSAT"
+        with mock.patch.object(
+                harness_runtime, "verified_contract",
+                side_effect=harness_runtime.HarnessUnavailable("tampered")):
+            with self.assertRaisesRegex(
+                    harness_runtime.HarnessUnavailable, "tampered"):
+                prompt.compose(KI("DSSAT", model), headless=False)
+
+    def test_harness_status_returns_source_and_contract_hashes(self):
+        model = Path(__file__).parents[2] / "models" / "DSSAT"
+        result = harness_runtime.status(model)
+        self.assertTrue(result["ready"], result)
+        self.assertEqual(len(result["implementation_sha256"]), 64)
+        self.assertEqual(len(result["contract_sha256"]), 64)
+
     def test_dssat_reference_case_bundles_a_valid_default_soil(self):
         soil = (Path(__file__).parents[2] / "models" / "DSSAT" / "tools" /
                 "generic_soil.sol")
@@ -576,6 +671,72 @@ class EnvironmentAndTlsTests(unittest.TestCase):
         ctx = tls.context()
         self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
         self.assertTrue(ctx.check_hostname)
+
+
+class ProxySettingsTests(unittest.TestCase):
+    def _base_env(self):
+        return {key: None for key in settings.PROXY_ENV_KEYS}
+
+    def test_auto_proxy_detects_and_applies_the_mac_system_proxy(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(settings, "_path", return_value=Path(td) / "settings.json"), \
+             mock.patch.object(settings, "_BASE_PROXY_ENV", self._base_env()), \
+             mock.patch.object(settings.urllib.request, "getproxies", return_value={
+                 "https": "http://127.0.0.1:7897"}), \
+             mock.patch.dict(settings.os.environ, {}, clear=True):
+            settings.update({"proxy_mode": "auto"})
+            state = settings.masked()
+            self.assertEqual(state["proxy_effective"], "http://127.0.0.1:7897")
+            self.assertEqual(state["proxy_source"], "system")
+            self.assertEqual(
+                settings.with_provider_proxy("cli:claude", {})["HTTPS_PROXY"],
+                "http://127.0.0.1:7897")
+            self.assertNotIn(
+                "HTTPS_PROXY", settings.with_provider_proxy("cli:kimi", {}))
+
+    def test_manual_proxy_can_be_replaced_or_disabled_without_restart(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(settings, "_path", return_value=Path(td) / "settings.json"), \
+             mock.patch.object(settings, "_BASE_PROXY_ENV", self._base_env()), \
+             mock.patch.object(settings.urllib.request, "getproxies", return_value={}), \
+             mock.patch.dict(settings.os.environ, {}, clear=True):
+            settings.update({"proxy_mode": "manual",
+                             "proxy_url": "http://127.0.0.1:7897/"})
+            self.assertEqual(settings.load()["proxy_url"], "http://127.0.0.1:7897")
+            self.assertEqual(
+                settings.with_provider_proxy("cli:codex", {})["HTTP_PROXY"],
+                "http://127.0.0.1:7897")
+            settings.update({"proxy_mode": "off"})
+            self.assertNotIn(
+                "HTTP_PROXY", settings.with_provider_proxy("cli:codex", {}))
+            self.assertEqual(settings.masked()["proxy_effective"], "")
+
+    def test_proxy_provider_selection_is_saved_and_defaults_to_claude_codex(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(settings, "_path", return_value=Path(td) / "settings.json"), \
+             mock.patch.object(settings.urllib.request, "getproxies", return_value={
+                 "https": "http://127.0.0.1:7897"}):
+            self.assertEqual(
+                set(settings.masked()["proxy_providers"]),
+                {"cli:claude", "cli:codex"})
+            settings.update({"proxy_providers": ["cli:kimi", "api:anthropic"]})
+            self.assertEqual(
+                set(settings.masked()["proxy_providers"]),
+                {"cli:kimi", "api:anthropic"})
+            self.assertEqual(
+                settings.proxy_url_for("cli:kimi"), "http://127.0.0.1:7897")
+            self.assertEqual(settings.proxy_url_for("api:deepseek"), "")
+
+    def test_manual_proxy_rejects_missing_or_credential_bearing_addresses(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(settings, "_path", return_value=Path(td) / "settings.json"), \
+             mock.patch.object(settings, "_BASE_PROXY_ENV", self._base_env()), \
+             mock.patch.dict(settings.os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "proxy address is required"):
+                settings.update({"proxy_mode": "manual", "proxy_url": ""})
+            with self.assertRaisesRegex(ValueError, "credentials are not stored"):
+                settings.update({"proxy_mode": "manual",
+                                 "proxy_url": "http://user:secret@127.0.0.1:7897"})
 
 
 class KimiSecurityTests(unittest.TestCase):
@@ -1400,6 +1561,11 @@ class McpConnectionTests(unittest.TestCase):
 
 
 class FrontendRegressionTests(unittest.TestCase):
+    def test_environment_selfcheck_proves_the_harness_before_providers(self):
+        source = (Path(__file__).parents[1] / "kiss_cli" / "gui.py").read_text()
+        self.assertIn("[1/5] KI harness contract", source)
+        self.assertIn("harness_runtime.status", source)
+
     def test_explicit_autonomous_chat_does_not_require_a_second_approval(self):
         self.assertIn("continue into the tools in this SAME", gui.SCOPE_FIRST_RULES)
         self.assertIn("Do not ask them to approve the work again", gui.SCOPE_FIRST_RULES)
@@ -1430,6 +1596,10 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("Copy this message", page)
         self.assertIn("Recheck local CLIs", page)
         self.assertIn("/api/providers?refresh=1", page)
+        self.assertIn('id="s-proxy-mode"', page)
+        self.assertIn('id="s-proxy-url"', page)
+        self.assertIn("Test AI connection", page)
+        self.assertIn("/api/selfcheck?provider=", page)
         self.assertIn("refreshMachineStatus", page)
         self.assertIn('fetch("/api/status",{cache:"no-store"})', page)
         self.assertIn("refreshMachineStatus(true,true)", page)
@@ -1450,7 +1620,10 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("const INFLIGHT=new Map()", page)
         self.assertIn('$("#newsess").disabled=false', page)
         self.assertIn('id="activitynote"', page)
-        self.assertIn("has been working for", page)
+        self.assertIn("process is alive but silent for", page)
+        self.assertIn("can confirm that the process is alive, but not that it is computing", page)
+        self.assertIn("/agent-status", page)
+        self.assertIn("event_silence_seconds", page)
         self.assertIn("continue in the background", page)
         self.assertIn("setInterval(updateActivityUI,1000)", page)
         self.assertIn('id="actionpick"', page)
@@ -1569,6 +1742,12 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("managedWorkspacePermission", page)
         self.assertIn("View the full technical report", page)
         self.assertIn("Allow for this model — continue", page)
+        self.assertIn('id="setupactivity"', page)
+        self.assertIn('class="agent-orbit"', page)
+        self.assertIn("lastSignalAt=Date.now()", page)
+        self.assertIn("Agent process connected", page)
+        self.assertIn("setInterval(drawRunState,1000)", page)
+        self.assertIn("prefers-reduced-motion:reduce", page)
         self.assertNotIn('req.expected_path||["download","licence"]', page)
         chat = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text()
         self.assertIn("kiss.draft.", chat)

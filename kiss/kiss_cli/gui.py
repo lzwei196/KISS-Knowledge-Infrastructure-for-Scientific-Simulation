@@ -24,12 +24,13 @@ import re
 import shutil
 import sys
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import api, calibration, clipboard, doctor, handoff, install, kdtstudio, mcp, paths, policy, port, preparation, projectrun, projectview, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
+from . import api, calibration, clipboard, doctor, handoff, harness_runtime, install, kdtstudio, ki_updates, mcp, paths, policy, port, preparation, projectrun, projectview, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI
 from .manifest import Manifest
 
@@ -109,6 +110,78 @@ def _with_heartbeats(stream, interval: float = 12.0):
 
 
 CHAT_KEEPALIVE = "\u200b"
+
+
+# Live agent state is deliberately process-local.  It describes work owned by
+# this running desktop instance and must not survive an app restart.  The
+# session transcript remains the durable record; this registry exists only so
+# a second HTTP request can tell the browser more than "the streaming socket is
+# still open" while the first request is blocked inside an agent or tool.
+_LIVE_AGENT_RUNS: dict[str, dict] = {}
+_LIVE_AGENT_RUNS_LOCK = threading.Lock()
+
+
+def _register_agent_run(session_id: str, events: dict) -> None:
+    now = time.time()
+    events.update({
+        "state": "starting",
+        "started_at": now,
+        "last_transport_at": now,
+        "last_visible_output_at": None,
+    })
+    with _LIVE_AGENT_RUNS_LOCK:
+        _LIVE_AGENT_RUNS[session_id] = events
+
+
+def _agent_run_snapshot(session_id: str) -> dict:
+    """Return a JSON-safe, honest view of one live provider turn.
+
+    A heartbeat proves only that GeoForge's response handler is alive.  A
+    provider subprocess can still be waiting in a long tool, on the network,
+    or be stuck.  Expose those facts separately so the UI never upgrades a
+    transport heartbeat into the false claim that the model is computing.
+    """
+    with _LIVE_AGENT_RUNS_LOCK:
+        events = _LIVE_AGENT_RUNS.get(session_id)
+    if not events:
+        return {"state": "idle", "process_alive": False}
+
+    now = time.time()
+    process = dict(events.get("process") or {})
+    proc = events.get("_process_handle")
+    returncode = process.get("returncode")
+    alive = process.get("state") == "running"
+    if proc is not None:
+        try:
+            polled = proc.poll()
+            alive = polled is None
+            if polled is not None:
+                returncode = polled
+        except (OSError, AttributeError):
+            pass
+
+    started = process.get("started_at") or events.get("started_at") or now
+    last_event = process.get("last_event_at")
+    last_output = (process.get("last_output_at") or
+                   events.get("last_visible_output_at"))
+    transport = events.get("last_transport_at")
+    finished = events.get("finished_at")
+    state = "running" if alive else ("finishing" if not finished else "finished")
+    return {
+        "state": state,
+        "provider": events.get("provider"),
+        "process_alive": bool(alive),
+        "pid": process.get("pid"),
+        "returncode": returncode,
+        "activity": process.get("activity"),
+        "elapsed_seconds": max(0, int(now - started)),
+        "event_silence_seconds": (max(0, int(now - last_event))
+                                  if last_event else None),
+        "output_silence_seconds": (max(0, int(now - last_output))
+                                   if last_output else None),
+        "transport_silence_seconds": (max(0, int(now - transport))
+                                      if transport else None),
+    }
 
 
 def _forward_chat_stream(stream, out, interval: float = 5.0) -> bool:
@@ -488,7 +561,9 @@ def build_data_plan(ki, man: Manifest, cfg, software: dict,
 class Handler(BaseHTTPRequestHandler):
     catalog: Catalog
     repo_root: Path
+    library_root: Path
     workroot: Path
+    ki_update_manager: ki_updates.UpdateManager | None = None
 
     protocol_version = "HTTP/1.1"
 
@@ -520,10 +595,15 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code: int = 200) -> None:
         self._send(code, json.dumps(obj).encode(), "application/json")
 
+    def _shipped_manifest(self, name: str) -> Path:
+        """Manifest paired with the currently active, validated KI snapshot."""
+        root = getattr(self, "library_root", self.repo_root)
+        return root / "kiss" / "manifests" / f"{name}.yaml"
+
     def _manifest(self, ki) -> Manifest:
         if ki.manifest:
             return Manifest.load(ki.manifest)
-        shipped = self.repo_root / "kiss" / "manifests" / f"{ki.name}.yaml"
+        shipped = self._shipped_manifest(ki.name)
         if shipped.exists():
             return Manifest.load(shipped)
         # Agent-discovered recipes must remain writable in a frozen .app.
@@ -806,6 +886,17 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/kdt/jobs":
             return self._json({"jobs": kdtstudio.jobs()})
 
+        if route == "/api/ki-updates":
+            manager = self.ki_update_manager
+            if manager is None:
+                return self._json({
+                    "state": "disabled",
+                    "summary": "Automatic KI updates run in the Desktop app.",
+                    "source_url": ki_updates.REPOSITORY_URL,
+                    "branch": ki_updates.branch_for_platform(),
+                })
+            return self._json(manager.status())
+
         if route.startswith("/api/kdt/job/"):
             parts = route.strip("/").split("/")
             if len(parts) not in (4, 5):
@@ -842,7 +933,22 @@ class Handler(BaseHTTPRequestHandler):
             self._open_stream()
             emit = lambda s: self._chunk(s + "\n")
 
-            emit("[1/4] Python 3 for model environments")
+            emit("[1/5] KI harness contract")
+            probe_ki = next((candidate for candidate in self.catalog
+                             if candidate.skill), None)
+            harness = harness_runtime.status(probe_ki.root if probe_ki else None)
+            if harness.get("ready"):
+                emit(f"   OK  {harness.get('marker')} — "
+                     f"{harness.get('contract_chars') or 0} contract characters")
+                emit(f"       {harness.get('implementation_origin')}")
+                emit("       implementation sha256 "
+                     f"{harness.get('implementation_sha256') or '—'}")
+                emit("       contract sha256       "
+                     f"{harness.get('contract_sha256') or '—'}")
+            else:
+                emit(f"   FAIL  {harness.get('error')}")
+
+            emit("[2/5] Python 3 for model environments")
             base = install.find_base_python()
             if base:
                 emit(f"   OK  {base}")
@@ -850,7 +956,7 @@ class Handler(BaseHTTPRequestHandler):
                 emit("   FAIL  none found. One-time fix:")
                 emit("         macOS: brew install python   |   or: xcode-select --install")
 
-            emit("[2/4] Agent CLIs on this machine")
+            emit("[3/5] Agent CLIs on this machine")
             detected = providers.detected()
 
             def _skill_count(cli: str) -> int:
@@ -887,7 +993,7 @@ class Handler(BaseHTTPRequestHandler):
             # short health cache for one more diagnostic run.
             avail = providers.available()
 
-            emit("[3/4] API keys in the environment")
+            emit("[4/5] API keys in the environment")
             akeys = api.available()
             if akeys:
                 for p in akeys:
@@ -895,10 +1001,12 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 emit("   none set (fine if you use an agent CLI)")
 
-            emit("[4/4] Agent sign-in — running the agent for real")
+            emit("[5/5] Agent sign-in — running the agent for real")
             kind, _, pname = want.partition(":")
             if kind == "api" and pname in api.PROVIDERS:
                 p = api.PROVIDERS[pname]
+                proxy = settings.proxy_url_for(f"api:{p.name}")
+                emit(f"   network proxy={proxy or 'not enabled for this provider'}")
                 if not p.available():
                     emit(f"   FAIL  {p.env_key} not set — get one: {p.signup}")
                 else:
@@ -924,7 +1032,12 @@ class Handler(BaseHTTPRequestHandler):
                                                   "messages": [{"role": "user", "content": "Say OK"}]}).encode(),
                                 headers={"Content-Type": "application/json",
                                          "Authorization": f"Bearer {p.key()}"})
-                        with _rq.urlopen(req, timeout=45, context=tls.context()) as r:
+                        handlers = [
+                            _rq.ProxyHandler({"http": proxy, "https": proxy}
+                                             if proxy else {}),
+                            _rq.HTTPSHandler(context=tls.context()),
+                        ]
+                        with _rq.build_opener(*handlers).open(req, timeout=45) as r:
                             emit(f"   OK  {p.label} answered (HTTP {r.status}) — key is valid")
                     except _er.HTTPError as e:
                         body = e.read().decode("utf-8", "replace")[:200]
@@ -948,6 +1061,9 @@ class Handler(BaseHTTPRequestHandler):
                 if target is None:
                     emit("   SKIP  no agent CLI to test")
                 else:
+                    provider_id = f"cli:{target.name}"
+                    proxy = settings.proxy_url_for(provider_id)
+                    emit(f"   network proxy={proxy or 'not enabled for this provider'}")
                     # "Signed in everywhere except inside this app" is almost
                     # always the environment the app hands the CLI: a Finder
                     # launch gets launchd's bare PATH and, if HOME differs from
@@ -972,6 +1088,7 @@ class Handler(BaseHTTPRequestHandler):
                         # as a hanging auth prompt.
                         r = _sp.run(argv, capture_output=True, text=True, timeout=90,
                                     errors="replace",
+                                    env=settings.with_provider_proxy(provider_id),
                                     **({"input": probe} if target.stdin_prompt else {}))
                         tail = (r.stdout + r.stderr).strip()
                         if r.returncode == 0 and ("OK" in r.stdout or '"text"' in r.stdout):
@@ -1055,6 +1172,14 @@ class Handler(BaseHTTPRequestHandler):
             except KeyError as e:
                 return self._json({"error": str(e)}, 400)
 
+        if route.startswith("/api/session/") and route.endswith("/agent-status"):
+            sid = route.split("/")[3]
+            if not sessions.valid_id(sid):
+                return self._json({"error": "invalid session id"}, 400)
+            if not sessions.load(self.workroot, sid):
+                return self._json({"error": "no such session"}, 404)
+            return self._json(_agent_run_snapshot(sid))
+
         if route.startswith("/api/session/") and route.endswith("/run"):
             sid = route.split("/")[3]
             if not sessions.valid_id(sid):
@@ -1132,7 +1257,7 @@ class Handler(BaseHTTPRequestHandler):
             out = []
             for ki in self.catalog:
                 man = self._manifest(ki)
-                shipped = (self.repo_root / "kiss" / "manifests" / f"{ki.name}.yaml").exists()
+                shipped = self._shipped_manifest(ki.name).exists()
                 imported = bool(self.catalog.user_dir and ki.root.parent == self.catalog.user_dir)
                 checked_import = (ki.root / ".geoforge-import.json").is_file()
                 out.append({
@@ -1153,7 +1278,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(e)}, 404)
             man = self._manifest(ki)
             wd = self._workdir(ki)
-            shipped = (self.repo_root / "kiss" / "manifests" / f"{ki.name}.yaml").exists()
+            shipped = self._shipped_manifest(ki.name).exists()
             local = (self.workroot / "_manifests" / f"{ki.name}.yaml").exists()
             return self._json({
                 "name": ki.name, **ki.meta,
@@ -1285,8 +1410,32 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(error)}, 400)
             return self._json(created)
 
+        if route == "/api/ki-updates/check":
+            manager = self.ki_update_manager
+            if manager is None:
+                return self._json({
+                    "error": "automatic KI updates are available in the Desktop app"
+                }, 400)
+            started = manager.start()
+            return self._json({"started": started, **manager.status()})
+
         if route == "/api/kdt/probe":
             return self._stream_kdt_probe(req)
+
+        if route == "/api/kdt/evidence":
+            try:
+                inventory = kdtstudio.add_evidence(
+                    str(req.get("job") or ""),
+                    kind=str(req.get("kind") or ""),
+                    source_type=str(req.get("source_type") or ""),
+                    value=str(req.get("value") or ""),
+                    label=str(req.get("label") or ""),
+                )
+            except KeyError as error:
+                return self._json({"error": str(error)}, 404)
+            except (ValueError, OSError) as error:
+                return self._json({"error": str(error)}, 400)
+            return self._json({"ok": True, "evidence": inventory})
 
         if route == "/api/kdt/build":
             return self._stream_kdt_build(req)
@@ -2342,15 +2491,19 @@ class Handler(BaseHTTPRequestHandler):
         # Collect the streamed reply so the transcript survives the turn.
         buf: list[str] = []
         self._open_stream()
+        runtime_events: dict = {"provider": want}
+        _register_agent_run(sid, runtime_events)
 
         def out(piece: str) -> bool:
+            now = time.time()
+            runtime_events["last_transport_at"] = now
             if piece != CHAT_KEEPALIVE:
                 buf.append(piece)
+                runtime_events["last_visible_output_at"] = now
             return self._chunk(piece)
 
         failure = None
         cli_state: dict = {}
-        runtime_events: dict = {}
         try:
             prior = [dict(message, text=sessions.message_text(message))
                      for message in s["messages"][:-1][-20:]]
@@ -2423,6 +2576,8 @@ class Handler(BaseHTTPRequestHandler):
                 except KeyError:
                     continue
             calibration.ensure_project(project, calibration_kis)
+            runtime_events["state"] = "finished"
+            runtime_events["finished_at"] = time.time()
             self._end_stream()
 
     @staticmethod
@@ -2982,19 +3137,43 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
 
 
 def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
-          workroot: Path | None = None, host: str = "127.0.0.1") -> int:
+          workroot: Path | None = None, host: str = "127.0.0.1",
+          auto_update: bool = False) -> int:
     settings.apply_to_env()      # saved API keys; real env vars win
     from .firstrun import data_dir
     user_models = data_dir() / "user_models"
     if models_dir:
-        cat = Catalog(models_dir, user_dir=user_models)
+        base = Catalog(models_dir, user_dir=user_models)
     else:
-        cat = Catalog.discover()
-        cat.user_dir = user_models
+        base = Catalog.discover()
+        base.user_dir = user_models
+    base_repo_root = base.models_dir.parent
+    active_root = ki_updates.active_library_root() if auto_update else None
+    if active_root is not None:
+        cat = Catalog(active_root / "models", user_dir=user_models)
+        library_root = active_root
+    else:
+        cat = base
+        library_root = base_repo_root
     Handler.catalog = cat
-    Handler.repo_root = cat.models_dir.parent
+    # The executable's own root continues to provide the reviewed harness and
+    # ki_tools_common. Only KI packages and their paired install manifests are
+    # switched by the updater.
+    Handler.repo_root = base_repo_root
+    Handler.library_root = library_root
     Handler.workroot = Path(workroot or Path.home() / "kiss").expanduser()
     Handler.workroot.mkdir(parents=True, exist_ok=True)
+
+    if auto_update:
+        def activate(snapshot: Path) -> None:
+            Handler.catalog = Catalog(snapshot / "models", user_dir=user_models)
+            Handler.library_root = snapshot
+
+        manager = ki_updates.UpdateManager(library_root, activate)
+        Handler.ki_update_manager = manager
+        manager.start()
+    else:
+        Handler.ki_update_manager = None
 
     srv = ThreadingHTTPServer((host, port), Handler)
     url = f"http://127.0.0.1:{port}/"

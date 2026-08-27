@@ -101,6 +101,82 @@ class KdtStudioTests(unittest.TestCase):
         reopened = kdtstudio.job(created["id"])
         self.assertEqual(reopened["provider"], "api:deepseek")
 
+    def test_probe_evidence_inventory_and_user_evidence_are_workspace_scoped(self):
+        (self.source / "docs").mkdir()
+        (self.source / "docs" / "manual.md").write_text(
+            "Model paper DOI 10.1234/example.2026", encoding="utf-8")
+        (self.source / "examples").mkdir()
+        (self.source / "examples" / "case.in").write_text("real case", encoding="utf-8")
+        (self.source / "validation").mkdir()
+        (self.source / "validation" / "observed.csv").write_text(
+            "date,value\n2020-01-01,1\n", encoding="utf-8")
+        created = self._create()
+        root = Path(created["root"])
+        (root / "probe" / "probe_report.json").write_text(json.dumps({
+            "source_root": str(self.source), "primary_language": "Fortran",
+            "build_system": "make", "has_examples": True,
+        }), encoding="utf-8")
+        (root / "probe" / "io_graph.json").write_text(
+            json.dumps({"summary": {}}), encoding="utf-8")
+
+        evidence = kdtstudio.evidence_inventory(created["id"])
+        by_kind = {item["kind"]: item for item in evidence["items"]}
+        self.assertEqual(by_kind["official_docs"]["state"], "found")
+        self.assertEqual(by_kind["working_example"]["state"], "found")
+        self.assertEqual(by_kind["literature"]["state"], "found")
+        self.assertEqual(by_kind["validation_data"]["state"], "found")
+        self.assertEqual(by_kind["restricted_assets"]["state"], "not_requested")
+
+        paper = self.base / "paper-notes.txt"
+        paper.write_text("legally supplied notes", encoding="utf-8")
+        updated = kdtstudio.add_evidence(
+            created["id"], kind="literature", source_type="local",
+            value=str(paper), label="author notes")
+        literature = next(item for item in updated["items"] if item["kind"] == "literature")
+        copied = root / literature["supplied"][0]["value"]
+        self.assertTrue(copied.is_file())
+        self.assertEqual(copied.read_text(), "legally supplied notes")
+
+        updated = kdtstudio.add_evidence(
+            created["id"], kind="literature", source_type="link",
+            value="10.1234/public-paper")
+        literature = next(item for item in updated["items"] if item["kind"] == "literature")
+        self.assertTrue(any(row["value"].startswith("https://doi.org/")
+                            for row in literature["supplied"]))
+        prompt = kdtstudio.build_prompt(created["id"])
+        self.assertIn("10 KI deliverable groups", prompt)
+        self.assertIn("https://doi.org/10.1234/public-paper", prompt)
+        self.assertIn("user-supplied evidence", prompt)
+
+    def test_deliverable_inventory_is_ten_plus_one_for_process_models(self):
+        created = self._create()
+        root = Path(created["root"])
+        candidate = root / "candidate"
+        (candidate / "SKILL.md").write_text("skill", encoding="utf-8")
+        (candidate / "tools").mkdir()
+        (candidate / "tools" / "run.py").write_text("", encoding="utf-8")
+        contract = kdtstudio.deliverable_inventory(created["id"])
+        self.assertEqual(contract["required"], 10)
+        self.assertEqual(contract["present"], 2)
+        self.assertEqual(contract["label"], "10 KI deliverable groups + 1 acceptance report")
+        self.assertFalse(contract["acceptance_report"])
+        (root / "runs" / "ki-acceptance.json").write_text("{}", encoding="utf-8")
+        self.assertTrue(kdtstudio.deliverable_inventory(created["id"])["acceptance_report"])
+
+    def test_agent_evidence_request_is_queued_not_claimed_as_found(self):
+        created = self._create()
+        root = Path(created["root"])
+        (root / "probe" / "probe_report.json").write_text(
+            json.dumps({"source_root": str(self.source)}), encoding="utf-8")
+        inventory = kdtstudio.add_evidence(
+            created["id"], kind="literature", source_type="agent",
+            value="Resolve public papers on the next pass")
+        literature = next(item for item in inventory["items"]
+                          if item["kind"] == "literature")
+        self.assertEqual(literature["state"], "agent_requested")
+        self.assertEqual(literature["supplied"], [])
+        self.assertEqual(len(literature["requested"]), 1)
+
     def test_desktop_prompt_has_no_server_path_and_uses_probe_evidence(self):
         created = self._create()
         root = Path(created["root"])
@@ -273,10 +349,13 @@ class KdtStudioTests(unittest.TestCase):
         self.assertIn('id="customdomain"', page)
         self.assertIn('id="runprovider"', page)
         self.assertIn('id="runllm"', page)
+        self.assertIn('id="evidencepanel"', page)
+        self.assertIn('id="contractpanel"', page)
+        self.assertIn("10 KI deliverable groups", gui + page)
         self.assertIn("No KDT prior protocol exists", page)
         self.assertIn("GitHub file or folder page", page)
         for route in ("/api/kdt/create", "/api/kdt/probe", "/api/kdt/build",
-                      "/api/kdt/verify", "/api/kdt/import"):
+                      "/api/kdt/verify", "/api/kdt/import", "/api/kdt/evidence"):
             self.assertIn(route, gui)
         self.assertIn('href="/studio"', app)
         self.assertIn('location.href="/studio"', library)

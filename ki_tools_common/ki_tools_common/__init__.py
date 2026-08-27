@@ -35,25 +35,9 @@ climate_sources_io.py's docstring for why (a verified HDF5 library ABI
 clash between netCDF4 and h5py, not a flaky-filesystem issue).
 """
 
-from ki_tools_common import (
-    units,
-    humidity,
-    netcdf_utils,
-    validation,
-    metrics,
-    io_helpers,
-    forcing_sources,
-    load_forcing,
-    soil_utils,
-    landcover,
-    debug_framework,
-    cross_platform,
-    crop_calendar,
-    fertilizer,
-    crop_obs,
-    terrain,
-    climate_scenarios,
-)
+from __future__ import annotations
+
+import importlib
 
 __version__ = "5.2.0"
 
@@ -76,3 +60,22 @@ __all__ = [
     "terrain",
     "climate_scenarios",
 ]
+
+
+def __getattr__(name: str):
+    """Load numerical helpers only when a caller actually requests one.
+
+    The KI harness itself is text/path logic and must remain importable in a
+    minimal frozen runtime.  Eagerly importing every scientific helper here
+    made ``from ki_tools_common.harness import contract`` depend on NumPy,
+    netCDF and their compiled libraries before the harness could even start.
+    """
+    if name not in __all__:
+        raise AttributeError(name)
+    module = importlib.import_module(f"{__name__}.{name}")
+    globals()[name] = module
+    return module
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

@@ -309,6 +309,25 @@ def cmd_calibration_status(args) -> int:
     return 0 if status.get("ready") else 1
 
 
+def cmd_harness_status(args) -> int:
+    """Prove the exact bundled harness imports and injects its full contract."""
+    from . import harness_runtime
+
+    cat = _catalog(args)
+    if args.model:
+        ki = cat.get(args.model)
+    else:
+        ki = next((candidate for candidate in cat if candidate.skill), None)
+        if ki is None:
+            print(json.dumps({"ready": False, "error": "no KI with SKILL.md"},
+                             indent=2))
+            return 1
+    status = harness_runtime.status(ki.root)
+    status["model"] = ki.name
+    print(json.dumps(status, indent=2, ensure_ascii=False))
+    return 0 if status.get("ready") else 1
+
+
 def cmd_calibrate(args) -> int:
     """Run the fixed engine through the app/CLI's own Python environment."""
     from . import calibration
@@ -424,6 +443,12 @@ def build_parser() -> argparse.ArgumentParser:
         "calibration-status",
         help="check the bundled calibration framework and optimizer dependencies")
     q.set_defaults(fn=cmd_calibration_status)
+
+    q = sub.add_parser(
+        "harness-status",
+        help="prove the bundled KI harness imports and injects its contract")
+    q.add_argument("model", nargs="?", help="KI used for contract generation")
+    q.set_defaults(fn=cmd_harness_status)
 
     q = sub.add_parser(
         "calibrate",

@@ -2,15 +2,17 @@
 """Reproducible Apple Silicon GeoForge Desktop bundle."""
 
 from pathlib import Path
+import tomllib
 
 from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs, copy_metadata
 
 
-VERSION = "0.6.45"
-BUILD_NUMBER = "645"
 # PyInstaller exposes SPECPATH as the directory containing this spec.
 SOURCE = Path(SPECPATH).resolve()
 REPO = SOURCE.parent
+with (SOURCE / "pyproject.toml").open("rb") as version_file:
+    VERSION = tomllib.load(version_file)["project"]["version"]
+BUILD_NUMBER = "".join(VERSION.split("."))
 ICON = REPO / "assets" / "logo.icns"
 KI_TOOLS_SOURCE = REPO / "ki_tools_common"
 

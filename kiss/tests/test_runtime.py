@@ -650,6 +650,23 @@ print(MARKER, len(text), implementation.__file__)
             self.assertEqual((root / "Demo").resolve(), prefix.resolve())
             self.assertIn("linked install tree", notes[0])
 
+    def test_builtin_git_acquisition_inherits_selected_provider_proxy(self):
+        with tempfile.TemporaryDirectory() as td:
+            proxy_env = {"HTTPS_PROXY": "http://127.0.0.1:7897"}
+            man = Manifest(
+                model="Demo",
+                acquire=Acquire(
+                    strategy="build", repo="https://example.invalid/demo.git",
+                    ref="main"),
+            )
+            with mock.patch.object(
+                    install, "_run", return_value=(1, "network unavailable")) as run:
+                step, _binary = install.acquire(
+                    man, Path(td) / "Demo", sys.executable, env=proxy_env)
+
+            self.assertFalse(step.ok)
+            self.assertEqual(run.call_args.kwargs["env"], proxy_env)
+
 
 class EnvironmentAndTlsTests(unittest.TestCase):
     def test_interactive_login_environment_is_nul_delimited(self):
@@ -1598,7 +1615,8 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("/api/providers?refresh=1", page)
         self.assertIn('id="s-proxy-mode"', page)
         self.assertIn('id="s-proxy-url"', page)
-        self.assertIn("Test AI connection", page)
+        self.assertIn("Test AI & GitHub", page)
+        self.assertIn("agent-run Git, pip, curl, and download commands", page)
         self.assertIn("/api/selfcheck?provider=", page)
         self.assertIn("refreshMachineStatus", page)
         self.assertIn('fetch("/api/status",{cache:"no-store"})', page)
@@ -2140,6 +2158,79 @@ class AgentSetupTests(unittest.TestCase):
 
             installed = (target / "ki_tools_common" / "__init__.py").read_text()
             self.assertIn(str(cfg.roles["outputs"]), installed)
+
+    def test_agent_prepare_maps_legacy_ki_tools_before_first_preflight(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            package = root / "repo" / "models" / "Demo"
+            (package / "tools").mkdir(parents=True)
+            (package / "tools" / "prepare.py").write_text("print('ready')\n")
+            (package / "preflight_check.py").write_text(
+                'check_dir("KISSPATH_KI_ROOT/Demo/knowledge_infrastructure/tools", '
+                '"KI tools directory")\n'
+            )
+            common = root / "repo" / "ki_tools_common" / "ki_tools_common"
+            common.mkdir(parents=True)
+            (common / "__init__.py").write_text("# bundled common tools\n")
+            ki = KI("Demo", package)
+
+            with mock.patch("kiss_cli.handoff.write_setup"):
+                live, cfg = setup.prepare(
+                    ki, SimpleNamespace(), root / "work", root / "repo",
+                    root / "repo" / "models",
+                )
+
+            expected = (root / "work" / "models" / "Demo" /
+                        "knowledge_infrastructure" / "tools")
+            self.assertTrue(expected.is_symlink())
+            self.assertEqual(expected.resolve(), (live.root / "tools").resolve())
+            self.assertEqual(
+                cfg.roles["ki_root"], (root / "work" / "models").resolve())
+
+    def test_provider_network_failure_becomes_specific_user_handoff(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            made = setup.request_for_provider_connection(
+                root, "kimi", "auth.kimi.com")
+            shown = setup.request(root)
+
+            self.assertEqual(made["kind"], "login")
+            self.assertEqual(shown["title"], "Kimi Code cannot connect")
+            self.assertIn("auth.kimi.com", shown["message"])
+            self.assertIn("installation has not failed", shown["message"])
+            self.assertIn("AI Settings", shown["message"])
+
+    def test_api_setup_command_inherits_its_provider_proxy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki_root = root / "ki"
+            ki_root.mkdir()
+            cfg = SimpleNamespace(
+                root=root, python=sys.executable,
+                roles={"binaries": root / "binaries"},
+            )
+            completed = subprocess.CompletedProcess(
+                ["git", "--version"], 0, stdout="git version test\n", stderr="")
+
+            def routed(provider, env):
+                self.assertEqual(provider, "api:deepseek")
+                return {**env, "HTTPS_PROXY": "http://127.0.0.1:7897"}
+
+            with mock.patch.object(
+                    settings, "with_provider_proxy", side_effect=routed) as route, \
+                 mock.patch.object(api.subprocess, "run", return_value=completed) as run:
+                result = api.execute_tool(
+                    "run_setup_command", {"argv": ["git", "--version"]},
+                    SimpleNamespace(root=ki_root), cfg, setup_mode=True,
+                    setup_context={"provider_id": "api:deepseek"},
+                )
+
+            self.assertIn("git version test", result)
+            self.assertEqual(route.call_count, 1)
+            self.assertEqual(
+                run.call_args.kwargs["env"]["HTTPS_PROXY"],
+                "http://127.0.0.1:7897")
 
     def test_agent_final_preflight_becomes_the_saved_verification_state(self):
         with tempfile.TemporaryDirectory() as td:

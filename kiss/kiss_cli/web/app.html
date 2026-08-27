@@ -313,7 +313,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
       <div class="hint" id="s-proxy-note" style="margin:7px 0 0">GeoForge passes this proxy only to the providers selected below.</div>
       <label style="margin-top:11px">Use proxy for</label>
       <div id="s-proxy-providers" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px"></div>
-      <div class="hint" style="margin:7px 0 0">Claude Code and Codex are enabled by default. Kimi and DeepSeek use their normal connection unless you enable them.</div>
+      <div class="hint" style="margin:7px 0 0">Select every provider that needs this proxy. Its agent-run Git, pip, curl, and download commands will use the same route.</div>
     </div>
     <div class="datacard" style="margin-top:12px;padding:14px">
       <label for="s-kimi-security" style="margin-top:0">Kimi Code file access</label>
@@ -329,7 +329,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <label>OpenRouter API key</label><input id="s-openrouter" autocomplete="off">
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="primary" id="s-save">Save</button>
-      <button id="s-test">Test AI connection</button>
+      <button id="s-test">Test AI & GitHub</button>
       <button id="s-close">Close</button>
       <span class="hint" id="s-msg" style="align-self:center"></span>
     </div>

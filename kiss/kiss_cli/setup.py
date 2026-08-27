@@ -191,6 +191,38 @@ def request_for_kimi_permission(root: Path, path: str) -> dict | None:
     })
 
 
+def request_for_provider_connection(root: Path, provider: str,
+                                    service: str) -> dict:
+    """Surface a provider network failure as a real setup handoff.
+
+    A failed OAuth/DNS call cannot be repaired by the model-install agent.  If
+    it remains only in the black setup transcript, users reasonably conclude
+    that the scientific installation froze.  Keep it separate from KI status
+    and tell the user exactly which outside service could not be reached.
+    """
+    current = request(root)
+    if current and current.get("status") == "waiting":
+        return current
+    label = "Kimi Code" if str(provider).lower() == "kimi" else str(provider)
+    host = str(service or "the provider service").strip()[:240]
+    return request_user(root, {
+        "kind": "login",
+        "title": f"{label} cannot connect",
+        "message": (
+            f"{label} could not reach {host}. The model installation has not "
+            "failed; its setup agent stopped because the AI connection is "
+            "offline. Check DNS, VPN, or your network. If this provider needs "
+            "a proxy on this Mac, open AI Settings, enable the proxy for "
+            f"{label}, save, then continue the repair."
+        ),
+        "allow_note": False,
+        "resume_hint": (
+            f"Retry {label} after its connection to {host} is available, or "
+            "select another AI provider on the setup page."
+        ),
+    })
+
+
 def resume(root: Path, note: str = "") -> dict | None:
     """Mark the user's part complete so the next agent turn can continue."""
     path = Path(root) / REQUEST_FILE
@@ -356,6 +388,16 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
     prepare_common(cfg, repo_root)
 
     live_ki = type(ki)(name=ki.name, root=live)
+    # A small number of older KDT KIs declare their tools below the original
+    # server layout (for example
+    # ``KISSPATH_KI_ROOT/Delft3D/knowledge_infrastructure/tools``).  The
+    # desktop deliberately materialises a portable KI at ``<workspace>/ki``.
+    # Create the same compatibility links used by the deterministic installer
+    # before the first preflight, even when the setup is agent-owned and no
+    # model binary has been acquired yet.  Otherwise a user-selected install
+    # folder is recorded correctly but the agent is handed a false "tools not
+    # found" failure.
+    install.place_where_the_ki_expects(live_ki, None, cfg, None)
     install_locations.record(ki.name, root, cfg, ki_root=live)
     handoff.write_setup(
         live_ki, man, cfg, root,

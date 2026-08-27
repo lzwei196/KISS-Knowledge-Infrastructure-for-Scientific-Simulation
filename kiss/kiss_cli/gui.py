@@ -993,7 +993,33 @@ class Handler(BaseHTTPRequestHandler):
             # short health cache for one more diagnostic run.
             avail = providers.available()
 
-            emit("[4/5] API keys in the environment")
+            emit("[4/6] GitHub model-source connection")
+            network_provider = want if ":" in want else (
+                f"cli:{want}" if want else "")
+            source_proxy = settings.proxy_url_for(network_provider)
+            emit(f"   provider route={network_provider or 'direct'}")
+            emit(f"   network proxy={source_proxy or 'not enabled for this provider'}")
+            import urllib.request as _source_request
+            try:
+                source_req = _source_request.Request(
+                    "https://github.com", method="HEAD",
+                    headers={"User-Agent": "geoforge-desktop"})
+                source_handlers = [
+                    _source_request.ProxyHandler(
+                        {"http": source_proxy, "https": source_proxy}
+                        if source_proxy else {}),
+                    _source_request.HTTPSHandler(context=tls.context()),
+                ]
+                with _source_request.build_opener(*source_handlers).open(
+                        source_req, timeout=20) as response:
+                    emit(f"   OK  GitHub answered (HTTP {response.status}) — "
+                         "agent installs can download source")
+            except Exception as error:
+                emit(f"   FAIL  cannot reach GitHub: {error}")
+                emit("         Fix: select this provider under ‘Use proxy for’, "
+                     "or correct the proxy address, then test again.")
+
+            emit("[5/6] API keys in the environment")
             akeys = api.available()
             if akeys:
                 for p in akeys:
@@ -1001,7 +1027,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 emit("   none set (fine if you use an agent CLI)")
 
-            emit("[5/5] Agent sign-in — running the agent for real")
+            emit("[6/6] Agent sign-in — running the agent for real")
             kind, _, pname = want.partition(":")
             if kind == "api" and pname in api.PROVIDERS:
                 p = api.PROVIDERS[pname]
@@ -1961,7 +1987,10 @@ class Handler(BaseHTTPRequestHandler):
                     output.append(piece)
                     return emit(piece)
 
-                run_install(ki, self._manifest(ki), root, capture, self.repo_root)
+                run_install(
+                    ki, self._manifest(ki), root, capture, self.repo_root,
+                    provider_id=want if ":" in want else f"cli:{want}",
+                )
                 return "".join(output)
 
             if kind == "api":
@@ -2002,6 +2031,13 @@ class Handler(BaseHTTPRequestHandler):
                         permission_event.get("provider") == "kimi"):
                     setup_flow.request_for_kimi_permission(
                         root, str(permission_event.get("path") or ""))
+                connection_event = runtime_events.get("connection")
+                if isinstance(connection_event, dict):
+                    setup_flow.request_for_provider_connection(
+                        root,
+                        str(connection_event.get("provider") or pname),
+                        str(connection_event.get("service") or ""),
+                    )
 
             self._record_agent_preflight(ki, live_ki, cfg, root, emit)
             handoff_req = setup_flow.request(root)
@@ -3057,7 +3093,8 @@ class Handler(BaseHTTPRequestHandler):
         self._end_stream()
 
 
-def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
+def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path,
+                *, provider_id: str = "") -> None:
     """The same six steps as ``kiss init``, streamed line by line."""
     root.mkdir(parents=True, exist_ok=True)
     cfg_file = root / paths.CONFIG_NAME
@@ -3069,6 +3106,8 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
         cfg_file.write_text(cfg.dumps(), encoding="utf-8")
         emit(f"wrote {cfg_file}\n")
     cfg.python = install.runtime_python(cfg.python)
+    network_env = (settings.with_provider_proxy(provider_id, {})
+                   if provider_id else None)
 
     strategy = man.acquire.strategy if man.acquire else "none"
     emit(f"\ninitialising {ki.name} (strategy: {strategy})\n\n")
@@ -3109,7 +3148,8 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
 
     step("[3/8] ki_tools_common", install.install_ki_tools_common(cfg, repo_root))
     step("[4/8] system deps", install.check_system_deps(man.system_deps))
-    step("[5/8] python deps", install.install_python_deps(man.python_deps, cfg.python))
+    step("[5/8] python deps", install.install_python_deps(
+        man.python_deps, cfg.python, env=network_env))
     prefix = cfg.roles["binaries"] / (man.install_dir or ki.name)
     blocker = next((prior for prior in result.steps if not prior.ok), None)
     if blocker:
@@ -3119,7 +3159,7 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
             f"not run because {blocker.name} failed: {blocker.detail}", skipped=True,
         ), None
     else:
-        s, binary = install.acquire(man, prefix, cfg.python)
+        s, binary = install.acquire(man, prefix, cfg.python, env=network_env)
     result.binary = binary
     for note in install.place_where_the_ki_expects(ki, binary, cfg, prefix):
         emit(f"      {note}\n")

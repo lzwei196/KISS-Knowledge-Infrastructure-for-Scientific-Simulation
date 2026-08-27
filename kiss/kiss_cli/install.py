@@ -84,17 +84,19 @@ def check_system_deps(deps: list[str]) -> Step:
     return Step("system-deps", True, f"{len(deps)} present" if deps else "none required")
 
 
-def install_python_deps(deps: list[str], python: str) -> Step:
+def install_python_deps(deps: list[str], python: str,
+                        env: dict | None = None) -> Step:
     if not deps:
         return Step("python-deps", True, "none required")
     cmd = [python, "-m", "pip", "install", "--quiet", *deps]
-    rc, out = _run(cmd)
+    rc, out = _run(cmd, env=env)
     return Step("python-deps", rc == 0,
                 f"{len(deps)} packages" if rc == 0 else out.strip()[-400:],
                 commands=[" ".join(cmd)])
 
 
-def acquire(man: Manifest, prefix: Path, python: str) -> tuple[Step, Path | None]:
+def acquire(man: Manifest, prefix: Path, python: str,
+            env: dict | None = None) -> tuple[Step, Path | None]:
     """Obtain the executable per the manifest's strategy."""
     a = man.acquire
     if a is None:
@@ -104,17 +106,18 @@ def acquire(man: Manifest, prefix: Path, python: str) -> tuple[Step, Path | None
         "pip": _acq_pip, "download": _acq_download, "build": _acq_build,
         "wine": _acq_wine, "bundled": _acq_bundled, "manual": _acq_manual,
     }[a.strategy]
-    return fn(man, prefix, python)
+    return fn(man, prefix, python, env)
 
 
-def _acq_pip(man, prefix, python):
+def _acq_pip(man, prefix, python, env=None):
     pkg = man.acquire.package or man.model.lower()
     cmd = [python, "-m", "pip", "install", "--quiet", pkg]
-    rc, out = _run(cmd)
+    rc, out = _run(cmd, env=env)
     if rc != 0:
         return Step("acquire[pip]", False, out.strip()[-400:], commands=[" ".join(cmd)]), None
     mod = (man.acquire.produces or pkg).replace("-", "_")
-    rc2, out2 = _run([python, "-c", f"import {mod}; print({mod}.__file__)"])
+    rc2, out2 = _run(
+        [python, "-c", f"import {mod}; print({mod}.__file__)"], env=env)
     if rc2 != 0:
         return Step("acquire[pip]", False,
                     f"installed {pkg} but `import {mod}` fails: {out2.strip()[-200:]}",
@@ -123,7 +126,7 @@ def _acq_pip(man, prefix, python):
                 commands=[" ".join(cmd)]), Path(out2.strip())
 
 
-def _acq_download(man, prefix, python):
+def _acq_download(man, prefix, python, env=None):
     a = man.acquire
     if not a.url:
         return Step("acquire[download]", False, "manifest has no url"), None
@@ -131,7 +134,16 @@ def _acq_download(man, prefix, python):
     try:
         if not dest.exists():
             req = urllib.request.Request(a.url, headers={"User-Agent": "geoforge-desktop"})
-            with urllib.request.urlopen(req, timeout=1800, context=tls.context()) as src, \
+            proxy = ((env or {}).get("HTTPS_PROXY") or
+                     (env or {}).get("https_proxy") or
+                     (env or {}).get("HTTP_PROXY") or
+                     (env or {}).get("http_proxy") or "")
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler(
+                    {"http": proxy, "https": proxy} if proxy else {}),
+                urllib.request.HTTPSHandler(context=tls.context()),
+            )
+            with opener.open(req, timeout=1800) as src, \
                     dest.open("wb") as out:
                 shutil.copyfileobj(src, out)
     except Exception as e:
@@ -160,7 +172,7 @@ def _acq_download(man, prefix, python):
     return Step("acquire[download]", True, f"from {a.url}"), binary
 
 
-def _acq_build(man, prefix, python):
+def _acq_build(man, prefix, python, env=None):
     a = man.acquire
     if not a.repo:
         return Step("acquire[build]", False, "manifest has no repo"), None
@@ -184,34 +196,40 @@ def _acq_build(man, prefix, python):
                      ["git", "-C", str(src), "fetch", "--depth", "1", "origin", sha]]
             rc, out = 0, ""
             for c in steps:
-                rc, out = _run(c)
+                rc, out = _run(c, env=env)
                 cmds.append(" ".join(c))
                 if rc != 0:
                     break
             if rc == 0:
-                rc, out = _run(["git", "-C", str(src), "checkout", "-q", "FETCH_HEAD"])
+                rc, out = _run(
+                    ["git", "-C", str(src), "checkout", "-q", "FETCH_HEAD"],
+                    env=env)
                 cmds.append(f"git -C {src} checkout FETCH_HEAD")
             if rc != 0:
                 # Some servers refuse to serve an arbitrary SHA to a shallow
                 # fetch. Falling back to a full clone costs time, not accuracy.
-                rc, out = _run(["git", "-C", str(src), "fetch", "origin"], timeout=1800)
+                rc, out = _run(
+                    ["git", "-C", str(src), "fetch", "origin"],
+                    timeout=1800, env=env)
                 cmds.append(f"git -C {src} fetch origin")
                 if rc == 0:
-                    rc, out = _run(["git", "-C", str(src), "checkout", "-q", sha])
+                    rc, out = _run(
+                        ["git", "-C", str(src), "checkout", "-q", sha],
+                        env=env)
                     cmds.append(f"git -C {src} checkout {sha}")
         else:
             clone = ["git", "clone", "--depth", "1"]
             if a.ref:
                 clone += ["--branch", a.ref]
             clone += [a.repo, str(src)]
-            rc, out = _run(clone)
+            rc, out = _run(clone, env=env)
             cmds.append(" ".join(clone))
         if rc != 0:
             return Step("acquire[build]", False, f"clone failed: {out.strip()[-400:]}",
                         commands=cmds), None
 
     for c in a.commands:
-        rc, out = _run(c, cwd=src)
+        rc, out = _run(c, cwd=src, env=env)
         cmds.append(c)
         if rc != 0:
             return Step("acquire[build]", False,
@@ -244,7 +262,7 @@ def _acq_build(man, prefix, python):
                 commands=cmds), binary
 
 
-def _acq_wine(man, prefix, python):
+def _acq_wine(man, prefix, python, env=None):
     if shutil.which("wine") is None:
         return Step("acquire[wine]", False,
                     "wine is not installed — required to run this model's Windows binary"), None
@@ -257,14 +275,14 @@ def _acq_wine(man, prefix, python):
     return Step("acquire[wine]", True, f"wine present; exe at {exe}"), exe
 
 
-def _acq_bundled(man, prefix, python):
+def _acq_bundled(man, prefix, python, env=None):
     p = Path(man.acquire.produces or "")
     return (Step("acquire[bundled]", p.exists(),
                  f"shipped in the KI: {p}" if p.exists() else f"expected bundled file missing: {p}"),
             p if p.exists() else None)
 
 
-def _acq_manual(man, prefix, python):
+def _acq_manual(man, prefix, python, env=None):
     return Step("acquire[manual]", False,
                 man.agent_hint or "this model must be obtained by hand — see SKILL.md"), None
 

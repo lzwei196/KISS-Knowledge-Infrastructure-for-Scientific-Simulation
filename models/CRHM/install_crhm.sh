@@ -23,7 +23,7 @@ CRHM_DIR="${MODEL_DIR}/crhmcode"
 SRC_DIR="${CRHM_DIR}/crhmcode/src"
 BUILD_DIR="${CRHM_DIR}/crhmcode/build"
 BOOST_VERSION="1_75_0"
-BOOST_URL="https://boostorg.jfrog.io/artifactory/main/release/1.75.0/source/boost_${BOOST_VERSION}.tar.gz"
+BOOST_URL="https://archives.boost.io/release/1.75.0/source/boost_${BOOST_VERSION}.tar.gz"
 
 echo "=== CRHM Installation Script ==="
 echo ""
@@ -32,7 +32,7 @@ echo ""
 echo "[1/6] Checking prerequisites..."
 for cmd in cmake g++ git; do
     if ! command -v "$cmd" &>/dev/null; then
-        echo "ERROR: $cmd not found. Install with: sudo apt install build-essential cmake git"
+        echo "ERROR: $cmd not found. Install a C++ toolchain, CMake, and Git with your system package manager."
         exit 1
     fi
 done
@@ -60,10 +60,18 @@ else
     echo "  Downloading Boost ${BOOST_VERSION} (~120 MB)..."
     mkdir -p "${SRC_DIR}/libs"
     cd "${SRC_DIR}/libs"
-    wget -q --show-progress "${BOOST_URL}" -O "boost_${BOOST_VERSION}.tar.gz"
+    ARCHIVE="boost_${BOOST_VERSION}.tar.gz"
+    if command -v curl &>/dev/null; then
+        curl -fL --retry 3 --progress-bar "${BOOST_URL}" -o "${ARCHIVE}"
+    elif command -v wget &>/dev/null; then
+        wget -q --show-progress "${BOOST_URL}" -O "${ARCHIVE}"
+    else
+        echo "ERROR: curl or wget is required to download Boost."
+        exit 1
+    fi
     echo "  Extracting..."
-    tar -xzf "boost_${BOOST_VERSION}.tar.gz"
-    rm "boost_${BOOST_VERSION}.tar.gz"
+    tar -xzf "${ARCHIVE}"
+    rm "${ARCHIVE}"
     echo "  Boost extracted to ${BOOST_DIR}"
 fi
 
@@ -83,7 +91,14 @@ echo "[5/6] Building CRHM..."
 mkdir -p "${BUILD_DIR}"
 cd "${BUILD_DIR}"
 cmake ../src -DCMAKE_BUILD_TYPE=Release 2>&1
-cmake --build . -j$(nproc) 2>&1
+if command -v nproc &>/dev/null; then
+    JOBS="$(nproc)"
+elif command -v sysctl &>/dev/null; then
+    JOBS="$(sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+else
+    JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+fi
+cmake --build . -j"${JOBS}" 2>&1
 
 # Step 6: Validate
 echo ""

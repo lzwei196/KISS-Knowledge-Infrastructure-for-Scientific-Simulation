@@ -1,0 +1,58 @@
+kiss_manifest_version: 1
+model: Alpine3D
+binary_type: Mach-O/ELF
+verified: unverified
+install_dir: Alpine3D
+
+acquire:
+  strategy: build
+  repo: https://code.wsl.ch/snow-models/alpine3d.git
+  # Upstream does not publish a branch/tag named "3.2.0". The scientific
+  # release is tagged with the model-name prefix.
+  ref: alpine3d-3.2.0
+  commands:
+    - >-
+      python3 -c "from pathlib import Path; Path('Source').mkdir(exist_ok=True)"
+    - >-
+      python3 -c "from pathlib import Path; import subprocess;
+      p=Path('Source/meteoio');
+      subprocess.run(['git','clone','--depth','1','--branch','MeteoIO-2.11.0',
+      'https://code.wsl.ch/snow-models/meteoio.git',str(p)],check=True)
+      if not (p/'.git').is_dir() else None"
+    - cmake -S Source/meteoio -B Source/meteoio/build -DCMAKE_INSTALL_PREFIX=local -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    - cmake --build Source/meteoio/build --parallel
+    - cmake --install Source/meteoio/build
+    - >-
+      python3 -c "from pathlib import Path; import subprocess;
+      p=Path('Source/snowpack');
+      subprocess.run(['git','clone','--depth','1','--branch','Snowpack-3.7.0',
+      'https://code.wsl.ch/snow-models/snowpack.git',str(p)],check=True)
+      if not (p/'.git').is_dir() else None"
+    - cmake -S Source/snowpack -B Source/snowpack/build -DCMAKE_INSTALL_PREFIX=local -DCMAKE_PREFIX_PATH=local -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    - cmake --build Source/snowpack/build --parallel
+    - cmake --install Source/snowpack/build
+    # Apple Clang has no OpenMP runtime by default. OpenMP is an optional
+    # acceleration in Alpine3D, not part of its scientific formulation.
+    - cmake -S . -B build -DCMAKE_PREFIX_PATH=local -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DOPENMP=OFF
+    - cmake --build build --parallel
+  produces: bin/alpine3d
+  system_deps: [git, cmake, make, c++]
+
+system_deps: [git, cmake, make, c++]
+python_deps: [PyYAML, numpy, netCDF4]
+
+reference_case: bin/alpine3d --help
+
+notes: >-
+  The acquisition path is portable and uses the real upstream release tags.
+  MeteoIO and SNOWPACK are built into the selected model workspace before
+  Alpine3D. This recipe remains marked unverified until the complete clean
+  install and KI preflight pass on a release build.
+
+agent_hint: >-
+  Keep every checkout, build directory, library and executable below the
+  GeoForge-selected Alpine3D install workspace. Do not reuse or recreate any
+  HydroCraft/KDT authoring-server path. On macOS configure Alpine3D with
+  OPENMP=OFF unless the user has independently installed and selected a
+  compatible OpenMP toolchain. Finish only after alpine3d --help and the KI's
+  deterministic preflight both pass.

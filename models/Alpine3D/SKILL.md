@@ -120,7 +120,7 @@ in that file's `# SNOTEL <id>: <Name>, <ST>` comment line.
 
 ## Validated Test Cases (Tier-3, real DEM + real obs)
 
-Located at `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Alpine3D/t3_runs/`:
+Located at `KISSPATH_BINARIES/Alpine3D/t3_runs/`:
 
 ⚠️ Every row in the table below was produced with the differenced (i.e. ~44%
 too dry) precipitation described above. Treat their NSE/PBIAS as a **floor**,
@@ -363,7 +363,7 @@ make -j$(nproc) && sudo make install
 ### Binary Location
 
 After build: `alpine3d/build/bin/alpine3d`
-After install: `/usr/local/bin/alpine3d` or current location: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d`
+After install: `/usr/local/bin/alpine3d` or the GeoForge-managed location: `KISSPATH_BINARIES/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d`
 
 ### Test
 

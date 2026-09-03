@@ -11,7 +11,7 @@ MODEL_ID = "Alpine3D"
 KI_DIR = os.path.dirname(os.path.abspath(__file__))
 HYDROCRAFT_PYTHON = "KISSPATH_PYTHON_ENV/bin/python"
 MANIFEST_BINARY = (
-    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Alpine3D/"
+    "KISSPATH_BINARIES/Alpine3D/"
     "source/repo/Source/alpine3d/bin/alpine3d"
 )
 

@@ -12,7 +12,7 @@ package:
   scientific_reference_version: Alpine3D 3.2.0 (SLF release; SNOWPACK 1D snow/soil physics + MeteoIO interpolation
     + EnergyBalance terrain radiation + optional SnowDrift + Runoff)
   binary:
-    path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d
+    path: KISSPATH_BINARIES/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d
     type: work_dir
 pipeline:
   stages:

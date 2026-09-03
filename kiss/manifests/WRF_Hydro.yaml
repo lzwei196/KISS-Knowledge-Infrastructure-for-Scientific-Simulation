@@ -11,7 +11,10 @@ acquire:
   # dag.yaml is the scientific version, not a literal Git branch name.
   ref: v5.2.0
   commands:
-    - cmake -S trunk/NDHMS -B build -DCMAKE_BUILD_TYPE=Release
+    # CMake 4 removed implicit compatibility with the project's old minimum.
+    # This policy floor keeps the upstream v5.2.0 source unchanged while
+    # allowing a current Homebrew CMake to configure it.
+    - cmake -S trunk/NDHMS -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     - cmake --build build --parallel
     # CMake creates a complete Run directory. Put that directory where this
     # KI's preflight and execution tools expect it, including all parameter

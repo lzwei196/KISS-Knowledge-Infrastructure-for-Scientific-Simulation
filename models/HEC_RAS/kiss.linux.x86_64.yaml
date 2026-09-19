@@ -1,0 +1,21 @@
+kiss_manifest_version: 1
+model: HEC_RAS
+binary_type: PE
+verified: unverified
+install_dir: HEC_RAS
+acquire:
+  strategy: wine
+  exe: x64/Ras.exe
+  produces: x64/Ras.exe
+python_deps:
+- numpy
+- pandas
+- h5py
+system_deps:
+- wine
+reference_case: wine x64/Ras.exe
+notes: Windows-only upstream (USACE HEC-RAS 6.x installer; no source, no Linux build).
+  Runs under WINE on Linux with the installed program tree copied in. Windows campaign
+  also recorded needs-user.
+agent_hint: Install HEC-RAS 6.x on a Windows machine (https://www.hec.usace.army.mil/software/hec-ras/)
+  and copy its program folder so that x64/Ras.exe sits under binaries/HEC_RAS/.

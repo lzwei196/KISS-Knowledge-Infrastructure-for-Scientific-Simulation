@@ -1,0 +1,18 @@
+kiss_manifest_version: 1
+model: EPIC
+binary_type: PE
+verified: unverified
+install_dir: EPIC
+acquire:
+  strategy: wine
+  exe: epic1102-official_release.exe
+  produces: epic1102-official_release.exe
+python_deps: [numpy, pandas, xarray, PyYAML]
+system_deps:
+- wine
+reference_case: wine epic1102-official_release.exe
+notes: 'Windows-only upstream (Texas A&M EPIC 1102; registration-gated download, no
+  source). Runs under WINE on Linux. No public URL: the executable must be supplied.'
+agent_hint: Register at https://epicapex.tamu.edu/epic/ and place epic1102-official_release.exe
+  in this KI's install prefix (binaries/EPIC/). Nothing else is needed; WINE is already
+  present.

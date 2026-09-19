@@ -1,0 +1,19 @@
+kiss_manifest_version: 1
+model: DNDC
+binary_type: PE
+verified: unverified
+install_dir: DNDC
+acquire:
+  strategy: wine
+  exe: dndc_run/DNDC95.exe
+  produces: dndc_run/DNDC95.exe
+python_deps:
+- numpy
+- pandas
+system_deps:
+- wine
+reference_case: wine dndc_run/DNDC95.exe
+notes: Windows-only upstream (UNH DNDC 9.5; registration-gated installer, no source).
+  Runs under WINE on Linux.
+agent_hint: Obtain DNDC95.exe from the UNH DNDC distribution (registration) and place
+  it at binaries/DNDC/dndc_run/DNDC95.exe.

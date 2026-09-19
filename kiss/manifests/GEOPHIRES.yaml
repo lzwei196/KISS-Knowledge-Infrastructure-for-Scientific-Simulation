@@ -1,0 +1,15 @@
+kiss_manifest_version: 1
+model: GEOPHIRES
+verified: observed
+install_dir: GEOPHIRES
+acquire:
+  strategy: build
+  repo: https://github.com/NREL/python-geophires-x
+  ref: v3.11.25
+  commands:
+  - pip install --no-build-isolation .
+  produces: ''
+  system_deps: []
+python_version: '3.11'
+notes: 'OBSERVED: proposed by agent from none upstream evidence (none), then executed
+  by kiss init to a passing preflight.'

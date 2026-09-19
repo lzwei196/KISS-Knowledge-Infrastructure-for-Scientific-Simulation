@@ -1,0 +1,51 @@
+kiss_manifest_version: 1
+model: SWAT_Plus
+binary_type: ELF
+verified: unverified
+install_dir: swatplus
+acquire:
+  strategy: build
+  repo: https://github.com/swat-model/swatplus
+  ref: cb442f7c05fc3bfc34349c446010f452d2737ca0
+  commands:
+  - cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+  - cmake --build build --parallel
+  - cmake -E copy build/swatplus-62.0.0-2-gcb442f7-gnu-win_amd64-Rel.exe swatplus.exe
+  produces: swatplus.exe
+  system_deps:
+  - gfortran
+  - cmake
+  - make
+system_deps:
+- gfortran
+- cmake
+- make
+python_deps:
+- numpy
+- pandas
+data:
+- role: static
+  name: TxtInOut project directory
+  why: SWAT+ runs against a prepared TxtInOut directory (HRUs, soils, weather, management).
+    Build it with QSWAT+ or the tools under tools/s1..s5 in this KI.
+- role: forcing
+  name: Daily weather (pcp, tmp, slr, hmd, wnd)
+  why: SWAT+ reads its own station text format; tools/s3 converts common sources.
+  variables:
+  - pcp
+  - tmp
+  - slr
+  - hmd
+  - wnd
+reference_case: swatplus
+notes: 'LINUX x86_64 port of the windows recipe (kiss.windows.yaml): same source pin
+  and product path; binary_type/system_deps adapted. Not yet verified on Linux. Windows
+  installation end state independently checked on 2026-09-06: runnable (pe) — SWAT+.
+  This is partial recipe evidence; scientific validation and calibration readiness
+  are not established by the installation probe. OBSERVED INSTALLATION on Windows
+  on 2026-09-06: DeepSeek staged a pinned WinLibs UCRT GCC/gfortran toolchain, built
+  the official source commit above, produced the self-contained rev'
+agent_hint: On Windows, stage a pinned workspace-local WinLibs UCRT GCC/gfortran release
+  when no Fortran compiler is on PATH. The pinned source produces the versioned executable
+  copied to swatplus.exe by this recipe. A SWAT+ run needs a complete TxtInOut; running
+  the binary in an empty directory exits immediately and that is not a build failure.

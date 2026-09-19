@@ -1,0 +1,19 @@
+kiss_manifest_version: 1
+model: DLBreach
+binary_type: PE
+verified: unverified
+install_dir: dlbreach
+acquire:
+  strategy: wine
+  exe: DLBreach_Barrier.exe
+  produces: DLBreach_Barrier.exe
+  url: https://webspace.clarkson.edu/~wwu/DLBreach_Barrier.zip
+  sha256: df7d57bb7370c98a2611720955083f178c0d0e26aec007c6a392b806de8b374b
+python_deps:
+- numpy
+- pandas
+system_deps:
+- wine
+reference_case: wine DLBreach_Barrier.exe
+notes: 'Windows-only upstream (Clarkson DLBreach). Public archive: one PE32 executable
+  at the zip root. Verified on Linux x86_64 under WINE 9.0.'

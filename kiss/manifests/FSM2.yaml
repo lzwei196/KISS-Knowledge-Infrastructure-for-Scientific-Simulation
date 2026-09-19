@@ -1,0 +1,27 @@
+kiss_manifest_version: 1
+model: FSM2
+verified: observed
+install_dir: FSM2
+acquire:
+  strategy: build
+  repo: https://github.com/RichardEssery/FSM2.git
+  ref: f0c86be12274354c958c2b71661cefefd6ae79f3
+  commands:
+  - printf '#define ALBEDO 2\n#define CANINT 1\n#define CANMOD 1\n#define CANRAD 1\n#define
+    CANUNL 1\n#define CONDCT 1\n#define DENSTY 1\n#define EXCHNG 1\n#define HYDROL
+    1\n#define SGRAIN 1\n#define SNFRAC 1\n#define DRIV1D 1\n#define SWPART 0\n#define
+    ZOFFST 0\n#define PROFNC 0\n' > src/OPTS.h
+  - cd src && gfortran -cpp -O3 -o ../FSM2 FSM2_MODULES.F90 FSM2_PARAMS.F90 FSM2.F90
+    FSM2_DRIVE.F90 FSM2_OUTPUT.F90 FSM2_VEG.F90 FSM2_TIMESTEP.F90 CANOPY.F90 INTERCEPT.F90
+    LUDCMP.F90 PSIMH.F90 QSAT.F90 SNOW.F90 SOIL.F90 SOLARPOS.F90 SRFEBAL.F90 SWRAD.F90
+    THERMAL.F90 TRIDIAG.F90 TWOSTREAM.F90
+  produces: FSM2
+  system_deps:
+  - git
+  - gfortran
+python_deps:
+- numpy
+- pandas
+reference_case: FSM2
+notes: 'OBSERVED: proposed by agent from none upstream evidence (none), then executed
+  by kiss init to a passing preflight.'

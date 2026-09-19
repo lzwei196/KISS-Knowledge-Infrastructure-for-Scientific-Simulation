@@ -1,0 +1,16 @@
+kiss_manifest_version: 1
+model: DualSPHysics
+verified: observed
+install_dir: DualSPHysics
+acquire:
+  strategy: build
+  repo: https://github.com/DualSPHysics/DualSPHysics
+  ref: ef3721a861fda961f0e2f9ec4cd317b19de99086
+  commands:
+  - 'sed -i ''1i #include <cstdint>'' src/source/JBinaryData.cpp'
+  - 'sed -i ''1i #include <cstdint>'' src/source/JBinaryData.h'
+  - cd src/source && make -f Makefile_cpu -j16
+  produces: bin/linux/DualSPHysics5.4CPU_linux64
+  system_deps: []
+notes: 'OBSERVED: proposed by agent from none upstream evidence (none), then executed
+  by kiss init to a passing preflight.'

@@ -1,0 +1,12 @@
+kiss_manifest_version: 1
+model: PySWMM
+verified: observed
+install_dir: PySWMM
+acquire:
+  strategy: pip
+  package: pyswmm
+  version: 2.1.0
+  extras: []
+  system_deps: []
+notes: 'OBSERVED: proposed by agent from strong upstream evidence (ci, readme), then
+  executed by kiss init to a passing preflight.'

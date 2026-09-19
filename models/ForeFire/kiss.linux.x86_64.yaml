@@ -1,0 +1,42 @@
+kiss_manifest_version: 1
+model: ForeFire
+binary_type: ELF
+verified: unverified
+install_dir: ForeFire/source/repo
+acquire:
+  strategy: build
+  repo: https://github.com/forefireAPI/firefront.git
+  ref: 0c0fa267fa0e6c0041c5802d3a92a2c3ceaae27a
+  commands: []
+  produces: bin/forefire
+python_deps:
+- numpy
+- netCDF4
+- pyproj
+- scipy
+- fiona
+- shapely
+- lxml
+- matplotlib
+- rasterio
+system_deps:
+- gcc
+- g++
+- git
+- cmake
+- netcdf
+- netcdf-cxx
+notes: 'LINUX x86_64 port of the macos recipe (kiss.macos.arm64.yaml): same source
+  pin and product path; binary_type/system_deps adapted. Build commands dropped (platform-specific)
+  — write native ones. Not yet verified on Linux. Official source revision reports
+  ForeFire 2.5.0. Native serial CLI scope; optional MPI atmospheric coupling and Python
+  extension are separate. Genuine Homebrew NetCDF C and C++4 libraries are installed
+  on the audited host. Independent DS receipt pending.'
+agent_hint: Preserve bin/forefire together with lib/libforefireL.dylib in the source
+  tree. Use forefire -v in an empty directory to prove genuine native startup; do
+  not run a .ff simulation or download LFS scientific inputs. Actual imports required
+  are numpy, netCDF4, pyproj, scipy, fiona, shapely, ki_tools_common.load_forcing,
+  lxml, matplotlib. The bundled ki_tools_common helper must load through the actual
+  KI source path. Do not create Linux .so aliases or symlink the C header netcdf.h
+  over the genuine C++ umbrella header netcdf. Use real macOS dylibs discovered by
+  CMake.

@@ -1,0 +1,41 @@
+kiss_manifest_version: 1
+model: CE_QUAL_W2
+binary_type: ELF
+verified: unverified
+install_dir: ce_qual_w2
+acquire:
+  strategy: build
+  repo: https://github.com/CE-QUAL-W2-ERDC/CE-QUAL-W2.git
+  ref: 5544026e3f1a39c0c9e827bd3dc2bbc13a94636c
+  commands:
+  - cmake -E make_directory bin
+  - cmake -E copy executables/model/w2_v45_64.exe bin/w2_v5
+  - cmake -E copy executables/model/w2_v45_64.exe bin/w2_v5.exe
+  - cmake -E copy executables/model/preW2-v45_64.exe bin/preW2-v45_64.exe
+  produces: bin/w2_v5
+  system_deps:
+  - git
+  - cmake
+system_deps:
+- git
+- cmake
+python_deps:
+- numpy
+- pandas
+- xarray
+- netCDF4
+- geopandas
+- shapely
+- rasterio
+- matplotlib
+- scipy
+reference_case: bin/w2_v5
+notes: 'LINUX x86_64 port of the windows recipe (kiss.windows.yaml): same source pin
+  and product path; binary_type/system_deps adapted. Not yet verified on Linux. OBSERVED
+  on Windows on 2026-09-06: the official ERDC v4.5 Windows executable loaded successfully
+  and wrote W2CodeCompilerVersion.opt identifying CE-QUAL-W2 Version 4.50, Intel compiler
+  2021, build date 2022-04-26. The executable has no terminating help/version flag,
+  so a bounded startup probe is expected to time out after proving that it loaded.'
+agent_hint: Use the official precompiled Windows model executable shipped in the pinned
+  ERDC repository. Preserve the full checkout for documentation and support files,
+  but do not copy it into a second nested source tree.

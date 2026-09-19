@@ -1,0 +1,21 @@
+kiss_manifest_version: 1
+model: APEX
+binary_type: PE
+verified: unverified
+install_dir: APEX
+acquire:
+  strategy: wine
+  exe: APEX0806.exe
+  produces: APEX0806.exe
+python_deps:
+- numpy
+- pandas
+system_deps:
+- wine
+reference_case: wine APEX0806.exe
+notes: Windows-only upstream (Texas A&M APEX 0806; registration-gated, no source).
+  Runs under WINE on Linux. The KI also expects the ex1_RiselTX reference template
+  beside ki/examples/.
+agent_hint: Obtain APEX0806.exe from https://epicapex.tamu.edu/software/ (registration)
+  and place it in this KI's install prefix (binaries/APEX/); also drop it at ki/reference/APEX0806.exe
+  where the KI preflight looks.

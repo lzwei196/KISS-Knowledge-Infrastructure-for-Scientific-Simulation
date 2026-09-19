@@ -1,0 +1,11 @@
+kiss_manifest_version: 1
+model: openAMUNDSEN
+verified: observed
+install_dir: openAMUNDSEN
+acquire:
+  strategy: pip
+  pypi_name: openamundsen
+  version: 1.0.0
+  system_deps: []
+notes: 'OBSERVED: proposed by agent from strong upstream evidence (ci, readme), then
+  executed by kiss init to a passing preflight.'

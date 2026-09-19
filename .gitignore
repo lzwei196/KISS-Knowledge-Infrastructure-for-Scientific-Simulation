@@ -32,3 +32,16 @@ kiss/dist-*/
 kiss/build-*/
 kiss/.pyinstaller-*/
 /GeoForge Desktop.app/
+
+# Local data, releases and experiment runs: never source.
+/acceptance/
+/releases/
+/kiss/releases/
+/.stress-kimi*/
+/git_examples/
+/auto_dissect_general/
+/auto_dissect_general.zip
+/ArchDam-RDC-KI/
+/output/
+/kiss/product-book/
+*.log

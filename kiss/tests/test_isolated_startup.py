@@ -1,4 +1,5 @@
 import os
+import platform
 import sys
 import tempfile
 import unittest
@@ -22,6 +23,8 @@ class IsolatedStartupTests(unittest.TestCase):
             result = api.execute_tool('run_setup_command', {'argv': [str(binary), '--version']}, ki, cfg, setup_mode=True, setup_context={'installation_only': True})
             self.assertIn('ISOLATED', result)
             self.assertNotIn('INPUT_PRESENT', result)
-            with mock.patch.object(runnable, 'find_binary', return_value=binary), mock.patch.object(runnable, '_file_kind', return_value='macho'), mock.patch.object(runnable, '_missing_libs', return_value=[]):
+            # the probe only runs for a binary native to this platform (CI checks run on Linux)
+            native = {'Darwin': 'macho', 'Linux': 'elf'}.get(platform.system(), 'elf')
+            with mock.patch.object(runnable, 'find_binary', return_value=binary), mock.patch.object(runnable, '_file_kind', return_value=native), mock.patch.object(runnable, '_missing_libs', return_value=[]):
                 verdict = runnable.check(ki, cfg=cfg)
             self.assertEqual(verdict.probe_output, 'ISOLATED')
